@@ -34,8 +34,11 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
         stops = pending_requests(conn)
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
-        from holophyte.admission import state
+        from holophyte.admission import project_of, state
         admission, hold_note = state(conn, project)
+        project_id = project_of(conn, project)
+        queued = ([] if project_id is None
+                  else store.read.queued_tickets(conn, project_id))
         if admission == "disabled":
             runs = []
         schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -86,6 +89,11 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                               if strikes[run.id] is not None else 0),
                   "host": json_host(project, run.host)}
                  for run in runs],
+        "queued": [{"ticket": ticket.linearIdentifier,
+                    "ticket_url": ticket.ticketUrl, "title": ticket.title,
+                    "reason": ticket.outcomeReason, "pr_url": ticket.prUrl,
+                    "waiting_ms": now - ticket.endedAt}
+                   for ticket in queued],
     }
 
 

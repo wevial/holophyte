@@ -60,26 +60,22 @@ for the operator.
 ## Suite pins and conventions
 
 These fail the `unit` check, which you do not run locally, so settle them in
-the same commit:
-* `tests/test_file_sizes.py`: 1000 lines a module, 1500 a test module. Only
-  a file over its ceiling has a `PINNED` entry, and a file over its ceiling
-  may not grow: its entry never rises, so a change that would grow it puts
-  the new code in a new module. A file brought to or under its ceiling
-  leaves the table.
-* `tests/test_comment_budget.py`: each module under `holophyte/` and `store/`
-  and each top-level module has a pinned count of comment and docstring lines
-  and of lines citing a ticket id. Neither may grow; a lowered count lowers its
-  pin in the same commit. A new module holds at most one such line per 20 and
-  cites no ticket.
+the same commit. Each test's docstring holds its full rules:
+* `tests/test_file_sizes.py`: 1000 lines a module, 1500 a test module. A
+  file over its ceiling may not grow; new code goes in a new module.
+* `tests/test_comment_budget.py`: a module's comment and docstring lines and
+  its ticket citations may not grow, and a lowered count lowers its pin in
+  the same commit.
 * `tests/test_store_surface.py`: a public `store` function added or removed
   edits the allow-list with the ticket that needs it. No raw
   `UPDATE runs|tickets|projects` under `holophyte/`: use a named store writer.
-* `tests/test_docs*.py`: a new CLI mode goes in the README usage block, a new
-  module in `docs/development.md`, a config key in `docs/config.md`, a daemon
-  key in `docs/reference/http.md`.
+* `tests/test_docs*.py`: a new `factory.py` mode or `holo` command goes in
+  the README usage block and a `factory.py` option in
+  `docs/reference/cli.md`, a new module in `docs/development.md`, a config
+  key in `docs/config.md`, a daemon key in `docs/reference/http.md`.
 * Complexity above 12 fails ruff `C901`; an exemption is a per-function
-  `noqa: C901` naming its reason in a few words, and its `COMPLEXITY_EXEMPT`
-  entry in `tests/test_comment_budget.py` names the ticket that retires it.
+  `noqa: C901` naming its reason in a few words, with its `COMPLEXITY_EXEMPT`
+  entry in `tests/test_comment_budget.py`.
 * A comment states only a constraint the code cannot express. History (which
   ticket, which incident, what the code used to do) belongs in the commit
   message and the store; a name that needs a comment is renamed or a block
@@ -87,8 +83,7 @@ the same commit:
 * Boards are reached only through `provider.Board`, built by
   `board_for()`; never call `linear_provider` directly.
 * Schema changes bump `SCHEMA_VERSION` and stay additive where they can
-  (`store/schema.py` says when `READABLE_FROM` must rise). Tickets never state
-  a literal schema version.
+  (`store/schema.py` says when `READABLE_FROM` must rise).
 * Agent routes are live-probed before dispatch; the only substitutions are a
   configured `*_fallback`, and a ticket's implementer profile falling back to
   the default implementer when its probe fails, each probed and recorded;
@@ -100,43 +95,5 @@ the same commit:
 
 ## Operator
 
-The runbook (`docs/operating/runbook.md`) is the procedure; these are the
-rules it serves.
-* **Escalation ladder, in order.** (1) The factory's own verbs: `--requeue`,
-  `--approve`, `--babysit`, `--repoint`, `--pause`/`--resume`/`--abort`,
-  `--hold`/`--release-hold`, `--close KO-n --landed URL`,
-  `--file-ticket --update`; a loop is relaunched as
-  `holophyte-loop@NAME` (the host sweep also starts it for a ready ticket).
-  (2) `--sweep`, then `--sweep --act`; on a registered project the host
-  sweep already acts every minute, so first check it is running
-  (`factory.py --status`). A stuck lease is a sweep question: never
-  hand-edit `runs`, `tickets` or `projects` to free one. (3) The store API below from a REPL. (4) Raw SQL
-  only where no API exists, paired with a ticket for the missing API filed
-  the same day. Never skip a rung downward; two relaunches against one
-  failure, then a written diagnosis.
-* **Operator store API, by name.** `release`, `resume`, `transition`,
-  `record_intervention`, `record_project_intervention`, `walk_ticket`,
-  `requeue` and `repair_references` are kept for rung 3 even when the loop
-  does not call them; `tests/test_store_surface.py` checks these eight.
-* **Record before acting.** Every out-of-band state change gets its
-  interventions row, with truthful action and real time, before the write;
-  the verbs write it for you. A backdated or mislabeled record is worse than
-  none.
-* **A worker's report is not proof.** Read the diff and rerun the verify
-  commands before calling anything done.
-* **Tickets** follow `ticketTemplate.md`; check one with
-  `python3 ticket_template.py --repo . TICKET.md`, file it with
-  `--file-ticket`, and change a filed body only with
-  `--file-ticket --update KO-n`.
-* **After a merge** nothing is restarted by hand: the sweep timer runs from
-  `HEAD`, the host daemon exits on a `HEAD` move, the loop re-execs.
-* **A merge outside the loop** goes through a pull request, never a push
-  straight to `main` (an admin push skips the required `unit` check). It
-  needs the suite green, ruff clean and an independent review of the final
-  branch state; a ticket the factory ran is closed with
-  `--close KO-n --landed URL`. Ask before it, and before the first
-  out-of-band state edit, when the human is present. When absent, freeing a
-  work-blocking lease and preserving at-risk work are authorized; the merge
-  waits `blocked_on_operator`.
-* **Close the loop.** Reconcile store, board and branches before ending an
-  incident, and file one ticket per gap it revealed.
+Operators: `docs/operating/runbook.md` holds the escalation ladder and the
+operator's rules; ticket agents do not need them.

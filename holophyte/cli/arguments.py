@@ -101,8 +101,8 @@ def _note_checks(parser, args):
                          " --cancel, --gap-layer, --approve-story and --decide"
                          " require --note TEXT")
         return
-    filed = args.file_ticket if args.update is None else None
-    optional = args.approve or args.babysit or args.close or args.move or filed
+    optional = args.approve or args.babysit or args.close or args.move \
+        or args.file_ticket
     if args.note is not None and args.requeue is None \
             and args.repoint is None and optional is None:
         parser.error("--note is what --requeue, --approve, --babysit, "
@@ -169,18 +169,19 @@ def _modifier_checks(parser, args):
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="factory.py",
-        description="Holophyte: a minimal Linear-driven software factory.",
+        description=("Holophyte: a minimal software factory driven by the "
+                     "project's board."),
         epilog="Project commands: factory.py project --help")
     parser.add_argument(
         "target", metavar="project", nargs="?",
         help="repository the loop works in; left out, --status reports the "
              "host: every project in HOLOPHYTE_HOME/host.toml")
     modes = parser.add_mutually_exclusive_group()
-    modes.add_argument("--pause", metavar="KO-n",
+    modes.add_argument("--pause", metavar="KEY-n",
                        help="stop at the next safe point; requires --note")
-    modes.add_argument("--resume", metavar="KO-n",
+    modes.add_argument("--resume", metavar="KEY-n",
                        help="resume a paused run at its recorded boundary")
-    modes.add_argument("--abort", metavar="KO-n",
+    modes.add_argument("--abort", metavar="KEY-n",
                        help="end a run now: kill its turn, commit its tree as"
                        " WIP, push an open pull request's branch, park the"
                        " ticket; requires --note")
@@ -192,7 +193,7 @@ def build_parser():
         help="print the project store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
     modes.add_argument(
-        "--requeue", metavar="KO-n",
+        "--requeue", metavar="KEY-n",
         help="put the ticket back in the queue after its run failed: records "
              "a 'requeue' intervention on that run carrying --note and walks "
              "the ticket to ready and clears its question in one transaction; "
@@ -203,7 +204,7 @@ def build_parser():
              "refuses a ticket relaunched twice against one failure since a "
              "human last acted on it unless --force")
     modes.add_argument(
-        "--approve", metavar="KO-n",
+        "--approve", metavar="KEY-n",
         help="release the ticket parked awaiting merge approval: records an "
              "'approve' intervention on its parked run carrying --note "
              f"(default {APPROVE_DEFAULT_NOTE!r}), ends that run with its "
@@ -224,7 +225,7 @@ def build_parser():
              "twice against one failure, recording 'forced past N "
              "relaunches: ' ahead of the note")
     modes.add_argument(
-        "--babysit", metavar="KO-n",
+        "--babysit", metavar="KEY-n",
         help="send the ticket parked on its pull request ([merge] mode = "
              "\"pr\") back to the babysitter: a custom --note records a "
              "maintainer instruction like Send back, while no note or the "
@@ -236,7 +237,7 @@ def build_parser():
              "under approve = \"human\" rather than merging; refuses a "
              "ticket in any other state naming it, and writes nothing then")
     modes.add_argument(
-        "--repoint", nargs=2, metavar=("KO-n", "SHA"),
+        "--repoint", nargs=2, metavar=("KEY-n", "SHA"),
         help="move the ticket's parked candidate to SHA, a full 40-hex "
              "commit id, after the branch was rebuilt by hand (rebased onto "
              "a rewritten main, say): records a 'repoint' intervention on "
@@ -261,7 +262,7 @@ def build_parser():
         help="with --gap-layer: who found the gap, a witness or the "
              "operator (the default)")
     modes.add_argument(
-        "--close", metavar="KO-n",
+        "--close", metavar="KEY-n",
         help="close a ticket whose change landed outside the factory; requires "
              "--landed URL and a terminal non-merged last run, with no live run")
     parser.add_argument(
@@ -362,15 +363,16 @@ def build_parser():
              f"unless {BABYSIT_DEFAULT_NOTE!r}; with --close: context for the external "
              "landing; recorded on the intervention row's "
              "event; with --cancel, required, or --move: the ticket's note; "
-             "with --file-ticket: the filed ticket's first board note; "
+             "with --file-ticket: the filed ticket's first board note, or "
+             "with --update the updated ticket's note after the update; "
              "with --approve-story, required: the approval's; with "
              "--decide, required: the answer's")
     parser.add_argument(
         "--author", metavar="NAME",
         help="with --babysit and --note: the maintainer instruction's"
              " author, sent as one even when the note is the default; with"
-             " --file-ticket and --note: who the filed ticket's first board"
-             " note, AUTHOR: NOTE, is from; default the caller's login")
+             " --file-ticket and --note: who the filed or updated ticket's"
+             " board note, AUTHOR: NOTE, is from; default the caller's login")
     parser.add_argument(
         "--state", choices=FILE_TICKET_STATES,
         help="with --file-ticket: the workflow state the issue is created in "
@@ -380,7 +382,7 @@ def build_parser():
         help="with --file-ticket or --file-story: the priority the issue or "
              "the story's tickets are created with (default none)")
     parser.add_argument(
-        "--update", metavar="KO-n",
+        "--update", metavar="KEY-n",
         help="with --file-story: the filed story to apply the directory "
              "to. With --file-ticket: replace that issue's title, description "
              "and estimate from the validated file instead of creating one; "

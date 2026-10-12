@@ -178,9 +178,11 @@ PR_CLOSED_QUESTION = "rejected: "
 
 def _reconcile_pull_requests(target, conn, project, provider,
                              failed_asked=None):
-    from holophyte.admission import held_line
     sent = set()
-    if held_line(conn, project) or _budget_low():
+    disabled = conn.execute(
+        "SELECT 1 FROM projects WHERE id = ? AND admission = 'disabled'",
+        (project,)).fetchone()
+    if disabled or _budget_low():
         return sent
     poll_ms = merge_config(target).pr_poll_sec * 1000
     for ticket in store.read.blocked_tickets(conn, project):

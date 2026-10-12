@@ -1066,12 +1066,11 @@ class HeldProjectTests(SweepTestCase):
         before = self.conn.execute("SELECT * FROM runs ORDER BY id").fetchall()
         store.hold(self.conn, self.project_id, "reboot pending")
         provider = Mock(team="team-1")
-        with patch("holophyte.host.reconcile._reconcile_pull_requests") as reconcile:
+        with patch("holophyte.host.reconcile._reconcile_pull_requests"):
             holophyte.host.supervisor.supervise_pass(
                 self.project, 42, T0, now=T0 + MINUTE, provider=provider,
                 out=io.StringIO()
             )
-        reconcile.assert_not_called()
         self.assertEqual(provider.mock_calls, [])
         self.assertEqual(
             self.conn.execute("SELECT * FROM runs ORDER BY id").fetchall(), before
@@ -1081,6 +1080,26 @@ class HeldProjectTests(SweepTestCase):
         output = "\n".join(self.run_sweep(T0 + MINUTE))
         self.assertIn("held: reboot pending", output)
         self.assertIn(str(self.target), output)
+
+    def test_held_project_without_a_live_loop_reconciles_its_parked_pulls(self):
+        parked = self.a_run()
+        for phase in ("verifying", "reviewing", "merge_gate"):
+            store.set_phase(self.conn, parked, phase, now=T0)
+        store.tickets.transition(self.conn, self.ticket_of[parked],
+                                 "blocked_on_operator")
+        store.park(self.conn, parked, "awaiting_merge_approval", now=T0,
+                   pr_url="https://github.com/org/repo/pull/1")
+        store.hold(self.conn, self.project_id, "draining")
+        provider = Mock(team="team-1")
+        with patch("holophyte.host.reconcile._reconcile_pull_requests") as reconcile, \
+                patch("holophyte.host.supervisor.start_loop_for") as start:
+            asked = holophyte.host.supervisor.reconcile_parked_pull_requests(
+                self.project, self.conn, T0 + MINUTE, provider, io.StringIO())
+        self.assertEqual(asked, [self.project_id])
+        self.assertEqual(
+            [c.args[2] for c in reconcile.call_args_list], [self.project_id])
+        start.assert_not_called()
+        self.assertEqual(provider.mock_calls, [])
 
 if __name__ == "__main__":
     unittest.main()

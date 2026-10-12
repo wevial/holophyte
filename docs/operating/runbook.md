@@ -3,24 +3,44 @@
 What to do when the factory is stuck, in the order to do it. The rule
 behind every recipe: **record before acting**. Every out-of-band state
 change gets an `interventions` row, with a truthful action and a real
-timestamp, before the change; the operator commands write it for you.
+timestamp, before the change; the operator commands write it for you. A
+backdated or mislabeled record is worse than none.
 
 ## The escalation ladder
 
-1. **Relaunch or unblock through the factory's own paths.** Relaunch the
-   loop; `--requeue` a failed ticket; `--approve` or `--babysit` a parked
-   one; `--repoint` a rebuilt candidate; fix the ticket file and
-   `--file-ticket --update`.
-2. **`--sweep`, then `--sweep --act`** once a trip is confirmed. A stuck or
-   refused lease is a sweep question, never a SQL question.
-3. **Store API from a Python REPL:** `release`, `resume`, `transition`,
-   `record_intervention`, `walk_ticket`, `requeue`. Kept public for exactly
-   this rung and pinned by `tests/test_store_surface.py`.
+1. **The factory's own verbs.** `--requeue`, `--approve`, `holo send-back`,
+   `holo steer`, `--repoint`, `--pause`/`--resume`/`--abort`,
+   `--hold`/`--release-hold`, `--close HOLO-n --landed URL`,
+   `--file-ticket --update`; a loop is relaunched with `holo start` (the
+   `holophyte-loop@NAME` unit, which the host sweep also starts for a ready
+   ticket).
+2. **`--sweep`, then `--sweep --act`** once a trip is confirmed. On a
+   registered project the host sweep already acts every minute, so first
+   check it is running (`factory.py --status`). A stuck or refused lease is
+   a sweep question: never hand-edit `runs`, `tickets` or `projects` to free
+   one.
+3. **Operator store API, by name.** From a Python REPL: `release`, `resume`,
+   `transition`, `record_intervention`, `record_project_intervention`,
+   `walk_ticket`, `requeue` and `repair_references`, kept public for this
+   rung even when the loop does not call them;
+   `tests/test_store_surface.py` checks these eight.
 4. **Raw SQL** only where no API exists, paired with a ticket for the
    missing API filed the same day.
 
-Never skip a rung downward. At most two relaunches against the same
-infrastructure failure; the third response is a written diagnosis.
+Never skip a rung downward. At most two relaunches against one failure;
+the third response is a written diagnosis.
+
+## Operator rules
+
+- **A worker's report is not proof.** Read the diff and rerun the verify
+  commands before calling anything done.
+- **Tickets** follow `ticketTemplate.md`; check one with
+  `python3 ticket_template.py --repo . TICKET.md`, file it with
+  `--file-ticket`, and change a filed body only with
+  `--file-ticket --update HOLO-n`. A ticket states no literal schema
+  version; filing refuses one.
+- **After a merge** nothing is restarted by hand: the sweep timer runs from
+  `HEAD`, the host daemon exits on a `HEAD` move, the loop re-execs.
 
 ## Daily shape
 
@@ -38,28 +58,31 @@ so relaunching it is routine. The sweep runs every minute from the
 checkout's `HEAD`, and the daemon leaves for the new code on its own after
 a self-merge; neither is restarted by hand. The console rebuilds itself:
 the host daemon builds `console/dist` at startup when its stamp is not the
-checkout's `console/` tree, and keeps the old build if that fails. After
-each loop merge the operator pushes `main` by hand; the factory never
-pushes.
+checkout's `console/` tree, and keeps the old build if that fails. Under
+`[merge] mode = "pr"` the factory pushes the run's branch and GitHub merges
+its pull request, so nothing is pushed by hand; under `mode = "local"` the
+merge lands on the checkout's own `main` and the factory does not push it
+(see [Config](../config.md#merge)).
 
 ## Recipes
 
 ### A run failed and the ticket needs to go back in the queue
 
 ```
-python3 factory.py PROJECT --requeue KO-n --note "why: contract fixed / infra outage / …"
+python3 factory.py PROJECT --requeue HOLO-n \
+    --note "why: contract fixed / infra outage / …"
 # then relaunch the loop
 ```
 
 Refuses a ticket that is merged, has a live run, or does not exist; writes
 an `interventions` row with action `requeue`. If the failure was a contract
-defect, fix the file and `--file-ticket FILE --update KO-n` first; the
+defect, fix the file and `--file-ticket FILE --update HOLO-n` first; the
 rerun reuses the preserved branch.
 
 ### A run is parked awaiting merge approval
 
 ```
-python3 factory.py PROJECT --approve KO-n --note "looked at the diff; merge"
+python3 factory.py PROJECT --approve HOLO-n --note "looked at the diff; merge"
 # then relaunch the loop
 ```
 
@@ -82,7 +105,8 @@ through the store API.
 ### A run is parked on its pull request and the PR has moved
 
 ```
-python3 factory.py PROJECT --babysit KO-n --note "new review thread; look at the PR again"
+python3 factory.py PROJECT --babysit HOLO-n \
+    --note "new review thread; look at the PR again"
 # then relaunch the loop
 ```
 
@@ -102,15 +126,15 @@ merged -- is named and nothing is written.
 
 ```
 # in the preserved worktree, after main was rewritten (a filtered history, say)
-git rebase --onto main OLD_BASE KO-n-branch          # the same commits, new tips
-python3 factory.py PROJECT --repoint KO-n $(git rev-parse HEAD) --note "rebased onto the filtered main; same commits"
-python3 factory.py PROJECT --approve KO-n --note "looked at the diff; merge"
+git rebase --onto main OLD_BASE task/HOLO-n-SLUG  # same commits, new tips
+python3 factory.py PROJECT --repoint HOLO-n $(git rev-parse HEAD) \
+    --note "rebased onto the filtered main; same commits"
+python3 factory.py PROJECT --approve HOLO-n --note "looked at the diff; merge"
 ```
 
 The approval holds the branch to the sha the park recorded, so a branch
-rebuilt as the same commits on a rewritten `main` (2026-09-05: three
-parked candidates after `FINDINGS.md` was filtered out of the unpushed
-history) would fail its gate as drift. `--repoint` is the one legitimate
+rebuilt as the same commits on a rewritten `main` (a filtered history,
+say) would fail its gate as drift. `--repoint` is the one legitimate
 move of that sha: it writes an `interventions` row with action `repoint`
 carrying the note, a `runEvents` row naming the old and new shas, then
 sets `runs.candidateSha`, in one transaction, and prints both shas. The
@@ -123,10 +147,15 @@ with raw SQL on `runs.candidateSha` now that this verb exists.
 
 ### The supervisor ended a run that was fine
 
-Read the round findings (`FINDINGS.md`, or the store) and the sweep reason
-in the ticket's Linear comment. If the trip was wrong, `--requeue` with a
-note saying so and file a ticket for the trip rule; the false
-`review_stuck` of 2026-09-03 became a finding-key fix the same day.
+Read the run's round findings and the sweep's reason in the store with
+`holo run N`: its review rounds carry the findings (`holo run N --json`
+for each one in full), even for a run swept mid fix turn, and its
+timeline shows the event the sweep wrote (`supervisor sweep: …`). The
+ledger (`--ledger`) gains a round's entry only after its fix turn
+returns, so it is context, not the findings source. If the trip was
+wrong, `--requeue` with a note saying so and file a ticket for the trip
+rule; the false `review_stuck` of 2026-09-03 became a finding-key fix
+the same day.
 
 ### A preserved branch conflicts with a moved-on `main`
 
@@ -134,8 +163,9 @@ The loop refuses to reuse it and says so. In the worktree:
 
 ```
 git merge --no-ff main        # resolve, keep the branch's intent
-git commit -q -m "KO-n: merge main (why)"
-python3 factory.py PROJECT --requeue KO-n --note "merged main into the preserved branch by hand"
+git commit -q -m "HOLO-n: merge main (why)"
+python3 factory.py PROJECT --requeue HOLO-n \
+    --note "merged main into the preserved branch by hand"
 ```
 
 ### The loop died mid-review
@@ -146,10 +176,11 @@ killed harder, `--sweep` lists strays under `review containers` and
 
 ### Two loops on one host claimed the same ticket
 
-Each project's `[board]` table names its own Linear project; a project
-without one refuses to start. If it happens anyway, kill the wrong loop,
-release its run as `failed` with `outcome_class="infra"`, remove its
-worktree and branch, and record the kill.
+Each project's `[board]` table names its own board, a Linear `project_id`
+or a native `prefix`; a project without one refuses to start. If it
+happens anyway, kill the wrong loop, release its run as `failed` with
+`outcome_class="infra"`, remove its worktree and branch, and record the
+kill.
 
 ### A ticket was skipped as `needs_spec`
 
@@ -157,7 +188,8 @@ The loop prints the first validator problem. Common causes: an unfilled
 `<placeholder>` (any angle-bracket token outside a link is one, HTML tags
 included), a criterion naming a path the project gitignores, a section
 after `## Open questions` (it must read exactly `- None`), a bold key that
-Linear rewrote. Fix the file, `--file-ticket FILE --update KO-n`, relaunch.
+Linear rewrote. Fix the file, `--file-ticket FILE --update HOLO-n`,
+relaunch.
 
 ### The host sweep is stale or a project shows an error
 
@@ -211,7 +243,9 @@ python3 factory.py PROJECT --release-hold --note "on the native board"
 ```
 
 Hold, then drain: the loop claims nothing new, and `--status` shows the
-live runs finishing. The host sweep delivers the pending board pushes and
+live runs finishing. Parked pull requests are still reconciled during the
+hold, so a woken run waits in the ready queue until the release. The
+host sweep delivers the pending board pushes and
 notes; the import's summary counts them, and the switch waits for both to
 read 0, since nothing posts to Linear afterwards. The import upserts by
 board id, so rows, runs, ledger and `dependsOn` stay, old tickets keep
@@ -227,7 +261,7 @@ maintainer's own handle, names exactly one ticket key, and asks for a change
 to that ticket's work.
 
 ```
-holo steer -p PROJECT KO-n -n "the comment's text, as written" --author "maintainer via Lotuspod"
+holo steer -p PROJECT HOLO-n -n "COMMENT" --author "maintainer via Lotuspod"
 ```
 
 The note is the comment's text as written. Add `--hint` only when the
@@ -238,12 +272,14 @@ answered on the page and not relayed.
 
 ### A manual merge to `main`
 
-Named event with a gate: suite green, `ruff` clean, an independent review
-of the final branch state, `--no-ff` with a message naming the why, the
-store and Linear walked to their terminal states in the same sitting, the
-FINDINGS window committed. Ask first when the human is present; when
-absent, freeing a lease and preserving at-risk work are authorised, the
-merge waits.
+A merge outside the loop goes through a pull request, never a push straight
+to `main` (an admin push skips the required `unit` check). It needs the
+suite green, `ruff` clean and an independent review of the final branch
+state; a ticket the factory ran is then closed with
+`--close HOLO-n --landed URL`. Ask before it, and before the first
+out-of-band state edit, when the human is present. When absent, freeing a
+work-blocking lease and preserving at-risk work are authorized; the merge
+waits `blocked_on_operator`.
 
 ## Reading the state
 
@@ -266,6 +302,5 @@ coloured dot on the glyph means something in "needs you".
 ## Close the loop afterwards
 
 Reconcile every touched surface before ending an incident: store status,
-board status, `FINDINGS.md` where a project renders one, branches and
-stashes. File one ticket per gap
-the incident revealed; every recipe above started as one.
+board status, branches and stashes. File one ticket per gap the incident
+revealed; every recipe above started as one.

@@ -57,6 +57,11 @@ those writing routes. A project with no store answers 503.
      "verify_started_ms": null,
      "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1",
      "stop_requested": null, "stop_action": null}
+  ],
+  "queued": [
+    {"ticket": "KO-220", "ticket_url": null, "title": "Name the held project",
+     "reason": "approved for merge; the next claim resumes the candidate at the merge gate",
+     "pr_url": "https://github.com/example/repo/pull/41", "waiting_ms": 95000}
   ]
 }
 ```
@@ -100,6 +105,12 @@ repository the daemon serves, as a path. `schema_version` is the
 store's schema version (its `PRAGMA user_version`). `admission` is the
 project's admission state (`store/enums.py` `ProjectAdmission`): `enabled`,
 `held` or `disabled`; while it is `disabled`, `runs` is empty.
+`queued` lists the project's tickets waiting for the next claim: `ready`,
+with no active run and an ended last run, oldest wait first, whatever the
+admission state. A ready ticket that never ran is not in it. Each entry
+carries the ticket's `ticket`, `ticket_url` and `title`, the last run's
+outcome reason as `reason` and its pull request as `pr_url` (null without
+one), and `waiting_ms`, the daemon's `now` minus the run's end.
 `hold_note` is the note of the latest admission change, null when there
 is none.
 `actions` is whether

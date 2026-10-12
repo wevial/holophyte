@@ -576,6 +576,27 @@ def ready_tickets(conn, project_id=None):
 
 
 @dataclass(frozen=True)
+class QueuedTicket:
+    linearIdentifier: str
+    ticketUrl: str | None
+    title: str
+    outcomeReason: str | None
+    prUrl: str | None
+    endedAt: int
+
+
+def queued_tickets(conn, project_id):
+    rows = conn.execute(
+        "SELECT t.linearIdentifier, t.url, t.title, r.outcomeReason, r.prUrl,"
+        " r.endedAt FROM tickets t JOIN runs r ON r.id = t.lastRunId"
+        " WHERE t.status = 'ready' AND t.activeRunId IS NULL"
+        " AND r.endedAt IS NOT NULL AND t.projectId = ?"
+        " ORDER BY r.endedAt, t.id",
+        (project_id,)).fetchall()
+    return [QueuedTicket(*row) for row in rows]
+
+
+@dataclass(frozen=True)
 class ClaimableTicket:
     id: int
     linearIssueId: str
