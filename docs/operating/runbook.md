@@ -58,28 +58,31 @@ so relaunching it is routine. The sweep runs every minute from the
 checkout's `HEAD`, and the daemon leaves for the new code on its own after
 a self-merge; neither is restarted by hand. The console rebuilds itself:
 the host daemon builds `console/dist` at startup when its stamp is not the
-checkout's `console/` tree, and keeps the old build if that fails. After
-each loop merge the operator pushes `main` by hand; the factory never
-pushes.
+checkout's `console/` tree, and keeps the old build if that fails. Under
+`[merge] mode = "pr"` the factory pushes the run's branch and GitHub merges
+its pull request, so nothing is pushed by hand; under `mode = "local"` the
+merge lands on the checkout's own `main` and the factory does not push it
+(see [Config](../config.md#merge)).
 
 ## Recipes
 
 ### A run failed and the ticket needs to go back in the queue
 
 ```
-python3 factory.py PROJECT --requeue KO-n --note "why: contract fixed / infra outage / …"
+python3 factory.py PROJECT --requeue HOLO-n \
+    --note "why: contract fixed / infra outage / …"
 # then relaunch the loop
 ```
 
 Refuses a ticket that is merged, has a live run, or does not exist; writes
 an `interventions` row with action `requeue`. If the failure was a contract
-defect, fix the file and `--file-ticket FILE --update KO-n` first; the
+defect, fix the file and `--file-ticket FILE --update HOLO-n` first; the
 rerun reuses the preserved branch.
 
 ### A run is parked awaiting merge approval
 
 ```
-python3 factory.py PROJECT --approve KO-n --note "looked at the diff; merge"
+python3 factory.py PROJECT --approve HOLO-n --note "looked at the diff; merge"
 # then relaunch the loop
 ```
 
@@ -102,7 +105,8 @@ through the store API.
 ### A run is parked on its pull request and the PR has moved
 
 ```
-python3 factory.py PROJECT --babysit KO-n --note "new review thread; look at the PR again"
+python3 factory.py PROJECT --babysit HOLO-n \
+    --note "new review thread; look at the PR again"
 # then relaunch the loop
 ```
 
@@ -122,15 +126,15 @@ merged -- is named and nothing is written.
 
 ```
 # in the preserved worktree, after main was rewritten (a filtered history, say)
-git rebase --onto main OLD_BASE KO-n-branch          # the same commits, new tips
-python3 factory.py PROJECT --repoint KO-n $(git rev-parse HEAD) --note "rebased onto the filtered main; same commits"
-python3 factory.py PROJECT --approve KO-n --note "looked at the diff; merge"
+git rebase --onto main OLD_BASE task/HOLO-n-SLUG  # same commits, new tips
+python3 factory.py PROJECT --repoint HOLO-n $(git rev-parse HEAD) \
+    --note "rebased onto the filtered main; same commits"
+python3 factory.py PROJECT --approve HOLO-n --note "looked at the diff; merge"
 ```
 
 The approval holds the branch to the sha the park recorded, so a branch
-rebuilt as the same commits on a rewritten `main` (2026-09-05: three
-parked candidates after `FINDINGS.md` was filtered out of the unpushed
-history) would fail its gate as drift. `--repoint` is the one legitimate
+rebuilt as the same commits on a rewritten `main` (a filtered history,
+say) would fail its gate as drift. `--repoint` is the one legitimate
 move of that sha: it writes an `interventions` row with action `repoint`
 carrying the note, a `runEvents` row naming the old and new shas, then
 sets `runs.candidateSha`, in one transaction, and prints both shas. The
@@ -143,10 +147,15 @@ with raw SQL on `runs.candidateSha` now that this verb exists.
 
 ### The supervisor ended a run that was fine
 
-Read the round findings (`FINDINGS.md`, or the store) and the sweep reason
-in the ticket's Linear comment. If the trip was wrong, `--requeue` with a
-note saying so and file a ticket for the trip rule; the false
-`review_stuck` of 2026-09-03 became a finding-key fix the same day.
+Read the run's round findings and the sweep's reason in the store with
+`holo run N`: its review rounds carry the findings (`holo run N --json`
+for each one in full), even for a run swept mid fix turn, and its
+timeline shows the event the sweep wrote (`supervisor sweep: …`). The
+ledger (`--ledger`) gains a round's entry only after its fix turn
+returns, so it is context, not the findings source. If the trip was
+wrong, `--requeue` with a note saying so and file a ticket for the trip
+rule; the false `review_stuck` of 2026-09-03 became a finding-key fix
+the same day.
 
 ### A preserved branch conflicts with a moved-on `main`
 
@@ -154,8 +163,9 @@ The loop refuses to reuse it and says so. In the worktree:
 
 ```
 git merge --no-ff main        # resolve, keep the branch's intent
-git commit -q -m "KO-n: merge main (why)"
-python3 factory.py PROJECT --requeue KO-n --note "merged main into the preserved branch by hand"
+git commit -q -m "HOLO-n: merge main (why)"
+python3 factory.py PROJECT --requeue HOLO-n \
+    --note "merged main into the preserved branch by hand"
 ```
 
 ### The loop died mid-review
@@ -166,10 +176,11 @@ killed harder, `--sweep` lists strays under `review containers` and
 
 ### Two loops on one host claimed the same ticket
 
-Each project's `[board]` table names its own Linear project; a project
-without one refuses to start. If it happens anyway, kill the wrong loop,
-release its run as `failed` with `outcome_class="infra"`, remove its
-worktree and branch, and record the kill.
+Each project's `[board]` table names its own board, a Linear `project_id`
+or a native `prefix`; a project without one refuses to start. If it
+happens anyway, kill the wrong loop, release its run as `failed` with
+`outcome_class="infra"`, remove its worktree and branch, and record the
+kill.
 
 ### A ticket was skipped as `needs_spec`
 
@@ -177,7 +188,8 @@ The loop prints the first validator problem. Common causes: an unfilled
 `<placeholder>` (any angle-bracket token outside a link is one, HTML tags
 included), a criterion naming a path the project gitignores, a section
 after `## Open questions` (it must read exactly `- None`), a bold key that
-Linear rewrote. Fix the file, `--file-ticket FILE --update KO-n`, relaunch.
+Linear rewrote. Fix the file, `--file-ticket FILE --update HOLO-n`,
+relaunch.
 
 ### The host sweep is stale or a project shows an error
 
@@ -249,7 +261,7 @@ maintainer's own handle, names exactly one ticket key, and asks for a change
 to that ticket's work.
 
 ```
-holo steer -p PROJECT KO-n -n "the comment's text, as written" --author "maintainer via Lotuspod"
+holo steer -p PROJECT HOLO-n -n "COMMENT" --author "maintainer via Lotuspod"
 ```
 
 The note is the comment's text as written. Add `--hint` only when the
