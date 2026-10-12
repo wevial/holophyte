@@ -147,11 +147,15 @@ with raw SQL on `runs.candidateSha` now that this verb exists.
 
 ### The supervisor ended a run that was fine
 
-Read the run's round findings and the sweep's reason in the store:
-`holo run N --ledger` for the findings, and `holo run N` for the event the
-sweep wrote (`supervisor sweep: …`). If the trip was wrong, `--requeue`
-with a note saying so and file a ticket for the trip rule; the false
-`review_stuck` of 2026-09-03 became a finding-key fix the same day.
+Read the run's round findings and the sweep's reason in the store with
+`holo run N`: its review rounds carry the findings (`holo run N --json`
+for each one in full), even for a run swept mid fix turn, and its
+timeline shows the event the sweep wrote (`supervisor sweep: …`). The
+ledger (`--ledger`) gains a round's entry only after its fix turn
+returns, so it is context, not the findings source. If the trip was
+wrong, `--requeue` with a note saying so and file a ticket for the trip
+rule; the false `review_stuck` of 2026-09-03 became a finding-key fix
+the same day.
 
 ### A preserved branch conflicts with a moved-on `main`
 
