@@ -3,24 +3,44 @@
 What to do when the factory is stuck, in the order to do it. The rule
 behind every recipe: **record before acting**. Every out-of-band state
 change gets an `interventions` row, with a truthful action and a real
-timestamp, before the change; the operator commands write it for you.
+timestamp, before the change; the operator commands write it for you. A
+backdated or mislabeled record is worse than none.
 
 ## The escalation ladder
 
-1. **Relaunch or unblock through the factory's own paths.** Relaunch the
-   loop; `--requeue` a failed ticket; `--approve` or `--babysit` a parked
-   one; `--repoint` a rebuilt candidate; fix the ticket file and
-   `--file-ticket --update`.
-2. **`--sweep`, then `--sweep --act`** once a trip is confirmed. A stuck or
-   refused lease is a sweep question, never a SQL question.
-3. **Store API from a Python REPL:** `release`, `resume`, `transition`,
-   `record_intervention`, `walk_ticket`, `requeue`. Kept public for exactly
-   this rung and pinned by `tests/test_store_surface.py`.
+1. **The factory's own verbs.** `--requeue`, `--approve`, `holo send-back`,
+   `holo steer`, `--repoint`, `--pause`/`--resume`/`--abort`,
+   `--hold`/`--release-hold`, `--close HOLO-n --landed URL`,
+   `--file-ticket --update`; a loop is relaunched with `holo start` (the
+   `holophyte-loop@NAME` unit, which the host sweep also starts for a ready
+   ticket).
+2. **`--sweep`, then `--sweep --act`** once a trip is confirmed. On a
+   registered project the host sweep already acts every minute, so first
+   check it is running (`factory.py --status`). A stuck or refused lease is
+   a sweep question: never hand-edit `runs`, `tickets` or `projects` to free
+   one.
+3. **Operator store API, by name.** From a Python REPL: `release`, `resume`,
+   `transition`, `record_intervention`, `record_project_intervention`,
+   `walk_ticket`, `requeue` and `repair_references`, kept public for this
+   rung even when the loop does not call them;
+   `tests/test_store_surface.py` checks these eight.
 4. **Raw SQL** only where no API exists, paired with a ticket for the
    missing API filed the same day.
 
-Never skip a rung downward. At most two relaunches against the same
-infrastructure failure; the third response is a written diagnosis.
+Never skip a rung downward. At most two relaunches against one failure;
+the third response is a written diagnosis.
+
+## Operator rules
+
+- **A worker's report is not proof.** Read the diff and rerun the verify
+  commands before calling anything done.
+- **Tickets** follow `ticketTemplate.md`; check one with
+  `python3 ticket_template.py --repo . TICKET.md`, file it with
+  `--file-ticket`, and change a filed body only with
+  `--file-ticket --update HOLO-n`. A ticket states no literal schema
+  version; filing refuses one.
+- **After a merge** nothing is restarted by hand: the sweep timer runs from
+  `HEAD`, the host daemon exits on a `HEAD` move, the loop re-execs.
 
 ## Daily shape
 
@@ -240,12 +260,14 @@ answered on the page and not relayed.
 
 ### A manual merge to `main`
 
-Named event with a gate: suite green, `ruff` clean, an independent review
-of the final branch state, `--no-ff` with a message naming the why, the
-store and Linear walked to their terminal states in the same sitting, the
-FINDINGS window committed. Ask first when the human is present; when
-absent, freeing a lease and preserving at-risk work are authorised, the
-merge waits.
+A merge outside the loop goes through a pull request, never a push straight
+to `main` (an admin push skips the required `unit` check). It needs the
+suite green, `ruff` clean and an independent review of the final branch
+state; a ticket the factory ran is then closed with
+`--close HOLO-n --landed URL`. Ask before it, and before the first
+out-of-band state edit, when the human is present. When absent, freeing a
+work-blocking lease and preserving at-risk work are authorized; the merge
+waits `blocked_on_operator`.
 
 ## Reading the state
 
@@ -268,6 +290,5 @@ coloured dot on the glyph means something in "needs you".
 ## Close the loop afterwards
 
 Reconcile every touched surface before ending an incident: store status,
-board status, `FINDINGS.md` where a project renders one, branches and
-stashes. File one ticket per gap
-the incident revealed; every recipe above started as one.
+board status, branches and stashes. File one ticket per gap the incident
+revealed; every recipe above started as one.
