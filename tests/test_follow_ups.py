@@ -31,6 +31,7 @@ import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
+import store.follow_ups  # noqa: E402
 import store.tickets  # noqa: E402
 import ticket_template  # noqa: E402
 from holophyte.agents.fix_session import fix_turn  # noqa: E402
@@ -68,11 +69,13 @@ class CaptureTests(LoopFixture):
             self.conn, project, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1")
         self.run_id = store.claim(self.conn, project, ticket)
+        self.prompts = []
 
     def fix(self, *messages):
         sha = self.git("rev-parse", "HEAD").strip()
 
         def timed(*args, argv=None):
+            self.prompts.append(args[-1])
             for turn, message in enumerate(messages):
                 Commit(message).play(self.target, f"{sha[:8]}-{turn}")
             return "done", False
@@ -137,6 +140,55 @@ class CaptureTests(LoopFixture):
             ("feature", 0, "(bogus): Lint the verify block")])
         self.assertEqual(len(events(self.conn, self.run_id,
                                     "follow_up_kind_missing")), 3)
+
+    def test_a_fix_turn_is_shown_its_pending_feature_follow_ups(self):
+        self.fix(f"{FIX}")
+        self.fix("fix again\n\nADDRESS: fixed it\n")
+
+        [(feature,), (guardrail,)] = self.conn.execute(
+            "SELECT id FROM followUps ORDER BY id").fetchall()
+        first, second = self.prompts
+        self.assertNotIn("ADDRESS(follow-up", first)
+        self.assertIn(f"follow-up {feature}: Cache the board read"
+                      " @ provider.py:185", second)
+        self.assertIn("ADDRESS(follow-up N)", second)
+        self.assertNotIn(f"follow-up {guardrail}:", second)
+
+    def test_an_address_line_settles_only_this_run_s_pending_features(self):
+        project = store.tickets.ensure_project(self.conn, "team",
+                                               str(self.target))
+        other_ticket = store.tickets.mirror_ticket(
+            self.conn, project, linear_issue_id="issue-2",
+            linear_identifier="KO-2", title="ticket 2")
+        other_run = store.claim(self.conn, project, other_ticket)
+        other = store.follow_ups.record_follow_up(
+            self.conn, other_run, "0" * 40, "feature", True, "Elsewhere",
+            "other-fingerprint")
+        self.fix(FIX)
+        [(feature,), (guardrail,)] = self.conn.execute(
+            "SELECT id FROM followUps WHERE runId = ? ORDER BY id",
+            (self.run_id,)).fetchall()
+
+        self.fix(f"fix again\n\nADDRESS(follow-up {other}): Elsewhere\n"
+                 f"ADDRESS(follow-up {guardrail}): Lint ticket checks\n"
+                 f"ADDRESS(follow-up {feature}): Cache the board read\n")
+
+        settled = dict(self.conn.execute(
+            "SELECT id, settledAt IS NOT NULL FROM followUps").fetchall())
+        self.assertEqual(settled, {other: 0, guardrail: 0, feature: 1})
+        self.assertEqual([event["id"] for event in events(
+            self.conn, self.run_id, "follow_up_superseded")], [feature])
+
+    def test_an_address_line_cannot_settle_its_own_commit_s_follow_up(self):
+        (next_id,) = self.conn.execute(
+            "SELECT coalesce(max(id), 0) + 1 FROM followUps").fetchone()
+
+        self.fix(f"fix\n\n{FEATURE}\n"
+                 f"ADDRESS(follow-up {next_id}): Cache the board read\n")
+
+        self.assertEqual([row[0::6] for row in self.rows()], [(next_id, None)])
+        self.assertEqual(events(self.conn, self.run_id,
+                                "follow_up_superseded"), [])
 
 class Recording(LinearBoard):
     """A Linear board that records each filing instead of calling Linear."""
@@ -418,6 +470,91 @@ class NativeSettleTests(NativeProject):
         self.assertEqual(self.read(
             "SELECT runId, filedAs, duplicateOf FROM followUps ORDER BY runId"),
             [(first, None, key), (second, key, None)])
+
+    def test_a_follow_up_a_later_fix_turn_addressed_files_no_draft(self):
+        key = store.board.file_ticket(self.conn, self.project_id, "NAT",
+                                      VALID_BODY)
+        ticket = store.read.ticket_by_identifier(self.conn, key)
+        run_id = store.claim(self.conn, self.project_id, ticket.id)
+        base = self.git("rev-parse", "HEAD").strip()
+        self.git("commit", "-q", "--allow-empty", "-m", f"fix\n\n{FEATURE}")
+        capture(self.conn, run_id, self.target, base)
+        [(row_id,)] = self.read("SELECT id FROM followUps")
+        base = self.git("rev-parse", "HEAD").strip()
+        self.git("commit", "-q", "--allow-empty", "-m",
+                 f"fix again\n\nADDRESS(follow-up {row_id}): Cache the board read")
+        fixing = self.git("rev-parse", "HEAD").strip()
+        capture(self.conn, run_id, self.target, base)
+        for phase in ("working", "verifying", "reviewing", "merge_gate",
+                      "merging"):
+            store.set_phase(self.conn, run_id, phase)
+        release_run(self.conn, run_id, True, merge_sha=fixing)
+        settle(self.project, self.conn, run_id)
+
+        self.assertEqual(self.drafts(), [])
+        self.assertEqual(self.read("SELECT settledAt IS NOT NULL, filedAs"
+                                   " FROM followUps"), [(1, None)])
+        superseded = self.conn.execute(
+            "SELECT summary || coalesce(payload, '') FROM runEvents"
+            " WHERE runId = ? AND kind = ?",
+            (run_id, "follow_up_superseded")).fetchall()
+        self.assertEqual(len(superseded), 1)
+        self.assertIn(fixing, superseded[0][0])
+
+    def test_two_wordings_of_one_line_file_one_draft_with_both_texts(self):
+        run_id = self.merged_run(
+            f"fix\n\n{FEATURE}",
+            "fix again\n\nFOLLOW_UP(feature): Reuse the cached board"
+            " @ provider.py:185")
+
+        drafts = self.drafts()
+        self.assertEqual(len(drafts), 1, drafts)
+        [(key, body)] = drafts
+        self.assertIn("Cache the board read", body)
+        self.assertIn("Reuse the cached board", body)
+        self.assertEqual(sorted(self.read(
+            f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {run_id}"),
+            key=str), sorted([(key, None), (None, key)], key=str))
+
+    def test_a_later_repeat_of_a_joined_wording_joins_the_open_draft(self):
+        self.merged_run(
+            f"fix\n\n{FEATURE}",
+            "fix again\n\nFOLLOW_UP(feature): Reuse the cached board"
+            " @ provider.py:185")
+        [(key, _)] = self.drafts()
+
+        repeat = self.merged_run(f"fix\n\n{FEATURE}")
+
+        self.assertEqual([draft for draft, _ in self.drafts()], [key])
+        self.assertEqual(self.read(
+            f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {repeat}"),
+            [(None, key)])
+
+    def test_a_wording_joined_to_an_older_draft_files_its_own(self):
+        self.merged_run(f"fix\n\n{FEATURE}")
+        [(first, _)] = self.drafts()
+
+        repeat = self.merged_run(
+            "fix\n\nFOLLOW_UP(feature): Add board read metrics"
+            " @ provider.py:185", f"fix again\n\n{FEATURE}")
+
+        [_, (second, body)] = self.drafts()
+        self.assertIn("Add board read metrics", body)
+        self.assertEqual(self.read(
+            f"SELECT filedAs, duplicateOf FROM followUps WHERE runId = {repeat}"
+            " ORDER BY id"), [(second, None), (None, first)])
+
+    def test_adjacent_lines_and_line_less_paths_file_a_draft_each(self):
+        run_id = self.merged_run(
+            f"fix\n\n{FEATURE}\n"
+            "FOLLOW_UP(feature): Reuse the cached board @ provider.py:186\n"
+            "FOLLOW_UP(feature): Retry the label write @ provider.py\n"
+            "FOLLOW_UP(feature): Log the board latency @ provider.py\n")
+
+        self.assertEqual(len(self.drafts()), 4)
+        self.assertEqual(self.read(
+            f"SELECT count(*) FROM followUps WHERE runId = {run_id}"
+            " AND filedAs IS NOT NULL AND duplicateOf IS NULL"), [(4,)])
 
 class LinearMergeTests(LoopRuns):
     """The default Linear-mode project, its board a recording stand-in."""

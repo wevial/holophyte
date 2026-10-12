@@ -81,14 +81,18 @@ def pending_follow_ups(conn, run_id):
 
 
 def filed_drafts(conn, follow_up_id):
-    """Keys other rows of this project filed for the fingerprint, newest first."""
-    return [key for (key,) in conn.execute(
-        "SELECT f.filedAs FROM followUps f JOIN runs r ON r.id = f.runId"
+    """Drafts other rows of this project filed or joined for the fingerprint."""
+    return list(dict.fromkeys(key for (key,) in conn.execute(
+        "SELECT coalesce(f.filedAs, f.duplicateOf) FROM followUps f"
+        " JOIN runs r ON r.id = f.runId"
         " JOIN followUps this ON this.id = ?"
         " JOIN runs thisRun ON thisRun.id = this.runId"
         " WHERE r.projectId = thisRun.projectId AND f.id <> this.id"
         " AND f.fingerprint = this.fingerprint AND f.kind = 'feature'"
-        " AND f.filedAs IS NOT NULL ORDER BY f.id DESC", (follow_up_id,))]
+        " AND (f.filedAs IS NOT NULL OR EXISTS (SELECT 1 FROM followUps d"
+        "   JOIN runs dr ON dr.id = d.runId WHERE d.filedAs = f.duplicateOf"
+        "   AND dr.projectId = thisRun.projectId))"
+        " ORDER BY f.id DESC", (follow_up_id,))))
 
 
 def _settle(conn, follow_up_id, event, summary, now, named=None, **columns):
@@ -123,6 +127,12 @@ def settle_filed(conn, follow_up_id, key, now=None):
 def settle_duplicate(conn, follow_up_id, key, now=None, of="open draft"):
     return _settle(conn, follow_up_id, "follow_up_duplicate",
                    f"duplicate of {of} {key}", now, duplicateOf=key)
+
+
+def settle_superseded(conn, follow_up_id, commit_sha, now=None):
+    return _settle(conn, follow_up_id, "follow_up_superseded",
+                   f"superseded by fix commit {commit_sha}", now,
+                   named=commit_sha)
 
 
 def settle_ledger(conn, follow_up_id, now=None):
