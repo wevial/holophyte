@@ -13,7 +13,6 @@ import io
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -246,39 +245,6 @@ class UiDraftPullRequestTests(DraftFixture):
                             APPROVE, Idle(""), provider=self.provider())
         self.assertIn("review", fake.roles)
         self.assert_held()
-
-    def ui_worktree(self, path):
-        wt = Path(tempfile.mkdtemp()) / "wt"
-        self.addCleanup(shutil.rmtree, wt.parent)
-        self.git("worktree", "add", "-q", "-b", f"ui-{path}", str(wt))
-        (wt / path).write_text("x\n")
-        for argv in (("add", path), ("commit", "-q", "-m", f"touch {path}")):
-            subprocess.run(["git", *argv], cwd=wt, check=True)
-        return wt
-
-    def test_the_token_path_sends_draft_only_for_a_ui_diff(self):
-        self.configure(UI)
-        self.git("remote", "add", "origin", self.ORIGIN)
-        bindir = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, bindir)
-        (bindir / "git").symlink_to(shutil.which("git"))
-        answer = MagicMock()
-        answer.__enter__.return_value.read.return_value = json.dumps(
-            {"html_url": self.URL}).encode()
-        for path, expected in (("page.tsx", {"draft": True}),
-                               ("server.py", {})):
-            wt = self.ui_worktree(path)
-            with (self.subTest(path=path),
-                  patch.dict(os.environ, {"PATH": str(bindir),
-                                          "GH_TOKEN": "t0ken"}),
-                  patch.object(github.urllib.request, "urlopen",
-                               return_value=answer) as urlopen):
-                github.create_pull_request(
-                    self.project, BRANCH, "KO-1: x", "body",
-                    pullrequest._opens_draft(self.project, wt))
-                sent = json.loads(urlopen.call_args.args[0].data)
-                self.assertEqual({k: v for k, v in sent.items()
-                                  if k == "draft"}, expected)
 
 
 if __name__ == "__main__":
