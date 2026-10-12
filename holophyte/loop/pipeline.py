@@ -39,7 +39,7 @@ from holophyte.loop.steering import close as close_steering
 from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import Aborted, continuation
 from holophyte.loop.trim import trim
-from holophyte.pr.pullrequest import _prepare_pr, _push_and_open
+from holophyte.pr.pullrequest import _opens_draft, _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
 from holophyte.review import reproduce
 from holophyte.story.story_claim import story_brief
@@ -163,7 +163,7 @@ def _run_stages(run, task):
         with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
                         beat_s):
             url = _push_and_open(project, conn, run_id, branch, title, text,
-                                 beat_s)
+                                 beat_s, _opens_draft(project, wt))
         sha = sh(["git", "rev-parse", branch], wt)
     else:
         with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,

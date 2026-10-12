@@ -13,6 +13,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,17 +28,17 @@ from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import BRANCH, MergeModeFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
-from holophyte.pr import github  # noqa: E402
+from holophyte.pr import github, pr_media, pullrequest  # noqa: E402
+from holophyte.pr.pr_ready import HELD  # noqa: E402
 
 AUTO = '[merge]\nmode = "pr"\npr_rounds = 1\npr_quiet_sec = 0\n'
 DRAFT = 'pr_draft = true\n'
+UI = ('[merge]\nmode = "pr"\napprove = "human"\n'
+      'pr_quiet_sec = 0\npr_draft = "ui"\nui_paths = ["*.tsx"]\n'
+      'ui_capture = "true"\n')
 
 
-class DraftPullRequestTests(MergeModeFixture):
-
-    def run_loop(self):
-        return self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                         provider=self.provider())
+class DraftFixture(MergeModeFixture):
 
     def kinds(self):
         return [kind for kind, _ in self.api_calls()]
@@ -47,6 +48,13 @@ class DraftPullRequestTests(MergeModeFixture):
 
     def park_reason(self):
         return self.question().split("\n")[1]
+
+
+class DraftPullRequestTests(DraftFixture):
+
+    def run_loop(self):
+        return self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                         provider=self.provider())
 
     def test_a_draft_project_opens_its_pull_request_with_draft(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + DRAFT)
@@ -73,7 +81,9 @@ class DraftPullRequestTests(MergeModeFixture):
                   patch.object(github.urllib.request, "urlopen",
                                return_value=answer) as urlopen):
                 self.assertEqual(github.create_pull_request(
-                    self.project, BRANCH, "KO-1: x", "body"), self.URL)
+                    self.project, BRANCH, "KO-1: x", "body",
+                    pullrequest._opens_draft(self.project, self.project.path)),
+                    self.URL)
                 request = urlopen.call_args.args[0]
                 self.assertEqual(request.full_url,
                                  f"{github.API}/repos/example/repo/pulls")
@@ -158,6 +168,104 @@ class DraftPullRequestTests(MergeModeFixture):
         self.assertEqual(self.kinds(), ["state", "merge"])
         self.assertEqual(self.ready_events(), [])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+
+
+class UiDraftPullRequestTests(DraftFixture):
+    """`pr_draft = "ui"`: a draft only when the diff touches `ui_paths`,
+    held for the maintainer to mark ready."""
+
+    def setUp(self):
+        super().setUp()
+        private = patch.object(pr_media, "repo_is_private", return_value=False)
+        private.start()
+        self.addCleanup(private.stop)
+
+    def run_ui_loop(self, path):
+        return self.loop(Commit("the scripted work", path=path), APPROVE,
+                         Idle(""), provider=self.provider())
+
+    def creates(self):
+        return [c for c in self.recorded() if c.startswith("gh pr create")]
+
+    def held_events(self):
+        return self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'pr_draft_held'")
+
+    def assert_held(self):
+        self.assertNotIn("ready", self.kinds())
+        self.assertEqual(self.ready_events(), [])
+        self.assertEqual(self.read("SELECT phase FROM runs ORDER BY id")[-1],
+                         ("awaiting_merge_approval",))
+        self.assertTrue(self.park_reason().startswith(HELD), self.park_reason())
+
+    def test_a_ui_candidate_opens_as_a_draft_and_parks_held_unmarked(self):
+        self.configure(UI)
+        self.fake_route(states=[self.pr_state(draft=True)])
+        self.run_ui_loop("page.tsx")
+        self.assertEqual(len(self.creates()), 1)
+        self.assertIn(" --draft ", self.creates()[0])
+        self.assert_held()
+        self.assertEqual(len(self.held_events()), 1)
+
+    def test_a_candidate_off_the_ui_paths_opens_ready(self):
+        self.configure(UI)
+        self.fake_route()
+        self.run_ui_loop("server.py")
+        self.assertEqual(len(self.creates()), 1)
+        self.assertNotIn("--draft", self.creates()[0])
+        self.assertEqual(self.held_events(), [])
+
+    def test_a_maintainer_note_on_a_held_draft_fixes_pushes_and_holds_again(self):
+        self.configure(UI)
+        self.fake_route(states=[self.pr_state(draft=True)])
+        self.run_ui_loop("page.tsx")
+        self.assertEqual(len(self.pushed()), 1)
+
+        self.serve(self.pr_state(draft=True))
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", "make the button blue", out=io.StringIO())
+        self.loop(Commit("fix: blue button", path="page.tsx"), Idle(""),
+                  APPROVE, Idle(""), provider=self.provider())
+        (_, first), (_, fixed) = self.pushed()
+        self.assertNotEqual(first, fixed)
+        self.assertIn("fix: blue button",
+                      self.git("log", "-1", "--format=%s", fixed))
+        self.assert_held()
+        self.assertEqual(len(self.held_events()), 2)
+
+    def ui_worktree(self, path):
+        wt = Path(tempfile.mkdtemp()) / "wt"
+        self.addCleanup(shutil.rmtree, wt.parent)
+        self.git("worktree", "add", "-q", "-b", f"ui-{path}", str(wt))
+        (wt / path).write_text("x\n")
+        for argv in (("add", path), ("commit", "-q", "-m", f"touch {path}")):
+            subprocess.run(["git", *argv], cwd=wt, check=True)
+        return wt
+
+    def test_the_token_path_sends_draft_only_for_a_ui_diff(self):
+        self.configure(UI)
+        self.git("remote", "add", "origin", self.ORIGIN)
+        bindir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, bindir)
+        (bindir / "git").symlink_to(shutil.which("git"))
+        answer = MagicMock()
+        answer.__enter__.return_value.read.return_value = json.dumps(
+            {"html_url": self.URL}).encode()
+        for path, expected in (("page.tsx", {"draft": True}),
+                               ("server.py", {})):
+            wt = self.ui_worktree(path)
+            with (self.subTest(path=path),
+                  patch.dict(os.environ, {"PATH": str(bindir),
+                                          "GH_TOKEN": "t0ken"}),
+                  patch.object(github.urllib.request, "urlopen",
+                               return_value=answer) as urlopen):
+                github.create_pull_request(
+                    self.project, BRANCH, "KO-1: x", "body",
+                    pullrequest._opens_draft(self.project, wt))
+                sent = json.loads(urlopen.call_args.args[0].data)
+                self.assertEqual({k: v for k, v in sent.items()
+                                  if k == "draft"}, expected)
 
 
 if __name__ == "__main__":

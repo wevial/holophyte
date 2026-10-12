@@ -98,7 +98,7 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged mergeable headRefOid mergeCommit { oid } mergedBy { login }
-      updatedAt title
+      updatedAt title isDraft
       threadCount: reviewThreads(first: %d) { totalCount nodes { isResolved } }
       reviewDecision
       %s
@@ -128,6 +128,7 @@ class PullStatus:
     rate_reset: str | None = None
     activity: tuple = ()
     title: str | None = None
+    draft: bool | None = None
 
 
 def pull_status(target, pull):
@@ -146,7 +147,9 @@ def pull_status(target, pull):
     updated = node.get("updatedAt")
     decision = node.get("reviewDecision")
     title = node.get("title")
+    draft = node.get("isDraft")
     return PullStatus(title=title if isinstance(title, str) else None,
+                      draft=draft if isinstance(draft, bool) else None,
                       activity=activities(target, pull, node,
                       (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),

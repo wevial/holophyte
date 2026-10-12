@@ -529,10 +529,14 @@ class MergeConfigTests(ConfigTestCase):
         self.assertIn("[merge] review_fixes", message)
         self.assertIn("boolean", message)
 
-    def test_pr_draft_must_be_a_boolean(self):
-        message = refused(self, '[merge]\npr_draft = "yes"\n')
-        self.assertIn("[merge] pr_draft", message)
-        self.assertIn("boolean", message)
+    def test_pr_draft_is_a_boolean_or_ui_and_ui_needs_ui_paths(self):
+        self.locate('[merge]\npr_draft = "ui"\nui_paths = ["*.tsx"]\n'
+                    'ui_capture = "true"\n')
+        self.assertEqual(config_tables.merge_config(self.project).pr_draft, "ui")
+        for toml in ('[merge]\npr_draft = "yes"\n',
+                     '[merge]\npr_draft = "ui"\n'):
+            with self.subTest(toml=toml):
+                self.assertIn("[merge] pr_draft", refused(self, toml))
 
     def test_ui_capture_video_must_be_a_boolean(self):
         message = refused(self, '[merge]\nui_capture_video = "yes"\n')

@@ -351,8 +351,8 @@ def merge_config(project):
     values["review_fixes"] = _merge_boolean(
         project, "review_fixes",
         table.get("review_fixes", defaults.pop("review_fixes")))
-    values["pr_draft"] = _merge_boolean(
-        project, "pr_draft", table.get("pr_draft", defaults.pop("pr_draft")))
+    values["pr_draft"] = _pr_draft(
+        project, table.get("pr_draft", defaults.pop("pr_draft")))
     values["retrigger_missing_checks"] = _merge_boolean(
         project, "retrigger_missing_checks", table.get(
             "retrigger_missing_checks", defaults.pop("retrigger_missing_checks")))
@@ -412,6 +412,14 @@ def _merge_boolean(project, key, value):
         raise SystemExit(
             f"[holo2] {project.config_path}: [merge] {key} must be a"
             f" boolean, got {value!r}")
+    return value
+
+
+def _pr_draft(project, value):
+    if value != "ui" and not isinstance(value, bool):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [merge] pr_draft must be true,"
+            f' false or "ui", got {value!r}')
     return value
 
 
@@ -481,6 +489,9 @@ def _validate_ui(project, values):
     paths, command = values["ui_paths"], values["ui_capture"]
     if bool(paths) != bool(command.strip()):
         raise SystemExit("[merge] ui_paths and ui_capture must be configured together")
+    if values["pr_draft"] == "ui" and not paths:
+        raise SystemExit(f"[holo2] {project.config_path}: [merge] pr_draft"
+                         ' = "ui" needs ui_paths')
     if any(not p.strip() or PurePosixPath(p).is_absolute()
            or ".." in PurePosixPath(p).parts for p in paths):
         raise SystemExit("[merge] ui_paths must be non-empty repository-relative globs")

@@ -20,7 +20,12 @@ from holophyte.loop.gates import (
 )
 from holophyte.loop.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.loop.stop import end_aborted, stop_if_requested
-from holophyte.pr.pullrequest import _prepare_pr, _push_and_open, _resume_on_pr
+from holophyte.pr.pullrequest import (
+    _opens_draft,
+    _prepare_pr,
+    _push_and_open,
+    _resume_on_pr,
+)
 from holophyte.redact import safe_print as print
 from holophyte.review.findings import commit_findings
 from holophyte.review.reproduce import tests_only_line
@@ -100,7 +105,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
         with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
                         beat_s):
             url = _push_and_open(project, conn, run_id, branch, title, text,
-                                 beat_s)
+                                 beat_s, _opens_draft(project, wt))
         sha = sh(["git", "rev-parse", branch], wt)
     else:
         with _gate_lock(project, conn, run_id, provider, task_id, branch, sha,
