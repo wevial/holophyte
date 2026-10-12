@@ -494,10 +494,11 @@ class DaemonWritesTests(unittest.TestCase):
         self.assertEqual(found, [])
 
     def test_help_names_the_actions_opt_in(self):
-        # A wide COLUMNS keeps argparse from wrapping an entry mid-phrase.
+        # Wide COLUMNS stops mid-phrase wraps; NO_COLOR overrides FORCE_COLOR.
         help_text = subprocess.run(
             [sys.executable, "factory.py", "--help"], cwd=ROOT,
-            env={**os.environ, "COLUMNS": "1000"}, capture_output=True,
+            env={**os.environ, "COLUMNS": "1000", "NO_COLOR": "1",
+                 "PYTHON_COLORS": "0"}, capture_output=True,
             text=True, check=True).stdout
         entry = re.search(r"^  --serve .*?(?=^  -)", help_text,
                           re.MULTILINE | re.DOTALL)
