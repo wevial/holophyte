@@ -145,10 +145,9 @@ with raw SQL on `runs.candidateSha` now that this verb exists.
 ### The supervisor ended a run that was fine
 
 Read the run's round findings and the sweep's reason in the store:
-`holo run N --ledger` for the findings, and `holo run N` for the outcome
-reason the sweep wrote (`swept by the supervisor in phase …`). If the trip
-was wrong, `--requeue` with a
-note saying so and file a ticket for the trip rule; the false
+`holo run N --ledger` for the findings, and `holo run N` for the event the
+sweep wrote (`supervisor sweep: …`). If the trip was wrong, `--requeue`
+with a note saying so and file a ticket for the trip rule; the false
 `review_stuck` of 2026-09-03 became a finding-key fix the same day.
 
 ### A preserved branch conflicts with a moved-on `main`
