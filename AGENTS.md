@@ -95,45 +95,5 @@ the same commit. Each test's docstring holds its full rules:
 
 ## Operator
 
-The runbook (`docs/operating/runbook.md`) is the procedure; these are the
-rules it serves.
-* **Escalation ladder, in order.** (1) The factory's own verbs: `--requeue`,
-  `--approve`, `holo send-back`, `holo steer`, `--repoint`,
-  `--pause`/`--resume`/`--abort`, `--hold`/`--release-hold`,
-  `--close HOLO-n --landed URL`, `--file-ticket --update`; a loop is
-  relaunched with `holo start` (the `holophyte-loop@NAME` unit, which the
-  host sweep also starts for a ready ticket). (2) `--sweep`, then
-  `--sweep --act`; on a registered project the host sweep already acts every
-  minute, so first check it is running (`factory.py --status`). A stuck
-  lease is a sweep question: never hand-edit `runs`, `tickets` or
-  `projects` to free one. (3) The store API below from a REPL. (4) Raw SQL
-  only where no API exists, paired with a ticket for the missing API filed
-  the same day. Never skip a rung downward; two relaunches against one
-  failure, then a written diagnosis.
-* **Operator store API, by name.** `release`, `resume`, `transition`,
-  `record_intervention`, `record_project_intervention`, `walk_ticket`,
-  `requeue` and `repair_references` are kept for rung 3 even when the loop
-  does not call them; `tests/test_store_surface.py` checks these eight.
-* **Record before acting.** Every out-of-band state change gets its
-  interventions row, with truthful action and real time, before the write;
-  the verbs write it for you. A backdated or mislabeled record is worse than
-  none.
-* **A worker's report is not proof.** Read the diff and rerun the verify
-  commands before calling anything done.
-* **Tickets** follow `ticketTemplate.md`; check one with
-  `python3 ticket_template.py --repo . TICKET.md`, file it with
-  `--file-ticket`, and change a filed body only with
-  `--file-ticket --update HOLO-n`. A ticket states no literal schema
-  version; filing refuses one.
-* **After a merge** nothing is restarted by hand: the sweep timer runs from
-  `HEAD`, the host daemon exits on a `HEAD` move, the loop re-execs.
-* **A merge outside the loop** goes through a pull request, never a push
-  straight to `main` (an admin push skips the required `unit` check). It
-  needs the suite green, ruff clean and an independent review of the final
-  branch state; a ticket the factory ran is closed with
-  `--close HOLO-n --landed URL`. Ask before it, and before the first
-  out-of-band state edit, when the human is present. When absent, freeing a
-  work-blocking lease and preserving at-risk work are authorized; the merge
-  waits `blocked_on_operator`.
-* **Close the loop.** Reconcile store, board and branches before ending an
-  incident, and file one ticket per gap it revealed.
+Operators: `docs/operating/runbook.md` holds the escalation ladder and the
+operator's rules; ticket agents do not need them.

@@ -3,7 +3,7 @@
 Every public function is porting work for the Rust replacement. Additions
 and removals must be deliberate: these lists hold the package, schema,
 read and working-clock surfaces. Operator names are also read from
-AGENTS.md so the protocol and module cannot drift.
+the runbook so the protocol and module cannot drift.
 
 Run: python3 -m unittest discover -s tests -p 'test_store*' -v
 """
@@ -209,7 +209,8 @@ EXPECTED_READ = [
     "ticket_notes",
 ]
 
-AGENTS_MD = Path(__file__).resolve().parent.parent / "AGENTS.md"
+ROOT = Path(__file__).resolve().parent.parent
+RUNBOOK = ROOT / "docs" / "operating" / "runbook.md"
 
 def public_functions(module=store):
     """Public function names of `module` without a leading `_`.
@@ -237,22 +238,21 @@ def public_classes(module=store):
 
 
 def operator_api_names():
-    """The backticked names in AGENTS.md's "Operator store API" bullet."""
-    text = AGENTS_MD.read_text()
+    """The backticked names in the runbook's "Operator store API" rung."""
+    text = RUNBOOK.read_text()
     match = re.search(
         r"\*\*Operator store API, by name\.\*\*(.*?)even when", text, re.S
     )
-    assert match, "AGENTS.md no longer has the operator store API bullet"
+    assert match, "the runbook no longer has the operator store API rung"
     return re.findall(r"`([a-z_]+)`", match.group(1))
 
 
 class StoreSurfaceTests(unittest.TestCase):
     def test_loop_has_no_raw_state_updates(self):
-        root = AGENTS_MD.parent
         pattern = re.compile(r"\bUPDATE\s+(?:runs|tickets|projects)\b", re.I)
         matches = [
-            f"{path.relative_to(root)}:{source.count(chr(10), 0, match.start()) + 1}"
-            for path in sorted((root / "holophyte").rglob("*.py"))
+            f"{path.relative_to(ROOT)}:{source.count(chr(10), 0, match.start()) + 1}"
+            for path in sorted((ROOT / "holophyte").rglob("*.py"))
             for source in [path.read_text()]
             for match in pattern.finditer(source)
         ]
@@ -417,7 +417,7 @@ class StoreSurfaceTests(unittest.TestCase):
         self.assertNotIn("newest_thing", EXPECTED_READ)
         self.assertNotIn("dataclass", public_functions(store.read))
 
-    def test_operator_api_named_in_agents_md_is_present(self):
+    def test_operator_api_named_in_runbook_is_present(self):
         names = operator_api_names()
         self.assertEqual(len(names), 8, names)
         for name in names:
