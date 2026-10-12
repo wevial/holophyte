@@ -674,7 +674,7 @@ What needs the operator, computed where the store is:
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
-   "pr_url": "https://github.com/example/repo/pull/2170", "reason": "…", "asked_ms": 1788449000000,
+   "pr_url": "https://github.com/example/repo/pull/2170", "park_kind": "pull_request", "reason": "…", "asked_ms": 1788449000000,
    "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…"},
    "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
@@ -694,7 +694,8 @@ ticket whose parked run has a `pr_url` and whose recorded park kind
 (`runs.parkKind`, one of `store/enums.py` `ParkKind`) is `pull_request`,
 as a park under `[merge] mode = "pr"` records it, or `ci`, as a babysit
 waiting only on pending checks or the quiet period records it; the
-question's wording plays no part. The run waits on a review, its checks
+question's wording plays no part. The item names that kind as
+`park_kind`. The run waits on a review, its checks
 or a merge, not on an answer,
 so the item carries `pr_url` and `reason` (the question with its first
 line removed, or the whole question when it has one line) in place of

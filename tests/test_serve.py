@@ -819,8 +819,8 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(by_ticket["KO-8"]["question"],
                          "Which branch is canonical?")
         self.assertEqual(by_ticket["KO-10"], {
-            "kind": "pr_open", "ticket": "KO-10", "ticket_url": None,
-            "title": "ticket KO-10", "run": run, "pr_url": url,
+            "kind": "pr_open", "ticket": "KO-10", "ticket_url": None, "run": run,
+            "title": "ticket KO-10", "pr_url": url, "park_kind": "pull_request",
             "reason": "review requested from a coworker"
                       "\n1. src/x.py:3 by @coworker",
             "asked_ms": self.now - 2 * MIN,
