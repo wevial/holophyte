@@ -320,7 +320,7 @@ class WitnessOutputTests(WitnessRunnerFixture, unittest.TestCase):
         self.addCleanup(forced.stop)
         target = self.project()
         self.approve([("W1", "tests/test_w1.py",
-                       "true && printenv NO_COLOR PYTHON_COLORS", PASSES)])
+                       "true && printenv NO_COLOR && printenv PYTHON_COLORS", PASSES)])
 
         (row,) = run_witnesses(target, self.conn, self.story_id,
                                main_tip(target), "baseline", copy_files=True)
