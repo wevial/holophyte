@@ -408,10 +408,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
         if provider is not None and not linear_budget_low(now, out):
             observe_board(target, conn, project, provider, now, out,
                           memory.states_asked, knobs.board_ask_ms)
-        if admission == "held":
-            continue
         if loop_is_live(conn, project, now, knobs.heartbeat_stale_ms):
-            live = True
+            live = live or admission != "held"
             continue
         try:
             with contextlib.redirect_stdout(out):
@@ -422,6 +420,8 @@ def reconcile_parked_pull_requests(target, conn, now, provider=None, out=None,
                   f" ({e}); the next pass asks again", file=out)
         else:
             asked.append(project)
+        if admission == "held":
+            continue
         reconcile_board_closes(conn, project, provider, target, now, out,
                                knobs.board_ask_ms, memory.mirror_asked)
         owed.extend(tickets_owed(target, conn, project, provider, now, out,

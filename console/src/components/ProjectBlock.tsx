@@ -4,12 +4,13 @@ import { supervisorStale, underHost } from "../lib/hosts";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import { runKey, type ProjectGroup } from "../lib/runs";
 import type { Run } from "../lib/types";
+import { QueuedRow } from "./QueuedRow";
 import { ReasonAction } from "./ReasonAction";
 import { RunRow } from "./RunRow";
 import { SettingsSheet } from "./SettingsSheet";
 
 /** One project's card: the daemon's host and supervisor line over a row
- *  per live run. The header's Settings entry opens the project's
+ *  per live run, then a row per ticket queued for the next claim. The header's Settings entry opens the project's
  *  `SettingsSheet` over the page; closing it returns focus to the entry.
  *  Beside it, Hold for an `enabled` project, or the hold note and Release
  *  hold for a `held` one, each posting its reason to the daemon;
@@ -108,6 +109,7 @@ export function ProjectBlock({
             />
           );
         })}
+        {group.queued?.map((entry) => <QueuedRow key={entry.ticket} entry={entry} sinceMs={sinceMs} />)}
       </ul>
       {settingsOpen && (
         <SettingsSheet base={group.base} name={group.name} path={group.path} status={status} onClose={closeSettings} deps={deps} />

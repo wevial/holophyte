@@ -5,6 +5,8 @@ with writer and /repo, IDs and PIDs with 1, and absolute timestamps with NOW;
 the builder freezes clocks, so durations remain meaningful and unchanged.
 The status fixture includes an unestimated run with no recorded host;
 `run-detail-unestimated.json` pins the same run with both fields null.
+It also lists one queued ticket, approved off its pull request and waiting
+for a claim, so its toil counts that approval.
 
 `host-status.json` and `host-attention.json` pin a host daemon's root
 `/status` and `/attention` over two registered projects whose run ids

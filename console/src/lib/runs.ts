@@ -1,5 +1,5 @@
 import { projectName } from "./derive";
-import type { Run, RunEvent, Status } from "./types";
+import type { Queued, Run, RunEvent, Status } from "./types";
 
 const BOOKKEEPING_KINDS = new Set(["pr_seen_commits", "pr_empty_wakes", "pr_wake_breaker", "pr_text_sha"]);
 
@@ -85,8 +85,8 @@ export interface DaemonStatus {
   seen_ms?: number | null;
 }
 
-/** One project's block on the Floor: the daemon that serves it and its
- *  live runs. Two daemons serving one project path are two blocks, each
+/** One project's block on the Floor: the daemon that serves it, its
+ *  live runs and its tickets queued for the next claim. Two daemons serving one project path are two blocks, each
  *  under its own daemon's supervisor line. */
 export interface ProjectGroup {
   /** The project's path, as the rail selects it. */
@@ -99,6 +99,7 @@ export interface ProjectGroup {
    *  keep counting against the local clock between polls. */
   seen_ms?: number | null;
   runs: Run[];
+  queued?: Queued[];
 }
 
 /** One group per (project, daemon) across the given bodies, in the order
@@ -109,8 +110,12 @@ export function groupByProject(daemons: DaemonStatus[]): ProjectGroup[] {
   for (const { base, status, seen_ms } of daemons) {
     const path = status.project;
     const existing = groups.find((group) => group.path === path && group.base === base);
-    if (existing) existing.runs.push(...status.runs);
-    else groups.push({ path, name: projectName(path), base, status, seen_ms, runs: [...status.runs] });
+    if (existing) {
+      existing.runs.push(...status.runs);
+      existing.queued?.push(...(status.queued ?? []));
+    } else {
+      groups.push({ path, name: projectName(path), base, status, seen_ms, runs: [...status.runs], queued: [...(status.queued ?? [])] });
+    }
   }
   return groups;
 }
