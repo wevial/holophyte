@@ -22,6 +22,7 @@ FALLBACK_KIND = "feature"
 _LINE = re.compile(r"(?:- )?FOLLOW_UP\((feature|guardrail)\): (.+?)"
                    r"(?: @ ([^\s:]+)(?::(\d+))?)?")
 _LEGACY = re.compile(r"(?:- )?FOLLOW_UP(?![.,;])(.*)")
+_ADDRESSED = re.compile(r"(?:- )?ADDRESS\(follow-up (\d+)\)(?::.*)?")
 _QUOTES = str.maketrans("", "", "`'\"‘’“”")
 TITLE_PREFIX = "Draft follow-up: "
 TITLE_CHARS = 70
@@ -55,6 +56,11 @@ def parse(message):
     return found
 
 
+def addressed(message):
+    return [int(match.group(1)) for match in map(
+        _ADDRESSED.fullmatch, map(str.strip, message.splitlines())) if match]
+
+
 def normalised(text):
     return " ".join(text.lower().translate(_QUOTES).split()).rstrip(".")
 
@@ -74,17 +80,44 @@ def _commits(wt, sha):
             yield commit, message
 
 
+def _pending_features(conn, run_id):
+    return [row for row in store.follow_ups.pending_follow_ups(conn, run_id)
+            if row.kind == "feature"]
+
+
+def _supersede(conn, commit, ids, pending):
+    for row_id in ids:
+        if row_id in pending:
+            store.follow_ups.settle_superseded(conn, row_id, commit)
+
+
 def capture(conn, run_id, wt, sha):
     """Each FOLLOW_UP line of the commits after `sha`, stored pending."""
     try:
         for commit, message in _commits(wt, sha):
+            pending = {row.id for row in _pending_features(conn, run_id)}
             for finding in parse(message):
                 store.follow_ups.record_follow_up(
                     conn, run_id, commit, finding.kind, finding.kind_given,
                     finding.text, fingerprint(finding.text, finding.path),
                     path=finding.path, line=finding.line)
+            _supersede(conn, commit, addressed(message), pending)
     except Exception as e:
         print(f"[holo2] follow-ups not captured: {e}")
+
+
+def pending_prompt(conn, run_id):
+    rows = _pending_features(conn, run_id)
+    if not rows:
+        return ""
+    listed = "\n".join(
+        f"follow-up {row.id}: {row.text}"
+        + (f" @ {_where(row)}" if row.path else "") for row in rows)
+    return ("Follow-ups still pending for this ticket:\n"
+            f"{listed}\n"
+            "For each listed follow-up your commit fixes, write one unwrapped"
+            " line of the commit message, ADDRESS(follow-up N): TEXT, with"
+            " that follow-up's N and text.\n\n")
 
 
 def draft_title(text):
@@ -166,19 +199,25 @@ def _file(conn, row, board_of, body):
     store.follow_ups.settle_filed(conn, row.id, key)
 
 
-def settle_row(target, conn, row, origin, board_of):
+def _notes(*notes):
+    return "\n\n".join(note for note in notes if note) or None
+
+
+def settle_row(target, conn, row, origin, board_of, note):
     if row.kind == "guardrail":
         store.follow_ups.settle_ledger(conn, row.id)
         return
     found = store.stories.story(conn, row.ticketId)
     if (found is not None and found.ticketId != row.ticketId
             and found.state in store.story_proposals.PROPOSABLE_STATES):
-        _settle_story_row(target, conn, row, origin, board_of, found.ticketId)
+        _settle_story_row(target, conn, row, origin, board_of, found.ticketId,
+                          note)
     elif not _open_draft(conn, row, board_of):
-        _file(conn, row, board_of, draft_body(row, origin))
+        _file(conn, row, board_of, draft_body(row, origin, note=note))
 
 
-def _settle_story_row(target, conn, row, origin, board_of, story_id):
+def _settle_story_row(target, conn, row, origin, board_of, story_id,
+                      same_line):
     (story_key,) = conn.execute("SELECT linearIdentifier FROM tickets"
                                 " WHERE id = ?", (story_id,)).fetchone()
     duplicate = store.story_proposals.story_duplicate(
@@ -197,14 +236,14 @@ def _settle_story_row(target, conn, row, origin, board_of, story_id):
     if scope.verdict == story_scope.IN_STORY:
         store.story_proposals.record_proposal(
             conn, story_id, row.id, row.ticketId, draft_title(row.text),
-            draft_body(row, origin, note=(
+            draft_body(row, origin, note=_notes(
                 f"Proposed child of story {story_key}, raised by"
-                f" {origin.key}; not in the plan until --decide accepts it."),
-                depends_on=origin.key))
+                f" {origin.key}; not in the plan until --decide accepts it.",
+                same_line), depends_on=origin.key))
         return
-    _file(conn, row, board_of, draft_body(row, origin, note=(
+    _file(conn, row, board_of, draft_body(row, origin, note=_notes(
         f"Related: story {story_key}, raised by its child {origin.key};"
-        " not a child of the story.")))
+        " not a child of the story.", same_line)))
 
 
 @contextlib.contextmanager
@@ -233,13 +272,44 @@ def settle(target, conn, run_id):
                                f"follow-ups not settled: {e}", level="detail")
 
 
+def _same_line_groups(rows):
+    groups = {}
+    for row in rows:
+        same_line = (row.kind == "feature" and row.path
+                     and row.line is not None)
+        groups.setdefault((row.path, row.line) if same_line else row.id,
+                          []).append(row)
+    return groups.values()
+
+
+def _settled_key(conn, row_id):
+    return conn.execute(
+        "SELECT coalesce(f.filedAs, 'p' || p.id) FROM followUps f"
+        " LEFT JOIN storyProposals p ON p.followUpId = f.id WHERE f.id = ?",
+        (row_id,)).fetchone()[0]
+
+
+def _settle_one(target, conn, row, origin, board_of, note=None):
+    try:
+        settle_row(target, conn, row, origin, board_of, note)
+    except Exception as e:
+        print(f"[holo2] follow-up {row.id} not filed: {e}")
+        store.follow_ups.settle_unfiled(conn, row.id,
+                                        f"{type(e).__name__}: {e}")
+
+
 def _settle_rows(target, conn, run_id):
     origin = _origin(conn, run_id)
     board_of = functools.cache(lambda: _board(target))
-    for row in store.follow_ups.pending_follow_ups(conn, run_id):
-        try:
-            settle_row(target, conn, row, origin, board_of)
-        except Exception as e:
-            print(f"[holo2] follow-up {row.id} not filed: {e}")
-            store.follow_ups.settle_unfiled(conn, row.id,
-                                            f"{type(e).__name__}: {e}")
+    rows = store.follow_ups.pending_follow_ups(conn, run_id)
+    for *others, newest in _same_line_groups(rows):
+        note = ("Also raised at this line:\n" + "\n".join(
+            f"- {row.text}" for row in others)) if others else None
+        _settle_one(target, conn, newest, origin, board_of, note)
+        key = _settled_key(conn, newest.id) if others else None
+        for row in others:
+            if key:
+                store.follow_ups.settle_duplicate(conn, row.id, key,
+                                                  of="same-line follow-up")
+            else:
+                _settle_one(target, conn, row, origin, board_of)
