@@ -249,11 +249,10 @@ def operator_api_names():
 
 class StoreSurfaceTests(unittest.TestCase):
     def test_loop_has_no_raw_state_updates(self):
-        root = ROOT
         pattern = re.compile(r"\bUPDATE\s+(?:runs|tickets|projects)\b", re.I)
         matches = [
-            f"{path.relative_to(root)}:{source.count(chr(10), 0, match.start()) + 1}"
-            for path in sorted((root / "holophyte").rglob("*.py"))
+            f"{path.relative_to(ROOT)}:{source.count(chr(10), 0, match.start()) + 1}"
+            for path in sorted((ROOT / "holophyte").rglob("*.py"))
             for source in [path.read_text()]
             for match in pattern.finditer(source)
         ]
