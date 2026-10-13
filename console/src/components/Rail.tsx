@@ -1,4 +1,4 @@
-import logo from "../../../assets/menubar-template.svg";
+import logo from "../../../assets/logo.svg";
 import { formatDuration } from "../lib/format";
 import { projectName, supervisorLabel } from "../lib/derive";
 import type { ProjectChoice } from "../lib/attention";
@@ -80,7 +80,7 @@ export function Rail({
       className="flex h-full w-[220px] shrink-0 flex-col gap-[22px] overflow-y-auto bg-rail px-[14px] py-[18px]"
     >
       <div className="flex items-center gap-2 px-2">
-        <img src={logo} alt="" width={20} height={20} className="size-5 invert" />
+        <img src={logo} alt="" width={20} height={20} className="size-5" />
         <span className="text-[15px] font-bold text-rail-fg">Holophyte</span>
       </div>
 

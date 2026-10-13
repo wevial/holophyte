@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { inflateSync } from "node:zlib";
 
 import { renderIcon, renderTrayIcons } from "../icon.ts";
 
@@ -18,6 +19,54 @@ describe("renderIcon", () => {
     expect(new TextDecoder().decode(png.subarray(12, 16))).toBe("IHDR");
     expect(view.getUint32(16)).toBe(1024);
     expect(view.getUint32(20)).toBe(1024);
+  });
+});
+
+/** The RGBA alpha at (x, y) of an 8-bit RGBA PNG, unfiltering every scanline. */
+function alphaAt(png: Uint8Array, points: readonly (readonly [number, number])[]): number[] {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  expect([png[24], png[25]]).toEqual([8, 6]);
+  const idat: Uint8Array[] = [];
+  for (let at = 8; at < png.length; ) {
+    const length = view.getUint32(at);
+    if (new TextDecoder().decode(png.subarray(at + 4, at + 8)) === "IDAT") idat.push(png.subarray(at + 8, at + 8 + length));
+    at += 12 + length;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = width * 4;
+  const pixels = new Uint8Array(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)]!;
+    for (let i = 0; i < stride; i++) {
+      const value = raw[y * (stride + 1) + 1 + i]!;
+      const a = i >= 4 ? pixels[y * stride + i - 4]! : 0;
+      const b = y > 0 ? pixels[(y - 1) * stride + i]! : 0;
+      const c = i >= 4 && y > 0 ? pixels[(y - 1) * stride + i - 4]! : 0;
+      const p = a + b - c;
+      const paeth = Math.abs(p - a) <= Math.abs(p - b) && Math.abs(p - a) <= Math.abs(p - c) ? a : Math.abs(p - b) <= Math.abs(p - c) ? b : c;
+      const predictor = [0, a, b, (a + b) >> 1, paeth][filter]!;
+      pixels[y * stride + i] = (value + predictor) & 0xff;
+    }
+  }
+  return points.map(([x, y]) => pixels[y * stride + x * 4 + 3]!);
+}
+
+describe("app icon", () => {
+  test("assets/icon.svg renders full-bleed: the four corner pixels of the 1024 px icon are opaque", () => {
+    const svg = readFileSync(path.resolve(import.meta.dirname, "../../../assets/icon.svg"), "utf8");
+    const png = renderIcon(svg, 1024);
+    expect(alphaAt(png, [[0, 0], [1023, 0], [0, 1023], [1023, 1023]])).toEqual([255, 255, 255, 255]);
+  });
+});
+
+describe("favicon", () => {
+  test("console/public/favicon.svg renders an opaque tile ground with transparent rounded corners", () => {
+    const svg = readFileSync(path.resolve(import.meta.dirname, "../../public/favicon.svg"), "utf8");
+    const png = renderIcon(svg, 100);
+    expect(alphaAt(png, [[50, 95], [5, 50], [94, 50], [50, 5]])).toEqual([255, 255, 255, 255]);
+    expect(alphaAt(png, [[0, 0], [99, 0], [0, 99], [99, 99]])).toEqual([0, 0, 0, 0]);
   });
 });
 
