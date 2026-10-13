@@ -48,6 +48,15 @@ class OutsideDiffParseTests(unittest.TestCase):
         self.assertEqual((finding.path, finding.start), ("src/app.py", 40))
         self.assertIn("Preserve the literal <details> tag", finding.text)
 
+    def test_a_location_line_quoted_in_a_fence_stays_in_its_finding(self):
+        body = REVIEW.replace(
+            "after a successful call.\n",
+            "after a successful call.\n> `60`: example output to preserve\n"
+            "> Keep the cap at five.\n")
+        (finding,) = findings(body)
+        self.assertEqual((finding.start, finding.end), (40, 52))
+        self.assertIn("Keep the cap at five.", finding.text)
+
 
 if __name__ == "__main__":
     unittest.main()

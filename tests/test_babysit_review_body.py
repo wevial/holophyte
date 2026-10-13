@@ -121,6 +121,18 @@ class ReviewBodyFindingTests(MergeModeFixture):
         brief = fake.turns[fake.roles.index("adjudicate")].goal
         self.assertIn(TITLE, brief)
 
+    def test_a_declined_finding_from_a_listed_bot_login_is_not_left_open(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'bot_logins = ["review-helper"]\n')
+        self.fake_route(states=[self.with_review(
+            self.pr_state(), author=("review-helper", "User")),
+            self.pr_state()])
+        self.loop(Commit("initial work"), APPROVE, Idle(""),
+                  Reply("THREAD 1: DECLINE -- not this ticket"),
+                  provider=self.provider())
+        self.assertIn("Declined: not this ticket", self.answer())
+        self.assertIn("waiting for a human to say merge", self.question())
+
 
 if __name__ == "__main__":
     unittest.main()

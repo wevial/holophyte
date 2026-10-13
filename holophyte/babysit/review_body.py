@@ -48,12 +48,15 @@ def _unquoted(body):
                      for line in body.splitlines())
 
 
+def _unfenced(pattern, text):
+    fences = [fence.span() for fence in FENCE_RE.finditer(text)]
+    return [m for m in pattern.finditer(text)
+            if not any(a <= m.start() < b for a, b in fences)]
+
+
 def _details(text):
     blocks, depth, start = [], 0, 0
-    fences = [fence.span() for fence in FENCE_RE.finditer(text)]
-    for tag in DETAILS_RE.finditer(text):
-        if any(a <= tag.start() < b for a, b in fences):
-            continue
+    for tag in _unfenced(DETAILS_RE, text):
         if tag.group() == "<details>":
             depth += 1
             if depth == 1:
@@ -69,7 +72,7 @@ def _details(text):
 
 
 def _file_findings(path, text):
-    locations = list(LOCATION_RE.finditer(text))
+    locations = _unfenced(LOCATION_RE, text)
     for n, location in enumerate(locations):
         end = locations[n + 1].start() if n + 1 < len(locations) else len(text)
         chunk = CLOSERS_RE.sub("", text[location.start():end]).strip()
