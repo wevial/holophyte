@@ -67,10 +67,21 @@ test("the manifest names both PNGs with sizes, standalone display and the paper 
   expect(manifest.display).toBe("standalone");
   expect(manifest.background_color).toBe(paper);
   expect(manifest.theme_color).toBe(paper);
+});
+
+test("the favicon is the mark: a 100-unit square whose rounded tile is filled by a gradient", async () => {
   const svg = await Bun.file(new URL("favicon.svg", publicDir)).text();
-  expect(svg).toContain('viewBox="28 -19 263 263"');
-  expect(svg).toMatch(/<rect class="tile" x="28" y="-19" width="263" height="263"/);
-  expect(svg).toContain(`fill: ${paper}`);
+  expect(svg).toContain('viewBox="0 0 100 100"');
+  const tile = /<rect [^>]*>/.exec(svg)![0];
+  expect(tile).toMatch(/ rx="[1-9][\d.]*"/);
+  const gradient = /fill="url\(#([^)]+)\)"/.exec(tile)![1];
+  expect(svg).toContain(`<linearGradient id="${gradient}"`);
+});
+
+test("the favicon and the docs site logo are copies of assets/logo.svg", async () => {
+  const mark = await Bun.file(new URL("../../assets/logo.svg", import.meta.url)).text();
+  expect(await Bun.file(new URL("favicon.svg", publicDir)).text()).toBe(mark);
+  expect(await Bun.file(new URL("../../docs/assets/logo.svg", import.meta.url)).text()).toBe(mark);
 });
 
 test("the build carries public/ into dist and index.html links the icons and manifest", async () => {

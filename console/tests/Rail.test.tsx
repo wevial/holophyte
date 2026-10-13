@@ -80,3 +80,10 @@ test("clicking a row selects that daemon's project", () => {
   const again = mountRail([daemon("writer", 7710, "/srv/dev/holophyte"), daemon("writer", 7711, "/srv/dev/relos")], () => {}, "/srv/dev/relos");
   expect(within(again).getAllByRole("button").map((row) => row.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
 });
+
+test("the brand mark is the cosmic lotus logo, drawn without inverting it", () => {
+  mountRail([]);
+  const brand = screen.getByRole("navigation", { name: "Console" }).querySelector("img")!;
+  expect(brand.getAttribute("src")).toMatch(/assets\/logo\.svg$/);
+  expect(brand.classList.contains("invert")).toBe(false);
+});
