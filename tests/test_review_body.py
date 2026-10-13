@@ -39,6 +39,15 @@ class OutsideDiffParseTests(unittest.TestCase):
         self.assertIn("Retry loop never resets", unsplit.text)
         self.assertIn("The second finding lost its title.", unsplit.text)
 
+    def test_a_details_tag_quoted_in_a_fence_is_text(self):
+        body = REVIEW.replace(
+            "after a successful call.\n",
+            "after a successful call.\n"
+            "> Preserve the literal <details> tag in the generated HTML.\n")
+        (finding,) = findings(body)
+        self.assertEqual((finding.path, finding.start), ("src/app.py", 40))
+        self.assertIn("Preserve the literal <details> tag", finding.text)
+
 
 if __name__ == "__main__":
     unittest.main()

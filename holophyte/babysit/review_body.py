@@ -8,6 +8,7 @@ from holophyte.pr.github import Thread
 
 SECTION_RE = re.compile(r"Outside diff range comments\s*\((\d+)\)")
 DETAILS_RE = re.compile(r"<details>|</details>")
+FENCE_RE = re.compile(r"^```.*?^```[^\n]*$", re.MULTILINE | re.DOTALL)
 SUMMARY_RE = re.compile(r"\s*<summary>(.*?)</summary>(?:<blockquote>)?", re.DOTALL)
 FILE_SUMMARY_RE = re.compile(r"^(.+?)\s*\(\d+\)$")
 LOCATION_RE = re.compile(r"^`(\d+)(?:-(\d+))?`:(.*)$", re.MULTILINE)
@@ -49,7 +50,10 @@ def _unquoted(body):
 
 def _details(text):
     blocks, depth, start = [], 0, 0
+    fences = [fence.span() for fence in FENCE_RE.finditer(text)]
     for tag in DETAILS_RE.finditer(text):
+        if any(a <= tag.start() < b for a, b in fences):
+            continue
         if tag.group() == "<details>":
             depth += 1
             if depth == 1:
