@@ -463,6 +463,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
                 store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
             if reason:
                 store.record_event(conn, run_id, kind, reason)
+            ci_wake.carry_approval(conn, run_id, status)
             store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {why} but the ticket moved while GitHub"

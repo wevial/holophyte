@@ -1050,6 +1050,64 @@ class CiParkTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 3"),
                          [("merged",)])
 
+    def approval_parked_on_quiet(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.github(self.pull(self.OLD, "SUCCESS"))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.serve(self.pr_state(head=self.pushed()[-1][1], review="APPROVED"))
+        holophyte.cli.operator.approve(self.project, "KO-131", "merge it",
+                                       out=io.StringIO())
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.serve(self.pr_state(updated_at=fresh))
+        with patch("holophyte.pr.github.SLEEP", self.fail), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        self.assertEqual(self.read("SELECT parkKind FROM runs WHERE id = 2"),
+                         [("ci",)])
+        self.age()
+        return fresh
+
+    def assert_woken_for_a_fresh_approval(self, why, served):
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn(why, dropped[0])
+        self.serve(served)
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        (resumed,) = self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                               " AND kind = 'pull_request'")
+        self.assertIn("for another babysit pass", resumed[0])
+        self.assertEqual(self.read("SELECT outcome, phase FROM runs WHERE id = 3"),
+                         [(None, "awaiting_merge_approval")])
+
+    def test_an_approval_is_dropped_when_the_head_moved_before_the_wake(self):
+        fresh = self.approval_parked_on_quiet()
+        moved = dict(self.pull(fresh, "SUCCESS"), headRefOid="f" * 40)
+        self.reconcile(moved, later_s=300)
+        self.assert_woken_for_a_fresh_approval("the head moved", self.pr_state())
+        self.assertIn("waiting for a human to say merge", self.question())
+
+    def test_an_approval_is_dropped_when_a_review_thread_opened_before_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        threaded = dict(self.pull(fresh, "SUCCESS"), reviewThreads={
+            "totalCount": 1, "nodes": [{"isResolved": False}]})
+        self.reconcile(threaded, later_s=300)
+        self.assert_woken_for_a_fresh_approval("a review thread is open",
+                                               self.pr_state())
+
+    def test_an_approval_is_dropped_when_changes_were_requested_before_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        self.reconcile(self.pull(fresh, "SUCCESS") | {
+            "reviewDecision": "CHANGES_REQUESTED"}, later_s=300)
+        self.assert_woken_for_a_fresh_approval(
+            "a review requested changes",
+            self.pr_state(review="CHANGES_REQUESTED"))
+
     def test_red_checks_wake_a_park_whose_own_read_failed(self):
         self.ci_parked("PENDING", park_read=RuntimeError("GitHub down"))
         self.assertEqual(self.read("SELECT prSeenChecks FROM runs"), [(None,)])

@@ -50,3 +50,28 @@ def _expire(conn, ticket, pull, why, held):
                            park_kind="pull_request")
     print(f"[holo2] {ticket.linearIdentifier}: {why}; the run waits on a"
           " human")
+
+
+def carry_approval(conn, run_id, status):
+    parked = conn.execute(
+        "SELECT r.candidateSha FROM runs r WHERE r.id = ? AND EXISTS (SELECT 1"
+        " FROM runEvents e WHERE e.runId = r.id AND e.kind = 'approval_parked')",
+        (run_id,)).fetchone()
+    if parked is None:
+        return
+    sha = parked[0]
+    open_threads = (status.threads if status.open_threads is None
+                    else status.open_threads)
+    if status.head_sha not in (None, sha):
+        why = f"the head moved from {sha[:12]} to {status.head_sha[:12]}"
+    elif open_threads or open_threads is None or status.open_threads_floor:
+        why = "a review thread is open or its count is unknown"
+    elif status.review == "changes_requested":
+        why = "a review requested changes"
+    else:
+        store.record_event(conn, run_id, "approval_carried",
+                           f"the approval of {sha} carries through the park")
+        return
+    store.record_event(conn, run_id, "approval_dropped",
+                       f"the approval of {sha} is not carried: {why}; the run"
+                       " parks for a fresh approval")
