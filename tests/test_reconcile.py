@@ -1198,7 +1198,8 @@ class ReadyWakeTests(MergeModeFixture):
                        'pr_quiet_sec = 0\npr_draft = "ui"\n'
                        'ui_paths = ["*.tsx"]\nui_capture = "true"\n' + config)
         draft = path.endswith(".tsx")
-        self.fake_route(states=[self.pr_state(**s, draft=draft) for s in steps])
+        self.fake_route(states=[self.pr_state(**{"draft": draft, **s})
+                                for s in steps])
         self.github(dict(self.pull(CiParkTests.OLD, "PENDING"), isDraft=draft))
         naps = []
         with patch("holophyte.pr.github.SLEEP", naps.append), \
@@ -1235,6 +1236,16 @@ class ReadyWakeTests(MergeModeFixture):
     def test_a_non_ui_babysit_check_timeout_records_no_hold_or_ready_wake(self):
         self.babysit_wait_expired("server.py")
         self.assert_ready_wake(held=0)
+
+    def test_a_ui_pull_request_turned_draft_while_checks_wait_wakes_when_ready(self):
+        ready = {"checks": "PENDING", "draft": False}
+        self.timed_out("page.tsx", "check_wait_sec = 60\n",
+                       ({"threads": [self.DEFECT], "draft": False}, ready, ready,
+                        {"checks": "PENDING"}),
+                       Reply("THREAD 1: ADDRESS -- a real crash"),
+                       Commit("fix: default load()", path="page.tsx"))
+        self.assertIn("pending checks exceeded 60s", self.question())
+        self.assert_ready_wake(held=1)
 
     def ci_park_expired(self, path):
         self.timed_out(path, "", ({"checks": "PENDING"},))
