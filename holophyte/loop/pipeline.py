@@ -146,7 +146,7 @@ def _run_stages(run, task):
         _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
                                verify_cmd, contracts, spent, criteria,
-                               resume=resume)
+                               resume=resume, review_round=rnd)
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)

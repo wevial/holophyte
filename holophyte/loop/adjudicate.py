@@ -31,14 +31,25 @@ from holophyte.review.reply_parsing import (
 )
 
 
-def _left_open(conn, run_id, rnd, criteria):
+def _findings_across_resumes(conn, run_id, review_round):
+    runs = conn.execute(
+        "SELECT old.id, old.outcome FROM runs old JOIN runs current"
+        " ON old.ticketId = current.ticketId WHERE current.id = ?"
+        " AND old.id <= current.id ORDER BY old.id DESC", (run_id,)).fetchall()
+    for each, outcome in runs:
+        if each != run_id and outcome != "paused":
+            break
+        for ended in store.read.rounds_of(conn, each):
+            if ended.round == review_round and ended.endedAt is not None:
+                return json.loads(ended.findings)
+    return []
+
+
+def _left_open(conn, run_id, review_round, criteria):
     if conn is None:
         return []
-    rounds = [each for each in store.read.newest_ended_rounds(conn, run_id)
-              if each.round < rnd]
-    if not rounds:
-        return []
-    return sorted({finding["line"] for finding in json.loads(rounds[0].findings)
+    return sorted({finding["line"] for finding
+                   in _findings_across_resumes(conn, run_id, review_round)
                    if finding.get("path") == store.CRITERIA_PATH
                    and 1 <= (finding.get("line") or 0) <= len(criteria)})
 
@@ -67,12 +78,13 @@ def _refusal(refused):
 
 def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            branch, wt, beat_s, base_sha, sha, ticket,
-                           verify_cmd, contracts, cap, criteria=(), resume=None):
+                           verify_cmd, contracts, cap, criteria=(), resume=None,
+                           review_round=None):
     """No fix round follows: anything but PASS preserves the branch and stops."""
     pending = resume if resume and resume.get("terminal") else {}
     ticket = reviewed_ticket(conn, run_id, ticket)
     left_open = (pending["left_open"] if "left_open" in pending
-                 else _left_open(conn, run_id, cap + 1, criteria))
+                 else _left_open(conn, run_id, review_round or cap, criteria))
     if pending:
         set_phase(conn, run_id, "verifying", "resume terminal adjudication")
         ok, out = pending["ok"], pending["out"]
