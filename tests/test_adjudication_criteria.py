@@ -14,8 +14,13 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from fake_agent import REQUEST_CHANGES, Commit, Reply  # noqa: E402
 from loop_fixture import BRANCH, LoopFixture  # noqa: E402
+from pause_fixture import PauseReply  # noqa: E402
+
+from holophyte.loop.stop import command  # noqa: E402
 
 CRITERION = "Given the thing, when it runs, then it works"
+PROSE_PASS = ("Mergeable.\nCRITERION 1: met — the commit message records "
+              "the measurement\nVERDICT: PASS")
 LEFT_UNWITNESSED = Reply(
     "Blocker: the measurement is missing.\n"
     "CRITERION 1: unwitnessed — the measurement is not in the pull "
@@ -48,9 +53,25 @@ class AdjudicationCriteriaTests(LoopFixture):
                          [("criteria", 1)])
 
     def test_a_pass_overturning_an_unwitnessed_criterion_with_prose_fails(self):
-        self.adjudicate("Mergeable.\nCRITERION 1: met — the commit message "
-                        "records the measurement\nVERDICT: PASS")
+        self.adjudicate(PROSE_PASS)
         self.assert_failed_naming_criterion_1("unwitnessed")
+
+    def test_a_resumed_adjudication_still_refuses_a_prose_pass(self):
+        self.loop(Commit("first cut"), REQUEST_CHANGES,
+                  Commit("fix round 1"), LEFT_UNWITNESSED,
+                  Commit("fix round 2"), PauseReply(self.db, Reply(PROSE_PASS)))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "reviewing")])
+
+        command(self.project, "KO-131", None, resume=True)
+        self.loop()
+
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("failed",)])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs"
+                                 " WHERE outcome = 'failed'")
+        self.assertIn("criterion 1 unwitnessed", reason)
 
     def test_a_pass_with_no_criterion_line_fails(self):
         self.adjudicate("Mergeable as it stands.\nVERDICT: PASS")

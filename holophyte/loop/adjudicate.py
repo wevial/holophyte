@@ -73,6 +73,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     """No fix round follows: anything but PASS preserves the branch and stops."""
     pending = resume if resume and resume.get("terminal") else {}
     ticket = reviewed_ticket(conn, run_id, ticket)
+    left_open = (pending["left_open"] if "left_open" in pending
+                 else _left_open(conn, run_id, cap + 1, criteria))
     if pending:
         set_phase(conn, run_id, "verifying", "resume terminal adjudication")
         ok, out = pending["ok"], pending["out"]
@@ -85,7 +87,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
             ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-             ok=ok, out=str(out), reply=pending.get("reply"))
+             ok=ok, out=str(out), reply=pending.get("reply"),
+             left_open=left_open)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
@@ -100,7 +103,6 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     print("[holo2] verify ok before adjudication")
 
     set_phase(conn, run_id, "reviewing", "terminal adjudication")
-    left_open = _left_open(conn, run_id, cap + 1, criteria)
     recorded = bool(pending.get("reply"))
     if recorded:
         reply = pending["reply"]
@@ -145,7 +147,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
         decision = "FAIL"
     if decision != "PASS":
         boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-                 ok=ok, out=str(out), reply=str(reply))
+                 ok=ok, out=str(out), reply=str(reply), left_open=left_open)
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",
