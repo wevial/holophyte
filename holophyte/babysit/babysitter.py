@@ -773,7 +773,8 @@ def _decline_threads(project, conn, run_id, beat_s, pull, declined, model):
     bot_authors = merge_config(project).bot_authors
     left_open = []
     for _, thread, reason in declined:
-        resolve = thread.author.endswith("[bot]") or thread.author in bot_authors
+        resolve = (thread.kind == "review_body" or thread.author.endswith("[bot]")
+                   or thread.author in bot_authors)
         _post(project, conn, run_id, beat_s, pull, thread,
               babysitter.declined_reply(model, reason), resolve=resolve)
         if not resolve:

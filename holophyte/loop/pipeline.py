@@ -139,6 +139,11 @@ def _run_stages(run, task):
         project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
         sha, ticket, verify_cmd, contracts, criteria, budget_min, cap, resume=resume)
     spent = max(cap, rnd)
+    if resume and resume.get("terminal"):
+        if rnd < resume["rnd"]:
+            rnd = resume.get("review_round", rnd)
+        else:
+            resume = None
     while not approved or not close_steering(conn, run_id):
         steered = steer_turn(project, conn, run_id, beat_s, wt, budget_min,
                              ticket, sha, timed=_timed, check_cap=_check_run_cap)
@@ -146,7 +151,7 @@ def _run_stages(run, task):
         _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                branch, wt, beat_s, base_sha, sha, ticket,
                                verify_cmd, contracts, spent, criteria,
-                               resume=resume)
+                               resume=resume, review_round=rnd)
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)

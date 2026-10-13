@@ -1,7 +1,10 @@
 """The terminal adjudication: one bare verdict once the review rounds are spent."""
+import json
 from time import time
 
 import review_runner
+import store
+import store.read
 from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
@@ -18,15 +21,71 @@ from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.redact import safe_print as print
-from holophyte.review.briefs import criteria_brief, tests_brief
+from holophyte.review.briefs import criteria_brief, left_open_brief, tests_brief
+from holophyte.review.reply_parsing import (
+    DEFAULT_SEVERITY,
+    criteria_block,
+    criteria_findings,
+    finding_message,
+    test_references,
+)
+
+
+def _findings_across_resumes(conn, run_id, review_round):
+    runs = conn.execute(
+        "SELECT old.id, old.outcome FROM runs old JOIN runs current"
+        " ON old.ticketId = current.ticketId WHERE current.id = ?"
+        " AND old.id <= current.id ORDER BY old.id DESC", (run_id,)).fetchall()
+    for each, outcome in runs:
+        if each != run_id and outcome != "paused":
+            break
+        for ended in store.read.rounds_of(conn, each):
+            if ended.round == review_round and ended.endedAt is not None:
+                return json.loads(ended.findings)
+    return []
+
+
+def _left_open(conn, run_id, review_round, criteria):
+    if conn is None:
+        return []
+    return sorted({finding["line"] for finding
+                   in _findings_across_resumes(conn, run_id, review_round)
+                   if finding.get("path") == store.CRITERIA_PATH
+                   and 1 <= (finding.get("line") or 0) <= len(criteria)})
+
+
+def _criteria_gate(reply, criteria, wt, left_open):
+    findings = criteria_findings(reply, criteria, wt)
+    flagged = {finding["line"] for finding in findings}
+    block = criteria_block(reply)
+    for n in left_open:
+        if n in flagged or test_references(block[n][1]):
+            continue
+        message = (f"CRITERION {n}: unwitnessed \u2014 the review round left "
+                   "it unmet or unwitnessed; only a named test overturns that"
+                   f"\n{criteria[n - 1]}")
+        findings.append({"path": store.CRITERIA_PATH, "line": n,
+                         "severity": DEFAULT_SEVERITY,
+                         "message": finding_message(message)})
+    return sorted(findings, key=lambda finding: finding["line"])
+
+
+def _refusal(refused):
+    lines = "".join(f"Refused: {finding['message'].splitlines()[0]}\n"
+                    for finding in refused)
+    return f"{lines}\n" if lines else ""
 
 
 def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            branch, wt, beat_s, base_sha, sha, ticket,
-                           verify_cmd, contracts, cap, criteria=(), resume=None):
+                           verify_cmd, contracts, cap, criteria=(), resume=None,
+                           review_round=None):
     """No fix round follows: anything but PASS preserves the branch and stops."""
     pending = resume if resume and resume.get("terminal") else {}
     ticket = reviewed_ticket(conn, run_id, ticket)
+    review_round = review_round or cap
+    left_open = (pending["left_open"] if "left_open" in pending
+                 else _left_open(conn, run_id, review_round, criteria))
     if pending:
         set_phase(conn, run_id, "verifying", "resume terminal adjudication")
         ok, out = pending["ok"], pending["out"]
@@ -39,7 +98,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
             ok, out = with_baseline(project, wt, verify_cmd, ok, out,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-             ok=ok, out=str(out), reply=pending.get("reply"))
+             ok=ok, out=str(out), reply=pending.get("reply"),
+             left_open=left_open, review_round=review_round)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
@@ -54,7 +114,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     print("[holo2] verify ok before adjudication")
 
     set_phase(conn, run_id, "reviewing", "terminal adjudication")
-    if pending.get("reply"):
+    recorded = bool(pending.get("reply"))
+    if recorded:
         reply = pending["reply"]
     else:
         round_started = int(time() * 1000)
@@ -68,7 +129,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                 "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
                 f"{ticket}\n\n"
                 + _verify_brief(verify_cmd, ok, out)
-                + criteria_brief(criteria)
+                + criteria_brief(criteria, "FAIL")
+                + left_open_brief(criteria, left_open)
                 + tests_brief(wt)
                 + "This candidate has already had its review rounds and their "
                 "fixes; no further fix round exists. Your job is a verdict on "
@@ -81,24 +143,32 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                 "VERDICT: PASS  or  VERDICT: FAIL\n"
                 "PASS means the candidate is mergeable as it stands.", wt,
                 base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
-        record_round(project, conn, run_id, cap + 1, "adjudicate", reply,
-                     verify_cmd, ok, out, started_at=round_started)
     try:
         decision = review_runner.terminal_verdict(
             reply, review_runner.ADJUDICATION_VERDICTS)
     except review_runner.ReviewBoundaryError:
         decision = "MALFORMED"
+    refused = (_criteria_gate(reply, criteria, wt, left_open)
+               if decision == "PASS" else [])
+    if not recorded:
+        record_round(project, conn, run_id, cap + 1, "adjudicate", reply,
+                     verify_cmd, ok, out, started_at=round_started,
+                     structured_findings=refused or None)
+    if refused:
+        decision = "FAIL"
     if decision != "PASS":
         boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-                 ok=ok, out=str(out), reply=str(reply))
+                 ok=ok, out=str(out), reply=str(reply), left_open=left_open,
+                 review_round=review_round)
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",
                f"Terminal adjudication after {cap} review "
                f"rounds: {decision}; branch {branch} preserved at "
-               f"{sha}\n\nAdjudicator reply:\n{reply}", provider)
+               f"{sha}\n\n{_refusal(refused)}Adjudicator reply:\n{reply}",
+               provider)
         raise RunFailure(failure_reason.adjudication(
-            reply, criteria, decision,
+            refused or criteria_findings(reply, criteria), criteria, decision,
             f"branch {branch} preserved at {sha[:12]}"))
     stop_if_requested(conn, run_id, "merge_gate")
     print("[holo2] terminal adjudication: PASS")

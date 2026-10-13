@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
+    PASS,
     REQUEST_CHANGES,
     Commit,
     FakeAgent,
@@ -161,7 +162,7 @@ class NotReproducedTests(LoopFixture):
         self.configure("[loop]\nreview_rounds = 1\nreview_rounds_max = 1\n")
         fake, _ = self.loop(Declare("test the modal"), REFUSED,
                             Commit("fix the modal"), REQUEST_CHANGES,
-                            Commit("fix again"), Reply("Mergeable.\nVERDICT: PASS"))
+                            Commit("fix again"), PASS)
 
         self.assertEqual(fake.roles, ["implement", "adjudicate", "implement",
                                       "review", "implement", "adjudicate"])

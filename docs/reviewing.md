@@ -288,6 +288,9 @@ work strike, and restores the previous park reason.
 A human mention in the pull request conversation follows the same forms.
 Its reply quotes the request; there is no review thread to resolve.
 Unmentioned conversation comments are ignored.
+A bot review's "Outside diff range comments" are treated as bot threads; each
+is answered with one pull request comment carrying a fingerprint marker, so a
+later pass does not act on it again.
 
 A merge under human approval requires an explicit approve recorded on the
 run: `--approve KO-n` records `approvedAt` and `approvedBy`. A `--babysit`

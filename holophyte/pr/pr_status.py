@@ -8,6 +8,7 @@ from holophyte.babysit.conversation_comments import (
     conversation_threads,
     pull_comments,
 )
+from holophyte.babysit.review_body import review_threads
 from holophyte.babysit.thread_mentions import classify
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
@@ -61,6 +62,7 @@ query($owner: String!, $name: String!, $number: Int!, $after: String,
         nodes { id author { login __typename } body url viewerDidAuthor
                 reactionGroups { content viewerHasReacted } }
       }
+      reviews(last: 20) { nodes { id author { login __typename } body url } }
       reviewThreads(first: %d, after: $after) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -248,6 +250,7 @@ def pr_state(target, pull):
         node = _pull_request_page(target, pull, info["endCursor"])
     comments = pull_comments(target, pull, first_page, _pull_request_page)
     threads.extend(conversation_threads(target, pull, comments))
+    threads.extend(review_threads(target, pull, first_page, comments))
     every_run, required = _check_reads(target, pull,
                                        first_page.get("headRefOid"))
     runs = _started_since_ready(every_run, first_page)
