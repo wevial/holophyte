@@ -21,6 +21,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     Commit,
     Idle,
+    Reply,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     INVALID_BODY,
@@ -32,6 +33,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
+import holophyte.babysit.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
@@ -1190,3 +1192,76 @@ class ReadyWakeTests(MergeModeFixture):
         self.reconcile(self.read_as(False))
         self.assertEqual(self.wakes(), [("supervisor",)])
         self.assertEqual(len(self.ready_wakes()), 1)
+
+    def timed_out(self, path, config, steps, *fixes):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'pr_quiet_sec = 0\npr_draft = "ui"\n'
+                       'ui_paths = ["*.tsx"]\nui_capture = "true"\n' + config)
+        draft = path.endswith(".tsx")
+        self.fake_route(states=[self.pr_state(**{"draft": draft, **s})
+                                for s in steps])
+        self.github(dict(self.pull(CiParkTests.OLD, "PENDING"), isDraft=draft))
+        naps = []
+        with patch("holophyte.pr.github.SLEEP", naps.append), \
+                patch.object(holophyte.babysit.babysitter, "monotonic",
+                             side_effect=lambda: sum(naps)), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Commit("the scripted work", path=path), APPROVE,
+                      Idle(""), *fixes, provider=self.provider())
+        self.age()
+
+    def held_events(self):
+        return self.read("SELECT 1 FROM runEvents WHERE kind = 'pr_draft_held'")
+
+    def assert_ready_wake(self, held):
+        self.assertEqual(len(self.held_events()), held)
+        self.reconcile(self.read_as(False))
+        expected = [(f"{self.URL} was marked ready for review",)] * held
+        self.assertEqual(self.ready_wakes(), expected)
+        self.assertEqual(len(self.wakes()), held)
+
+    def babysit_wait_expired(self, path):
+        self.timed_out(path, "check_wait_sec = 60\n",
+                       ({"threads": [self.DEFECT]}, {"checks": "PENDING"}),
+                       Reply("THREAD 1: ADDRESS -- a real crash"),
+                       Commit("fix: default load()", path=path))
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("pull_request",)])
+        self.assertIn("pending checks exceeded 60s", self.question())
+
+    def test_a_ui_draft_parked_on_a_babysit_check_timeout_wakes_when_ready(self):
+        self.babysit_wait_expired("page.tsx")
+        self.assert_ready_wake(held=1)
+
+    def test_a_non_ui_babysit_check_timeout_records_no_hold_or_ready_wake(self):
+        self.babysit_wait_expired("server.py")
+        self.assert_ready_wake(held=0)
+
+    def test_a_ui_pull_request_turned_draft_while_checks_wait_wakes_when_ready(self):
+        ready = {"checks": "PENDING", "draft": False}
+        self.timed_out("page.tsx", "check_wait_sec = 60\n",
+                       ({"threads": [self.DEFECT], "draft": False}, ready, ready,
+                        {"checks": "PENDING"}),
+                       Reply("THREAD 1: ADDRESS -- a real crash"),
+                       Commit("fix: default load()", path="page.tsx"))
+        self.assertIn("pending checks exceeded 60s", self.question())
+        self.assert_ready_wake(held=1)
+
+    def ci_park_expired(self, path):
+        self.timed_out(path, "", ({"checks": "PENDING"},))
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("ci",)])
+        pending = dict(self.pull(CiParkTests.OLD, "PENDING"),
+                       isDraft=path.endswith(".tsx"))
+        self.reconcile(pending, later_s=1801)
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("pull_request",)])
+        self.assertIn("pending checks exceeded 1800s", self.question())
+        self.age()
+
+    def test_a_ui_draft_whose_ci_park_expires_wakes_when_ready(self):
+        self.ci_park_expired("page.tsx")
+        self.assert_ready_wake(held=1)
+
+    def test_a_non_ui_ci_park_expiry_records_no_hold_or_ready_wake(self):
+        self.ci_park_expired("server.py")
+        self.assert_ready_wake(held=0)

@@ -613,11 +613,14 @@ def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
         if retrigger is not None:
             sha, reviewed = retrigger.sha, retrigger.reviewed
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
-                    pull, str(expired), (), reviewed=reviewed)
+                    pull, str(expired), (), reviewed=reviewed,
+                    held=pr_ready.held_for_frontend(project, expired.state or state))
 
 
 class WaitExpired(Exception):
-    pass
+    def __init__(self, why, state=None):
+        super().__init__(why)
+        self.state = state
 
 
 class WaitsOnCI(Exception):
@@ -639,11 +642,12 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
                 late = unreported(state, absent, merge.missing_check_sec,
                                   monotonic)
                 if late:
-                    state = retrigger(late) if retrigger else None
-                    if state is None:
+                    retried = retrigger(late) if retrigger else None
+                    if retried is None:
                         raise WaitExpired(
                             "required checks never reported on the head"
-                            f" commit: {', '.join(late)}")
+                            f" commit: {', '.join(late)}", state)
+                    state = retried
                     park_ci = False
                     state = route_bot_threads(project, conn, run_id, beat_s,
                                               pull, state, merge)
@@ -672,7 +676,8 @@ def _settled_state(project, conn, run_id, beat_s, pull, state=None, refresh=None
             remaining = deadline - monotonic()
             if remaining <= 0:
                 raise WaitExpired(
-                    f"{reason} exceeded {merge.check_wait_sec}s on the pull request")
+                    f"{reason} exceeded {merge.check_wait_sec}s on the pull request",
+                    state)
             stop_if_requested(conn, run_id, "merge_gate")
             github.SLEEP(min(nap, remaining))
             state = maintainer_notes.pending_state(
