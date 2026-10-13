@@ -130,7 +130,7 @@ def review_threads(target, pull, node, comments):
 
 
 def quote_line(thread):
-    header = thread.body.splitlines()[0] if thread.body else thread.path
+    header = thread.body.splitlines()[0]
     return f"> [Review by @{thread.author}]({thread.url}): {header}"
 
 
