@@ -126,6 +126,8 @@ def answered(comments):
 
 def review_threads(target, pull, node, comments):
     reviews = (node.get("reviews") or {}).get("nodes") or ()
+    if not reviews:
+        return
     merge = merge_config(target)
     bots = (*merge.bot_authors, *merge.bot_logins)
     done = answered(comments)
