@@ -61,6 +61,15 @@ describe("app icon", () => {
   });
 });
 
+describe("favicon", () => {
+  test("console/public/favicon.svg renders an opaque tile ground with transparent rounded corners", () => {
+    const svg = readFileSync(path.resolve(import.meta.dirname, "../../public/favicon.svg"), "utf8");
+    const png = renderIcon(svg, 100);
+    expect(alphaAt(png, [[50, 95], [5, 50], [94, 50], [50, 5]])).toEqual([255, 255, 255, 255]);
+    expect(alphaAt(png, [[0, 0], [99, 0], [0, 99], [99, 99]])).toEqual([0, 0, 0, 0]);
+  });
+});
+
 describe("quiet template", () => {
   test("menubar-template.svg is the black leaf with its veins cut out by a mask, and its PNGs are 20 and 40 px tall", () => {
     const svg = readFileSync(path.resolve(import.meta.dirname, "../../../assets/menubar-template.svg"), "utf8");

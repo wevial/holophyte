@@ -69,14 +69,13 @@ test("the manifest names both PNGs with sizes, standalone display and the paper 
   expect(manifest.theme_color).toBe(paper);
 });
 
-test("the favicon is the mark: a 100-unit square with an opaque rounded tile filled by a gradient", async () => {
+test("the favicon is the mark: a 100-unit square whose rounded tile is filled by a gradient", async () => {
   const svg = await Bun.file(new URL("favicon.svg", publicDir)).text();
   expect(svg).toContain('viewBox="0 0 100 100"');
   const tile = /<rect [^>]*>/.exec(svg)![0];
   expect(tile).toMatch(/ rx="[1-9][\d.]*"/);
   const gradient = /fill="url\(#([^)]+)\)"/.exec(tile)![1];
   expect(svg).toContain(`<linearGradient id="${gradient}"`);
-  expect(tile).not.toContain("opacity");
 });
 
 test("the favicon and the docs site logo are copies of assets/logo.svg", async () => {
