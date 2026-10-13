@@ -455,6 +455,8 @@ Each module, one line:
 - `holophyte/babysit/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysit/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
+- `holophyte/babysit/review_body.py` — bot review-body outside-diff findings, their
+  fingerprints and answer markers.
 - `holophyte/babysit/thread_answers.py` — read-only mention answers and thread replies.
 - `holophyte/babysit/thread_mentions.py` — mention markers and typed intent triage.
 - `holophyte/questions.py` — typed choice requests and safe service failures.

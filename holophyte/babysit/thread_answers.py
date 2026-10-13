@@ -3,7 +3,7 @@ from urllib.parse import quote
 
 import store
 from holophyte.agents.roles import agent_route
-from holophyte.babysit import maintainer_notes, thread_mentions
+from holophyte.babysit import maintainer_notes, review_body, thread_mentions
 from holophyte.babysit.conversation_comments import (
     ASK_REPLY_MARKER,
     console_ask_mark,
@@ -135,6 +135,9 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
             if maintainer_notes.is_console_ask(thread):
                 console_asks.answered(conn, run_id, maintainer_notes.event_id(thread),
                                       url, outbound(answer, secrets))
+        elif thread.kind == "review_body":
+            github.comment_on_pull(target, pull, outbound(
+                review_body.answer(thread, body), secrets))
         else:
             github.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":
@@ -145,7 +148,7 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
             store.record_event(conn, run_id, "pull_request",
                                f"replied on thread {thread.url}:"
                                f" {babysitter.gist(body.splitlines()[-1])}")
-        if resolve and thread.kind != "conversation":
+        if resolve and thread.kind not in ("conversation", "review_body"):
             github.resolve_thread(target, pull, thread.id)
             if conn is not None and run_id is not None:
                 store.record_event(conn, run_id, "pull_request",
