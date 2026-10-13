@@ -127,7 +127,7 @@ class Reply:
 # as the reviewer would end them, because `review_runner.terminal_verdict()`
 # reads the last line and the loop's malformed-reply path exists precisely for
 # text that does not have one.
-# The approval witnesses the fixture ticket's single criterion: since
+# APPROVE and PASS witness the fixture ticket's single criterion: since
 # KO-189 a reviewer that approves without a `CRITERION n: met` line for
 # each criterion has asked for changes whatever its verdict line says.
 APPROVE = Reply("Reviewed the diff; no blockers.\n"
@@ -135,7 +135,9 @@ APPROVE = Reply("Reviewed the diff; no blockers.\n"
                "VERDICT: APPROVE")
 REQUEST_CHANGES = Reply("Blocker: the scripted change is incomplete.\n"
                         "VERDICT: REQUEST_CHANGES")
-PASS = Reply("Mergeable as it stands.\nVERDICT: PASS")
+PASS = Reply("Mergeable as it stands.\n"
+             "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+             "VERDICT: PASS")
 FAIL = Reply("Not mergeable as it stands.\nVERDICT: FAIL")
 MALFORMED = Reply("I have some thoughts about this but never say the word.")
 

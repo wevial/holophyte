@@ -205,6 +205,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         findings = []
     if structured_findings is not None:
         findings = structured_findings
+        if role == "adjudicate" and verdict == "pass" and findings:
+            verdict = "changes_requested"
     if role == "review" and verdict != "error":
         unwitnessed = criteria_findings(reply, criteria, root,
                                         approved_range=approved_range,

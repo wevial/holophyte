@@ -50,14 +50,12 @@ def verify(output, command, context):
     return compose('verify', **facts, context=context)
 
 
-def adjudication(reply, criteria, decision, context):
+def adjudication(findings, criteria, decision, context):
     from holophyte.review.reply_parsing import criteria_block
 
-    block = criteria_block(reply)
-    failed = [{'number': n, 'status': block.get(n, ('unwitnessed', ''))[0],
-               'text': text}
-              for n, text in enumerate(criteria, 1)
-              if block.get(n, ('unwitnessed', ''))[0] != 'met']
+    block = criteria_block('\n'.join(f['message'] for f in findings))
+    failed = [{'number': n, 'status': block[n][0], 'text': text}
+              for n, text in enumerate(criteria, 1) if n in block]
     return compose('adjudication', decision=decision, criteria=failed,
                    context=context)
 

@@ -164,7 +164,7 @@ def trim_brief(root, base_sha, sha):
             "missing at the range's final state.\n\n")
 
 
-def criteria_brief(criteria):
+def criteria_brief(criteria, refused="REQUEST_CHANGES"):
     if not criteria:
         return ""
     numbered = "\n".join(f"{n}. {c}" for n, c in enumerate(criteria, 1))
@@ -181,8 +181,18 @@ def criteria_brief(criteria):
             "`path::\"test name\"` or `path::TestName`; escape a double "
             "quote inside a test name with a backslash, `\\\"`.\n"
             "A criterion marked not met or unwitnessed, or left out of this "
-            "list, is a blocker: the round is REQUEST_CHANGES regardless of "
+            f"list, is a blocker: the round is {refused} regardless of "
             "the verdict line.\n\n")
+
+
+def left_open_brief(criteria, left_open):
+    listed = "\n".join(f"{n}. {criteria[n - 1]}" for n in left_open)
+    if not listed:
+        return ""
+    return ("The newest review round left these criteria unmet or "
+            f"unwitnessed:\n{listed}\nOnly a named test overturns that: a "
+            "`met` line for one of them must name a test that exists, or it "
+            "is read as unwitnessed and the verdict is FAIL.\n\n")
 
 
 def stale_approval_brief(stale):
