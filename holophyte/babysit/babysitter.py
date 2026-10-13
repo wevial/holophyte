@@ -319,6 +319,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             continue
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
+        pr_ready.hold_for_frontend(replace(run, sha=sha), pull, state,
+                                   reviewed, before_review=True)
         fixed = sha if sha == reviewed else _review_fix(
             project, conn, run_id, provider, task_id, branch, wt, sha, reviewed,
             beat_s, pull, ticket, verify_cmd, contracts, criteria, fix_note,

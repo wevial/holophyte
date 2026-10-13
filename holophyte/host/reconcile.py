@@ -389,9 +389,20 @@ def _seen(status):
 def _wake_reason(target, conn, ticket, pull, status):
     kind, reason = _conflict_wake(conn, ticket, pull, status)
     if reason is None:
+        reason = _ready_wake(conn, ticket, pull, status)
+    if reason is None:
         reason = ci_wake.wake_reason(target, conn, ticket, pull, status,
                                      _iso_epoch(_seen(status)[0]))
     return kind, reason
+
+
+def _ready_wake(conn, ticket, pull, status):
+    if status.draft is not False:
+        return None
+    held = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
+                        " AND kind = 'pr_draft_held'",
+                        (ticket.runId,)).fetchone()
+    return f"{pull.url} was marked ready for review" if held else None
 
 
 def _conflict_wake(conn, ticket, pull, status):

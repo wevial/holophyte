@@ -202,7 +202,10 @@ machines it walks. Back to the [README](index.md).
    point a pass would merge it or park it ready to merge, the babysitter
    marks it ready for review once (a `pr_ready` run event) and passes
    again, waiting for the checks, and a draft it may not mark parks
-   instead. A push the remote refuses or a PR create
+   instead. With `pr_draft = "ui"` it opens as a draft only when the diff
+   touches `[merge] ui_paths`, and the babysitter never marks it: it parks
+   held for the maintainer (a `pr_draft_held` run event) until the
+   reconcile reads it marked ready for review and wakes the run. A push the remote refuses or a PR create
    that fails is an infra failure -- no strike, branch and worktree
    preserved, no PR recorded. Then the loop babysits the pull request for
    up to `[merge] pr_rounds` passes (see [PR rounds](reviewing.md#pr-rounds)):

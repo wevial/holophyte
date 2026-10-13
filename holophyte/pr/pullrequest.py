@@ -283,7 +283,15 @@ def _with_concerns(text, conn, run_id):
             + "\n".join(f"- {consolidate.bullet(item)}" for item in held))
 
 
-def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
+def _opens_draft(project, wt):
+    merge = merge_config(project)
+    if merge.pr_draft == "ui":
+        return pr_media.matches(wt, merge.ui_paths)
+    return merge.pr_draft is True
+
+
+def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
+                   draft=False):
     """The caller holds the merge lock a claim's fetch of these refs takes."""
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pull_request",
@@ -298,7 +306,8 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s):
         # `gh pr create` refuses a branch already open as a PR: adopt it.
         url = github.open_pull_request(project, branch)
         if url is None:
-            url = github.create_pull_request(project, branch, title, text)
+            url = github.create_pull_request(project, branch, title, text,
+                                             draft)
             print(f"[holo2] pull request open: {url}")
         else:
             adopted = True
