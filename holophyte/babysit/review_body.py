@@ -7,6 +7,9 @@ from holophyte.config.config_tables import merge_config
 from holophyte.pr.github import Thread
 
 SECTION_RE = re.compile(r"Outside diff range comments\s*\((\d+)\)")
+TOP_SECTION_RE = re.compile(
+    r"(?:Outside diff range|Nitpick|Duplicate|Additional) comments\s*\(\d+\)"
+    r"|Review details")
 DETAILS_RE = re.compile(
     r"^[ \t]*(?:(<details>)[ \t]*(?=<summary>|$)"
     r"|(?:</(?:blockquote|details)>[ \t]*)+$)", re.MULTILINE)
@@ -54,6 +57,23 @@ def _unfenced(pattern, text):
     fences = [fence.span() for fence in FENCE_RE.finditer(text)]
     return [m for m in pattern.finditer(text)
             if not any(a <= m.start() < b for a, b in fences)]
+
+
+def _openings(text):
+    for tag in _unfenced(DETAILS_RE, text):
+        summary = SUMMARY_RE.match(text, tag.end()) if tag[1] else None
+        if summary:
+            yield tag.start(), summary[1].strip()
+
+
+def _unclosed_section(text):
+    starts = [(start, summary) for start, summary in _openings(text)
+              if TOP_SECTION_RE.search(summary)]
+    for n, (start, summary) in enumerate(starts):
+        if SECTION_RE.search(summary):
+            end = starts[n + 1][0] if n + 1 < len(starts) else len(text)
+            return [_unsplit(text[start:end])]
+    return []
 
 
 def _details(text):
@@ -107,8 +127,7 @@ def findings(body):
         if len(found) < int(section[1]):
             found.append(_unsplit(inner))
         return found
-    section = SECTION_RE.search(text)
-    return [_unsplit(text[section.start():])] if section else []
+    return _unclosed_section(text)
 
 
 def fingerprint(reviewer, finding):

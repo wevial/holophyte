@@ -81,6 +81,14 @@ class OutsideDiffParseTests(unittest.TestCase):
         (unsplit,) = findings(body)
         self.assertEqual(unsplit.path, "")
         self.assertIn("Retry loop never resets", unsplit.text)
+        self.assertNotIn("named constant", unsplit.text)
+
+    def test_a_fenced_section_example_in_review_details_is_not_a_finding(self):
+        body = ("<details>\n<summary>📜 Review details</summary>\n\n"
+                "```\n<details>\n"
+                "<summary>⚠️ Outside diff range comments (1)</summary>"
+                "<blockquote>\n```\n\n</details>\n")
+        self.assertEqual(findings(body), [])
 
 
 if __name__ == "__main__":
