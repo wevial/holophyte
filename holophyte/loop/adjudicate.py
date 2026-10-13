@@ -83,8 +83,9 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     """No fix round follows: anything but PASS preserves the branch and stops."""
     pending = resume if resume and resume.get("terminal") else {}
     ticket = reviewed_ticket(conn, run_id, ticket)
+    review_round = review_round or cap
     left_open = (pending["left_open"] if "left_open" in pending
-                 else _left_open(conn, run_id, review_round or cap, criteria))
+                 else _left_open(conn, run_id, review_round, criteria))
     if pending:
         set_phase(conn, run_id, "verifying", "resume terminal adjudication")
         ok, out = pending["ok"], pending["out"]
@@ -98,7 +99,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
              ok=ok, out=str(out), reply=pending.get("reply"),
-             left_open=left_open)
+             left_open=left_open, review_round=review_round)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
@@ -157,7 +158,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
         decision = "FAIL"
     if decision != "PASS":
         boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-                 ok=ok, out=str(out), reply=str(reply), left_open=left_open)
+                 ok=ok, out=str(out), reply=str(reply), left_open=left_open,
+                 review_round=review_round)
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",

@@ -17,7 +17,7 @@ from loop_fixture import BRANCH, LoopFixture  # noqa: E402
 from pause_fixture import PauseReply  # noqa: E402
 
 import store  # noqa: E402
-from holophyte.loop.stop import command  # noqa: E402
+from holophyte.loop.stop import command, resume_paused  # noqa: E402
 from tests.test_steer import SteerFixture  # noqa: E402
 from tests.test_steer_live import Steering  # noqa: E402
 
@@ -155,6 +155,28 @@ class SteeredAdjudicationTests(SteerFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn("criterion 1 unwitnessed", reason)
+
+    def test_a_steered_adjudication_paused_and_resumed_still_refuses_a_prose_pass(self):
+        paused, _ = self.loop(
+            Commit("first cut"), REQUEST_CHANGES,
+            Commit("fix round 1"), LEFT_UNWITNESSED,
+            Commit("fix round 2"), Steering(self, PASS, "-n", "also log it"),
+            Commit("the steer"),
+            Steering(self, Reply(PROSE_PASS), "-n", "and the host", pause=True))
+        self.assertEqual(paused.roles[-3:], ["adjudicate", "implement", "adjudicate"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        resume_paused(self.project, self.conn, self.ticket, "go on")
+
+        resumed, _ = self.loop(Commit("the second steer"), Reply(PROSE_PASS))
+
+        self.assertEqual(resumed.roles, ["implement", "adjudicate"])
+        self.assertIn(LEFT_OPEN, resumed.turns[-1].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("failed",)])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs"
+                                 " WHERE outcome = 'failed'")
         self.assertIn("criterion 1 unwitnessed", reason)
 
 
