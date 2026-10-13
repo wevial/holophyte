@@ -1019,25 +1019,7 @@ class CiParkTests(MergeModeFixture):
         self.assertEqual(self.wakes(), [("supervisor",)])
 
     def test_an_approval_parked_on_a_quiet_wait_merges_when_woken_quiet(self):
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.fake_route(states=[self.pr_state()])
-        self.github(self.pull(self.OLD, "SUCCESS"))
-        with patch.object(sys, "stdout", io.StringIO()):
-            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                      provider=self.provider())
-        self.assertIn("waiting for a human to say merge", self.question())
-        self.serve(self.pr_state(head=self.pushed()[-1][1], review="APPROVED"))
-        holophyte.cli.operator.approve(self.project, "KO-131", "merge it",
-                                       out=io.StringIO())
-        fresh = datetime.now(timezone.utc).isoformat()
-        self.serve(self.pr_state(updated_at=fresh))
-        self.github(self.pull(fresh, "SUCCESS"))
-        with patch("holophyte.pr.github.SLEEP", self.fail), \
-                patch.object(sys, "stdout", io.StringIO()):
-            self.loop(provider=self.provider())
-        self.assertEqual(self.read("SELECT parkKind FROM runs WHERE id = 2"),
-                         [("ci",)])
-        self.age()
+        fresh = self.approval_parked_on_quiet()
 
         self.reconcile(self.pull(fresh, "SUCCESS"), later_s=300)
         self.serve(self.pr_state())
@@ -1057,6 +1039,7 @@ class CiParkTests(MergeModeFixture):
         with patch.object(sys, "stdout", io.StringIO()):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                       provider=self.provider())
+        self.assertIn("waiting for a human to say merge", self.question())
         self.serve(self.pr_state(head=self.pushed()[-1][1], review="APPROVED"))
         holophyte.cli.operator.approve(self.project, "KO-131", "merge it",
                                        out=io.StringIO())
