@@ -35,6 +35,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.babysit.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
@@ -1016,6 +1017,38 @@ class CiParkTests(MergeModeFixture):
 
         self.reconcile(green, later_s=300)
         self.assertEqual(self.wakes(), [("supervisor",)])
+
+    def test_an_approval_parked_on_a_quiet_wait_merges_when_woken_quiet(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.github(self.pull(self.OLD, "SUCCESS"))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertIn("waiting for a human to say merge", self.question())
+        self.serve(self.pr_state(head=self.pushed()[-1][1], review="APPROVED"))
+        holophyte.cli.operator.approve(self.project, "KO-131", "merge it",
+                                       out=io.StringIO())
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.serve(self.pr_state(updated_at=fresh))
+        self.github(self.pull(fresh, "SUCCESS"))
+        with patch("holophyte.pr.github.SLEEP", self.fail), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        self.assertEqual(self.read("SELECT parkKind FROM runs WHERE id = 2"),
+                         [("ci",)])
+        self.age()
+
+        self.reconcile(self.pull(fresh, "SUCCESS"), later_s=300)
+        self.serve(self.pr_state())
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+
+        (resumed,) = self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                               " AND kind = 'pull_request'")
+        self.assertIn("after an approval", resumed[0])
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 3"),
+                         [("merged",)])
 
     def test_red_checks_wake_a_park_whose_own_read_failed(self):
         self.ci_parked("PENDING", park_read=RuntimeError("GitHub down"))
