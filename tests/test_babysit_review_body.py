@@ -30,7 +30,7 @@ class ReviewBodyFindingTests(MergeModeFixture):
             "body": REVIEW, "url": f"{self.URL}#pullrequestreview-1"}]}
         return state
 
-    def test_outside_diff_finding_is_adjudicated_before_a_ready_park(self):
+    def test_outside_diff_finding_is_adjudicated_fixed_and_answered(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route(states=[self.with_review(self.pr_state()),
                                 self.pr_state()])
@@ -42,7 +42,8 @@ class ReviewBodyFindingTests(MergeModeFixture):
         brief = fake.turns[fake.roles.index("adjudicate")].goal
         self.assertIn("src/app.py:40", brief)
         self.assertIn(TITLE, brief)
-        self.assertIn("reset the backoff", fake.turns[4].goal)
+        fix = fake.turns[fake.roles.index("adjudicate") + 1]
+        self.assertIn("reset the backoff", fix.goal)
         kinds = [kind for kind, _ in self.api_calls()]
         self.assertEqual(kinds.count("conversation"), 1)
         self.assertNotIn("reply", kinds)
@@ -59,6 +60,19 @@ class ReviewBodyFindingTests(MergeModeFixture):
         self.assertTrue(any("POST repos/example/repo/issues/7/comments" in c
                             for c in self.recorded()))
         return body
+
+    def test_a_finding_repeated_in_two_reviews_is_one_item(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        state = self.with_review(self.pr_state())
+        reviews = state["data"]["repository"]["pullRequest"]["reviews"]["nodes"]
+        reviews.append(dict(reviews[0], id="PRR_2"))
+        self.fake_route(states=[state, self.pr_state()])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: DECLINE -- not this ticket"),
+                            provider=self.provider())
+        brief = fake.turns[fake.roles.index("adjudicate")].goal
+        self.assertNotIn("THREAD 2", brief)
+        self.answer()
 
     def test_declined_finding_is_answered_on_the_pull_and_left_unresolved(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')

@@ -78,7 +78,6 @@ def _file_findings(path, text):
 
 
 def findings(body):
-    """Every outside-diff finding; a short count yields the whole section too."""
     for summary, inner in _details(_unquoted(body or "")):
         section = SECTION_RE.search(summary)
         if section is None:
@@ -122,6 +121,7 @@ def review_threads(target, pull, node, comments):
         for finding in findings(review.get("body")):
             mark = fingerprint(login, finding)
             if mark not in done:
+                done.add(mark)
                 yield Thread(
                     id=mark, path=finding.path, line=finding.start, author=login,
                     body=f"{finding.header}\n\n{finding.text}",
