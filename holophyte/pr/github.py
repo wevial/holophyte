@@ -321,7 +321,7 @@ def push_branch(target, branch):
                            " branch preserved, no pull request opened")
 
 
-def create_pull_request(target, branch, title, body):
+def create_pull_request(target, branch, title, body, draft=False):
     from holophyte.leak_guard import refuse_private_text
 
     refuse_private_text(target, pull_request_title=title,
@@ -329,28 +329,24 @@ def create_pull_request(target, branch, title, body):
     secrets = known_secrets(target.config())
     title, body = outbound(title, secrets), outbound(body, secrets)
     if shutil.which(GH) is not None:
-        return _create_with_gh(target, branch, title, body)
+        return _create_with_gh(target, branch, title, body, draft)
     token = token_from_env()
     if token is None:
         raise InfraFailure(f"no {GH!r} on PATH and no "
                            f"{' or '.join(TOKEN_VARS)} in the environment;"
                            f" branch {branch} pushed and preserved, no pull"
                            " request opened")
-    return _create_with_api(target, branch, title, body, token)
+    return _create_with_api(target, branch, title, body, token, draft)
 
 
-def _draft(target):
-    return config_tables.merge_config(target).pr_draft
-
-
-def _create_with_gh(target, branch, title, body):
+def _create_with_gh(target, branch, title, body, draft):
     """Without `--repo`, `gh` opens the PR in its own default repository."""
     repo = origin_url(target)
     if repo is None:
         raise InfraFailure(f"no `{REMOTE}` remote to open the pull request"
                            f" in; branch {branch} preserved")
     argv = [GH, "pr", "create", "--repo", repo, "--base", BASE,
-            "--head", branch, *(["--draft"] if _draft(target) else []),
+            "--head", branch, *(["--draft"] if draft else []),
             "--title", title, "--body-file", "-"]
     try:
         r = subprocess.run(argv, cwd=target.path, input=body,
@@ -367,14 +363,13 @@ def _create_with_gh(target, branch, title, body):
     return url
 
 
-def _create_with_api(target, branch, title, body, token):
+def _create_with_api(target, branch, title, body, token, draft):
     repo = repo_of(origin_url(target))
     if repo is None:
         raise InfraFailure(f"cannot read OWNER/REPO off the {REMOTE} URL;"
                            f" branch {branch} pushed and preserved")
     payload = json.dumps({"title": title, "body": body, "head": branch,
-                          "base": BASE, **({"draft": True} if _draft(target)
-                                           else {})}).encode()
+                          "base": BASE, **({"draft": True} if draft else {})}).encode()
     request = urllib.request.Request(
         f"{API}/repos/{repo}/pulls", data=payload, method="POST",
         headers={"Authorization": f"Bearer {token}",

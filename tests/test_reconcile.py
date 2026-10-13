@@ -1133,3 +1133,60 @@ class CiParkTests(MergeModeFixture):
                     " 'pr_empty_wakes' ORDER BY id DESC LIMIT 1"), [("0",)])
         self.assertEqual(self.read("SELECT id FROM runEvents"
                                    " WHERE kind = 'pr_wake_breaker'"), [])
+
+
+class ReadyWakeTests(MergeModeFixture):
+    """`pr_draft = "ui"`: a draft held for the maintainer wakes when the
+    reconcile reads it ready for review."""
+    pull, github, age, reconcile, wakes = (
+        CiParkTests.pull, CiParkTests.github, CiParkTests.age,
+        CiParkTests.reconcile, CiParkTests.wakes)
+
+    def setUp(self):
+        super().setUp()
+        private = patch("holophyte.pr.pr_media.repo_is_private",
+                        return_value=False)
+        private.start()
+        self.addCleanup(private.stop)
+
+    def read_as(self, draft):
+        return dict(self.pull(CiParkTests.OLD, "SUCCESS"), isDraft=draft)
+
+    def held(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'pr_quiet_sec = 0\npr_draft = "ui"\n'
+                       'ui_paths = ["*.tsx"]\nui_capture = "true"\n')
+        self.fake_route(states=[self.pr_state(draft=True)])
+        self.github(self.read_as(True))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Commit("the scripted work", path="page.tsx"), APPROVE,
+                      Idle(""), provider=self.provider())
+        self.assertEqual(len(self.read(
+            "SELECT 1 FROM runEvents WHERE kind = 'pr_draft_held'")), 1)
+        self.age()
+
+    def ready_wakes(self):
+        return self.read("SELECT summary FROM runEvents WHERE kind = 'ci_wake'")
+
+    def test_a_held_draft_wakes_when_marked_ready_and_not_while_a_draft(self):
+        self.held()
+        self.reconcile(self.read_as(True))
+        self.assertEqual(self.wakes(), [])
+
+        self.reconcile(self.read_as(False))
+        self.assertEqual(self.wakes(), [("supervisor",)])
+        self.assertEqual(self.ready_wakes(),
+                         [(f"{self.URL} was marked ready for review",)])
+
+    def test_a_later_ready_to_merge_park_is_not_woken_as_ready(self):
+        self.held()
+        self.reconcile(self.read_as(False))
+        self.serve(self.pr_state())
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        self.assertIn("ready to merge", self.question())
+        self.age()
+
+        self.reconcile(self.read_as(False))
+        self.assertEqual(self.wakes(), [("supervisor",)])
+        self.assertEqual(len(self.ready_wakes()), 1)
