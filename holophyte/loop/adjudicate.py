@@ -30,9 +30,6 @@ from holophyte.review.reply_parsing import (
     test_references,
 )
 
-OVERTURN_NOTE = ("the review round left it unmet or unwitnessed; only a named "
-                 "test overturns that")
-
 
 def _left_open(conn, run_id, rnd, criteria):
     if conn is None:
@@ -53,7 +50,8 @@ def _criteria_gate(reply, criteria, wt, left_open):
     for n in left_open:
         if n in flagged or test_references(block[n][1]):
             continue
-        message = (f"CRITERION {n}: unwitnessed \u2014 {OVERTURN_NOTE}"
+        message = (f"CRITERION {n}: unwitnessed \u2014 the review round left "
+                   "it unmet or unwitnessed; only a named test overturns that"
                    f"\n{criteria[n - 1]}")
         findings.append({"path": store.CRITERIA_PATH, "line": n,
                          "severity": DEFAULT_SEVERITY,
