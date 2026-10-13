@@ -7,7 +7,9 @@ from holophyte.config.config_tables import merge_config
 from holophyte.pr.github import Thread
 
 SECTION_RE = re.compile(r"Outside diff range comments\s*\((\d+)\)")
-DETAILS_RE = re.compile(r"<details>|</details>")
+DETAILS_RE = re.compile(
+    r"^[ \t]*(?:(<details>)[ \t]*(?=<summary>|$)"
+    r"|(?:</(?:blockquote|details)>[ \t]*)+$)", re.MULTILINE)
 FENCE_RE = re.compile(r"^```.*?^```[^\n]*$", re.MULTILINE | re.DOTALL)
 SUMMARY_RE = re.compile(r"\s*<summary>(.*?)</summary>(?:<blockquote>)?", re.DOTALL)
 FILE_SUMMARY_RE = re.compile(r"^(.+?)\s*\(\d+\)$")
@@ -57,11 +59,14 @@ def _unfenced(pattern, text):
 def _details(text):
     blocks, depth, start = [], 0, 0
     for tag in _unfenced(DETAILS_RE, text):
-        if tag.group() == "<details>":
+        if tag[1]:
             depth += 1
             if depth == 1:
                 start = tag.end()
-        elif depth:
+            continue
+        for _ in range(tag.group().count("</details>")):
+            if depth == 0:
+                break
             depth -= 1
             if depth == 0:
                 inner = text[start:tag.start()]
@@ -72,7 +77,8 @@ def _details(text):
 
 
 def _file_findings(path, text):
-    locations = _unfenced(LOCATION_RE, text)
+    locations = [location for location in _unfenced(LOCATION_RE, text)
+                 if SEVERITY_RE.search(location[3])]
     for n, location in enumerate(locations):
         end = locations[n + 1].start() if n + 1 < len(locations) else len(text)
         chunk = CLOSERS_RE.sub("", text[location.start():end]).strip()
@@ -84,19 +90,25 @@ def _file_findings(path, text):
                           title[1].strip(), chunk)
 
 
+def _unsplit(text):
+    return Finding("", None, None, "", UNSPLIT_TITLE,
+                   CLOSERS_RE.sub("", text).strip())
+
+
 def findings(body):
-    for summary, inner in _details(_unquoted(body or "")):
+    text = _unquoted(body or "")
+    for summary, inner in _details(text):
         section = SECTION_RE.search(summary)
         if section is None:
             continue
-        found = [finding for name, text in _details(inner)
+        found = [finding for name, block in _details(inner)
                  for finding in _file_findings(
-                     FILE_SUMMARY_RE.sub(r"\1", name), text)]
+                     FILE_SUMMARY_RE.sub(r"\1", name), block)]
         if len(found) < int(section[1]):
-            found.append(Finding("", None, None, "", UNSPLIT_TITLE,
-                                 CLOSERS_RE.sub("", inner).strip()))
+            found.append(_unsplit(inner))
         return found
-    return []
+    section = SECTION_RE.search(text)
+    return [_unsplit(text[section.start():])] if section else []
 
 
 def fingerprint(reviewer, finding):

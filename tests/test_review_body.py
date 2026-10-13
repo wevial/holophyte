@@ -57,6 +57,31 @@ class OutsideDiffParseTests(unittest.TestCase):
         self.assertEqual((finding.start, finding.end), (40, 52))
         self.assertIn("Keep the cap at five.", finding.text)
 
+    def test_a_details_tag_in_prose_is_text(self):
+        body = REVIEW.replace(
+            "> After one failed call",
+            "> Preserve the literal <details> tag in the generated HTML.\n"
+            ">\n> After one failed call")
+        (finding,) = findings(body)
+        self.assertEqual((finding.path, finding.start), ("src/app.py", 40))
+        self.assertIn("Preserve the literal <details> tag", finding.text)
+        self.assertIn("reset the delay to its initial value", finding.text)
+
+    def test_a_location_line_in_prose_stays_in_its_finding(self):
+        body = REVIEW.replace(
+            "> After one failed call",
+            "> `60`: The delay must reset here.\n>\n> After one failed call")
+        (finding,) = findings(body)
+        self.assertEqual((finding.start, finding.end), (40, 52))
+        self.assertIn("`60`: The delay must reset here.", finding.text)
+        self.assertIn("After one failed call", finding.text)
+
+    def test_a_section_that_never_closes_yields_its_whole_text(self):
+        body = REVIEW.replace("> </blockquote></details>\n", "")
+        (unsplit,) = findings(body)
+        self.assertEqual(unsplit.path, "")
+        self.assertIn("Retry loop never resets", unsplit.text)
+
 
 if __name__ == "__main__":
     unittest.main()
