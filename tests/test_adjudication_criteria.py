@@ -179,6 +179,33 @@ class SteeredAdjudicationTests(SteerFixture):
                                  " WHERE outcome = 'failed'")
         self.assertIn("criterion 1 unwitnessed", reason)
 
+    def test_a_resume_whose_raised_cap_runs_a_review_gates_on_that_review(self):
+        self.loop(Commit("first cut"), REQUEST_CHANGES,
+                  Commit("fix round 1"), Reply(
+                      "Blocker: tidy up.\nCRITERION 1: met — "
+                      "tests/test_thing.py::test_it_works\n"
+                      "VERDICT: REQUEST_CHANGES"),
+                  Commit("fix round 2"), Steering(self, PASS, "-n", "also log it"),
+                  Commit("the steer"),
+                  Steering(self, Reply("Not yet.\nVERDICT: FAIL"), "-n",
+                           "and the host", pause=True))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        self.configure("[loop]\nreview_rounds = 4\n")
+        resume_paused(self.project, self.conn, self.ticket, "go on")
+
+        resumed, _ = self.loop(Commit("the second steer"), LEFT_UNWITNESSED,
+                               Commit("fix round 4"), Reply(PROSE_PASS))
+
+        self.assertEqual(resumed.roles, ["implement", "review", "implement",
+                                         "adjudicate"])
+        self.assertIn(LEFT_OPEN, resumed.turns[-1].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("failed",)])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs"
+                                 " WHERE outcome = 'failed'")
+        self.assertIn("criterion 1 unwitnessed", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

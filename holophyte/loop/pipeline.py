@@ -140,7 +140,10 @@ def _run_stages(run, task):
         sha, ticket, verify_cmd, contracts, criteria, budget_min, cap, resume=resume)
     spent = max(cap, rnd)
     if resume and resume.get("terminal"):
-        rnd = resume.get("review_round", rnd)
+        if rnd < resume["rnd"]:
+            rnd = resume.get("review_round", rnd)
+        else:
+            resume = None
     while not approved or not close_steering(conn, run_id):
         steered = steer_turn(project, conn, run_id, beat_s, wt, budget_min,
                              ticket, sha, timed=_timed, check_cap=_check_run_cap)
