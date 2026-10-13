@@ -129,10 +129,7 @@ def review_threads(target, pull, node, comments):
                     kind="review_body", node_id=review.get("id") or "")
 
 
-def quote_line(thread):
-    header = thread.body.splitlines()[0]
-    return f"> [Review by @{thread.author}]({thread.url}): {header}"
-
-
 def answer(thread, body):
-    return f"{quote_line(thread)}\n\n{body}\n\n{MARKER.format(thread.id)}"
+    header = thread.body.splitlines()[0]
+    return (f"> [Review by @{thread.author}]({thread.url}): {header}\n\n"
+            f"{body}\n\n{MARKER.format(thread.id)}")
