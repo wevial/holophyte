@@ -16,18 +16,24 @@ HELD = ("the pull request is a draft held for frontend review; mark it ready"
         " up again")
 
 
+def held_for_frontend(project, state):
+    return bool(state.draft) and merge_config(project).pr_draft == "ui"
+
+
+def record_hold(conn, run_id, pull, sha):
+    store.record_event(conn, run_id, "pr_draft_held",
+                       f"{pull.url} held as a draft at {sha}")
+
+
 def hold_for_frontend(run, pull, state, reviewed, before_review=False):
     from holophyte.babysit.babysitter import _fixes_reviewed
     from holophyte.pr.pullrequest import _park_on_pr
-    merge = merge_config(run.project)
-    if (not state.draft or merge.pr_draft != "ui"
-            or before_review and _fixes_reviewed(merge)):
+    if (not held_for_frontend(run.project, state)
+            or before_review and _fixes_reviewed(merge_config(run.project))):
         return
-    if run.conn is not None and run.run_id is not None:
-        store.record_event(run.conn, run.run_id, "pr_draft_held",
-                           f"{pull.url} held as a draft at {run.sha}")
     _park_on_pr(run.project, run.conn, run.run_id, run.provider, run.task_id,
-                run.branch, run.sha, pull, HELD, (), reviewed=reviewed)
+                run.branch, run.sha, pull, HELD, (), reviewed=reviewed,
+                held=True)
 
 
 def mark_or_park(run, pull, state, reviewed, marked):

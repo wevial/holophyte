@@ -613,7 +613,8 @@ def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
         if retrigger is not None:
             sha, reviewed = retrigger.sha, retrigger.reviewed
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
-                    pull, str(expired), (), reviewed=reviewed)
+                    pull, str(expired), (), reviewed=reviewed,
+                    held=pr_ready.held_for_frontend(project, state))
 
 
 class WaitExpired(Exception):

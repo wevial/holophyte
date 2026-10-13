@@ -15,7 +15,7 @@ from holophyte.loop import run as run_state
 from holophyte.loop.gates import InfraFailure, MergeParked, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, set_phase
 from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
-from holophyte.pr import github, merge_queue, pr_activity, pr_media, pr_status
+from holophyte.pr import github, merge_queue, pr_activity, pr_media, pr_ready, pr_status
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from store import operator_notes
@@ -434,7 +434,8 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
 
 
 def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                why, threads, reviewed=None, park_kind="pull_request"):
+                why, threads, reviewed=None, park_kind="pull_request",
+                held=False):
     """Delayed updatedAt bumps alone cannot trigger another pass."""
     from holophyte.babysit.babysit_steps import record_step
     record_step(conn, run_id, "parked")
@@ -445,11 +446,15 @@ def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
         if not block_ticket(conn, ticket_id, provider, question, park_kind=park_kind):
             print(f"[holo2] {task_id} could not be moved to"
                   " blocked_on_operator; parking the run anyway")
-        store.park(conn, run_id, "awaiting_merge_approval",
-                   f"{babysitter.gist(why)}; {branch} at {short} is open as"
-                   f" {pull.url} ([merge] mode = \"pr\")",
-                   candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
-                   pr_seen=_pr_seen(project, pull, conn, run_id), park_kind=park_kind)
+        pr_seen = _pr_seen(project, pull, conn, run_id)
+        with store.transaction(conn):
+            if held:
+                pr_ready.record_hold(conn, run_id, pull, sha)
+            store.park(conn, run_id, "awaiting_merge_approval",
+                       f"{babysitter.gist(why)}; {branch} at {short} is open"
+                       f" as {pull.url} ([merge] mode = \"pr\")",
+                       candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
+                       pr_seen=pr_seen, park_kind=park_kind)
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"
