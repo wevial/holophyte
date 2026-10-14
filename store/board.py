@@ -5,13 +5,19 @@ import json
 import time
 
 import ticket_template
+from ticket_depends import rewrite_depends
 
 from . import RevisionMoved
 from .notes import record_note
 from .operate import abort, record_intervention, release
 from .revisions import record_board_fields
 from .schema import _transaction
-from .stories import abandon_story, story
+from .stories import (
+    _inherited_edges,
+    _rewire_approved_edge,
+    abandon_story,
+    story,
+)
 from .tickets import mirror_ticket, transition, walk_ticket
 from .writes import set_board_state
 
@@ -142,6 +148,7 @@ def cancel_ticket(conn, project_id, identifier, expected_revision, note,
         _refuse_merged_park(conn, ticket_id, identifier)
         revision = _record_column(conn, ticket_id, "canceled", "cancel", note,
                                   author, now)
+        _rewire_dependents(conn, project_id, ticket_id, identifier, author, now)
         if run_id is not None:
             abort(conn, run_id, note, source="human", now=now,
                   trigger="board_cancelled")
@@ -177,6 +184,58 @@ def resolve_dependencies(conn, project_id):
                 transition(conn, ticket_id, "ready")
                 resolved.append(identifier)
     return resolved
+
+
+def _rewire_dependents(conn, project_id, canceled_id, canceled, author, now):
+    (issue_id, inherited) = conn.execute(
+        "SELECT linearIssueId, dependsOn FROM tickets WHERE id = ?",
+        (canceled_id,)).fetchone()
+    inherited = json.loads(inherited)
+    rows = conn.execute(
+        "SELECT id, linearIssueId, linearIdentifier, status, dependsOn,"
+        " boardColumn FROM tickets WHERE projectId = ? ORDER BY id",
+        (project_id,)).fetchall()
+    names = {row[1]: row[2] for row in rows}
+    status_of = {row[1]: row[3] for row in rows}
+    for ticket_id, _, _, status, depends, column in rows:
+        depends = json.loads(depends)
+        if (issue_id not in depends or status in ("merged", "abandoned")
+                or column == "canceled"):
+            continue
+        rewired = _inherited_edges(depends, issue_id, inherited)
+        _rewrite_dependencies(conn, project_id, ticket_id, rewired, names,
+                              author, now)
+        named = ", ".join(names.get(dep, dep) for dep in rewired) or "none"
+        record_note(conn, ticket_id, "rewire",
+                    f"{canceled} was canceled: Depends on {canceled} is now"
+                    f" {named}", f"rewire:{canceled}", author=author, now=now)
+        _ready_if_met(conn, ticket_id, rewired, status_of)
+        _rewire_approved_edge(conn, ticket_id, issue_id, inherited)
+
+
+def _rewrite_dependencies(conn, project_id, ticket_id, rewired, names, author,
+                          now):
+    (issue_id, identifier, text, criteria, url, state, affinity,
+     revision) = conn.execute(
+        "SELECT linearIssueId, linearIdentifier, body, acceptanceCriteria,"
+        " url, boardState, affinity, revision FROM tickets WHERE id = ?",
+        (ticket_id,)).fetchone()
+    text = rewrite_depends(text or "", lambda _deps: [
+        names.get(dep, dep) for dep in rewired])
+    _write(conn, project_id, issue_id, identifier, text,
+           bool(json.loads(criteria)), author, now, depends_on=rewired,
+           url=url, board_state=state, affinity=affinity,
+           expected_revision=revision)
+
+
+def _ready_if_met(conn, ticket_id, depends, status_of):
+    status, criteria, commands = conn.execute(
+        "SELECT status, acceptanceCriteria, verificationCommands FROM tickets"
+        " WHERE id = ?", (ticket_id,)).fetchone()
+    if (status == "blocked_on_deps" and json.loads(criteria)
+            and json.loads(commands)
+            and all(status_of.get(dep) == "merged" for dep in depends)):
+        transition(conn, ticket_id, "ready")
 
 
 def _refuse_merged_park(conn, ticket_id, identifier):

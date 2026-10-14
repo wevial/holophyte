@@ -616,6 +616,8 @@ At the root:
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
+- `ticket_depends.py` — finds a ticket body's estimate line and rewrites its
+  `Depends on:` list, for story filing and a cancel's rewire.
 - `story_template.py` — validator for a story directory's body, witness
   files and children; `python3 ticket_template.py --repo PATH --story DIR` exits
   0 iff the story is valid.
