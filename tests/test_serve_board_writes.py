@@ -114,6 +114,29 @@ class ServeBoardWriteTests(ServeBoardCase):
             self.post("/NAT-2/cancel", {"note": "dup"}, revision="1"),
             (200, {"ticket": "NAT-2", "revision": 2, "run": None}))
 
+    def test_a_cancel_closing_out_a_parked_run_records_the_maintainer(self):
+        self.start_host()
+        self.post("", {"body": body()}, revision=None)
+        with self.store("native") as (conn, project):
+            (ticket,) = conn.execute(
+                "SELECT id FROM tickets WHERE linearIdentifier = 'NAT-1'"
+            ).fetchone()
+            run = store.claim(conn, project, ticket)
+            store.tickets.transition(conn, ticket, "in_flight")
+            store.set_phase(conn, run, "working")
+            store.set_phase(conn, run, "verifying")
+            store.park(conn, run, "awaiting_merge_approval")
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+
+        self.assertEqual(
+            self.post("/NAT-1/cancel", {"note": "wrong scope"}, revision="1"),
+            (200, {"ticket": "NAT-1", "revision": 2, "run": None}))
+        with self.store("native") as (conn, _):
+            rows = conn.execute(
+                'SELECT "action", source, actor FROM interventions'
+                " WHERE runId = ?", (run,)).fetchall()
+        self.assertEqual(rows, [("close_out", "human", "maintainer")])
+
     def test_the_gate_refuses_before_anything_is_written(self):
         self.start_host()
         self.post("", {"body": body()}, revision=None)

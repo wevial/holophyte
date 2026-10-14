@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from .enums import InterventionActor
+
 
 @dataclass(frozen=True)
 class RunSnapshot:
@@ -203,21 +205,37 @@ def ended_runs(conn):
 class Toil:
     by_action: dict
     merged: int
+    by_actor: dict
+
+
+ACTORS = tuple(actor.value for actor in InterventionActor)
 
 
 def toil_since(conn, since_ms):
     """A read-only daemon may open an unmigrated store with no `interventions`."""
+    columns = {row[1] for row in conn.execute(
+        "PRAGMA table_info(interventions)")}
     rows = conn.execute(
         'SELECT "action", COUNT(*) FROM interventions'
         " WHERE source = 'human' AND at >= ?"
         ' GROUP BY "action" ORDER BY COUNT(*) DESC, "action"',
-        (since_ms,)).fetchall() if conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE name = 'interventions'"
-        ).fetchone() else []
+        (since_ms,)).fetchall() if columns else []
+    by_actor = _actor_counts(conn, columns, since_ms)
     merged = conn.execute(
         "SELECT COUNT(*) FROM runs WHERE outcome = 'merged' AND endedAt >= ?",
         (since_ms,)).fetchone()[0]
-    return Toil(by_action=dict(rows), merged=merged)
+    return Toil(by_action=dict(rows), merged=merged, by_actor=by_actor)
+
+
+def _actor_counts(conn, columns, since_ms):
+    actor = "actor" if "actor" in columns else "NULL"
+    rows = conn.execute(
+        f"SELECT {actor}, COUNT(*) FROM interventions"
+        " WHERE action != 'migrate' AND at >= ?"
+        f" GROUP BY {actor}", (since_ms,)).fetchall() if columns else []
+    counted = dict(rows)
+    return {**{name: counted.get(name, 0) for name in ACTORS},
+            "unknown": counted.get(None, 0)}
 
 
 @dataclass(frozen=True)

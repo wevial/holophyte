@@ -1,6 +1,6 @@
 {
   "project": "/repo",
-  "schema_version": 47,
+  "schema_version": 48,
   "admission": "enabled",
   "hold_note": null,
   "active_routes": {
@@ -38,6 +38,12 @@
       "per_merge": null,
       "by_action": {
         "approve": 1
+      },
+      "by_actor": {
+        "maintainer": 0,
+        "operator": 1,
+        "supervisor": 0,
+        "unknown": 0
       }
     },
     "7d": {
@@ -46,6 +52,12 @@
       "per_merge": null,
       "by_action": {
         "approve": 1
+      },
+      "by_actor": {
+        "maintainer": 0,
+        "operator": 1,
+        "supervisor": 0,
+        "unknown": 0
       }
     }
   },

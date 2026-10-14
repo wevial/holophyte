@@ -11,7 +11,6 @@ DEFAULT_AUTHOR = "maintainer"
 
 
 def recorded_reason(body):
-    """`interventions` has no actor column, so the author rides in the note."""
     note = body.get("note")
     if not isinstance(note, str) or not note.strip():
         return None

@@ -84,6 +84,7 @@ from holophyte.serve.views import (  # noqa: F401
     supervisor_view,
     ticket_detail,
 )
+from store.operate import acting_as, author_actor
 
 ADDRESS_SHAPE = "PORT|HOST:PORT"
 LOOPBACK = "127.0.0.1"
@@ -112,7 +113,8 @@ JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
     "Scope", ("project", "token", "action_token", "actions", "config_edit",
-              "unit_name", "prefix", "beat_stale_ms"))
+              "unit_name", "prefix", "beat_stale_ms", "machine_token"),
+    defaults=(None,))
 
 
 def parse_address(text):
@@ -353,7 +355,15 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        self.answer(*self.act(scope, action, body))
+        with acting_as(self.actor(scope, body)):
+            self.answer(*self.act(scope, action, body))
+
+    def actor(self, scope, body):
+        machine = scope.machine_token
+        if machine is not None and authorized(
+                self.headers.get("Authorization"), machine):
+            return author_actor(body.get("author")) or "operator"
+        return "maintainer"
 
     def act(self, scope, action, body):
         try:
@@ -401,7 +411,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"ok": False, "error": str(bad)})
-        self.answer(*self.edit_config(scope, body))
+        with acting_as(self.actor(scope, {})):
+            self.answer(*self.edit_config(scope, body))
 
     def edit_config(self, scope, body):
         return write_config(scope.project, body)
@@ -473,10 +484,11 @@ class StatusServer(InFlight, ThreadingHTTPServer):
         self.peers = console_config(project).daemons
         knobs = serve_config(project)
         # Resolved at bind: actions without a key fail here, never serve open.
-        self.scope = Scope(project, token,
-                           resolve_action_token(project, knobs, token),
-                           knobs.actions, knobs.config_edit, knobs.name,
-                           None, None)
+        action_token = resolve_action_token(project, knobs, token)
+        _serve_token, *machine_token = action_token or (None,)
+        self.scope = Scope(project, token, action_token, knobs.actions,
+                           knobs.config_edit, knobs.name, None, None,
+                           tuple(machine_token) or None)
         self.started_ms = int(time() * 1000)
         self.listen(address, StatusHandler, sock)
 

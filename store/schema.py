@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 47
+SCHEMA_VERSION = 48
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -282,6 +282,8 @@ ADDED_COLUMNS = (
     ("steerNotes", "interrupt", "interrupt INTEGER"),
     ("steerNotes", "withdrawnBy",
      "withdrawnBy INTEGER REFERENCES interventions (id)"),
+    ("interventions", "actor", "actor TEXT "
+     + _enums.check_clause("actor", _enums.InterventionActor)),
 )
 
 
@@ -412,8 +414,9 @@ def _record_migration(conn, version):
                        "pid": os.getpid(), "ppid": os.getppid(),
                        "argv": sys.argv, "user": getpass.getuser(), "at": at})
     conn.execute(
-        'INSERT INTO interventions (source, "trigger", action, note, at)'
-        " VALUES ('factory', 'manual', 'migrate', ?, ?)", (note, at))
+        'INSERT INTO interventions (source, "trigger", action, note, at, actor)'
+        " VALUES ('factory', 'manual', 'migrate', ?, ?, 'supervisor')",
+        (note, at))
 
 
 def _widen_interventions_action(conn):
@@ -452,10 +455,11 @@ def _widen_interventions_action(conn):
         conn.execute(
             "INSERT INTO interventions_new"
             ' (id, runId, source, "trigger", "action", question, guidance, at,'
-            ' projectId, note)'
+            ' projectId, note, actor)'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
-            '   ELSE "action" END, question, guidance, at, projectId, note'
+            '   ELSE "action" END, question, guidance, at, projectId, note,'
+            "   actor"
             " FROM interventions")
         conn.execute("DROP TABLE interventions")
         conn.execute("ALTER TABLE interventions_new RENAME TO interventions")

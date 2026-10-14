@@ -12,8 +12,9 @@ def switched(conn, project, evidence, run_id=None):
     with store.transaction(conn):
         conn.execute(
             'INSERT INTO interventions (projectId, runId, source, "trigger",'
-            ' "action", guidance, at)'
-            " VALUES (?, ?, 'supervisor', 'manual', 'route_fallback', ?, ?)",
+            ' "action", guidance, at, actor)'
+            " VALUES (?, ?, 'supervisor', 'manual', 'route_fallback', ?, ?,"
+            " 'supervisor')",
             (project, run_id, note, now))
         if run_id is None:
             launch_backoff.event(conn, project, 'route_fallback', note, now)

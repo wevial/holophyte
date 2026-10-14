@@ -658,6 +658,34 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertIn(f"{self.URL} was merged on GitHub by coworker", out)
         self.assertIn(f"run {run_id} closed out as merged", out)
 
+    def human_rows(self):
+        return self.conn.execute(
+            'SELECT source, "action", actor FROM interventions'
+            " WHERE source = 'human' ORDER BY id").fetchall()
+
+    def test_a_merge_found_on_github_for_a_parked_run_is_the_supervisors(self):
+        self.parked_on_pr()
+        self.fake_github(self.MERGED_PULL)
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(self.human_rows(),
+                         [("human", "approve", "supervisor")])
+
+    def test_a_merge_found_on_github_for_a_failed_run_is_the_supervisors(self):
+        run_id = self.a_run()
+        self.conn.execute("UPDATE runs SET prUrl = ? WHERE id = ?",
+                          (self.URL, run_id))
+        self.conn.commit()
+        store.release(self.conn, run_id, "failed", "verify failed",
+                      now=T0 + MINUTE)
+        self.fake_github(self.MERGED_PULL)
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(self.human_rows(),
+                         [("human", "close_out", "supervisor")])
+
     # KO-376: a sweep that sent a run back to the babysitter walked its
     # ticket to `ready` on a board whose loop has exited, so it starts the
     # loop as the console's launch-loop action does, through a `systemctl`
@@ -705,6 +733,20 @@ class ParkedPullRequestTests(SweepTestCase):
             ("ready",))
         self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
         self.assertIn("started holophyte-loop@repo", out)
+
+    def test_the_sweeps_interventions_record_the_supervisor_as_actor(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        self.fake_systemctl()
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(self.conn.execute(
+            'SELECT "action", source, actor FROM interventions'
+            " WHERE action != 'migrate' ORDER BY id").fetchall(),
+            [("babysit", "supervisor", "supervisor"),
+             ("launch_loop", "supervisor", "supervisor")])
 
     def test_a_sweep_under_a_live_loop_starts_nothing(self):
         run_id = self.parked_on_pr()

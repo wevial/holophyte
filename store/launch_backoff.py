@@ -29,8 +29,9 @@ def intervention(conn, project, action, note, now, run_id=None):
                                   source="supervisor", now=now)
         return
     conn.execute(
-        'INSERT INTO interventions (projectId, source, "trigger", "action", at)'
-        " VALUES (?, 'supervisor', 'manual', ?, ?)", (project, action, now))
+        'INSERT INTO interventions (projectId, source, "trigger", "action", at,'
+        " actor) VALUES (?, 'supervisor', 'manual', ?, ?, 'supervisor')",
+        (project, action, now))
     event(conn, project, action, note, now)
 
 

@@ -126,6 +126,12 @@ class InterventionSource(str, Enum):
     FACTORY = 'factory'
 
 
+class InterventionActor(str, Enum):
+    MAINTAINER = 'maintainer'
+    OPERATOR = 'operator'
+    SUPERVISOR = 'supervisor'
+
+
 class InterventionTrigger(str, Enum):
     TIME_BOX = 'time_box'
     OFF_CRITERIA = 'off_criteria'
@@ -266,6 +272,7 @@ CONSTRAINED_COLUMNS = {
     ('interventions', 'source'): InterventionSource,
     ('interventions', 'trigger'): InterventionTrigger,
     ('interventions', 'action'): InterventionAction,
+    ('interventions', 'actor'): InterventionActor,
     ('gapLayers', 'layer'): GapLayer,
     ('gapLayers', 'foundBy'): GapFinder,
     ('stories', 'state'): StoryState,
