@@ -788,6 +788,10 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(fake.turns[7].candidate_sha, fixed)
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
                          [fixed])
+        rewritten = "One branch opens the link in a new tab."
+        self.assertIn(rewritten, self.pr_body.read_text())
+        self.assertNotIn(rewritten, fake.turns[5].goal)
+        self.assertIn(rewritten, fake.turns[7].goal)
 
     def test_a_description_finding_after_the_rewrite_parks_with_it(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')

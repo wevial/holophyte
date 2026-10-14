@@ -14,6 +14,10 @@ DESCRIPTION_TAG_RE = re.compile(r'path:\s*"?(?:the\s+)?PR description\b', re.I)
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
+HEADING_RE = re.compile(
+    r"^[ \t]*(?:#{1,6}[ \t]+[\w ]{1,40}:?|\*\*[\w ]{1,40}:?\*\*:?"
+    r"|\w[\w ]{0,39}:)[ \t]*$", re.M)
+
 FINDING_START_RE = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|(?:p[0-2]|nit|blocker)\b)",
                               re.I)
 
@@ -27,7 +31,7 @@ def description_findings(verdict, decision, unwitnessed):
     if decision != "REQUEST_CHANGES" or unwitnessed:
         return []
     reply = without_refuted(verdict)
-    for pattern in (CRITERION_LINE_RE, SCOPE_LINE_RE, VERDICT_LINE_RE):
+    for pattern in (CRITERION_LINE_RE, SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
         reply = pattern.sub("", reply)
     blocks = [block.strip() for block in finding_blocks(reply) if block.strip()]
     if blocks and all(DESCRIPTION_TAG_RE.search(subject)
