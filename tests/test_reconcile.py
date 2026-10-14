@@ -35,6 +35,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.babysit.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.host.reconcile  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
@@ -1016,6 +1017,138 @@ class CiParkTests(MergeModeFixture):
 
         self.reconcile(green, later_s=300)
         self.assertEqual(self.wakes(), [("supervisor",)])
+
+    def test_an_approval_parked_on_a_quiet_wait_merges_when_woken_quiet(self):
+        fresh = self.approval_parked_on_quiet()
+        self.reconcile(self.approved_pull(fresh), later_s=300)
+        self.serve(self.pr_state())
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+
+        (resumed,) = self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                               " AND kind = 'pull_request'")
+        self.assertIn("after an approval", resumed[0])
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = 3"),
+                         [("merged",)])
+
+    def approval_parked_on_quiet(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.github(self.pull(self.OLD, "SUCCESS"))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        self.assertIn("waiting for a human to say merge", self.question())
+        self.serve(self.pr_state(head=self.pushed()[-1][1], review="APPROVED"))
+        holophyte.cli.operator.approve(self.project, "KO-131", "merge it",
+                                       out=io.StringIO())
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.serve(self.pr_state(updated_at=fresh))
+        with patch("holophyte.pr.github.SLEEP", self.fail), \
+                patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        self.assertEqual(self.read("SELECT parkKind FROM runs WHERE id = 2"),
+                         [("ci",)])
+        self.age()
+        return fresh
+
+    def approved_pull(self, fresh):
+        ((approved_head,),) = self.read("SELECT candidateSha FROM runs WHERE id = 2")
+        return dict(self.pull(fresh, "SUCCESS"), headRefOid=approved_head)
+
+    def test_an_approval_is_dropped_when_the_head_is_unread_at_the_wake(self):
+        fresh = self.approval_parked_on_quiet()
+        self.reconcile(dict(self.approved_pull(fresh), headRefOid=None),
+                       later_s=300)
+        self.assert_woken_for_a_fresh_approval(
+            "the pull request's head could not be read", self.pr_state())
+
+    def test_an_approval_is_dropped_when_a_conversation_request_waits_at_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        served = self.pr_state()
+        served["data"]["repository"]["pullRequest"]["comments"] = {"nodes": [{
+            "id": "IC_1", "url": self.URL + "#issuecomment-1",
+            "author": {"login": "operator", "__typename": "User"},
+            "body": "@holophyte fix: rename the flag"}]}
+        self.serve(served)
+        self.reconcile(self.approved_pull(fresh), later_s=300)
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn("1 conversation or review request(s)", dropped[0])
+
+    def assert_woken_for_a_fresh_approval(self, why, served):
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn(why, dropped[0])
+        self.serve(served)
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        (resumed,) = self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                               " AND kind = 'pull_request'")
+        self.assertIn("for another babysit pass", resumed[0])
+        self.assertEqual(self.read("SELECT outcome, phase FROM runs WHERE id = 3"),
+                         [(None, "awaiting_merge_approval")])
+
+    def test_an_approval_is_dropped_when_the_head_moved_before_the_wake(self):
+        fresh = self.approval_parked_on_quiet()
+        moved = dict(self.pull(fresh, "SUCCESS"), headRefOid="f" * 40)
+        self.reconcile(moved, later_s=300)
+        self.assert_woken_for_a_fresh_approval("the head moved", self.pr_state())
+        self.assertIn("waiting for a human to say merge", self.question())
+
+    def test_an_approval_is_dropped_when_the_candidate_was_repointed_before_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        ((approved_head,),) = self.read("SELECT candidateSha FROM runs WHERE id = 2")
+        moved = self.git("commit-tree", f"{approved_head}^{{tree}}", "-p",
+                         approved_head, "-m", "pushed by someone else").strip()
+        conn = store.open(self.db)
+        store.repoint(conn, store.read.run_snapshot(conn, 2).ticketId, moved,
+                      "point at the pushed head")
+        conn.close()
+        self.reconcile(dict(self.pull(fresh, "SUCCESS"), headRefOid=moved),
+                       later_s=300)
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn("the candidate was re-pointed", dropped[0])
+        self.serve(self.pr_state(head=moved))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        self.assertNotIn(("merged",),
+                         self.read("SELECT outcome FROM runs WHERE id = 3"))
+        self.assertEqual(self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                                   " AND summary LIKE '%after an approval%'"), [])
+
+    def test_an_approval_is_dropped_when_a_review_thread_opened_before_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        threaded = dict(self.approved_pull(fresh), reviewThreads={
+            "totalCount": 1, "nodes": [{"isResolved": False}]})
+        self.reconcile(threaded, later_s=300)
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn("a review thread is open", dropped[0])
+        self.serve(self.pr_state([self.DEFECT]), self.pr_state())
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(Reply("THREAD 1: DECLINE -- the caller checks for None"
+                            " before indexing"), provider=self.provider())
+        (resumed,) = self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                               " AND kind = 'pull_request'"
+                               " AND summary LIKE 'resuming%'")
+        self.assertIn("for another babysit pass", resumed[0])
+        self.assertIn("reply", [kind for kind, _ in self.api_calls()])
+        self.assertEqual(self.read("SELECT outcome, phase FROM runs WHERE id = 3"),
+                         [(None, "awaiting_merge_approval")])
+
+    def test_an_approval_is_dropped_when_changes_were_requested_before_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        self.reconcile(self.approved_pull(fresh) | {
+            "reviewDecision": "CHANGES_REQUESTED"}, later_s=300)
+        self.assert_woken_for_a_fresh_approval(
+            "a review requested changes",
+            self.pr_state(review="CHANGES_REQUESTED"))
 
     def test_red_checks_wake_a_park_whose_own_read_failed(self):
         self.ci_parked("PENDING", park_read=RuntimeError("GitHub down"))

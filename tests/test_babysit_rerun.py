@@ -1,8 +1,10 @@
 """KO-707: a red Actions check's failed jobs are rerun once before the fix turn."""
 from __future__ import annotations
 
+import io
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +15,7 @@ import babysit_fixture as cases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
 
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 
@@ -184,6 +187,35 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn("unit", warning)
         self.assertIn("HTTP 403", warning)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_an_approval_rerun_to_green_keeps_its_sha_on_a_quiet_wait_park(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'check_wait_sec = 60\n')
+        self.fake_route(states=[self.pr_state()])
+        self.naps, red = [], []
+        self.enterContext(patch.object(holophyte.pr.github, "SLEEP", self.naps.append))
+        self.enterContext(patch(
+            "holophyte.pr.pr_status._check_runs_of", lambda *_: [
+                self.UNIT if red and not self.reruns() else self.GREEN]))
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        self.assertIn("waiting for a human to say merge", self.question())
+        approved = self.pushed()[-1][1]
+        self.serve(self.pr_state(head=approved, review="APPROVED"))
+        holophyte.cli.operator.approve(self.project, "KO-131", "merge it",
+                                       out=io.StringIO())
+        red.append(True)
+        self.serve(self.pr_state(
+            updated_at=datetime.now(timezone.utc).isoformat()))
+        clock = {"side_effect": lambda: sum(self.naps)}
+        with patch("holophyte.babysit.babysitter.monotonic", **clock), \
+                patch("holophyte.babysit.check_fix.monotonic", **clock):
+            self.loop(provider=self.provider())
+        self.assertEqual(len(self.reruns()), 1)
+        self.assertIn("quiet wait exceeded 60s", self.question())
+        self.assertEqual(self.read("SELECT payload FROM runEvents WHERE runId = 2"
+                                   " AND kind = 'approval_parked'"),
+                         [(f'{{"sha": "{approved}"}}',)])
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from holophyte.babysit.conversation_comments import (
     console_answers,
     conversation_threads,
+    open_requests,
     pull_comments,
 )
 from holophyte.babysit.review_body import review_threads
@@ -413,6 +414,13 @@ def _comment_nodes(page):
             author_kind=AUTHOR_KINDS.get(author.get("__typename"), "unknown"),
             node_id=c.get("id") or "", acknowledged=acknowledged(c)))
     return comments
+
+
+def unanswered_requests(target, pull):
+    page = _pull_request_page(target, pull, None)
+    comments = pull_comments(target, pull, page, _pull_request_page)
+    return (len(open_requests(target, pull, comments))
+            + len(list(review_threads(target, pull, page, comments))))
 
 
 def _pull_request_page(target, pull, after, comments_after=None):

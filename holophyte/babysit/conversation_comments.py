@@ -57,15 +57,28 @@ def conversation_threads(target, pull, comments):
     if not comments:
         return
     merge = merge_config(target)
+    for thread in _unanswered(target, pull, comments, merge):
+        if refused(thread, merge.mention_handle, merge.mention_accounts):
+            refuse(target, pull, thread)
+        else:
+            yield thread
+
+
+def open_requests(target, pull, comments):
+    if not comments:
+        return []
+    merge = merge_config(target)
+    return [thread for thread in _unanswered(target, pull, comments, merge)
+            if not refused(thread, merge.mention_handle, merge.mention_accounts)]
+
+
+def _unanswered(target, pull, comments, merge):
     replies = {_reply_quote(c) for c in comments}
     secrets = known_secrets(target.config())
     for comment in comments:
         thread = _instruction(comment, pull, merge)
         if thread and outbound(quote_request(thread), secrets) not in replies:
-            if refused(thread, merge.mention_handle, merge.mention_accounts):
-                refuse(target, pull, thread)
-            else:
-                yield thread
+            yield thread
 
 
 def _instruction(comment, pull, merge):

@@ -74,14 +74,16 @@ class ApprovedCandidate:
 
 def approved_candidate(conn, ticket_id, run_id):
     row = conn.execute(
-        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt, outcome"
+        "SELECT id, resumePhase, candidateSha, prUrl, approvedSha, approvedAt, outcome,"
+        " EXISTS (SELECT 1 FROM runEvents e WHERE e.runId = runs.id"
+        " AND e.kind = 'approval_carried')"
         " FROM runs"
         " WHERE ticketId = ? AND id <> ?"
         " ORDER BY attempt DESC LIMIT 1", (ticket_id, run_id)).fetchone()
     if row is None or row[1] not in ("merge_gate", "merging"):
         return None
     return ApprovedCandidate(run_id=row[0], sha=row[2], pr_url=row[3],
-                             approved=row[5] is not None,
+                             approved=row[5] is not None or bool(row[7]),
                              approved_sha=row[4], paused=row[6] == "paused")
 
 

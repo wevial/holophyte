@@ -266,6 +266,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
     check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
     pass_no = refreshes = 0
     marked, released = False, None
+    approved_sha = reviewed if approved else None
     while pass_no < merge.pr_rounds and refreshes < merge.pr_main_refreshes:
         pass_no += 1
         stop_if_requested(conn, run_id, "merge_gate")
@@ -273,7 +274,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         state = _settled_or_park(
             project, conn, run_id, beat_s, pull, pushed_state, provider,
             task_id, branch, sha, reviewed, refresh, retrigger,
-            park_ci=sha == run.sha and not check_fix.reran)
+            park_ci=sha == run.sha and not check_fix.reran,
+            approval=approved_sha if approved else None)
         sha, reviewed = retrigger.sha, retrigger.reviewed
         pushed_state = None
         ticket = maintainer_notes.amended_ticket(conn, run_id, contract, url)
@@ -314,7 +316,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         if state.checks != "success":
             sha, pushed_state = fix_checks_or_park(
                 replace(run, sha=sha), beat_s, pull, state, ticket, verify_cmd,
-                contracts, pass_no, reviewed, check_fix)
+                contracts, pass_no, reviewed, check_fix,
+                approval=approved_sha if approved else None)
             pull = replace(pull, awaited=check_fix.awaited)
             continue
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
@@ -598,7 +601,8 @@ def _quiet_left(state, quiet_ms, refresh=None):
 
 def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
                      task_id, branch, sha, reviewed, refresh=None,
-                     retrigger=None, deadline=None, park_ci=False):
+                     retrigger=None, deadline=None, park_ci=False,
+                     approval=None):
     from holophyte.pr.pullrequest import _park_on_pr
     try:
         state = state or pr_status.pr_state(project, pull)
@@ -608,13 +612,15 @@ def _settled_or_park(project, conn, run_id, beat_s, pull, state, provider,
     except WaitsOnCI as waiting:
         stop_if_requested(conn, run_id, "merge_gate")
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
-                    pull, str(waiting), (), reviewed=reviewed, park_kind="ci")
+                    pull, str(waiting), (), reviewed=reviewed, park_kind="ci",
+                    approval=approval)
     except WaitExpired as expired:
         if retrigger is not None:
             sha, reviewed = retrigger.sha, retrigger.reviewed
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, str(expired), (), reviewed=reviewed,
-                    held=pr_ready.held_for_frontend(project, expired.state or state))
+                    held=pr_ready.held_for_frontend(project, expired.state or state),
+                    approval=approval)
 
 
 class WaitExpired(Exception):

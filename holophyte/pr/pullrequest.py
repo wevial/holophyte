@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 from dataclasses import replace
@@ -435,7 +436,7 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
 
 def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 why, threads, reviewed=None, park_kind="pull_request",
-                held=False):
+                held=False, approval=None):
     """Delayed updatedAt bumps alone cannot trigger another pass."""
     from holophyte.babysit.babysit_steps import record_step
     record_step(conn, run_id, "parked")
@@ -455,6 +456,11 @@ def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                        f" as {pull.url} ([merge] mode = \"pr\")",
                        candidate_sha=sha, pr_url=pull.url, approved_sha=reviewed,
                        pr_seen=pr_seen, park_kind=park_kind)
+            if approval is not None and approval == sha:
+                store.record_event(conn, run_id, "approval_parked",
+                                   f"the approval of {sha} waits with the park",
+                                   level="detail",
+                                   payload=json.dumps({"sha": sha}))
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"
