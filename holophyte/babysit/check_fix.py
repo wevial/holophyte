@@ -75,7 +75,8 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
                        (), None, ticket, verify_cmd, contracts, run.budget_min,
                        pass_no, review_follows=True,
                        goal=check_fix_brief(pull, failed, logs, ticket, group),
-                       no_commit_why=why, reviewed=reviewed)
+                       no_commit_why=why, reviewed=reviewed,
+                       notes=state.notes)
     return sha, _just_pushed_state(run.project, run.conn, run.run_id,
                                    run.provider, run.task_id, run.branch, sha,
                                    beat_s, pull, reviewed)

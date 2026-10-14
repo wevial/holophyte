@@ -154,6 +154,17 @@ class ReviewBodyFindingTests(MergeModeFixture):
                                 " WHERE round = 2")[0]
         self.assertEqual(len(json.loads(findings)), 1)
 
+    def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        request = ("Devin tagged this as\n```\n<!-- devin-review-comment"
+                   ' {"kind": "analysis"} -->\n```\nbut please add the retry.')
+        person = ("src/app.py", 1, ("operator", "User"), request)
+        self.fake_route(states=[self.pr_state([person])])
+        self.loop(Commit("initial work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        self.assertIn("please add the retry", self.question())
+        self.assertNotIn("waiting for a human to say merge", self.question())
+
     def test_a_persons_reply_on_a_devin_analysis_keeps_it_an_open_thread(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         analysis = ("The description promises a retry the diff does not add.\n"

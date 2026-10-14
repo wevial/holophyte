@@ -9,7 +9,8 @@ def is_analysis(thread):
     answered = any(reply.author_kind != "bot"
                    and not reply.body.startswith("---- Comment by ")
                    for reply in thread.replies)
-    return bool(marker and ANALYSIS_RE.search(marker[1])) and not answered
+    devin = thread.author_kind == "bot" and thread.author.startswith("devin")
+    return bool(devin and marker and ANALYSIS_RE.search(marker[1])) and not answered
 
 
 def split(threads):

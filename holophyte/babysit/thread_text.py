@@ -130,10 +130,14 @@ def parse_verdicts(reply, count):
             for n in range(1, count + 1)}
 
 
-def fix_brief(pull, addressed, ticket, notes=()):
-    context = "".join(
+def note_context(notes):
+    return "".join(
         f"\n\nNote for context, not a finding to address -- {where(t)} by"
         f" @{t.author}\n{t.body}" for t in notes)
+
+
+def fix_brief(pull, addressed, ticket, notes=()):
+    context = note_context(notes)
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
         + (maintainer_notes.instruction(t) if maintainer_notes.is_note(t)

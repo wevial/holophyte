@@ -28,6 +28,7 @@ from holophyte.babysit.thread_text import (  # noqa: F401
     declined_reply,
     fix_brief,
     gist,
+    note_context,
     open_threads_question,
     parse_summaries,
     parse_verdicts,
@@ -900,7 +901,8 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         spec = _spec_digest(project, wt, task_id, ticket)
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
-            goal or babysitter.fix_brief(pull, addressed, ticket, notes))
+            goal + note_context(notes) if goal
+            else babysitter.fix_brief(pull, addressed, ticket, notes))
         saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
                                pass_no, review_follows), spec=spec)
     else:
