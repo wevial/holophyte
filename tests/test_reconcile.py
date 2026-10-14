@@ -1020,10 +1020,7 @@ class CiParkTests(MergeModeFixture):
 
     def test_an_approval_parked_on_a_quiet_wait_merges_when_woken_quiet(self):
         fresh = self.approval_parked_on_quiet()
-        ((approved_head,),) = self.read("SELECT candidateSha FROM runs WHERE id = 2")
-
-        self.reconcile(dict(self.pull(fresh, "SUCCESS"), headRefOid=approved_head),
-                       later_s=300)
+        self.reconcile(self.approved_pull(fresh), later_s=300)
         self.serve(self.pr_state())
         with patch.object(sys, "stdout", io.StringIO()):
             self.loop(provider=self.provider())
@@ -1054,6 +1051,31 @@ class CiParkTests(MergeModeFixture):
                          [("ci",)])
         self.age()
         return fresh
+
+    def approved_pull(self, fresh):
+        ((approved_head,),) = self.read("SELECT candidateSha FROM runs WHERE id = 2")
+        return dict(self.pull(fresh, "SUCCESS"), headRefOid=approved_head)
+
+    def test_an_approval_is_dropped_when_the_head_is_unread_at_the_wake(self):
+        fresh = self.approval_parked_on_quiet()
+        self.reconcile(dict(self.approved_pull(fresh), headRefOid=None),
+                       later_s=300)
+        self.assert_woken_for_a_fresh_approval(
+            "the pull request's head could not be read", self.pr_state())
+
+    def test_an_approval_is_dropped_when_a_conversation_request_waits_at_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        served = self.pr_state()
+        served["data"]["repository"]["pullRequest"]["comments"] = {"nodes": [{
+            "id": "IC_1", "url": self.URL + "#issuecomment-1",
+            "author": {"login": "operator", "__typename": "User"},
+            "body": "@holophyte fix: rename the flag"}]}
+        self.serve(served)
+        self.reconcile(self.approved_pull(fresh), later_s=300)
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn("1 conversation or review request(s)", dropped[0])
 
     def assert_woken_for_a_fresh_approval(self, why, served):
         (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
@@ -1101,7 +1123,7 @@ class CiParkTests(MergeModeFixture):
     def test_an_approval_is_dropped_when_a_review_thread_opened_before_the_wake(
             self):
         fresh = self.approval_parked_on_quiet()
-        threaded = dict(self.pull(fresh, "SUCCESS"), reviewThreads={
+        threaded = dict(self.approved_pull(fresh), reviewThreads={
             "totalCount": 1, "nodes": [{"isResolved": False}]})
         self.reconcile(threaded, later_s=300)
         (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
@@ -1122,7 +1144,7 @@ class CiParkTests(MergeModeFixture):
     def test_an_approval_is_dropped_when_changes_were_requested_before_the_wake(
             self):
         fresh = self.approval_parked_on_quiet()
-        self.reconcile(self.pull(fresh, "SUCCESS") | {
+        self.reconcile(self.approved_pull(fresh) | {
             "reviewDecision": "CHANGES_REQUESTED"}, later_s=300)
         self.assert_woken_for_a_fresh_approval(
             "a review requested changes",

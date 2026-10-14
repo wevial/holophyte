@@ -208,7 +208,7 @@ def _reconcile_pull_requests(target, conn, project, provider,
         elif not low:
             kind, reason = _wake_reason(target, conn, ticket, pull, status)
             issue = None if reason is ci_wake.EXPIRED else _rebabysit(
-                conn, ticket, pull, status, poll_ms, reason, kind)
+                conn, ticket, pull, status, poll_ms, reason, kind, target)
             if issue is not None:
                 sent.add(issue)
         if low:
@@ -417,7 +417,7 @@ def _conflict_wake(conn, ticket, pull, status):
 
 
 def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
-               kind="ci_wake"):
+               kind="ci_wake", target=None):
     identifier, run_id = ticket.linearIdentifier, ticket.runId
     row = conn.execute("SELECT prSeenAt, prSeenThreads, lastHeartbeat,"
                        " (SELECT linearIssueId FROM tickets WHERE id = ?)"
@@ -455,6 +455,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
             f" threads (last seen {seen_threads})") if arrived else reason
     if arrived and kind == "conflict_wake":
         note = f"{reason}; {note}"
+    requests = ci_wake.approval_requests(target, conn, run_id, pull)
     try:
         with store.transaction(conn):
             store.record_pr_seen(conn, run_id, mark)
@@ -463,7 +464,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
                 store.record_event(conn, run_id, "pr_wake", json.dumps(arrived))
             if reason:
                 store.record_event(conn, run_id, kind, reason)
-            ci_wake.carry_approval(conn, run_id, status)
+            ci_wake.carry_approval(conn, run_id, status, requests)
             store.babysit(conn, ticket.id, note, source="supervisor")
     except store.ApproveRefused as refused:
         print(f"[holo2] {identifier}: {why} but the ticket moved while GitHub"

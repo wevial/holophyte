@@ -4,6 +4,8 @@ from time import time
 import store
 import store.read
 from holophyte.config.config_tables import merge_config
+from holophyte.loop.gates import InfraFailure
+from holophyte.pr import pr_status
 from holophyte.pr.pr_ready import held_for_frontend, record_hold
 
 FINISHED = ("success", "failure")
@@ -53,11 +55,24 @@ def _expire(conn, ticket, pull, why, held):
           " human")
 
 
-def carry_approval(conn, run_id, status):
-    parked = conn.execute(
+def parked_approval(conn, run_id):
+    return conn.execute(
         "SELECT e.payload, r.candidateSha FROM runEvents e JOIN runs r"
         " ON r.id = e.runId WHERE e.runId = ? AND e.kind = 'approval_parked'"
         " ORDER BY e.id DESC LIMIT 1", (run_id,)).fetchone()
+
+
+def approval_requests(target, conn, run_id, pull):
+    if target is None or parked_approval(conn, run_id) is None:
+        return None
+    try:
+        return pr_status.unanswered_requests(target, pull)
+    except InfraFailure:
+        return None
+
+
+def carry_approval(conn, run_id, status, requests=None):
+    parked = parked_approval(conn, run_id)
     if parked is None:
         return
     sha, candidate = json.loads(parked[0])["sha"], parked[1]
@@ -66,10 +81,16 @@ def carry_approval(conn, run_id, status):
     if candidate != sha:
         why = (f"the candidate was re-pointed from {sha[:12]} to"
                f" {(candidate or '?')[:12]}")
-    elif status.head_sha not in (None, sha):
+    elif status.head_sha is None:
+        why = "the pull request's head could not be read"
+    elif status.head_sha != sha:
         why = f"the head moved from {sha[:12]} to {status.head_sha[:12]}"
     elif open_threads or open_threads is None or status.open_threads_floor:
         why = "a review thread is open or its count is unknown"
+    elif requests is None:
+        why = "the conversation requests could not be read"
+    elif requests:
+        why = f"{requests} conversation or review request(s) wait for an answer"
     elif status.review == "changes_requested":
         why = "a review requested changes"
     else:
