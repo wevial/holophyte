@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_store_board_moves.py' -v
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -109,6 +110,22 @@ class StoreBoardMoveTests(unittest.TestCase):
         with self.assertRaises(store.board.FilingRefused):
             store.board.cancel_ticket(self.conn, self.project_id, "NAT-3", 2,
                                       "again")
+
+    def test_a_cancel_rewires_a_dependent_to_its_own_dependencies(self):
+        self.file()
+        self.file(body(depends="NAT-1"))
+        self.file(body(depends="NAT-2"))
+
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-2", 1,
+                                  "shipped by NAT-1")
+        depends = self.conn.execute(
+            "SELECT dependsOn FROM tickets WHERE linearIdentifier = 'NAT-3'"
+        ).fetchone()[0]
+        self.assertEqual(json.loads(depends), ["NAT-1"])
+
+        store.tickets.walk_ticket(self.conn, self.ticket_id("NAT-1"), "merged")
+        self.assertEqual(store.board.resolve_dependencies(
+            self.conn, self.project_id), ["NAT-3"])
 
     def test_resolve_dependencies_readies_a_wait_whose_dependencies_merged(self):
         for _ in range(5):
