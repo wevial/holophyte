@@ -402,13 +402,15 @@ def steered_line(target, conn, ticket_id, identifier, note, author, hint, now,
             f" {steered.id}) for {reader}")
 
 
-def withdraw_steers(target, identifier, note, out=None):
+def withdraw_steers(target, identifier, note, out=None, author=None):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            count, intervention_id = steer_notes.withdraw(conn, ticket_id, note)
+            with acting_as(author_actor(author)):
+                count, intervention_id = steer_notes.withdraw(conn, ticket_id,
+                                                              note)
         except ValueError as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier}: {count} amendment(s) withdrawn (steer"

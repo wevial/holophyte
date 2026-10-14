@@ -31,6 +31,7 @@ import store
 import store.read
 import store.tickets
 from holophyte.config.config_tables import board_config
+from holophyte.holo import cli as holo_cli
 from holophyte.loop.runs import open_store
 from tests.fake_agent import APPROVE, Commit
 from tests.loop_fixture import LoopFixture, StubProvider, a_task
@@ -108,6 +109,11 @@ class RequeueTarget(unittest.TestCase):
             holophyte.cli.entry.cli([str(self.repo), *args])
         self.board = StubBoard.instance
         return out.getvalue(), err.getvalue()
+
+    def holo(self, *words):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIn(holo_cli.main([*words, "-p", str(self.repo)]),
+                          (0, None))
 
     def interventions(self):
         return self.conn.execute(
@@ -188,6 +194,19 @@ class RequeueCliTests(RequeueTarget):
             "SELECT action, actor FROM interventions"
             " WHERE action != 'migrate'").fetchall(),
             [("operator_note", "maintainer")])
+
+    def test_a_withdrawal_signed_by_the_maintainer_records_the_maintainer(self):
+        self.fail_the_run()
+        self.holo("steer", "KO-1", "-n", "also cover the empty case")
+
+        self.holo("steer", "KO-1", "--withdraw", "-n", "split it out",
+                  "--author", "maintainer")
+
+        self.assertEqual(self.conn.execute(
+            "SELECT note, actor FROM interventions WHERE action = 'steer'"
+            " ORDER BY id").fetchall(),
+            [("amendment for KO-1: also cover the empty case", "operator"),
+             ("withdraw 1 amendment(s) for KO-1: split it out", "maintainer")])
 
     def test_a_requeue_of_a_run_with_a_pull_request_names_it_in_the_note(self):
         """KO-407: a failed run that left its branch open as a pull request
