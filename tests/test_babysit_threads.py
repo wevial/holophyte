@@ -74,6 +74,24 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
     def test_budget_cutoff_with_all_thread_answers_fails(self):
         self.no_commit_thread_answers("timeout")
 
+    def test_an_unsummarised_no_commit_fix_parks_with_its_explanation(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", holophyte.cli.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state([self.DEFECT]))
+        explanation = "Nothing to change in code: the description is the gap."
+        self.loop(Reply("THREAD 1: ADDRESS -- crash"), Idle(explanation),
+                  provider=self.provider())
+        self.assertEqual(self.read(
+            "SELECT phase, outcome, parkKind FROM runs ORDER BY id DESC LIMIT 1"),
+            [("awaiting_merge_approval", None, "fix_declined")])
+        self.assertIn(explanation, self.question())
+
     def test_human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.human_conversation_mention_is_fixed_and_replied_on_the_pull()
 
