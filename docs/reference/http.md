@@ -1138,6 +1138,9 @@ written. The cancel is the store's `cancel_ticket()`, authored `console`:
 200 with the new `revision` and `run`, the live run the cancel asked to
 abort (its `stopRequested` names an `abort` intervention), null when the
 ticket had none; 409 with `current` and 422 with `problems` as a move's.
+The abort, or the close-out of a run parked awaiting merge approval, is
+an intervention with actor `maintainer`: the console sends every native
+board write.
 
 ## `POST /mcp`
 

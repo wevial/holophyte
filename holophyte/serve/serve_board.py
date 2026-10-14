@@ -10,6 +10,7 @@ from holophyte.config.config_tables import board_config, board_mode
 from holophyte.loop.runs import open_store
 from holophyte.serve.serve_runs import no_store
 from holophyte.serve.server import authorized
+from store.operate import acting_as
 
 TICKETS = "/tickets"
 TICKETS_PREFIX = TICKETS + "/"
@@ -136,7 +137,8 @@ def write(handler, scope, path, parse, act, revisioned=True):
         refused = handler.refused(scope)
         if refused is not None:
             return handler.answer(*refused)
-        handler.answer(*act(scope.project, expected, *fields))
+        with acting_as("maintainer"):
+            handler.answer(*act(scope.project, expected, *fields))
     except (Exception, SystemExit) as bad:
         handler.answer(*handler.failure(scope, path, bad))
 
