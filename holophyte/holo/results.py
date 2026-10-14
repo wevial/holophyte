@@ -135,7 +135,9 @@ def steer(args, target):
             args.leaf.error("--withdraw drops amendments: it takes no --hint"
                             " or --now")
         from holophyte.cli.operator import withdraw_steers
-        return withdraw_steers(project, values[0], note)
+        author = getattr(args, "author", None)
+        return withdraw_steers(project, values[0], note,
+                               author=author[-1] if author else None)
     from holophyte.cli.operator import steer_ticket
     author = getattr(args, "author", None)
     return steer_ticket(project, values[0], note, hint=args.hint,

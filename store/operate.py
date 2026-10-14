@@ -1,6 +1,8 @@
 """store.operate: the operator API, the writes that end, resume and requeue runs."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import getpass
 import re
 import socket
@@ -440,9 +442,9 @@ def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
             )
         conn.execute(
             'INSERT INTO interventions'
-            ' (runId, source, "trigger", "action", guidance, note, at)'
-            " VALUES (?, ?, 'manual', 'resume', ?, ?, ?)",
-            (run_id, source, guidance, note, now),
+            ' (runId, source, "trigger", "action", guidance, note, at, actor)'
+            " VALUES (?, ?, 'manual', 'resume', ?, ?, ?, ?)",
+            (run_id, source, guidance, note, now, intervention_actor(source)),
         )
     return target
 
@@ -450,6 +452,41 @@ def resume(conn, run_id, guidance=None, source="human", now=None, note=None):
 INTERVENTION_SOURCES = tuple(e.value for e in _enums.InterventionSource)
 INTERVENTION_TRIGGERS = tuple(e.value for e in _enums.InterventionTrigger)
 INTERVENTION_ACTIONS = tuple(e.value for e in _enums.InterventionAction)
+INTERVENTION_ACTORS = tuple(e.value for e in _enums.InterventionActor)
+_ACTING = contextvars.ContextVar(
+    "acting", default=_enums.InterventionActor.OPERATOR.value)
+
+
+@contextlib.contextmanager
+def acting_as(actor):
+    if actor is None:
+        yield
+        return
+    _check_actor(actor)
+    token = _ACTING.set(actor)
+    try:
+        yield
+    finally:
+        _ACTING.reset(token)
+
+
+def author_actor(author):
+    if isinstance(author, str) and author.strip().lower() == "maintainer":
+        return _enums.InterventionActor.MAINTAINER.value
+    return None
+
+
+def _check_actor(actor):
+    if actor not in INTERVENTION_ACTORS:
+        raise ValueError(f"unknown intervention actor {actor!r}")
+
+
+def intervention_actor(source, actor=None):
+    actor = _ACTING.get() if actor is None else actor
+    _check_actor(actor)
+    if source == _enums.InterventionSource.HUMAN:
+        return actor
+    return _enums.InterventionActor.SUPERVISOR.value
 
 
 def _validate_intervention(action, note, source, trigger):
@@ -464,9 +501,10 @@ def _validate_intervention(action, note, source, trigger):
 
 def record_intervention(conn, run_id, action, note, source="human",
                         trigger="manual", question=None, guidance=None,
-                        now=None):
+                        now=None, actor=None):
     """Record an operator or supervisor decision on a run; return its id."""
     _validate_intervention(action, note, source, trigger)
+    actor = intervention_actor(source, actor)
     if action == "redirect" and (
             not isinstance(question, str) or not question.strip()):
         raise ValueError("a redirect records the question it asked;"
@@ -479,10 +517,11 @@ def record_intervention(conn, run_id, action, note, source="human",
             raise ValueError(f"no run {run_id}")
         cursor = conn.execute(
             'INSERT INTO interventions'
-            ' (runId, source, "trigger", "action", question, guidance, note, at)'
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ' (runId, source, "trigger", "action", question, guidance, note, at,'
+            " actor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, source, trigger, action, question, guidance,
-             None if action == _enums.InterventionAction.MIGRATE else note, now))
+             None if action == _enums.InterventionAction.MIGRATE else note, now,
+             actor))
         _append_event(conn, run_id, "narrative", "intervention",
                       f"{source} {action}: {note}", now)
         record_ledger(conn, run_id, "intervention",
@@ -611,18 +650,21 @@ def _set_admission(conn, project_id, note, state, action):
         if row[1] == state:
             raise ValueError(f"project {row[0]} already {state}: {row[2] or ''}")
         intervention = conn.execute(
-            'INSERT INTO interventions (projectId, source, "trigger", action, note, at)'
-            " VALUES (?, 'human', 'manual', ?, ?, ?)",
-            (project_id, action, note, int(time.time() * 1000))).lastrowid
+            'INSERT INTO interventions (projectId, source, "trigger", action, note,'
+            " at, actor) VALUES (?, 'human', 'manual', ?, ?, ?, ?)",
+            (project_id, action, note, int(time.time() * 1000),
+             intervention_actor("human"))).lastrowid
         conn.execute("UPDATE projects SET admission = ?, holdNote = ? WHERE id = ?",
                      (state, note if state != "enabled" else None, project_id))
         return intervention
 
 
 def record_project_intervention(conn, action, note, source="human",
-                                trigger="manual", project_id=None, now=None):
+                                trigger="manual", project_id=None, now=None,
+                                actor=None):
     """Record a decision on the project rather than one run; return its id."""
     _validate_intervention(action, note, source, trigger)
+    actor = intervention_actor(source, actor)
     with _transaction(conn):
         projects = [row[0] for row in conn.execute("SELECT id FROM projects")]
         if project_id is None and len(projects) == 1:
@@ -634,9 +676,10 @@ def record_project_intervention(conn, action, note, source="human",
                              f" {len(projects)}; pass project_id")
         return conn.execute(
             'INSERT INTO interventions (projectId, source, "trigger", action,'
-            " note, at) VALUES (?, ?, ?, ?, ?, ?)",
+            " note, at, actor) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (project_id, source, trigger, action, note,
-             now if now is not None else int(time.time() * 1000))).lastrowid
+             now if now is not None else int(time.time() * 1000),
+             actor)).lastrowid
 
 
 from .repair import repair_references  # noqa: E402,F401

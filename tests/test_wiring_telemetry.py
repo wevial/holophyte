@@ -294,9 +294,9 @@ class ReportTests(ReportStoreCase):
     def test_rejected_run_has_its_own_report_column(self):
         self.completed_run(1, actual_min=5, estimate_min=25, rounds=1,
                            outcome="rejected")
-        # Past the live block: its "in flight" line, the two toil lines, the
-        # gap layers and gaps found lines and the blank.
-        lines = holophyte.cli.report.report_lines(self.conn)[6:]
+        # Past the live block: its "in flight" line, the toil and actor lines,
+        # the gap layers and gaps found lines and the blank.
+        lines = holophyte.cli.report.report_lines(self.conn)[8:]
         row = dict(zip(lines[0].split(), lines[1].split()))
         self.assertEqual(row["outcome"], "rejected")
         self.assertEqual(row["rejected"], "1")
@@ -305,7 +305,7 @@ class ReportTests(ReportStoreCase):
     def test_a_line_per_run_with_its_ratio_and_a_summary(self):
         self.three_runs()
 
-        lines = holophyte.cli.report.report_lines(self.conn)[7:]
+        lines = holophyte.cli.report.report_lines(self.conn)[9:]
 
         # The host column is this machine's own name: the claim stamped it.
         host = socket.gethostname()
@@ -329,7 +329,7 @@ class ReportTests(ReportStoreCase):
         self.completed_run(4, actual_min=7, estimate_min=None, rounds=0,
                            outcome="merged")
 
-        lines = holophyte.cli.report.report_lines(self.conn)[7:]
+        lines = holophyte.cli.report.report_lines(self.conn)[9:]
 
         self.assertEqual(lines[4].split(), ["KO-4", "7.0", "7.0", "0.0", "n/a",
                                             "n/a", "0", "merged", "0",
@@ -342,7 +342,7 @@ class ReportTests(ReportStoreCase):
         self.three_runs()
         self.conn.execute("UPDATE runs SET host = NULL WHERE id = 2")
 
-        lines = holophyte.cli.report.report_lines(self.conn)[7:]
+        lines = holophyte.cli.report.report_lines(self.conn)[9:]
 
         self.assertEqual(lines[2].split()[-1], "?")
         self.assertEqual(lines[1].split()[-1], socket.gethostname())
@@ -365,14 +365,14 @@ class ReportTests(ReportStoreCase):
 
         printed = out.getvalue().splitlines()[1:]
         self.assertEqual(printed[:2], ["in flight: none", ""])
-        # The failure count, the toil lines and the gap layers and gaps found
+        # The failure count, the toil and actor lines, gap layers and gaps found
         # lines precede the table, and below it the `[report] findings` mode -- the
         # default, nothing configured -- and the one line on the supervisor:
         # none has ever beaten here.
-        self.assertEqual(printed[:12], holophyte.cli.report.report_lines(self.conn))
-        self.assertEqual(printed[12], "findings: none")
-        self.assertEqual(printed[13], "supervisor: none recorded")
-        self.assertEqual(len(printed), 14)
+        self.assertEqual(printed[:14], holophyte.cli.report.report_lines(self.conn))
+        self.assertEqual(printed[14], "findings: none")
+        self.assertEqual(printed[15], "supervisor: none recorded")
+        self.assertEqual(len(printed), 16)
         # Nothing was claimed: three runs went in, three are there, all ended,
         # and the lease the loop would have taken is free.
         self.assertEqual(
@@ -437,7 +437,7 @@ class HostLabelTests(ReportStoreCase):
         self.assertNotIn(hostname, rendered)
         # Every recorded host is the label; the NULL row stays unknown, as
         # the store does not know the pre-column run ran on this writer.
-        self.assertEqual([line.split()[-1] for line in printed[9:12]],
+        self.assertEqual([line.split()[-1] for line in printed[11:14]],
                          [self.LABEL, "?", self.LABEL])
         self.assertRegex(printed[-1],
                          rf"^supervisor: live, .* \(pid 4242 on {self.LABEL}\)$")

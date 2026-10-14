@@ -321,7 +321,9 @@ def _close_merged_after_failure(target, conn, provider, ticket_id,
     message = (f"Closed: {pull.url} merged on GitHub by {who} as {short}"
                " after the run ended; no factory merge occurred.")
     try:
-        close_out_landed(target, conn, ticket_id, message, provider, run_id)
+        with store.operate.acting_as("supervisor"):
+            close_out_landed(target, conn, ticket_id, message, provider,
+                             run_id)
     except CloseRefused as refused:
         print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but the"
               f" ticket cannot be closed out ({refused}); left alone")
@@ -511,7 +513,8 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
         store.record_intervention(
             conn, run_id, "approve",
             f"{pull.url} merged on GitHub by {who} as {short}; the run is"
-            " closed out as merged", source="human", trigger="manual")
+            " closed out as merged", source="human", trigger="manual",
+            actor="supervisor")
         store.release(conn, run_id, "merged", merge_sha=sha)
         store.set_question(conn, ticket.id, None)
         store.tickets.walk_ticket(conn, ticket.id, "merged")

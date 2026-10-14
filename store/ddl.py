@@ -520,6 +520,7 @@ CREATE TABLE IF NOT EXISTS interventions (
     question  TEXT,  -- for redirect
     guidance  TEXT,  -- human answer, only when the run was blocked_on_operator
     at        INTEGER NOT NULL,
+    actor     TEXT {_enums.check_clause('actor', _enums.InterventionActor)},
     CHECK (runId IS NOT NULL OR projectId IS NOT NULL OR "action" = 'migrate')
 )"""
 
