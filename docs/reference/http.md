@@ -145,7 +145,8 @@ by action, most frequent first, ties by name. `by_actor` counts every
 intervention in the window, the supervisor's included and `migrate` rows
 left out, by the `interventions.actor` that acted: `maintainer` (a daemon
 action under any token but the machine token), `operator` (the command
-line, MCP, or a daemon action under the machine token) and `supervisor`
+line, MCP, or a daemon action under the machine token, unless its body's
+`author` is `maintainer`, as `holo --author maintainer` sends it) and `supervisor`
 (the supervisor and the loop); `unknown` counts the rows written before
 the store recorded an actor.
 Every `host` passes through `[report] host_label`.
