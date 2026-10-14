@@ -45,7 +45,7 @@ def check_fix_brief(pull, failed, logs, ticket, group=None):
 
 
 def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
-                       pass_no, reviewed, check_fix, group=None):
+                       pass_no, reviewed, check_fix, group=None, approval=None):
     from holophyte.babysit.babysitter import _fix_threads
     _park_unless_fixable(run, pull, state, reviewed, check_fix, group)
     stop_if_requested(run.conn, run.run_id, "merge_gate")
@@ -55,7 +55,7 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
         check_fix.awaited = tuple(dict.fromkeys(
             check.name for check in state.failed_checks))
         pull = replace(pull, awaited=check_fix.awaited)
-        state = _rerun_and_settle(run, beat_s, pull, state, reviewed)
+        state = _rerun_and_settle(run, beat_s, pull, state, reviewed, approval)
         if not _red(state, run.sha):
             return run.sha, state
         _park_unless_fixable(run, pull, state, reviewed, check_fix)
@@ -99,7 +99,7 @@ def _park_unless_fixable(run, pull, state, reviewed, check_fix, group=None):
                     _why(state, group), (), reviewed=reviewed)
 
 
-def _rerun_and_settle(run, beat_s, pull, state, reviewed):
+def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval=None):
     failed = state.failed_checks
     runs = tuple(dict.fromkeys(check.workflow_run_id for check in failed))
     names = ", ".join(check.name for check in failed)
@@ -119,10 +119,11 @@ def _rerun_and_settle(run, beat_s, pull, state, reviewed):
                     f"check rerun of {names} failed: {refused}")
         return state
     return _rerun_result(run, beat_s, pull, reviewed, names,
-                         {check.job_id for check in failed})
+                         {check.job_id for check in failed}, approval)
 
 
-def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs):
+def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs,
+                  approval=None):
     """GitHub adds a rerun's jobs late: a red still in `rerun_jobs` predates it."""
     from holophyte.babysit.babysitter import _settled_or_park
     from holophyte.pr.pullrequest import _park_on_pr
@@ -135,7 +136,7 @@ def _rerun_result(run, beat_s, pull, reviewed, names, rerun_jobs):
             state = _settled_or_park(run.project, run.conn, run.run_id, beat_s,
                                      pull, state, run.provider, run.task_id,
                                      run.branch, run.sha, reviewed,
-                                     deadline=deadline)
+                                     deadline=deadline, approval=approval)
             if not _unreported(state, run.sha, rerun_jobs):
                 return state
         remaining = deadline - monotonic()
