@@ -10,15 +10,13 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 
-DESCRIPTION_TAG = 'path: "PR description"'
-
 DESCRIPTION_TAG_RE = re.compile(r'path:\s*"?(?:the\s+)?PR description\b', re.I)
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
 TAG_BRIEF = ("List each blocker as its own item, and tag one about the pull"
              " request description rather than the code with"
-             f" `{DESCRIPTION_TAG}`.\n")
+             ' `path: "PR description"`.\n')
 
 
 def description_findings(verdict, decision, unwitnessed):

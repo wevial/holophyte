@@ -249,7 +249,7 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
 
 
 def _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
-                     beat_s, wt, budget_min, own, answered, review=""):
+                     beat_s, wt, budget_min, own, answered, review):
     written = _written_pr_text(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
         monotonic(), budget_min or PR_TEXT_BUDGET_MIN, None,
