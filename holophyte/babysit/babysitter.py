@@ -558,6 +558,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
             reviewed or main_merge_base(wt, sha), beat_s, pull, ticket,
             budget_min, answered, described):
         verdict, decision, unwitnessed, rnd = _covering_review(*review)
+        stale = stale_approvals(decision, unwitnessed)
     if not unwitnessed and decision == "APPROVE":
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"

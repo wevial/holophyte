@@ -4,6 +4,7 @@ from holophyte.board.projection import ledger
 from holophyte.loop.gates import sh
 from holophyte.review.reply_parsing import (
     CRITERION_LINE_RE,
+    FINDING_PATH_RE,
     SCOPE_LINE_RE,
     finding_blocks,
     without_refuted,
@@ -15,8 +16,9 @@ DESCRIPTION_TAG_RE = re.compile(r'path:\s*"?(?:the\s+)?PR description\b', re.I)
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
-TAG_BRIEF = ("Tag a blocker about the pull request description rather than"
-             f" the code with `{DESCRIPTION_TAG}`.\n")
+TAG_BRIEF = ("List each blocker as its own item, and tag one about the pull"
+             " request description rather than the code with"
+             f" `{DESCRIPTION_TAG}`.\n")
 
 
 def description_findings(verdict, decision, unwitnessed):
@@ -27,7 +29,8 @@ def description_findings(verdict, decision, unwitnessed):
     for pattern in (CRITERION_LINE_RE, SCOPE_LINE_RE, VERDICT_LINE_RE):
         reply = pattern.sub("", reply)
     blocks = [block.strip() for block in finding_blocks(reply) if block.strip()]
-    if blocks and all(DESCRIPTION_TAG_RE.search(block) for block in blocks):
+    if blocks and all(DESCRIPTION_TAG_RE.search(block)
+                      and not FINDING_PATH_RE.search(block) for block in blocks):
         return blocks
     return []
 
