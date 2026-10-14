@@ -67,7 +67,7 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
         run, beat_s, ticket,
         verify_cmd, contracts, criteria, approved=carried.approved,
         reviewed=reviewed, verified=None, just_pushed=pushed,
-        fix_note=None if pr_activity.is_wake_note(note) else note)
+        fix_note=None if (note or "").startswith(pr_activity.WAKE_NOTE) else note)
     return run_state.land(run, True)
 
 

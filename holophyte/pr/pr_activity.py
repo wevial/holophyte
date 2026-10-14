@@ -158,7 +158,3 @@ def arrived(conn, run_id, status, seen_at):
     if seen is None and not result:
         record_commits(conn, run_id, status)
     return result
-
-
-def is_wake_note(note):
-    return bool(note) and note.startswith(WAKE_NOTE)
