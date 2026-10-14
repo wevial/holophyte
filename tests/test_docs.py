@@ -240,11 +240,12 @@ class RetiredRoadmapTests(unittest.TestCase):
     drop it, and the failure lineage lives on the architecture overview."""
 
     def test_no_file_names_the_retired_roadmap_page(self):
-        found = subprocess.run(
+        grep = subprocess.run(
             ["git", "grep", "-l", "roadmap[.]md"], cwd=ROOT,
-            capture_output=True, text=True).stdout.split()
+            capture_output=True, text=True)
         self.assertFalse((DOCS / "roadmap").with_suffix(".md").exists())
-        self.assertEqual(found, [])
+        self.assertEqual(grep.stdout.split(), [])
+        self.assertEqual(grep.returncode, 1, grep.stderr)
 
     def test_overview_holds_the_failure_lineage_it_links(self):
         text = (DOCS / "architecture" / "overview.md").read_text()
