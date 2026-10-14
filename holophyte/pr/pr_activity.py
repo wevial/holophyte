@@ -19,6 +19,7 @@ ACTIVITY_FIELDS = '\n'.join(
     f'{name}(last: 100) {{ {PAGE} nodes {{ {fields} }} }}'
     for name, fields in FIELDS.items())
 HEADER = re.compile(r'^---- Comment by [^\n]+', re.MULTILINE)
+WAKE_NOTE = 'new review activity on '
 
 
 def _pages(target, pull, page, field, fields, read, *, thread=None):
@@ -157,3 +158,7 @@ def arrived(conn, run_id, status, seen_at):
     if seen is None and not result:
         record_commits(conn, run_id, status)
     return result
+
+
+def is_wake_note(note):
+    return bool(note) and note.startswith(WAKE_NOTE)

@@ -539,6 +539,36 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(self.read("SELECT phase, outcome FROM runs WHERE id = 2"),
                          [("awaiting_merge_approval", None)])
 
+    def test_a_wake_on_bot_status_comments_alone_runs_no_fix_turn(self):
+        import store
+        from holophyte.host import reconcile
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
+                  REQUEST_CHANGES, provider=self.provider())
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.conversation_state(("vercel[bot]", "Bot"),
+                                           "Deployment ready"))
+        status = holophyte.pr.pr_status.PullStatus(
+            merged=False, closed=False, updated_at="2026-10-14T10:00:00Z", threads=0,
+            activity=(("conversation comment", "2026-10-14T10:00:00Z", "IC_1"),))
+        with closing(store.open(self.project.store_path)) as conn:
+            conn.execute("UPDATE runs SET prSeenAt = '2026-10-14T09:00:00Z'")
+            conn.commit()
+            reconcile._rebabysit(conn, store.read.blocked_tickets(conn)[0],
+                                 holophyte.pr.pr_status.parse_pr_url(self.URL),
+                                 status, 0)
+
+        fake, _ = self.loop(REQUEST_CHANGES, provider=self.provider())
+
+        self.assertEqual(fake.roles, ["review"])
+        self.assertEqual(self.read("SELECT phase, outcome, parkKind FROM runs"
+                                   " WHERE id = 2"),
+                         [("awaiting_merge_approval", None, "pull_request")])
+        self.assertIn("asked for changes", self.question())
+
     def test_explicit_approval_of_rejected_candidate_skips_review(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])

@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
+from holophyte.babysit import devin_notes
 from holophyte.babysit.conversation_comments import (
     console_answers,
     conversation_threads,
@@ -261,9 +262,10 @@ def pr_state(target, pull):
             runs += status_contexts_of(target, pull, first_page, graphql)
         except InfraFailure:
             runs = None
+    threads, notes = devin_notes.split(threads)
     return replace(_state_of(first_page, threads, runs, required, pull.awaited,
                              rollup_stale),
-                   console_answers=console_answers(comments))
+                   console_answers=console_answers(comments), notes=notes)
 
 
 def _reopened(target, thread):

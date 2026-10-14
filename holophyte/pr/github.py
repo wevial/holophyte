@@ -132,6 +132,7 @@ class PrState:
     draft: bool = False
     node_id: str = ""
     console_answers: tuple = ()
+    notes: tuple = ()
 
 
 def origin_url(target):

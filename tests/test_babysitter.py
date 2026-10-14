@@ -45,7 +45,7 @@ import store  # noqa: E402
 import store.read  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter, maintainer_notes  # noqa: E402
-from holophyte.loop.gates import MergeParked, RunFailure, sh  # noqa: E402
+from holophyte.loop.gates import MergeParked, sh  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
 from holophyte.loop.stop import resume_babysit_fix, resume_paused  # noqa: E402
 from holophyte.pr import github, pr_media, pr_status  # noqa: E402
@@ -791,7 +791,8 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
             return babysitter._answer_threads(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, 30, CAPTURE_PULL,
-                SimpleNamespace(threads=(CAPTURE_THREAD,), checks="success"),
+                SimpleNamespace(threads=(CAPTURE_THREAD,), checks="success",
+                                notes=()),
                 1, 1, "reviewer", TICKET, "true", (), 10, reviewed=self.head,
                 criteria=["Given the page, then it shows load"])
 
@@ -809,8 +810,8 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.assertNotIn("failed (exit 1)", self.prompts[1])
         self.assertIn("https://example.test/01-state.png", self.prompts[1])
 
-    def test_a_fix_that_changes_neither_head_nor_spec_still_fails(self):
-        with self.assertRaisesRegex(RunFailure, "fix round made no progress"):
+    def test_a_fix_that_changes_neither_head_nor_spec_parks(self):
+        with self.assertRaisesRegex(MergeParked, "Fix round made no commit"):
             self.review_fix(lambda: None)
 
         self.assertEqual(self.fix_turns, 1)

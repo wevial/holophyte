@@ -57,6 +57,7 @@ from holophyte.pr import github, merge_queue, pr_ready, pr_status
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.pr.pr_media import capture_spec_digest
+from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import (
     covering_scope,
@@ -755,7 +756,7 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         sha = _fix_threads(project, conn, run_id, provider, task_id, branch,
                            wt, sha, beat_s, pull, by_verdict["ADDRESS"],
                            model, ticket, verify_cmd, contracts, budget_min,
-                           pass_no, criteria=criteria,
+                           pass_no, criteria=criteria, notes=state.notes,
                            review_follows=_fixes_reviewed(merge_config(project)))
     declined_open = _decline_threads(project, conn, run_id, beat_s, pull,
                                      by_verdict["DECLINE"], model)
@@ -856,22 +857,47 @@ def _review_spec_only_fix(project, conn, run_id, provider, task_id, branch, wt,
                     budget_min=budget_min, fix_context=str(fixes))
 
 
+def _declined_why(addressed, summaries, answer):
+    if addressed and all(summaries.get(n) for n, _, _ in addressed):
+        explained = "\n".join(f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
+                              for n, thread, _ in addressed)
+    else:
+        explained = answer.strip()
+    return "Fix round made no commit; operator instruction needed:\n" + explained
+
+
+def _park_no_commit(project, conn, run_id, provider, task_id, branch, wt, sha,
+                    pull, addressed, answer, summaries, spec_moved,
+                    no_commit_why, reviewed):
+    from holophyte.loop.branch_sync import _candidate_drift
+    from holophyte.pr.pullrequest import _park_on_pr
+    if no_commit_why:
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    no_commit_why, (), reviewed=reviewed)
+    if not answer.strip():
+        raise RunFailure(f"the fix turn returned nothing for {pull.url}; branch"
+                         f" {branch} preserved at {sha[:12]}")
+    if not spec_moved and not _candidate_drift(wt, branch, sha):
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    outbound(_declined_why(addressed, summaries, answer),
+                             known_secrets(project.config())),
+                    (), park_kind="fix_declined")
+
+
 def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
                  resume_step=None, no_commit_why=None, reviewed=None,
-                 criteria=(), reviewed_by_caller=False):
+                 criteria=(), reviewed_by_caller=False, notes=()):
     from holophyte.loop.branch_sync import _candidate_drift
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
-    from holophyte.pr.pullrequest import _park_on_pr
-    from holophyte.redact import known_secrets, outbound, redact_prose
     if resume_step is None:
         record_step(conn, run_id, "fix")
         maintainer_notes.start_fix(conn, run_id, addressed)
         spec = _spec_digest(project, wt, task_id, ticket)
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
-            goal or babysitter.fix_brief(pull, addressed, ticket))
+            goal or babysitter.fix_brief(pull, addressed, ticket, notes))
         saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
                                pass_no, review_follows), spec=spec)
     else:
@@ -882,21 +908,14 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     if fixed == sha:
         _record_implementer_output(conn, run_id, f"fix round {pass_no}: {fixes}",
                                    known_secrets(project.config()))
-    summaries = babysitter.parse_summaries(redact_prose(fixes, assignments=True))
+    answer = redact_prose(str(fixes), assignments=True)
+    summaries = babysitter.parse_summaries(answer)
     spec_moved = "spec" in saved and _spec_digest(
         project, wt, task_id, ticket) != saved["spec"]
-    if (addressed and fixed == sha and not timed_out and not spec_moved
-            and all(summaries.get(n) for n, _, _ in addressed)
-            and not _candidate_drift(wt, branch, fixed)):
-        why = "Fix round made no commit; operator instruction needed:\n" + "\n".join(
-            f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
-            for n, thread, _ in addressed)
-        why = outbound(why, known_secrets(project.config()))
-        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull, why,
-                    (), park_kind="fix_declined")
-    if no_commit_why and fixed == sha and not timed_out:
-        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                    no_commit_why, (), reviewed=reviewed)
+    if fixed == sha and not timed_out:
+        _park_no_commit(project, conn, run_id, provider, task_id, branch, wt,
+                        sha, pull, addressed, answer, summaries,
+                        spec_moved, no_commit_why, reviewed)
     if timed_out or (fixed == sha and not spec_moved):
         raise RunFailure(failure_reason.fix_round(
             [{'message': thread.body} for _, thread, _ in addressed], timed_out,

@@ -62,12 +62,12 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
         pr_status.parse_pr_url(url), ticket,
         verify_cmd, contracts, run.budget_min, carried, criteria)
     run = replace(run, sha=sha, pr_url=url)
+    note = None if carried.approved else store.read.babysit_note(conn, carried.run_id)
     run = babysitter._babysit(
         run, beat_s, ticket,
         verify_cmd, contracts, criteria, approved=carried.approved,
         reviewed=reviewed, verified=None, just_pushed=pushed,
-        fix_note=(None if carried.approved else
-                  store.read.babysit_note(conn, carried.run_id)))
+        fix_note=None if pr_activity.is_wake_note(note) else note)
     return run_state.land(run, True)
 
 

@@ -65,10 +65,18 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
     def test_no_commit_park_redacts_configured_secrets(self):
         self.no_commit_thread_answers("secret")
 
-    def test_no_commit_review_fix_without_threads_still_fails(self):
-        self.no_commit_review_fix_fails()
+    def test_no_commit_review_fix_without_threads_parks_with_its_answer(self):
+        phase, outcome, _, park = self.no_commit_review_fix("nothing asks for a change")
+        self.assertEqual((phase, outcome, park),
+                         ("awaiting_merge_approval", None, "fix_declined"))
+        self.assertIn("nothing asks for a change", self.question())
 
-    def test_partially_answered_no_commit_threads_fail(self):
+    def test_a_no_commit_fix_turn_that_returned_nothing_fails(self):
+        phase, outcome, reason, _ = self.no_commit_review_fix("")
+        self.assertEqual((phase, outcome), ("failed", "failed"))
+        self.assertIn("the fix turn returned nothing", reason)
+
+    def test_partially_answered_no_commit_threads_park_with_the_answer(self):
         self.no_commit_thread_answers("partial")
 
     def test_budget_cutoff_with_all_thread_answers_fails(self):
@@ -381,8 +389,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             message="the index keeps a forced file",
             path="src/app.py", line=10, url=self.URL + "#discussion_r1",
             severity="p2", raw=raw))
-        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
-                         [("failed", "failed")])
+        self.assertEqual(self.read("SELECT phase, outcome, parkKind FROM runs"),
+                         [("awaiting_merge_approval", None, "fix_declined")])
         self.assertEqual(self.git("rev-parse", BRANCH).strip(),
                          fake.turns[1].candidate_sha)
         ((summary, payload),) = self.read(
