@@ -10,16 +10,15 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 
-DESCRIPTION_TAG_RE = re.compile(r'path:\s*"?(?:the\s+)?PR description\b', re.I)
+DESCRIPTION_SUBJECT_RE = re.compile(
+    r'^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:(?:p[0-3]|nit|blocker|major|minor)\b'
+    r'[^\w(\n]*)?[(\[]?\s*path:\s*"?(?:the\s+)?PR description\b', re.I)
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
 HEADING_RE = re.compile(
     r"^[ \t]*(?:#{1,6}[ \t]+[\w ]{1,40}:?|\*\*[\w ]{1,40}:?\*\*:?"
     r"|\w[\w ]{0,39}:)[ \t]*$", re.M)
-
-FINDING_START_RE = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|(?:p[0-2]|nit|blocker)\b)",
-                              re.I)
 
 TAG_BRIEF = ("List each blocker as its own item, and tag one about the pull"
              " request description rather than the code with"
@@ -34,15 +33,15 @@ def description_findings(verdict, decision, unwitnessed):
     for pattern in (CRITERION_LINE_RE, SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
         reply = pattern.sub("", reply)
     blocks = [block.strip() for block in finding_blocks(reply) if block.strip()]
-    if blocks and all(DESCRIPTION_TAG_RE.search(subject)
-                      for block in blocks for subject in _subjects(block)):
+    if blocks and all(_one_description_finding(block) for block in blocks):
         return blocks
     return []
 
 
-def _subjects(block):
+def _one_description_finding(block):
     first, *rest = block.splitlines()
-    return [first, *(line for line in rest if FINDING_START_RE.match(line))]
+    return bool(DESCRIPTION_SUBJECT_RE.match(first)) and all(
+        line[:1].isspace() for line in rest)
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,

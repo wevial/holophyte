@@ -31,6 +31,18 @@ class DescriptionFindingsTests(unittest.TestCase):
         self.assertEqual(description_findings(
             f"Findings:\n{TAGGED}\n{CODE}{TAIL}", "REQUEST_CHANGES", []), [])
 
+    def test_an_unlisted_code_blocker_after_a_tagged_item_is_not_hidden(self):
+        for code in ("**P1 — load() crashes on empty input**",
+                     "P1: load() crashes on empty input"):
+            with self.subTest(code=code):
+                self.assertEqual(description_findings(
+                    f"{TAGGED}\n{code}{TAIL}", "REQUEST_CHANGES", []), [])
+
+    def test_a_code_blocker_mentioning_the_tag_is_not_a_description_finding(self):
+        mention = CODE[:-1] + ' (also noted under path: "PR description").'
+        self.assertEqual(description_findings(
+            f"{mention}{TAIL}", "REQUEST_CHANGES", []), [])
+
 
 if __name__ == "__main__":
     unittest.main()
