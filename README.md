@@ -153,4 +153,3 @@ two opt-ins, `[serve] actions` and `config_edit`
   example.
 - [Reviewing](docs/reviewing.md) — the local reviewer boundary.
 - [Development](docs/development.md) — the package map, tests and linting.
-- [Roadmap](docs/roadmap.md) — phases and standing decisions.

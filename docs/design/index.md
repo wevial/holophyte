@@ -6,8 +6,8 @@ works or is ticketed to be, **proposed** means it has a shape but no
 decision, **open** means the shape itself is still being argued. Nothing
 here is sorted into a bin before it has to be.
 
-The standing decisions in the [roadmap](../roadmap.md) predate this
-section and remain in force; new ones land here.
+The [standing decisions](#standing-decisions) predate these notes and
+remain in force; new ones land here as notes.
 
 | # | Note | Status |
 | --- | --- | --- |
@@ -24,6 +24,14 @@ section and remain in force; new ones land here.
 | 11 | [Per-ticket leases and parallel loops](0011-parallel.md) | proposed |
 | 12 | [A second board behind the provider protocol](0012-second-board.md) | accepted |
 | 13 | [The console's shape](0013-console.md) | accepted |
+
+## Standing decisions
+
+1. **KISS / evidence-first.** No mechanism without a demonstrated consumer: config knobs, plugin seams and supervisor features alike.
+2. **Pluggable by shape, not by system.** Hardcoded behavior moves to module-level seams (callables, lists, config) as tickets touch it; a plugin or registry mechanism waits for a second consumer's evidence.
+3. **Tickets are atoms.** Narrow 15–30 min leaves; parents are tracking-only and unclaimable; the claimed ticket body is a frozen contract.
+4. **Every failure becomes a mechanical gate.** Each failure class gets a gate; the [failure lineage](../architecture/overview.md#failure-lineage-why-each-gate-exists) lists them.
+5. **The factory never pushes `main`.** Pushing `main` is the operator's call; under `[merge] mode = "pr"` the loop pushes its own task and evidence branches and opens a pull request ([note 7](0007-merge-modes.md)).
 
 ## Writing one
 
