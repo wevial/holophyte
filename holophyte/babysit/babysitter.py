@@ -13,6 +13,11 @@ from holophyte.babysit import babysitter, maintainer_notes, thread_mentions
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
+from holophyte.babysit.description_review import (
+    TAG_BRIEF,
+    description_findings,
+    rewrite_description,
+)
 from holophyte.babysit.main_checkout import detached_main
 from holophyte.babysit.thread_answers import answer_asks, post
 from holophyte.babysit.thread_findings import thread_finding
@@ -462,6 +467,7 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
             + tests_brief(wt)
             + scope_brief(wt, ticket, covered, sha, candidate_only=True)
             + evidence
+            + TAG_BRIEF
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
@@ -546,6 +552,12 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         stale = stale_approvals(decision, unwitnessed)
     recovered = _fix_answers(conn, run_id, rnd, fix_note)
     answered = "\n".join(part for part in (fix_context, recovered) if part)
+    described = description_findings(verdict, decision, unwitnessed)
+    if described and rewrite_description(
+            project, conn, run_id, provider, task_id, branch, wt, sha,
+            reviewed or main_merge_base(wt, sha), beat_s, pull, ticket,
+            budget_min, answered, described):
+        verdict, decision, unwitnessed, rnd = _covering_review(*review)
     if not unwitnessed and decision == "APPROVE":
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"

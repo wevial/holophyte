@@ -107,8 +107,11 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         "Answer with exactly one line `TITLE: ...` (the title alone, under"
         f" {github.PR_TITLE_MAX} characters) followed by the description in"
         " Markdown. Explain what the change does for a user or caller and why"
-        " first. Note decisions, risks and anything surprising. Do not narrate"
-        " the diff. Do not list files, styles, class names, renames or tests."
+        " first. Where the ticket's planned approach and the diff differ, the"
+        " description follows the diff: describe what the diff does, not what"
+        " the ticket planned. Note decisions, risks and anything surprising."
+        " Do not narrate the diff. Do not list files, styles, class names,"
+        " renames or tests."
         " Use this repository's own style; do not paste the ticket, and do not add"
         " a link to the ticket -- the loop appends one. Do not edit, commit"
         " or run anything: answer with the text only.",
@@ -131,21 +134,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     parts.append(f"The diff against main (`git diff main...HEAD`):\n\n"
                  f"```diff\n{diff}\n```")
     if refresh is not None:
-        current, answered = refresh
-        parts.extend([
-            "the description as it stands:\n\n" + current,
-            "what this fix answered:\n\n" + answered,
-            "Rewrite the description to explain the current behaviour and reasons."
-            " The title"
-            " will be ignored. Do not include Linear, Evidence, or appended bot"
-            " blocks. Follow the same prose rules above.",
-        ])
-        if merge_config(project).pr_changes_log:
-            parts.append("Under `## Changes since first review`, give one bullet for"
-                         " this fix: what changed in behaviour, one line only."
-                         " Omit earlier rounds; the loop preserves them.")
-        else:
-            parts.append("Do not include a Changes since first review section.")
+        parts.extend(_refresh_parts(project, *refresh))
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
@@ -182,6 +171,24 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     return title, github.pr_body_written(text, task_id, issue_url, native)
 
 
+def _refresh_parts(project, current, answered, review):
+    parts = ["the description as it stands:\n\n" + current,
+             "what this fix answered:\n\n" + answered]
+    if review:
+        parts.append("the review says the description is wrong:\n\n" + review)
+    parts.append("Rewrite the description to explain the current behaviour and"
+                 " reasons. The title will be ignored. Do not include Linear,"
+                 " Evidence, or appended bot blocks. Follow the same prose rules"
+                 " above.")
+    if merge_config(project).pr_changes_log:
+        parts.append("Under `## Changes since first review`, give one bullet for"
+                     " this fix: what changed in behaviour, one line only."
+                     " Omit earlier rounds; the loop preserves them.")
+    else:
+        parts.append("Do not include a Changes since first review section.")
+    return parts
+
+
 TRAILING_KEY = re.compile(r" \(([A-Z]+-\d+)\)\Z")
 
 
@@ -208,11 +215,13 @@ def _without_changes(text):
 
 
 def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
-                    beat_s, wt, budget_min, pull, answered, *, sha=None):
+                    beat_s, wt, budget_min, pull, answered, *, sha=None,
+                    review=""):
     """A refused turn never overwrites the existing prose."""
-    written = bool(sha) and pr_activity.latest(conn, run_id, "pr_text_sha") == sha
+    written = (not review and bool(sha)
+               and pr_activity.latest(conn, run_id, "pr_text_sha") == sha)
     if written and not merge_config(project).ui_paths:
-        return
+        return False
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
         current = github.rest(project, pull, "GET", endpoint)["body"] or ""
@@ -224,9 +233,9 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     text = None if written else _refreshed_prose(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
-        budget_min, own, answered)
+        budget_min, own, answered, review)
     if text is None and section is None:
-        return
+        return False
     with heartbeat_while(conn, run_id, beat_s):
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
         if text is not None:
@@ -236,14 +245,15 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
         github.edit_pr_body(project, pull, body)
     if text is not None and sha and conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pr_text_sha", sha)
+    return text is not None
 
 
 def _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
-                     beat_s, wt, budget_min, own, answered):
+                     beat_s, wt, budget_min, own, answered, review=""):
     written = _written_pr_text(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
         monotonic(), budget_min or PR_TEXT_BUDGET_MIN, None,
-        refresh=(own, answered))
+        refresh=(own, answered, review))
     if written is None:
         return None
     log_changes = merge_config(project).pr_changes_log

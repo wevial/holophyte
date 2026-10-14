@@ -789,6 +789,46 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
                          [fixed])
 
+    def test_a_description_finding_after_the_rewrite_parks_with_it(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        first = "path: \"PR description\" -- it promises a postMessage handshake"
+        again = "path: \"PR description\" -- it still names the handshake"
+
+        def described(finding):
+            return Reply(f"Blocker ({finding}).\n"
+                         "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
+                         "VERDICT: REQUEST_CHANGES")
+
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("thread fix"), described(first),
+                            Idle("TITLE: Open pod links\nOne branch opens it."),
+                            described(again), provider=self.provider())
+
+        self.assertEqual(fake.roles[5:], ["review", "implement", "review"])
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertIn("the review of the fix at "
+                      + fake.turns[7].candidate_sha[:12] + " asked for changes",
+                      self.question())
+        self.assertIn("it still names the handshake", self.question())
+
+    def test_a_code_finding_beside_a_description_finding_skips_the_rewrite(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        mixed = Reply(
+            "- Blocker (path: \"PR description\" -- it names a handshake).\n"
+            "- Blocker: src/app.py:3 drops the tab target.\n"
+            "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
+            "VERDICT: REQUEST_CHANGES")
+
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("thread fix"), mixed, provider=self.provider())
+
+        self.assertEqual(fake.roles[5:], ["review"])
+        self.assertIn("src/app.py:3 drops the tab target", self.question())
+
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
