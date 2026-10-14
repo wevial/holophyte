@@ -765,6 +765,30 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                       + fake.turns[2].candidate_sha[:12] + " asked for changes",
                       self.question())
 
+    def test_a_description_only_finding_rewrites_the_text_and_reviews_again(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        stale = ("path: \"PR description\" -- the description promises a"
+                 " postMessage handshake the diff does not add")
+        description_only = Reply(
+            f"Blocker ({stale}).\n"
+            "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
+            "VERDICT: REQUEST_CHANGES")
+
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("thread fix"), description_only,
+                            Idle("TITLE: Open pod links in a tab\n"
+                                 "One branch opens the link in a new tab."),
+                            APPROVE, Idle(""), provider=self.provider())
+
+        self.assertEqual(fake.roles[5:8], ["review", "implement", "review"])
+        self.assertIn(stale, fake.turns[6].goal)
+        fixed = fake.turns[5].candidate_sha
+        self.assertEqual(fake.turns[7].candidate_sha, fixed)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
+                         [fixed])
+
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
