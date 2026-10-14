@@ -123,9 +123,24 @@ sees. [Store and state](data.md) has the tables and the diagrams.
 ## Why it is shaped this way
 
 Every gate is the fossil of a failure. The
-[roadmap's failure lineage](../roadmap.md#failure-lineage-why-each-gate-exists)
+[failure lineage](#failure-lineage-why-each-gate-exists)
 lists the wreck each one bought, from empty verify output to mid-run
-goalpost edits. The standing decisions that keep the shape small are on the
-same page: no mechanism without a demonstrated consumer, pluggable by shape
-rather than by system, tickets as atoms, every failure becomes a mechanical
-gate, and the factory never pushes.
+goalpost edits. The [standing decisions](../design/index.md#standing-decisions)
+keep the shape small: no mechanism without a demonstrated consumer,
+pluggable by shape rather than by system, tickets as atoms, every failure
+becomes a mechanical gate, and the factory never pushes `main`.
+
+## Failure lineage (why each gate exists)
+
+| Wreck | Gate it bought |
+|---|---|
+| KO-106 empty verify output | per-clause fail-loud diagnostics |
+| KO-107 `Ran 0 tests OK` | vacuous-green = RED |
+| port 8622→8000 drift | literal contract checks |
+| KO-109 round-2 death | fix rounds + terminal adjudication |
+| KO-110 180-min blob | mechanical scope caps |
+| 53KB FINDINGS in a day | windowed deterministic rendering |
+| KO-111 absolute-`cd` verify | relative-path rule |
+| KO-138 unwitnessed default | behavioral claims need a witness test |
+| retry-loop token burn (anticipated) | failure-pattern escalation |
+| mid-run goalpost edits (anticipated) | claim-time snapshot + drift abort |

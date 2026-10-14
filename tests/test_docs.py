@@ -235,6 +235,25 @@ class ReadmeRetiredClaimsTests(unittest.TestCase):
         self.assertEqual(found, [])
 
 
+class RetiredRoadmapTests(unittest.TestCase):
+    """The roadmap page is retired: nothing links it, the nav and README
+    drop it, and the failure lineage lives on the architecture overview."""
+
+    def test_no_file_names_the_retired_roadmap_page(self):
+        grep = subprocess.run(
+            ["git", "grep", "-l", "roadmap[.]md"], cwd=ROOT,
+            capture_output=True, text=True)
+        self.assertFalse((DOCS / "roadmap").with_suffix(".md").exists())
+        self.assertEqual(grep.stdout.split(), [])
+        self.assertEqual(grep.returncode, 1, grep.stderr)
+
+    def test_overview_holds_the_failure_lineage_it_links(self):
+        text = (DOCS / "architecture" / "overview.md").read_text()
+        title = "Failure lineage (why each gate exists)"
+        self.assertIn(title, headings(text, 2))
+        self.assertIn(f"(#{anchor(title)})", text)
+
+
 def section(text, title):
     """The body under the `## title` heading, up to the next `## `."""
     return text.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]

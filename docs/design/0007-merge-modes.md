@@ -27,7 +27,7 @@ and genuine questions are never auto-replied; they park too.
 ## Consequences
 
 A second merge path with its own tests; a GitHub token on the writer
-host; the standing decision in the roadmap is amended.
+host; the [standing decision](index.md#standing-decisions) is amended.
 
 ## Tickets
 
