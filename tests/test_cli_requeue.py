@@ -164,6 +164,17 @@ class RequeueCliTests(RequeueTarget):
             (self.run,)).fetchone()
         self.assertEqual(entries[0].at, intervention_at)
 
+    def test_a_command_line_requeue_records_the_operator_as_its_actor(self):
+        self.fail_the_run()
+
+        self.cli("--requeue", "KO-1", "--note", "contract fixed")
+
+        cursor = self.conn.execute(
+            "SELECT * FROM interventions WHERE \"action\" = 'requeue'")
+        columns = [d[0] for d in cursor.description]
+        (row,) = [dict(zip(columns, r)) for r in cursor.fetchall()]
+        self.assertEqual(row.get("actor"), "operator")
+
     def test_a_requeue_of_a_run_with_a_pull_request_names_it_in_the_note(self):
         """KO-407: a failed run that left its branch open as a pull request
         (one that adopted the PR, or parked on it, before it failed) keeps
