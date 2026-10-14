@@ -123,4 +123,4 @@ The store schema and the ticket template are the cross-language contracts.
 A Rust daemon replaces `server.py` against the same store; a Rust verify
 gate replaces `gates.py` with the same clause-by-clause report; the Python
 test suite run against the other binary is the acceptance oracle. That
-ordering is the roadmap's, and it is why the seams came first.
+ordering is why the seams came first.
