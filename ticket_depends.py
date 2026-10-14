@@ -6,12 +6,13 @@ ESTIMATE_SECTION = "Estimate & dependencies"
 
 def estimate_line(lines):
     """The index of the estimate line `ticket_template.parse()` reads."""
-    titled, section = False, None
-    for index, line in enumerate(lines):
+    first = next((index for index, line in enumerate(lines)
+                  if ticket_template.H1_RE.match(line)), -1)
+    section = None
+    for index in range(first + 1, len(lines)):
+        line = lines[index]
         heading = ticket_template.H2_RE.match(line)
-        if not titled:
-            titled = bool(ticket_template.H1_RE.match(line))
-        elif heading and section == ESTIMATE_SECTION:
+        if heading and section == ESTIMATE_SECTION:
             return None
         elif heading:
             section = heading.group(1).strip()

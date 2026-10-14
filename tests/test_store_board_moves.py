@@ -157,6 +157,22 @@ class StoreBoardMoveTests(unittest.TestCase):
         self.assertTrue(store.tickets.pickable(self.conn,
                                                self.ticket_id("NAT-2")))
 
+    def test_a_cancel_rewires_a_titleless_draft_and_moves_its_revision(self):
+        self.file()
+        draft = body(depends="NAT-1").replace("# Add export endpoint\n\n", "")
+        self.file(draft, column="backlog")
+        self.assertEqual(self.depends("NAT-2"), (["NAT-1"], ["NAT-1"]))
+
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-1", 1,
+                                  "won't do")
+
+        self.assertEqual(self.depends("NAT-2"), ([], []))
+        self.assertEqual(self.row("NAT-2")[3], 2)
+        with self.assertRaises(store.RevisionMoved):
+            store.board.edit_ticket(self.conn, self.project_id, "NAT-2",
+                                    draft, 1)
+        self.assertEqual(self.depends("NAT-2"), ([], []))
+
     def test_a_dependency_abandoned_without_a_cancel_still_refuses_a_claim(self):
         self.file()
         self.file(body(depends="NAT-1"))
