@@ -86,6 +86,9 @@ class RecordInterventionTests(InterventionFixture):
             dict(action="close_out", note="x", trigger="whim"),
             dict(action="close_out", note="x", source="ghost"),
             dict(action="close_out", note="   "),
+            dict(action="close_out", note="x", actor="human"),
+            dict(action="close_out", note="x", source="supervisor",
+                 actor="admin"),
         ):
             with self.assertRaises(ValueError):
                 store.record_intervention(self.conn, self.run, **bad)
@@ -130,7 +133,8 @@ class RecordInterventionTests(InterventionFixture):
                   re.findall(r"IN \(([^)]*)\)", ddl)]
         self.assertEqual(values, [store.INTERVENTION_SOURCES,
                                   store.INTERVENTION_TRIGGERS,
-                                  store.INTERVENTION_ACTIONS])
+                                  store.INTERVENTION_ACTIONS,
+                                  store.operate.INTERVENTION_ACTORS])
 
 
 class MigrationTests(InterventionFixture):

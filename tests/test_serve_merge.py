@@ -546,6 +546,38 @@ class GateTests(MergeCase):
         self.assertEqual((dump(self.db), self.github.calls), (before, []))
 
 
+class MergeActorTests(MergeCase):
+    def start_with_machine_token(self):
+        machine = self.root / "machine.token"
+        machine.write_text(MACHINE + "\n")
+        machine.chmod(0o600)
+        serve = self.root / "serve.token"
+        serve.write_text(TOKEN + "\n")
+        serve.chmod(0o600)
+        self.start('[merge]\nmode = "pr"\napprove = "human"\n'
+                   f'[serve]\ntoken_file = "{serve}"\n'
+                   f'machine_token_file = "{machine}"\nactions = true\n')
+
+    def approve_actor(self):
+        return self.rows("SELECT source, actor FROM interventions"
+                         " WHERE action = 'approve'")
+
+    def test_a_merge_under_the_consoles_token_records_the_maintainer(self):
+        self.park()
+        self.start_with_machine_token()
+        code, _, posted = self.post_merge(run=self.run)
+        self.assertEqual((code, posted["ok"]), (200, True), posted)
+        self.assertEqual(self.approve_actor(), [("human", "maintainer")])
+
+    def test_a_merge_under_the_machine_token_records_the_operator(self):
+        self.park()
+        self.start_with_machine_token()
+        code, _, posted = self.request("POST", "/actions/merge",
+                                       bearer(MACHINE), body={"run": self.run})
+        self.assertEqual((code, posted["ok"]), (200, True), posted)
+        self.assertEqual(self.approve_actor(), [("human", "operator")])
+
+
 class HostMergeTests(HostServeCase):
     def test_a_project_merge_answers_only_to_the_machine_token(self):
         github = FakeGithub()

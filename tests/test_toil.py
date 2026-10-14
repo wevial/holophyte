@@ -87,4 +87,6 @@ class ToilTests(ServeTestCase):
         self.assertEqual(code, 200)
         self.assertEqual(body["toil"]["24h"], {
             "interventions": 3, "merged": 0, "per_merge": None,
-            "by_action": {"requeue": 3}})
+            "by_action": {"requeue": 3},
+            "by_actor": {"maintainer": 0, "operator": 3, "supervisor": 0,
+                         "unknown": 0}})

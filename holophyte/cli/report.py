@@ -210,13 +210,14 @@ def toil_status(conn, now):
         body[label] = {
             "interventions": count, "merged": toil.merged,
             "per_merge": count / toil.merged if toil.merged else None,
-            "by_action": toil.by_action}
+            "by_action": toil.by_action, "by_actor": toil.by_actor}
     return body
 
 
 def toil_lines(conn, now):
+    windows = toil_status(conn, now)
     lines = []
-    for label, window in toil_status(conn, now).items():
+    for label, window in windows.items():
         rate = ("" if window["per_merge"] is None
                 else f", {window['per_merge']:.2f} per merge")
         actions = ", ".join(f"{action} {n}"
@@ -224,6 +225,10 @@ def toil_lines(conn, now):
         lines.append(f"toil {label}: {window['interventions']} human"
                      f" interventions, {window['merged']} merged{rate}"
                      + (f" ({actions})" if actions else ""))
+    for label, window in windows.items():
+        actors = ", ".join(f"{actor} {n}"
+                           for actor, n in window["by_actor"].items())
+        lines.append(f"interventions {label} by actor: {actors}")
     return lines
 
 

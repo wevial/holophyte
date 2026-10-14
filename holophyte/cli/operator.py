@@ -39,6 +39,7 @@ from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
 from store import operator_notes, steer_notes
 from store.gap_layers import record_gap_layer
+from store.operate import acting_as, author_actor
 
 BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
@@ -315,16 +316,17 @@ def babysit_ticket(target, identifier, note, out=None, author=None):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            if note != BABYSIT_DEFAULT_NOTE or author is not None:
-                run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
-                event_id = operator_notes.send_back(
-                    conn, run_id, note,
-                    getpass.getuser() if author is None else author)
-                purpose = ("as a maintainer instruction "
-                           f"(operator_note event {event_id})")
-            else:
-                run_id = store.babysit(conn, ticket_id, note)
-                purpose = "for another look"
+            with acting_as(author_actor(author)):
+                if note != BABYSIT_DEFAULT_NOTE or author is not None:
+                    run_id = store.read.ticket_by_id(conn, ticket_id).lastRunId
+                    event_id = operator_notes.send_back(
+                        conn, run_id, note,
+                        getpass.getuser() if author is None else author)
+                    purpose = ("as a maintainer instruction "
+                               f"(operator_note event {event_id})")
+                else:
+                    run_id = store.babysit(conn, ticket_id, note)
+                    purpose = "for another look"
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} sent back to the babysitter: run {run_id}"
@@ -338,9 +340,10 @@ def send_back_run(target, run_id, note, author=None, out=None):
     conn = _operator_store(target)
     try:
         try:
-            event_id = operator_notes.send_back(
-                conn, run_id, note,
-                getpass.getuser() if author is None else author)
+            with acting_as(author_actor(author)):
+                event_id = operator_notes.send_back(
+                    conn, run_id, note,
+                    getpass.getuser() if author is None else author)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] run {run_id}: {refused}") from None
         print(f"[holo2] run {run_id} sent back to the babysitter as a"
@@ -357,10 +360,11 @@ def steer_ticket(target, identifier, note, hint=False, author=None, out=None,
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         try:
-            line = steered_line(
-                target, conn, ticket_id, identifier, note,
-                getpass.getuser() if author is None else author, hint=hint,
-                now=now, out=out)
+            with acting_as(author_actor(author)):
+                line = steered_line(
+                    target, conn, ticket_id, identifier, note,
+                    getpass.getuser() if author is None else author,
+                    hint=hint, now=now, out=out)
         except (store.ApproveRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {line}", file=out)

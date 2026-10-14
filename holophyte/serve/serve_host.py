@@ -471,7 +471,7 @@ class HostServer(StatusServer):
         write = None if self.write_token is None else self.write_token + own
         return Scope(entry.target, read, write, self.actions,
                      knobs.config_edit and write is not None, entry.name,
-                     prefix, stale_ms), slash + rest
+                     prefix, stale_ms, self.write_token), slash + rest
 
 
 def host_tokens(host, knobs, bound_host, entries):

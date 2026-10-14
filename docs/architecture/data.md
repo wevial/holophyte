@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 47) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 48) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -44,7 +44,7 @@ A new table or column follows the ones already there:
 | `supervisorHeartbeats` | supervisor process; one row for the host sweep | supervisor | pid, start, last beat, passes, host; the host sweep keeps one sentinel row per store, pid 0, which readers print as "host sweep" |
 | `loopRestarts` | self-merge re-exec | loop | sha; the supervisor checks the loop came back |
 | `linearDeliveries` | push to Linear | loop | what was projected, when |
-| `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint` plus the babysit action `store.babysit()` writes (a fixed set, currently 9 values); the record-before-acting rule lives here |
+| `interventions` | operator or supervisor decision on a run | operator commands, supervisor | action ∈ `redirect, kill, extend_time_box, resume, close_out, requeue, approve, repoint` plus the babysit action `store.babysit()` writes (a fixed set, currently 9 values); `actor` names who acted, `maintainer`, `operator` or `supervisor`, null on a row from before schema 48; the record-before-acting rule lives here |
 | `ledger` | entry in a run's narrative | loop, operator commands | `kind` ∈ `merge, failure, round, adjudication, intervention, note`, `source` ∈ `loop, operator`; written before the Linear comment that projects it; served at `/ledger` and `/runs/N/ledger` |
 | `followUps` | FOLLOW_UP line of a run's fix commit | loop | `kind` ∈ `feature, guardrail`; captured pending at the fix turn and settled when the run merges: a feature as a Backlog draft (`filedAs`) or a duplicate of an open one (`duplicateOf`), a guardrail as a findings-ledger entry; `error` when the draft could not be filed |
 | `storyProposals` | a story child's feature follow-up proposed as a new child of the story | loop | `state` ∈ `proposed, accepted, rejected, superseded`; written when the adjudicator calls the follow-up `in_story`; outside the approved plan, so it changes no child, witness, generation or frontier and cannot be claimed; `raisedBy` is the child whose run raised it |

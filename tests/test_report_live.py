@@ -9,8 +9,10 @@ from unittest.mock import patch
 
 import holophyte.cli.entry
 import holophyte.cli.report as report
+import holophyte.serve.server
 import store
 import store.tickets
+from holophyte.config.project import Project
 from tests.phase_fixture import advance_phase, finish_run
 from tests.test_wiring_telemetry import ReportStoreCase
 
@@ -27,7 +29,9 @@ FINISHED = (
 # KO-705: the toil lines close the live block; KO-1 merged in 2023, outside
 # both windows of the wall clock.
 NO_TOIL = ["toil 24h: 0 human interventions, 0 merged",
-           "toil 7d: 0 human interventions, 0 merged"]
+           "toil 7d: 0 human interventions, 0 merged",
+           *(f"interventions {window} by actor: maintainer 0, operator 0,"
+             " supervisor 0, unknown 0" for window in ("24h", "7d"))]
 NO_GAPS = ("gap layers: impossible 0, static 0, witness 0, guidance 0,"
            " review 0, none 0")
 NO_FINDERS = "gaps found: witness 0, operator 0"
@@ -118,8 +122,8 @@ class LiveReportTests(ReportStoreCase):
             lines = report.report_lines(self.conn)
         self.assertEqual(lines[0], "in flight:")
         self.assertTrue(lines[1].startswith("KO-454  merge_gate"))
-        self.assertEqual(lines[3:7], [*NO_TOIL, NO_GAPS, NO_FINDERS])
-        self.assertEqual("\n".join(lines[7:]), FINISHED)
+        self.assertEqual(lines[3:9], [*NO_TOIL, NO_GAPS, NO_FINDERS])
+        self.assertEqual("\n".join(lines[9:]), FINISHED)
         self.assertFalse(self.conn.in_transaction)
         following = report.report_lines(self.conn)
         self.assertEqual(following[0], "in flight: none")
@@ -165,8 +169,9 @@ class LiveReportTests(ReportStoreCase):
             self.assertEqual(lines[3:5], [
                 f"toil {window}: 0 human interventions, 1 merged, 0.00 per"
                 " merge" for window in ("24h", "7d")])
-            self.assertEqual(lines[5:7], [NO_GAPS, NO_FINDERS])
-            self.assertEqual("\n".join(lines[7:]), FINISHED)
+            self.assertEqual(lines[5:7], NO_TOIL[2:])
+            self.assertEqual(lines[7:9], [NO_GAPS, NO_FINDERS])
+            self.assertEqual("\n".join(lines[9:]), FINISHED)
             out = io.StringIO()
             with patch.object(sys, "stdout", out):
                 holophyte.cli.entry.cli(["--report", str(self.target)])
@@ -176,6 +181,29 @@ class LiveReportTests(ReportStoreCase):
         self.assertEqual(report.report_lines(self.conn),
                          ["in flight: none", "", *NO_TOIL, NO_GAPS,
                           NO_FINDERS, *FINISHED.splitlines()])
+
+    def test_report_and_status_count_interventions_by_actor(self):
+        run = self.live_run(9, NOW - 60_000, "working")
+        for actor in ("maintainer", "operator", "operator"):
+            store.record_intervention(self.conn, run, "steer", f"{actor} note",
+                                      actor=actor, now=NOW - 1000)
+        store.record_intervention(self.conn, run, "kill", "silent run",
+                                  source="supervisor", now=NOW - 1000)
+        self.conn.execute(
+            'INSERT INTO interventions (runId, source, "trigger", action,'
+            " note, at) VALUES (?, 'human', 'manual', 'requeue',"
+            " 'before the actor column', ?)", (run, NOW - 1000))
+        self.conn.commit()
+
+        with patch("holophyte.cli.report.time.time", return_value=NOW / 1000):
+            lines = report.report_lines(self.conn)
+        self.assertIn("interventions 24h by actor: maintainer 1, operator 2,"
+                      " supervisor 1, unknown 1", lines)
+        code, body = holophyte.serve.server.status(
+            Project.locate(self.target), now=NOW)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["toil"]["24h"]["by_actor"], {
+            "maintainer": 1, "operator": 2, "supervisor": 1, "unknown": 1})
 
     def test_actual_is_split_into_agent_and_verify_columns(self):
         self.completed_run(2, 5, 10, 0, "merged")

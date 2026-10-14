@@ -175,6 +175,20 @@ class RequeueCliTests(RequeueTarget):
         (row,) = [dict(zip(columns, r)) for r in cursor.fetchall()]
         self.assertEqual(row.get("actor"), "operator")
 
+    def test_a_babysit_signed_by_the_maintainer_records_the_maintainer(self):
+        park_run(self.conn, self.run, "awaiting_merge_approval",
+                 "parked on its pull request",
+                 pr_url="https://github.com/example/repo/pull/3")
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+
+        self.cli("--babysit", "KO-1", "--note", "answer thread 2",
+                 "--author", "maintainer")
+
+        self.assertEqual(self.conn.execute(
+            "SELECT action, actor FROM interventions"
+            " WHERE action != 'migrate'").fetchall(),
+            [("operator_note", "maintainer")])
+
     def test_a_requeue_of_a_run_with_a_pull_request_names_it_in_the_note(self):
         """KO-407: a failed run that left its branch open as a pull request
         (one that adopted the PR, or parked on it, before it failed) keeps

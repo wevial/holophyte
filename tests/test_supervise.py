@@ -706,6 +706,20 @@ class ParkedPullRequestTests(SweepTestCase):
         self.assertEqual(calls(), ["--user start holophyte-loop@repo"])
         self.assertIn("started holophyte-loop@repo", out)
 
+    def test_the_sweeps_interventions_record_the_supervisor_as_actor(self):
+        run_id = self.parked_on_pr()
+        self.seen_before_activity(run_id)
+        self.fake_github(self.ACTIVE_PULL)
+        self.fake_systemctl()
+
+        self.one_pass(T0 + 20 * MINUTE, StubProvider())
+
+        self.assertEqual(self.conn.execute(
+            'SELECT "action", source, actor FROM interventions'
+            " WHERE action != 'migrate' ORDER BY id").fetchall(),
+            [("babysit", "supervisor", "supervisor"),
+             ("launch_loop", "supervisor", "supervisor")])
+
     def test_a_sweep_under_a_live_loop_starts_nothing(self):
         run_id = self.parked_on_pr()
         self.seen_before_activity(run_id)

@@ -35,6 +35,7 @@ def ensure_project(conn, linear_team_id, repo_path, default_branch="main",
 
 def register_project(conn, linear_team_id, repo_path):
     """Adopt the row `ensure_project()` wrote for this team and path, recorded once."""
+    from .operate import intervention_actor
     path = str(Path(repo_path).resolve())
     with _transaction(conn):
         paths = canonical_projects(conn)
@@ -52,9 +53,10 @@ def register_project(conn, linear_team_id, repo_path):
         else:
             project = ensure_project(conn, linear_team_id, path)
         conn.execute(
-            'INSERT INTO interventions (projectId, source, "trigger", action, note, at)'
-            " VALUES (?, 'human', 'manual', 'register_project', ?, ?)",
-            (project, f"registered {path}", int(time.time() * 1000)))
+            'INSERT INTO interventions (projectId, source, "trigger", action, note,'
+            " at, actor) VALUES (?, 'human', 'manual', 'register_project', ?, ?, ?)",
+            (project, f"registered {path}", int(time.time() * 1000),
+             intervention_actor("human")))
         return project
 
 

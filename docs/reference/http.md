@@ -40,9 +40,13 @@ those writing routes. A project with no store answers 503.
   "host": "writer-1",
   "now": 1788450534491,
   "toil": {"24h": {"interventions": 3, "merged": 2, "per_merge": 1.5,
-                   "by_action": {"requeue": 2, "babysit": 1}},
+                   "by_action": {"requeue": 2, "babysit": 1},
+                   "by_actor": {"maintainer": 1, "operator": 2, "supervisor": 1,
+                                "unknown": 0}},
            "7d": {"interventions": 4, "merged": 3, "per_merge": 1.3333333333333333,
-                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1}}},
+                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1},
+                  "by_actor": {"maintainer": 1, "operator": 3, "supervisor": 1,
+                               "unknown": 0}}},
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
@@ -137,7 +141,13 @@ the last `24h` and the last `7d` before `now`, the same windows as
 source `human` in the window, project-level ones such as a `hold`
 included; `merged` counts the runs that ended merged in it; `per_merge` is
 their ratio, null when `merged` is 0; `by_action` counts the interventions
-by action, most frequent first, ties by name.
+by action, most frequent first, ties by name. `by_actor` counts every
+intervention in the window, the supervisor's included and `migrate` rows
+left out, by the `interventions.actor` that acted: `maintainer` (a daemon
+action under any token but the machine token), `operator` (the command
+line, MCP, or a daemon action under the machine token) and `supervisor`
+(the supervisor and the loop); `unknown` counts the rows written before
+the store recorded an actor.
 Every `host` passes through `[report] host_label`.
 
 ## `GET /runs?limit=N`

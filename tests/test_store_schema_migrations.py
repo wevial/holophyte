@@ -541,7 +541,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
         self.addCleanup(conn.close)
         after = self.rows(conn)
         # Opening adds one truthful migration-evidence row, as every version does.
-        after['interventions'] = after['interventions'][:1]
+        after['interventions'] = [row[:-1] for row in after['interventions'][:1]]
         # Admission and board columns are new; pre-existing values survive.
         after['projects'] = [row[:7] + row[9:-1] for row in after['projects']]
         after['tickets'] = [row[:-11] for row in after['tickets']]

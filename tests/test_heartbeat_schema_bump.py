@@ -99,6 +99,37 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
         self.assertTrue(all(conn is not self.conn for conn in connections))
         self.assertNotIn('beating through the open connection', output)
 
+    def test_a_store_from_before_the_actor_column_migrates_with_actor_null(self):
+        store.record_intervention(self.conn, self.run, 'pause', 'hold on',
+                                  now=2000)
+        self.conn.execute('ALTER TABLE interventions DROP COLUMN actor')
+        self.conn.execute(f'PRAGMA user_version = {store.SCHEMA_VERSION - 1}')
+        self.conn.commit()
+        tables = [name for (name,) in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+            " AND name != 'interventions' ORDER BY name")]
+
+        def dump(conn, columns='*'):
+            return ({table: conn.execute(f'SELECT * FROM "{table}"').fetchall()
+                     for table in tables},
+                    conn.execute(f'SELECT {columns} FROM interventions'
+                                 " WHERE action != 'migrate'"
+                                 ' ORDER BY id').fetchall())
+
+        before = dump(self.conn)
+        self.conn.close()
+        migrated = store.open(self.path)
+        self.addCleanup(migrated.close)
+
+        self.assertEqual(migrated.execute('PRAGMA user_version').fetchone()[0],
+                         store.SCHEMA_VERSION)
+        self.assertEqual(dump(migrated, 'id, runId, projectId, source,'
+                              ' "trigger", action, note, question, guidance,'
+                              ' at'), before)
+        self.assertEqual(migrated.execute(
+            "SELECT action, actor FROM interventions WHERE action != 'migrate'"
+        ).fetchall(), [('pause', None)])
+
     def test_three_failed_opens_then_recovery_keeps_every_beat(self):
         opened = store.open(self.path)
         self.addCleanup(opened.close)
