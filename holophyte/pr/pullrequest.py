@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 from dataclasses import replace
@@ -457,7 +458,9 @@ def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                        pr_seen=pr_seen, park_kind=park_kind)
             if approval is not None and approval == sha:
                 store.record_event(conn, run_id, "approval_parked",
-                                   f"the approval of {sha} waits with the park")
+                                   f"the approval of {sha} waits with the park",
+                                   level="detail",
+                                   payload=json.dumps({"sha": sha}))
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"

@@ -1,3 +1,4 @@
+import json
 from time import time
 
 import store
@@ -54,15 +55,18 @@ def _expire(conn, ticket, pull, why, held):
 
 def carry_approval(conn, run_id, status):
     parked = conn.execute(
-        "SELECT r.candidateSha FROM runs r WHERE r.id = ? AND EXISTS (SELECT 1"
-        " FROM runEvents e WHERE e.runId = r.id AND e.kind = 'approval_parked')",
-        (run_id,)).fetchone()
+        "SELECT e.payload, r.candidateSha FROM runEvents e JOIN runs r"
+        " ON r.id = e.runId WHERE e.runId = ? AND e.kind = 'approval_parked'"
+        " ORDER BY e.id DESC LIMIT 1", (run_id,)).fetchone()
     if parked is None:
         return
-    sha = parked[0]
+    sha, candidate = json.loads(parked[0])["sha"], parked[1]
     open_threads = (status.threads if status.open_threads is None
                     else status.open_threads)
-    if status.head_sha not in (None, sha):
+    if candidate != sha:
+        why = (f"the candidate was re-pointed from {sha[:12]} to"
+               f" {(candidate or '?')[:12]}")
+    elif status.head_sha not in (None, sha):
         why = f"the head moved from {sha[:12]} to {status.head_sha[:12]}"
     elif open_threads or open_threads is None or status.open_threads_floor:
         why = "a review thread is open or its count is unknown"

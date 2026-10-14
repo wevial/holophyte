@@ -1075,6 +1075,29 @@ class CiParkTests(MergeModeFixture):
         self.assert_woken_for_a_fresh_approval("the head moved", self.pr_state())
         self.assertIn("waiting for a human to say merge", self.question())
 
+    def test_an_approval_is_dropped_when_the_candidate_was_repointed_before_the_wake(
+            self):
+        fresh = self.approval_parked_on_quiet()
+        ((approved_head,),) = self.read("SELECT candidateSha FROM runs WHERE id = 2")
+        moved = self.git("commit-tree", f"{approved_head}^{{tree}}", "-p",
+                         approved_head, "-m", "pushed by someone else").strip()
+        conn = store.open(self.db)
+        store.repoint(conn, store.read.run_snapshot(conn, 2).ticketId, moved,
+                      "point at the pushed head")
+        conn.close()
+        self.reconcile(dict(self.pull(fresh, "SUCCESS"), headRefOid=moved),
+                       later_s=300)
+        (dropped,) = self.read("SELECT summary FROM runEvents WHERE runId = 2"
+                               " AND kind = 'approval_dropped'")
+        self.assertIn("the candidate was re-pointed", dropped[0])
+        self.serve(self.pr_state(head=moved))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(provider=self.provider())
+        self.assertNotIn(("merged",),
+                         self.read("SELECT outcome FROM runs WHERE id = 3"))
+        self.assertEqual(self.read("SELECT summary FROM runEvents WHERE runId = 3"
+                                   " AND summary LIKE '%after an approval%'"), [])
+
     def test_an_approval_is_dropped_when_a_review_thread_opened_before_the_wake(
             self):
         fresh = self.approval_parked_on_quiet()
