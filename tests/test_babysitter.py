@@ -45,7 +45,7 @@ import store  # noqa: E402
 import store.read  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter, maintainer_notes  # noqa: E402
-from holophyte.loop.gates import MergeParked, RunFailure, sh  # noqa: E402
+from holophyte.loop.gates import MergeParked, sh  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
 from holophyte.loop.stop import resume_babysit_fix, resume_paused  # noqa: E402
 from holophyte.pr import github, pr_media, pr_status  # noqa: E402
@@ -748,7 +748,8 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
             stderr=subprocess.PIPE).strip()
 
     @contextmanager
-    def fakes(self, fix, replies=None):
+    def fakes(self, fix, replies=None,
+              answer="THREAD 1: pointed the capture spec at the index."):
         replies = replies or ["CRITERION 1: unwitnessed — the capture failed\n"
                               "VERDICT: REQUEST_CHANGES",
                               "CRITERION 1: met — ui/page.html shows load\n"
@@ -762,7 +763,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         def fixer(*args, **kwargs):
             self.fix_turns += 1
             fix()
-            return "THREAD 1: pointed the capture spec at the index.", False
+            return answer, False
 
         def publish(project, wt, output, files, task_id, note, media_repo):
             return "Media lives here.", {
@@ -777,8 +778,8 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
               patch.object(babysitter, "_post") as self.posted):
             yield
 
-    def review_fix(self, fix):
-        with self.fakes(fix):
+    def review_fix(self, fix, **fakes):
+        with self.fakes(fix, **fakes):
             return babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, None, 30, CAPTURE_PULL, TICKET, "true",
@@ -791,7 +792,8 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
             return babysitter._answer_threads(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, 30, CAPTURE_PULL,
-                SimpleNamespace(threads=(CAPTURE_THREAD,), checks="success"),
+                SimpleNamespace(threads=(CAPTURE_THREAD,), checks="success",
+                                notes=()),
                 1, 1, "reviewer", TICKET, "true", (), 10, reviewed=self.head,
                 criteria=["Given the page, then it shows load"])
 
@@ -809,12 +811,12 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.assertNotIn("failed (exit 1)", self.prompts[1])
         self.assertIn("https://example.test/01-state.png", self.prompts[1])
 
-    def test_a_fix_that_changes_neither_head_nor_spec_still_fails(self):
-        with self.assertRaisesRegex(RunFailure, "fix round made no progress"):
-            self.review_fix(lambda: None)
+    def test_a_silent_fix_that_only_edits_the_spec_is_reviewed_again(self):
+        approved = self.review_fix(self.edit_spec, answer="")
 
+        self.assertEqual(approved, self.head)
         self.assertEqual(self.fix_turns, 1)
-        self.assertEqual(len(self.prompts), 1)
+        self.assertEqual(len(self.prompts), 2)
 
     def test_a_spec_only_fix_paused_after_its_turn_is_reviewed_on_resume(self):
         def fix_then_pause():

@@ -227,14 +227,13 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         self.assertNotIn("(none recorded)", reason)
 
     def test_stale_finding_beside_an_ordinary_one_gets_a_fix_turn(self):
-        with self.assertRaises(RunFailure) as failed:
+        with self.assertRaises(Parked):
             self.review_fix(self.stale_reply("unwitnessed — no test"))
 
         self.assertEqual(len(self.prompts), 1)
         self.assertEqual(len(self.fix_turns), 1)
         self.assertIn("changed since approval at", self.fix_turns[0])
         self.assertEqual(self.rereview_events(), [])
-        self.assertIn("fix round made no progress", str(failed.exception))
 
 
 if __name__ == "__main__":

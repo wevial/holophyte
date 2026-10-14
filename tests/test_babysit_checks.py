@@ -379,10 +379,10 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
             "id": 42, "app": {"slug": "github-actions"}}
     FAILED = "FAIL: test_x (tests.test_y.Case.test_x)"
 
-    def red_check(self, run, log="", *, until_fixed=False):
+    def red_check(self, run, log="", *, until_fixed=False, states=None):
         """`run` red on every head, or the first alone; `log` its job's log."""
         self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route()
+        self.fake_route(states=states)
         self.job_log.write_text(log)
         heads, n = [], iter(range(42, 10**4))  # A rerun makes new jobs.
         def check_runs(target, pull, sha):
@@ -452,6 +452,34 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
                             provider=self.provider())
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         self.assert_parked_on_checks()
+
+    def test_a_check_fix_that_makes_no_commit_parks_with_its_explanation(self):
+        self.red_check(self.UNIT, self.FAILED)
+        explanation = "The unit failure is a flaky runner, not this change."
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  Idle(explanation), provider=self.provider())
+        self.assert_parked_on_checks()
+        self.assertIn(explanation, self.question())
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("fix_declined",)])
+
+    def test_a_check_fix_turn_is_handed_a_devin_analysis_as_context(self):
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.red_check(self.UNIT, self.FAILED, states=[self.pr_state([devin])])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Idle("The runner is flaky."), provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement", "implement"])
+        self.assertIn("CHECK unit", fake.turns[3].goal)
+        self.assertIn("promises a retry", fake.turns[3].goal)
+
+    def test_a_check_fix_that_returns_nothing_fails(self):
+        self.red_check(self.UNIT, self.FAILED)
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""), Idle(""),
+                  provider=self.provider())
+        ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("the fix turn returned nothing", reason)
 
 if __name__ == "__main__":
     unittest.main()

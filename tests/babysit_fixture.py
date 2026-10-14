@@ -22,13 +22,11 @@ T0 = 1_700_000_000_000
 
 class BabysitHelpers:
     """Shared pass setup and assertions; no discoverable test cases."""
-    def no_commit_review_fix_fails(self):
+    def no_commit_review_fix(self, answer):
         self.resume_rejected_fix()
-        self.loop(REQUEST_CHANGES, Idle("no answer"), provider=self.provider())
-        ((outcome, reason),) = self.read(
-            "SELECT outcome, outcomeReason FROM runs ORDER BY id DESC LIMIT 1")
-        self.assertEqual(outcome, "failed")
-        self.assertIn("fix round made no progress", reason)
+        self.loop(REQUEST_CHANGES, Idle(answer), provider=self.provider())
+        return self.read("SELECT phase, outcome, outcomeReason, parkKind FROM runs"
+                         " ORDER BY id DESC LIMIT 1")[0]
 
     def no_commit_thread_answers(self, mode):
         from store.operator_notes import send_back
@@ -66,7 +64,7 @@ class BabysitHelpers:
         row, = self.read("SELECT id, phase, outcome, outcomeReason, prUrl FROM runs"
                          " ORDER BY id DESC LIMIT 1")
         run_id, phase, outcome, reason, url = row
-        if mode in {"partial", "timeout", "dirty"}:
+        if mode in {"timeout", "dirty"}:
             self.assertEqual((phase, outcome), ("failed", "failed"))
             state = "timed out" if mode == "timeout" else "made no progress"
             self.assertIn("fix round " + state, reason)
@@ -79,6 +77,9 @@ class BabysitHelpers:
             "SELECT parkKind FROM runs ORDER BY id DESC LIMIT 1"),
             [("fix_declined",)])
         question = self.question()
+        if mode == "partial":
+            self.assertIn(output.split("\n", 1)[1], question)
+            return
         if mode == "secret":
             self.assertIn("Credential [redacted] is unavailable.", question)
             self.assertIn("api_key=[redacted]", question)

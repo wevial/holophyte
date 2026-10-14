@@ -65,14 +65,40 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
     def test_no_commit_park_redacts_configured_secrets(self):
         self.no_commit_thread_answers("secret")
 
-    def test_no_commit_review_fix_without_threads_still_fails(self):
-        self.no_commit_review_fix_fails()
+    def test_no_commit_review_fix_without_threads_parks_with_its_answer(self):
+        phase, outcome, _, park = self.no_commit_review_fix("nothing asks for a change")
+        self.assertEqual((phase, outcome, park),
+                         ("awaiting_merge_approval", None, "fix_declined"))
+        self.assertIn("nothing asks for a change", self.question())
 
-    def test_partially_answered_no_commit_threads_fail(self):
+    def test_a_no_commit_fix_turn_that_returned_nothing_fails(self):
+        phase, outcome, reason, _ = self.no_commit_review_fix("")
+        self.assertEqual((phase, outcome), ("failed", "failed"))
+        self.assertIn("the fix turn returned nothing", reason)
+
+    def test_partially_answered_no_commit_threads_park_with_the_answer(self):
         self.no_commit_thread_answers("partial")
 
     def test_budget_cutoff_with_all_thread_answers_fails(self):
         self.no_commit_thread_answers("timeout")
+
+    def test_an_unsummarised_no_commit_fix_parks_with_its_explanation(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", holophyte.cli.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state([self.DEFECT]))
+        explanation = "Nothing to change in code: the description is the gap."
+        self.loop(Reply("THREAD 1: ADDRESS -- crash"), Idle(explanation),
+                  provider=self.provider())
+        self.assertEqual(self.read(
+            "SELECT phase, outcome, parkKind FROM runs ORDER BY id DESC LIMIT 1"),
+            [("awaiting_merge_approval", None, "fix_declined")])
+        self.assertIn(explanation, self.question())
 
     def test_human_conversation_mention_is_fixed_and_replied_on_the_pull(self):
         self.human_conversation_mention_is_fixed_and_replied_on_the_pull()
@@ -363,8 +389,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
             message="the index keeps a forced file",
             path="src/app.py", line=10, url=self.URL + "#discussion_r1",
             severity="p2", raw=raw))
-        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
-                         [("failed", "failed")])
+        self.assertEqual(self.read("SELECT phase, outcome, parkKind FROM runs"),
+                         [("awaiting_merge_approval", None, "fix_declined")])
         self.assertEqual(self.git("rev-parse", BRANCH).strip(),
                          fake.turns[1].candidate_sha)
         ((summary, payload),) = self.read(
@@ -661,6 +687,19 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual([r["exitCode"] for r in results], [0, 0])
         baseline = [r for r in results if r["source"] == "baseline"]
         self.assertEqual(baseline[0]["output"].strip(), fake.turns[0].candidate_sha)
+
+    def test_babysit_review_fix_carries_an_open_devin_analysis(self):
+        self.resume_rejected_fix()
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.serve(self.pr_state([devin]), self.pr_state([devin]))
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(fake.roles[:2], ["review", "implement"])
+        self.assertIn("repair the pin", fake.turns[1].goal)
+        self.assertIn("promises a retry", fake.turns[1].goal)
 
     def test_allowance_refresh_keeps_original_address_and_retry_context(self):
         self.resume_rejected_fix()

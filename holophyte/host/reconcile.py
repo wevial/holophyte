@@ -451,7 +451,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
         return None
     threads = "?" if status.threads is None else status.threads
-    note = (f"new review activity on {pull.url}: "
+    note = (f"{pr_activity.WAKE_NOTE}{pull.url}: "
             f"{', '.join(sorted({item[0] for item in arrived}))}; updated"
             f" {status.updated_at} (last seen {seen_at}), {threads} review"
             f" threads (last seen {seen_threads})") if arrived else reason

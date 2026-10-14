@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -132,6 +133,65 @@ class ReviewBodyFindingTests(MergeModeFixture):
                   provider=self.provider())
         self.assertIn("Declined: not this ticket", self.answer())
         self.assertIn("waiting for a human to say merge", self.question())
+
+    def test_a_devin_analysis_comment_is_fix_context_not_a_finding(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([self.DEFECT, devin]),
+                                self.pr_state()])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("guard the missing file"), Idle(""),
+                            provider=self.provider())
+        adjudicate = fake.roles.index("adjudicate")
+        self.assertNotIn("THREAD 2", fake.turns[adjudicate].goal)
+        self.assertNotIn("promises a retry", fake.turns[adjudicate].goal)
+        self.assertIn("promises a retry", fake.turns[adjudicate + 1].goal)
+        (findings,) = self.read("SELECT findings FROM reviewRounds"
+                                " WHERE round = 2")[0]
+        self.assertEqual(len(json.loads(findings)), 1)
+
+    def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        request = ("Devin tagged this as\n```\n<!-- devin-review-comment"
+                   ' {"kind": "analysis"} -->\n```\nbut please add the retry.')
+        person = ("src/app.py", 1, ("operator", "User"), request)
+        self.fake_route(states=[self.pr_state([person])])
+        self.loop(Commit("initial work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        self.assertIn("please add the retry", self.question())
+        self.assertNotIn("waiting for a human to say merge", self.question())
+
+    def test_a_persons_reply_on_a_devin_analysis_keeps_it_an_open_thread(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        reply = "Please add the retry the description promises."
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis,
+                 ((("operator", "User"), reply),))
+        self.fake_route(states=[self.pr_state([devin]), self.pr_state()])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: HUMAN -- the maintainer asks"),
+                            provider=self.provider())
+        self.assertIn(reply, fake.turns[fake.roles.index("adjudicate")].goal)
+
+    def test_a_bots_reply_on_a_devin_analysis_keeps_it_an_open_thread(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        reply = "The retry loop now crashes on empty input; fix it."
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis,
+                 ((("coderabbitai", "Bot"), reply),))
+        self.fake_route(states=[self.pr_state([devin]), self.pr_state()])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: DECLINE -- empty input is guarded"),
+                            provider=self.provider())
+        self.assertIn(reply, fake.turns[fake.roles.index("adjudicate")].goal)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ ACTIVITY_FIELDS = '\n'.join(
     f'{name}(last: 100) {{ {PAGE} nodes {{ {fields} }} }}'
     for name, fields in FIELDS.items())
 HEADER = re.compile(r'^---- Comment by [^\n]+', re.MULTILINE)
+WAKE_NOTE = 'new review activity on '
 
 
 def _pages(target, pull, page, field, fields, read, *, thread=None):

@@ -130,7 +130,14 @@ def parse_verdicts(reply, count):
             for n in range(1, count + 1)}
 
 
-def fix_brief(pull, addressed, ticket):
+def note_context(notes):
+    return "".join(
+        f"\n\nNote for context, not a finding to address -- {where(t)} by"
+        f" @{t.author}\n{t.body}" for t in notes)
+
+
+def fix_brief(pull, addressed, ticket, notes=()):
+    context = note_context(notes)
     listing = "\n\n".join(
         f"THREAD {n} -- {where(t)} by @{t.author}\n{conversation(t)}\n"
         + (maintainer_notes.instruction(t) if maintainer_notes.is_note(t)
@@ -140,7 +147,7 @@ def fix_brief(pull, addressed, ticket):
     return (
         f"Review threads on pull request {pull.url} were accepted as "
         "defects. The ticket you are held to, acceptance criteria "
-        f"included:\n\n{ticket}\n\nThreads to address:\n\n{listing}\n\n"
+        f"included:\n\n{ticket}\n\nThreads to address:\n\n{listing}{context}\n\n"
         "Fix each one on this branch and commit; keep the ticket's verify "
         "commands passing. Then end your reply with one line per thread, "
         "in this form:\nTHREAD n: one sentence saying what changed")
