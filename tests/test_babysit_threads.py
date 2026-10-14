@@ -813,6 +813,44 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                       self.question())
         self.assertIn("it still names the handshake", self.question())
 
+    def test_a_description_finding_citing_an_api_and_a_file_still_rewrites(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+        stale = ("path: \"PR description\" -- it promises a window.postMessage"
+                 " handshake in src/app.tsx that the diff does not add")
+        cited = Reply(f"- Blocker ({stale}).\n"
+                      "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
+                      "VERDICT: REQUEST_CHANGES")
+
+        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- a real crash"),
+                            Commit("thread fix"), cited,
+                            Idle("TITLE: Open pod links\nOne branch opens it."),
+                            APPROVE, Idle(""), provider=self.provider())
+
+        self.assertEqual(fake.roles[5:8], ["review", "implement", "review"])
+        self.assertIn(stale, fake.turns[6].goal)
+        self.assertEqual([v["sha"] for kind, v in self.api_calls() if kind == "merge"],
+                         [fake.turns[5].candidate_sha])
+
+    def test_a_second_description_rejection_parks_despite_a_babysit_note(self):
+        self.resume_rejected_fix()
+
+        def described(finding):
+            return Reply(f"Blocker (path: \"PR description\" -- {finding}).\n"
+                         "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
+                         "VERDICT: REQUEST_CHANGES")
+
+        fake, _ = self.loop(described("it promises a handshake"),
+                            Idle("TITLE: Open pod links\nOne branch opens it."),
+                            described("it still names the handshake"),
+                            provider=self.provider())
+
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertEqual(fake.turns[2].candidate_sha, fake.turns[0].candidate_sha)
+        self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
+        self.assertIn("it still names the handshake", self.question())
+
     def test_a_code_finding_beside_a_description_finding_skips_the_rewrite(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
