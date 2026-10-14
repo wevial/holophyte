@@ -871,12 +871,15 @@ def _park_no_commit(project, conn, run_id, provider, task_id, branch, wt, sha,
                     no_commit_why, reviewed):
     from holophyte.loop.branch_sync import _candidate_drift
     from holophyte.pr.pullrequest import _park_on_pr
-    if no_commit_why:
-        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                    no_commit_why, (), reviewed=reviewed)
     if not answer.strip() and not spec_moved:
         raise RunFailure(f"the fix turn returned nothing for {pull.url}; branch"
                          f" {branch} preserved at {sha[:12]}")
+    if no_commit_why:
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    outbound(f"{no_commit_why}; "
+                             + _declined_why(addressed, summaries, answer),
+                             known_secrets(project.config())),
+                    (), reviewed=reviewed, park_kind="fix_declined")
     if not spec_moved and not _candidate_drift(wt, branch, sha):
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     outbound(_declined_why(addressed, summaries, answer),

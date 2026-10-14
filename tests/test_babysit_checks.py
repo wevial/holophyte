@@ -453,5 +453,22 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
         self.assert_parked_on_checks()
 
+    def test_a_check_fix_that_makes_no_commit_parks_with_its_explanation(self):
+        self.red_check(self.UNIT, self.FAILED)
+        explanation = "The unit failure is a flaky runner, not this change."
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  Idle(explanation), provider=self.provider())
+        self.assert_parked_on_checks()
+        self.assertIn(explanation, self.question())
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("fix_declined",)])
+
+    def test_a_check_fix_that_returns_nothing_fails(self):
+        self.red_check(self.UNIT, self.FAILED)
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""), Idle(""),
+                  provider=self.provider())
+        ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
+        self.assertEqual(outcome, "failed")
+        self.assertIn("the fix turn returned nothing", reason)
+
 if __name__ == "__main__":
     unittest.main()
