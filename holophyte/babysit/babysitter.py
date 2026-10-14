@@ -874,7 +874,7 @@ def _park_no_commit(project, conn, run_id, provider, task_id, branch, wt, sha,
     if no_commit_why:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     no_commit_why, (), reviewed=reviewed)
-    if not answer.strip():
+    if not answer.strip() and not spec_moved:
         raise RunFailure(f"the fix turn returned nothing for {pull.url}; branch"
                          f" {branch} preserved at {sha[:12]}")
     if not spec_moved and not _candidate_drift(wt, branch, sha):
