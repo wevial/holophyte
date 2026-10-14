@@ -329,7 +329,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         fixed = sha if sha == reviewed else _review_fix(
             project, conn, run_id, provider, task_id, branch, wt, sha, reviewed,
             beat_s, pull, ticket, verify_cmd, contracts, criteria, fix_note,
-            budget_min)
+            budget_min, notes=state.notes)
         if fixed != sha:
             fix_note = None  # One fix allowance per babysit, past the cap too.
             sha = reviewed = fixed
@@ -493,7 +493,8 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
 
 def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
-                criteria=(), fix_note=None, budget_min=None, *, fix_context=""):
+                criteria=(), fix_note=None, budget_min=None, *, fix_context="",
+                notes=()):
     from holophyte.loop.review_round import set_phase
     from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
@@ -575,11 +576,11 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         fixed = _fix_threads(project, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
                              contracts, budget_min, rnd, review_follows=True, goal=goal,
-                             reviewed_by_caller=True)
+                             reviewed_by_caller=True, notes=notes)
         return _review_fix(project, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
-                           fix_context=f"{answered}\n{verdict}")
+                           fix_context=f"{answered}\n{verdict}", notes=notes)
     # No `reviewed`: the judgement on record is this rejection, so the
     # resume that follows reviews the candidate again before any merge.
     _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,

@@ -179,6 +179,20 @@ class ReviewBodyFindingTests(MergeModeFixture):
                             provider=self.provider())
         self.assertIn(reply, fake.turns[fake.roles.index("adjudicate")].goal)
 
+    def test_a_bots_reply_on_a_devin_analysis_keeps_it_an_open_thread(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        reply = "The retry loop now crashes on empty input; fix it."
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis,
+                 ((("coderabbitai", "Bot"), reply),))
+        self.fake_route(states=[self.pr_state([devin]), self.pr_state()])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: DECLINE -- empty input is guarded"),
+                            provider=self.provider())
+        self.assertIn(reply, fake.turns[fake.roles.index("adjudicate")].goal)
+
 
 if __name__ == "__main__":
     unittest.main()

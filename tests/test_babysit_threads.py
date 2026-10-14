@@ -688,6 +688,19 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         baseline = [r for r in results if r["source"] == "baseline"]
         self.assertEqual(baseline[0]["output"].strip(), fake.turns[0].candidate_sha)
 
+    def test_babysit_review_fix_carries_an_open_devin_analysis(self):
+        self.resume_rejected_fix()
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.serve(self.pr_state([devin]), self.pr_state([devin]))
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(fake.roles[:2], ["review", "implement"])
+        self.assertIn("repair the pin", fake.turns[1].goal)
+        self.assertIn("promises a retry", fake.turns[1].goal)
+
     def test_allowance_refresh_keeps_original_address_and_retry_context(self):
         self.resume_rejected_fix()
         self.serve(self.pr_state([self.DEFECT]), self.pr_state())
