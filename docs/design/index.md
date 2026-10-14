@@ -29,7 +29,7 @@ remain in force; new ones land here as notes.
 
 1. **KISS / evidence-first.** No mechanism without a demonstrated consumer: config knobs, plugin seams and supervisor features alike.
 2. **Pluggable by shape, not by system.** Hardcoded behavior moves to module-level seams (callables, lists, config) as tickets touch it; a plugin or registry mechanism waits for a second consumer's evidence.
-3. **Tickets are atoms.** Narrow 15–30 min leaves; parents are tracking-only and unclaimable; the claimed ticket body is a frozen contract.
+3. **Tickets are atoms.** Narrow leaves within the [scope caps](../operating/tickets.md), 90 minutes at most; parents are tracking-only and unclaimable; the claimed ticket body is a frozen contract.
 4. **Every failure becomes a mechanical gate.** Each failure class gets a gate; the [failure lineage](../architecture/overview.md#failure-lineage-why-each-gate-exists) lists them.
 5. **The factory never pushes `main`.** Pushing `main` is the operator's call; under `[merge] mode = "pr"` the loop pushes its own task and evidence branches and opens a pull request ([note 7](0007-merge-modes.md)).
 
