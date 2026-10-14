@@ -203,25 +203,25 @@ def _rewire_dependents(conn, project_id, canceled_id, canceled, author, now):
                 or column == "canceled"):
             continue
         rewired = _inherited_edges(depends, issue_id, inherited)
-        _rewrite_dependencies(conn, project_id, ticket_id, rewired, names,
+        named = [names.get(dep, dep) for dep in rewired]
+        _rewrite_dependencies(conn, project_id, ticket_id, rewired, named,
                               author, now)
-        named = ", ".join(names.get(dep, dep) for dep in rewired) or "none"
         record_note(conn, ticket_id, "rewire",
                     f"{canceled} was canceled: Depends on {canceled} is now"
-                    f" {named}", f"rewire:{canceled}", author=author, now=now)
+                    f" {', '.join(named) or 'none'}", f"rewire:{canceled}",
+                    author=author, now=now)
         _ready_if_met(conn, ticket_id, rewired, status_of)
         _rewire_approved_edge(conn, ticket_id, issue_id, inherited)
 
 
-def _rewrite_dependencies(conn, project_id, ticket_id, rewired, names, author,
+def _rewrite_dependencies(conn, project_id, ticket_id, rewired, named, author,
                           now):
     (issue_id, identifier, text, criteria, url, state, affinity,
      revision) = conn.execute(
         "SELECT linearIssueId, linearIdentifier, body, acceptanceCriteria,"
         " url, boardState, affinity, revision FROM tickets WHERE id = ?",
         (ticket_id,)).fetchone()
-    text = rewrite_depends(text or "", lambda _deps: [
-        names.get(dep, dep) for dep in rewired])
+    text = rewrite_depends(text or "", lambda _deps: named)
     _write(conn, project_id, issue_id, identifier, text,
            bool(json.loads(criteria)), author, now, depends_on=rewired,
            url=url, board_state=state, affinity=affinity,
