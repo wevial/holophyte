@@ -35,8 +35,7 @@ async function show(page: Page, key: string) {
 
 async function shot(page: Page, name: string, fullPage = false) {
   await page.evaluate(() => document.fonts.ready);
-  await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => null))));
-  await page.screenshot({ path: path.join(out, name), fullPage });
+  await page.screenshot({ path: path.join(out, name), fullPage, animations: "disabled" });
 }
 
 test("the Needs you focus card: a failed run with triage, a ready PR, the rows under it and at 390 px", async ({ page }) => {
