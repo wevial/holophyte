@@ -763,6 +763,17 @@ console page can link to the classic view behind it.
 Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 
+`console/src/next/router.tsx` routes it with TanStack Router over hash
+history, since the static route has no single-page fallback: `#/` is
+Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
+each in the shell its root renders, and any other path is a not-found page.
+The root route's search holds one optional `project`, the project's name
+as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
+scoped view; every route inherits it, the sidebar's links carry it, and
+`scopedHosts()` in `console/src/next/scope.ts` narrows the polled hosts to
+it. The root polls once with `usePeers()` and shares the result with the
+sidebar and the pages through a React context.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than
