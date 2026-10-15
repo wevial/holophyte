@@ -11,6 +11,7 @@ import { fakeDeps, hostOf, peersFetch, settle, type StubDaemon } from "../harnes
 
 const DEMO = "http://writer-host:7710";
 const SECOND = "http://writer-host-2:7711";
+const SAME_HOST = "http://writer-host:7712";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const hostStatus = (await Bun.file(new URL("host-status.json", SERVE)).json()) as HostStatus;
@@ -154,21 +155,14 @@ test("a host that stopped answering gets a banner dated from its last answer, an
   expect(within(never as HTMLElement).getByText("It has not answered since this page opened.")).toBeTruthy();
 });
 
-test("before any host answers the sections show bare labels under an asking line, which goes at the first answer", async () => {
+test("before any host /peers lists answers the sections show bare labels under an asking line, which goes at the first answer", async () => {
   const NOW = at(12, 0);
-  let release = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const daemons = peersFetch(DEMO, { [DEMO]: projectDaemon("/srv/dev/demo", NOW), [SECOND]: projectDaemon("/srv/dev/writer", NOW) });
-  const fetch: Fetch = async (url, init) => {
-    if (url !== `${DEMO}/peers`) await held;
-    return daemons(url, init);
-  };
-  await mount(fetch, NOW);
+  const refused = { down: new Error("connection refused") };
+  const daemons: Record<string, StubDaemon> = { [DEMO]: refused, [SAME_HOST]: refused };
+  const { queries } = await mount(peersFetch(DEMO, daemons), NOW);
 
-  const asking = screen.getAllByRole("status").filter((line) => line.textContent?.startsWith("Asking"));
-  expect(asking.map((line) => line.textContent)).toEqual(["Asking writer-host for its projects…"]);
+  const asking = () => screen.getAllByRole("status").filter((line) => line.textContent?.startsWith("Asking")).map((line) => line.textContent);
+  expect(asking()).toEqual(["Asking writer-host for its projects…"]);
   for (const name of SECTIONS) {
     expect(section(name).querySelector("h2 > span")).toBeNull();
     expect(section(name).querySelector("p")).toBeNull();
@@ -176,11 +170,16 @@ test("before any host answers the sections show bare labels under an asking line
   expect(screen.queryByText("The factory has it from here.")).toBeNull();
   expect(screen.queryByText("No pull requests open.")).toBeNull();
 
-  release();
-  for (let round = 0; round < 6; round += 1) await act(settle);
-  expect(screen.queryByText("Asking writer-host for its projects…")).toBeNull();
+  daemons[DEMO] = projectDaemon("/srv/dev/demo", NOW);
+  daemons[SAME_HOST] = projectDaemon("/srv/dev/writer", NOW);
+  await refetch(queries);
+  expect(asking()).toEqual([]);
   expect(section("Needs you").querySelector("h2 > span")!.textContent).toBe("0");
   expect(screen.getByText("The factory has it from here.")).toBeTruthy();
+  cleanup();
+
+  await mount(peersFetch(DEMO, { [DEMO]: refused, [SECOND]: refused }), NOW);
+  expect(asking()).toEqual(["Asking 2 hosts for their projects…"]);
 });
 
 test("the footer counts a host daemon's answering projects and ages its sweep, toning a stale one bad", async () => {

@@ -64,8 +64,8 @@ export function Notices({ stale, silent, lines }: { stale: StaleConsole | null; 
       ))}
       {lines.length > 0 && (
         <ul className="flex flex-col gap-1 font-mono text-[12.5px] leading-[1.5] text-ink-2">
-          {lines.map((line) => (
-            <li key={line}>{line}</li>
+          {lines.map((line, index) => (
+            <li key={`${index}:${line}`}>{line}</li>
           ))}
         </ul>
       )}
