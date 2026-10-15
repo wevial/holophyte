@@ -75,9 +75,8 @@ def placeholder(path):
 
 
 def path_shaped_word(tree, path):
-    parent = str(Path(path).parent)
     return ("/" in path and not path.endswith("/") and not Path(path).suffix
-            and parent not in tree.trees)
+            and str(Path(path).parent) not in tree.trees)
 
 
 def path_findings(tree, named):
