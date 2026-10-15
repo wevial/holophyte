@@ -19,16 +19,10 @@ type Host = HostRecord<ContractBodies>;
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
 
-/** The entry the card holds, by its key, and the position it was last at. */
-export interface Held {
-  key: string;
-  index: number;
-}
-
 /** The card's entry: the held key where it still stands, else whatever
  *  now stands at its last position, else the last entry. */
 export function useHeldEntry(entries: NeedsYouEntry[]): { index: number; hold: (index: number) => void } {
-  const [held, setHeld] = useState<Held | null>(null);
+  const [held, setHeld] = useState<{ key: string; index: number } | null>(null);
   const keys = entries.map(entryKey);
   const found = held == null ? -1 : keys.indexOf(held.key);
   const index = found >= 0 ? found : Math.max(0, Math.min(held?.index ?? 0, entries.length - 1));

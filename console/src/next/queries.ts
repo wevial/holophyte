@@ -67,7 +67,7 @@ export function useReadiness(hosts: HostRecord<PollBodies>[], deps: { fetch: Fet
 
 /** `/runs/N` at `base`, read again every `POLL_INTERVAL_MS` while mounted;
  *  idle with no run. */
-export function useRun(base: string | null, id: number | null, deps: { fetch: Fetch } = defaultPollDeps) {
+export function useRun(base: string | null, id: number | null, deps: { fetch: Fetch }) {
   const path = `/runs/${String(id)}`;
   return useQuery({
     queryKey: routeKey(base ?? "", path),
