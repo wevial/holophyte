@@ -47,6 +47,14 @@ class MainTree:
     def has(self, path):
         return path in self.files or path in self.trees
 
+    def resolve(self, path):
+        normalized = str(Path(path))
+        if self.text(normalized) is not None:
+            return [normalized]
+        if "/" in path:
+            return []
+        return sorted(f for f in self.files if Path(f).name == normalized)
+
     def text(self, path):
         if path not in self._texts:
             blob = self._git("cat-file", "blob", f"main:{path}")
@@ -134,10 +142,8 @@ def _named_symbols(tree, item):
 def _item_paths(tree, item, declarations):
     present = []
     for _, path in ticket_template._prose_paths(item):
-        normalized = str(Path(path))
-        if (normalized not in present and not declared_new(path, declarations)
-                and tree.text(normalized) is not None):
-            present.append(normalized)
+        if not declared_new(path, declarations):
+            present += [f for f in tree.resolve(path) if f not in present]
     return present
 
 
@@ -147,10 +153,12 @@ def _symbol_finding(tree, text, name, label, paired, present):
             return None, None
         files = ", ".join(f"`{p}`" for p in present)
         return f"`{text}` (named in {label}) is not in {files} on main", None
-    if re.search(rf"\b{re.escape(name)}\b", tree.text(paired)):
+    word = re.compile(rf"\b{re.escape(name)}\b")
+    if any(word.search(tree.text(p)) for p in paired):
         return None, None
     holders = tree.holders(name)
-    missing = f"`{text}` (named in {label}) is not in `{paired}` on main"
+    files = ", ".join(f"`{p}`" for p in paired)
+    missing = f"`{text}` (named in {label}) is not in {files} on main"
     if not holders:
         return missing, None
     return None, missing + " but is in " + ", ".join(f"`{h}`" for h in holders)
@@ -167,12 +175,10 @@ def symbol_findings(tree, t, declarations):
         for start, text, name in _named_symbols(tree, item):
             paired = pairs.get(start)
             if paired is not None:
-                paired = str(Path(paired))
-                if not tree.has(paired) and (
-                        "/" in paired or declared_new(paired, declarations)):
+                if declared_new(paired, declarations) or not (
+                        tree.has(str(Path(paired))) or tree.resolve(paired)):
                     continue
-                if tree.text(paired) is None:
-                    paired = None
+                paired = tree.resolve(paired) or None
             reason, advisory = _symbol_finding(
                 tree, text, name, f"Implementation notes #{i}", paired,
                 present)

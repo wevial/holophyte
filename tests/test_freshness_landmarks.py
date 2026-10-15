@@ -102,6 +102,15 @@ class SymbolPairingTests(RepoCase):
         self.assertEqual(len(advisories), 1, advisories)
         self.assertIn("`console/src/lib/runs.ts`", advisories[0])
 
+    def test_a_symbol_paired_with_a_tracked_basename_is_checked_there(self):
+        body = notes_body("Reuse `phaseLabel()` from `claim.py`; compare"
+                          " `console/src/lib/derive.ts`.")
+        stale, advisories = self.findings(body)
+        self.assertEqual(stale, [])
+        self.assertEqual(len(advisories), 1, advisories)
+        self.assertIn("`holophyte/loop/claim.py`", advisories[0])
+        self.assertIn("`console/src/lib/runs.ts`", advisories[0])
+
     def test_a_symbol_found_nowhere_keeps_the_stale_wording(self):
         body = notes_body("Call `gone_helper()` in `holophyte/loop/claim.py`.")
         self.assertEqual(self.findings(body), ([
