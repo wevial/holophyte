@@ -6,6 +6,7 @@ import { DropIcon, FolderIcon, OverviewIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
+const LEAST_HEIGHT = 164;
 
 function iconColour(row: SwitcherRow): string {
   if (row.name == null) return "text-ink-2";
@@ -41,7 +42,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
   const id = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
+  const [place, setPlace] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
@@ -66,11 +67,10 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
     const rail = buttonRef.current!.closest("aside")?.getBoundingClientRect() ?? rect;
     const room = window.innerWidth - DIALOG_WIDTH - EDGE;
     const beside = folded && rail.right + 4 <= room;
-    setPlace(
-      beside
-        ? { top: rect.top, left: rail.right + 4 }
-        : { top: rect.bottom + 4, left: Math.max(EDGE, Math.min(rect.left, room)) },
-    );
+    const below = beside ? rect.top : rect.bottom + 4;
+    const top = Math.max(EDGE, Math.min(below, window.innerHeight - EDGE - LEAST_HEIGHT));
+    const left = beside ? rail.right + 4 : Math.max(EDGE, Math.min(rect.left, room));
+    setPlace({ top, left, maxHeight: window.innerHeight - top - EDGE });
     setQuery("");
     setActive(Math.max(0, rows.indexOf(current)));
   };
@@ -160,7 +160,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
           ref={dialogRef}
           role="dialog"
           aria-label="Switch project"
-          style={{ top: place.top, left: place.left, width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
+          style={{ top: place.top, left: place.left, maxHeight: place.maxHeight, width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
           className="fixed z-50 flex flex-col border border-rule bg-paper shadow-card"
           onMouseDown={(event) => {
             if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
@@ -194,10 +194,10 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
           {matches.length === 0 ? (
             <p className="px-3 py-3 text-[13px] text-ink-3">No project matches.</p>
           ) : (
-            <ul id={listId} role="listbox" aria-label="Projects" className="flex max-h-[320px] flex-col overflow-y-auto py-1">
+            <ul id={listId} role="listbox" aria-label="Projects" className="flex max-h-[320px] min-h-0 flex-col overflow-y-auto py-1">
               {matches.map((row, index) => (
                 <li
-                  key={row.label}
+                  key={row.name == null ? "all-projects-scope" : `project:${row.name}`}
                   id={optionId(index)}
                   role="option"
                   aria-selected={row.name === current.name}

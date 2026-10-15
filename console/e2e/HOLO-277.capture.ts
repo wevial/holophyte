@@ -3,7 +3,6 @@ import { expect, test, type Page } from "@playwright/test";
 
 const out = process.env.CAPTURE_OUT ?? "";
 
-// The fixture serves one project, demo; each extra name is a held copy of it.
 async function addHeldProjects(page: Page, names: string[]) {
   await page.route("**/status", async (route) => {
     const url = new URL(route.request().url());
@@ -77,4 +76,17 @@ test("arrow keys scroll the active option into view in a long list", async ({ pa
   await expect(dialog(page).getByRole("option", { name: /held-14/ })).toHaveAttribute("data-active", "true");
   await expect(dialog(page).getByRole("option", { name: /held-14/ })).toBeInViewport({ ratio: 1 });
   await expect.poll(() => dialog(page).getByRole("listbox").evaluate((list) => list.scrollTop)).toBeGreaterThan(0);
+});
+
+test("on a short viewport the dialog's list ends on screen and reaches its last option", async ({ page }) => {
+  await addHeldProjects(page, Array.from({ length: 14 }, (_, at) => `held-${at + 1}`));
+  await page.setViewportSize({ width: 390, height: 320 });
+  await page.goto("/next.html");
+  await switcher(page).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(dialog(page).getByRole("option")).toHaveCount(16);
+  const box = (await dialog(page).boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(320);
+  await page.keyboard.press("ArrowUp");
+  await expect(dialog(page).getByRole("option", { name: /held-14/ })).toBeInViewport({ ratio: 1 });
 });
