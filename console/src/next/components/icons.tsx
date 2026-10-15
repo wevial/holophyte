@@ -20,9 +20,9 @@ function Stroke({ children, className }: { children: ReactNode; className?: stri
 }
 
 /** The flat five-petal mark, filled with the current colour. */
-export function Mark({ className }: { className?: string }) {
+export function Mark() {
   return (
-    <svg viewBox="0 0 24 24" width={22} height={22} fill="currentColor" aria-hidden="true" className={className}>
+    <svg viewBox="0 0 24 24" width={22} height={22} fill="currentColor" aria-hidden="true">
       <path d="M12 2.5c1.6 1.8 3.1 4.4 3.1 7.2 0 2.7-1.4 5.3-3.1 7.6-1.7-2.3-3.1-4.9-3.1-7.6 0-2.8 1.5-5.4 3.1-7.2Z" />
       <path d="M11.6 17.6C9 15.4 5.6 13.9 2.6 14.3c1.6 2.4 5 4 9 3.3Z" />
       <path d="M12.4 17.6c2.6-2.2 6-3.7 9-3.3-1.6 2.4-5 4-9 3.3Z" />

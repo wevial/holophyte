@@ -16,7 +16,7 @@ import {
   TicketsIcon,
 } from "./icons";
 
-export const RAIL_KEY = "holophyte.next.rail";
+const RAIL_KEY = "holophyte.next.rail";
 
 const PAGES = [
   { to: "/", label: "Overview", icon: <OverviewIcon /> },

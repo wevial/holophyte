@@ -4,11 +4,11 @@ import { projectName } from "../lib/derive";
 import type { HostRecord } from "../lib/hosts";
 
 /** The search every route of the new console inherits from its root. */
-export interface ScopeSearch {
+interface ScopeSearch {
   project?: string;
 }
 
-export const PROJECT_MAX = 200;
+const PROJECT_MAX = 200;
 
 export function validateScope(search: Record<string, unknown>): ScopeSearch {
   const { project } = search;
