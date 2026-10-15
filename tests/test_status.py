@@ -197,6 +197,52 @@ class StrandedStatusTests(SweepTestCase):
         self.assertEqual(snap["stranded"][1]["reason"], reason)
 
 
+def file_stuck_wait(conn, project_id, prefix):
+    """PREFIX-1 merged, PREFIX-2 parked needs_spec by the critic, and
+    PREFIX-3, -4 and -5 each waiting on the one before."""
+    def file(n, specced=True):
+        return store.tickets.mirror_ticket(
+            conn, project_id, linear_issue_id=f"issue-{prefix}-{n}",
+            linear_identifier=f"{prefix}-{n}", title=f"ticket {prefix}-{n}",
+            acceptance_criteria=["Given it, then it works"] if specced else [],
+            verification_commands=["echo ok"] if specced else [],
+            depends_on=[f"issue-{prefix}-{n - 1}"] if n > 1 else [])
+
+    merged = file(1)
+    store.tickets.transition(conn, merged, "in_flight")
+    store.tickets.transition(conn, merged, "merged")
+    store.record_note(
+        conn, file(2, specced=False), "critic",
+        "**Not claimed: this ticket is out of date with main**\n\n"
+        f"* critic: stale — already shipped by {prefix}-1\n", "critic-1")
+    for n in (3, 4, 5):
+        store.tickets.transition(conn, file(n), "blocked_on_deps")
+
+
+class StuckWaitStatusTests(SweepTestCase):
+    status = StatusTests.status
+
+    def setUp(self):
+        super().setUp()
+        file_stuck_wait(self.conn, self.project_id, "NAT")
+
+    def test_json_and_text_name_the_wait_its_dependency_and_the_queue(self):
+        snap = json.loads(self.status("--json"))
+        self.assertEqual(
+            [{key: stuck[key] for key in ("ticket", "dependency",
+                                          "dependency_state", "reason",
+                                          "behind")} for stuck in snap["stuck"]],
+            [{"ticket": "NAT-3", "dependency": "NAT-2",
+              "dependency_state": "needs_spec",
+              "reason": "critic: stale — already shipped by NAT-1",
+              "behind": 2}])
+        self.assertEqual(
+            [line for line in self.status().splitlines()
+             if line.startswith("stuck ")],
+            ["stuck NAT-3: waits on NAT-2, which needs a spec: critic: stale"
+             " — already shipped by NAT-1 (2 queued behind)"])
+
+
 class HostStatusBackoffTests(HostFixture):
     """A registered project and a `sweep.json` the host sweep last wrote."""
 

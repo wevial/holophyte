@@ -277,6 +277,14 @@ Each module, one line:
   every project in `host.toml`, each under `/projects/NAME`, the root's
   `/status` and `/attention` for the host, the machine token, one
   project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
+- `holophyte/serve/contract.py` — the poll and run routes' response types:
+  one `TypedDict` per body `/status`, `/attention` and `/peers` answer, a
+  project's and a host root's, and `/runs/N`, `/runs/N/merge` and
+  `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
+  writes their JSON Schema and zod or `--check`s them.
+- `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
+  Schema, JSON Schema into zod source, and the drift check against the
+  committed files; it knows no route.
 - `holophyte/serve/serve_board.py` — the host daemon's native board writes
   (KO-758): the gate every one passes (the machine token alone, host
   `[serve] actions`, a native board, `If-Match`) and `PUT
@@ -456,8 +464,12 @@ Each module, one line:
 - `holophyte/babysit/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysit/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
-- `holophyte/babysit/devin_notes.py` — a Devin review comment marked `analysis`:
-  fix-turn context, not an open finding.
+- `holophyte/babysit/devin_notes.py` — a Devin review comment marked `analysis`,
+  told apart by the factory's triage reply: a note stays fix-turn context, a
+  finding is an open thread, and one with no reply is untriaged.
+- `holophyte/babysit/note_triage.py` — one read-only `adjudicate` triage of the
+  untriaged Devin `analysis` comments as FINDING or NOTE, each answered on its
+  thread; a FINDING joins the open threads.
 - `holophyte/babysit/review_body.py` — bot review-body outside-diff findings, their
   fingerprints and answer markers.
 - `holophyte/babysit/thread_answers.py` — read-only mention answers and thread replies.
@@ -619,6 +631,8 @@ At the root:
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
+- `ticket_depends.py` — finds a ticket body's estimate line and rewrites its
+  `Depends on:` list, for story filing and a cancel's rewire.
 - `story_template.py` — validator for a story directory's body, witness
   files and children; `python3 ticket_template.py --repo PATH --story DIR` exits
   0 iff the story is valid.
@@ -714,11 +728,22 @@ it; it never builds — there is no install lifecycle script, and
 own), which
 registers `happy-dom` so component tests render with
 `@testing-library/react` and no browser; `console/src/lib/` tests stay free
-of the DOM. `build` runs `console/build.ts`, which hands `console/index.html`
-to `Bun.build` with `bun-plugin-tailwind` and writes the static bundle to
-`console/dist/` — `index.html` is the stable entry the daemon serves, next
-to its hashed script and stylesheet. `console/dist/` and
+of the DOM. `build` runs `console/build.ts`, which hands both pages,
+`console/index.html` and `console/next.html`, to one `Bun.build` call with
+`bun-plugin-tailwind` and writes the static bundle to `console/dist/` —
+each page keeps its name there, next to its own hashed script, and
+`index.html` is the stable entry the daemon serves. `console/dist/` and
 `console/node_modules/` are git-ignored.
+
+The daemon owns the types of the routes the console polls.
+`python3 -m holophyte.serve.contract` renders the `TypedDict`s in
+`holophyte/serve/contract.py` into one JSON Schema per route in
+`console/contract/` and the zod schemas with their inferred types in
+`console/src/lib/contract.gen.ts`; both are committed and never edited by
+hand. `--check` writes nothing and exits 1 naming each file that differs
+from a fresh render, or that sits in `console/contract/` unrendered;
+`tests/test_serve_contract.py` runs it in the `unit` check, and walks the
+pinned answers in `tests/fixtures/serve/` against their types.
 
 Captures are the screenshots a console pull request carries, taken by
 `holophyte/capture_playwright.py` with a real Chromium. The fixture
@@ -726,6 +751,11 @@ Captures are the screenshots a console pull request carries, taken by
 host with the `demo` project, serves it from a real host daemon and runs one
 command with `CONSOLE_URL` naming it; that command is the console's
 `capture` script, `playwright test` from the pinned `@playwright/test`.
+`seed()` writes a ticket in backlog, one ready, a working run, a run in
+review after one changes-requested round, a question park, a pull request
+parked on CI, one parked ready for its merge, a stranded failure, a merge
+from today, an older merge and an abandoned failure, so a spec injects only
+the states beyond those.
 `console/playwright.config.ts` is Chromium only, one worker, no retries, a
 1440×900 light viewport, `baseURL` from `CONSOLE_URL`, and no `webServer`,
 since the fixture boots the daemon. A ticket's spec is
@@ -745,6 +775,39 @@ writer host: install it with the upstream installer
 (`curl -fsSL https://bun.sh/install | bash`) as the factory's user, so the
 loop's login shell sees `bun` on PATH. The factory's verify step inherits
 that PATH, so nothing in the loop changes. The writer host runs Bun 1.4.2.
+
+### The new console
+
+The new console is built beside the classic one until it replaces it. It
+lives in `console/src/next/`, with its tests under `console/tests/next/`,
+and is served at `/next.html` beside the classic console at `/`; the
+classic sidebar links to it. The classic console opens on the view a
+`#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
+console page can link to the classic view behind it.
+
+Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
+Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
+
+`console/src/next/router.tsx` routes it with TanStack Router over hash
+history, since the static route has no single-page fallback: `#/` is
+Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
+each in the shell its root renders, and any other path is a not-found page.
+The root route's search holds one optional `project`, the project's name
+as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
+scoped view; every route inherits it, the sidebar's links carry it, and
+`scopedHosts()` in `console/src/next/scope.ts` narrows the polled hosts to
+it. The root polls once with `usePeers()` and shares the result with the
+sidebar and the pages through a React context.
+
+The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
+sets that scope. Its rows come from `switcherRows()` in
+`console/src/next/projects.ts`: "All projects", then one row per project
+name, pooling the hosts that serve it, with its held tag, need count and
+open runs, or "not answering" when every host of it failed its last poll.
+A find box filters them; arrow keys move, Enter picks, Esc closes. A pick
+rewrites `project` on the current route and is kept in session storage under
+`holophyte.next.project`, so opening `/next.html` with an empty hash starts
+at Overview in that scope; a hash that names a route is shown as written.
 
 ### Desktop wrapper
 

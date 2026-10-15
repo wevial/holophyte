@@ -6,11 +6,11 @@ const fact = (name: string, ok: boolean, detail: string) => ({ name, ok, detail 
 const review = "GitHub's review decision is REVIEW_REQUIRED; the host's GitHub user may bypass it:"
   + " ruleset human-review asks 1 approving review, current_user_can_bypass pull_requests_only";
 const bypassable = {
-  run: 48, ticket: "DEMO-8", pr_url: "https://github.com/example/demo/pull/32",
+  run: 48, ticket: "DEMO-48", pr_url: "https://github.com/example/demo/pull/32",
   head_sha: "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
   ready: false, reason: "review_bypassable", detail: review,
   facts: [
-    fact("parked", true, "run 48 is DEMO-8's newest run, parked awaiting_merge_approval"),
+    fact("parked", true, "run 48 is DEMO-48's newest run, parked awaiting_merge_approval"),
     fact("human_approval", true, "[merge] approve is \"human\""),
     fact("review_approved", false, review),
     fact("checks_passed", true, "the required checks are success"),
@@ -29,7 +29,7 @@ test("bypass merge", async ({ browser, baseURL }) => {
     const body = await response.json();
     const now = typeof body.now === "number" ? body.now : Date.now();
     body.items = [...body.items, {
-      kind: "pr_open", level: "attention", run: 48, ticket: "DEMO-8",
+      kind: "pr_open", level: "attention", run: 48, ticket: "DEMO-48",
       title: "Name each worker's route on the Floor", ticket_url: null,
       pr_url: "https://github.com/example/demo/pull/32",
       reason: "Waiting for a maintainer's merge", asked_ms: now - 12 * 60_000,
@@ -43,7 +43,7 @@ test("bypass merge", async ({ browser, baseURL }) => {
 
   await page.goto("/");
   const table = page.getByRole("region", { name: "Pull requests" });
-  const row = table.getByRole("row").filter({ hasText: "DEMO-8" });
+  const row = table.getByRole("row").filter({ hasText: "DEMO-48" });
   const bypass = row.getByRole("button", { name: "Merge (bypass review)" });
   await expect(bypass).toBeVisible();
   await expect(row.getByRole("button", { name: "Merge", exact: true })).toHaveCount(0);

@@ -131,6 +131,19 @@ class NativeMoveCliTests(ConfigTestCase):
         self.assertIn("--note", self.usage_error("--cancel", "NAT-2",
                                                  "--revision", "4"))
 
+    def test_a_cancel_names_each_dependent_it_rewired(self):
+        self.native(1)
+        for depends in ("NAT-1", "NAT-2"):
+            path = self.root / "D.md"
+            path.write_text(body("Thing", depends=depends))
+            self.assertEqual(self.cli("--file-ticket", str(path))[0], 0)
+
+        self.assertEqual(
+            self.cli("--cancel", "NAT-2", "--revision", "1", "--note", "dup"),
+            (0, "[holo2] canceled NAT-2 (revision 2); rewired NAT-3 to"
+                " NAT-1\n"))
+        self.assertEqual(self.ticket("NAT-3"), ("ready", 2, "blocked_on_deps"))
+
     def test_a_cancel_with_no_live_run_names_none(self):
         self.native(1)
         self.assertEqual(

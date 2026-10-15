@@ -61,6 +61,7 @@ PINNED = {
     "holophyte/babysit/description_review.py": 1,
     "holophyte/babysit/devin_notes.py": 0,
     "holophyte/babysit/main_checkout.py": 2,
+    "holophyte/babysit/note_triage.py": 0,
     "holophyte/babysit/maintainer_notes.py": 1,
     "holophyte/babysit/plain_text.py": 0,
     "holophyte/babysit/review_body.py": 0,
@@ -214,6 +215,8 @@ PINNED = {
 
     "holophyte/serve/__init__.py": 0,
     "holophyte/serve/console_build.py": 2,
+    "holophyte/serve/contract.py": 0,
+    "holophyte/serve/contract_emit.py": 0,
     "holophyte/serve/serve_actions.py": 4,
     "holophyte/serve/serve_ask.py": 0,
     "holophyte/serve/serve_board.py": 3,
@@ -232,7 +235,7 @@ PINNED = {
     "holophyte/story/story_claim.py": 5,
     "holophyte/story/story_close.py": 1,
     "holophyte/story/story_drift.py": 6,
-    "holophyte/story/story_filing.py": 7,
+    "holophyte/story/story_filing.py": 6,
     "holophyte/story/story_scope.py": 3,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
@@ -269,6 +272,7 @@ PINNED = {
     "store/writes.py": 2,
 
     "story_template.py": 1,
+    "ticket_depends.py": 3,
     "ticket_template.py": 24,
 }
 

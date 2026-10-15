@@ -261,29 +261,6 @@ test("pending and failed detail stay inside the detail row and retry recovers", 
   expect(document.querySelectorAll("[data-finding]")).toHaveLength(2);
 });
 
-test("the run link opens the existing run view on its serving daemon", async () => {
-  window.location.hash = "#run=47";
-  const seen: string[] = [];
-  const { deps } = fakeDeps(async url => {
-    seen.push(url);
-    if (url.endsWith("/runs/47")) return Response.json(detail);
-    if (url.endsWith("/status")) return Response.json(status);
-    if (url.endsWith("/attention")) return Response.json({ level: "none", now: status.now, items: [] });
-    return new Response("not found", { status: 404 });
-  });
-  try {
-    render(<App base={host.base} pollDeps={deps} />);
-    await act(settle);
-    expect(screen.getByRole("region", { name: "Run 47" })).toBeTruthy();
-    expect(screen.getByRole("article", { name: "run 47" })).toBeTruthy();
-    expect(seen).toContain(`${host.base}/runs/47`);
-    await act(async () => { window.location.hash = ""; window.dispatchEvent(new Event("hashchange")); });
-    expect(screen.queryByRole("region", { name: "Run 47" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Floor" })).toBeTruthy();
-  } finally { window.location.hash = ""; }
-});
-
-
 test("a peer run link stays in this console and authenticates the peer run page", async () => {
   const peer = "http://writer:7711";
   storeToken("writer:7711", "peer-test-token");

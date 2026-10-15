@@ -32,6 +32,7 @@ from holophyte.host.supervisor_lock import supervisor_lock_path
 from holophyte.loop.gates import merge_lock_path
 from tests.host_fixture import HostFixture
 from tests.test_holo_grammar import ROOT, factory, holo
+from tests.test_status import file_stuck_wait
 from tests.test_store_stories import WITNESSES
 
 NOW = int(datetime(2026, 10, 6, 17, 42, tzinfo=timezone.utc).timestamp() * 1000)
@@ -292,6 +293,22 @@ class BetaWaitingTests(StatusPageTests):
         needs = lines[lines.index("Needs you (3)") + 1:]
         self.assertIn('  !  beta   BETA-1    story "ticket BETA-1" parked,'
                       " 1 open decision", needs)
+        self.assertNotIn("Quiet", lines)
+
+    def test_a_stuck_wait_is_under_needs_you_with_its_queue_not_quiet(self):
+        file_stuck_wait(self.beta_conn, self.beta_id, "BETA")
+
+        snap = self.snapshot()
+        snap["projects"] = [project for project in snap["projects"]
+                            if project["name"] == "beta"]
+
+        lines = self.page(snap)
+
+        needs = lines.index("Needs you (1)")
+        self.assertEqual(lines[needs + 1],
+                         "  !  beta  BETA-3  waits on BETA-2, which needs a"
+                         " spec: critic: stale — already shipped by BETA-1"
+                         " · 2 queued behind")
         self.assertNotIn("Quiet", lines)
 
     def test_a_held_project_names_its_hold_and_note_instead_of_quiet(self):

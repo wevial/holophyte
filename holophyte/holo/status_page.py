@@ -8,6 +8,7 @@ from pathlib import Path
 from time import sleep, time
 from typing import NamedTuple
 
+from holophyte.cli.status import stuck_sentence
 from holophyte.holo.render import (
     age,
     age_since,
@@ -110,7 +111,8 @@ def project_rows(project, now, errors):
         return [], [], [], [Row("✗", who, "", hinted(project["error"],
                                                     REGISTRY_HINT))]
     needs = (admission_rows(who, status) + parked_rows(who, status)
-             + story_rows(who, status) + stranded_rows(who, status, now))
+             + story_rows(who, status) + stranded_rows(who, status, now)
+             + stuck_rows(who, status))
     running = running_rows(who, status)
     trouble = lock_rows(who, status, key)
     if key in errors:
@@ -189,6 +191,13 @@ def stranded_rows(who, status, now):
                 age_since(stranded["ended_ms"], now)
                 if stranded["ended_ms"] is not None else "")
             for stranded in status["stranded"]]
+
+
+def stuck_rows(who, status):
+    return [Row("!", who, stuck["ticket"], stuck_sentence(stuck)
+                + (f" · {stuck['behind']} queued behind" if stuck["behind"]
+                   else ""))
+            for stuck in status.get("stuck", [])]
 
 
 def running_rows(who, status):
