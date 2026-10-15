@@ -5,12 +5,14 @@ import { formatClock, formatSettled } from "../../lib/format";
 import { DayLog } from "../components/DayLog";
 import { FocusCard, useHeldEntry } from "../components/FocusCard";
 import { MergedToday } from "../components/MergedToday";
+import { FirstLoad, Notices } from "../components/Notices";
 import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
 import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
+import { firstLoadLine, noticeLines, silentHosts, staleConsole } from "../notices";
 import { useOverview } from "../overview";
 import { useDayLedger } from "../queries";
-import { PollDepsContext } from "../scope";
+import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
 
@@ -54,6 +56,7 @@ function FoldingSection({
   summary,
   empty,
   isEmpty = count === 0,
+  loading = false,
   open = readOpen(id),
   onFold,
   children,
@@ -65,18 +68,19 @@ function FoldingSection({
   summary?: string;
   empty: string;
   isEmpty?: boolean;
+  loading?: boolean;
   open?: boolean;
   onFold?: (open: boolean) => void;
   children?: ReactNode;
 }) {
   return (
-    <Section label={label} count={count} hot={hot} summary={summary} defaultOpen={open}
+    <Section label={label} count={loading ? undefined : count} hot={hot} summary={loading ? undefined : summary} defaultOpen={open}
       onToggle={(next) => {
         writeOpen(id, next);
         onFold?.(next);
       }}
     >
-      {isEmpty ? <Empty>{empty}</Empty> : children}
+      {loading ? null : isEmpty ? <Empty>{empty}</Empty> : children}
     </Section>
   );
 }
@@ -84,6 +88,10 @@ function FoldingSection({
 export function Overview() {
   const view = useOverview();
   const log = useDayLedger(view.hosts, view.now, useContext(PollDepsContext));
+  const origin = useContext(OriginContext);
+  const { hosts: everyHost } = useConsolePeers();
+  const asking = firstLoadLine(view.hosts, origin);
+  const firstLoad = asking != null;
   const held = useHeldEntry(view.needs);
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
@@ -141,8 +149,18 @@ export function Overview() {
             </p>
           </header>
         )}
+        {asking != null ? (
+          <FirstLoad line={asking} />
+        ) : (
+          <Notices
+            stale={staleConsole(everyHost, origin)}
+            silent={silentHosts(view.hosts, view.now)}
+            lines={noticeLines(view.hosts, log.answers, view.now)}
+          />
+        )}
         <div className="flex flex-col gap-[44px]">
           <FoldingSection
+            loading={firstLoad}
             key={needMount}
             id="need"
             open={needOpen}
@@ -156,6 +174,7 @@ export function Overview() {
             <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} cardRef={card} />
           </FoldingSection>
           <FoldingSection
+            loading={firstLoad}
             id="run"
             label="Running"
             count={view.running}
@@ -166,6 +185,7 @@ export function Overview() {
             <RunningLanes groups={lanes} now={view.now} />
           </FoldingSection>
           <FoldingSection
+            loading={firstLoad}
             id="pr"
             label="Pull requests"
             count={view.pullRequests.length}
@@ -176,6 +196,7 @@ export function Overview() {
             <PullRequestLanes groups={prLanes} readiness={view.readiness} needs={view.needs} onShow={showNeed} />
           </FoldingSection>
           <FoldingSection
+            loading={firstLoad}
             id="done"
             label="Merged today"
             count={view.mergedToday.length}

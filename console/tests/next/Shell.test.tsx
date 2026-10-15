@@ -186,7 +186,7 @@ test("the footer names the host and how long ago it was polled, and reads pollin
     }));
     clock.now = 4000;
     act(() => seconds.forEach((tick) => tick()));
-    expect(screen.getByText("writer-host · polled 4s ago")).toBeTruthy();
+    expect(document.querySelector("[data-footer-line]")?.textContent).toBe("writer-host · 1 project answering · polled 4s ago");
   } finally {
     globalThis.setInterval = realSetInterval;
   }

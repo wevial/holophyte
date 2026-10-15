@@ -1,8 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
-import { formatDuration } from "../../lib/format";
-import { groupByHost } from "../../lib/hosts";
 import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
+import { footerLine } from "../notices";
 import { switcherRows } from "../projects";
 import { useReadiness } from "../queries";
 import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
@@ -134,22 +133,16 @@ function PageLink({
   );
 }
 
-function pollLine(hostLabels: string[], answered: boolean, polledAgo: number | null): string {
-  if (!answered || polledAgo == null) return "polling…";
-  const host = hostLabels.length === 1 ? hostLabels[0] : `${hostLabels.length} hosts`;
-  return `${host} · polled ${formatDuration(polledAgo)} ago`;
-}
-
 export function Sidebar() {
-  const { hosts, polledAgo, now } = useConsolePeers();
+  const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const [folded, setFolded] = useState(readFolded);
   const readiness = useReadiness(hosts, useContext(PollDepsContext));
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const failing = hosts.some((host) => host.error != null);
-  const answered = hosts.some((host) => host.seen_ms != null);
-  const polled = pollLine(groupByHost(hosts).map((group) => group.label), answered, polledAgo);
+  const footer = footerLine(hosts, now);
+  const polled = footer == null ? "polling…" : footer.tail == null ? footer.lead : `${footer.lead} · ${footer.tail.text}`;
 
   const fold = () => {
     setFolded(!folded);
@@ -199,9 +192,19 @@ export function Sidebar() {
       </nav>
 
       <footer className={`mt-auto flex flex-col gap-2 border-t border-rule-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
-        <p className="flex min-w-0 items-center gap-1 font-mono text-[11px] tracking-[-0.02em] whitespace-nowrap text-ink-3" title={folded ? polled : undefined}>
+        <p className="flex min-w-0 items-start gap-1 font-mono text-[11px] leading-[1.4] tracking-[-0.02em] text-ink-3" title={folded ? polled : undefined}>
           <SignalIcon className={failing ? "text-bad" : "text-live"} />
-          {!folded && <span className="truncate">{polled}</span>}
+          {!folded && (
+            <span data-footer-line className="min-w-0 break-words">
+              {footer == null ? polled : footer.lead}
+              {footer?.tail && (
+                <>
+                  {" · "}
+                  <span className={footer.tail.bad ? "text-bad" : undefined}>{footer.tail.text}</span>
+                </>
+              )}
+            </span>
+          )}
         </p>
         {folded ? (
           <a href="/" aria-label="Classic console" title="Classic console" className="flex size-11 items-center justify-center text-ink-2 hover:text-ink">

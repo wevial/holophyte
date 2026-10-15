@@ -369,3 +369,29 @@ body {
     transition: none !important;
   }
 }
+
+.think {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.think i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--rule);
+  animation: think 1.2s steps(1, end) infinite;
+}
+
+.think i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.think i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes think {
+  0%, 100% { background: var(--rule); }
+  33% { background: var(--ink-3); }
+}
