@@ -532,6 +532,9 @@ Each module, one line:
 - `holophyte/babysit/check_failures.py` — a job log's failure lines (test
   failure headers and error lines), their normalized signature, and the
   test whether a red read repeats a failure an earlier round was handed.
+- `holophyte/babysit/description_review.py` — a covering review whose every
+  blocker is tagged `path: "PR description"`: the description rewritten with
+  those findings as input before the same commit is reviewed once more.
 - `holophyte/babysit/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.

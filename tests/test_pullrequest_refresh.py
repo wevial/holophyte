@@ -263,3 +263,11 @@ class PullRequestRefreshTests(MergeModeFixture):
                 self.assertEqual(len(out.getvalue().splitlines()), 1)
                 self.assertIn(reason, out.getvalue())
         self.assertFalse(any(c.startswith("gh pr edit") for c in self.recorded()))
+
+    def test_the_writer_is_told_the_diff_wins_over_the_tickets_plan(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.pr_body.write_text("Adds a postMessage handshake.\n\nLinear: KO-131\n")
+        prompt = self.refresh(("TITLE: Ignored\nOne branch opens a tab.", False))
+        self.assertIn("Where the ticket's planned approach and the diff differ,"
+                      " the description follows the diff", prompt)
