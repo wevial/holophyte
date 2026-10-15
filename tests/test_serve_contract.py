@@ -20,6 +20,9 @@ from holophyte.serve.contract import (
     ROUTES,
     SCHEMA_DIR,
     ZOD_FILE,
+    Board,
+    BoardColumn,
+    BoardTicket,
     Round,
     RunDetail,
     Status,
@@ -197,6 +200,19 @@ class PinnedAnswerTests(unittest.TestCase):
         with self.assertRaisesRegex(
                 AssertionError, r"^run-detail\.rounds\.0\.operator_notes: undeclared$"):
             walk(body, typing.TypedDict("RunDetail", detail), "run-detail")
+
+    def test_a_board_ticket_type_without_waits_on_fails_the_board_walk(self):
+        hints = typing.get_type_hints(BoardTicket, include_extras=True)
+        narrower = typing.TypedDict("BoardTicket", {key: hint for key, hint
+                                                    in hints.items()
+                                                    if key != "waits_on"})
+        column = typing.get_type_hints(BoardColumn, include_extras=True)
+        column["tickets"] = list[narrower]
+        board = typing.get_type_hints(Board, include_extras=True)
+        board["columns"] = list[typing.TypedDict("BoardColumn", column)]
+        with self.assertRaisesRegex(AssertionError, r"^board\.columns\.2"
+                                    r"\.tickets\.0\.waits_on: undeclared$"):
+            walk(pinned("board"), typing.TypedDict("Board", board), "board")
 
 
 if __name__ == "__main__":
