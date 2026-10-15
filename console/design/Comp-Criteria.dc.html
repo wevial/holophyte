@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acceptance criteria</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--need:#f5a3c7;--live:#86d993;--ask:#f0cf62;--wait:#aaa7ec;--done:#7b84a1}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--need:#b02f6b;--live:#1f7a35;--ask:#8a6500;--wait:#5653a6;--done:#8b90a8}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+summary{list-style:none;cursor:pointer}summary::-webkit-details-marker{display:none}
+.disc::before{content:"";width:0;height:0;border-left:6px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s}
+details[open] > .disc::before{transform:rotate(90deg)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1200px; height: 720px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · run page</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Acceptance criteria</h2>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 32px; align-items: start">
+<section aria-label="Criteria checklist" style="padding: 24px 28px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Acceptance criteria <span style="color: var(--ink); letter-spacing: 0.04em">2 of 5 met</span></div>
+<ol style="list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--rule-2)">
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--live)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="met" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC1</span><span style="flex: 1; min-width: 0">Sweep with <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--act</span> requeues a lease past its threshold.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--live)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="met" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC2</span><span style="flex: 1; min-width: 0">A lease inside its threshold is left alone.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--wait)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="not yet witnessed" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC3</span><span style="flex: 1; min-width: 0"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--sweep</span> without <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--act</span> changes nothing.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--need)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="unmet" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC4</span><span style="flex: 1; min-width: 0">The requeue's interventions row names the sweep.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0"><span style="display: inline-flex; color: var(--wait)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="not yet witnessed" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC5</span><span style="flex: 1; min-width: 0">No new flag; leaving out <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--act</span> is the dry run.</span><span style="flex: none; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">from your steer</span></li>
+</ol>
+<details style="margin-top: 14px; border-top: 1px solid var(--rule)">
+<summary class="disc" style="display: flex; align-items: center; gap: 10px; min-height: 44px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2)">Evidence <span style="letter-spacing: 0.04em; text-transform: none; color: var(--ink-3)">2 tests · 1 finding</span></summary>
+<ul style="list-style: none; margin: 0; padding: 0; font: 400 12px/1.8 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li>AC1 · tests/test_sweep.py::test_silent_lease_requeued</li>
+<li>AC2 · tests/test_sweep.py::test_live_lease_untouched · real git</li>
+<li>AC4 · round 1: the row names "loop", not "sweep" · lease.py:142</li>
+</ul>
+</details>
+</section>
+<section aria-label="Criteria icons" style="padding: 20px 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Icons</div>
+<ul style="list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; font: 400 13px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li style="display: flex; align-items: center; gap: 12px"><span style="display: inline-flex; color: var(--live)"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg></span>met · a test witnesses it</li>
+<li style="display: flex; align-items: center; gap: 12px"><span style="display: inline-flex; color: var(--wait)"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg></span>not yet witnessed</li>
+<li style="display: flex; align-items: center; gap: 12px"><span style="display: inline-flex; color: var(--need)"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg></span>unmet · review found a gap</li>
+</ul>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1200,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>

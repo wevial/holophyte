@@ -181,3 +181,9 @@ export function shippedUrl(base: string, limit: number, before?: number, outcome
 export function mergedRows(rows: ShippedRow[]): ShippedRow[] {
   return rows.filter((row) => (row.outcome ?? "merged") === "merged");
 }
+
+/** The merged rows of `now`'s local day, newest first. */
+export function todayMerges(rows: ShippedRow[], now: number, tz?: string): ShippedRow[] {
+  const newest = [...rows].sort((a, b) => b.ended_ms - a.ended_ms || b.id - a.id);
+  return withinDays(groupByDay(mergedRows(newest), now, tz), 1).flatMap((group) => group.rows);
+}

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Holophyte · Runs</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--ask:#8a6500;--wait:#5653a6;--bad:#c0321f}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live);transform-box:fill-box;transform-origin:center;animation:ring 2.6s ease-in-out infinite}
+@keyframes ring{50%{transform:scale(.84);stroke-opacity:.3}}
+svg:has(> path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]) > circle{fill:var(--live);stroke:var(--live)}
+path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]{stroke:var(--canvas);stroke-width:1.8}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.ants-r{fill:none;stroke:var(--wait);stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;cursor:pointer;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+.link:hover{color:var(--ink);border-bottom-color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.nav-a:hover{color:var(--ink)!important}
+.shell{--pg-t:20px;--pg-x:24px;--pg-b:32px;--hd-t:12px;--hd-b:12px;--sec:14px;height:100vh;overflow:hidden}
+.pg-title{margin:0;font:600 20px/1.25 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em;color:var(--ink)}
+.shell > aside{height:100vh;box-sizing:border-box}.shell > aside nav{flex:0 1 auto;min-height:0;overflow-y:auto}
+.shell > .pad-main{height:100vh;overflow-y:auto}
+.pg-w{position:relative}
+.pg-t{position:absolute;right:4px;top:6px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--ink-3)}
+.pg-sub{list-style:none;margin:2px 0 6px 20px;padding:0;border-left:1px solid var(--rule-2)}
+.st-a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;min-height:44px;padding:7px 8px 8px 12px;box-sizing:border-box;text-decoration:none}
+.st-k,.st-p{font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-t{grid-column:1 / -1;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif}
+@media (max-width:720px){.shell{height:auto;overflow:visible}.shell > aside,.shell > .pad-main{height:auto;overflow:visible}}
+.sw{position:relative;margin:12px 0 4px}
+.sw-b{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px 0 12px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-align:left;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-b .tag,.sw-o .tag{color:var(--wait);font-size:11px;font-weight:400}
+.sw-need{margin-left:auto;color:var(--need);font-weight:600}
+.sw-c{margin-left:6px;color:var(--ink-3)}.sw-need[hidden]+.sw-c{margin-left:auto}
+.sw-back{position:fixed;inset:0;z-index:55;border:0;padding:0;background:transparent;cursor:default}
+.sw-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:264px;box-sizing:border-box;padding:8px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.sw-q{display:block;box-sizing:border-box;width:100%;min-height:36px;padding:0 10px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sw-q:focus{outline:2px solid var(--act);outline-offset:-1px}.sw-q::placeholder{color:var(--ink-2)}
+.sw-l{list-style:none;margin:8px 0 0;padding:0}
+.sw-o{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 8px;cursor:pointer;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-o:hover{background:var(--paper-2)!important}.sw-o[aria-selected="true"]{color:var(--act)}
+.sw-cnt{margin-left:auto;display:inline-flex;gap:10px;font-weight:400;font-size:12px;color:var(--ink-3)}.sw-cnt b{color:var(--need);font-weight:600}
+.sw-none{margin:0;padding:10px 8px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.pg-a{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 10px 0 12px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.pg-a .badge{margin-left:auto;color:var(--need);letter-spacing:0;font-weight:600}
+.seg{min-height:36px;padding:0 12px;border:0;cursor:pointer;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.seg b{margin-left:6px;font-weight:500;letter-spacing:0}
+.list{overflow-x:auto}
+.list-in{min-width:1000px}
+.rgrid{display:grid;grid-template-columns:84px minmax(0,2.6fr) 96px minmax(0,1.7fr) 64px 96px 96px 80px;gap:12px;align-items:start}
+.rhead{padding:12px 12px 10px;border-bottom:1px solid var(--rule);font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.rrow{padding:12px;border-bottom:1px solid var(--rule-2);text-decoration:none;color:var(--ink);font-size:14px}
+.rrow:hover{background:var(--paper-2)}
+.rrow.need{background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+.rrow.need:hover{background:var(--paper-2)}
+.rrow.done{color:var(--ink-2)}
+.m{font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.st{display:inline-flex;align-items:center;gap:8px;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace}
+@media (max-width:720px){.pad-main{padding:16px 8px 32px!important}.pad-x{padding-left:16px!important;padding-right:16px!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}} shell" style="min-height: 100vh; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: stretch; background-color: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+
+<aside aria-label="Console" style="flex: 1 1 232px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; background: var(--canvas); border-right: 1px solid var(--rule-2); padding: 0 8px 16px">
+<div style="display: flex; align-items: center; min-height: 60px; margin: 0 -8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--rule-2)">
+<a href="Main.dc.html" aria-label="Holophyte console, overview" style="display: flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink)">
+<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="flex: none"><g style="fill: var(--act); stroke: var(--canvas); stroke-width: 1.1; stroke-linejoin: round"><path d="M12 17 C7.4 17.6 3.6 15.6 2 12.2 C5.6 11.8 9.4 13.6 12 17Z"></path><path d="M12 17 C16.6 17.6 20.4 15.6 22 12.2 C18.4 11.8 14.6 13.6 12 17Z"></path><path d="M12 17 C8.2 16.6 5.6 13 6 8 C9 9.2 11.2 12.6 12 17Z"></path><path d="M12 17 C15.8 16.6 18.4 13 18 8 C15 9.2 12.8 12.6 12 17Z"></path><path d="M12 4 C15.2 7.2 15.2 13 12 17 C8.8 13 8.8 7.2 12 4Z"></path></g><path d="M6 20.2 H18" style="fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-linecap: round"></path></svg>
+<b style="font: 600 15px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.01em">holophyte</b>
+</a>
+</div>
+<div class="sw" onKeyDown="{{sw.key}}">
+<button type="button" class="nav-a sw-b" onClick="{{sw.toggle}}" aria-haspopup="listbox" aria-expanded="{{sw.open}}" aria-label="{{sw.aria}}" title="{{sw.title}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{sw.iconColor}}"><path d="{{sw.icon}}"></path></svg><span hidden="{{sw.rail}}">{{sw.name}}</span><span class="tag" hidden="{{sw.noTag}}">held</span><span class="sw-need" hidden="{{sw.noNeed}}">{{sw.need}}</span><svg class="ico sw-c" hidden="{{sw.rail}}" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></button>
+<sc-if value="{{sw.open}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="sw-back" tabindex="-1" aria-hidden="true" onClick="{{sw.close}}"></button>
+<div class="sw-pop" role="dialog" aria-label="Switch project">
+<label class="sr" for="swq">Find a project</label>
+<input id="swq" class="sw-q" type="text" value="{{sw.q}}" onChange="{{sw.onQ}}" placeholder="Find a project" autocomplete="off" autoFocus="{{ true }}" role="combobox" aria-expanded="true" aria-controls="swl" aria-activedescendant="{{sw.activeId}}">
+<ul id="swl" role="listbox" aria-label="Projects" class="sw-l">
+<sc-for list="{{sw.items}}" as="it" hint-placeholder-count="4"><li id="{{it.id}}" role="option" aria-selected="{{it.sel}}" class="sw-o" onClick="{{it.pick}}" style="background: {{it.bg}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{it.iconColor}}"><path d="{{it.icon}}"></path></svg><span>{{it.name}}</span><span class="tag" hidden="{{it.noTag}}">held</span><span class="sw-cnt"><b hidden="{{it.noNeed}}">{{it.need}}</b><span>{{it.runs}}</span></span></li></sc-for>
+</ul>
+<p class="sw-none" hidden="{{sw.hasItems}}">No project matches.</p>
+</div>
+</sc-if>
+</div>
+<nav aria-label="Pages" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px">
+<sc-for list="{{pages}}" as="p" hint-placeholder-count="6"><div class="pg-w"><a href="{{p.href}}" class="nav-a pg-a" aria-current="{{p.cur}}" aria-label="{{p.aria}}" style="color: {{p.color}}; background: {{p.bg}}; box-shadow: {{p.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="{{p.d1}}"></path><path d="{{p.d2}}"></path></svg><span hidden="{{p.rail}}">{{p.label}}</span><span class="badge" hidden="{{p.noBadge}}">{{p.badge}}</span></a><sc-if value="{{p.hasSub}}" hint-placeholder-val="{{ false }}"><button type="button" class="nav-a pg-t" aria-expanded="{{p.subOpen}}" aria-controls="nav-stories" aria-label="{{p.subAria}}" onClick="{{p.toggleSub}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; transform: {{p.subRot}}"><path d="M6 4l4 4-4 4"></path></svg></button></sc-if><sc-if value="{{p.subShow}}" hint-placeholder-val="{{ false }}"><ul id="nav-stories" class="pg-sub" aria-label="Stories"><sc-for list="{{p.subs}}" as="st" hint-placeholder-count="3"><li><a href="Story.dc.html" class="nav-a st-a" aria-current="{{st.cur}}" aria-label="{{st.aria}}" onClick="{{st.go}}" style="color: {{st.color}}; background: {{st.bg}}"><span class="st-k">{{st.key}}</span><span class="st-p">{{st.prog}}</span><span class="st-t">{{st.title}}</span></a></li></sc-for></ul></sc-if></div></sc-for>
+</nav>
+<div style="margin: auto -8px 0; padding: 14px 8px 0; border-top: 1px solid var(--rule-2); display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+<div style="display: flex; align-items: center; gap: 12px; padding-left: 14px; font: 400 11px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg><span>writer-host · polled 4s ago</span></div>
+<button type="button" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}" style="display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-2); cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>{{themeWord}}</button>
+</div>
+</aside>
+
+<div class="pad-main" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: var(--pg-t) var(--pg-x) var(--pg-b)">
+<main style="max-width: 1320px; margin: 0 auto">
+<section aria-labelledby="rH" style="position: relative">
+<div class="pad-x" style="padding: var(--hd-t) 0 var(--hd-b); border-bottom: 1px solid var(--rule)">
+<h1 id="rH" class="pg-title">Runs</h1>
+<p style="margin: 6px 0 0; font: 400 13px/1.6 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">{{scopeLine}}<span style="color: var(--ink-3); margin: 0 6px">/</span><b style="color: var(--ink); font-weight: 600">{{nActive}}</b> active<span style="color: var(--ink-3); margin: 0 6px">/</span>newest first<span style="color: var(--ink-3); margin: 0 6px">/</span>today and yesterday</p>
+<sc-if value="{{projOn}}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 14px; font: 400 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span>Showing <b style="color: var(--act); font-weight: 500">{{proj}}</b> only</span><button type="button" class="link" onClick="{{clearProj}}" style="min-height: 32px">Show all projects</button></div></sc-if>
+</div>
+
+<div class="pad-x" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: var(--sec) 0 0">
+<span id="stL" style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">State</span>
+<div role="group" aria-labelledby="stL" style="display: inline-flex; flex-wrap: wrap; border: 1px solid var(--ink-3)">
+<sc-for list="{{filters}}" as="f" hint-placeholder-count="5"><button type="button" class="seg" aria-pressed="{{f.on}}" onClick="{{f.pick}}" style="color: {{f.color}}; background: {{f.bg}}">{{f.label}}<b>{{f.n}}</b></button></sc-for>
+</div>
+</div>
+
+<div class="list" style="margin-top: var(--sec); background: var(--paper); border: 1px solid var(--rule)"><div class="list-in">
+<div class="rgrid rhead" aria-hidden="true"><span>Run</span><span>Ticket</span><span>Project</span><span>State</span><span>Rounds</span><span>PR</span><span>Started</span><span style="text-align: right">Took</span></div>
+<ol aria-label="Runs, newest first" style="list-style: none; margin: 0; padding: 0">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<li><a class="rgrid rrow {{r.cls}}" href="Run.dc.html" aria-label="{{r.aria}}"><span class="m" style="color: var(--ink-2)">{{r.n}}</span><span><b style="font: 500 11.5px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3); font-variant-numeric: tabular-nums">{{r.key}}</b> <span style="font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 600; color: var(--ink)">{{r.title}}</span></span><span class="m">{{r.proj}}</span><span class="st" style="color: {{r.color}}"><sc-if value="{{r.ci}}" hint-placeholder-val="{{ false }}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect class="ants-r" x="1.5" y="1.5" width="13" height="13" pathLength="16" style="stroke-width: 1.4"></rect><path d="M8 4.8V8l2.3 1.6"></path></svg></sc-if><sc-if value="{{r.nci}}" hint-placeholder-val="{{ true }}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="{{r.r}}"></circle><path d="{{r.path}}"></path></svg></sc-if>{{r.word}}</span><span class="m">{{r.rounds}}</span><span class="m">{{r.pr}}</span><span class="m">{{r.start}}</span><span class="m" style="text-align: right">{{r.took}}</span></a></li>
+</sc-for>
+</ol>
+<p hidden="{{hasRows}}" style="margin: 0; padding: 18px 12px; font: 400 13px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">{{emptyText}}</p>
+</div></div>
+<div class="pad-x" style="display: flex; flex-wrap: wrap; gap: 6px 18px; padding: var(--sec) 0; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span>Active runs also show on the Overview. Open a run for its stage, log and agent.</span><span>times PT</span></div>
+</section>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1440,"height":1400}}'>
+const NAV_GRID = 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z';
+const NAV_FOLDER = 'M2 4.5h4.2l1.5 1.5H14v7.5H2z';
+const NAV_PAGES = [
+  ['overview', 'Overview', 'M2 9.5h3.5l1 2h3l1-2H14', 'M3.6 3h8.8L14 9.5V13H2V9.5z', 'Main.dc.html'],
+  ['runs', 'Runs', 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z', 'M6.6 5.4v5.2L10.8 8z', 'Runs.dc.html'],
+  ['issues', 'Issues', 'M3.5 1.5h6l3 3v10h-9z', 'M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4', 'Issues.dc.html'],
+  ['findings', 'Findings', 'M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5', '', 'Findings.dc.html']
+];
+const NAV_SCOPES = [['', 'All projects', 'var(--ink-2)', '', 'All'], ['holophyte', 'holophyte', 'var(--live)', '', 'H'], ['lotuspod', 'lotuspod', 'var(--live)', '', 'L'], ['relos', 'relos', 'var(--wait)', 'held', 'R']];
+const NAV_RUNS = { '': 14, holophyte: 9, lotuspod: 3, relos: 2 };
+const NAV_NEED = { '': 5, holophyte: 4, lotuspod: 0, relos: 1 };
+const NAV_FIND = { '': 2, holophyte: 1, lotuspod: 0, relos: 1 };
+function readScope(fallback) { try { const v = window.sessionStorage.getItem('holo.scope'); if (v !== null) return v; } catch (e) {} return fallback; }
+function saveScope(v) { try { window.sessionStorage.setItem('holo.scope', v); } catch (e) {} }
+const NAV_HELD = { relos: true };
+const NAV_STORIES = [['HOLO-220', 'Unattended runs recover themselves', 'holophyte', '4/7'], ['HOLO-241', 'The console tells the truth', 'holophyte', '1/7'],
+  ['HOLO-245', 'Findings become guardrails', 'holophyte', '1/5'], ['LOTUS-50', 'Two-way pages', 'lotuspod', '1/5']];
+function navSub(cmp, id, screen, scope, rail, opt) {
+  if (id !== 'issues') return { hasSub: false, subShow: false, subs: [] };
+  let open = cmp.state.navSt;
+  if (open === undefined) { open = true; try { open = window.sessionStorage.getItem('holo.stories') !== '0'; } catch (e) {} }
+  const toggle = () => { const v = !open; try { window.sessionStorage.setItem('holo.stories', v ? '1' : '0'); } catch (e) {} cmp.setState({ navSt: v }); };
+  const subs = NAV_STORIES.filter((x) => !scope || x[2] === scope).map((x) => {
+    const cur = screen === 'issues' && opt.story === x[0];
+    return { key: x[0], title: x[1], prog: x[3], cur: cur ? 'page' : null, color: cur ? 'var(--act)' : 'var(--ink-2)', bg: cur ? 'var(--act-wash)' : 'transparent',
+      aria: x[0] + ' ' + x[1] + ', ' + x[3].replace('/', ' of ') + ' merged',
+      go: (e) => { try { window.sessionStorage.setItem('holo.story', x[0]); } catch (err) {} if (opt.onStory) { if (e) e.preventDefault(); opt.onStory(x[0]); } } };
+  });
+  const has = !rail && subs.length > 0;
+  return { hasSub: has, subShow: has && open, subOpen: open ? 'true' : 'false', subRot: open ? 'rotate(90deg)' : 'none',
+    subAria: (open ? 'Hide' : 'Show') + ' the story list', toggleSub: toggle, subs: subs };
+}
+function navVals(cmp, screen, scope, rail, onScope, o) {
+  const opt = o || {};
+  const needs = opt.need || NAV_NEED, runs = opt.runs || NAV_RUNS, finds = opt.find || NAV_FIND, held = opt.held || NAV_HELD;
+  const sw = cmp.state.sw || { open: false, q: '', i: 0 };
+  const setSw = (p) => cmp.setState({ sw: Object.assign({}, cmp.state.sw || { open: false, q: '', i: 0 }, p) });
+  const pick = (id) => { saveScope(id); setSw({ open: false, q: '', i: 0 }); onScope(id); };
+  const q = sw.q.trim().toLowerCase();
+  const list = NAV_SCOPES.filter((x) => !q || x[1].toLowerCase().indexOf(q) >= 0);
+  const i = Math.min(sw.i, Math.max(list.length - 1, 0));
+  const colorOf = (id) => (held[id] ? 'var(--wait)' : (id ? 'var(--live)' : 'var(--ink-2)'));
+  const items = list.map((x, k) => ({ id: 'sw-' + (x[0] || 'all'), name: x[1], icon: x[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(x[0]),
+    noTag: !held[x[0]], need: String(needs[x[0]]), noNeed: !needs[x[0]], runs: runs[x[0]] + ' open', sel: x[0] === scope ? 'true' : 'false',
+    bg: k === i ? 'var(--paper-2)' : 'transparent', pick: () => pick(x[0]) }));
+  const cur = NAV_SCOPES.filter((x) => x[0] === scope)[0] || NAV_SCOPES[0];
+  const key = (e) => {
+    if (e.key === 'Escape') { if (sw.open) { e.preventDefault(); setSw({ open: false }); } return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sw.open) { setSw({ open: true, q: '', i: 0 }); return; }
+      const n = list.length;
+      if (n) setSw({ i: (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+      return;
+    }
+    if (e.key === 'Enter' && sw.open && list[i] && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); pick(list[i][0]); }
+  };
+  const pages = NAV_PAGES.map((p) => {
+    const isCur = p[0] === screen, n = p[0] === 'overview' ? needs[scope] : (p[0] === 'findings' ? finds[scope] : 0);
+    return { href: p[0] === 'overview' && opt.overviewHref ? opt.overviewHref : p[4], label: p[1], d1: p[2], d2: p[3], cur: isCur ? 'page' : null,
+      aria: p[1] + (n ? ', ' + n + (p[0] === 'overview' ? ' need you' : ' open') : ''),
+      color: isCur ? 'var(--act)' : 'var(--ink-2)', bg: isCur ? 'var(--act-wash)' : 'transparent', sh: isCur ? 'inset 2px 0 0 var(--act)' : 'none',
+      badge: n ? String(n) : '', noBadge: !n, rail: rail, ...navSub(cmp, p[0], screen, scope, rail, opt) };
+  });
+  return {
+    sw: { open: sw.open, q: sw.q, name: cur[1], icon: cur[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(cur[0]),
+      noTag: !held[cur[0]] || rail, need: String(needs[cur[0]]), noNeed: !needs[cur[0]], rail: rail,
+      aria: 'Project: ' + cur[1] + (held[cur[0]] ? ', held' : '') + (needs[cur[0]] ? ', ' + needs[cur[0]] + ' need you' : '') + '. Switch project',
+      title: cur[1] + (needs[cur[0]] ? ' · ' + needs[cur[0]] + ' need you' : ''),
+      items: items, hasItems: items.length > 0, activeId: items[i] ? items[i].id : '',
+      toggle: () => setSw({ open: !sw.open, q: '', i: 0 }), close: () => setSw({ open: false }),
+      onQ: (e) => setSw({ q: e.target.value, i: 0, open: true }), key: key },
+    pages: pages
+  };
+}
+const P = { play: 'M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z', check: 'M5 8.3 7.1 10.4 11 6.2', x: 'M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4', pause: 'M6.6 5.6v4.8M9.4 5.6v4.8',
+  q: 'M6.2 6.3a1.9 1.9 0 1 1 2.7 1.7c-.6.3-.9.7-.9 1.2v.3M8 11.4v.1', dots: 'M5.3 8h.1M8 8h.1M10.7 8h.1', tri: 'M8 2 14.5 13.5h-13zM8 6.3v3.2M8 11.6v.1',
+  slash: 'M4.4 11.6l7.2-7.2' };
+const K = {
+  live: ['var(--live)', P.play, 'active'], ready: ['var(--live)', P.check, 'active'], stale: ['var(--need)', P.tri, 'active'], ci: ['var(--wait)', '', 'active'],
+  parked: ['var(--wait)', P.dots, 'active'], question: ['var(--ask)', P.q, 'active'], paused: ['var(--ask)', P.pause, 'active'],
+  merged: ['var(--live)', 'M5.2 8.3 7.2 10.3 10.9 6.3', 'merged'], failed: ['var(--bad)', P.x, 'failed'], abandoned: ['var(--ink-3)', P.slash, 'abandoned']
+};
+const R = [
+  [232, 'LOTUS-57', 'Render a decision form as a radio group', 'lotuspod', 'live', 'implementing · turn 1', '–', '–', '16:47', '6m'],
+  [231, 'HOLO-231', 'The sweep frees a silent lease', 'holophyte', 'live', 'reviewing · round 2 of 3', '2', '#524 draft', '16:36', '16m'],
+  [230, 'HOLO-238', 'Name the host on a stale-console banner', 'holophyte', 'live', 'verifying', '–', '–', '16:34', '19m'],
+  [229, 'RELOS-88', 'Back off the webhook retry on a 429', 'relos', 'stale', 'stale · no beat 15m', '–', '–', '16:22', '31m'],
+  [228, 'HOLO-234', "Show a queued ticket's reason on the board card", 'holophyte', 'ci', 'on CI', '1', '#523', '16:20', '33m'],
+  [227, 'HOLO-233', 'Compare primary and shadow implementers per ticket', 'holophyte', 'ready', 'ready to merge', '1', '#521', '16:05', '48m'],
+  [226, 'LOTUS-55', 'Sanitize pasted HTML in page comments', 'lotuspod', 'parked', 'parked · 1 bot thread', '1', '#88', '15:58', '55m'],
+  [225, 'HOLO-228', 'Cache the board read', 'holophyte', 'failed', 'failed at verify', '–', '–', '15:51', '11m'],
+  [224, 'HOLO-229', 'Retry a flaky verify once', 'holophyte', 'question', 'asks to merge', '2', '#519', '15:10', '1h 43m'],
+  [223, 'HOLO-236', 'Move run events to their own table', 'holophyte', 'paused', 'paused · migration window', '–', '#522 draft', '13:31', '3h 22m'],
+  [222, 'HOLO-230', 'Count a capture-only fix round as progress', 'holophyte', 'merged', 'merged 11:15', '1', '#520', '11:07', '8m'],
+  [221, 'LOTUS-54', 'Keep answered decisions in a newest-first table', 'lotuspod', 'merged', 'merged 10:02', '2', '#86', '09:41', '21m'],
+  [220, 'HOLO-227', 'Refuse a third relaunch against one failure', 'holophyte', 'merged', 'merged 08:47', '1', '#517', '08:33', '14m'],
+  [219, 'HOLO-224', 'Name the worker in every log line', 'holophyte', 'merged', 'merged', '1', '#514', 'yest 21:05', '12m'],
+  [218, 'HOLO-226', 'Split the review prompt by risk', 'holophyte', 'failed', 'failed · round cap hit', '3', '#516', 'yest 19:20', '58m'],
+  [217, 'LOTUS-52', 'Show who answered a decision', 'lotuspod', 'merged', 'merged', '1', '#84', 'yest 18:02', '17m'],
+  [216, 'RELOS-90', 'Retry invite emails on a bounce', 'relos', 'abandoned', 'abandoned · aborted by you', '–', '–', 'yest 17:40', '9m'],
+  [215, 'HOLO-225', 'Name the stale run in the console', 'holophyte', 'merged', 'merged', '1', '#513', 'yest 15:30', '19m'],
+  [214, 'HOLO-231', 'The sweep frees a silent lease', 'holophyte', 'failed', 'failed at verify', '1', '–', 'yest 15:10', '12m']
+];
+const FILTERS = [['all', 'All'], ['active', 'Active'], ['merged', 'Merged'], ['failed', 'Failed'], ['abandoned', 'Abandoned']];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, proj: readScope('') || null, f: 'all' };
+  }
+  renderVals() {
+    const s = this.state;
+    const theme = s.theme || this.props.theme || 'night';
+    const inProj = R.filter((r) => !s.proj || r[3] === s.proj);
+    const count = { all: inProj.length, active: 0, merged: 0, failed: 0, abandoned: 0 };
+    inProj.forEach((r) => { count[K[r[4]][2]] += 1; });
+    const rows = inProj.filter((r) => s.f === 'all' || K[r[4]][2] === s.f).map((r) => {
+      const k = K[r[4]], need = ['stale', 'question', 'paused', 'ready'].indexOf(r[4]) >= 0;
+      return { n: String(r[0]), key: r[1], title: r[2], proj: r[3], word: r[5], rounds: r[6], pr: r[7], start: r[8], took: r[9],
+        color: k[0], path: k[1], r: r[4] === 'stale' ? '0' : '6.5', ci: r[4] === 'ci', nci: r[4] !== 'ci',
+        cls: need ? 'need' : (k[2] === 'merged' || k[2] === 'abandoned' ? 'done' : ''),
+        aria: 'Run ' + r[0] + ', ' + r[1] + ' ' + r[2] + ', ' + r[3] + ', ' + r[5] + ', started ' + r[8] };
+    });
+    const filters = FILTERS.map((f) => ({ label: f[1], n: String(count[f[0]]), on: s.f === f[0],
+      color: s.f === f[0] ? 'var(--paper)' : 'var(--ink-2)', bg: s.f === f[0] ? 'var(--ink)' : 'transparent',
+      pick: () => this.setState({ f: f[0] }) }));
+    const fname = FILTERS.filter((f) => f[0] === s.f)[0][1].toLowerCase();
+    return {
+      themeClass: 't-' + theme,
+      themeWord: theme === 'dawn' ? 'Dawn' : 'Night',
+      themeLabel: theme === 'dawn' ? 'Colour theme: dawn. Switch to night' : 'Colour theme: night. Switch to dawn',
+      toggleTheme: () => this.setState({ theme: theme === 'dawn' ? 'night' : 'dawn' }),
+      ...navVals(this, 'runs', s.proj || '', false, (id) => this.setState({ proj: id || null })),
+      rows: rows, hasRows: rows.length > 0, filters: filters,
+      emptyText: 'No ' + fname + ' runs in ' + (s.proj || 'any project') + ' today or yesterday.',
+      nActive: String(count.active), scopeLine: (s.proj || 'all projects') + ' · ' + inProj.length + ' runs',
+      proj: s.proj || '', projOn: !!s.proj, clearProj: () => { saveScope(''); this.setState({ proj: null }); }
+    };
+  }
+}
+</script>
+</body>
+</html>
