@@ -17,7 +17,6 @@ import {
   POLL_INTERVAL_MS,
   REQUEST_TIMEOUT_MS,
   TICK_MS,
-  defaultPollDeps,
   type PollDeps,
   type PollSchemas,
 } from "../lib/poll";
@@ -46,13 +45,13 @@ interface Fleet {
 /** The new console's one cache. A failed read is not retried: the next
  *  poll is the retry, and the failure shows at once. */
 export function consoleQueryClient(): QueryClient {
-  return new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } } });
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
 /** Every daemon `/peers` names, as `usePeers()` polls it, but as one query
  *  per origin: every view that reads it shares one poll every
  *  `POLL_INTERVAL_MS`, and each body is parsed with the generated contract. */
-export function useFleet(origin: string, deps: PollDeps = defaultPollDeps): PeersState<ContractBodies> {
+export function useFleet(origin: string, deps: PollDeps): PeersState<ContractBodies> {
   const client = useQueryClient();
   const depsRef = useRef(deps);
   depsRef.current = deps;
