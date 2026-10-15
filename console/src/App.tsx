@@ -4,7 +4,7 @@ import { Hosts } from "./components/Hosts";
 import { RunDetail } from "./components/RunDetail";
 import { Now } from "./components/Now";
 import { Shipped } from "./components/Shipped";
-import { Rail, type ProjectChoice, type View } from "./components/Rail";
+import { Rail, VIEWS, type ProjectChoice, type View } from "./components/Rail";
 import { usePeers } from "./hooks/usePeers";
 import { useShipped } from "./hooks/useShipped";
 import { rootOf, visibleHosts } from "./lib/hosts";
@@ -15,6 +15,12 @@ import { applyTheme, readTheme, writeTheme, type Theme } from "./lib/theme";
  *  every other daemon it names. */
 function servingBase(): string {
   return window.location.origin;
+}
+
+/** The view a `#view=` link names, or null for any other hash. */
+function linkedView(): View | null {
+  const match = /^#view=([a-z]+)$/.exec(window.location.hash);
+  return VIEWS.find(({ id }) => id === match?.[1])?.id ?? null;
 }
 
 export function App({
@@ -39,12 +45,16 @@ export function App({
     } catch { return null; }
   };
   const [linkedRun, setLinkedRun] = useState(readRun);
+  const [view, setView] = useState<View>(() => linkedView() ?? "now");
   useEffect(() => {
-    const changed = () => setLinkedRun(readRun());
+    const changed = () => {
+      setLinkedRun(readRun());
+      const named = linkedView();
+      if (named) setView(named);
+    };
     window.addEventListener("hashchange", changed);
     return () => window.removeEventListener("hashchange", changed);
   }, [base]);
-  const [view, setView] = useState<View>("now");
   const [project, setProject] = useState<ProjectChoice>("all");
   const [theme, setTheme] = useState<Theme>(readTheme);
   const peers = usePeers(base, pollDeps, timeoutMs);

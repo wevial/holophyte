@@ -16,7 +16,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
@@ -31,9 +33,13 @@ import json, os, sys, urllib.request
 url = os.environ["CONSOLE_URL"]
 seen = {}
 for path in ("/projects/demo/board", "/projects/demo/shipped?outcome=all",
-             "/projects/demo/attention"):
+             "/projects/demo/attention", "/projects/demo/status"):
     with urllib.request.urlopen(url + path, timeout=10) as answer:
         seen[path] = json.load(answer)
+for run in seen["/projects/demo/status"]["runs"]:
+    path = "/projects/demo/runs/%d" % run["id"]
+    with urllib.request.urlopen(url + path, timeout=10) as answer:
+        seen[run["ticket"]] = json.load(answer)
 open(sys.argv[1], "w").write(json.dumps(seen))
 """
 
@@ -108,16 +114,62 @@ class ConsoleFixtureTests(unittest.TestCase):
                    for column in board["columns"]}
         self.assertEqual(list(columns["backlog"]), ["DEMO-1"])
         self.assertEqual(list(columns["ready"]), ["DEMO-2"])
-        self.assertEqual(list(columns["in_flight"]), ["DEMO-3"])
+        self.assertEqual(sorted(columns["in_flight"]),
+                         ["DEMO-11", "DEMO-3", "DEMO-7"])
         self.assertIsNotNone(columns["in_flight"]["DEMO-3"]["run"])
-        self.assertEqual(list(columns["blocked_on_operator"]), ["DEMO-4"])
+        self.assertEqual(sorted(columns["blocked_on_operator"]),
+                         ["DEMO-4", "DEMO-8", "DEMO-9"])
         shipped = {row["ticket"]: row["outcome"] for row
                    in seen["/projects/demo/shipped?outcome=all"]["rows"]}
-        self.assertEqual(shipped, {"DEMO-5": "merged", "DEMO-6": "failed"})
+        self.assertEqual(shipped, {"DEMO-5": "merged", "DEMO-6": "failed",
+                                   "DEMO-10": "merged", "DEMO-11": "failed"})
         blocked = [item["ticket"] for item
                    in seen["/projects/demo/attention"]["items"]
                    if item["kind"] == "blocked"]
         self.assertEqual(blocked, ["DEMO-4"])
+
+    def test_the_overview_states_are_served_as_the_daemon_reads_them(self):
+        midnight = datetime.now().replace(
+            hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
+
+        result, seen = self.script(READ)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        status = seen["/projects/demo/status"]
+        stale_ms = status["thresholds"]["heartbeat_stale_ms"]
+        runs = {run["ticket"]: run for run in status["runs"]}
+        self.assertEqual({ticket: run["phase"] for ticket, run in runs.items()},
+                         {"DEMO-3": "working", "DEMO-7": "reviewing"})
+        for run in runs.values():
+            self.assertLess(run["heartbeat_age_ms"], stale_ms, run["ticket"])
+        (review,) = seen["DEMO-7"]["rounds"]
+        self.assertEqual(review["verdict"], "changes_requested")
+        self.assertEqual([f["severity"] for f in review["findings"]], ["p1"])
+
+        items = seen["/projects/demo/attention"]["items"]
+        self.assertNotIn("stale_run", [item["kind"] for item in items])
+        parks = {item["ticket"]: item for item in items
+                 if item["kind"] == "pr_open"}
+        self.assertEqual(sorted(parks), ["DEMO-8", "DEMO-9"])
+        self.assertEqual((parks["DEMO-8"]["park_kind"],
+                          parks["DEMO-8"]["pr"]["checks"]), ("ci", "pending"))
+        self.assertEqual(
+            (parks["DEMO-9"]["park_kind"], parks["DEMO-9"]["pr"]["checks"],
+             parks["DEMO-9"]["pr"]["review"],
+             parks["DEMO-9"]["pr"]["open_threads"]),
+            ("pull_request", "success", "approved", 0))
+        failed = [(item["ticket"], item["reason"]) for item in items
+                  if item["kind"] == "failed"]
+        self.assertEqual(failed, [("DEMO-11", "verify failed: 2 tests red")])
+
+        rows = {row["ticket"]: row for row
+                in seen["/projects/demo/shipped?outcome=all"]["rows"]}
+        today = rows["DEMO-10"]
+        self.assertEqual(today["outcome"], "merged")
+        self.assertEqual(today["pr_url"],
+                         "https://github.com/example/demo/pull/43")
+        self.assertGreaterEqual(today["ended_ms"], midnight)
+        self.assertLessEqual(today["ended_ms"], time.time() * 1000)
 
     def test_no_route_the_console_polls_names_the_machine(self):
         result, seen = self.script(POLLED)
@@ -135,7 +187,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         (bare, _), (status, answer) = seen
         self.assertEqual(bare, 401)
         self.assertEqual(status, 201)
-        self.assertEqual(answer["ticket"], "DEMO-7")
+        self.assertEqual(answer["ticket"], "DEMO-12")
 
     def test_the_command_s_code_is_kept_and_everything_torn_down(self):
         result, (url, home) = self.script(RECORD)

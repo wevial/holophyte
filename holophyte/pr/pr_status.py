@@ -255,8 +255,7 @@ def pr_state(target, pull):
     threads.extend(review_threads(target, pull, first_page, comments))
     every_run, required = _check_reads(target, pull,
                                        first_page.get("headRefOid"))
-    runs = _started_since_ready(every_run, first_page)
-    rollup_stale = runs is not None and len(runs) < len(every_run)
+    runs, rollup_stale = _fold_by_ready(every_run, first_page)
     if runs is not None:
         try:
             runs += status_contexts_of(target, pull, first_page, graphql)
@@ -455,16 +454,34 @@ def _ready_ms(node):
     return _iso_ms(last.get("createdAt")) if isinstance(last, dict) else None
 
 
-def _started_before(run, ready):
-    started = _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
-    return started is not None and started < ready
+def _start_ms(run):
+    return _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
 
 
-def _started_since_ready(runs, node):
+def _run_order(run):
+    run_id = run.get("id")
+    return (_start_ms(run),
+            run_id if isinstance(run_id, int)
+            and not isinstance(run_id, bool) else -1)
+
+
+def _fold_by_ready(runs, node):
     ready = _ready_ms(node)
     if runs is None or ready is None:
-        return runs
-    return [run for run in runs if not _started_before(run, ready)]
+        return runs, False
+    newest = {}
+    for run in runs:
+        start = _start_ms(run)
+        if start is None:
+            continue
+        name = run.get("name")
+        if name not in newest or _run_order(run) >= _run_order(newest[name]):
+            newest[name] = run
+    kept = [run for run in runs
+            if _start_ms(run) is None or newest[run.get("name")] is run]
+    stale = any(_start_ms(run) < ready <= _start_ms(newest[run.get("name")])
+                for run in runs if _start_ms(run) is not None)
+    return kept, stale
 
 
 def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
