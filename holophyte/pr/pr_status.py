@@ -255,8 +255,7 @@ def pr_state(target, pull):
     threads.extend(review_threads(target, pull, first_page, comments))
     every_run, required = _check_reads(target, pull,
                                        first_page.get("headRefOid"))
-    runs = _started_since_ready(every_run, first_page)
-    rollup_stale = runs is not None and len(runs) < len(every_run)
+    runs, rollup_stale = _fold_by_ready(every_run, first_page)
     if runs is not None:
         try:
             runs += status_contexts_of(target, pull, first_page, graphql)
@@ -460,11 +459,23 @@ def _started_before(run, ready):
     return started is not None and started < ready
 
 
-def _started_since_ready(runs, node):
+def _fold_by_ready(runs, node):
     ready = _ready_ms(node)
     if runs is None or ready is None:
-        return runs
-    return [run for run in runs if not _started_before(run, ready)]
+        return runs, False
+    rerun = {run.get("name") for run in runs
+             if isinstance(run, dict) and not _started_before(run, ready)}
+    newest = {}
+    for run in runs:
+        if _started_before(run, ready) and run.get("name") not in rerun:
+            name = run.get("name")
+            if (name not in newest or _iso_ms(run.get("started_at"))
+                    >= _iso_ms(newest[name].get("started_at"))):
+                newest[name] = run
+    kept = [run for run in runs if not _started_before(run, ready)
+            or newest.get(run.get("name")) is run]
+    return kept, any(_started_before(run, ready)
+                     and run.get("name") in rerun for run in runs)
 
 
 def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):

@@ -269,14 +269,30 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
             self.check_run("e2e-ok", self.AFTER_READY)), ready_at=self.READY_AT)
         self.assertEqual(done.checks, "success")
 
-    def test_a_red_unrequired_run_from_before_the_ready_event_is_not_counted(
+    def test_a_red_run_from_before_the_ready_event_rerun_green_is_not_counted(
             self):
         state = self._state_with_rest(self.e2e_required(
-            self.check_run("e2e-ok", self.AFTER_READY),
-            self.check_run("lint", self.BEFORE_READY, conclusion="failure")),
+            self.check_run("e2e-ok", self.BEFORE_READY, conclusion="failure"),
+            self.check_run("e2e-ok", self.AFTER_READY)),
             ready_at=self.READY_AT, rollup="FAILURE")
         self.assertEqual((state.checks, state.failed_checks),
                          ("success", ()))
+
+    def test_a_red_run_from_before_the_ready_event_without_a_rerun_fails(self):
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.AFTER_READY),
+            self.check_run("lint", self.BEFORE_READY, conclusion="failure")),
+            ready_at=self.READY_AT)
+        self.assertEqual(state.checks, "failure")
+        self.assertEqual([c.name for c in state.failed_checks], ["lint"])
+
+    def test_a_green_run_superseded_by_a_running_rerun_is_pending(self):
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("e2e-ok", self.BEFORE_READY),
+            self.check_run("e2e-ok", self.AFTER_READY, status="in_progress")),
+            ready_at=self.READY_AT)
+        self.assertEqual((state.checks, state.missing_checks,
+                          state.pending_contexts), ("pending", (), ("e2e-ok",)))
 
     def test_without_a_ready_event_or_a_readable_start_a_run_is_kept(self):
         early = self._state_with_rest(self.e2e_required(
