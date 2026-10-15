@@ -42,9 +42,7 @@ def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
                         findings):
     from holophyte.pr.pullrequest import refresh_pr_text
 
-    if not answered:
-        base = reviewed or main_merge_base(wt, sha)
-        answered = sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
+    answered = fix_summary(answered, wt, reviewed, sha)
     print(f"[holo2] the review of the fix at {sha[:12]} faults only the pull"
           " request description; rewriting it")
     rewrote = refresh_pr_text(
@@ -56,3 +54,19 @@ def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
                f"Rewrote the description of {pull.url} for the review of the"
                f" fix at {sha}; reviewing the same commit once more", provider)
     return rewrote
+
+
+def fix_summary(answered, wt, reviewed, sha):
+    if answered:
+        return answered
+    base = reviewed or main_merge_base(wt, sha)
+    return sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
+
+
+def rereviewed(covering_review, review, outcome, fix_note, budget_min, answered):
+    described = description_findings(*outcome[:3])
+    if not described or not rewrite_description(
+            *review[:12], budget_min, answered, described):
+        return outcome, fix_note
+    outcome = covering_review(*review)
+    return outcome, None if description_findings(*outcome[:3]) else fix_note
