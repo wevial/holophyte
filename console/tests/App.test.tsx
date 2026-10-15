@@ -232,3 +232,43 @@ test("both daemons failing on the first poll: Now still opens with one critical 
   expect(within(rows[0]!).getByText("writer:7710 · never answered · http://writer:7710/status timed out")).toBeTruthy();
   expect(within(rows[1]!).getByText("writer-2:7710 · never answered · Failed to fetch")).toBeTruthy();
 });
+
+const pressed = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) }).getAttribute("aria-pressed");
+
+test.each([
+  ["board", "Board", "Board"],
+  ["shipped", "Finished", "Finished"],
+  ["hosts", "Hosts", "Hosts & daemons"],
+])("loaded at #view=%s, the console presses %s and shows its view", async (hash, button, heading) => {
+  window.location.hash = `#view=${hash}`;
+  try {
+    await mount({ status: working, attention: NO_ATTENTION });
+    expect(pressed(button)).toBe("true");
+    expect(pressed("Now")).toBe("false");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(heading);
+  } finally { window.location.hash = ""; }
+});
+
+test("a #view= naming no view opens Now or keeps the view shown, and a later #view=board shows the Board", async () => {
+  window.location.hash = "#view=nowhere";
+  try {
+    await mount({ status: working, attention: NO_ATTENTION });
+    expect(pressed("Now")).toBe("true");
+    expect(screen.getByRole("region", { name: "Floor" })).toBeTruthy();
+    await act(async () => { window.location.hash = "#view=board"; window.dispatchEvent(new Event("hashchange")); });
+    expect(pressed("Board")).toBe("true");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Board");
+    await act(async () => { window.location.hash = "#view=nowhere"; window.dispatchEvent(new Event("hashchange")); });
+    expect(pressed("Board")).toBe("true");
+  } finally { window.location.hash = ""; }
+});
+
+test("a #run= link still opens the run detail", async () => {
+  const id = working.runs[0]!.id;
+  window.location.hash = `#run=${id}`;
+  try {
+    await mount({ status: working, attention: NO_ATTENTION });
+    expect(screen.getByRole("region", { name: `Run ${id}` })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`Run ${id}`);
+  } finally { window.location.hash = ""; }
+});

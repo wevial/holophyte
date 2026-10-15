@@ -87,3 +87,9 @@ test("the brand mark is the cosmic lotus logo, drawn without inverting it", () =
   expect(brand.getAttribute("src")).toMatch(/assets\/logo\.svg$/);
   expect(brand.classList.contains("invert")).toBe(false);
 });
+
+test("the rail's foot links to the new console", () => {
+  mountRail([]);
+  const link = screen.getByRole("link", { name: "Try the new console" });
+  expect(link.getAttribute("href")).toBe("/next.html");
+});
