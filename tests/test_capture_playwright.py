@@ -36,18 +36,18 @@ else:
     open(written, 'wb').close()
 sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
 """
-# Writes 01-a.png into CAPTURE_OUT and each FAKE_VIDEOS [test, bytes] pair as
-# test/video.webm under the config's outputDir, one second apart, and records
-# that directory in recordings.txt.
+# Writes 01-a.png into CAPTURE_OUT and each FAKE_VIDEOS [path, bytes] pair at
+# that path under the config's outputDir, one second apart, and records that
+# directory in recordings.txt.
 VIDEO_FAKE = """\
 import json, os, re, sys
 config = open(sys.argv[sys.argv.index('--config') + 1]).read()
 recordings = re.search(r'outputDir: "([^"]+)"', config)[1]
 open('recordings.txt', 'w').write(recordings)
 open(os.path.join(os.environ['CAPTURE_OUT'], '01-a.png'), 'wb').close()
-for number, (test, data) in enumerate(json.loads(os.environ['FAKE_VIDEOS'])):
-    os.makedirs(os.path.join(recordings, test))
-    video = os.path.join(recordings, test, 'video.webm')
+for number, (path, data) in enumerate(json.loads(os.environ['FAKE_VIDEOS'])):
+    video = os.path.join(recordings, path)
+    os.makedirs(os.path.dirname(video), exist_ok=True)
     open(video, 'w').write(data)
     written = (1_700_000_000 + number) * 10**9
     os.utime(video, ns=(written, written))
@@ -308,7 +308,8 @@ class FakeBootTests(unittest.TestCase):
 
     def test_recordings_are_copied_in_written_order_and_their_directory_removed(self):
         result = self.capture(boot=(sys.executable, "video_fake.py"), video=True,
-                              videos=[["z-first", "first"], ["a-second", "second"]])
+                              videos=[["z-first/video.webm", "first"],
+                                      ["a-second/video.webm", "second"]])
 
         self.assertEqual(result.returncode, 0, result.stderr)
         output = self.repo / "out"
@@ -319,6 +320,20 @@ class FakeBootTests(unittest.TestCase):
         recordings = (self.repo / "recordings.txt").read_text()
         self.assertFalse(os.path.exists(recordings), recordings)
         self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+
+    def test_only_the_video_a_spec_saved_is_published_not_page_scratch_files(self):
+        # Playwright names a recorded context's per-page scratch file after the
+        # page, page@<hex>.webm; the real-Playwright tests pin that naming.
+        result = self.capture(boot=(sys.executable, "video_fake.py"), video=True,
+                              videos=[["capture/video/page@3f2a9c.webm", "warm-up"],
+                                      ["capture/video/page@9c1e07.webm", "scratch"],
+                                      ["capture/video-feature.webm", "feature"]])
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = self.repo / "out"
+        self.assertEqual(sorted(p.name for p in output.glob("*.webm")),
+                         ["video-01.webm"])
+        self.assertEqual((output / "video-01.webm").read_text(), "feature")
 
     def test_a_video_run_that_recorded_nothing_still_passes_and_says_so(self):
         result = self.capture(boot=(sys.executable, "video_fake.py"), video=True)
