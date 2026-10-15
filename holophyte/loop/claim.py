@@ -390,6 +390,7 @@ def skip_line(identifier, strikes, pr_url, question, park_kind=None):
 
 def _admit_ticket(project, conn, project_id, provider, task, seen):
     _UNREFRESHED.pop(task["id"], None)
+    freshness.ADVISORIES.pop(task["id"], None)
     pr = on_pull_request(conn, project_id, task)
     problems = body_problems(task, project.path, on_pull_request=pr)
     if problems:
@@ -402,11 +403,13 @@ def _admit_ticket(project, conn, project_id, provider, task, seen):
     if skip_labelled_stale(conn, project_id, task):
         return None
     refreshed = not pr and _refresh_for(project, conn, task)
-    stale = (stale_reasons(project.path, task.get("body"), conn, provider)
-             if refreshed else [])
+    advisories = []
+    stale = (stale_reasons(project.path, task.get("body"), conn, provider,
+                           advisories) if refreshed else [])
     if stale:
         park_stale(project, conn, project_id, provider, task, stale)
         return None
+    freshness.ADVISORIES[task["id"]] = advisories
     ticket_id = mirror_task(conn, project_id, task)
     held = store.read.ticket_by_id(conn, ticket_id).activeRunId
     if held is not None:

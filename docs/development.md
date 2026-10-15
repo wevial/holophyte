@@ -398,6 +398,15 @@ Each module, one line:
   in Ready is refused naming its status (`KEY-n is already in ready at status
   ready; nothing changed`). A native park keeps its column, and its note
   names `--file-ticket --update` and `--move KEY-n ready`.
+- `holophyte/review/landmarks.py` — what counts as a lost landmark:
+  `MainTree` caches main's file list, blobs and `git grep` holders for one
+  check; `path_findings()` and `symbol_findings()` split a ticket's misses
+  into stale reasons (gone from main) and advisories (a bare basename that
+  matches no tracked file, or a symbol its sentence pairs with one file but
+  main holds in another). A symbol pairs with the path after ` in `,
+  ` from `, ` of ` or `(`, or with a path leading its item before `:`.
+  Advisories print at filing and become a claimed run's `warning` events;
+  they never park.
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from

@@ -488,10 +488,13 @@ def file_ticket(target, path, state, board, out=None, priority=None,
     if problems:
         print(f"[holo2] {path}: {problems[0]}", file=out)
         return 1
-    stale = landmark_reasons(target.path, text)
+    stale, advisories = landmark_reasons(target.path, text)
     warning = "warning: " if ticket.depends_on else ""
     for reason in stale:
         print(f"[holo2] {path}: {warning}{reason}", file=out)
+    for advisory in advisories:
+        print(f"[holo2] {path}: {ticket_template.ADVISORY_PREFIX}{advisory}",
+              file=out)
     if stale and not ticket.depends_on:
         return 1
     refusals = (store.board.FilingRefused, store.RevisionMoved)

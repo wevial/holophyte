@@ -23,6 +23,14 @@ from holophyte.board.projection import (
 from holophyte.config.config_tables import loop_config
 from holophyte.files import RangeError, touched_files
 from holophyte.redact import safe_print as print
+from holophyte.review.landmarks import (
+    MainTree,
+    declared_new,
+    path_findings,
+    path_shaped_word,
+    placeholder,
+    symbol_findings,
+)
 
 STALE_HEADING = "Not claimed: this ticket is out of date with main"
 BACKLOG_STATE = "Backlog"
@@ -54,11 +62,7 @@ FRESHNESS: UNSURE <one-line reason>
 """
 FRESHNESS_LINE = re.compile(r"FRESHNESS:\s+(FRESH|STALE|UNSURE)(?:\s+(.*))?")
 WARNINGS = {}
-
-
-FUNCTION_SPAN_RE = re.compile(r"(?:[A-Za-z_]\w*\.)*([A-Za-z_]\w*)\(\)")
-# At least one lowercase letter, so a constant like `MAX_RUNS` is no class.
-CLASS_SPAN_RE = re.compile(r"[A-Z][A-Z0-9]*[a-z][A-Za-z0-9]*")
+ADVISORIES = {}
 
 
 def _git(repo, *args):
@@ -66,22 +70,7 @@ def _git(repo, *args):
                           capture_output=True, text=True).returncode == 0
 
 
-def _main_text(repo, path):
-    # `cat-file blob` refuses a directory, which `show` would list as text.
-    r = subprocess.run(["git", "-C", str(repo), "cat-file", "blob",
-                        f"main:{path}"],
-                       capture_output=True, text=True, errors="replace")
-    return r.stdout if r.returncode == 0 else None
-
-
-def _declared_new(path, declarations):
-    files, directories = declarations
-    normalized = str(Path(path))
-    return (normalized in files
-            or any(normalized.startswith(d + "/") for d in directories))
-
-
-def named_paths(body):
+def named_paths(body, tree=None):
     if body is None:
         return []
     t = ticket_template.parse(body)
@@ -94,7 +83,9 @@ def named_paths(body):
     for label, text in texts:
         for _, path in ticket_template._prose_paths(text):
             normalized = str(Path(path))
-            if normalized in seen or _declared_new(path, declarations):
+            if (normalized in seen or declared_new(path, declarations)
+                    or placeholder(path)
+                    or tree is not None and path_shaped_word(tree, path)):
                 continue
             seen.add(normalized)
             named.append((label, path))
@@ -107,59 +98,22 @@ def main_verified(repo):
 
 def landmark_reasons(repo, body):
     if body is None or not main_verified(repo):
-        return []
+        return [], []
     t = ticket_template.parse(body)
-    reasons = [f"`{path}` (named in {label}) is not on main"
-               for label, path in named_paths(body)
-               if not _git(repo, "cat-file", "-e", f"main:{Path(path)}")]
-    return reasons + _missing_symbols(repo, t, ticket_template._new_paths(t))
+    tree = MainTree(repo)
+    stale, advisories = path_findings(tree, named_paths(body, tree))
+    symbols = symbol_findings(tree, t, ticket_template._new_paths(t))
+    return stale + symbols[0], advisories + symbols[1]
 
 
-def stale_reasons(repo, body, conn=None, provider=None):
+def stale_reasons(repo, body, conn=None, provider=None, advisories=None):
     if body is None:
         return []
-    return (landmark_reasons(repo, body) + _unmerged_dependencies(
-        ticket_template.parse(body), conn, provider))
-
-
-def _named_symbols(item):
-    masked = ticket_template._mask_code_spans(item)
-    for span in re.finditer(r"`([^`\n]+)`", item):
-        text = span.group(1)
-        function = FUNCTION_SPAN_RE.fullmatch(text)
-        if function:
-            name = function.group(1)
-        elif CLASS_SPAN_RE.fullmatch(text):
-            name = text
-        else:
-            continue
-        sentence = ticket_template._sentence_before(masked, span.start())
-        if not re.search(r"\bnew\b", sentence, re.I):
-            yield text, name
-
-
-def _missing_symbols(repo, t, declarations):
-    reasons, texts = [], {}
-    notes = t.sections.get("Implementation notes", "")
-    for i, item in enumerate(ticket_template._list_item_blocks(notes), 1):
-        paths = []
-        for _, path in ticket_template._prose_paths(item):
-            normalized = str(Path(path))
-            if normalized in paths or _declared_new(path, declarations):
-                continue
-            if normalized not in texts:
-                texts[normalized] = _main_text(repo, normalized)
-            if texts[normalized] is not None:
-                paths.append(normalized)
-        if not paths:
-            continue
-        for span, name in _named_symbols(item):
-            word = re.compile(rf"\b{re.escape(name)}\b")
-            if not any(word.search(texts[p]) for p in paths):
-                files = ", ".join(f"`{p}`" for p in paths)
-                reasons.append(f"`{span}` (named in Implementation notes #{i})"
-                               f" is not in {files} on main")
-    return reasons
+    stale, advised = landmark_reasons(repo, body)
+    if advisories is not None:
+        advisories.extend(advised)
+    return stale + _unmerged_dependencies(ticket_template.parse(body), conn,
+                                          provider)
 
 
 def _unmerged_dependencies(t, conn, provider):
@@ -507,6 +461,8 @@ def carry_warning(conn, run_id, task):
     warning = WARNINGS.pop(task["id"], None)
     if warning is not None:
         store.record_event(conn, run_id, "warning", warning)
+    for advisory in ADVISORIES.pop(task["id"], []):
+        store.record_event(conn, run_id, "warning", f"landmark: {advisory}")
 
 
 def parked_since_admitted(conn, ticket_id, task):
