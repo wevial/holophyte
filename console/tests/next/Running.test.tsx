@@ -71,7 +71,7 @@ test("a lane per project in record order, each live run a row with its stage, ti
 
   const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Count the rounds, reviewing, 16 of 25 minutes" });
   expect(row.getAttribute("href")).toBe(`/#run=7&daemon=${encodeURIComponent(DEMO)}`);
-  expect(within(row).getByText("reviewing · round 2")).toBeTruthy();
+  expect(within(row).getByText("reviewing · round 2 of 2")).toBeTruthy();
   expect(within(row).getByText("16m / 25m")).toBeTruthy();
   expect(row.querySelector("[data-bar]")!.getAttribute("data-bar")).toBe("live");
 
@@ -86,12 +86,35 @@ test("a run past the heartbeat threshold is named as gone quiet, not drawn, and 
   await mount("#/", demo, writer);
   expect(within(lane("writer")).queryAllByRole("link")).toEqual([]);
   expect(lane("writer").textContent).toContain("WRITER-3 went quiet. It is up in Needs you.");
-  expect(head("writer")).toContain("0 running");
-  expect(head("demo")).toContain("1 running");
+  expect(head("writer")).toContain("1 of 1 workers busy");
+  expect(head("demo")).toContain("1 of 1 workers busy");
   cleanup();
 
   await mount("#/?project=demo", demo, writer);
   expect(lanes()).toEqual(["demo"]);
+});
+
+test("a lane head counts its live and quiet runs against the project's workers, and a chip its round against the cap", async () => {
+  const live = [{ ...demoRun, max_rounds: 3 }, runOf(8, "DEMO-8", "Draw the lane", { phase: "working", round: 0 })];
+  const quiet = runOf(9, "DEMO-9", "Went quiet", { heartbeat_age_ms: STALE_MS + MINUTE });
+  await mount("#/", statusOf("/srv/dev/demo", [...live, quiet], { workers: 3 }), statusOf("/srv/dev/writer", [writerRun]));
+  expect(head("demo")).toContain("3 of 3 workers busy");
+  expect(within(lane("demo")).getAllByRole("link")).toHaveLength(2);
+  const row = within(lane("demo")).getByRole("link", { name: /^DEMO-7 / });
+  expect(within(row).getByText("reviewing · round 2 of 3")).toBeTruthy();
+});
+
+test("the Running summary sums busy runs and workers over the lanes in scope before the queue", async () => {
+  const queued = [queuedOf("DEMO-2"), queuedOf("DEMO-4"), queuedOf("DEMO-5")];
+  const demo = statusOf("/srv/dev/demo", [demoRun, runOf(8, "DEMO-8", "Draw the lane", { phase: "working" })], { workers: 3, queued });
+  const writer = statusOf("/srv/dev/writer", [writerRun], { workers: 2 });
+  await mount("#/", demo, writer);
+  const summary = () => running().querySelector("header")!.textContent;
+  expect(summary()).toContain("3 of 5 workers busy · 3 queued");
+  cleanup();
+
+  await mount("#/?project=writer", demo, writer);
+  expect(summary()).toContain("1 of 2 workers busy · nothing queued");
 });
 
 test("the queue count unfolds into a row per queued ticket and folds them away again", async () => {
