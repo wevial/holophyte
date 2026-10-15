@@ -82,6 +82,36 @@ test("two views reading the fleet share one poll per tick and the same host reco
   expect(seen.switcher!.hosts).toBe(seen.sidebar!.hosts);
 });
 
+test("a view that mounts after the fleet has polled reads the cache without polling again", async () => {
+  const { fetch, asked } = counting(peersFetch(ORIGIN, { [ORIGIN]: { status, attention } }));
+  const queries = client();
+  const fake = fakeDeps(fetch);
+  const seen: Record<string, PeersState<ContractBodies>> = {};
+  function View({ name }: { name: string }) {
+    seen[name] = useFleet(ORIGIN, fake.deps);
+    return null;
+  }
+  const tree = (late: boolean) => (
+    <QueryClientProvider client={queries}>
+      <View name="sidebar" />
+      {late && <View name="switcher" />}
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree(false));
+  await act(settle);
+  await act(settle);
+  rerender(tree(true));
+  await act(settle);
+  await act(settle);
+
+  expect(Object.fromEntries(asked)).toEqual({
+    [`${ORIGIN}/status`]: 1,
+    [`${ORIGIN}/attention`]: 1,
+    [`${ORIGIN}/peers`]: 1,
+  });
+  expect(seen.switcher!.hosts).toBe(seen.sidebar!.hosts);
+});
+
 test("a body off the generated contract marks its record with the endpoint and path; the classic schemas still read the status", async () => {
   const { queued: _queued, ...unqueued } = status;
   const laterKind = { ...attention, items: [{ ...attention.items[0], kind: "later_kind" }] };

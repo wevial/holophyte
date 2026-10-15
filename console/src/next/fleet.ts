@@ -66,6 +66,7 @@ export function useFleet(origin: string, deps: PollDeps): PeersState<ContractBod
       return { hosts: mergeHosts(known, results, depsRef.current.now()), polls: (previous?.polls ?? 0) + 1 };
     },
     refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
   });
   useTick(TICK_MS);
   const now = deps.now();
