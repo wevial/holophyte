@@ -137,6 +137,20 @@ class RouteParkWakeTests(MergeModeFixture):
         self.assertEqual(self.wakes(),
                          [("retrying the adjudicator after a route outage",)])
 
+    def test_an_older_redirect_does_not_shorten_the_route_retry(self):
+        self.route_parked()
+        conn = store.open(self.db)
+        with conn:
+            (run_id, parked_ms), = conn.execute(
+                "SELECT id, lastHeartbeat FROM runs").fetchall()
+            store.record_intervention(conn, run_id, "redirect", "try again",
+                                      question="which route?",
+                                      now=parked_ms - 2 * RETRY_S * 1000)
+        conn.close()
+
+        self.reconcile(later_s=RETRY_S - PARKED_S - 1)
+        self.assertEqual(self.wakes(), [])
+
 
 class TerminalAdjudicationOutageTests(LoopFixture):
     def terminal(self, turn):
