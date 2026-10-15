@@ -235,13 +235,17 @@ test("both daemons failing on the first poll: Now still opens with one critical 
 
 const pressed = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) }).getAttribute("aria-pressed");
 
-test("loaded at #view=hosts, the console presses Hosts and shows its view", async () => {
-  window.location.hash = "#view=hosts";
+test.each([
+  ["board", "Board", "Board"],
+  ["shipped", "Finished", "Finished"],
+  ["hosts", "Hosts", "Hosts & daemons"],
+])("loaded at #view=%s, the console presses %s and shows its view", async (hash, button, heading) => {
+  window.location.hash = `#view=${hash}`;
   try {
     await mount({ status: working, attention: NO_ATTENTION });
-    expect(pressed("Hosts")).toBe("true");
+    expect(pressed(button)).toBe("true");
     expect(pressed("Now")).toBe("false");
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hosts & daemons");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(heading);
   } finally { window.location.hash = ""; }
 });
 
