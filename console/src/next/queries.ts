@@ -67,13 +67,6 @@ export function useReadiness(hosts: HostRecord<PollBodies>[], deps: { fetch: Fet
   return readiness;
 }
 
-export interface DayLedger {
-  /** Each scoped host's last good `/ledger` answer, by its record `key`. */
-  answers: Map<string, Ledger>;
-  /** Every host's entries since local midnight, newest first. */
-  entries: LedgerEntry[];
-}
-
 /** A daemon without the route answers 404: no lines, not a failure. */
 async function ledgerOrNone(fetch: Fetch, url: string): Promise<Ledger | null> {
   try {
@@ -85,8 +78,9 @@ async function ledgerOrNone(fetch: Fetch, url: string): Promise<Ledger | null> {
 }
 
 /** Every `/ledger` entry of every answering host since local midnight
- *  before `now`, of any kind, so each answer also carries its outages. */
-export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): DayLedger {
+ *  before `now`, of any kind, so each answer also carries its outages;
+ *  newest first. */
+export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): LedgerEntry[] {
   const asked = hosts.filter((host) => host.status != null);
   const path = `/ledger?since=${localMidnight(now)}&limit=${LEDGER_LIMIT}`;
   const results = useQueries({
@@ -97,13 +91,5 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
       staleTime: POLL_INTERVAL_MS,
     })),
   });
-  const answers = new Map<string, Ledger>();
-  asked.forEach((host, index) => {
-    const data = results[index]?.data;
-    if (data) answers.set(host.key, data);
-  });
-  const entries = Array.from(answers.values())
-    .flatMap((answer) => answer.entries)
-    .sort((a, b) => b.at - a.at);
-  return { answers, entries };
+  return results.flatMap((result) => result.data?.entries ?? []).sort((a, b) => b.at - a.at);
 }
