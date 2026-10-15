@@ -334,6 +334,9 @@
         "round": {
           "type": "integer"
         },
+        "max_rounds": {
+          "type": "integer"
+        },
         "strikes": {
           "type": "integer"
         },
@@ -367,6 +370,7 @@
         "verify_started_ms",
         "time_box_ms",
         "round",
+        "max_rounds",
         "strikes",
         "host"
       ],
@@ -444,6 +448,9 @@
             }
           ]
         },
+        "workers": {
+          "type": "integer"
+        },
         "schema_version": {
           "type": "integer"
         },
@@ -500,6 +507,7 @@
         "project",
         "admission",
         "hold_note",
+        "workers",
         "schema_version",
         "active_routes",
         "route_labels",

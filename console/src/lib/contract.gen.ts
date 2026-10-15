@@ -73,6 +73,7 @@ export const statusRunSchema = z.looseObject({
   verify_started_ms: z.int().nullable(),
   time_box_ms: z.int().nullable(),
   round: z.int(),
+  max_rounds: z.int(),
   strikes: z.int(),
   host: z.string().nullable(),
 });
@@ -92,6 +93,7 @@ export const statusSchema = z.looseObject({
   project: z.string(),
   admission: z.string(),
   hold_note: z.string().nullable(),
+  workers: z.int(),
   schema_version: z.int(),
   active_routes: z.record(z.string(), activeRouteSchema),
   route_labels: routeLabelsSchema,
