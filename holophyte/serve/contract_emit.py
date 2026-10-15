@@ -53,8 +53,8 @@ def _kinded(members):
 
 def _object(body, defs):
     name = body.__name__
-    hints = typing.get_type_hints(body, include_extras=True)
-    properties = {key: _schema(_bare(hint), defs, f"{name}.{key}")
+    hints = typing.get_type_hints(body)
+    properties = {key: _schema(hint, defs, f"{name}.{key}")
                   for key, hint in hints.items()}
     shape = {"type": "object", "properties": properties,
              "required": [key for key in hints
@@ -63,12 +63,6 @@ def _object(body, defs):
     if defs.setdefault(name, shape) != shape:
         raise ContractError(f"$defs/{name} names two shapes")
     return {"$ref": f"#/$defs/{name}"}
-
-
-def _bare(hint):
-    while typing.get_origin(hint) in (typing.NotRequired, typing.Required):
-        hint = typing.get_args(hint)[0]
-    return hint
 
 
 def render(routes, schema_dir, zod_file, command):
