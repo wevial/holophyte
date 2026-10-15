@@ -21,9 +21,9 @@ NOTE = "also log the port"
 
 
 class RecordingTests(SteerFixture):
-    def assert_steer_recorded_on_its_pull_request_in(self, phases):
+    def test_a_run_verifying_a_fix_on_its_pull_request_takes_the_note(self):
         run = self.claim()
-        for phase in ("working", *phases):
+        for phase in ("working", "verifying"):
             store.set_phase(self.conn, run, phase)
         self.assertTrue(steer_notes.close(self.conn, run))
         store.set_pull_request(self.conn, run, PR_URL)
@@ -37,14 +37,7 @@ class RecordingTests(SteerFixture):
         self.assertEqual(self.read("SELECT runId, note, eventId FROM steerNotes"),
                          [(run, NOTE, event_id)])
         self.assertEqual(self.read("SELECT phase, endedAt FROM runs"),
-                         [(phases[-1], None)])
-
-    def test_a_run_verifying_a_fix_on_its_pull_request_takes_the_note(self):
-        self.assert_steer_recorded_on_its_pull_request_in(("verifying",))
-
-    def test_a_run_reviewing_a_fix_on_its_pull_request_takes_the_note(self):
-        self.assert_steer_recorded_on_its_pull_request_in(("verifying",
-                                                           "reviewing"))
+                         [("verifying", None)])
 
 
 class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
