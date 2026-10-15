@@ -20,6 +20,7 @@ test("the new console's Overview: Merged today's rows and the day's log beside t
   const column = await merged(page).boundingBox();
   const rail = await log(page).boundingBox();
   expect(rail!.x).toBeGreaterThan(column!.x + column!.width);
+  await merged(page).scrollIntoViewIfNeeded();
   await shot(page, "01-today-dawn.png");
 
   await page.getByRole("button", { name: "Colour theme: dawn. Switch to night" }).click();
