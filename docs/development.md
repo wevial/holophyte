@@ -502,6 +502,9 @@ Each module, one line:
 - `holophyte/babysit/babysitter.py` — the babysit pass over a pull request:
   thread answering and fixing, the merge of `main`, and the waits that drive
   them.
+- `holophyte/babysit/adjudicator_outage.py` — a failed thread-pass
+  adjudicator turn, or one with no verdict for any thread, parked as a
+  `route` outage that the host retries after `[merge] route_retry_sec`.
 - `holophyte/babysit/thread_text.py` — the babysitter's thread text: the
   conventions it quotes, the adjudicator's brief over its threads, the
   `ADDRESS`/`DECLINE`/`HUMAN` verdict parser, the fix brief and summary

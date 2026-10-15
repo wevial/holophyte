@@ -6,11 +6,13 @@ import review_runner
 import store
 import store.read
 from holophyte import failure_reason
+from holophyte.agents.fallback import failure_line
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import verify_config
 from holophyte.loop.gates import (
+    InfraFailure,
     RunFailure,
     record_unreviewed_verification,
     run_verify,
@@ -143,6 +145,9 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                 "VERDICT: PASS  or  VERDICT: FAIL\n"
                 "PASS means the candidate is mergeable as it stands.", wt,
                 base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
+        failed = failure_line(reply)
+        if failed:
+            raise InfraFailure(f"terminal adjudication turn failed: {failed}")
     try:
         decision = review_runner.terminal_verdict(
             reply, review_runner.ADJUDICATION_VERDICTS)

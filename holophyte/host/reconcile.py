@@ -443,7 +443,7 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
         return None
     why = f"{pull.url} has new review activity" if arrived else reason
     waited_ms = int(time() * 1000) - (parked_ms or 0)
-    if waited_ms < poll_ms:
+    if waited_ms < poll_ms and not (reason and ticket.parkKind == "route"):
         if reason is None:
             store.record_pr_seen(conn, run_id, mark, parked_only=True,
                                  facts_only=True)
