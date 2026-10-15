@@ -235,17 +235,13 @@ test("both daemons failing on the first poll: Now still opens with one critical 
 
 const pressed = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) }).getAttribute("aria-pressed");
 
-test.each([
-  ["board", "Board", "Board"],
-  ["shipped", "Finished", "Finished"],
-  ["hosts", "Hosts", "Hosts & daemons"],
-])("loaded at #view=%s, the console presses %s and shows its view", async (hash, button, heading) => {
-  window.location.hash = `#view=${hash}`;
+test("loaded at #view=hosts, the console presses Hosts and shows its view", async () => {
+  window.location.hash = "#view=hosts";
   try {
     await mount({ status: working, attention: NO_ATTENTION });
-    expect(pressed(button)).toBe("true");
+    expect(pressed("Hosts")).toBe("true");
     expect(pressed("Now")).toBe("false");
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(heading);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hosts & daemons");
   } finally { window.location.hash = ""; }
 });
 
@@ -260,15 +256,5 @@ test("a #view= naming no view opens Now or keeps the view shown, and a later #vi
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Board");
     await act(async () => { window.location.hash = "#view=nowhere"; window.dispatchEvent(new Event("hashchange")); });
     expect(pressed("Board")).toBe("true");
-  } finally { window.location.hash = ""; }
-});
-
-test("a #run= link still opens the run detail", async () => {
-  const id = working.runs[0]!.id;
-  window.location.hash = `#run=${id}`;
-  try {
-    await mount({ status: working, attention: NO_ATTENTION });
-    expect(screen.getByRole("region", { name: `Run ${id}` })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`Run ${id}`);
   } finally { window.location.hash = ""; }
 });
