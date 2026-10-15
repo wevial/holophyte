@@ -61,6 +61,8 @@ MOCKUP_URL_RE = re.compile(
     r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
     r"|https://lotuspod(?:\.[A-Za-z0-9-]+)+/[\w.-]+\.html")
 URL_TOKEN_RE = re.compile(r"(?<![\w+.-])[A-Za-z][\w+.-]*:[^\s*`>)\]\"']\S*")
+MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
+MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
 APPROVED_RE = re.compile(r"^(?:[-*+]\s+)?Approved \d{4}-\d{2}-\d{2}:\s*\S")
 EVIDENCE_STATES_FOR_MOCKUP = 3
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
@@ -199,7 +201,7 @@ class Ticket:
         self.summary = ""
         self.what = self.why = self.how = ""
         self.ui_change = self.blast_radius = None
-        self.mockup = ""
+        self.mockup = self.mockup_source = ""
         self.in_scope = []
         self.out_of_scope = []
         self.acceptance = []
@@ -252,6 +254,7 @@ def parse(text):
     t.ui_change, t.blast_radius = kv.get("UI change"), kv.get("Blast radius")
     t.reproduce = COMMENT_RE.sub("", t.sections.get("Reproduce", "")).strip()
     t.mockup = COMMENT_RE.sub("", t.sections.get("Mock-up", "")).strip()
+    t.mockup_source = _section_source(text, "Mock-up")
     t.in_scope = _list_items(t.sections.get("In scope", ""))
     t.out_of_scope = _list_items(t.sections.get("Out of scope", ""))
     (t.acceptance, t.acceptance_done, t.acceptance_other,
@@ -275,6 +278,17 @@ def parse(text):
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))
     t.open_questions_none = _clean(oq) in OPEN_QUESTIONS_NONE
     return t
+
+
+def _section_source(text, name):
+    found, buf = False, []
+    for ln in text.splitlines():
+        h2 = H2_RE.match(ln)
+        if h2 and found:
+            break
+        found = found or bool(h2 and h2.group(1).strip() == name)
+        buf += [ln] if found and not h2 else []
+    return COMMENT_RE.sub("", "\n".join(buf)).strip()
 
 
 def _keep(t, name, body):
@@ -581,20 +595,27 @@ def _mockup_urls(text):
     return urls
 
 
+def mockup_media_kind(url):
+    media = MOCKUP_MEDIA_RE.fullmatch(url)
+    return MOCKUP_MEDIA_KINDS[media.group(1)] if media else None
+
+
 def _mockup_problems(t):
     if "Mock-up" not in t.order:
         return []
-    urls = _mockup_urls(t.mockup)
+    urls = [url for url in _mockup_urls(t.mockup) if MOCKUP_URL_RE.fullmatch(url)]
     approvals = [line for line in t.mockup.splitlines()
                  if APPROVED_RE.match(line.strip())]
-    problems = [f"'## Mock-up' link is not a claude.ai artifact or a Lotuspod "
-                f"page: {url}"
-                for url in urls if not MOCKUP_URL_RE.fullmatch(url)]
+    problems = [f"'## Mock-up' link is not a claude.ai artifact, a Lotuspod "
+                f"page, a .png snapshot or a .zip mock-up bundle: {url}"
+                for url in _mockup_urls(t.mockup_source)
+                if not MOCKUP_URL_RE.fullmatch(url) and not mockup_media_kind(url)]
     if not urls:
         problems.append("'## Mock-up' has no link to the approved mock-up; write "
                         "the URL bare, since a markdown link keeps only its text")
     elif len(urls) > 1:
-        problems.append(f"'## Mock-up' holds {len(urls)} links; give exactly one")
+        problems.append(f"'## Mock-up' holds {len(urls)} design links; give "
+                        "exactly one")
     if len(approvals) != 1:
         problems.append(f"'## Mock-up' needs exactly one 'Approved YYYY-MM-DD: "
                         f"what' line; it has {len(approvals)}")
@@ -940,9 +961,11 @@ def main(argv):
             from holophyte.config.project import Project
             from holophyte.isolation.launcher import container_docker_problems
             from holophyte.loop.implementer_profile import filing_problems
+            from holophyte.pr import mockup
             project = Project.locate(Path(repo).resolve(), adopt=False)
             problems += container_docker_problems(project, ticket)
             problems += filing_problems(project, ticket)
+            problems += mockup.filing_problems(project, ticket)
             problems = ticket_problems(repo, text, problems)
         blockers = blocking(problems)
         if blockers:

@@ -16,7 +16,12 @@ where it was seen; its presence makes the first turn a reproduce turn that
 commits a failing test before any fix); optional Mock-up (one bare link to
 the approved mock-up, a `https://claude.ai/artifact/ID`,
 `https://claude.ai/code/artifact/ID` or `https://lotuspod.DOMAIN/NAME.html`
-page, and one `Approved YYYY-MM-DD: what` line); In scope (at most six entries); Out of scope; Acceptance
+page, one `Approved YYYY-MM-DD: what` line, and any number of media links
+below it: a `.png` snapshot of a board or a `.zip` bundle of the boards'
+`.dc.html` sources, `canvas.json` and PNGs, each bare, `![caption](URL)` or
+`[caption](URL)` and under the project's `[merge.media_bucket] public_base`;
+the run downloads them into the task worktree's ignored `.holophyte/mockup/`
+and lists them in the implementer's goal); In scope (at most six entries); Out of scope; Acceptance
 criteria (at most ten, each `Given … when … then …`); Verify command(s)
 (a fenced block of relative-path, non-interactive commands; exit 0 is
 pass); optional Contract checks (`relative/path: exact literal`); optional
@@ -58,6 +63,7 @@ check.
 | Open questions not exactly `- None` | an open question is not a frozen contract |
 | `**UI change:**` other than `major` or `minor`, or a `## Mock-up` without exactly one accepted bare URL and one `Approved YYYY-MM-DD: what` line | a markdown link keeps only its text, and an unnamed approval is no agreement |
 | `**UI change:** major` with no `## Mock-up`, on a project whose `[merge]` sets `ui_paths` (`--file-ticket` and the claim) | a layout agreed before the run is cheaper than one corrected after the Evidence screenshots |
+| A `## Mock-up` media link outside `[merge.media_bucket] public_base`, or on a project without a bucket; or `**UI change:** major` whose `## Mock-up` has no snapshot or bundle, on a project that sets `ui_paths` and a bucket (`--file-ticket` and `--repo`, not the claim: a ticket filed earlier still claims and its run records a `mockup` warning) | no agent can open a claude.ai artifact; the implementer matches the design only from files the factory downloads |
 | A named path `main` lacks, or a named symbol not in the file it is paired with, in a body with `Depends on: none` (`--repo` and `--file-ticket`; with a dependency each reason is an advisory, or a `warning:` line at filing, and the claim re-checks it) | the claim parks such a ticket as stale; LOTUS-95, LOTUS-96, LOTUS-97 and HOLO-182 passed filing and were parked at claim |
 
 Advisories: a `What:` that chains two deliverables; a bare `python3` in a

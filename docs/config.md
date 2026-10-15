@@ -1216,6 +1216,12 @@ display metadata and does not install an expiry policy. The validator uses 1
 as its validation fallback when the key is omitted, but the publisher then
 says the evidence is kept until the operator removes it.
 
+A ticket's `## Mock-up` snapshots (`.png`) and bundles (`.zip`) are read
+from `public_base` too: filing refuses a media link outside it, and the run
+downloads each one into the task worktree for the implementer. A lifecycle
+expiry on the bucket expires them as well, so a ticket filed long before
+its run may reach the implementer without its design.
+
 ```toml
 [merge.media_bucket]
 endpoint = "https://objects.example.com"
