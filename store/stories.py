@@ -434,6 +434,30 @@ def reapprove_edges(conn, story_id, ticket_id, now=None):
                      (json.dumps(plan), story_id))
 
 
+def _rewire_approved_edge(conn, ticket_id, canceled, inherited):
+    found = story(conn, ticket_id)
+    if (found is None or found.ticketId == ticket_id
+            or found.state not in OPEN_STATES):
+        return
+    plan = found.approvedPlan
+    name = _ticket_name(conn, ticket_id)
+    if canceled not in plan["edges"].get(name, []):
+        return
+    plan["edges"][name] = _inherited_edges(plan["edges"][name], canceled,
+                                           inherited)
+    conn.execute("UPDATE stories SET approvedPlan = ? WHERE ticketId = ?",
+                 (json.dumps(plan), found.ticketId))
+
+
+def _inherited_edges(depends, canceled, inherited):
+    rewired = []
+    for dep in depends:
+        for entry in inherited if dep == canceled else [dep]:
+            if entry not in rewired:
+                rewired.append(entry)
+    return rewired
+
+
 def close_story(conn, story_id, main_sha, note, now=None):
     _check_text(main_sha=main_sha, note=note)
     if now is None:

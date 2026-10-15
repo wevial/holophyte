@@ -52,8 +52,8 @@ def _board_verb(args, board, out=None):
             if moved and status is not None:
                 line += f"; re-checked against main: {status}"
         else:
-            revision, run, closed = board.cancel(identifier, args.revision,
-                                                 args.note)
+            revision, run, closed, rewired = board.cancel(
+                identifier, args.revision, args.note)
             line = f"canceled {identifier} (revision {revision})"
             if run is not None:
                 line += f"; run {run} ends abandoned at its next safe point"
@@ -61,6 +61,9 @@ def _board_verb(args, board, out=None):
                 line += f"; run {closed[0]} ended abandoned"
                 if closed[1] is not None:
                     line += f", {closed[1]} left open"
+            for dependent, depends in rewired:
+                line += (f"; rewired {dependent} to"
+                         f" {', '.join(depends) or 'none'}")
     except RevisionMoved as moved:
         line = (f"{identifier} is at revision {moved.current}, not "
                 f"{moved.expected}; nothing changed")

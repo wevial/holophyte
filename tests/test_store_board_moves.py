@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_store_board_moves.py' -v
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+import ticket_template  # noqa: E402 - after the sys.path insert above
 from tests.test_store_board import body  # noqa: E402 - after the sys.path insert
 
 
@@ -109,6 +111,79 @@ class StoreBoardMoveTests(unittest.TestCase):
         with self.assertRaises(store.board.FilingRefused):
             store.board.cancel_ticket(self.conn, self.project_id, "NAT-3", 2,
                                       "again")
+
+    def depends(self, identifier):
+        depends, text = self.conn.execute(
+            "SELECT dependsOn, body FROM tickets WHERE linearIdentifier = ?",
+            (identifier,)).fetchone()
+        return json.loads(depends), ticket_template.parse(text).depends_on
+
+    def test_a_cancel_rewires_a_dependent_to_its_own_dependencies(self):
+        self.file()
+        self.file()
+        self.file(body(depends="NAT-2"))
+        self.file(body(depends="NAT-3"))
+        self.file(body(depends="NAT-2, NAT-3"))
+
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-3", 1,
+                                  "shipped by NAT-2")
+        for dependent in ("NAT-4", "NAT-5"):
+            self.assertEqual(self.depends(dependent), (["NAT-2"], ["NAT-2"]))
+            self.assertEqual(self.row(dependent),
+                             ("blocked_on_deps", "ready", None, 2))
+            self.assertEqual(self.notes(dependent), [(
+                "rewire", "NAT-3 was canceled: Depends on NAT-3 is now NAT-2")])
+
+        store.tickets.walk_ticket(self.conn, self.ticket_id("NAT-2"), "merged")
+        self.assertEqual(store.board.resolve_dependencies(
+            self.conn, self.project_id), ["NAT-4", "NAT-5"])
+
+    def test_a_cancel_of_a_ticket_with_no_dependencies_readies_its_dependent(
+            self):
+        self.file()
+        self.file(body(depends="NAT-1"))
+        self.assertEqual(self.row("NAT-2")[0], "blocked_on_deps")
+
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-1", 1,
+                                  "won't do")
+
+        self.assertEqual(self.depends("NAT-2"), ([], []))
+        self.assertIn("Depends on: none", self.conn.execute(
+            "SELECT body FROM tickets WHERE linearIdentifier = 'NAT-2'"
+        ).fetchone()[0])
+        self.assertEqual(self.row("NAT-2")[0], "ready")
+        self.assertEqual(self.notes("NAT-2"), [(
+            "rewire", "NAT-1 was canceled: Depends on NAT-1 is now none")])
+        self.assertTrue(store.tickets.pickable(self.conn,
+                                               self.ticket_id("NAT-2")))
+
+    def test_a_cancel_rewires_a_titleless_draft_and_moves_its_revision(self):
+        self.file()
+        draft = body(depends="NAT-1").replace("# Add export endpoint\n\n", "")
+        self.file(draft, column="backlog")
+        self.assertEqual(self.depends("NAT-2"), (["NAT-1"], ["NAT-1"]))
+
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-1", 1,
+                                  "won't do")
+
+        self.assertEqual(self.depends("NAT-2"), ([], []))
+        self.assertEqual(self.row("NAT-2")[3], 2)
+        with self.assertRaises(store.RevisionMoved):
+            store.board.edit_ticket(self.conn, self.project_id, "NAT-2",
+                                    draft, 1)
+        self.assertEqual(self.depends("NAT-2"), ([], []))
+
+    def test_a_dependency_abandoned_without_a_cancel_still_refuses_a_claim(self):
+        self.file()
+        self.file(body(depends="NAT-1"))
+        store.tickets.walk_ticket(self.conn, self.ticket_id("NAT-1"),
+                                  "abandoned")
+        store.tickets.transition(self.conn, self.ticket_id("NAT-2"), "ready")
+
+        verdict = store.tickets.pickable(self.conn, self.ticket_id("NAT-2"))
+        self.assertFalse(verdict)
+        self.assertEqual(verdict.reason,
+                         "it depends on NAT-1, which is abandoned, not merged")
 
     def test_resolve_dependencies_readies_a_wait_whose_dependencies_merged(self):
         for _ in range(5):

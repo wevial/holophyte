@@ -180,13 +180,26 @@ class NativeBoard:
                 " WHERE t.projectId = ? AND t.linearIdentifier = ?"
                 " AND i.action = 'close_out' AND i.\"trigger\" = 'board_cancelled'",
                 (project_id, identifier)).fetchone()
-        return revision, None if row is None else row[0], closed
+            rewired = _rewired(conn, project_id, identifier)
+        return revision, None if row is None else row[0], closed, rewired
 
     def stored_body(self, identifier):
         row = self._row(identifier)
         if row is None:
             raise RuntimeError(f"no ticket {identifier!r} on native board {self.key}")
         return row[4]
+
+
+def _rewired(conn, project_id, identifier):
+    names = dict(conn.execute("SELECT linearIssueId, linearIdentifier"
+                              " FROM tickets WHERE projectId = ?",
+                              (project_id,)))
+    return [(dependent, [names.get(dep, dep) for dep in json.loads(depends)])
+            for dependent, depends in conn.execute(
+                "SELECT t.linearIdentifier, t.dependsOn FROM ticketNotes n"
+                " JOIN tickets t ON t.id = n.ticketId WHERE t.projectId = ?"
+                " AND n.kind = 'rewire' AND n.dedupKey = ? ORDER BY t.id",
+                (project_id, f"rewire:{identifier}"))]
 
 
 def _json(values):

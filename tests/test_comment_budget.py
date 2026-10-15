@@ -231,7 +231,7 @@ PINNED = {
     "holophyte/story/story_claim.py": 5,
     "holophyte/story/story_close.py": 1,
     "holophyte/story/story_drift.py": 6,
-    "holophyte/story/story_filing.py": 7,
+    "holophyte/story/story_filing.py": 6,
     "holophyte/story/story_scope.py": 3,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
@@ -268,6 +268,7 @@ PINNED = {
     "store/writes.py": 2,
 
     "story_template.py": 1,
+    "ticket_depends.py": 3,
     "ticket_template.py": 24,
 }
 
