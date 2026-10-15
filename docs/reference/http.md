@@ -20,6 +20,11 @@ behind a bearer token ([Authentication](#authentication)). Unknown paths
 are 404 and any method but GET is 405, both with a JSON `error`, except
 those writing routes. A project with no store answers 503.
 
+`console/contract/` holds the machine-readable shapes of `GET /status`,
+`GET /attention` and `GET /peers`, and of the host root's `GET /status`
+and `GET /attention`: one JSON Schema per route, generated from
+`holophyte/serve/contract.py`.
+
 ## `GET /status`
 
 ```json

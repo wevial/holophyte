@@ -1,0 +1,683 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Attention",
+  "description": "GET /attention",
+  "$ref": "#/$defs/Attention",
+  "$defs": {
+    "BlockedItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "blocked"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asked_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ticket",
+        "ticket_url",
+        "question",
+        "run",
+        "asked_ms",
+        "pr_url",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "PullRequestFacts": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checks": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "checks",
+        "review",
+        "threads",
+        "open_threads",
+        "title"
+      ],
+      "additionalProperties": true
+    },
+    "PrOpenItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "pr_open"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "type": "string"
+        },
+        "park_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "asked_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr": {
+          "$ref": "#/$defs/PullRequestFacts"
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ticket",
+        "ticket_url",
+        "title",
+        "run",
+        "pr_url",
+        "park_kind",
+        "reason",
+        "asked_ms",
+        "pr",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "PausedItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "paused"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asked_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ticket",
+        "ticket_url",
+        "title",
+        "note",
+        "run",
+        "asked_ms",
+        "pr_url",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "StaleRunItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "stale_run"
+        },
+        "run": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "type": "string"
+        },
+        "heartbeat_age_ms": {
+          "type": "integer"
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run",
+        "ticket",
+        "ticket_url",
+        "phase",
+        "heartbeat_age_ms",
+        "pr_url",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "Triage": {
+      "type": "object",
+      "properties": {
+        "choice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requeued": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "choice",
+        "confidence",
+        "backend",
+        "model",
+        "requeued"
+      ],
+      "additionalProperties": true
+    },
+    "FailedItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "failed"
+        },
+        "run": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_ms": {
+          "type": "integer"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "triage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Triage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "run",
+        "ticket",
+        "ticket_url",
+        "reason",
+        "ended_ms",
+        "attempt",
+        "pr_url",
+        "triage",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "StuckWaitItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "stuck_wait"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "dependency": {
+          "type": "string"
+        },
+        "dependency_state": {
+          "enum": [
+            "needs_spec",
+            "abandoned",
+            "parked",
+            "failed"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "behind": {
+          "type": "integer"
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ticket",
+        "ticket_url",
+        "title",
+        "dependency",
+        "dependency_state",
+        "reason",
+        "behind",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "SupervisorItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "supervisor"
+        },
+        "state": {
+          "enum": [
+            "stale",
+            "none"
+          ]
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "state",
+        "heartbeat_age_ms",
+        "level"
+      ],
+      "additionalProperties": true
+    },
+    "Attention": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "enum": [
+            "attention",
+            "working",
+            "none"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/BlockedItem"
+              },
+              {
+                "$ref": "#/$defs/PrOpenItem"
+              },
+              {
+                "$ref": "#/$defs/PausedItem"
+              },
+              {
+                "$ref": "#/$defs/StaleRunItem"
+              },
+              {
+                "$ref": "#/$defs/FailedItem"
+              },
+              {
+                "$ref": "#/$defs/StuckWaitItem"
+              },
+              {
+                "$ref": "#/$defs/SupervisorItem"
+              }
+            ]
+          }
+        },
+        "now": {
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "items",
+        "now",
+        "project"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

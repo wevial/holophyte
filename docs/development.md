@@ -277,6 +277,13 @@ Each module, one line:
   every project in `host.toml`, each under `/projects/NAME`, the root's
   `/status` and `/attention` for the host, the machine token, one
   project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
+- `holophyte/serve/contract.py` — the poll routes' response types: one
+  `TypedDict` per body `/status`, `/attention` and `/peers` answer, a
+  project's and a host root's, `ROUTES` naming each, and `main()`, which
+  writes their JSON Schema and zod or `--check`s them.
+- `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
+  Schema, JSON Schema into zod source, and the drift check against the
+  committed files; it knows no route.
 - `holophyte/serve/serve_board.py` — the host daemon's native board writes
   (KO-758): the gate every one passes (the machine token alone, host
   `[serve] actions`, a native board, `If-Match`) and `PUT
@@ -724,6 +731,16 @@ each page keeps its name there, next to its own hashed script, and
 `index.html` is the stable entry the daemon serves. `console/dist/` and
 `console/node_modules/` are git-ignored.
 
+The daemon owns the types of the routes the console polls.
+`python3 -m holophyte.serve.contract` renders the `TypedDict`s in
+`holophyte/serve/contract.py` into one JSON Schema per route in
+`console/contract/` and the zod schemas with their inferred types in
+`console/src/lib/contract.gen.ts`; both are committed and never edited by
+hand. `--check` writes nothing and exits 1 naming each file that differs
+from a fresh render, or that sits in `console/contract/` unrendered;
+`tests/test_serve_contract.py` runs it in the `unit` check, and walks the
+pinned answers in `tests/fixtures/serve/` against their types.
+
 Captures are the screenshots a console pull request carries, taken by
 `holophyte/capture_playwright.py` with a real Chromium. The fixture
 `python3 -m tests.console_fixture` builds the console, seeds a throwaway
@@ -763,6 +780,20 @@ and is served at `/next.html` beside the classic console at `/`; the
 classic sidebar links to it. The classic console opens on the view a
 `#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
 console page can link to the classic view behind it.
+
+Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
+Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
+
+`console/src/next/router.tsx` routes it with TanStack Router over hash
+history, since the static route has no single-page fallback: `#/` is
+Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
+each in the shell its root renders, and any other path is a not-found page.
+The root route's search holds one optional `project`, the project's name
+as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
+scoped view; every route inherits it, the sidebar's links carry it, and
+`scopedHosts()` in `console/src/next/scope.ts` narrows the polled hosts to
+it. The root polls once with `usePeers()` and shares the result with the
+sidebar and the pages through a React context.
 
 ### Desktop wrapper
 
