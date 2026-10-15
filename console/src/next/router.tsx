@@ -11,6 +11,7 @@ import { usePeers } from "../hooks/usePeers";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { Sidebar } from "./components/Sidebar";
 import { NotFound, Placeholder } from "./pages/Placeholder";
+import { readStoredScope } from "./projects";
 import { PeersContext, validateScope } from "./scope";
 
 function Shell() {
@@ -58,7 +59,11 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 function createConsoleRouter() {
-  return createRouter({ routeTree, history: createHashHistory() });
+  const bare = window.location.hash === "" || window.location.hash === "#";
+  const router = createRouter({ routeTree, history: createHashHistory() });
+  const stored = bare ? readStoredScope() : undefined;
+  if (stored) void router.navigate({ to: "/", search: { project: stored }, replace: true });
+  return router;
 }
 
 declare module "@tanstack/react-router" {
