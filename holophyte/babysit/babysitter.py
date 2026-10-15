@@ -14,6 +14,7 @@ from holophyte.babysit.adjudicator_outage import adjudicate_or_park
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
+from holophyte.babysit.covering_fix import fix_or_park
 from holophyte.babysit.description_review import TAG_BRIEF, fix_summary, rereviewed
 from holophyte.babysit.main_checkout import detached_main
 from holophyte.babysit.note_triage import triage_notes, untriaged
@@ -512,6 +513,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context="",
                 notes=()):
+    from holophyte.babysit.capture_fix import fix_capture
     from holophyte.loop.review_round import set_phase
     from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
@@ -540,6 +542,9 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, reason, (),
                     reviewed=reviewed)
+    sha = fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
+                      reviewed, beat_s, pull, ticket, verify_cmd, contracts,
+                      budget_min, notes)
     if not _fixes_reviewed(merge):
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
@@ -578,16 +583,9 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
            f" {pull.url}; not merged\nReviewer findings:\n{verdict}",
            provider)
     stale_again(branch, sha, stale)
-    if fix_note is not None and (unwitnessed or
-            decision == "REQUEST_CHANGES"):
-        goal = (f"Fix the pre-merge review findings on {pull.url}. The ticket"
-                f" is the contract:\n\n{ticket}\n\nReviewer findings:\n{verdict}"
-                f"\n\nOperator babysit note:\n{fix_note}\n\n"
-                "Fix the blockers on this branch and commit; keep the ticket's"
-                " verify commands passing.")
-        ledger(conn, run_id, task_id, "round",
-               f"Babysit review fix allowance after round {rnd}: one fix and"
-               " recorded re-review, even if reviewRoundCap is spent.", provider)
+    goal, why = fix_or_park(project, conn, run_id, provider, task_id, sha, pull,
+                            ticket, (verdict, decision, unwitnessed, rnd), fix_note)
+    if goal is not None:
         fixed = _fix_threads(project, conn, run_id, provider, task_id, branch,
                              wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
                              contracts, budget_min, rnd, review_follows=True, goal=goal,
@@ -599,8 +597,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
     # No `reviewed`: the judgement on record is this rejection, so the
     # resume that follows reviews the candidate again before any merge.
     _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                f"the review of the fix at {sha[:12]} asked for changes;"
-                f" not merged. Reviewer findings:\n{verdict}", ())
+                why, ())
 
 
 def _next_round(conn, run_id):

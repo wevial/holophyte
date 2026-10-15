@@ -2,7 +2,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
-import { needsYouEntries, type NeedsYouEntry } from "../lib/attention";
+import { needsYouEntries, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
 import { shippedSchema, type QueuedTicket, type Status } from "../lib/contract.gen";
 import { hostItems, runCounts, type HostRecord } from "../lib/hosts";
 import { POLL_INTERVAL_MS, type Fetch } from "../lib/poll";
@@ -20,6 +20,7 @@ export interface Overview {
   answered: boolean;
   items: AttentionItem[];
   needs: NeedsYouEntry[];
+  readiness: ReadinessMap;
   pullRequests: AttentionItem[];
   runs: Status["runs"];
   running: number;
@@ -61,6 +62,7 @@ export function useOverview(): Overview {
     answered: hosts.some((host) => host.seen_ms != null),
     items,
     needs: needsYouEntries(items, readiness, now),
+    readiness,
     pullRequests: items.filter((item) => item.kind === "pr_open"),
     runs: statuses.flatMap((status) => status.runs),
     running: statuses.reduce((sum, status) => sum + runCounts(status).active, 0),

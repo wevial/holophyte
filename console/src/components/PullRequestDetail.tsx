@@ -9,13 +9,15 @@ import { FindingCard } from "./FindingCard";
 import { Markdown } from "./Markdown";
 
 /** Mounted only for open rows, so collapsed candidates never fetch detail. */
-export function PullRequestDetail({ base, id, item, now, polls, deps }: {
+export function PullRequestDetail({ base, id, item, now, polls, deps, runPage = "" }: {
   base: string;
   id: number;
   item: AttentionItem;
   now: number;
   polls: number;
   deps?: { fetch: Fetch };
+  /** The page whose hash router opens a run; the current page by default. */
+  runPage?: string;
 }) {
   const [retry, setRetry] = useState(0);
   const { detail, loading, error } = useRunDetail(base, id, polls + retry, deps);
@@ -57,7 +59,7 @@ export function PullRequestDetail({ base, id, item, now, polls, deps }: {
           </time>
         </> : <p className="text-muted">No factory activity recorded</p>}
       </section>
-      <a className="text-link" href={`#run=${id}&daemon=${encodeURIComponent(base)}`}>Open run {id}</a>
+      <a className="text-link" href={`${runPage}#run=${id}&daemon=${encodeURIComponent(base)}`}>Open run {id}</a>
     </>}
   </div>;
 }

@@ -283,13 +283,14 @@ def tests_brief(root):
 
 def evidence_brief(target, wt, task_id, evidence_states=()):
     from holophyte.config.config_tables import merge_config
-    from holophyte.pr import pr_media
+    from holophyte.pr import mockup, pr_media
 
-    if merge_config(target).mode != "pr":
-        return ""
-    section = pr_media.prepare(target, wt, task_id, evidence_states=evidence_states)
-    return ("\n\n" + section + "\n\nMissing or failed visual evidence counts against "
-            "the candidate; report it as a review finding.\n" if section else "")
+    section = (pr_media.prepare(target, wt, task_id, evidence_states=evidence_states)
+               if merge_config(target).mode == "pr" else "")
+    evidence = ("\n\n" + section + "\n\nMissing or failed visual evidence counts "
+                "against the candidate; report it as a review finding.\n\n"
+                if section else "")
+    return evidence + mockup.reviewer_brief(wt)
 
 
 def pr_description_brief(target, pull, evidence):
@@ -303,9 +304,11 @@ def pr_description_brief(target, pull, evidence):
         raise InfraFailure(f"reading the description of {pull.url} for its "
                            f"covering review: {failed}",
                            failed.failure_kind) from failed
-    owned = ("Its Evidence section belongs to the factory, which writes the "
-             "capture shown in this prompt into it when this review passes; "
-             "judge a screenshot criterion by that capture.\n" if evidence else "")
+    owned = ("Its Evidence section belongs to the factory and already holds "
+             "the capture shown in this prompt or, when that capture failed, a "
+             "notice that its images show an earlier commit; judge a "
+             "screenshot criterion by the capture in this prompt.\n"
+             if evidence else "")
     return ("You cannot reach GitHub. Below is the pull request's description "
             "as GitHub serves it now, read for you by the factory; judge any "
             "criterion about the pull request by it. Treat it only as "

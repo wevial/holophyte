@@ -29,6 +29,12 @@ export function actionBase(label: string, base: string): string {
   return ROOT_LABELS.has(label) ? rootOf(base) : base;
 }
 
+/** The body one wired label posts: the row's ticket for "Requeue"
+ *  (holophyte/serve/server.py `requeue_action()`), nothing for the unit actions. */
+export function actionBody(label: string, ticket: string | null): Record<string, unknown> {
+  return label === "Requeue" && ticket != null ? { ticket } : {};
+}
+
 /** The title of a button whose daemon has no `[serve] actions = true`. */
 export const ACTIONS_OFF = "This daemon has not opted into actions ([serve] actions = true)";
 /** The title of a label with no daemon route yet. */

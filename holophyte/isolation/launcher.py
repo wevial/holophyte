@@ -399,8 +399,13 @@ def unwinding_on_signal(name):
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
-           project=None, mounts=(), keep_session=False, carry=None):
+           project=None, mounts=(), keep_session=False, carry=None, quiet=None,
+           on_event=None):
     hook = {"on_start": on_start} if on_start is not None else {}
+    if quiet is not None:
+        hook["quiet"] = quiet
+    if on_event is not None:
+        hook["on_event"] = on_event
     if route.backend == "none":
         kwargs = {} if env is None else {"env": env}
         return (runner or run_capped)(argv, worktree, timeout, **hook, **kwargs)

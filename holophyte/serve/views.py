@@ -8,9 +8,10 @@ from time import time
 import store.read
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale
-from holophyte.config.config_tables import board_mode, sweep_config
+from holophyte.config.config_tables import board_mode, loop_config, sweep_config
 from holophyte.config.serve_settings import serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
+from holophyte.loop.runs import MAX_ROUNDS
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
@@ -54,6 +55,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
     return 200, {
         "project": str(project.path),
         "admission": admission, "hold_note": hold_note,
+        "workers": loop_config(project).workers,
         "schema_version": schema_version,
         "active_routes": active_routes(project),
         "route_labels": route_labels(project),
@@ -85,6 +87,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                   "time_box_ms": (int(run.timeBoxMs * scale)
                                   if run.timeBoxMs else run.timeBoxMs),
                   "round": run.reviewRoundCount,
+                  "max_rounds": run.reviewRoundCap or MAX_ROUNDS,
                   "strikes": (strikes[run.id].strikes
                               if strikes[run.id] is not None else 0),
                   "host": json_host(project, run.host)}

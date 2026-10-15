@@ -146,6 +146,13 @@ export function collapseFailed(items: AttentionItem[]): BandEntry[] {
   return entries;
 }
 
+/** The key an entry is held by: its run for a question, its ticket for a
+ *  failed ticket's attempts, its position when it names neither. */
+export function entryKey({ item, attempts }: BandEntry, index: number): string {
+  const tail = attempts ? item.ticket : (item.run ?? item.ticket);
+  return `${String(item.daemon ?? "")}-${item.kind}-${String(tail ?? index)}`;
+}
+
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
@@ -258,7 +265,7 @@ const CI_WAIT: Record<string, string> = {
 /** A `ci` park's checks state while the factory, not the maintainer, takes
  *  the next step; null for any other park, or for checks the wake is about
  *  to act on. */
-function waitingOnCi(item: AttentionItem): string | null {
+export function waitingOnCi(item: AttentionItem): string | null {
   if (item.kind !== "pr_open" || item.park_kind !== "ci") return null;
   const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
   return (pr?.checks != null ? CI_WAIT[pr.checks] : undefined) ?? null;

@@ -349,7 +349,7 @@ class GroupKill:
 
 
 def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
-               stderr=subprocess.STDOUT):
+               stderr=subprocess.STDOUT, quiet=None, on_event=None):
     environment = {} if env is None else {"env": env}
     # A session of its own makes the command's whole tree one killable group.
     with subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd),
@@ -357,6 +357,10 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
                           text=True, start_new_session=True, **environment) as proc:
         if on_start is not None:
             on_start(proc)
+        if quiet is not None:
+            from holophyte.agents.claude_stream import read_stream
+            return read_stream(proc, cmd, timeout, quiet, lambda: reap_group(
+                proc, subprocess.TimeoutExpired(cmd, timeout)), on_event)
         try:
             out, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired as expired:

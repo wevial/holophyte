@@ -40,6 +40,7 @@ PINNED = {
 
     "holophyte/agents/__init__.py": 0,
     "holophyte/agents/agent_output.py": 0,
+    "holophyte/agents/claude_stream.py": 1,
     "holophyte/agents/agent_routes.py": 6,
     "holophyte/agents/agent_turns.py": 1,
     "holophyte/agents/fallback.py": 4,
@@ -51,14 +52,17 @@ PINNED = {
     "holophyte/agents/session_arms.py": 0,
     "holophyte/agents/transcript_config.py": 0,
     "holophyte/agents/transcripts.py": 4,
+    "holophyte/agents/turn_progress.py": 0,
 
     "holophyte/babysit/__init__.py": 0,
     "holophyte/babysit/adjudicator_outage.py": 0,
     "holophyte/babysit/babysit_steps.py": 0,
     "holophyte/babysit/babysitter.py": 21,
     "holophyte/babysit/bot_threads.py": 0,
+    "holophyte/babysit/capture_fix.py": 2,
     "holophyte/babysit/check_failures.py": 4,
     "holophyte/babysit/check_fix.py": 1,
+    "holophyte/babysit/covering_fix.py": 2,
     "holophyte/babysit/conversation_comments.py": 0,
     "holophyte/babysit/description_review.py": 1,
     "holophyte/babysit/devin_notes.py": 0,
@@ -186,6 +190,7 @@ PINNED = {
     "holophyte/media_store.py": 1,
 
     "holophyte/pr/__init__.py": 0,
+    "holophyte/pr/evidence_refresh.py": 0,
     "holophyte/pr/github.py": 18,
     "holophyte/pr/merge_queue.py": 4,
     "holophyte/pr/merge_ready.py": 0,

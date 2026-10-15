@@ -3,12 +3,18 @@ import type { Queued, Run, RunEvent, Status } from "./types";
 
 const BOOKKEEPING_KINDS = new Set(["pr_seen_commits", "pr_empty_wakes", "pr_wake_breaker", "pr_text_sha"]);
 
+/** The newest `count` actions, newest first regardless of event order;
+ *  supervisor bookkeeping is not activity. */
+export function latestEvents(events: RunEvent[], count: number): RunEvent[] {
+  return events
+    .filter((event) => !BOOKKEEPING_KINDS.has(event.kind))
+    .sort((a, b) => b.at - a.at)
+    .slice(0, count);
+}
+
 /** The newest action, regardless of event order; supervisor bookkeeping is not activity. */
 export function lastActivity(events: RunEvent[]): RunEvent | null {
-  return events.reduce<RunEvent | null>((latest, event) => {
-    if (BOOKKEEPING_KINDS.has(event.kind)) return latest;
-    return latest === null || event.at > latest.at ? event : latest;
-  }, null);
+  return latestEvents(events, 1)[0] ?? null;
 }
 
 /** The Floor's phase pills. Store phases fold into three working words;
