@@ -7,6 +7,8 @@ The status fixture includes an unestimated run with no recorded host;
 `run-detail-unestimated.json` pins the same run with both fields null.
 It also lists one queued ticket, approved off its pull request and waiting
 for a claim, so its toil counts that approval.
+`attention.json` pins the same store's `/attention`: one ticket parked on
+its pull request, not yet approved, as a `pr_open` item.
 
 `host-status.json` and `host-attention.json` pin a host daemon's root
 `/status` and `/attention` over two registered projects whose run ids

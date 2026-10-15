@@ -29,8 +29,8 @@ def normalize_contract(value, key=""):
 
 
 def contract_answers(case):
-    """A reviewed run, an unestimated run predating host recording, and an
-    approved pull request waiting for a claim."""
+    """A reviewed run, an unestimated run predating host recording, an
+    approved pull request waiting for a claim, and one waiting on review."""
     case.seed()
     with store.open(str(case.db)) as conn:
         store.record_review_round(
@@ -72,11 +72,22 @@ def contract_answers(case):
                  candidate_sha="a" * 40, pr_url="https://github.com/example/repo/pull/9",
                  park_kind="pull_request", now=NOW - 120_000)
         store.approve(conn, approved, "go", now=NOW - 60_000)
+        waiting = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-10", linear_identifier="KO-10",
+            title="Reviewed ticket", acceptance_criteria=["Merge once reviewed"],
+            verification_commands=["echo ok"], time_box_ms=None)
+        store.tickets.transition(conn, waiting, "in_flight")
+        reviewed = store.claim(conn, project, waiting, now=NOW - 90_000)
+        store.tickets.transition(conn, waiting, "blocked_on_operator")
+        park_run(conn, reviewed, "awaiting_merge_approval", "PR open\nAwaiting review",
+                 candidate_sha="b" * 40, pr_url="https://github.com/example/repo/pull/10",
+                 park_kind="pull_request", now=NOW - 30_000)
     case.null_host(unestimated_run)
     target = Project.locate(case.target)
     answers = {}
     for name, (code, body) in {
         "status": holophyte.serve.server.status(target, now=NOW, started_ms=NOW),
+        "attention": holophyte.serve.server.attention(target, now=NOW),
         "run-detail": holophyte.serve.serve_runs.run_detail(
             target, str(case.run), now=NOW
         ),
