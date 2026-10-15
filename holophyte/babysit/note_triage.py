@@ -23,10 +23,19 @@ def untriaged(state, merge):
     return tuple(t for t in state.notes if devin_notes.triage(t) is None)
 
 
-def triage_notes(target, conn, run_id, beat_s, wt, sha, pull, state, ticket, merge):
-    pending = untriaged(state, merge)
-    if not pending:
+def triage_notes(target, conn, run_id, beat_s, wt, sha, pull, state, ticket, merge,
+                 triaged):
+    pending = tuple(t for t in untriaged(state, merge) if t.id not in triaged)
+    if pending:
+        _triage(target, conn, run_id, beat_s, wt, sha, pull, ticket, pending, triaged)
+    findings = tuple(t for t in state.notes if triaged.get(t.id) == "FINDING")
+    if not pending and not findings:
         return state
+    return replace(state, threads=state.threads + findings,
+                   notes=tuple(t for t in state.notes if t not in findings))
+
+
+def _triage(target, conn, run_id, beat_s, wt, sha, pull, ticket, pending, triaged):
     from holophyte.loop.review_round import agent, sh
     from holophyte.loop.stop import stop_if_requested
     prompt = triage_prompt(pull, ticket, pending)
@@ -39,7 +48,6 @@ def triage_notes(target, conn, run_id, beat_s, wt, sha, pull, state, ticket, mer
         raise InfraFailure("note triage failed")
     verdicts = parse(reply, len(pending))
     header = COMMENT_HEADER.format(model=agent_route(target, "adjudicate"))
-    findings = []
     for n, thread in enumerate(pending, 1):
         kind, reason = verdicts[n]
         line = devin_notes.FINDING_LINE if kind == "FINDING" else devin_notes.NOTE_LINE
@@ -49,10 +57,7 @@ def triage_notes(target, conn, run_id, beat_s, wt, sha, pull, state, ticket, mer
             store.record_event(conn, run_id, "bot_finding",
                                f"{thread.url}: triaged a Devin analysis as"
                                f" {kind.lower()}: {gist(reason)}")
-        if kind == "FINDING":
-            findings.append(thread)
-    return replace(state, threads=state.threads + tuple(findings),
-                   notes=tuple(t for t in state.notes if t not in findings))
+        triaged[thread.id] = kind
 
 
 def parse(reply, count):

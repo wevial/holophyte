@@ -246,8 +246,7 @@ def _resettle(run, sha, beat_s, pull, state, reviewed, refreshes, **kw):
         return sha, None, reviewed, refreshes
     sha, pushed_state, reviewed = _merge_origin_main(
         run.project, run.conn, run.run_id, run.provider, run.task_id, run.branch,
-        run.wt, sha, beat_s, pull, run.budget_min, reviewed=reviewed,
-        previous=state, **kw)
+        run.wt, sha, beat_s, pull, run.budget_min, reviewed=reviewed, **kw)
     return sha, pushed_state, reviewed, refreshes + 1
 
 
@@ -277,7 +276,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
     check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
-    pass_no = refreshes = 0
+    pass_no, refreshes, triaged = 0, 0, {}
     marked, released = False, None
     approved_sha = reviewed if approved else None
     while pass_no < merge.pr_rounds and refreshes < merge.pr_main_refreshes:
@@ -302,13 +301,14 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             pull, thread_mentions.classified(state.threads, merge), ticket, reviewed,
             park=not untriaged(state, merge)))
         answered, state = state, triage_notes(project, conn, run_id, beat_s, wt,
-                                              sha, pull, state, ticket, merge)
+                                              sha, pull, state, ticket, merge, triaged)
         # UNKNOWN is not a conflict.
         if state.mergeable == "CONFLICTING" or (state is not answered
                                                 and not state.threads):
             sha, pushed_state, reviewed, refreshes = _resettle(
                 run, sha, beat_s, pull, state, reviewed, refreshes, refresh=refresh,
-                verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
+                verify_cmd=verify_cmd, contracts=contracts, ticket=ticket,
+                previous=state if state is answered else None)
             pass_no -= 1
             continue
         rnd = _next_round(conn, run_id)

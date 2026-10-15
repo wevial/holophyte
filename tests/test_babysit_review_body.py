@@ -232,6 +232,20 @@ class ReviewBodyFindingTests(MergeModeFixture):
                          ["state", "reply", "state"])
         self.assertIn("quiet wait", self.question())
 
+    def test_a_stale_read_after_a_note_triage_does_not_triage_it_again(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("For context: the preference is read once per request.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([devin])])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: NOTE -- informational"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles.count("adjudicate"), 1)
+        self.assertEqual([kind for kind, _ in self.api_calls()].count("reply"), 1)
+        self.assertIn("waiting for a human to say merge", self.question())
+
     def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         request = ("Devin tagged this as\n```\n<!-- devin-review-comment"
