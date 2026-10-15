@@ -713,7 +713,10 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                     '<!-- devin-review-comment {"id": "ANALYSIS_0003",'
                     ' "kind": "analysis"} -->')
         devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        noted = devin + (((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
+                           "Read as a note, not a finding: informational"),),)
         self.resume_with_conversation(self.pr_state([ask, devin]),
+                                      self.pr_state([noted], checks="FAILURE"),
                                       initial_state=self.pr_state(checks="FAILURE"))
         fake, _ = self.loop(
             Reply("Yes: src/app.py:30. A change is not warranted."),

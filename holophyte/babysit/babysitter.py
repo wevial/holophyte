@@ -241,6 +241,16 @@ def _babysit(run, *args, **kwargs):
     return result.merge_sha if legacy else result
 
 
+def _resettle(run, sha, beat_s, pull, state, reviewed, refreshes, **kw):
+    if state.mergeable != "CONFLICTING":
+        return sha, None, reviewed, refreshes
+    sha, pushed_state, reviewed = _merge_origin_main(
+        run.project, run.conn, run.run_id, run.provider, run.task_id, run.branch,
+        run.wt, sha, beat_s, pull, run.budget_min, reviewed=reviewed,
+        previous=state, **kw)
+    return sha, pushed_state, reviewed, refreshes + 1
+
+
 def _pull_of(url, branch, sha):
     pull = pr_status.parse_pr_url(url)
     if pull is None:
@@ -291,15 +301,15 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             pull, thread_mentions.classified(state.threads, merge), ticket, reviewed,
             park=not untriaged(state, merge)))
-        state = triage_notes(project, conn, run_id, beat_s, wt, sha, pull, state,
-                             ticket, merge)
-        if state.mergeable == "CONFLICTING":
-            # UNKNOWN is not a conflict.
-            sha, pushed_state, reviewed = _merge_origin_main(
-                project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
-                pull, budget_min, reviewed=reviewed, previous=state, refresh=refresh,
+        answered, state = state, triage_notes(project, conn, run_id, beat_s, wt,
+                                              sha, pull, state, ticket, merge)
+        # UNKNOWN is not a conflict.
+        if state.mergeable == "CONFLICTING" or (state is not answered
+                                                and not state.threads):
+            sha, pushed_state, reviewed, refreshes = _resettle(
+                run, sha, beat_s, pull, state, reviewed, refreshes, refresh=refresh,
                 verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
-            pass_no, refreshes = pass_no - 1, refreshes + 1
+            pass_no -= 1
             continue
         rnd = _next_round(conn, run_id)
         if state.threads:

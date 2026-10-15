@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -21,6 +22,10 @@ FINGERPRINT = hashlib.sha1(
 MARKER = f"<!-- holophyte:review-finding {FINGERPRINT} -->"
 QUOTE = (f"> [Review by @coderabbitai](https://github.com/example/repo/pull/7"
          f"#pullrequestreview-1): src/app.py:40-52 (Major): {TITLE}")
+
+
+NOTE_REPLY = ((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
+               "Read as a note, not a finding: informational"),)
 
 
 class ReviewBodyFindingTests(MergeModeFixture):
@@ -192,7 +197,8 @@ class ReviewBodyFindingTests(MergeModeFixture):
                     '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
                     ' "kind": "analysis"} -->')
         devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
-        self.fake_route(states=[self.pr_state([devin])])
+        self.fake_route(states=[self.pr_state([devin]),
+                                self.pr_state([devin + (NOTE_REPLY,)])])
         fake, _ = self.loop(
             Commit("initial work"), APPROVE, Idle(""),
             Reply("THREAD 1: NOTE -- informational; nothing in the candidate"
@@ -207,6 +213,24 @@ class ReviewBodyFindingTests(MergeModeFixture):
         self.assertTrue(reply.startswith("---- Comment by "))
         self.assertIn("Read as a note, not a finding", reply)
         self.assertIn("waiting for a human to say merge", self.question())
+
+    def test_a_note_triage_reply_restarts_the_quiet_wait_before_a_merge(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        analysis = ("For context: the preference is read once per request.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        quiet = (datetime.now(timezone.utc) - timedelta(seconds=301)).isoformat()
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.fake_route(states=[
+            self.pr_state([devin], updated_at=quiet),
+            self.pr_state([devin + (NOTE_REPLY,)], updated_at=fresh)])
+        self.loop(Commit("initial work"), APPROVE, Idle(""),
+                  Reply("THREAD 1: NOTE -- informational"),
+                  provider=self.provider())
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "state"])
+        self.assertIn("quiet wait", self.question())
 
     def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
