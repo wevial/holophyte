@@ -111,12 +111,11 @@ def filing_problems(project, ticket):
 
 
 def _record(conn, run_id, summary):
-    if conn is not None and run_id is not None:
-        store.record_event(conn, run_id, "mockup", summary)
+    store.record_event(conn, run_id, "mockup", summary)
 
 
 def fetch(project, conn, run_id, wt, body):
-    ticket = ticket_template.parse(body or "")
+    ticket = ticket_template.parse(body)
     if "Mock-up" not in ticket.order:
         return
     links = media_links(ticket.mockup_source)
