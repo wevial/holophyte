@@ -36,7 +36,9 @@ export function Section({
         {count != null && <span className="font-mono text-[12px] text-ink-2">{count}</span>}
         {summary != null && <span className="truncate font-sans text-[13px] text-ink-3">{summary}</span>}
       </header>
-      {open && <div id={body}>{children}</div>}
+      <div id={body} hidden={!open}>
+        {open && children}
+      </div>
     </section>
   );
 }

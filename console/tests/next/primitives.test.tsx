@@ -49,6 +49,7 @@ test("a Section's label folds its children away and back, reporting each fold", 
   expect(label.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("HOLO-9 asks a question")).toBeNull();
   expect(onToggle).toHaveBeenLastCalledWith(false);
+  expect(document.getElementById(label.getAttribute("aria-controls") ?? "")?.hidden).toBe(true);
   fireEvent.click(label);
   expect(label.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("HOLO-9 asks a question")).toBeTruthy();
