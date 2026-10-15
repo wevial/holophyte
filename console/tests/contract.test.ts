@@ -4,12 +4,24 @@ import {
   attentionSchema,
   hostAttentionSchema,
   hostStatusSchema,
+  mergeReadinessSchema,
+  runAsksSchema,
+  runDetailSchema,
   statusSchema,
 } from "../src/lib/contract.gen";
 import status from "../../tests/fixtures/serve/status.json";
 import attention from "../../tests/fixtures/serve/attention.json";
 import hostStatus from "../../tests/fixtures/serve/host-status.json";
 import hostAttention from "../../tests/fixtures/serve/host-attention.json";
+import runDetail from "../../tests/fixtures/serve/run-detail.json";
+import runDetailUnestimated from "../../tests/fixtures/serve/run-detail-unestimated.json";
+import runMergeReady from "../../tests/fixtures/serve/run-merge-ready.json";
+import runMergeBypassable from "../../tests/fixtures/serve/run-merge-bypassable.json";
+import pinnedAsks from "../../tests/fixtures/serve/run-asks.json";
+
+// The pinned asks hold `NOW` where the daemon sends a time.
+const time = (value: string | null) => (value === "NOW" ? 1750000000000 : value);
+const runAsks = { ...pinnedAsks, asks: pinnedAsks.asks.map((ask) => ({ ...ask, asked_ms: time(ask.asked_ms), answered_ms: time(ask.answered_ms) })) };
 
 const firstIssuePath = (result: { success: boolean; error?: { issues: { path: PropertyKey[] }[] } }) =>
   result.error?.issues[0]?.path.join(".");
@@ -19,6 +31,23 @@ test("each pinned daemon answer parses unchanged with its generated schema", () 
   expect<unknown>(attentionSchema.parse(attention)).toEqual(attention);
   expect<unknown>(hostStatusSchema.parse(hostStatus)).toEqual(hostStatus);
   expect<unknown>(hostAttentionSchema.parse(hostAttention)).toEqual(hostAttention);
+});
+
+test("each pinned run-route answer parses unchanged with its generated schema", () => {
+  expect<unknown>(runDetailSchema.parse(runDetail)).toEqual(runDetail);
+  expect<unknown>(runDetailSchema.parse(runDetailUnestimated)).toEqual(runDetailUnestimated);
+  expect<unknown>(mergeReadinessSchema.parse(runMergeReady)).toEqual(runMergeReady);
+  expect<unknown>(mergeReadinessSchema.parse(runMergeBypassable)).toEqual(runMergeBypassable);
+  expect<unknown>(runAsksSchema.parse(runAsks)).toEqual(runAsks);
+});
+
+test("a run detail without rounds or with a numeric phase fails at its path; an extra run key passes", () => {
+  const { rounds: _rounds, ...roundless } = runDetail;
+  const phase = { ...runDetail, run: { ...runDetail.run, phase: 42 } };
+  expect(firstIssuePath(runDetailSchema.safeParse(roundless))).toBe("rounds");
+  expect(firstIssuePath(runDetailSchema.safeParse(phase))).toBe("run.phase");
+  const newer = { ...runDetail, run: { ...runDetail.run, later_field: "x" } };
+  expect<unknown>(runDetailSchema.parse(newer)).toEqual(newer);
 });
 
 test("a newer daemon's extra keys pass at the top level and inside a run", () => {

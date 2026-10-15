@@ -20,13 +20,30 @@ from holophyte.serve.contract import (
     ROUTES,
     SCHEMA_DIR,
     ZOD_FILE,
+    Round,
+    RunDetail,
     Status,
     main,
 )
 from holophyte.serve.contract_emit import ContractError, json_schema
 
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
-ANSWERS = ("status", "attention", "host-status", "host-attention")
+ANSWERS = ("status", "attention", "host-status", "host-attention",
+           "run-detail", "run-detail-unestimated", "run-merge-ready",
+           "run-merge-bypassable", "run-asks")
+ROUTE_OF = {"run-detail-unestimated": "run-detail",
+            "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
+PINNED_TIME = 1_750_000_000_000
+
+
+def pinned(stem):
+    """The pinned answer, with the asks' `NOW` time placeholders a time again."""
+    body = json.loads((FIXTURES / f"{stem}.json").read_text())
+    for ask in body.get("asks", ()):
+        for key in ("asked_ms", "answered_ms"):
+            if ask[key] == "NOW":
+                ask[key] = PINNED_TIME
+    return body
 
 
 def walk(value, annotation, where):
@@ -103,6 +120,12 @@ class GeneratedFilesTests(unittest.TestCase):
                               text=True)
         self.assertEqual((done.returncode, done.stderr), (0, ""))
         self.assertEqual(self.generated(ROOT), before)
+        self.assertEqual(sorted(path.name for path in before
+                                if path.parent == SCHEMA_DIR),
+                         [f"{stem}.schema.json" for stem in (
+                             "attention", "host-attention", "host-status",
+                             "peers", "run-asks", "run-detail", "run-merge",
+                             "status")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -150,8 +173,7 @@ class PinnedAnswerTests(unittest.TestCase):
     def test_each_pinned_answer_walks_clean_against_its_route_type(self):
         for stem in ANSWERS:
             with self.subTest(answer=stem):
-                body = json.loads((FIXTURES / f"{stem}.json").read_text())
-                walk(body, ROUTES[stem][0], stem)
+                walk(pinned(stem), ROUTES[ROUTE_OF.get(stem, stem)][0], stem)
 
     def test_an_answer_key_its_type_lacks_fails_the_walk_naming_it(self):
         hints = typing.get_type_hints(Status, include_extras=True)
@@ -161,6 +183,18 @@ class PinnedAnswerTests(unittest.TestCase):
         body = json.loads((FIXTURES / "status.json").read_text())
         with self.assertRaisesRegex(AssertionError, r"^status\.queued: undeclared$"):
             walk(body, narrower, "status")
+
+    def test_a_round_type_without_operator_notes_fails_the_run_detail_walk(self):
+        hints = typing.get_type_hints(Round, include_extras=True)
+        narrower = typing.TypedDict("Round", {key: hint for key, hint
+                                              in hints.items()
+                                              if key != "operator_notes"})
+        detail = typing.get_type_hints(RunDetail, include_extras=True)
+        detail["rounds"] = list[narrower]
+        body = pinned("run-detail")
+        with self.assertRaisesRegex(
+                AssertionError, r"^run-detail\.rounds\.0\.operator_notes: undeclared$"):
+            walk(body, typing.TypedDict("RunDetail", detail), "run-detail")
 
 
 if __name__ == "__main__":
