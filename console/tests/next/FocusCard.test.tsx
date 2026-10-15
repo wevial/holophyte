@@ -291,8 +291,9 @@ test("Merge asks first in a dialog listing why it is safe; Esc posts nothing and
   const merge = inCard("Merge");
   await press(merge);
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
-  expect(within(dialog).getByText("GitHub's review decision is APPROVED")).toBeTruthy();
-  expect(within(dialog).getByText("the required checks are success")).toBeTruthy();
+  const facts = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
+  expect([...facts].map((fact) => fact.textContent)).toEqual((ready.facts as { detail: string }[]).map((fact) => fact.detail));
+  expect(facts).toHaveLength(8);
   expect(dialog.textContent).toContain("The console cannot undo a merge");
   const cancel = within(dialog).getByRole("button", { name: "Cancel" });
   const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
