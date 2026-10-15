@@ -245,9 +245,11 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         return rest
 
     @staticmethod
-    def check_run(name, started_at, status="completed", conclusion="success"):
+    def check_run(name, started_at, status="completed", conclusion="success",
+                  run_id=None):
         return {"name": name, "status": status, "started_at": started_at,
-                "conclusion": conclusion if status == "completed" else None}
+                "conclusion": conclusion if status == "completed" else None,
+                **({"id": run_id} if run_id is not None else {})}
 
     def test_required_runs_only_from_before_the_ready_event_count(self):
         state = self._state_with_rest(self.e2e_required(
@@ -301,6 +303,17 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
             ready_at=self.READY_AT)
         self.assertEqual((state.checks, state.failed_checks),
                          ("success", ()))
+
+    def test_runs_started_in_the_same_second_keep_the_higher_id(self):
+        older = self.check_run("e2e-ok", self.AFTER_READY,
+                               conclusion="failure", run_id=101)
+        newer = self.check_run("e2e-ok", self.AFTER_READY, run_id=102)
+        for runs in ((older, newer), (newer, older)):
+            with self.subTest(order=[r["id"] for r in runs]):
+                state = self._state_with_rest(self.e2e_required(*runs),
+                                              ready_at=self.READY_AT)
+                self.assertEqual((state.checks, state.failed_checks),
+                                 ("success", ()))
 
     def test_a_run_without_a_readable_start_does_not_supersede_a_red_run(
             self):

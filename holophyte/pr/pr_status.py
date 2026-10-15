@@ -458,6 +458,13 @@ def _start_ms(run):
     return _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
 
 
+def _run_order(run):
+    run_id = run.get("id")
+    return (_start_ms(run),
+            run_id if isinstance(run_id, int)
+            and not isinstance(run_id, bool) else -1)
+
+
 def _fold_by_ready(runs, node):
     ready = _ready_ms(node)
     if runs is None or ready is None:
@@ -468,7 +475,7 @@ def _fold_by_ready(runs, node):
         if start is None:
             continue
         name = run.get("name")
-        if name not in newest or start >= _start_ms(newest[name]):
+        if name not in newest or _run_order(run) >= _run_order(newest[name]):
             newest[name] = run
     kept = [run for run in runs
             if _start_ms(run) is None or newest[run.get("name")] is run]
