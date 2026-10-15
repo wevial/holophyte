@@ -3,7 +3,7 @@ import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
 import { needsYouEntries, type NeedsYouEntry } from "../lib/attention";
-import { shippedSchema, type QueuedTicket } from "../lib/contract.gen";
+import { shippedSchema, type QueuedTicket, type Status } from "../lib/contract.gen";
 import { hostItems, runCounts, type HostRecord } from "../lib/hosts";
 import { POLL_INTERVAL_MS, type Fetch } from "../lib/poll";
 import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
@@ -15,10 +15,13 @@ import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 export interface Overview {
   project: string | undefined;
   now: number;
+  hosts: HostRecord<ContractBodies>[];
   /** Whether some scoped host has answered `/status` at least once. */
   answered: boolean;
+  items: AttentionItem[];
   needs: NeedsYouEntry[];
   pullRequests: AttentionItem[];
+  runs: Status["runs"];
   running: number;
   queued: QueuedTicket[];
   mergedToday: ShippedRow[];
@@ -54,9 +57,12 @@ export function useOverview(): Overview {
   return {
     project,
     now,
+    hosts,
     answered: statuses.length > 0,
+    items,
     needs: needsYouEntries(items, readiness, now),
     pullRequests: items.filter((item) => item.kind === "pr_open"),
+    runs: statuses.flatMap((status) => status.runs),
     running: statuses.reduce((sum, status) => sum + runCounts(status).active, 0),
     queued: statuses.flatMap((status) => status.queued),
     mergedToday: useMergedToday(hosts, now, deps.fetch),
