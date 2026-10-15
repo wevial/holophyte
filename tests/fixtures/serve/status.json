@@ -3,6 +3,7 @@
   "schema_version": 49,
   "admission": "enabled",
   "hold_note": null,
+  "workers": 1,
   "active_routes": {
     "implementer": {
       "command": null
@@ -96,6 +97,7 @@
       "verify_started_ms": null,
       "time_box_ms": 1500000,
       "round": 1,
+      "max_rounds": 2,
       "strikes": 0,
       "host": "writer",
       "stop_requested": null,
@@ -118,6 +120,7 @@
       "verify_started_ms": null,
       "time_box_ms": null,
       "round": 0,
+      "max_rounds": 2,
       "strikes": 0,
       "host": null,
       "stop_requested": null,

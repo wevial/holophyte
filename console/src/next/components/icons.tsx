@@ -19,20 +19,23 @@ function Stroke({ children, className }: { children: ReactNode; className?: stri
   );
 }
 
-/** The flat five-petal mark, filled with the current colour. */
+/** The flat five-petal mark over its ground line. */
 export function Mark() {
   return (
-    <svg viewBox="0 0 24 24" width={22} height={22} fill="currentColor" aria-hidden="true">
-      <path d="M12 2.5c1.6 1.8 3.1 4.4 3.1 7.2 0 2.7-1.4 5.3-3.1 7.6-1.7-2.3-3.1-4.9-3.1-7.6 0-2.8 1.5-5.4 3.1-7.2Z" />
-      <path d="M11.6 17.6C9 15.4 5.6 13.9 2.6 14.3c1.6 2.4 5 4 9 3.3Z" />
-      <path d="M12.4 17.6c2.6-2.2 6-3.7 9-3.3-1.6 2.4-5 4-9 3.3Z" />
-      <path d="M11.6 16.8C8.7 14.6 6.4 11.3 6 8c2.7 1 5 4.6 5.6 8.8Z" opacity="0.7" />
-      <path d="M12.4 16.8c2.9-2.2 5.2-5.5 5.6-8.8-2.7 1-5 4.6-5.6 8.8Z" opacity="0.7" />
+    <svg viewBox="0 0 24 24" width={24} height={24} aria-hidden="true" className="shrink-0">
+      <g className="fill-act stroke-canvas" strokeWidth={1.1} strokeLinejoin="round">
+        <path d="M12 17C7.4 17.6 3.6 15.6 2 12.2 5.6 11.8 9.4 13.6 12 17Z" />
+        <path d="M12 17C16.6 17.6 20.4 15.6 22 12.2 18.4 11.8 14.6 13.6 12 17Z" />
+        <path d="M12 17C8.2 16.6 5.6 13 6 8 9 9.2 11.2 12.6 12 17Z" />
+        <path d="M12 17C15.8 16.6 18.4 13 18 8 15 9.2 12.8 12.6 12 17Z" />
+        <path d="M12 4C15.2 7.2 15.2 13 12 17 8.8 13 8.8 7.2 12 4Z" />
+      </g>
+      <path d="M6 20.2H18" fill="none" className="stroke-ink-3" strokeWidth={1.3} strokeLinecap="round" />
     </svg>
   );
 }
 
-export function OverviewIcon() {
+export function AllProjectsIcon() {
   return (
     <Stroke>
       <rect x="2" y="2" width="5" height="5" />
@@ -43,10 +46,20 @@ export function OverviewIcon() {
   );
 }
 
+export function OverviewIcon() {
+  return (
+    <Stroke>
+      <path d="M2 9.5h3.5l1 2h3l1-2H14" />
+      <path d="M3.6 3h8.8L14 9.5V13H2V9.5Z" />
+    </Stroke>
+  );
+}
+
 export function RunsIcon() {
   return (
     <Stroke>
-      <path d="M2 8h3l2-5 2 10 2-5h3" />
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="M6.6 5.4v5.2L10.8 8Z" />
     </Stroke>
   );
 }
@@ -54,8 +67,8 @@ export function RunsIcon() {
 export function TicketsIcon() {
   return (
     <Stroke>
-      <rect x="2.5" y="2" width="11" height="12" />
-      <path d="M5 5.5h6M5 8h6M5 10.5h3.5" />
+      <path d="M3.5 1.5h6l3 3v10h-9Z" />
+      <path d="M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4" />
     </Stroke>
   );
 }
@@ -63,17 +76,25 @@ export function TicketsIcon() {
 export function FindingsIcon() {
   return (
     <Stroke>
-      <circle cx="7" cy="7" r="4.2" />
-      <path d="m10.2 10.2 3.6 3.6" />
+      <path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5" />
     </Stroke>
   );
 }
 
 export function ChevronIcon({ folded }: { folded: boolean }) {
   return (
-    <Stroke>
-      <path d={folded ? "m6 3.5 4.5 4.5L6 12.5" : "M10 3.5 5.5 8l4.5 4.5"} />
-    </Stroke>
+    <svg
+      viewBox="0 0 10 10"
+      width={12}
+      height={12}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+      className={`size-3 shrink-0 ${folded ? "-scale-x-100" : ""}`}
+    >
+      <path d="M6.5 2 3.5 5 6.5 8" />
+    </svg>
   );
 }
 
@@ -89,7 +110,7 @@ export function ClassicIcon() {
 export function SignalIcon({ className }: { className?: string }) {
   return (
     <Stroke className={className}>
-      <path d="M2 13.5h1.5M6 13.5V10M9.5 13.5V6.5M13 13.5V3" />
+      <path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1" />
     </Stroke>
   );
 }
@@ -102,19 +123,10 @@ export function MoonIcon() {
   );
 }
 
-export function SunIcon() {
-  return (
-    <Stroke>
-      <circle cx="8" cy="8" r="3" />
-      <path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
-    </Stroke>
-  );
-}
-
 export function FolderIcon() {
   return (
     <Stroke>
-      <path d="M2 4.5V12.5h12V5.5H7.5L6 3.5H2Z" />
+      <path d="M2 4.5h4.2l1.5 1.5H14v7.5H2Z" />
     </Stroke>
   );
 }
