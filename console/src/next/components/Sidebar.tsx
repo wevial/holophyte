@@ -1,9 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { formatDuration } from "../../lib/format";
-import { groupByHost, hostItems } from "../../lib/hosts";
+import { groupByHost } from "../../lib/hosts";
 import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
-import { keepScope, scopedHosts, useConsolePeers } from "../scope";
+import { switcherRows } from "../projects";
+import { useReadiness } from "../queries";
+import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
 import {
   ChevronIcon,
   ClassicIcon,
@@ -143,7 +145,9 @@ export function Sidebar() {
   const { hosts, polledAgo, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const [folded, setFolded] = useState(readFolded);
-  const needs = scopedHosts(hosts, project).reduce((total, host) => total + hostItems(host, now).length, 0);
+  const readiness = useReadiness(hosts, useContext(PollDepsContext));
+  const rows = switcherRows(hosts, now, readiness);
+  const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const failing = hosts.some((host) => host.error != null);
   const answered = hosts.some((host) => host.seen_ms != null);
   const polled = pollLine(groupByHost(hosts).map((group) => group.label), answered, polledAgo);
@@ -187,7 +191,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <ProjectSwitcher folded={folded} />
+      <ProjectSwitcher rows={rows} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col py-3">
         {PAGES.map((page) => (

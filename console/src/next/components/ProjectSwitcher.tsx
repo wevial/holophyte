@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { matchRows, storeScope, switcherRows, type SwitcherRow } from "../projects";
-import { useConsolePeers } from "../scope";
+import { matchRows, storeScope, type SwitcherRow } from "../projects";
 import { DropIcon, FolderIcon, OverviewIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
@@ -35,8 +34,7 @@ function unknownRow(name: string): SwitcherRow {
   return { name, label: name, held: false, need: 0, open: 0, down: false };
 }
 
-export function ProjectSwitcher({ folded }: { folded: boolean }) {
-  const { hosts, now } = useConsolePeers();
+export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded: boolean }) {
   const { project } = useSearch({ from: "__root__" });
   const navigate = useNavigate();
   const id = useId();
@@ -46,7 +44,6 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
-  const rows = switcherRows(hosts, now);
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const matches = matchRows(rows, query);
   const at = Math.min(active, Math.max(0, matches.length - 1));

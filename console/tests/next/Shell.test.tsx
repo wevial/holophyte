@@ -7,13 +7,13 @@ import { THEME_KEY } from "../../src/lib/theme";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
+import { needsDaemons } from "./needsFleet";
 
 const ORIGIN = "http://writer-host:7710";
 const PEER = "http://writer-host:7711";
 
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
-const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
 
 const happyDOM = (window as unknown as {
   happyDOM: { settings: { device: { prefersColorScheme: string } }; setViewport: (viewport: { width: number }) => void };
@@ -69,15 +69,14 @@ test("a scoped hash opens its page, marks its link current and keeps the scope o
   }
 });
 
-test("the Overview badge counts the scope's attention items and hides at zero", async () => {
-  const one = served.items[0]!;
-  const [two, three] = [{ ...one, run: 2 }, { ...one, run: 3 }];
-  await mount("#/", daemons([one, two], [three]));
+test("the Overview badge counts the scope's Needs you entries, as the heading does, and hides at zero", async () => {
+  await mount("#/", needsDaemons());
   expect(screen.getByRole("link", { name: "Overview, 3 need you" })).toBeTruthy();
   expect(badge()!.textContent).toBe("3");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("3 need you.");
   cleanup();
 
-  await mount("#/?project=demo", daemons([one, two], [three]));
+  await mount("#/?project=demo", needsDaemons());
   expect(screen.getByRole("link", { name: "Overview, 2 need you" })).toBeTruthy();
   expect(badge()!.textContent).toBe("2");
   cleanup();
