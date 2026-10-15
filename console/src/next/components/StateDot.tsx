@@ -64,7 +64,7 @@ const ICONS: Record<State, ReactNode> = {
   merged: (
     <>
       <circle cx="8" cy="8" r="6.5" fill="currentColor" />
-      <path d="M5.2 8.3 7.2 10.3 10.9 6.3" stroke="var(--canvas)" strokeWidth={1.8} />
+      <path d="M5.2 8.3 7.2 10.3 10.9 6.3" strokeWidth={1.8} style={{ stroke: "var(--canvas)" }} />
     </>
   ),
   queued: (

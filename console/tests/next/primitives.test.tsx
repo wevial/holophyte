@@ -118,7 +118,9 @@ test("disabled and busy buttons keep their own variant's edge, and a disabled on
       const busy = getComputedStyle(screen.getByRole("button", { name: "On" }));
       expect(disabled.boxShadow, variant).toBe(`inset 0 0 0 1px ${colour}`);
       expect(disabled.opacity, variant).toBe("0.5");
-      expect(busy.getPropertyValue("--btn-edge").trim(), variant).toBe(colour);
+      // happy-dom resolves only the first var() in a multi-layer value.
+      const dashes = [...busy.backgroundImage.matchAll(/linear-gradient\(\w+, (\S+) 50%/g)].map((m) => m[1]);
+      expect(dashes, variant).toEqual([colour, "var(--btn-edge)", "var(--btn-edge)", "var(--btn-edge)"]);
       expect(busy.color, variant).toBe(colour);
       cleanup();
     }
