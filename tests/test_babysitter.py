@@ -774,6 +774,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
               patch.object(pr_media, "_publish_git", publish),
               patch.object(github, "push_branch"),
               patch.object(github, "rest", return_value={"body": "Load."}),
+              patch.object(github, "edit_pr_body"),
               patch.object(holophyte.pr.pullrequest, "refresh_pr_text"),
               patch.object(babysitter, "_post") as self.posted):
             yield

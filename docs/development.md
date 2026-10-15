@@ -454,6 +454,10 @@ Each module, one line:
   media publishing and evidence shared by PR descriptions and review prompts.
   See [merge configuration](config.md#merge) for capture commands, destinations
   and size limits.
+- `holophyte/pr/evidence_refresh.py` — before the covering review of a
+  babysit fix, writing the capture at the fix head into the pull request's
+  Evidence section, or marking its earlier images stale when that capture
+  failed, and the ledger note recording which.
 - `holophyte/pr/mockup.py` — a ticket's `## Mock-up` media links: the
   filing checks against `[merge.media_bucket] public_base`, the download of
   each `.png` snapshot and `.zip` bundle into the task worktree's ignored
