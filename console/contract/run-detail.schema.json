@@ -1,0 +1,814 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunDetail",
+  "description": "GET /runs/N",
+  "$ref": "#/$defs/RunDetail",
+  "$defs": {
+    "RunDetailRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        },
+        "working_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_box_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "merge_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commit_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify_started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approved_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_rounds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "ticket_url",
+        "title",
+        "phase",
+        "attempt",
+        "started_ms",
+        "ended_ms",
+        "outcome",
+        "elapsed_ms",
+        "working_ms",
+        "agent_ms",
+        "verify_ms",
+        "time_box_ms",
+        "branch",
+        "host",
+        "heartbeat_age_ms",
+        "merge_sha",
+        "commit_url",
+        "pr_url",
+        "work_started_ms",
+        "verify_started_ms",
+        "approved_at",
+        "approved_by",
+        "max_rounds"
+      ],
+      "additionalProperties": true
+    },
+    "FindingFingerprint": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "severity"
+      ],
+      "additionalProperties": true
+    },
+    "InstructionTriage": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "enum": [
+            "fix",
+            "question",
+            "unclear"
+          ]
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "route": {
+          "enum": [
+            "fix",
+            "answer"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "confidence",
+        "route",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "RoundFinding": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string"
+        },
+        "criterion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "evidence_only": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "enum": [
+            "reproduced",
+            "traced",
+            "concern"
+          ]
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "stale_approval": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/FindingFingerprint"
+        },
+        "kind": {
+          "enum": [
+            "thread",
+            "finding"
+          ]
+        },
+        "author": {
+          "type": "string"
+        },
+        "author_kind": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "triage": {
+          "$ref": "#/$defs/InstructionTriage"
+        },
+        "outcome": {
+          "enum": [
+            "changed",
+            "kept",
+            "asked"
+          ]
+        },
+        "reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "severity",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "RoundInstruction": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "instruction"
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "author": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "triage": {
+          "$ref": "#/$defs/InstructionTriage"
+        },
+        "outcome": {
+          "enum": [
+            "changed",
+            "kept",
+            "asked"
+          ]
+        },
+        "reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "line",
+        "author",
+        "request",
+        "url"
+      ],
+      "additionalProperties": true
+    },
+    "OperatorNote": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "operator_note"
+        },
+        "event_id": {
+          "type": "integer"
+        },
+        "note": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "boolean"
+        },
+        "consumed": {
+          "type": "boolean"
+        },
+        "run_id": {
+          "type": "integer"
+        },
+        "round": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "event_id",
+        "note",
+        "author",
+        "consumed",
+        "run_id",
+        "round"
+      ],
+      "additionalProperties": true
+    },
+    "Round": {
+      "type": "object",
+      "properties": {
+        "round": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "reviewer_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoundFinding"
+          }
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoundInstruction"
+          }
+        },
+        "operator_notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperatorNote"
+          }
+        }
+      },
+      "required": [
+        "round",
+        "started_ms",
+        "ended_ms",
+        "verdict",
+        "reviewer_model",
+        "findings",
+        "instructions",
+        "operator_notes"
+      ],
+      "additionalProperties": true
+    },
+    "AdvisoryFinding": {
+      "type": "object",
+      "properties": {
+        "tone": {
+          "const": "advisory"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tone",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "RunEvent": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "summary"
+      ],
+      "additionalProperties": true
+    },
+    "ChainRound": {
+      "type": "object",
+      "properties": {
+        "round": {
+          "type": "integer"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "reviewer_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "round",
+        "verdict",
+        "reviewer_model"
+      ],
+      "additionalProperties": true
+    },
+    "ChainRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "type": "string"
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        },
+        "working_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_rounds": {
+          "type": "integer"
+        },
+        "turn_count": {
+          "type": "integer"
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChainRound"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "attempt",
+        "outcome",
+        "phase",
+        "started_ms",
+        "ended_ms",
+        "elapsed_ms",
+        "working_ms",
+        "agent_ms",
+        "verify_ms",
+        "max_rounds",
+        "turn_count",
+        "rounds"
+      ],
+      "additionalProperties": true
+    },
+    "RunChain": {
+      "type": "object",
+      "properties": {
+        "started_ms": {
+          "type": "integer"
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        },
+        "working_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChainRun"
+          }
+        }
+      },
+      "required": [
+        "started_ms",
+        "elapsed_ms",
+        "working_ms",
+        "agent_ms",
+        "verify_ms",
+        "runs"
+      ],
+      "additionalProperties": true
+    },
+    "RunDetail": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/$defs/RunDetailRun"
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Round"
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdvisoryFinding"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunEvent"
+          }
+        },
+        "chain": {
+          "$ref": "#/$defs/RunChain"
+        }
+      },
+      "required": [
+        "run",
+        "rounds",
+        "findings",
+        "events"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

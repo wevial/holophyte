@@ -277,9 +277,10 @@ Each module, one line:
   every project in `host.toml`, each under `/projects/NAME`, the root's
   `/status` and `/attention` for the host, the machine token, one
   project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
-- `holophyte/serve/contract.py` — the poll routes' response types: one
-  `TypedDict` per body `/status`, `/attention` and `/peers` answer, a
-  project's and a host root's, `ROUTES` naming each, and `main()`, which
+- `holophyte/serve/contract.py` — the poll and run routes' response types:
+  one `TypedDict` per body `/status`, `/attention` and `/peers` answer, a
+  project's and a host root's, and `/runs/N`, `/runs/N/merge` and
+  `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
   writes their JSON Schema and zod or `--check`s them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
@@ -463,8 +464,12 @@ Each module, one line:
 - `holophyte/babysit/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysit/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
-- `holophyte/babysit/devin_notes.py` — a Devin review comment marked `analysis`:
-  fix-turn context, not an open finding.
+- `holophyte/babysit/devin_notes.py` — a Devin review comment marked `analysis`,
+  told apart by the factory's triage reply: a note stays fix-turn context, a
+  finding is an open thread, and one with no reply is untriaged.
+- `holophyte/babysit/note_triage.py` — one read-only `adjudicate` triage of the
+  untriaged Devin `analysis` comments as FINDING or NOTE, each answered on its
+  thread; a FINDING joins the open threads.
 - `holophyte/babysit/review_body.py` — bot review-body outside-diff findings, their
   fingerprints and answer markers.
 - `holophyte/babysit/thread_answers.py` — read-only mention answers and thread replies.
@@ -802,6 +807,16 @@ the one poll. Every body is parsed with the generated schemas in
 fails at the fetch with a contract error naming the endpoint and field. A
 view that reads another route adds its own query keyed by the daemon base
 and the path, parsed with that route's generated schema.
+
+The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
+sets that scope. Its rows come from `switcherRows()` in
+`console/src/next/projects.ts`: "All projects", then one row per project
+name, pooling the hosts that serve it, with its held tag, need count and
+open runs, or "not answering" when every host of it failed its last poll.
+A find box filters them; arrow keys move, Enter picks, Esc closes. A pick
+rewrites `project` on the current route and is kept in session storage under
+`holophyte.next.project`, so opening `/next.html` with an empty hash starts
+at Overview in that scope; a hash that names a route is shown as written.
 
 ### Desktop wrapper
 

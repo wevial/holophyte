@@ -110,3 +110,19 @@ export function SunIcon() {
     </Stroke>
   );
 }
+
+export function FolderIcon() {
+  return (
+    <Stroke>
+      <path d="M2 4.5V12.5h12V5.5H7.5L6 3.5H2Z" />
+    </Stroke>
+  );
+}
+
+export function DropIcon() {
+  return (
+    <Stroke>
+      <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+    </Stroke>
+  );
+}

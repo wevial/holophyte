@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MergeReadiness",
+  "description": "GET /runs/N/merge",
+  "$ref": "#/$defs/MergeReadiness",
+  "$defs": {
+    "MergeFact": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "ok",
+        "detail"
+      ],
+      "additionalProperties": true
+    },
+    "MergeReadiness": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "ticket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MergeFact"
+          }
+        }
+      },
+      "required": [
+        "run",
+        "ticket",
+        "pr_url",
+        "head_sha",
+        "ready",
+        "reason",
+        "detail",
+        "facts"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
