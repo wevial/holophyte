@@ -131,12 +131,13 @@ def fetch(project, conn, run_id, wt, body):
     except (Refused, SystemExit, OSError, subprocess.CalledProcessError) as error:
         _record(conn, run_id, f"mock-up: nothing fetched: {error}")
         return
+    if not items:
+        return
     snapshots = [item for item in items if item["kind"] == "snapshot"]
     bundles = [item for item in items if item["kind"] == "bundle"]
-    if items:
-        boards = sum(len(item["boards"]) for item in bundles)
-        _record(conn, run_id, f"mock-up: {len(snapshots)} snapshots and "
-                f"{len(bundles)} bundles ({boards} boards) in {DIRECTORY}")
+    boards = sum(len(item["boards"]) for item in bundles)
+    _record(conn, run_id, f"mock-up: {len(snapshots)} snapshots and "
+            f"{len(bundles)} bundles ({boards} boards) in {DIRECTORY}")
 
 
 def _refuse_unsafe(root):
