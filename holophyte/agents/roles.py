@@ -31,6 +31,7 @@ from holophyte.agents.review_workspace import (
     review_scratch,
     table_review,
 )
+from holophyte.agents.turn_progress import TurnProgress
 from holophyte.config.agent_settings import (
     agent_command,
     review_route,
@@ -302,8 +303,14 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         raise failure from e
 
 
-def stream_watch(project, streamed):
-    return {"quiet": turn_quiet_sec(project)} if streamed else {}
+def stream_watch(project, streamed, role, cwd, conn, run_id):
+    if not streamed:
+        return {}
+    if conn is None or run_id is None:
+        return {"quiet": turn_quiet_sec(project)}
+    progress = TurnProgress(conn, run_id, role, cwd,
+                            known_secrets(project.config()))
+    return {"quiet": turn_quiet_sec(project), "on_event": progress.seen}
 
 
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
@@ -378,7 +385,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         import store
         store.record_agent_session(conn, run_id, session_id, role, "primary")
     streamed = seat is not None and seat.name == "claude"
-    hook.update(stream_watch(project, streamed))
+    hook.update(stream_watch(project, streamed, role, cwd, conn, run_id))
     code, out = launcher.launch(launcher.turn_route(project, cmd), cwd,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
