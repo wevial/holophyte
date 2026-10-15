@@ -120,7 +120,7 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
 
 /** One project's live runs, the runs that went quiet named instead of
  *  drawn, and its queue behind a count that unfolds. */
-export function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
+function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
   const [open, setOpen] = useState(false);
   const queueId = useId();
   const sinceMs = sinceSeen(group.seen_ms, now);
