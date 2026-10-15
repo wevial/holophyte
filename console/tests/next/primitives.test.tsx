@@ -70,7 +70,7 @@ test("busy and disabled buttons swallow clicks, the busy one says so, and an idl
   expect(idle).toHaveBeenCalledTimes(1);
 });
 
-test("a Section's label folds its children away and back, reporting each fold", () => {
+test("a Section's label folds its children away and back, turning its chevron and reporting each fold", () => {
   const onToggle = mock((_open: boolean) => {});
   render(
     <Section label="Needs you" count={5} summary="2 questions, 3 failed" onToggle={onToggle}>
@@ -78,15 +78,19 @@ test("a Section's label folds its children away and back, reporting each fold", 
     </Section>,
   );
   const label = screen.getByRole("button", { name: "Needs you" });
+  const turned = () => label.querySelector("svg[data-chevron]")!.getAttribute("class")!.split(/\s+/).includes("rotate-90");
   expect(screen.getByText("5")).toBeTruthy();
+  expect(turned()).toBe(true);
   expect(screen.getByText("2 questions, 3 failed")).toBeTruthy();
   fireEvent.click(label);
   expect(label.getAttribute("aria-expanded")).toBe("false");
+  expect(turned()).toBe(false);
   expect(screen.queryByText("HOLO-9 asks a question")).toBeNull();
   expect(onToggle).toHaveBeenLastCalledWith(false);
   expect(document.getElementById(label.getAttribute("aria-controls") ?? "")?.hidden).toBe(true);
   fireEvent.click(label);
   expect(label.getAttribute("aria-expanded")).toBe("true");
+  expect(turned()).toBe(true);
   expect(screen.getByText("HOLO-9 asks a question")).toBeTruthy();
 });
 
