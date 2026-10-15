@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tokens · Night and Dawn</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--ask:#f0cf62;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--need:#f5a3c7;--live:#86d993;--wait:#aaa7ec;--bad:#ff7b72;--done:#7b84a1;--p1:#ff9e85;--p2:#ecdc86;--p3:#4a5687;--tag:#d3cbf6}
+.t-dawn{color-scheme:light;--ask:#8a6500;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--need:#b02f6b;--live:#1f7a35;--wait:#5653a6;--bad:#c0321f;--done:#8b90a8;--p1:#ffb199;--p2:#eee38a;--p3:#c9c4dc;--tag:#e3dcfb}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+</style>
+</helmet>
+<div class="t-night" style="width: 1280px; height: 1240px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · foundations</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Night and Dawn</h2>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<section class="t-night" aria-label="Night tokens" style="padding: 28px; background: var(--canvas); color: var(--ink); border: 1px solid var(--rule)">
+<div class="label">Night · default</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 12px; margin-top: 18px; font: 400 11px/1.4 'IBM Plex Mono', ui-monospace, monospace">
+<div><div style="height: 44px; background: var(--canvas); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">canvas</div><div style="color: var(--ink-3)">#05070f</div></div>
+<div><div style="height: 44px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">paper</div><div style="color: var(--ink-3)">#0b1020</div></div>
+<div><div style="height: 44px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">paper-2 · hover</div><div style="color: var(--ink-3)">#11182c</div></div>
+<div><div style="height: 44px; background: var(--rule)"></div><div style="margin-top: 6px">rule / rule-2</div><div style="color: var(--ink-3)">#273050 · #1a2140</div></div>
+<div><div style="height: 44px; background: var(--ink)"></div><div style="margin-top: 6px">ink</div><div style="color: var(--ink-3)">#e9ecf6</div></div>
+<div><div style="height: 44px; background: var(--ink-2)"></div><div style="margin-top: 6px">ink-2</div><div style="color: var(--ink-3)">#b7bdd3</div></div>
+<div><div style="height: 44px; background: var(--ink-3)"></div><div style="margin-top: 6px">ink-3 · 6.1:1</div><div style="color: var(--ink-3)">#8a92ad</div></div>
+<div><div style="height: 44px; background: var(--done)"></div><div style="margin-top: 6px">done</div><div style="color: var(--ink-3)">#7b84a1</div></div>
+<div><div style="height: 44px; background: var(--act)"></div><div style="margin-top: 6px">act · need</div><div style="color: var(--ink-3)">#f5a3c7</div></div>
+<div><div style="height: 44px; background: var(--live)"></div><div style="margin-top: 6px">live · green</div><div style="color: var(--ink-3)">#86d993</div></div>
+<div><div style="height: 44px; background: var(--ask)"></div><div style="margin-top: 6px">ask · yellow</div><div style="color: var(--ink-3)">#f0cf62</div></div>
+<div><div style="height: 44px; box-shadow: inset 0 0 0 2px var(--wait)"></div><div style="margin-top: 6px">wait</div><div style="color: var(--ink-3)">#aaa7ec</div></div>
+<div><div style="height: 44px; background: var(--bad)"></div><div style="margin-top: 6px">bad</div><div style="color: var(--ink-3)">#ff7b72</div></div>
+<div><div style="height: 44px; background: var(--p1)"></div><div style="margin-top: 6px">P1</div><div style="color: var(--ink-3)">#ff9e85</div></div>
+<div><div style="height: 44px; background: var(--p2)"></div><div style="margin-top: 6px">P2</div><div style="color: var(--ink-3)">#ecdc86</div></div>
+<div><div style="height: 44px; background: var(--p3); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">P3 · tag</div><div style="color: var(--ink-3)">#4a5687 · #d3cbf6</div></div>
+</div>
+<div style="margin-top: 26px; padding: 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div style="font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 44px; line-height: 0.95; letter-spacing: -0.02em"><span style="color: var(--need)">5</span> need you.</div>
+<div style="margin-top: 6px; font: 400 11px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">Archivo 800 · width 118% · one headline a page</div>
+<p style="margin: 16px 0 0; font-size: 15px; color: var(--ink-2)">IBM Plex Sans 15/1.5 for titles and the why under them.</p>
+<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline"><span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3)">Needs you 05</span><span style="font: 400 12px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">HOLO-231 · 16m / 25m · 9b27c4d</span></div>
+<div style="margin-top: 6px; font: 400 11px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">IBM Plex Mono for every id, time, count, label and button</div>
+</div>
+</section>
+
+<section class="t-dawn" aria-label="Dawn tokens" style="padding: 28px; background: var(--canvas); color: var(--ink); border: 1px solid var(--rule)">
+<div class="label">Dawn · light</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 12px; margin-top: 18px; font: 400 11px/1.4 'IBM Plex Mono', ui-monospace, monospace">
+<div><div style="height: 44px; background: var(--canvas); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">canvas</div><div style="color: var(--ink-3)">#eceaf3</div></div>
+<div><div style="height: 44px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">paper</div><div style="color: var(--ink-3)">#fbfafd</div></div>
+<div><div style="height: 44px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">paper-2 · hover</div><div style="color: var(--ink-3)">#f3f1f8</div></div>
+<div><div style="height: 44px; background: var(--rule)"></div><div style="margin-top: 6px">rule / rule-2</div><div style="color: var(--ink-3)">#d3d0e0 · #e5e3ee</div></div>
+<div><div style="height: 44px; background: var(--ink)"></div><div style="margin-top: 6px">ink</div><div style="color: var(--ink-3)">#171a2c</div></div>
+<div><div style="height: 44px; background: var(--ink-2)"></div><div style="margin-top: 6px">ink-2</div><div style="color: var(--ink-3)">#454b66</div></div>
+<div><div style="height: 44px; background: var(--ink-3)"></div><div style="margin-top: 6px">ink-3 · 5.8:1</div><div style="color: var(--ink-3)">#5f6580</div></div>
+<div><div style="height: 44px; background: var(--done)"></div><div style="margin-top: 6px">done · glyph only</div><div style="color: var(--ink-3)">#8b90a8</div></div>
+<div><div style="height: 44px; background: var(--act)"></div><div style="margin-top: 6px">act · need</div><div style="color: var(--ink-3)">#b02f6b</div></div>
+<div><div style="height: 44px; background: var(--live)"></div><div style="margin-top: 6px">live · green</div><div style="color: var(--ink-3)">#1f7a35</div></div>
+<div><div style="height: 44px; background: var(--ask)"></div><div style="margin-top: 6px">ask · yellow</div><div style="color: var(--ink-3)">#8a6500</div></div>
+<div><div style="height: 44px; box-shadow: inset 0 0 0 2px var(--wait)"></div><div style="margin-top: 6px">wait</div><div style="color: var(--ink-3)">#5653a6</div></div>
+<div><div style="height: 44px; background: var(--bad)"></div><div style="margin-top: 6px">bad</div><div style="color: var(--ink-3)">#c0321f</div></div>
+<div><div style="height: 44px; background: var(--p1)"></div><div style="margin-top: 6px">P1</div><div style="color: var(--ink-3)">#ffb199</div></div>
+<div><div style="height: 44px; background: var(--p2)"></div><div style="margin-top: 6px">P2</div><div style="color: var(--ink-3)">#eee38a</div></div>
+<div><div style="height: 44px; background: var(--p3); box-shadow: inset 0 0 0 1px var(--rule)"></div><div style="margin-top: 6px">P3 · tag</div><div style="color: var(--ink-3)">#c9c4dc · #e3dcfb</div></div>
+</div>
+<div style="margin-top: 26px; padding: 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div style="font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 44px; line-height: 0.95; letter-spacing: -0.02em"><span style="color: var(--need)">5</span> need you.</div>
+<div style="margin-top: 6px; font: 400 11px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">Dawn is a full theme, not a light-mode afterthought</div>
+<p style="margin: 16px 0 0; font-size: 15px; color: var(--ink-2)">IBM Plex Sans 15/1.5 for titles and the why under them.</p>
+<div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline"><span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3)">Needs you 05</span><span style="font: 400 12px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">HOLO-231 · 16m / 25m · 9b27c4d</span></div>
+<div style="margin-top: 6px; font: 400 11px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">Text pairs pass 4.5:1 on paper; done is a glyph colour, never text</div>
+</div>
+</section>
+</div>
+
+<section aria-label="Shape and motion" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; padding: 24px 28px; border: 1px solid var(--rule); background: var(--paper)">
+<div>
+<div class="label">Shape</div>
+<ul style="list-style: none; margin: 12px 0 0; padding: 0; font: 400 12.5px/1.8 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li>corners square · radius 0</li>
+<li>buttons clip one corner · 9px</li>
+<li>hairlines 1px · light shadows on cards and dialogs only</li>
+<li>one standard icon per state · 1.6 stroke</li>
+</ul>
+</div>
+<div>
+<div class="label">Motion</div>
+<ul style="list-style: none; margin: 12px 0 0; padding: 0; font: 400 12.5px/1.8 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li>ease cubic-bezier(.2, .7, .2, 1)</li>
+<li>150ms colour · 200ms fill wipe</li>
+<li>320ms stamp · 1.1s settle wash</li>
+<li>0.9s marching outline while in flight</li>
+<li>nothing shakes; stale is held still</li>
+</ul>
+</div>
+<div>
+<div class="label">Rules</div>
+<ul style="list-style: none; margin: 12px 0 0; padding: 0; font: 400 12.5px/1.8 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li>pink: you · green: live · yellow: asks you</li>
+<li>one filled primary per row or dialog</li>
+<li>no glow: colour and words carry state</li>
+<li>headers are flat: no gradient, a hairline under</li>
+<li>the main panel is the page; content sits in its own containers</li>
+<li>reduced motion stops every loop</li>
+</ul>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

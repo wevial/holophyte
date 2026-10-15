@@ -41,6 +41,7 @@ from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import boundary
+from holophyte.pr import mockup
 from holophyte.pr.pr_media import implementer_brief as _capture_brief
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
@@ -676,7 +677,8 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "work with a clear message. Stay strictly on-scope; do not "
             "expand the task. Commit messages carry no tool attribution or "
             "co-author lines for an AI." + orchestration
-            + _capture_brief(project, ticket, task_id) + blast_radius.BRIEF
+            + _capture_brief(project, ticket, task_id)
+            + mockup.implementer_brief(wt) + blast_radius.BRIEF
             + reproduce.BRIEF)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     if shadow and fresh and not conflicts and not opening and not steered:

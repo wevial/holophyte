@@ -369,7 +369,7 @@ export function hostItems(host: HostRecord<PollBodies>, now: number): AttentionI
 }
 
 /** Live and stale run counts for a host's card. */
-export function runCounts(status: Status): { active: number; stale: number } {
+export function runCounts(status: Pick<Status, "runs" | "thresholds">): { active: number; stale: number } {
   const threshold = status.thresholds.heartbeat_stale_ms;
   const stale = status.runs.filter((run) => isStale(run.heartbeat_age_ms, threshold)).length;
   return { active: status.runs.length - stale, stale };
