@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, medianRounds, minutesLabel, tagRows, withinDays } from "../src/lib/shipped";
+import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, medianRounds, minutesLabel, tagRows, todayMerges, withinDays } from "../src/lib/shipped";
 import type { ShippedBody } from "../src/lib/types";
 import { fixture } from "./harness";
 
@@ -18,6 +18,17 @@ test("the day is the viewer's local one: 23:30 UTC on the 4th is the 5th in Toky
   const late = { ...ROWS[0]!, ended_ms: Date.UTC(2026, 8, 4, 23, 30) };
   expect(groupByDay([late], threeDays.now, "UTC")[0]!.label).toBe("Yesterday · Fri Sep 4");
   expect(groupByDay([late], threeDays.now, "Asia/Tokyo")[0]!.label).toBe("Today · Sat Sep 5");
+});
+
+test("todayMerges keeps only the merges of now's day in the pinned zone", () => {
+  const now = Date.UTC(2026, 8, 5, 12, 0);
+  const row = (id: number, endedMs: number, outcome: string) => ({ ...ROWS[0]!, id, ended_ms: endedMs, outcome });
+  const rows = [
+    row(3, Date.UTC(2026, 8, 5, 9, 0), "failed"),
+    row(2, Date.UTC(2026, 8, 5, 0, 10), "merged"),
+    row(1, Date.UTC(2026, 8, 4, 23, 50), "merged"),
+  ];
+  expect(todayMerges(rows, now, "UTC").map((kept) => kept.id)).toEqual([2]);
 });
 
 test("the bar is ok at or under 80 %, warn above 80 % to 100 %, over past it; the delta signs and tones follow", () => {

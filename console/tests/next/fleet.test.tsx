@@ -34,6 +34,7 @@ function client(): QueryClient {
 
 afterEach(() => {
   cleanup();
+  window.location.hash = "";
   for (const made of clients.splice(0)) made.clear();
 });
 
@@ -151,6 +152,7 @@ test("a daemon that fails the next poll keeps its last good status beside the ne
 
 test("the new console's root names the daemon's host once its first poll answers, asking each route once", async () => {
   const { fetch, asked } = counting(peersFetch(ORIGIN, { [ORIGIN]: { status: { ...status, host: "writer-host" }, attention } }));
+  window.location.hash = "#/runs";
   const fake = fakeDeps(fetch);
   render(
     <QueryClientProvider client={client()}>
