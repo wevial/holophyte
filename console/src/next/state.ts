@@ -6,7 +6,7 @@ export type State =
   | "failed" | "question" | "paused" | "needs_you" | "stale" | "running" | "ready_to_merge"
   | "merged" | "queued" | "on_ci" | "parked" | "held" | "todo" | "backlog";
 
-/** HOLO-275's raw colour tokens, by name. */
+/** The theme's raw colour tokens, by name. */
 export type Tone = "bad" | "ask" | "need" | "live" | "wait" | "ink-2" | "ink-3";
 
 export const STATES: Record<State, { word: string; tone: Tone }> = {

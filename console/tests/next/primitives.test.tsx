@@ -44,6 +44,7 @@ test("a Section's label folds its children away and back, reporting each fold", 
   );
   const label = screen.getByRole("button", { name: "Needs you" });
   expect(screen.getByText("5")).toBeTruthy();
+  expect(screen.getByText("2 questions, 3 failed")).toBeTruthy();
   fireEvent.click(label);
   expect(label.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("HOLO-9 asks a question")).toBeNull();
