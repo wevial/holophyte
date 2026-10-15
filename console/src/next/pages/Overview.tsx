@@ -50,6 +50,8 @@ function FoldingSection({
   summary,
   empty,
   isEmpty = count === 0,
+  open = readOpen(id),
+  onFold,
   children,
 }: {
   id: string;
@@ -59,10 +61,17 @@ function FoldingSection({
   summary?: string;
   empty: string;
   isEmpty?: boolean;
+  open?: boolean;
+  onFold?: (open: boolean) => void;
   children?: ReactNode;
 }) {
   return (
-    <Section label={label} count={count} hot={hot} summary={summary} defaultOpen={readOpen(id)} onToggle={(open) => writeOpen(id, open)}>
+    <Section label={label} count={count} hot={hot} summary={summary} defaultOpen={open}
+      onToggle={(next) => {
+        writeOpen(id, next);
+        onFold?.(next);
+      }}
+    >
       {isEmpty ? <Empty>{empty}</Empty> : children}
     </Section>
   );
@@ -82,10 +91,12 @@ export function Overview() {
   const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
   const card = useRef<HTMLElement>(null);
   const [needMount, setNeedMount] = useState(0);
+  const [needOpen, setNeedOpen] = useState(() => readOpen("need"));
   const showNeed = (index: number) => {
     flushSync(() => {
-      if (!readOpen("need")) {
+      if (!needOpen) {
         writeOpen("need", true);
+        setNeedOpen(true);
         setNeedMount((count) => count + 1);
       }
       held.hold(index);
@@ -128,6 +139,8 @@ export function Overview() {
         <FoldingSection
           key={needMount}
           id="need"
+          open={needOpen}
+          onFold={setNeedOpen}
           label="Needs you"
           count={need}
           hot

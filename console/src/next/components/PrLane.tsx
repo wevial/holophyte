@@ -129,6 +129,7 @@ function PrLaneRow({
             now={host.status ? host.status.now + sinceSeen(host.seen_ms, now) : now}
             polls={polls}
             deps={deps}
+            runPage="/"
           />
           {host.status?.actions === true && <AskAction base={host.base} runId={run} prUrl={item.pr_url} polls={polls} deps={deps} />}
         </div>

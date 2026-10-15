@@ -129,6 +129,7 @@ test("an opened row shows its run's detail, and Ask only where the daemon takes 
   expect(rowButton(43).getAttribute("aria-expanded")).toBe("true");
   expect(within(row).getByRole("region", { name: "Pull request facts" })).toBeTruthy();
   expect(within(row).getByRole("button", { name: "Ask" })).toBeTruthy();
+  expect(within(row).getByRole("link", { name: "Open run 10" }).getAttribute("href")).toBe(`/#run=10&daemon=${encodeURIComponent(DEMO)}`);
   const details = seen.map((request) => request.url).filter((url) => /\/runs\/\d+$/.test(url));
   expect([...new Set(details)]).toEqual([`${DEMO}/runs/10`]);
   cleanup();
@@ -143,4 +144,31 @@ test("an opened row shows its run's detail, and Ask only where the daemon takes 
   const opened = rows()[2]!;
   expect(within(opened).getByRole("region", { name: "Pull request facts" })).toBeTruthy();
   expect(within(opened).queryByRole("button", { name: "Ask" })).toBeNull();
+});
+
+test("with storage refusing, the tag reopens a folded Needs you and focuses its card", async () => {
+  await mount({ items: [blocked, onCi, readyPark, threadPark] });
+  const storage = Object.getPrototypeOf(localStorage) as Storage;
+  const { getItem, setItem, removeItem } = storage;
+  const refuse = () => {
+    throw new DOMException("storage disabled", "SecurityError");
+  };
+  storage.getItem = storage.setItem = storage.removeItem = refuse;
+  try {
+    const needs = screen.getByRole("region", { name: "Needs you" });
+    await act(async () => {
+      fireEvent.click(within(needs).getByRole("button", { name: "Needs you" }));
+      await settle();
+    });
+    expect(screen.queryByRole("article", { name: "Focus" })).toBeNull();
+    await act(async () => {
+      fireEvent.click(within(section()).getByRole("button", { name: "Show DEMO-9 in Needs you" }));
+      await settle();
+    });
+    const card = screen.getByRole("article", { name: "Focus" });
+    expect(card.getAttribute("data-focus")).toBe("DEMO-9");
+    expect(document.activeElement).toBe(card);
+  } finally {
+    Object.assign(storage, { getItem, setItem, removeItem });
+  }
 });
