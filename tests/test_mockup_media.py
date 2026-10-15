@@ -244,15 +244,17 @@ class FetchTests(LoopFixture):
              "/mockups/huge.png": png(oversized),
              "/mockups/good.png": png(PNG + b"good")},
             ["BASE/missing.png", "BASE/page.png", "BASE/huge.png",
-             "BASE/good.png"])
+             "BASE/board\u20131.png", "BASE/good.png"])
 
         self.assertEqual(self.events(), [
             f"mock-up: {base}/missing.png not fetched: HTTP 404",
             f"mock-up: {base}/page.png not fetched: served as text/html, "
             "not image/png",
             f"mock-up: {base}/huge.png not fetched: larger than 10 MB",
+            f"mock-up: {base}/board\u20131.png not fetched: cannot be "
+            "requested (UnicodeEncodeError)",
             "mock-up: 1 snapshots and 0 bundles (0 boards) in .holophyte/mockup"])
-        self.assertEqual((self.wt / ".holophyte/mockup/04.png").read_bytes(),
+        self.assertEqual((self.wt / ".holophyte/mockup/05.png").read_bytes(),
                          PNG + b"good")
 
     def test_a_hostile_bundle_or_redirect_is_skipped_and_writes_nothing_outside(self):
@@ -320,8 +322,9 @@ class ImplementTurnTests(LoopFixture):
         turn = self.run_major([])
         self.assertEqual(turn.role, "implement")
         self.assertNotIn("Match it: layout, copy, states", turn.goal)
-        self.assertEqual(self.events(), [mockup.NO_MEDIA])
-        self.assertIn("no snapshot or bundle", mockup.NO_MEDIA)
+        self.assertEqual(self.events(), [
+            "mock-up: no snapshot or bundle; the implementer has only the "
+            "design link, which it cannot open"])
 
     def test_the_first_implement_goal_lists_the_downloaded_design(self):
         turn = self.run_major(

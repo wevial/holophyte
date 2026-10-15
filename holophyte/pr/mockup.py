@@ -1,4 +1,5 @@
 """The approved mock-up's snapshots and bundles, fetched into the task worktree."""
+import http.client
 import io
 import json
 import os
@@ -238,6 +239,10 @@ def _download(link, base):
         raise Refused(f"HTTP {error.code}") from None
     except (URLError, OSError) as error:
         raise Refused(str(getattr(error, "reason", error))) from None
+    except (ValueError, http.client.HTTPException) as error:
+        raise Refused(f"cannot be requested ({type(error).__name__})") from None
+    if length.isdigit() and len(data) != int(length):
+        raise Refused(f"ended after {len(data)} of {length} bytes")
     if not data.startswith(signature):
         raise Refused(f"does not start with the {content_type} signature")
     return bytes(data)
@@ -295,9 +300,8 @@ def _extract(bundle, info, directory, budget):
 
 def implementer_brief(wt):
     directory = Path(wt) / DIRECTORY
-    if directory.parent.is_symlink() or directory.is_symlink():
-        return ""
     try:
+        _refuse_unsafe(Path(wt))
         items = json.loads((directory / "manifest.json").read_text())["items"]
         images = [f"- `{item['path']}`: {item['caption']}" for item in items
                   if item["kind"] == "snapshot"]
@@ -306,7 +310,8 @@ def implementer_brief(wt):
                    for path in item["images"]]
         boards = [f"- `{path}`: {item['caption']}" for item in bundles
                   for path in item["boards"]]
-    except (OSError, ValueError, KeyError, TypeError):
+    except (Refused, OSError, subprocess.CalledProcessError, ValueError,
+            KeyError, TypeError):
         return ""
     if not images and not boards:
         return ""
