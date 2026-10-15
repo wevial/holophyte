@@ -6,7 +6,7 @@ import { PollDepsContext } from "./scope";
 
 /** One post: `route` for `label` on the daemon whose project answers at
  *  `base`, and the sentence the toast says when the daemon takes it. */
-export interface ActionPost {
+interface ActionPost {
   label: string;
   base: string;
   route: string;
