@@ -95,7 +95,7 @@ test("a body off the generated contract marks its record with the endpoint and p
   expect(origin).toMatchObject({ contract_error: true, status: null });
   expect(origin!.error).toBe(`Response contract mismatch: ${ORIGIN}/status at queued`);
   expect(peer).toMatchObject({ contract_error: true, status: null });
-  expect(peer!.error).toStartWith(`Response contract mismatch: ${PEER}/attention at items.0`);
+  expect(peer!.error).toBe(`Response contract mismatch: ${PEER}/attention at items.0.kind`);
 
   const classic = await pollDaemon(ORIGIN, fetch);
   expect(classic.kind).toBe("project");
