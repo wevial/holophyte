@@ -652,6 +652,7 @@ class StuckWait:
     ticketUrl: str | None
     title: str
     boardState: str | None
+    boardColumn: str | None
     dependency: str
     dependencyState: str
     reason: str | None
@@ -667,6 +668,7 @@ class _WaitRow:
     url: str | None
     title: str
     boardState: str | None
+    boardColumn: str | None
     status: str
     dependsOn: tuple[str, ...]
     activeRunId: int | None
@@ -715,11 +717,12 @@ def _queued_behind(ticket, waiting):
 
 
 def stuck_waits(conn):
-    rows = [_WaitRow(*row[:8], tuple(json.loads(row[8])), *row[9:])
+    rows = [_WaitRow(*row[:9], tuple(json.loads(row[9])), *row[10:])
             for row in conn.execute(
                 "SELECT t.id, t.projectId, t.linearIssueId, t.linearIdentifier,"
-                " t.url, t.title, t.boardState, t.status, t.dependsOn,"
-                " t.activeRunId, t.blockedQuestion, r.prUrl, r.parkKind,"
+                " t.url, t.title, t.boardState, t.boardColumn, t.status,"
+                " t.dependsOn, t.activeRunId, t.blockedQuestion, r.prUrl,"
+                " r.parkKind,"
                 " r.outcome, r.outcomeReason FROM tickets t"
                 " LEFT JOIN runs r ON r.id = t.lastRunId"
                 " ORDER BY t.linearIdentifier")]
@@ -739,7 +742,8 @@ def stuck_waits(conn):
         waits.append(StuckWait(
             linearIdentifier=ticket.identifier, ticketUrl=ticket.url,
             title=ticket.title, boardState=ticket.boardState,
-            dependency=dep.identifier, dependencyState=state,
+            boardColumn=ticket.boardColumn, dependency=dep.identifier,
+            dependencyState=state,
             reason=_stuck_reason(conn, dep, state),
             behind=_queued_behind(ticket, waiting)))
     return waits

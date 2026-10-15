@@ -210,7 +210,8 @@ def stuck_wait_items(conn):
              "dependency_state": wait.dependencyState,
              "reason": reason_line(wait.reason), "behind": wait.behind}
             for wait in store.read.stuck_waits(conn)
-            if wait.boardState not in ("Backlog", "Canceled", "Done")]
+            if wait.boardState not in ("Backlog", "Canceled", "Done")
+            and wait.boardColumn != "backlog"]
 
 
 def reason_line(text):

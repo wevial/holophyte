@@ -11,6 +11,7 @@ import holophyte.host.supervisor
 import holophyte.serve.serve_actions
 import linear_provider
 import store
+import store.board
 import store.read
 import store.tickets
 from holophyte.loop.failure_triage import triage_failure
@@ -18,6 +19,7 @@ from provider import LinearBoard
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
+from tests.test_provider import ticket_body
 from tests.test_status import file_stuck_wait
 
 
@@ -580,4 +582,17 @@ class StuckWaitStatesTests(ServeTestCase):
             acceptance_criteria=[], verification_commands=[])
         shelved = self.wait_on("NAT-10", "NAT-9")
         store.set_board_state(self.conn, shelved, "Backlog")
+        self.assertEqual(self.stuck_waits(), {})
+
+    def test_a_wait_filed_into_the_native_backlog_column_is_no_stuck_wait(self):
+        store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="issue-NAT-1",
+            linear_identifier="NAT-1", title="ticket NAT-1",
+            acceptance_criteria=[], verification_commands=[])
+        text = ticket_body("shelved", verify="echo ok").replace("Depends on: none",
+                                              "Depends on: NAT-1")
+        shelved = store.board.file_ticket(self.conn, self.project_id, "SHELF",
+                                          text, column="backlog")
+        self.assertEqual(store.read.ticket_by_identifier(
+            self.conn, shelved).status, "blocked_on_deps")
         self.assertEqual(self.stuck_waits(), {})
