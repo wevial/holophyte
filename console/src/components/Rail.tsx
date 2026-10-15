@@ -140,6 +140,9 @@ export function Rail({
             poll failed: {error}
           </p>
         ))}
+        <a href="/next.html" className="px-2 font-mono text-[11px] text-rail-faint hover:text-rail-fg">
+          Try the new console
+        </a>
         <ThemeToggle theme={theme} onChange={onTheme} />
       </div>
     </nav>

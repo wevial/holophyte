@@ -40,7 +40,7 @@ function keepPublic(files: Set<string>): Bun.BunPlugin {
   };
 }
 
-// Bundles index.html (and the script and stylesheet it references) into
+// Bundles both pages (and the scripts and stylesheets they reference) into
 // `outdir`, copies `public/` (icons, manifest) in unchanged and writes the
 // stamp. Returns the emitted and copied paths relative to `outdir` so
 // callers can report or inspect them; throws with the bundler's logs on
@@ -49,7 +49,7 @@ export async function buildConsole(outdir: string = `${here}dist/`): Promise<str
   const tree = sourceTree();
   const files = await publicFiles();
   const result = await Bun.build({
-    entrypoints: [`${here}index.html`],
+    entrypoints: [`${here}index.html`, `${here}next.html`],
     outdir,
     plugins: [tailwind, keepPublic(files)],
     minify: true,
