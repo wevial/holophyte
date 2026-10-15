@@ -9,14 +9,19 @@ import stat
 import subprocess
 import tempfile
 import threading
-import time
 import zipfile
 import zlib
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import (
+    HTTPHandler,
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    Request,
+    build_opener,
+)
 
 import store
 import ticket_template
@@ -71,7 +76,15 @@ def _caption(line, url):
     end = line.find(f"]({url})")
     start = line.rfind("[", 0, max(end, 0))
     caption = line[start + 1:end].strip() if end >= 0 and start >= 0 else ""
-    return caption or unquote(urlsplit(url).path.rsplit("/", 1)[-1])
+    parts = _split(url)
+    return caption or unquote((parts.path if parts else url).rsplit("/", 1)[-1])
+
+
+def _split(url):
+    try:
+        return urlsplit(url)
+    except ValueError:
+        return None
 
 
 def _public_base(cfg):
@@ -79,9 +92,9 @@ def _public_base(cfg):
 
 
 def _under(url, base):
-    if not url.startswith(base + "/"):
+    rest = _split(url)
+    if rest is None or not url.startswith(base + "/"):
         return False
-    rest = urlsplit(url[len(base):])
     return not rest.query and not rest.fragment and not {".", ".."} & {
         unquote(part) for part in rest.path.split("/")}
 
@@ -166,7 +179,7 @@ def _rebuild(root, links, base, warn):
         for number, link in enumerate(links, 1):
             try:
                 items.append(_fetch_one(staging, number, link, base))
-            except Refused as why:
+            except (Refused, ValueError) as why:
                 warn(f"mock-up: {link.url} not fetched: {why}")
         (staging / "manifest.json").write_text(
             json.dumps({"items": items}, indent=2) + "\n")
@@ -221,27 +234,24 @@ class _StayUnder(HTTPRedirectHandler):
 
 def _download(link, base):
     content_type, signature, cap_mb = KINDS[link.kind]
-    cap, deadline = cap_mb * MB, time.monotonic() + TIMEOUT_S
-    expired = threading.Event()
+    watch = _Watch()
+    timer = threading.Timer(TIMEOUT_S, watch.expire)
+    timer.start()
     try:
-        with build_opener(_StayUnder(base)).open(
+        with build_opener(_StayUnder(base), _HTTP(watch), _HTTPS(watch)).open(
                 Request(link.url), timeout=TIMEOUT_S) as response:
-            timer = threading.Timer(max(deadline - time.monotonic(), 0),
-                                    _expire, (response, expired))
-            timer.start()
-            try:
-                data, length = _receive(response, link, cap, expired)
-            finally:
-                timer.cancel()
+            data, length = _receive(response, link, cap_mb * MB, watch.expired)
     except HTTPError as error:
         raise Refused(f"HTTP {error.code}") from None
     except (URLError, OSError, ValueError, http.client.HTTPException) as error:
-        if expired.is_set():
+        if watch.expired.is_set():
             raise Refused(f"took longer than {TIMEOUT_S} s") from None
         if isinstance(error, (URLError, OSError)):
             raise Refused(str(getattr(error, "reason", error))) from None
         raise Refused(f"cannot be requested ({type(error).__name__})") from None
-    if expired.is_set():
+    finally:
+        timer.cancel()
+    if watch.expired.is_set():
         raise Refused(f"took longer than {TIMEOUT_S} s")
     if length.isdigit() and len(data) != int(length):
         raise Refused(f"ended after {len(data)} of {length} bytes")
@@ -250,14 +260,56 @@ def _download(link, base):
     return bytes(data)
 
 
-def _expire(response, expired):
-    expired.set()
-    sock = getattr(getattr(response.fp, "raw", None), "_sock", None)
-    if sock is not None:
-        try:
-            sock.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
+class _Watch:
+    def __init__(self):
+        self.expired, self.lock, self.sockets = threading.Event(), threading.Lock(), []
+
+    def connection(self, base_class):
+        watch = self
+
+        class Connection(base_class):
+            def connect(self):
+                super().connect()
+                watch.add(self.sock)
+        return Connection
+
+    def add(self, sock):
+        with self.lock:
+            self.sockets.append(sock)
+            if self.expired.is_set():
+                _shutdown(sock)
+
+    def expire(self):
+        with self.lock:
+            self.expired.set()
+            for sock in self.sockets:
+                _shutdown(sock)
+
+
+def _shutdown(sock):
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+class _HTTP(HTTPHandler):
+    def __init__(self, watch):
+        super().__init__()
+        self.watch = watch
+
+    def http_open(self, req):
+        return self.do_open(self.watch.connection(http.client.HTTPConnection), req)
+
+
+class _HTTPS(HTTPSHandler):
+    def __init__(self, watch):
+        super().__init__()
+        self.watch = watch
+
+    def https_open(self, req):
+        return self.do_open(self.watch.connection(http.client.HTTPSConnection),
+                            req, context=self._context)
 
 
 def _receive(response, link, cap, expired):

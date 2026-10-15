@@ -91,8 +91,8 @@ BOARDS = {"project/canvas.json": b'{"boards": ["17-1", "17-2"]}',
 
 @contextmanager
 def media_server(routes):
-    """Serve `routes`, a path to (status, headers, body or a writer of it);
-    every other path is 404."""
+    """Serve `routes`, a path to (status, headers, body or a writer of it), or
+    to (None, {}, a writer of the raw response); every other path is 404."""
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -100,6 +100,8 @@ def media_server(routes):
             requests.append(self.path)
             status, headers, payload = routes.get(self.path, (404, {}, b""))
             try:
+                if status is None:
+                    return payload(self.wfile)
                 self.send_response(status)
                 for name, value in headers.items():
                     self.send_header(name, value)
@@ -175,6 +177,11 @@ class FilingTests(LoopFixture):
         self.assertEqual(self.problems(f"{design}\n\n![Board]({foreign})"), [
             "'## Mock-up' media link is not under the project's media bucket "
             f"(public_base {BASE}): {foreign}"])
+
+    def test_a_bracketed_path_under_the_bucket_files(self):
+        self.configure(merge_toml(BASE))
+        self.assertEqual(self.problems(
+            f"{ARTIFACT}\n\n{APPROVAL}\n\n![Board]({BASE}//[board/a.png)"), [])
 
     def test_the_repo_check_prints_the_refusal_and_exits_1(self):
         self.configure(merge_toml(BASE))
@@ -284,6 +291,35 @@ class FetchTests(MockupEventsFixture):
         self.assertEqual(self.events()[0],
                          f"mock-up: {base}/slow.png not fetched: took longer "
                          "than 0.3 s")
+        self.assertEqual((self.wt / ".holophyte/mockup/02.png").read_bytes(),
+                         PNG + b"good")
+
+    def test_trickling_headers_are_cut_off_at_the_deadline(self):
+        def trickle(stream):
+            stream.write(b"HTTP/1.0 200 OK\r\nContent-Type: image/png\r\nX-Slow: ")
+            for _ in range(60):
+                stream.write(b"x")
+                stream.flush()
+                time.sleep(0.05)
+
+        started = time.monotonic()
+        with patch.object(mockup, "TIMEOUT_S", 0.3):
+            base = self.fetch({"/mockups/slow.png": (None, {}, trickle),
+                               "/mockups/good.png": png(PNG + b"good")},
+                              ["BASE/slow.png", "BASE/good.png"])
+            elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 2)
+        self.assertEqual(self.events()[0],
+                         f"mock-up: {base}/slow.png not fetched: took longer "
+                         "than 0.3 s")
+        self.assertTrue((self.wt / ".holophyte/mockup/02.png").exists())
+
+    def test_a_bracketed_path_is_one_failed_link_not_a_failed_fetch(self):
+        base = self.fetch({"/mockups/good.png": png(PNG + b"good")},
+                          ["BASE//[board/a.png", "BASE/good.png"])
+        self.assertEqual(self.events()[0],
+                         f"mock-up: {base}//[board/a.png not fetched: HTTP 404")
         self.assertEqual((self.wt / ".holophyte/mockup/02.png").read_bytes(),
                          PNG + b"good")
 
