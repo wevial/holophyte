@@ -157,6 +157,12 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
+- `holophyte/agents/claude_stream.py` — a streaming Claude turn read line by
+  line, its `result` lines kept, and a turn quiet for `turn_quiet_sec` ended as
+  stalled.
+- `holophyte/agents/turn_progress.py` — a streaming Claude turn's tool calls
+  counted and labelled, recorded as a `turn_progress` event at most once a
+  minute.
 - `holophyte/review/briefs.py` — the scope, criteria, tests, trim and evidence
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
@@ -448,11 +454,18 @@ Each module, one line:
   media publishing and evidence shared by PR descriptions and review prompts.
   See [merge configuration](config.md#merge) for capture commands, destinations
   and size limits.
+- `holophyte/pr/evidence_refresh.py` — before the covering review of a
+  babysit fix, writing the capture at the fix head into the pull request's
+  Evidence section, or marking its earlier images stale when that capture
+  failed, and the ledger note recording which.
 - `holophyte/pr/mockup.py` — a ticket's `## Mock-up` media links: the
   filing checks against `[merge.media_bucket] public_base`, the download of
   each `.png` snapshot and `.zip` bundle into the task worktree's ignored
   `.holophyte/mockup/` with its `manifest.json`, and the implementer's brief
-  that lists them.
+  that lists them. `review_carry` names that directory and
+  `.holophyte/captured/` (the PNGs of the last UI capture) for every review
+  workspace to copy read-only, and `reviewer_brief` lists both with the
+  reviewer's design-match check.
 - `holophyte/capture_playwright.py` — a standalone Playwright capture runner a
   project can name as `[merge] ui_capture`: it runs the ticket's spec from a
   capture directory through a generated config that imports the project's
@@ -534,6 +547,11 @@ Each module, one line:
   rounds per babysit, up to `[merge] check_fix_rounds`: the brief with each
   failed Actions job's failure lines and log tail, the round's event and
   ledger line, and the park on a repeated failure or spent rounds.
+- `holophyte/babysit/capture_fix.py` — the capture fix round before the
+  covering review of a babysit fix whose capture from a local spec failed,
+  up to `[merge] capture_fix_rounds`: the brief with the missing views,
+  failing lines and capture log tail, the round's event and ledger line, the
+  capture again at the round's head, and the park when it still fails.
 - `holophyte/babysit/check_failures.py` — a job log's failure lines (test
   failure headers and error lines), their normalized signature, and the
   test whether a red read repeats a failure an earlier round was handed.
@@ -836,6 +854,9 @@ the one poll. Every body is parsed with the generated schemas in
 fails at the fetch with a contract error naming the endpoint and field. A
 view that reads another route adds its own query keyed by the daemon base
 and the path, parsed with that route's generated schema.
+An action is a mutation, `useAction()` in `console/src/next/actions.ts`:
+when the daemon takes it, it invalidates the fleet query and every route
+query of that daemon base, so the view re-reads at once, not at the next poll.
 
 The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
 sets that scope. Its rows come from `switcherRows()` in

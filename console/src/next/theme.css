@@ -205,36 +205,45 @@ body {
 }
 
 @theme static {
-  --ease-console: cubic-bezier(0.2, 0, 0, 1);
+  --ease-console: cubic-bezier(.2, .7, .2, 1);
   --motion-colour: 150ms;
   --motion-wipe: 200ms;
   --motion-march: 0.9s;
 }
 
 @keyframes state-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { transform: scale(0.84); stroke-opacity: 0.3; }
 }
 
 @keyframes state-march {
-  to { stroke-dashoffset: -9; }
+  to { stroke-dashoffset: -2; }
+}
+
+@keyframes toast-in {
+  from { transform: translateY(12px); }
+}
+
+.toast-in {
+  animation: toast-in 280ms var(--ease-console);
 }
 
 @keyframes edge-march {
-  to { background-position: 14.14px 0; }
+  to { background-position: 2px 0, -2px 100%, 0 -2px, 100% 2px; }
 }
 
 .state-pulse {
-  animation: state-pulse 1.8s var(--ease-console) infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: state-pulse 2.6s ease-in-out infinite;
 }
 
 .state-march {
+  stroke-dasharray: 1 1;
   animation: state-march var(--motion-march) linear infinite;
 }
 
-/* The edge layer shows through a 1px inset face, so the clipped corner keeps its border. */
+/* The clip cuts the inset edge off the corner, so ::after draws the diagonal back. */
 .btn {
-  --btn-corner: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -245,8 +254,9 @@ body {
   font-size: 14px;
   font-weight: 600;
   color: var(--btn-ink);
-  background: var(--btn-edge);
-  clip-path: var(--btn-corner);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--btn-edge);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
   isolation: isolate;
   transition: color var(--motion-colour) var(--ease-console);
 }
@@ -254,11 +264,21 @@ body {
 .btn::before {
   content: "";
   position: absolute;
-  inset: 1px;
+  inset: 0;
   z-index: -1;
-  clip-path: polygon(0 0, calc(100% - 8.6px) 0, 100% 8.6px, 100% 100%, 0 100%);
   background: linear-gradient(var(--btn-wipe), var(--btn-wipe)) no-repeat left / 0% 100%, var(--btn-face);
   transition: background-size var(--motion-wipe) var(--ease-console);
+}
+
+.btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(to bottom left, transparent calc(50% - 0.7px), var(--btn-edge) calc(50% - 0.7px),
+    var(--btn-edge) calc(50% + 0.7px), transparent calc(50% + 0.7px));
 }
 
 .btn:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible) {
@@ -269,37 +289,56 @@ body {
   background-size: 100% 100%, auto;
 }
 
+.btn:is([data-variant="primary"], [data-variant="danger-fill"]):not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible) {
+  filter: brightness(1.08);
+}
+
 .btn[data-variant="primary"] {
   --btn-edge: var(--act); --btn-face: var(--act); --btn-ink: var(--act-ink);
-  --btn-wipe: color-mix(in srgb, var(--act) 80%, var(--ink)); --btn-wipe-ink: var(--act-ink);
+  --btn-wipe: var(--act); --btn-wipe-ink: var(--act-ink);
 }
 
 .btn[data-variant="quiet"] {
-  --btn-edge: var(--rule); --btn-face: var(--paper); --btn-ink: var(--ink);
-  --btn-wipe: var(--paper-2); --btn-wipe-ink: var(--ink);
+  --btn-edge: var(--ink-3); --btn-face: transparent; --btn-ink: var(--ink);
+  --btn-wipe: var(--ink-3); --btn-wipe-ink: var(--paper);
 }
 
 .btn[data-variant="danger"] {
-  --btn-edge: var(--bad); --btn-face: var(--paper); --btn-ink: var(--bad);
+  --btn-edge: var(--bad); --btn-face: transparent; --btn-ink: var(--bad);
   --btn-wipe: var(--bad); --btn-wipe-ink: var(--bad-ink);
 }
 
 .btn[data-variant="danger-fill"] {
   --btn-edge: var(--bad); --btn-face: var(--bad); --btn-ink: var(--bad-ink);
-  --btn-wipe: color-mix(in srgb, var(--bad) 80%, var(--ink)); --btn-wipe-ink: var(--bad-ink);
+  --btn-wipe: var(--bad); --btn-wipe-ink: var(--bad-ink);
 }
 
 .btn[aria-busy="true"] {
-  --btn-face: var(--paper);
-  --btn-ink: var(--ink-2);
-  background: repeating-linear-gradient(45deg, var(--ink-3) 0 5px, transparent 5px 10px);
+  color: var(--btn-edge);
+  box-shadow: none;
+  clip-path: none;
+  background-image:
+    linear-gradient(90deg, var(--btn-edge) 50%, transparent 0), linear-gradient(90deg, var(--btn-edge) 50%, transparent 0),
+    linear-gradient(0deg, var(--btn-edge) 50%, transparent 0), linear-gradient(0deg, var(--btn-edge) 50%, transparent 0);
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-size: 2px 1px, 2px 1px, 1px 2px, 1px 2px;
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
   animation: edge-march var(--motion-march) linear infinite;
   cursor: progress;
 }
 
 .btn:disabled {
-  --btn-edge: var(--rule-2); --btn-face: var(--paper-2); --btn-ink: var(--ink-3);
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn[data-variant="primary"]:disabled {
+  color: var(--btn-edge);
+}
+
+.btn:is([aria-busy="true"], :disabled)::before,
+.btn[aria-busy="true"]::after {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

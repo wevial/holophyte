@@ -727,7 +727,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
             '[merge]\nmode = "pr"\napprove = "auto"\nui_paths = ["ui/**"]\n'
             'covering_fix_rounds = 0\n'
             f"ui_capture = '{shlex.join([sys.executable, str(script)])}'\n"
-            "ui_capture_local = true\n")
+            "ui_capture_local = true\ncapture_fix_rounds = 0\n")
         self.conn = open_store(self.project)
         self.addCleanup(self.conn.close)
         store.init(self.conn)
@@ -775,6 +775,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
               patch.object(pr_media, "_publish_git", publish),
               patch.object(github, "push_branch"),
               patch.object(github, "rest", return_value={"body": "Load."}),
+              patch.object(github, "edit_pr_body"),
               patch.object(holophyte.pr.pullrequest, "refresh_pr_text"),
               patch.object(babysitter, "_post") as self.posted):
             yield

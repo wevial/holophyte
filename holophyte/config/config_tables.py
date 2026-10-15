@@ -300,7 +300,7 @@ MERGE_KEYS = {
     "pr_quiet_sec": 300,
     "check_wait_sec": None,  # Resolved from github.CHECK_WAIT_S by merge_config.
     "missing_check_sec": 600, "retrigger_missing_checks": False,
-    "route_retry_sec": 900, "check_fix_rounds": 2,
+    "route_retry_sec": 900, "check_fix_rounds": 2, "capture_fix_rounds": 1,
     "require_up_to_date": True,
     "pr_style": "", "pr_changes_log": False, "review_fixes": False,
     "covering_fix_rounds": 2,
@@ -328,7 +328,8 @@ MERGE_INT_FLOORS = {"pr_rounds": 1, "pr_main_refreshes": 1,
                     "pr_poll_sec": PR_POLL_FLOOR,
                     "pr_quiet_sec": 0, "check_wait_sec": 1,
                     "missing_check_sec": 1, "route_retry_sec": 1,
-                    "check_fix_rounds": 1, "covering_fix_rounds": 0}
+                    "check_fix_rounds": 1, "capture_fix_rounds": 0,
+                    "covering_fix_rounds": 0}
 
 
 def merge_config(project):

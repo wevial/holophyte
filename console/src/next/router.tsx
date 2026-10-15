@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { Sidebar } from "./components/Sidebar";
+import { ToastProvider } from "./components/Toast";
 import { useFleet } from "./fleet";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
@@ -17,12 +18,14 @@ import { PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
-      <Sidebar />
-      <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
-        <Outlet />
-      </main>
-    </div>
+    <ToastProvider>
+      <div className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
+        <Sidebar />
+        <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
+          <Outlet />
+        </main>
+      </div>
+    </ToastProvider>
   );
 }
 

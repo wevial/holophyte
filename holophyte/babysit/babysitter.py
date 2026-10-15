@@ -513,6 +513,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                 reviewed, beat_s, pull, ticket, verify_cmd, contracts,
                 criteria=(), fix_note=None, budget_min=None, *, fix_context="",
                 notes=()):
+    from holophyte.babysit.capture_fix import fix_capture
     from holophyte.loop.review_round import set_phase
     from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
     set_phase(conn, run_id, "verifying", f"verify the fix at {sha[:12]}"
@@ -541,6 +542,9 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, reason, (),
                     reviewed=reviewed)
+    sha = fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
+                      reviewed, beat_s, pull, ticket, verify_cmd, contracts,
+                      budget_min, notes)
     if not _fixes_reviewed(merge):
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)

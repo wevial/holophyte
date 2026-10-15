@@ -205,7 +205,8 @@ class ShadowDocsTests(unittest.TestCase):
             holophyte.config.checks.check_config(target)
             seat = holophyte.agents.harness.shadow_seat(target)
         self.assertEqual(seat.turn("goal")[4:], [
-            "--model", "sonnet", "--effort", "high", "--output-format", "json",
+            "--model", "sonnet", "--effort", "high",
+            "--output-format", "stream-json", "--verbose",
             "goal"])
         self.assertIn("git branch --list 'shadow/*'", document)
         self.assertIn("git branch -D shadow/SLUG", document)

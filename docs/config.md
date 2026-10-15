@@ -86,6 +86,7 @@ implementer's command and isolation settings.
 | `implementer_session` | Default: absent (disabled) | Regular expression string with exactly one capture group containing the session id. Refused beside a table implementer, whose adapter records the session. |
 | `budget_scale` | Default: `1.0` | Finite number from 1.0 to 3.0; increase for a slower implementer harness. |
 | `turn_cap_min` | Default: `90` minutes | Integer of at least 1; the ceiling on any one implement, fix or babysit turn, scaled by `budget_scale`. An implement turn is armed with its ticket's box less the run's agent work so far, floored at ten minutes (or the box, if smaller), and never past this ceiling. A timed-out turn names the limit that fired, this cap or the ticket's box, and records a `turn_timeout` run event with its `role`, `limit` (`turn_cap` or `time_box`) and armed `seconds`. |
+| `turn_quiet_sec` | Default: `900` seconds | Integer of at least 0, not scaled by `budget_scale`; `0` turns the watchdog off. A Claude harness implement or trim turn (`[agents.implementer]`, `implementer_profiles` or `[agents.trimmer]` with `harness = "claude"`) runs with `--output-format stream-json --verbose`, and one that prints no stream line for this long is killed as stalled. It records a `turn_stalled` run event with its `role`, `quiet_s`, `lines` and `last_tool`, keeps its edits as a `WIP: implementer stalled mid-edit` commit, and fails the run as `infra`, with no fallback. While it runs, such a turn records a narrative `turn_progress` run event with its tool-call count and the latest call's label, on its first tool call and then at most once a minute. Opaque command strings get no watchdog. |
 | `implementer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup implementer. |
 | `reviewer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary, or a non-empty list of them; set for a probed backup reviewer. A list is probed in order when the primary fails, and the first entry that passes is recorded and used. |
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
@@ -905,6 +906,7 @@ the text. Removing a matching line is never refused.
 | `missing_check_sec` | Default: `600` seconds | Integer at least 1; how long a status check the base branch's ruleset requires may report nothing on the pull request's head before the babysitter stops waiting for it. Checks that reported and are merely slow wait for `check_wait_sec` instead. |
 | `route_retry_sec` | Default: `900` seconds | Integer at least 1; how long a run parked as a `route` outage waits before the host wakes it to ask the adjudicator again, whatever `pr_poll_sec` says. A babysit thread pass parks that way when its adjudicator command exits non-zero (a provider limit line is quoted in the reason) or gives no verdict for any thread; nothing is posted on the judged threads. A turn that fails again parks again. |
 | `check_fix_rounds` | Default: `2` | Integer at least 1; the most check fix turns one babysit pass runs on red checks. After a fix turn's commit goes red again, another round runs only when the failure is new: its failure lines (test failure headers and error lines read from the whole job logs, normalized for timestamps, durations, retries and digests) are not all lines an earlier round was handed. A repeated failure, or a new one once the rounds are used up, parks the run. `1` runs one fix turn, then parks. |
+| `capture_fix_rounds` | Default: `1` | Integer at least 0; the most capture fix rounds one run runs. On a project with `ui_capture_local = true`, when the UI capture at a babysit fix head exits nonzero, times out, writes no media or saves fewer views than the ticket declares, a capture fix turn runs before the covering review, handed the failure, the views not captured, the failing Playwright lines and the end of the capture log, and the capture runs again at the turn's head. If that capture still fails, the run parks without a covering review. A capture that fails to publish (upload, credentials) gets no round. `0` sends a failed capture straight to the covering review. |
 | `retrigger_missing_checks` | Default: `false` | Boolean; set to `true` to push one empty commit ("Retrigger missing checks: NAMES") to the candidate branch when a required check has reported nothing for `missing_check_sec`, then keep waiting on the new head. Otherwise, or when the check still reports nothing on that new head, the run parks naming the missing checks. |
 | `require_up_to_date` | Default: `true` | Boolean; under `mode = "pr"` the factory refuses to merge a candidate that does not hold the fetched tip of `main`, and parks it as behind main. Set to `false` only on a repository that does not require branches to be up to date before merging: the refusal is skipped and GitHub's own merge rules decide, so a conflicting merge is still refused. Non-boolean values are a startup error naming the key. |
 | `pr_changes_log` | Default: `false` | Boolean; set to `true` to retain an ordered "Changes since first review" list across approved fix rounds. Otherwise the next successful description refresh removes any existing list, preserving Evidence, the Linear line and appended blocks. Non-boolean values are a startup error naming the key. |
@@ -1144,7 +1146,18 @@ and the brief names the spec `<ui_capture_dir>/<ticket key>.capture.ts`, which
 stays in the worktree and is never committed. A change to the local spec the
 capture would run reruns the capture at the same commit and counts as
 fix-round progress. Numbered images receive state captions; missing images
-are marked "not captured" in the PR and reviewer prompt.
+are marked "not captured" in the PR and reviewer prompt. A capture fails when
+its command exits nonzero or times out, when it writes no media, or, for a
+ticket that lists states, when it exits 0 without an `NN-` image for every
+state; its section then opens with "The UI capture saved N of M views; not
+captured: …", and its media is published beside the ticket's earlier media
+(`pr-media/<ticket>-<head>`, or `<ticket>-<head>/` under `media_repo`) rather
+than over it. A ticket without states succeeds with any media file. The PR's
+Evidence section is rewritten when the pull request opens, when a review of
+its candidate approves, and before the covering review of each babysit fix
+that passed verify and touched `ui_paths` since the section's "Captured at"
+commit, whatever that review then decides. When the capture at the new head
+fails, the earlier images stay under a notice that they show an older commit.
 Tickets without the section keep the default capture.
 On a project that sets `ui_paths`, a ticket declaring `**UI change:** major`
 under What / Why / How must carry a `## Mock-up` section linking the approved

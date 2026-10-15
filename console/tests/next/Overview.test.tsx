@@ -1,65 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Attention, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
-
-const DEMO = "http://writer-host:7710";
-const WRITER = "http://writer-host:7711";
-const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
-const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
-const shippedRow = ((await Bun.file(new URL("shipped.json", SERVE)).json()) as { rows: ShippedRow[] }).rows[0]!;
-const ready = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const NOW = new Date(2026, 9, 15, 12, 0).getTime();
-
-type Item = Attention["items"][number];
-const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
-const park = served.items[0]!;
-const blocked: Item = {
-  kind: "blocked", level: "attention", ticket: "DEMO-4", ticket_url: null, question: "Which way?", run: 4,
-  asked_ms: NOW - (8 * HOUR + 2 * MINUTE), pr_url: null,
-};
-const failedAt = (run: number, attempt: number, endedMs: number): Item => ({
-  kind: "failed", level: "attention", run, ticket: "DEMO-11", ticket_url: null, reason: "verify failed",
-  ended_ms: endedMs, attempt, pr_url: null, triage: null,
-});
-const failed = [failedAt(11, 1, NOW - 3 * HOUR), failedAt(12, 2, NOW - 2 * HOUR)];
-const parkOf = (ticket: string, run: number, park_kind: string): Item => ({ ...park, ticket, run, park_kind, asked_ms: NOW - HOUR } as Item);
-const ciPark = parkOf("DEMO-8", 8, "ci");
-const prPark = parkOf("WRITER-9", 9, "pull_request");
-
-const run = (id: number, ticket: string) => ({ ...working.runs[0]!, id, ticket, heartbeat_age_ms: 30_000 });
-const queuedOf = (...tickets: string[]) => tickets.map((ticket) => ({ ...working.queued[0]!, ticket }));
-const merged = (id: number, ticket: string, endedMs: number, outcome = "merged"): ShippedRow => ({
-  ...shippedRow, id, ticket, ended_ms: endedMs, outcome,
-});
-
-interface Daemon {
-  items: Item[];
-  runs?: Status["runs"];
-  queued?: Status["queued"];
-  shipped?: ShippedRow[];
-}
-
-function fleet(demo: Daemon, writer: Daemon): Fetch {
-  const daemon = (project: string, body: Daemon) => ({
-    status: { ...working, project, runs: body.runs ?? [], queued: body.queued ?? [] },
-    attention: { level: body.items.length ? "attention" : "none", now: NOW, project, items: body.items },
-  });
-  const polls = peersFetch(DEMO, { [DEMO]: daemon("/srv/dev/demo", demo), [WRITER]: daemon("/srv/dev/writer", writer) });
-  return async (url) => {
-    if (url === `${WRITER}/runs/9/merge`) return Response.json({ ...ready, run: 9, ticket: "WRITER-9" });
-    if (url === `${DEMO}/shipped?limit=50`) return Response.json({ rows: demo.shipped ?? [], next_before: null, limit: 50 });
-    if (url === `${WRITER}/shipped?limit=50`) return Response.json({ rows: writer.shipped ?? [], next_before: null, limit: 50 });
-    return polls(url);
-  };
-}
+import { blocked, ciPark, DEMO, failed, fleet, merged, MINUTE, NOW, prPark, queuedOf, run, SERVE } from "./needsFleet";
 
 const busy = fleet(
   {
@@ -120,7 +66,7 @@ test("the four sections stand in order with their counts and summaries", async (
   const labels = screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"));
   expect(labels).toEqual(["Needs you", "Running", "Pull requests", "Merged today"]);
   expect(sectionHeader("Needs you")).toBe("Needs you3oldest waiting 8h 02m");
-  expect(sectionHeader("Running")).toBe("Running21 queued");
+  expect(sectionHeader("Running")).toBe("Running22 of 2 workers busy · 1 queued");
   expect(sectionHeader("Pull requests")).toBe("Pull requests21 waits on you");
   expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
 });
@@ -198,4 +144,89 @@ test("a host daemon that answered with no projects draws the heading and a zero 
   await mount("#/", empty);
   expect(heading()).toBe("Nothing needs you.");
   expect(countLine()).toBe("0 running · 0 open PRs · 0 queued · 0 merged today");
+});
+
+const classes = (element: Element | null | undefined) => element?.getAttribute("class")?.split(/\s+/) ?? [];
+const sectionCount = (name: string) => section(name).querySelector("h2 > span")!;
+
+test("the heading is the board's 20 px Archivo 600 title in a header closed by an 18 px pad and a rule hairline", async () => {
+  await mount("#/", busy);
+  const h1 = screen.getByRole("heading", { level: 1 });
+  expect(classes(h1)).toEqual(expect.arrayContaining(["font-sans", "text-[20px]", "font-semibold", "text-ink"]));
+  expect(classes(h1)).not.toContain("text-[32px]");
+  expect(classes(h1)).not.toContain("font-bold");
+  expect(classes(h1.parentElement)).toEqual(expect.arrayContaining(["pb-[18px]", "border-b", "border-rule"]));
+  expect(h1.parentElement!.contains(document.querySelector("[data-count-line]"))).toBe(true);
+  const number = within(h1).getByText("3");
+  expect(classes(number)).toContain("text-need");
+});
+
+test("at zero the heading draws Nothing in --live and leaves needs you. in the heading's ink", async () => {
+  await mount("#/", fleet({ items: [] }, { items: [] }));
+  const h1 = screen.getByRole("heading", { level: 1 });
+  expect(h1.textContent).toBe("Nothing needs you.");
+  const nothing = within(h1).getByText("Nothing");
+  expect(nothing).not.toBe(h1);
+  expect(classes(nothing)).toContain("text-live");
+  const rest = [...h1.childNodes].filter((node) => node !== nothing);
+  expect(rest.map((node) => node.nodeType)).toEqual(rest.map(() => Node.TEXT_NODE));
+  expect(classes(h1)).toContain("text-ink");
+});
+
+test("the count line sets each number in --ink at weight 600 and its words in --ink-2", async () => {
+  await mount("#/", busy);
+  const line = document.querySelector("[data-count-line]")!;
+  expect(line.textContent).toBe("2 running · 2 open PRs · 1 queued · 1 merged today");
+  expect(classes(line)).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "text-ink-2"]));
+  const numbers = [...line.children].filter((child) => /^\d+$/.test(child.textContent ?? ""));
+  expect(numbers.map((child) => child.textContent)).toEqual(["2", "2", "1", "1"]);
+  for (const number of numbers) expect(classes(number)).toEqual(expect.arrayContaining(["text-ink", "font-semibold"]));
+  const separators = [...line.children].filter((child) => child.textContent === " · ");
+  expect(separators).toHaveLength(3);
+  for (const separator of separators) expect(classes(separator)).toContain("text-ink-3");
+});
+
+test("a section heading is the board's chevron, 19 px Archivo 700 name, mono count and mono summary over no rule", async () => {
+  await mount("#/", busy);
+  const header = section("Needs you").querySelector("header")!;
+  const name = within(header).getByRole("button", { name: "Needs you" });
+  expect(name.querySelector("svg[data-chevron]")).toBeTruthy();
+  expect(classes(name)).toEqual(expect.arrayContaining(["font-sans", "text-[19px]", "font-bold", "text-ink"]));
+  expect(sectionCount("Needs you").textContent).toBe("3");
+  expect(classes(sectionCount("Needs you"))).toEqual(expect.arrayContaining(["font-mono", "text-need"]));
+  const summary = within(header).getByText(/^oldest waiting /);
+  expect(classes(summary)).toEqual(expect.arrayContaining(["font-mono", "text-ink-3"]));
+  expect(classes(header).filter((name) => name.startsWith("border"))).toEqual([]);
+  expect(header.nextElementSibling!.id).toBe(name.getAttribute("aria-controls")!);
+});
+
+test("the Needs you count is --need above zero and every other count, or a zero Needs you, is --ink-3", async () => {
+  await mount("#/", busy);
+  expect(sectionCount("Needs you").textContent).toBe("3");
+  expect(classes(sectionCount("Needs you"))).toContain("text-need");
+  for (const name of ["Running", "Pull requests", "Merged today"]) {
+    expect(classes(sectionCount(name))).toContain("text-ink-3");
+    expect(classes(sectionCount(name))).not.toContain("text-need");
+  }
+  cleanup();
+
+  await mount("#/", fleet({ items: [] }, { items: [] }));
+  expect(sectionCount("Needs you").textContent).toBe("0");
+  expect(classes(sectionCount("Needs you"))).toContain("text-ink-3");
+  expect(classes(sectionCount("Needs you"))).not.toContain("text-need");
+  expect(classes(sectionCount("Running"))).toContain("text-ink-3");
+  expect(classes(sectionCount("Running"))).not.toContain("text-need");
+});
+
+test("an empty section's sentence draws no border of its own, and the sections stand the board's 44 px apart", async () => {
+  await mount("#/", fleet({ items: [] }, { items: [] }));
+  const regions = screen.getAllByRole("region");
+  for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
+    const sentence = section(name).querySelector("p")!;
+    expect(sentence).toBeTruthy();
+    expect(classes(sentence).filter((name) => name.startsWith("border"))).toEqual([]);
+  }
+  const column = regions[0]!.parentElement!;
+  expect(regions.every((region) => region.parentElement === column)).toBe(true);
+  expect(classes(column)).toContain("gap-[44px]");
 });
