@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useContext, useRef, useState, type KeyboardEvent } from "react";
 import { NO_PR_URL } from "../../components/RowActions";
 import { ReasonAction } from "../../components/ReasonAction";
-import { actionBody, NOT_WIRED, ROUTES } from "../../lib/actions";
+import { actionBody, NOT_WIRED, ROOT_LABELS, ROUTES } from "../../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME, RUN_SWEEP, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
 import { UNREACHABLE, type HostRecord } from "../../lib/hosts";
@@ -122,8 +122,8 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
   const ticket = str(item.ticket);
   const ticketUrl = str(item.ticket_url);
   const prUrl = str(item.pr_url);
-  const on = host.status?.actions === true;
   const [primary, ...more] = entry.readyToMerge ? [MERGE, ...actions.filter((label) => label !== MERGE)] : actions;
+  const on = (primary != null && ROOT_LABELS.has(primary) ? host.host_status?.actions : host.status?.actions) === true;
   const pending = action.isPending ? action.variables?.label : undefined;
   const last = action.variables?.label;
   const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && last !== MERGE ? action.data.detail : null;

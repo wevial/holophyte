@@ -377,3 +377,20 @@ test("Resume opens a reason box on the card whose Send posts the ticket and the 
   expect(toast()).toBe("Resumed DEMO-6.");
   expect(attentionReads(asked)).toBeGreaterThan(reads);
 });
+
+test("a host sweep card on a host with no named projects reads the root's actions and posts Run sweep at the root", async () => {
+  const hostStatus = await Bun.file(new URL("host-status.json", SERVE)).json();
+  const action = fakeFetch({ ok: true, detail: "started" });
+  const sweep = { kind: "sweep_stale", project: null, state: "killed", started: NOW - 200_000, ended: null, level: "attention" };
+  await mount(async (url, init) => {
+    if (url === `${DEMO}/peers`) return Response.json({ self: addressOf(DEMO), peers: [] });
+    if (url === `${DEMO}/status`) return Response.json({ ...hostStatus, now: NOW, actions: true, projects: [] });
+    if (url === `${DEMO}/attention`) return Response.json({ level: "attention", now: NOW, items: [sweep] });
+    if (url.includes("/actions/")) return action.fetchImpl(url, init);
+    return new Response("not found", { status: 404 });
+  });
+  expect(cardText()).not.toContain("Actions are off");
+  await press(inCard("Run sweep"));
+  expect(action.seen.map(({ url }) => url)).toEqual([`${DEMO}/actions/run-sweep`]);
+  expect(toast()).toBe("Started a host sweep on writer-host.");
+});
