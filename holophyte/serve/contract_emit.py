@@ -81,12 +81,14 @@ def render(routes, schema_dir, zod_file, command):
     return files
 
 
-def write(root, files):
+def write(root, files, schema_dir):
     for path, text in files.items():
         target = Path(root) / path
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists() or target.read_text("utf-8") != text:
             target.write_text(text, "utf-8")
+    for extra in _extras(root, files, schema_dir):
+        (Path(root) / extra).unlink()
 
 
 def check(root, files, schema_dir):
@@ -94,10 +96,15 @@ def check(root, files, schema_dir):
              for path, text in files.items()
              if not (Path(root) / path).is_file()
              or (Path(root) / path).read_text("utf-8") != text]
-    found = sorted((Path(root) / schema_dir).glob("*"))
-    drift += [f"{schema_dir / extra.name}: not a generated file"
-              for extra in found if schema_dir / extra.name not in files]
+    drift += [f"{extra}: not a generated file"
+              for extra in _extras(root, files, schema_dir)]
     return drift
+
+
+def _extras(root, files, schema_dir):
+    found = sorted((Path(root) / schema_dir).glob("*"))
+    return [schema_dir / path.name for path in found
+            if path.is_file() and schema_dir / path.name not in files]
 
 
 def zod_module(schemas, command):

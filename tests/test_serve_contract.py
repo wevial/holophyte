@@ -91,8 +91,8 @@ def walk_scalar(value, annotation, where):
 
 class GeneratedFilesTests(unittest.TestCase):
     def generated(self, root):
-        paths = [ZOD_FILE, *(SCHEMA_DIR / name
-                             for name in sorted((root / SCHEMA_DIR).iterdir()))]
+        paths = [ZOD_FILE, *(SCHEMA_DIR / path.name
+                             for path in sorted((root / SCHEMA_DIR).iterdir()))]
         return {path: (root / path).read_bytes() for path in paths}
 
     def test_committed_files_pass_the_check_and_stay_untouched(self):
@@ -123,6 +123,18 @@ class GeneratedFilesTests(unittest.TestCase):
         self.assertIn(str(SCHEMA_DIR / "stale.schema.json"), err.getvalue())
         self.assertIn(f"`{COMMAND}`", err.getvalue())
         self.assertEqual(len(err.getvalue().splitlines()), 3)
+
+    def test_regenerating_an_edited_copy_restores_it_and_drops_the_stale_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shutil.copytree(ROOT / SCHEMA_DIR, root / SCHEMA_DIR)
+            (root / ZOD_FILE).parent.mkdir(parents=True)
+            (root / ZOD_FILE).write_text("// edited\n")
+            (root / SCHEMA_DIR / "stale.schema.json").write_text("{}\n")
+            self.assertEqual(main([], root=root), 0)
+            self.assertFalse((root / SCHEMA_DIR / "stale.schema.json").exists())
+            self.assertEqual(self.generated(root), self.generated(ROOT))
+            self.assertEqual(main(["--check"], root=root), 0)
 
 
 class PinnedAnswerTests(unittest.TestCase):

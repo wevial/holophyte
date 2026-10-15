@@ -352,7 +352,7 @@ def main(argv=None, root=ROOT):
     args = parser.parse_args(argv)
     files = render(ROUTES, SCHEMA_DIR, ZOD_FILE, COMMAND)
     if not args.check:
-        write(root, files)
+        write(root, files, SCHEMA_DIR)
         return 0
     drift = check(root, files, SCHEMA_DIR)
     if not drift:
