@@ -260,6 +260,24 @@ class FrontierGateTests(FrontierFixture):
         self.assertIn("no longer match", raced[0])
         self.assertEqual(self.open_decisions(), [("plan_drift", c, RESTORE)])
 
+    def test_a_canceled_child_hands_its_approved_edge_to_its_dependent(self):
+        a = self.file("ready")
+        b = self.file("ready", depending_on("NAT-2"))
+        c = self.file("ready", depending_on("NAT-3"))
+        self.approve(a, b, c)
+
+        store.board.cancel_ticket(self.conn, self.project_id, "NAT-3", 1,
+                                  "shipped by NAT-2")
+        self.claim(self.board)
+
+        self.assertEqual(self.conn.execute(
+            "SELECT json_extract(approvedPlan, '$.edges.\"NAT-4\"')"
+            " FROM stories").fetchone(), (f'["{self.issue(a)}"]',))
+        self.assertEqual(self.refusal(c),
+                         "it waits on NAT-2 of story NAT-1 to merge")
+        self.assertEqual(self.open_decisions(), [])
+        self.assertEqual(self.story_state(), "approved")
+
     def test_a_backlog_child_is_not_on_the_frontier(self):
         a, b = self.file("backlog"), self.file("ready")
         self.approve(a, b)

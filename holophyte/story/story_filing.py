@@ -16,10 +16,10 @@ import ticket_template
 from holophyte.board.projection import mirror_task
 from holophyte.config.config_tables import board_config
 from provider import FiledWithoutBlockers
+from ticket_depends import rewrite_depends
 
 STORY_HEADER_RE = re.compile(r"^Story:[ \t]*(\S+)")
 TICKET_HEADER_RE = re.compile(r"^Ticket:[ \t]*(\S+)")
-ESTIMATE_SECTION = "Estimate & dependencies"
 
 
 class StoryRefused(ValueError):
@@ -512,37 +512,8 @@ def _merged_issue_ids(conn, project_id, child, siblings):
 
 def _resolve(body, identifiers):
     """`body` with its `Depends on:` sibling slugs made their identifiers."""
-    lines = body.split("\n")
-    plain = ticket_template.MD_LINK_RE.sub(r"\1", body).split("\n")
-    index = _estimate_line(plain)
-    if index is None:
-        return body
-    line = plain[index]
-    match = ticket_template.ESTIMATE_RE.match(line.strip())
-    deps = [identifiers.get(dep, dep)
-            for dep in ticket_template._deps(match.group(2))]
-    if deps:
-        start = line.index(match.group(0))
-        lines[index] = (line[:start] + match.group(0)[:match.start(2)]
-                        + ", ".join(deps))
-    return "\n".join(lines)
-
-
-def _estimate_line(lines):
-    """The index of the estimate line `ticket_template.parse()` reads."""
-    titled, section = False, None
-    for index, line in enumerate(lines):
-        heading = ticket_template.H2_RE.match(line)
-        if not titled:
-            titled = bool(ticket_template.H1_RE.match(line))
-        elif heading and section == ESTIMATE_SECTION:
-            return None
-        elif heading:
-            section = heading.group(1).strip()
-        elif (section == ESTIMATE_SECTION
-              and ticket_template.ESTIMATE_RE.match(line.strip())):
-            return index
-    return None
+    return rewrite_depends(
+        body, lambda deps: [identifiers.get(dep, dep) for dep in deps])
 
 
 def _ticket_id(conn, project_id, identifier):
