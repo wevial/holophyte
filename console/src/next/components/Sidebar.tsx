@@ -16,6 +16,7 @@ import {
   SunIcon,
   TicketsIcon,
 } from "./icons";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 const RAIL_KEY = "holophyte.next.rail";
 
@@ -186,7 +187,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div data-slot="project-switcher" />
+      <ProjectSwitcher folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col py-3">
         {PAGES.map((page) => (

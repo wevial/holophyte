@@ -796,6 +796,16 @@ scoped view; every route inherits it, the sidebar's links carry it, and
 it. The root polls once with `usePeers()` and shares the result with the
 sidebar and the pages through a React context.
 
+The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
+sets that scope. Its rows come from `switcherRows()` in
+`console/src/next/projects.ts`: "All projects", then one row per project
+name, pooling the hosts that serve it, with its held tag, need count and
+open runs, or "not answering" when every host of it failed its last poll.
+A find box filters them; arrow keys move, Enter picks, Esc closes. A pick
+rewrites `project` on the current route and is kept in session storage under
+`holophyte.next.project`, so opening `/next.html` with an empty hash starts
+at Overview in that scope; a hash that names a route is shown as written.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than
