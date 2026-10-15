@@ -29,6 +29,7 @@ from holophyte.config.config_tables import merge_config
 
 DIRECTORY = ".holophyte/mockup"
 CAPTURED = ".holophyte/captured"
+DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 MOCKUP_IMAGE_MAX_MB = 10
 MOCKUP_BUNDLE_MAX_MB = 25
 BUNDLE_MAX_MEMBERS = 200
@@ -423,6 +424,7 @@ def clear_captured(wt):
         _refuse_unsafe(Path(wt), CAPTURED)
         staging = _ignored_staging(target)
         try:
+            (staging / ".head").write_text(_head(wt))
             _swap(staging, target)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
@@ -431,13 +433,17 @@ def clear_captured(wt):
     return True
 
 
-def keep_captured(wt, files):
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+def _head(wt):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True,
+                          text=True, check=True).stdout.strip()
+
+
+def keep_captured(wt, output, files):
     try:
         _refuse_unsafe(Path(wt), CAPTURED)
-        parent = os.open(Path(wt) / ".holophyte", flags)
+        parent = os.open(Path(wt) / ".holophyte", DIRECTORY_FLAGS)
         try:
-            directory = os.open(Path(CAPTURED).name, flags, dir_fd=parent)
+            directory = os.open(Path(CAPTURED).name, DIRECTORY_FLAGS, dir_fd=parent)
         finally:
             os.close(parent)
     except (Refused, OSError, subprocess.CalledProcessError):
@@ -445,21 +451,33 @@ def keep_captured(wt, files):
     try:
         for file in files:
             if file.suffix == ".png":
-                _copy_new(file, directory)
+                _copy_new(file, file.relative_to(output).parts, directory)
     except OSError:
         pass
     finally:
         os.close(directory)
 
 
-def _copy_new(file, directory):
+def _copy_new(file, parts, directory):
+    opened = []
     try:
-        fd = os.open(file.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                     0o644, dir_fd=directory)
-    except FileExistsError:
-        return
-    with os.fdopen(fd, "wb") as out, open(file, "rb") as source:
-        shutil.copyfileobj(source, out)
+        for part in parts[:-1]:
+            try:
+                os.mkdir(part, 0o755, dir_fd=directory)
+            except FileExistsError:
+                pass
+            directory = os.open(part, DIRECTORY_FLAGS, dir_fd=directory)
+            opened.append(directory)
+        try:
+            fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                         | os.O_NOFOLLOW, 0o644, dir_fd=directory)
+        except FileExistsError:
+            return
+        with os.fdopen(fd, "wb") as out, open(file, "rb") as source:
+            shutil.copyfileobj(source, out)
+    finally:
+        for fd in opened:
+            os.close(fd)
 
 
 def review_carry(wt):
@@ -479,10 +497,16 @@ def release_review_carry(checkout):
 
 
 def _captured(wt):
+    directory = Path(wt) / CAPTURED
     try:
         _refuse_unsafe(Path(wt), CAPTURED)
-        return sorted(file.name for file in (Path(wt) / CAPTURED).glob("*.png")
-                      if file.is_file() and not file.is_symlink())
+        if (directory / ".head").is_symlink() or (
+                (directory / ".head").read_text() != _head(wt)):
+            return []
+        return sorted((Path(root) / name).relative_to(directory).as_posix()
+                      for root, _, names in os.walk(directory) for name in names
+                      if name.endswith(".png")
+                      and not (Path(root) / name).is_symlink())
     except (Refused, OSError, subprocess.CalledProcessError):
         return []
 

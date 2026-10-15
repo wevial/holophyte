@@ -454,7 +454,7 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
         if cleared:
-            mockup.keep_captured(wt, files)
+            mockup.keep_captured(wt, output, files)
         lines = ['## Evidence']
         lines.extend(dropped)
         if not files:

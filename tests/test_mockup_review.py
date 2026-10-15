@@ -65,7 +65,7 @@ def a_capture(wt):
     shot = Path(tempfile.mkdtemp(dir=wt.parent)) / "01-gate.png"
     shot.write_bytes(PNG)
     mockup.clear_captured(wt)
-    mockup.keep_captured(wt, [shot])
+    mockup.keep_captured(wt, shot.parent, [shot])
 
 
 class ReviewPromptTests(unittest.TestCase):
@@ -128,6 +128,35 @@ class CapturedScreenshotTests(unittest.TestCase):
         self.candidate(script="raise SystemExit(3)")
         self.assertIn("failed", self.prepare())
         self.assertEqual(list(captured.glob("*.png")), [])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_a_capture_from_an_earlier_head_is_not_shown_as_this_heads(self):
+        fetched_mockup(self.repo)
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       f'Path(sys.argv[1], "01-gate.png").write_bytes({PNG!r})\n')
+        self.prepare()
+        self.assertIn(f"`{mockup.CAPTURED}/01-gate.png`",
+                      mockup.reviewer_brief(self.repo))
+        self.git("rm", "-q", "console/src/App.tsx")
+        self.git("commit", "-qm", "revert the UI")
+        self.assertEqual(self.prepare(), "")
+        brief = mockup.reviewer_brief(self.repo)
+        self.assertIn("No UI capture was made at this head.", brief)
+        self.assertNotIn("01-gate.png", brief)
+
+    def test_screenshots_sharing_a_name_in_two_directories_are_both_kept(self):
+        fetched_mockup(self.repo)
+        self.candidate(script="import sys\nfrom pathlib import Path\n"
+                       "for size in ('desktop', 'mobile'):\n"
+                       "    Path(sys.argv[1], size).mkdir()\n"
+                       "    Path(sys.argv[1], size, '01-gate.png').write_bytes("
+                       f"{PNG!r} + size.encode())\n")
+        self.prepare()
+        brief = mockup.reviewer_brief(self.repo)
+        for size in ("desktop", "mobile"):
+            name = f"{mockup.CAPTURED}/{size}/01-gate.png"
+            self.assertEqual((self.repo / name).read_bytes(), PNG + size.encode())
+            self.assertIn(f"`{name}`", brief)
         self.assertEqual(self.git("status", "--porcelain"), "")
 
     def test_a_link_the_capture_plants_is_never_written_through(self):
