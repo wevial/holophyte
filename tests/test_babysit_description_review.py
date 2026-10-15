@@ -44,5 +44,17 @@ class DescriptionFindingsTests(unittest.TestCase):
             f"{mention}{TAIL}", "REQUEST_CHANGES", []), [])
 
 
+    def test_a_tag_after_a_bracketed_severity_is_a_description_finding(self):
+        bracketed = ('- [P2] path: "PR description" — The description promises'
+                     ' a handshake absent from the diff.')
+        self.assertEqual(description_findings(
+            f"{bracketed}{TAIL}", "REQUEST_CHANGES", []), [bracketed])
+
+    def test_a_bracketed_severity_without_the_tag_is_a_code_finding(self):
+        bracketed = '- [P2] path: "PR description" — it names a handshake.'
+        self.assertEqual(description_findings(
+            f"{bracketed}\n- [P2] src/app.py:3 drops the tab target.{TAIL}",
+            "REQUEST_CHANGES", []), [])
+
 if __name__ == "__main__":
     unittest.main()
