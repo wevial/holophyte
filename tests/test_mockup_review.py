@@ -213,6 +213,25 @@ class ContainerReviewCarryTests(SweepTestCase):
             self.assertFalse(copy.stat().st_mode & 0o222, name)
         review_runner._check_clean(stage.path)
 
+    def test_a_configured_mockup_directory_is_carried_once(self):
+        fetched_mockup(self.target)
+        a_capture(self.target)
+        with open(self.target / ".git" / "info" / "exclude", "a") as exclude:
+            exclude.write(".holophyte/\n")
+        for configured, expected in (
+                ([mockup.DIRECTORY], [mockup.DIRECTORY, mockup.CAPTURED]),
+                ([".holophyte"], [".holophyte"])):
+            with self.subTest(configured=configured):
+                self.configure(f"[worktree]\ncarry = {json.dumps(configured)}\n")
+                carry = self.carry()
+                self.assertEqual(carry, expected)
+                stage = review_runner.stage_candidate(
+                    self.target, self.root / f"stage-{len(carry)}", self.base,
+                    self.sha, carry=carry)
+                self.assertEqual(
+                    (stage.path / mockup.CAPTURED / "01-gate.png").read_bytes(),
+                    PNG)
+
 
 class SeatReviewTests(unittest.TestCase):
     def setUp(self):

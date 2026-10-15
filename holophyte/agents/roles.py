@@ -246,6 +246,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     if family_route is not None and not switched:
         turn, profile, tier = family_route, family_label(family_route), None
     cap = REVIEW_TIMEOUT if timeout is None else timeout
+    configured = carry_directories(project)
     options = {} if tier is None else {"service_tier": tier}
     if role == "adversary":
         options["multi_agent"] = True
@@ -264,7 +265,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 prompt=goal,
                 timeout=cap,
                 verdicts=None,
-                carry=carry_directories(project) + review_carry(cwd),
+                carry=configured + review_carry(cwd, configured),
                 on_start=kill.arm,
                 **turn,
                 **options,

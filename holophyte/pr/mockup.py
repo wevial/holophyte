@@ -480,14 +480,21 @@ def _copy_new(file, parts, directory):
             os.close(fd)
 
 
-def review_carry(wt):
+def review_carry(wt, configured=()):
     root = Path(wt)
     try:
         _refuse_unsafe(root)
         _refuse_unsafe(root, CAPTURED)
     except (Refused, OSError, subprocess.CalledProcessError):
         return []
-    return [entry for entry in (DIRECTORY, CAPTURED) if (root / entry).is_dir()]
+    taken = [Path(entry).parts for entry in configured]
+    return [entry for entry in (DIRECTORY, CAPTURED) if (root / entry).is_dir()
+            and not any(_nested(Path(entry).parts, other) for other in taken)]
+
+
+def _nested(one, other):
+    shorter = min(len(one), len(other))
+    return one[:shorter] == other[:shorter]
 
 
 def release_review_carry(checkout):
