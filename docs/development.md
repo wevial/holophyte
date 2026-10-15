@@ -717,10 +717,11 @@ it; it never builds — there is no install lifecycle script, and
 own), which
 registers `happy-dom` so component tests render with
 `@testing-library/react` and no browser; `console/src/lib/` tests stay free
-of the DOM. `build` runs `console/build.ts`, which hands `console/index.html`
-to `Bun.build` with `bun-plugin-tailwind` and writes the static bundle to
-`console/dist/` — `index.html` is the stable entry the daemon serves, next
-to its hashed script and stylesheet. `console/dist/` and
+of the DOM. `build` runs `console/build.ts`, which hands both pages,
+`console/index.html` and `console/next.html`, to one `Bun.build` call with
+`bun-plugin-tailwind` and writes the static bundle to `console/dist/` —
+each page keeps its name there, next to its own hashed script, and
+`index.html` is the stable entry the daemon serves. `console/dist/` and
 `console/node_modules/` are git-ignored.
 
 Captures are the screenshots a console pull request carries, taken by
@@ -729,6 +730,11 @@ Captures are the screenshots a console pull request carries, taken by
 host with the `demo` project, serves it from a real host daemon and runs one
 command with `CONSOLE_URL` naming it; that command is the console's
 `capture` script, `playwright test` from the pinned `@playwright/test`.
+`seed()` writes a ticket in backlog, one ready, a working run, a run in
+review after one changes-requested round, a question park, a pull request
+parked on CI, one parked ready for its merge, a stranded failure, a merge
+from today, an older merge and an abandoned failure, so a spec injects only
+the states beyond those.
 `console/playwright.config.ts` is Chromium only, one worker, no retries, a
 1440×900 light viewport, `baseURL` from `CONSOLE_URL`, and no `webServer`,
 since the fixture boots the daemon. A ticket's spec is
@@ -748,6 +754,15 @@ writer host: install it with the upstream installer
 (`curl -fsSL https://bun.sh/install | bash`) as the factory's user, so the
 loop's login shell sees `bun` on PATH. The factory's verify step inherits
 that PATH, so nothing in the loop changes. The writer host runs Bun 1.4.2.
+
+### The new console
+
+The new console is built beside the classic one until it replaces it. It
+lives in `console/src/next/`, with its tests under `console/tests/next/`,
+and is served at `/next.html` beside the classic console at `/`; the
+classic sidebar links to it. The classic console opens on the view a
+`#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
+console page can link to the classic view behind it.
 
 ### Desktop wrapper
 
