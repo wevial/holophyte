@@ -555,6 +555,10 @@ Each module, one line:
 - `holophyte/babysit/check_failures.py` — a job log's failure lines (test
   failure headers and error lines), their normalized signature, and the
   test whether a red read repeats a failure an earlier round was handed.
+- `holophyte/babysit/covering_fix.py` — what follows a covering review of a
+  babysit fix that asks for changes: the operator note's fix, an automatic
+  fix round with the review's findings as the note, or the park when the
+  findings repeat or `[merge] covering_fix_rounds` is spent.
 - `holophyte/babysit/description_review.py` — a covering review whose every
   blocker is tagged `path: "PR description"`: the description rewritten with
   those findings as input before the same commit is reviewed once more.

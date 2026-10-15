@@ -145,7 +145,8 @@ class CaptureFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(self.merges(), [])
 
     def test_no_capture_fix_rounds_reviews_the_failed_capture(self):
-        self.broken_spec('approve = "auto"\ncapture_fix_rounds = 0\n')
+        self.broken_spec('approve = "auto"\ncapture_fix_rounds = 0\n'
+                         'covering_fix_rounds = 0\n')
         fake, _ = self.loop(REQUEST_CHANGES, Commit("ui fix", path="ui/app.txt"),
                             REQUEST_CHANGES, provider=self.provider())
 
@@ -159,7 +160,8 @@ class CaptureFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
         self.enterContext(patch.dict(os.environ))
         for name in CREDS:
             os.environ.pop(name, None)
-        self.broken_spec('approve = "auto"\n\n[merge.media_bucket]\n'
+        self.broken_spec('approve = "auto"\ncovering_fix_rounds = 0\n'
+                         '\n[merge.media_bucket]\n'
                          'endpoint = "https://objects.example.invalid"\n'
                          'bucket = "evidence"\n'
                          'public_base = "https://media.example.invalid"\n')
