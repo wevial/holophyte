@@ -43,7 +43,11 @@ class StreamRecord:
         if not isinstance(event, dict):
             return
         if self.on_event is not None:
-            self.tell(event)
+            try:
+                self.on_event(event)
+            except Exception as error:
+                print(f"[stream] dropped the turn's event hook: {error}", flush=True)
+                self.on_event = None
         if event.get("type", "result") == "result":
             self.kept.append(line)
         elif event.get("type") == "assistant":
@@ -59,13 +63,6 @@ class StreamRecord:
                 self.last_tool = block["name"]
             elif block.get("type") == "text" and isinstance(block.get("text"), str):
                 self.partial.append(block["text"])
-
-    def tell(self, event):
-        try:
-            self.on_event(event)
-        except Exception as error:
-            print(f"[stream] dropped the turn's event hook: {error}", flush=True)
-            self.on_event = None
 
     def output(self):
         return "\n".join(self.kept)
