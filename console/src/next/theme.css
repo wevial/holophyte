@@ -219,6 +219,14 @@ body {
   to { stroke-dashoffset: -2; }
 }
 
+@keyframes toast-in {
+  from { transform: translateY(12px); }
+}
+
+.toast-in {
+  animation: toast-in 280ms var(--ease-console);
+}
+
 @keyframes edge-march {
   to { background-position: 2px 0, -2px 100%, 0 -2px, 100% 2px; }
 }
