@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
+import { FocusCard, useHeldEntry } from "../components/FocusCard";
 import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
@@ -67,6 +68,7 @@ function FoldingSection({
 
 export function Overview() {
   const view = useOverview();
+  const held = useHeldEntry(view.needs);
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
@@ -115,7 +117,9 @@ export function Overview() {
           hot
           summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
           empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
-        />
+        >
+          <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} />
+        </FoldingSection>
         <FoldingSection
           id="run"
           label="Running"
