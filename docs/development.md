@@ -398,6 +398,15 @@ Each module, one line:
   in Ready is refused naming its status (`KEY-n is already in ready at status
   ready; nothing changed`). A native park keeps its column, and its note
   names `--file-ticket --update` and `--move KEY-n ready`.
+- `holophyte/review/landmarks.py` — what counts as a lost landmark:
+  `MainTree` caches main's file list, blobs and `git grep` holders for one
+  check; `path_findings()` and `symbol_findings()` split a ticket's misses
+  into stale reasons (gone from main) and advisories (a bare basename that
+  matches no tracked file, or a symbol its sentence pairs with one file but
+  main holds in another). A symbol pairs with the path after ` in `,
+  ` from `, ` of ` or `(`, or with a path leading its item before `:`.
+  Advisories print at filing and become a claimed run's `warning` events;
+  they never park.
 - `holophyte/environment_git.py` — excludes the filtered `.env` from Git
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
@@ -502,6 +511,9 @@ Each module, one line:
 - `holophyte/babysit/babysitter.py` — the babysit pass over a pull request:
   thread answering and fixing, the merge of `main`, and the waits that drive
   them.
+- `holophyte/babysit/adjudicator_outage.py` — a failed thread-pass
+  adjudicator turn, or one with no verdict for any thread, parked as a
+  `route` outage that the host retries after `[merge] route_retry_sec`.
 - `holophyte/babysit/thread_text.py` — the babysitter's thread text: the
   conventions it quotes, the adjudicator's brief over its threads, the
   `ADDRESS`/`DECLINE`/`HUMAN` verdict parser, the fix brief and summary
@@ -796,8 +808,20 @@ The root route's search holds one optional `project`, the project's name
 as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
 scoped view; every route inherits it, the sidebar's links carry it, and
 `scopedHosts()` in `console/src/next/scope.ts` narrows the polled hosts to
-it. The root polls once with `usePeers()` and shares the result with the
-sidebar and the pages through a React context.
+it. The root reads the fleet once with `useFleet()` and shares the result
+with the sidebar and the pages through a React context.
+
+The new console reads its data through one TanStack Query client,
+`consoleQueryClient()` in `console/src/next/fleet.ts`, which its entry
+mounts; a failed read is not retried, since the next poll is the retry.
+`useFleet()` is one query keyed by the origin: `pollPeers()` fans out to
+every daemon each `POLL_INTERVAL_MS`, `mergeHosts()` keeps each daemon's
+last good answer through its failures, and every view that reads it shares
+the one poll. Every body is parsed with the generated schemas in
+`console/src/lib/contract.gen.ts`, so a daemon whose answer changed shape
+fails at the fetch with a contract error naming the endpoint and field. A
+view that reads another route adds its own query keyed by the daemon base
+and the path, parsed with that route's generated schema.
 
 The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
 sets that scope. Its rows come from `switcherRows()` in

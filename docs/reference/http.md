@@ -22,9 +22,10 @@ those writing routes. A project with no store answers 503.
 
 `console/contract/` holds the machine-readable shapes of `GET /status`,
 `GET /attention` and `GET /peers`, of the host root's `GET /status`
-and `GET /attention`, and of the run routes `GET /runs/N`,
-`GET /runs/N/merge` and `GET /runs/N/asks`: one JSON Schema per route,
-generated from `holophyte/serve/contract.py`.
+and `GET /attention`, of the run routes `GET /runs/N`,
+`GET /runs/N/merge` and `GET /runs/N/asks`, and of the list routes
+`GET /shipped`, `GET /ledger`, `GET /board` and `GET /tickets/KEY`: one
+JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
 
@@ -712,8 +713,10 @@ run, else the run's last heartbeat (both null only for a ticket parked
 with no run behind it). A `pr_open` item is a `blocked_on_operator`
 ticket whose parked run has a `pr_url` and whose recorded park kind
 (`runs.parkKind`, one of `store/enums.py` `ParkKind`) is `pull_request`,
-as a park under `[merge] mode = "pr"` records it, or `ci`, as a babysit
-waiting only on pending checks or the quiet period records it; the
+as a park under `[merge] mode = "pr"` records it, `ci`, as a babysit
+waiting only on pending checks or the quiet period records it, or
+`route`, as a failed adjudicator turn records it until the host
+retries it; the
 question's wording plays no part. The item names that kind as
 `park_kind`. The run waits on a review, its checks
 or a merge, not on an answer,

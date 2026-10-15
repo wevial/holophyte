@@ -1,14 +1,17 @@
 """Seed and normalize the JSON contracts shared with the console tests."""
 import json
+import re
 
 import holophyte.serve.serve_runs
 import holophyte.serve.server
+import holophyte.serve.views
 import store
 from holophyte.config.project import Project
 from store.operator_notes import consume
 from tests.phase_fixture import park_run
 
 NOW = 1_750_000_000_000
+MIGRATED_BY = re.compile(r" by \S+, pid \d+, [^)]*\)$")
 
 
 def normalize_contract(value, key=""):
@@ -25,12 +28,15 @@ def normalize_contract(value, key=""):
                "ended_ms", "work_started_ms", "verify_started_ms",
                "approved_at"}:
         return 1 if key in {"id", "event_id", "run_id", "pid"} else NOW
+    if key == "text":
+        return MIGRATED_BY.sub(" by BUILD, pid 1, COMMAND)", value)
     return value
 
 
 def contract_answers(case):
-    """A reviewed run, an unestimated run predating host recording, an
-    approved pull request waiting for a claim, and one waiting on review."""
+    """A reviewed run, an unestimated run predating host recording with one
+    posted note, an approved pull request waiting for a claim, and one
+    waiting on review."""
     case.seed()
     with store.open(str(case.db)) as conn:
         store.record_review_round(
@@ -61,6 +67,9 @@ def contract_answers(case):
             verification_commands=["echo ok"], time_box_ms=None)
         store.tickets.transition(conn, ticket, "in_flight")
         unestimated_run = store.claim(conn, project, ticket, now=NOW)
+        store.mark_note_posted(conn, store.record_note(
+            conn, ticket, "escalation", "Needs an estimate", "estimate",
+            run_id=unestimated_run, now=NOW), now=NOW)
         approved = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-9", linear_identifier="KO-9",
             title="Approved ticket", acceptance_criteria=["Merge once approved"],
@@ -98,6 +107,10 @@ def contract_answers(case):
         "run-detail-unestimated": holophyte.serve.serve_runs.run_detail(
             target, str(unestimated_run), now=NOW
         ),
+        "shipped": holophyte.serve.serve_runs.shipped(target, "outcome=all"),
+        "ledger": holophyte.serve.serve_runs.ledger(target, "since=0"),
+        "board": holophyte.serve.views.board(target, now=NOW),
+        "ticket": holophyte.serve.views.ticket_detail(target, "KO-8"),
     }.items():
         case.assertEqual(code, 200)
         answers[name] = normalize_contract(body)

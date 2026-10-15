@@ -5,16 +5,20 @@ import {
   POLL_INTERVAL_MS,
   REQUEST_TIMEOUT_MS,
   TICK_MS,
+  classicSchemas,
   defaultPollDeps,
   fetchJson,
   pollDaemon,
   pollFailure,
+  type ClassicBodies,
+  type PollBodies,
   type PollDeps,
+  type PollSchemas,
 } from "../lib/poll";
 
-export interface PeersState {
+export interface PeersState<B extends PollBodies = ClassicBodies> {
   /** The origin first, then each peer `/peers` named, in its order. */
-  hosts: HostRecord[];
+  hosts: HostRecord<B>[];
   /** Milliseconds since the oldest host was last polled, null before the first. */
   polledAgo: number | null;
   /** Ticks completed; a dependent fetch keys off it. */
@@ -36,24 +40,34 @@ interface Inner {
  *  soon as it is known. Every request of the tick shares one deadline,
  *  `timeoutMs` from its start, so a `/peers` that hangs neither delays
  *  nor pre-empts the known daemons' polls. A failed `/peers` reports the
- *  addresses last known, in their order. */
+ *  addresses last known, in their order. Every body is parsed with
+ *  `schemas`. */
+export function pollPeers(origin: string, known: HostRecord[], deps: Pick<PollDeps, "fetch">, timeoutMs?: number): Promise<PollResult[]>;
+export function pollPeers<B extends PollBodies>(
+  origin: string,
+  known: HostRecord<B>[],
+  deps: Pick<PollDeps, "fetch">,
+  timeoutMs: number,
+  schemas: PollSchemas<B>,
+): Promise<PollResult<B>[]>;
 export async function pollPeers(
   origin: string,
-  known: HostRecord[],
+  known: HostRecord<PollBodies>[],
   deps: Pick<PollDeps, "fetch">,
   timeoutMs = REQUEST_TIMEOUT_MS,
-): Promise<PollResult[]> {
+  schemas: PollSchemas<PollBodies> = classicSchemas,
+): Promise<PollResult<PollBodies>[]> {
   const signal = AbortSignal.timeout(timeoutMs);
-  const inFlight = new Map<string, Promise<PollResult>>();
-  const start = ({ address, base }: { address: string; base: string }): Promise<PollResult> => {
+  const inFlight = new Map<string, Promise<PollResult<PollBodies>>>();
+  const start = ({ address, base }: { address: string; base: string }): Promise<PollResult<PollBodies>> => {
     let pending = inFlight.get(address);
     if (!pending) {
-      pending = pollDaemon(base, deps.fetch, signal).then(
-        (answer): PollResult =>
+      pending = pollDaemon(base, deps.fetch, signal, schemas).then(
+        (answer): PollResult<PollBodies> =>
           answer.kind === "host"
             ? { address, base, ok: true, host: answer.host, host_attention: answer.attention, projects: answer.projects }
             : { address, base, ok: true, status: answer.status, attention: answer.attention },
-        (failure: unknown): PollResult => ({ address, base, ...pollFailure(failure) }),
+        (failure: unknown): PollResult<PollBodies> => ({ address, base, ...pollFailure(failure) }),
       );
       inFlight.set(address, pending);
     }

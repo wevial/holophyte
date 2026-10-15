@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TicketDetail",
+  "description": "GET /tickets/KEY",
+  "$ref": "#/$defs/TicketDetail",
+  "$defs": {
+    "TicketRevision": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "author": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "at",
+        "author",
+        "title",
+        "body",
+        "priority",
+        "labels",
+        "column"
+      ],
+      "additionalProperties": true
+    },
+    "ClaimedSnapshot": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "null"
+        },
+        "title": {
+          "type": "string"
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verification_commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "title",
+        "acceptance_criteria",
+        "verification_commands"
+      ],
+      "additionalProperties": true
+    },
+    "RevisionStamp": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "author": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "at",
+        "author"
+      ],
+      "additionalProperties": true
+    },
+    "TicketNote": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "author": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "posted_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "post_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "author",
+        "kind",
+        "text",
+        "posted_ms",
+        "post_error"
+      ],
+      "additionalProperties": true
+    },
+    "TicketDetail": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verification_commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "time_box_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mirrored_ms": {
+          "type": "integer"
+        },
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TicketRevision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claimed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TicketRevision"
+            },
+            {
+              "$ref": "#/$defs/ClaimedSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RevisionStamp"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TicketNote"
+          }
+        }
+      },
+      "required": [
+        "ticket",
+        "ticket_url",
+        "title",
+        "status",
+        "body",
+        "acceptance_criteria",
+        "verification_commands",
+        "time_box_ms",
+        "run",
+        "mirrored_ms",
+        "current",
+        "claimed",
+        "revisions",
+        "notes"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

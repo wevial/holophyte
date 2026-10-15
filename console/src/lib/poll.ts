@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { hostStatusSchema, statusSchema } from "./schemas";
 import { addressOf, projectBase } from "./hosts";
 import { withToken } from "./token";
@@ -58,9 +58,34 @@ export const defaultPollDeps: PollDeps = {
   },
 };
 
-export interface PollAnswer {
-  status: Status;
+/** The bodies one poll parses: a project's `/status` and `/attention`,
+ *  and a host daemon's root `/status` and `/attention`. The shared host
+ *  helpers read no more of a project's status than its project and host. */
+export interface PollBodies {
+  status: Pick<Status, "project" | "host">;
   attention: Attention;
+  host: HostStatus;
+  hostAttention: Attention;
+}
+
+export interface ClassicBodies extends PollBodies {
+  status: Status;
+}
+
+export type PollSchemas<B extends PollBodies> = { [K in keyof PollBodies]: z.ZodType<B[K]> };
+
+const unparsedAttention = z.custom<Attention>();
+
+export const classicSchemas: PollSchemas<ClassicBodies> = {
+  status: statusSchema,
+  attention: unparsedAttention,
+  host: hostStatusSchema,
+  hostAttention: unparsedAttention,
+};
+
+export interface PollAnswer<B extends PollBodies = ClassicBodies> {
+  status: B["status"];
+  attention: B["attention"];
 }
 
 /** A non-2xx answer, carrying its status so a 401 can be told apart from
@@ -112,11 +137,13 @@ function parseAt<T>(schema: z.ZodType<T>, body: unknown, url: string): T {
 }
 
 /** One round trip: both endpoints of the daemon at `base`, both bounded by
- *  `signal` when given. */
-export async function pollOnce(base: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<PollAnswer> {
+ *  `signal` when given and parsed with `schemas`. */
+export function pollOnce(base: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<PollAnswer>;
+export function pollOnce<B extends PollBodies>(base: string, fetchImpl: Fetch, signal: AbortSignal | undefined, schemas: PollSchemas<B>): Promise<PollAnswer<B>>;
+export async function pollOnce(base: string, fetchImpl: Fetch, signal?: AbortSignal, schemas: PollSchemas<PollBodies> = classicSchemas): Promise<PollAnswer<PollBodies>> {
   const [status, attention] = await Promise.all([
-    fetchJson(fetchImpl, `${base}/status`, statusSchema, signal),
-    fetchJson<Attention>(fetchImpl, `${base}/attention`, undefined, signal),
+    fetchJson(fetchImpl, `${base}/status`, schemas.status, signal),
+    fetchJson(fetchImpl, `${base}/attention`, schemas.attention, signal),
   ]);
   return { status, attention };
 }
@@ -142,14 +169,14 @@ export function pollFailure(failure: unknown): PollFailure {
 /** One project behind a host daemon: its name and path from the root's
  *  list, and its own `/status` and `/attention` from under its prefix, or
  *  why they could not be had. */
-export type ProjectAnswer = { name: string; path: string } & ({ ok: true; status: Status; attention: Attention } | PollFailure);
+export type ProjectAnswer<B extends PollBodies = ClassicBodies> = { name: string; path: string } & (({ ok: true } & PollAnswer<B>) | PollFailure);
 
 /** What one daemon answered: a project daemon's two bodies at its root,
  *  or a host daemon's root `/status` and `/attention` with each project's
  *  own answers. */
-export type DaemonAnswer =
-  | ({ kind: "project" } & PollAnswer)
-  | { kind: "host"; host: HostStatus; attention: Attention; projects: ProjectAnswer[] };
+export type DaemonAnswer<B extends PollBodies = ClassicBodies> =
+  | ({ kind: "project" } & PollAnswer<B>)
+  | { kind: "host"; host: B["host"]; attention: B["hostAttention"]; projects: ProjectAnswer<B>[] };
 
 /** Whether a root `/status` body is a host daemon's: a `projects` list
  *  where a project daemon names its one `project`. */
@@ -170,12 +197,18 @@ export function unaskable(project: HostProject): string | null {
 
 /** One project of a host daemon: `/status` and `/attention` under
  *  `/projects/NAME`, unless the root already said why not. */
-async function pollProject(root: string, project: HostProject & { name: string }, fetchImpl: Fetch, signal?: AbortSignal): Promise<ProjectAnswer> {
+async function pollProject<B extends PollBodies>(
+  root: string,
+  project: HostProject & { name: string },
+  fetchImpl: Fetch,
+  signal: AbortSignal | undefined,
+  schemas: PollSchemas<B>,
+): Promise<ProjectAnswer<B>> {
   const { name, path } = project;
   const why = unaskable(project);
   if (why != null) return { name, path, ok: false, error: why };
   try {
-    return { name, path, ok: true, ...(await pollOnce(projectBase(root, name), fetchImpl, signal)) };
+    return { name, path, ok: true, ...(await pollOnce(projectBase(root, name), fetchImpl, signal, schemas)) };
   } catch (failure) {
     return { name, path, ...pollFailure(failure) };
   }
@@ -185,16 +218,23 @@ async function pollProject(root: string, project: HostProject & { name: string }
  *  `/attention`; when the status is a host's, each registered project's
  *  own two under its prefix, side by side. A project the registry cannot
  *  name (its config does not load) is listed by the root and not asked.
- *  Every request is bounded by `signal` when given. */
-export async function pollDaemon(base: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<DaemonAnswer> {
+ *  Every request is bounded by `signal` when given, and every body parsed
+ *  with `schemas`. */
+export function pollDaemon(base: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<DaemonAnswer>;
+export function pollDaemon<B extends PollBodies>(base: string, fetchImpl: Fetch, signal: AbortSignal | undefined, schemas: PollSchemas<B>): Promise<DaemonAnswer<B>>;
+export async function pollDaemon(base: string, fetchImpl: Fetch, signal?: AbortSignal, schemas: PollSchemas<PollBodies> = classicSchemas): Promise<DaemonAnswer<PollBodies>> {
   const url = `${base}/status`;
-  const [body, attention] = await Promise.all([
+  const attentionUrl = `${base}/attention`;
+  const [body, attentionBody] = await Promise.all([
     fetchJson<unknown>(fetchImpl, url, undefined, signal),
-    fetchJson<Attention>(fetchImpl, `${base}/attention`, undefined, signal),
+    fetchJson<unknown>(fetchImpl, attentionUrl, undefined, signal),
   ]);
-  if (!isHostBody(body)) return { kind: "project", status: parseAt(statusSchema, body, url), attention };
-  const host = parseAt(hostStatusSchema, body, url);
+  if (!isHostBody(body)) {
+    return { kind: "project", status: parseAt(schemas.status, body, url), attention: parseAt(schemas.attention, attentionBody, attentionUrl) };
+  }
+  const host = parseAt(schemas.host, body, url);
+  const attention = parseAt(schemas.hostAttention, attentionBody, attentionUrl);
   const named = host.projects.filter((project): project is HostProject & { name: string } => project.name != null);
-  const projects = await Promise.all(named.map((project) => pollProject(base, project, fetchImpl, signal)));
+  const projects = await Promise.all(named.map((project) => pollProject(base, project, fetchImpl, signal, schemas)));
   return { kind: "host", host, attention, projects };
 }

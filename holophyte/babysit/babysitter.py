@@ -10,6 +10,7 @@ from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import babysitter, maintainer_notes, thread_mentions
+from holophyte.babysit.adjudicator_outage import adjudicate_or_park
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
@@ -713,7 +714,6 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, state, rnd, pass_no, model, ticket,
                     verify_cmd, contracts, budget_min, reviewed=None, criteria=()):
     """Only configured bots' or `[bot]` logins' declines are resolved."""
-    from holophyte.loop.review_round import agent
     from holophyte.pr.pullrequest import _park_human, _park_on_pr
     merge = merge_config(project)
     record_step(conn, run_id, "threads")
@@ -724,15 +724,9 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     judged = tuple(t for t in threads if not maintainer_notes.is_note(t)
                    and t.classification != "MENTIONED"
                    and (act or t.author_kind == "bot"))
-    reply = "(no bot opened a thread; the adjudicator was not asked)"
-    if judged:
-        with heartbeat_while(conn, run_id, beat_s):
-            reply = agent(project, "adjudicate",
-                          babysitter.adjudication_brief(
-                              pull, judged, ticket, sha,
-                              babysitter.conventions(wt), run_id=run_id), wt, conn=conn,
-                          base_sha=base_sha, candidate_sha=sha, run_id=run_id)
-    stop_if_requested(conn, run_id, "merge_gate")
+    reply = adjudicate_or_park(project, conn, run_id, provider, task_id, branch,
+                               wt, sha, beat_s, pull, judged, ticket, base_sha,
+                               reviewed)
     verdicts = _verdicts_by_kind(
         threads, judged, babysitter.parse_verdicts(reply, len(judged)))
     record_round(project, conn, run_id, rnd, "review",

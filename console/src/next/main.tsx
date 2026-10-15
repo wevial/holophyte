@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { applyTheme, readTheme } from "../lib/theme";
+import { consoleQueryClient } from "./fleet";
 import { NextConsole } from "./router";
 import "./theme.css";
 
@@ -12,6 +14,8 @@ if (!root) {
 }
 createRoot(root).render(
   <StrictMode>
-    <NextConsole />
+    <QueryClientProvider client={consoleQueryClient()}>
+      <NextConsole />
+    </QueryClientProvider>
   </StrictMode>,
 );

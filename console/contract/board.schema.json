@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Board",
+  "description": "GET /board",
+  "$ref": "#/$defs/Board",
+  "$defs": {
+    "BoardTicket": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "time_box_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waits_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mirrored_ms": {
+          "type": "integer"
+        },
+        "column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ticket",
+        "ticket_url",
+        "title",
+        "time_box_ms",
+        "run",
+        "question",
+        "waits_on",
+        "mirrored_ms",
+        "column",
+        "priority",
+        "labels",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
+    "BoardColumn": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "backlog",
+            "needs_spec",
+            "blocked_on_deps",
+            "ready",
+            "blocked_on_operator",
+            "in_flight"
+          ]
+        },
+        "tickets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BoardTicket"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "tickets"
+      ],
+      "additionalProperties": true
+    },
+    "Board": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BoardColumn"
+          }
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "now": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "columns",
+        "editable",
+        "now"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

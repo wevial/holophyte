@@ -53,6 +53,7 @@ PINNED = {
     "holophyte/agents/transcripts.py": 4,
 
     "holophyte/babysit/__init__.py": 0,
+    "holophyte/babysit/adjudicator_outage.py": 0,
     "holophyte/babysit/babysit_steps.py": 0,
     "holophyte/babysit/babysitter.py": 21,
     "holophyte/babysit/bot_threads.py": 0,
@@ -206,7 +207,8 @@ PINNED = {
     "holophyte/review/briefs.py": 4,
     "holophyte/review/consolidate.py": 1,
     "holophyte/review/findings.py": 4,
-    "holophyte/review/freshness.py": 2,
+    "holophyte/review/freshness.py": 0,
+    "holophyte/review/landmarks.py": 1,
     "holophyte/review/reply_parsing.py": 11,
     "holophyte/review/reproduce.py": 1,
     "holophyte/review/skipped_tests.py": 0,
