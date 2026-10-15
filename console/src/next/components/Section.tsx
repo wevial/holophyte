@@ -3,6 +3,7 @@ import { useId, useState, type ReactNode } from "react";
 export function Section({
   label,
   count,
+  hot = false,
   summary,
   defaultOpen = true,
   onToggle,
@@ -10,6 +11,7 @@ export function Section({
 }: {
   label: string;
   count?: number;
+  hot?: boolean;
   summary?: ReactNode;
   defaultOpen?: boolean;
   onToggle?: (open: boolean) => void;
@@ -33,7 +35,7 @@ export function Section({
         >
           {label}
         </button>
-        {count != null && <span className="font-mono text-[12px] text-ink-2">{count}</span>}
+        {count != null && <span className={`font-mono text-[12px] ${hot && count > 0 ? "text-need" : "text-ink-3"}`}>{count}</span>}
         {summary != null && <span className="truncate font-sans text-[13px] text-ink-3">{summary}</span>}
       </header>
       <div id={body} hidden={!open}>
