@@ -925,6 +925,12 @@ class ServeContractTests(ServeTestCase):
             with self.subTest(endpoint=name):
                 expected = json.loads((fixtures / f"{name}.json").read_text())
                 self.assertEqual(body, expected)
+        self.assertTrue(answers["shipped"]["rows"])
+        self.assertTrue(answers["ledger"]["entries"])
+        self.assertTrue(any(column["tickets"]
+                            for column in answers["board"]["columns"]))
+        self.assertEqual(answers["ticket"]["acceptance_criteria"],
+                         ["Run without an estimate"])
 
 
 class TurnTests(TranscriptCase):

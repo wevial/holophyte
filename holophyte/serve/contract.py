@@ -523,6 +523,149 @@ class RunAsks(TypedDict):
     asks: list[ConsoleAsk]
 
 
+class ShippedRow(TypedDict):
+    id: int
+    ticket: str
+    ticket_url: str | None
+    title: str
+    rounds: int
+    findings: int
+    started_ms: int
+    actual_min: float | None
+    working_ms: int | None
+    agent_ms: int | None
+    verify_ms: int | None
+    run_count: int
+    ended_ms: int
+    wall_min: float
+    turn_count: int
+    estimate_min: float | None
+    merge_sha: str | None
+    commit_url: str | None
+    outcome: str
+    outcome_reason: str | None
+    pr_url: str | None
+    host: str | None
+
+
+class Shipped(TypedDict):
+    rows: list[ShippedRow]
+    next_before: int | None
+    limit: int
+
+
+class LedgerEntry(TypedDict):
+    at: int
+    run: int | None
+    ticket: str | None
+    kind: str
+    source: str
+    text: str
+    cleared: NotRequired[str | None]
+    waited_ms: NotRequired[int | None]
+    action: NotRequired[str]
+    tone: NotRequired[str]
+    schema_to: NotRequired[int]
+    schema_from: NotRequired[int]
+    project: NotRequired[str]
+
+
+class ActiveOutage(TypedDict):
+    project: int
+    run: None
+    ticket: None
+    kind: Literal["route_down"]
+    source: str
+    at: int
+    reason: str
+    text: str
+
+
+class Ledger(TypedDict):
+    entries: list[LedgerEntry]
+    active_outages: list[ActiveOutage]
+    since: int
+    limit: int
+
+
+class BoardTicket(TypedDict):
+    ticket: str
+    ticket_url: str | None
+    title: str
+    time_box_ms: int | None
+    run: int | None
+    question: str | None
+    waits_on: list[str]
+    mirrored_ms: int
+    column: str | None
+    priority: int | None
+    labels: list[str]
+    revision: int
+
+
+class BoardColumn(TypedDict):
+    state: Literal["backlog", "needs_spec", "blocked_on_deps", "ready",
+                   "blocked_on_operator", "in_flight"]
+    tickets: list[BoardTicket]
+
+
+class Board(TypedDict):
+    columns: list[BoardColumn]
+    editable: bool
+    now: int
+
+
+class TicketRevision(TypedDict):
+    revision: int
+    at: int
+    author: str
+    title: str
+    body: str
+    priority: int | None
+    labels: list[str]
+    column: str | None
+
+
+class ClaimedSnapshot(TypedDict):
+    revision: None
+    title: str
+    acceptance_criteria: list[str]
+    verification_commands: list[str]
+
+
+class RevisionStamp(TypedDict):
+    revision: int
+    at: int
+    author: str
+
+
+class TicketNote(TypedDict):
+    id: int
+    at: int
+    author: str
+    kind: str
+    text: str
+    posted_ms: int | None
+    post_error: str | None
+
+
+class TicketDetail(TypedDict):
+    ticket: str
+    ticket_url: str | None
+    title: str
+    status: str
+    body: str
+    acceptance_criteria: list[str]
+    verification_commands: list[str]
+    time_box_ms: int | None
+    run: int | None
+    mirrored_ms: int
+    current: TicketRevision | None
+    claimed: TicketRevision | ClaimedSnapshot | None
+    revisions: list[RevisionStamp]
+    notes: list[TicketNote]
+
+
 ROUTES = {
     "status": (Status, "GET /status"),
     "attention": (Attention, "GET /attention"),
@@ -532,6 +675,10 @@ ROUTES = {
     "run-detail": (RunDetail, "GET /runs/N"),
     "run-merge": (MergeReadiness, "GET /runs/N/merge"),
     "run-asks": (RunAsks, "GET /runs/N/asks"),
+    "shipped": (Shipped, "GET /shipped"),
+    "ledger": (Ledger, "GET /ledger"),
+    "board": (Board, "GET /board"),
+    "ticket": (TicketDetail, "GET /tickets/KEY"),
 }
 
 

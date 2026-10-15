@@ -2,12 +2,16 @@ import { expect, test } from "bun:test";
 import {
   type Attention,
   attentionSchema,
+  boardSchema,
   hostAttentionSchema,
+  ledgerSchema,
   hostStatusSchema,
   mergeReadinessSchema,
   runAsksSchema,
   runDetailSchema,
+  shippedSchema,
   statusSchema,
+  ticketDetailSchema,
 } from "../src/lib/contract.gen";
 import status from "../../tests/fixtures/serve/status.json";
 import attention from "../../tests/fixtures/serve/attention.json";
@@ -18,6 +22,10 @@ import runDetailUnestimated from "../../tests/fixtures/serve/run-detail-unestima
 import runMergeReady from "../../tests/fixtures/serve/run-merge-ready.json";
 import runMergeBypassable from "../../tests/fixtures/serve/run-merge-bypassable.json";
 import pinnedAsks from "../../tests/fixtures/serve/run-asks.json";
+import shipped from "../../tests/fixtures/serve/shipped.json";
+import ledger from "../../tests/fixtures/serve/ledger.json";
+import board from "../../tests/fixtures/serve/board.json";
+import ticket from "../../tests/fixtures/serve/ticket.json";
 
 // The pinned asks hold `NOW` where the daemon sends a time.
 const time = (value: string | null) => (value === "NOW" ? 1750000000000 : value);
@@ -39,6 +47,25 @@ test("each pinned run-route answer parses unchanged with its generated schema", 
   expect<unknown>(mergeReadinessSchema.parse(runMergeReady)).toEqual(runMergeReady);
   expect<unknown>(mergeReadinessSchema.parse(runMergeBypassable)).toEqual(runMergeBypassable);
   expect<unknown>(runAsksSchema.parse(runAsks)).toEqual(runAsks);
+});
+
+test("each pinned list-route answer parses unchanged with its generated schema", () => {
+  expect<unknown>(shippedSchema.parse(shipped)).toEqual(shipped);
+  expect<unknown>(ledgerSchema.parse(ledger)).toEqual(ledger);
+  expect<unknown>(boardSchema.parse(board)).toEqual(board);
+  expect<unknown>(ticketDetailSchema.parse(ticket)).toEqual(ticket);
+});
+
+test("a board column state outside the board's states fails at its path", () => {
+  const shipping = { ...board, columns: [{ ...board.columns[0], state: "shipping" }, ...board.columns.slice(1)] };
+  expect(firstIssuePath(boardSchema.safeParse(shipping))).toStartWith("columns.0.state");
+});
+
+test("a ticket claimed by an older build carries its claim-time snapshot and parses", () => {
+  // The daemon answers this only for a run claimed before revisions were recorded; no pin holds one.
+  const claimed = { revision: null, title: ticket.title, acceptance_criteria: ticket.acceptance_criteria, verification_commands: ticket.verification_commands };
+  const older = { ...ticket, claimed };
+  expect<unknown>(ticketDetailSchema.parse(older)).toEqual(older);
 });
 
 test("a run detail without rounds or with a numeric phase fails at its path; an extra run key passes", () => {

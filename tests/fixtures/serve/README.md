@@ -10,6 +10,14 @@ It also lists one queued ticket, approved off its pull request and waiting
 for a claim, so its toil counts that approval.
 `attention.json` pins the same store's `/attention`: one ticket parked on
 its pull request, not yet approved, as a `pr_open` item.
+`shipped.json` pins the same store's `/shipped?outcome=all`: the approved
+ticket's ended run.
+`ledger.json` pins its `/ledger?since=0`: a round, an operator approval and
+the store's migration row, whose build, pid and command become `BUILD`,
+1 and `COMMAND`.
+`board.json` pins its `/board`, a store-mirror board with no backlog column.
+`ticket.json` pins its `/tickets/KO-8`: the unestimated ticket, claimed at
+its current revision, with one posted note.
 
 `host-status.json` and `host-attention.json` pin a host daemon's root
 `/status` and `/attention` over two registered projects whose run ids
