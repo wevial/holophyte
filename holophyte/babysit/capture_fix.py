@@ -4,14 +4,13 @@ import store
 import store.read
 import ticket_template
 from holophyte.babysit.check_failures import LISTED_MAX, failure_lines
+from holophyte.babysit.check_fix import LOG_TAIL_LINES
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import pr_media
 from holophyte.pr.evidence_refresh import publish_evidence
 from holophyte.redact import safe_print as print
-
-LOG_TAIL_LINES = 80
 
 
 def capture_fix_brief(project, pull, ticket, task_id, sha, failure):
