@@ -43,6 +43,13 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
         return [summary for (summary,) in self.read(
             f"SELECT summary FROM runEvents WHERE kind = '{kind}' ORDER BY id")]
 
+    def fix_goals(self, fake):
+        return [turn.goal for turn in fake.turns[3:] if turn.role == "implement"
+                and "CHECK unit" in turn.goal]
+
+    def merges(self):
+        return [v["sha"] for kind, v in self.api_calls() if kind == "merge"]
+
     def test_a_new_failure_on_the_fix_commit_gets_a_second_round_and_merges(self):
         self.red_per_head("FAIL: test_a (tests.test_y.Case.test_a)\n",
                           "FAIL: test_b (tests.test_y.Case.test_b)\n")
@@ -50,27 +57,18 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
                             Commit("fix: test_a"), Commit("fix: test_b"),
                             APPROVE, Idle(""),
                             provider=StubProvider(dict(a_task(), body=self.BODY)))
-        fixes = [turn for turn in fake.turns[3:] if turn.role == "implement"
-                 and "CHECK unit" in turn.goal]
-        self.assertEqual(len(fixes), 2, self.read("SELECT outcomeReason FROM runs"))
-        self.assertIn("FAIL: test_b", fixes[1].goal)
-        self.assertIn("check fix round 2 of 2", fixes[1].goal)
+        goals = self.fix_goals(fake)
+        self.assertEqual(len(goals), 2, self.read("SELECT outcomeReason FROM runs"))
+        self.assertIn("FAIL: test_b", goals[1])
+        self.assertIn("check fix round 2 of 2", goals[1])
         fixed = self.pushed()[-1][1]
         self.assertIn("fix: test_b", self.git("log", "-1", "--format=%s", fixed))
-        self.assertEqual([v["sha"] for kind, v in self.api_calls()
-                          if kind == "merge"], [fixed])
+        self.assertEqual(self.merges(), [fixed])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual(len(self.events("check_fix_round")), 2)
         self.assertIn("Check fix round 2 of 2", " ".join(
             text for (text,) in self.read(
                 "SELECT text FROM ledger WHERE kind = 'round'")))
-
-    def fix_goals(self, fake):
-        return [turn.goal for turn in fake.turns[3:] if turn.role == "implement"
-                and "CHECK unit" in turn.goal]
-
-    def merges(self):
-        return [v["sha"] for kind, v in self.api_calls() if kind == "merge"]
 
     def test_the_same_failure_with_new_stamps_and_digests_parks_as_a_repeat(self):
         self.red_per_head(
