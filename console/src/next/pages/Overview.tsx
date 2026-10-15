@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
+import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
 
@@ -44,6 +45,7 @@ function FoldingSection({
   count,
   summary,
   empty,
+  isEmpty = count === 0,
   children,
 }: {
   id: string;
@@ -51,11 +53,12 @@ function FoldingSection({
   count: number;
   summary?: string;
   empty: string;
+  isEmpty?: boolean;
   children?: ReactNode;
 }) {
   return (
     <Section label={label} count={count} summary={summary} defaultOpen={readOpen(id)} onToggle={(open) => writeOpen(id, open)}>
-      {count === 0 ? <Empty>{empty}</Empty> : children}
+      {isEmpty ? <Empty>{empty}</Empty> : children}
     </Section>
   );
 }
@@ -67,6 +70,7 @@ export function Overview() {
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
+  const lanes = laneGroups(view.hosts);
   return (
     <div className="flex max-w-[880px] flex-col gap-6 px-8 py-7">
       {view.answered && (
@@ -103,7 +107,10 @@ export function Overview() {
         count={view.running}
         summary={queued === 0 ? "nothing queued" : `${queued} queued`}
         empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-      />
+        isEmpty={!lanes.some((group) => group.runs.length > 0)}
+      >
+        <RunningLanes groups={lanes} now={view.now} />
+      </FoldingSection>
       <FoldingSection
         id="pr"
         label="Pull requests"
