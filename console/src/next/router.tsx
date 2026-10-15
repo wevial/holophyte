@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   createHashHistory,
   createRootRoute,
@@ -12,7 +12,8 @@ import { Sidebar } from "./components/Sidebar";
 import { useFleet } from "./fleet";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
-import { PeersContext, validateScope } from "./scope";
+import { Overview } from "./pages/Overview";
+import { PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
   return (
@@ -31,16 +32,16 @@ const rootRoute = createRootRoute({
   notFoundComponent: NotFound,
 });
 
+function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
+  return createRoute({ getParentRoute: () => rootRoute, path, component: page });
+}
+
 function placeholderRoute<TPath extends string>(path: TPath, page: Parameters<typeof Placeholder>[0]) {
-  return createRoute({ getParentRoute: () => rootRoute, path, component: () => <Placeholder {...page} /> });
+  return pageRoute(path, () => <Placeholder {...page} />);
 }
 
 const routeTree = rootRoute.addChildren([
-  placeholderRoute("/", {
-    title: "Overview",
-    sentence: "What needs you, what is running, pull requests and today's merges come here first.",
-    classic: { href: "/", label: "Open Now in the classic console" },
-  }),
+  pageRoute("/", Overview),
   placeholderRoute("/runs", {
     title: "Runs",
     sentence: "Active and finished runs come here next.",
@@ -82,8 +83,10 @@ export function NextConsole({
   const peers = useFleet(base, pollDeps);
   const [router] = useState(createConsoleRouter);
   return (
-    <PeersContext.Provider value={peers}>
-      <RouterProvider router={router} />
-    </PeersContext.Provider>
+    <PollDepsContext.Provider value={pollDeps}>
+      <PeersContext.Provider value={peers}>
+        <RouterProvider router={router} />
+      </PeersContext.Provider>
+    </PollDepsContext.Provider>
   );
 }
