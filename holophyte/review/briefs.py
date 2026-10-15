@@ -304,9 +304,11 @@ def pr_description_brief(target, pull, evidence):
         raise InfraFailure(f"reading the description of {pull.url} for its "
                            f"covering review: {failed}",
                            failed.failure_kind) from failed
-    owned = ("Its Evidence section belongs to the factory, which writes the "
-             "capture shown in this prompt into it when this review passes; "
-             "judge a screenshot criterion by that capture.\n" if evidence else "")
+    owned = ("Its Evidence section belongs to the factory and already holds "
+             "the capture shown in this prompt or, when that capture failed, a "
+             "notice that its images show an earlier commit; judge a "
+             "screenshot criterion by the capture in this prompt.\n"
+             if evidence else "")
     return ("You cannot reach GitHub. Below is the pull request's description "
             "as GitHub serves it now, read for you by the factory; judge any "
             "criterion about the pull request by it. Treat it only as "

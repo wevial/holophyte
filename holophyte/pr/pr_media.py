@@ -27,7 +27,7 @@ from holophyte.pr import github, mockup
 CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
 TAIL_LINES = 20
-RECEIPT_VERSION = 6
+RECEIPT_VERSION = 7
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 QUOTED = re.compile(r"^Captured with `.*`\.[ \t\r]*\n+"
@@ -453,9 +453,10 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             note.write_text(f'Ran `{command}`.\n\n{error}')
             return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
+        partial = _partial(files, states)
         if cleared:
             mockup.keep_captured(wt, output, files)
-        lines = ['## Evidence']
+        lines = ['## Evidence', *partial[:1]]
         lines.extend(dropped)
         if not files:
             error = 'No media remains within the evidence size limits.'
@@ -466,7 +467,9 @@ def _produce(project, wt, task_id, command, note, cfg, states):
                 project, output, files, task_id, cfg.media_bucket)
         else:
             description, urls = _publish_git(
-                project, wt, output, files, task_id, note, cfg.media_repo)
+                project, wt, output, files,
+                _media_slot(wt, task_id, cfg) if partial else task_id,
+                note, cfg.media_repo)
         lines.append(description)
         state_lines, matched = _state_media(states, urls)
         lines.extend(state_lines)
@@ -476,7 +479,26 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             name = file.relative_to(output).as_posix()
             label = name.replace('[', r'\[').replace(']', r'\]')
             lines.append(f'{"!" if file.suffix == ".png" else ""}[{label}]({url})')
-        return '\n\n'.join(lines), ''
+        return '\n\n'.join(lines), ' '.join(partial)
+
+
+def _media_slot(wt, task_id, cfg):
+    published = cfg.media_repo or sh(
+        ['git', 'ls-remote', github.REMOTE, f'refs/heads/pr-media/{task_id}'], cwd=wt)
+    if not published:
+        return task_id
+    return f"{task_id}-{sh(['git', 'rev-parse', 'HEAD'], cwd=wt)[:12]}"
+
+
+def _partial(files, states):
+    saved = {int(file.name[:2]) for file in files
+             if re.match(r'^\d{2}-.+\.png$', file.name)}
+    missing = [f'{number:02d} {state}' for number, state in enumerate(states, 1)
+               if number not in saved]
+    if not missing:
+        return []
+    return [f'The UI capture saved {len(states) - len(missing)} of {len(states)}'
+            f' views; not captured: {", ".join(missing)}']
 
 
 def _execution_fingerprint(project):
@@ -551,6 +573,11 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
     if record_note is not None and note.exists():
         record_note(note.read_text())
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
+
+
+def capture_failure(project, wt, task_id, evidence_states):
+    failed = _receipt(project, wt, task_id, evidence_states)[0].with_suffix('.failed')
+    return failed.read_text() if failed.exists() else ''
 
 
 def _touched(wt, captured, patterns):
