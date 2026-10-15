@@ -636,3 +636,111 @@ def claimable(conn, project_id, order="identifier"):
                             tuple(json.loads(row[13])),
                             tuple(json.loads(row[14])))
             for row in rows if verdicts.get(row[2])]
+
+
+def parked_on_pull_request(outcome, pr_url, park_kind):
+    return (outcome != "paused" and bool(pr_url)
+            and park_kind in ("pull_request", "ci"))
+
+_STUCK_NOTE_KINDS = {"needs_spec": ("critic", "stale", "validation"),
+                     "abandoned": ("cancel",)}
+
+
+@dataclass(frozen=True)
+class StuckWait:
+    linearIdentifier: str
+    ticketUrl: str | None
+    title: str
+    boardState: str | None
+    dependency: str
+    dependencyState: str
+    reason: str | None
+    behind: int
+
+
+@dataclass(frozen=True)
+class _WaitRow:
+    id: int
+    projectId: int
+    issueId: str
+    identifier: str
+    url: str | None
+    title: str
+    boardState: str | None
+    status: str
+    dependsOn: tuple[str, ...]
+    activeRunId: int | None
+    blockedQuestion: str | None
+    prUrl: str | None
+    parkKind: str | None
+    outcome: str | None
+    outcomeReason: str | None
+
+
+def _stuck_state(dep):
+    if dep.status in ("needs_spec", "abandoned"):
+        return dep.status
+    if dep.status == "blocked_on_operator" and not parked_on_pull_request(
+            dep.outcome, dep.prUrl, dep.parkKind):
+        return "parked"
+    if (dep.status == "in_flight" and dep.activeRunId is None
+            and dep.outcome == "failed"):
+        return "failed"
+    return None
+
+
+def _stuck_reason(conn, dep, state):
+    if state == "parked":
+        return dep.blockedQuestion
+    if state == "failed":
+        return dep.outcomeReason
+    kinds = _STUCK_NOTE_KINDS[state]
+    row = conn.execute(
+        "SELECT text FROM ticketNotes WHERE ticketId = ? AND kind IN"
+        f" ({', '.join('?' for _ in kinds)}) ORDER BY at DESC, id DESC"
+        " LIMIT 1", (dep.id, *kinds)).fetchone()
+    return None if row is None else row[0]
+
+
+def _queued_behind(ticket, waiting):
+    seen, frontier = set(), [ticket.issueId]
+    while frontier:
+        issue = frontier.pop()
+        for other in waiting:
+            if issue in other.dependsOn and other.issueId not in seen \
+                    and other.issueId != ticket.issueId:
+                seen.add(other.issueId)
+                frontier.append(other.issueId)
+    return len(seen)
+
+
+def stuck_waits(conn):
+    rows = [_WaitRow(*row[:8], tuple(json.loads(row[8])), *row[9:])
+            for row in conn.execute(
+                "SELECT t.id, t.projectId, t.linearIssueId, t.linearIdentifier,"
+                " t.url, t.title, t.boardState, t.status, t.dependsOn,"
+                " t.activeRunId, t.blockedQuestion, r.prUrl, r.parkKind,"
+                " r.outcome, r.outcomeReason FROM tickets t"
+                " LEFT JOIN runs r ON r.id = t.lastRunId"
+                " ORDER BY t.linearIdentifier")]
+    by_issue = {(row.projectId, row.issueId): row for row in rows}
+    waits = []
+    for ticket in rows:
+        if ticket.status != "blocked_on_deps":
+            continue
+        deps = [by_issue[ticket.projectId, issue] for issue in ticket.dependsOn
+                if (ticket.projectId, issue) in by_issue]
+        stuck = next(((dep, _stuck_state(dep)) for dep in deps
+                      if _stuck_state(dep) is not None), None)
+        if stuck is None:
+            continue
+        dep, state = stuck
+        waiting = [row for row in rows if row.projectId == ticket.projectId
+                   and row.status == "blocked_on_deps"]
+        waits.append(StuckWait(
+            linearIdentifier=ticket.identifier, ticketUrl=ticket.url,
+            title=ticket.title, boardState=ticket.boardState,
+            dependency=dep.identifier, dependencyState=state,
+            reason=_stuck_reason(conn, dep, state),
+            behind=_queued_behind(ticket, waiting)))
+    return waits

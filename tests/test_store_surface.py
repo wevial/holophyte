@@ -186,6 +186,9 @@ EXPECTED_READ = [
     "open_readonly",
     # KO-747: the store-mode notes the host sweep has yet to post.
     "pending_notes",
+    # HOLO-270: whether a parked ticket waits on its pull request, which
+    # `/attention` serves as `pr_open` and a stuck wait does not count.
+    "parked_on_pull_request",
     # HOLO-250: the `serve` daemon's Floor read of the ready tickets whose
     # last run ended, waiting for the next claim.
     "queued_tickets",
@@ -196,6 +199,9 @@ EXPECTED_READ = [
     "rounds_of",
     "run_detail",
     "strike",
+    # HOLO-270: the `/attention` and `--status` read of the waits only a
+    # person can end.
+    "stuck_waits",
     # KO-218: the `serve` daemon's supervisor read, so it needs nothing from
     # `store` itself.
     "supervisor_beat",

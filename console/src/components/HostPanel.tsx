@@ -25,6 +25,7 @@ const NOUNS: Record<Kind, string> = {
   paused: "paused ticket",
   stale_run: "stale run",
   failed: "failed run",
+  stuck_wait: "stuck wait",
   supervisor: "supervisor",
   unreachable: "unreachable",
 };

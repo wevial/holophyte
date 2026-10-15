@@ -112,7 +112,8 @@ def parked_item(ticket):
     if ticket.outcome == "paused":
         return paused_item(ticket)
     question = ticket.blockedQuestion or ""
-    if ticket.prUrl and ticket.parkKind in ("pull_request", "ci"):
+    if store.read.parked_on_pull_request(ticket.outcome, ticket.prUrl,
+                                         ticket.parkKind):
         _, separator, reason = question.partition("\n")
         reason = reason if separator else question
         match = PR_URL_RE.match(ticket.prUrl)
@@ -159,6 +160,7 @@ def attention(project, now=None, beat_stale_ms=None):
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
         failed = store.read.recent_failed_runs(conn, now - FAILED_WINDOW_MS)
         stranded = store.read.stranded_runs(conn)
+        stuck = stuck_wait_items(conn)
         beat = store.read.supervisor_beat(conn)
     finally:
         conn.close()
@@ -187,6 +189,8 @@ def attention(project, now=None, beat_stale_ms=None):
                  and run.activeRunId is None
                  and run.ticketStatus in ("ready", "in_flight", "blocked_on_operator")
                  and run.boardState not in ("Backlog", "Canceled", "Done"))
+    items.extend({"kind": "stuck_wait", **item, "level": "attention"}
+                 for item in stuck)
     supervisor = supervisor_view(project, beat, now, knobs, beat_stale_ms)
     if supervisor["state"] != "live":
         items.append({"kind": "supervisor", "state": supervisor["state"],
@@ -198,6 +202,26 @@ def attention(project, now=None, beat_stale_ms=None):
         level = "working" if runs else "none"
     return 200, {"level": level, "items": items, "now": now,
                  "project": str(project.path)}
+
+
+def stuck_wait_items(conn):
+    return [{"ticket": wait.linearIdentifier, "ticket_url": wait.ticketUrl,
+             "title": wait.title, "dependency": wait.dependency,
+             "dependency_state": wait.dependencyState,
+             "reason": reason_line(wait.reason), "behind": wait.behind}
+            for wait in store.read.stuck_waits(conn)
+            if wait.boardState not in ("Backlog", "Canceled", "Done")]
+
+
+def reason_line(text):
+    lines = [line.strip() for line in (text or "").splitlines()]
+    bullet = next((line[2:].strip() for line in lines
+                   if line.startswith("* ")), None)
+    if bullet is not None:
+        return bullet
+    first = next((line.replace("**", "").strip() for line in lines if line),
+                 None)
+    return first or None
 
 
 BOARD_STATES = ("needs_spec", "blocked_on_deps", "ready",

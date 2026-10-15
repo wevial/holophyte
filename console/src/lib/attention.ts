@@ -8,9 +8,9 @@ import type { AttentionItem, Run, Status } from "./types";
  *  pull request: nobody owes the factory an answer, the PR waits on a
  *  review or a merge, so it is its own kind and not a question. `paused`
  *  is a ticket a pause parked (holophyte/serve/serve_levers.py `paused_item()`),
- *  waiting on a Resume. */
-export type Kind = "blocked" | "pr_open" | "paused" | "stale_run" | "failed" | "supervisor" | "unreachable";
-export const KINDS: Kind[] = ["blocked", "pr_open", "paused", "stale_run", "failed", "supervisor", "unreachable"];
+ *  waiting on a Resume; `stuck_wait`, one waiting on a dependency that will not land. */
+export type Kind = "blocked" | "pr_open" | "paused" | "stale_run" | "failed" | "stuck_wait" | "supervisor" | "unreachable";
+export const KINDS: Kind[] = ["blocked", "pr_open", "paused", "stale_run", "failed", "stuck_wait", "supervisor", "unreachable"];
 
 /** A chip: every kind, or one of them. */
 export type KindFilter = "all" | Kind;
@@ -22,6 +22,7 @@ export const CHIP_LABELS: Record<KindFilter, string> = {
   paused: "Paused",
   stale_run: "Stale runs",
   failed: "Failed",
+  stuck_wait: "Stuck waits",
   supervisor: "Supervisor",
   unreachable: "Unreachable",
 };
@@ -32,6 +33,7 @@ export const PILL_TEXT: Record<Kind, string> = {
   paused: "paused",
   stale_run: "stale run",
   failed: "failed",
+  stuck_wait: "stuck",
   supervisor: "supervisor",
   unreachable: "unreachable",
 };
@@ -62,6 +64,7 @@ const ACTIONS: Record<Kind, string[]> = {
   paused: [RESUME],
   stale_run: [ABORT, "Requeue"],
   failed: ["Requeue", "Mark needs_spec"],
+  stuck_wait: [],
   supervisor: ["Restart supervisor"],
   unreachable: [],
 };
@@ -146,7 +149,7 @@ export function collapseFailed(items: AttentionItem[]): BandEntry[] {
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
-  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, paused: 0, stale_run: 0, failed: 0, supervisor: 0, unreachable: 0 };
+  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, paused: 0, stale_run: 0, failed: 0, stuck_wait: 0, supervisor: 0, unreachable: 0 };
   for (const item of items) {
     if ((KINDS as string[]).includes(item.kind)) counts[item.kind as Kind] += 1;
   }
@@ -239,6 +242,13 @@ export function prFacts(pr: PrFacts): Fact[] {
         : { label: `${threads} ${threads === 1 ? "thread" : "threads"} open`, tone: "warn" },
   ];
 }
+
+const DEPENDENCY_STATE: Record<string, string> = {
+  needs_spec: "needs a spec",
+  abandoned: "was abandoned",
+  parked: "is parked for a person",
+  failed: "failed",
+};
 
 const CI_WAIT: Record<string, string> = {
   pending: "checks running",
@@ -419,6 +429,16 @@ export function describe(
           attempt == null ? null : `strike ${attempt} of ${thresholds.strikes}`,
           plain.branch != null && plain.sha != null ? `${plain.branch} @ ${plain.sha.slice(0, 7)}` : null,
         ),
+      };
+    }
+    case "stuck_wait": {
+      const state = str(item.dependency_state) ?? "";
+      const reason = str(item.reason);
+      const behind = num(item.behind) ?? 0;
+      return {
+        ...base,
+        body: `Waits on ${str(item.dependency) ?? "a dependency"}, which ${DEPENDENCY_STATE[state] ?? state}${reason ? `: ${reason}` : ""}`,
+        meta: behind > 0 ? `${behind} queued behind` : null,
       };
     }
     case "supervisor": {
