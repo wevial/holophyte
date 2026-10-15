@@ -191,6 +191,7 @@ PINNED = {
     "holophyte/pr/merge_queue.py": 4,
     "holophyte/pr/merge_ready.py": 0,
     "holophyte/pr/missing_checks.py": 2,
+    "holophyte/pr/mockup.py": 1,
     "holophyte/pr/pr_activity.py": 5,
     "holophyte/pr/pr_contexts.py": 0,
     "holophyte/pr/pr_head.py": 2,
