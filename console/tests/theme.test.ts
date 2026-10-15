@@ -1,46 +1,10 @@
 import { expect, test } from "bun:test";
+import { declarations, tokensUnder as tokensIn } from "./cssTokens";
 
 const css = await Bun.file(new URL("../src/theme.css", import.meta.url)).text();
 
-type Declaration = { path: string[]; name: string };
-
-/** A minimal walk over the stylesheet: every `name: value;` declaration
- *  with the preludes of the blocks enclosing it, outermost first, so an
- *  `@media` wrapper and the selector inside it are both visible. */
-function declarations(source: string): Declaration[] {
-  const text = source.replace(/\/\*[\s\S]*?\*\//g, "");
-  const out: Declaration[] = [];
-  const path: string[] = [];
-  let buffer = "";
-  for (const char of text) {
-    if (char === "{") {
-      path.push(buffer.trim());
-      buffer = "";
-    } else if (char === "}") {
-      path.pop();
-      buffer = "";
-    } else if (char === ";") {
-      const match = /^\s*(--[a-z0-9-]+)\s*:/.exec(buffer);
-      if (match) out.push({ path: [...path], name: match[1]! });
-      buffer = "";
-    } else {
-      buffer += char;
-    }
-  }
-  return out;
-}
-
 const decls = declarations(css);
-
-/** The custom-property names declared directly in the rule whose selector
- *  is exactly `selector` (optionally under the given at-rule wrapper). */
-function tokensUnder(selector: string, wrapper?: string): string[] {
-  const names = decls
-    .filter((d) => d.path.at(-1) === selector && (wrapper ? d.path.at(-2) === wrapper : d.path.length === 1))
-    .map((d) => d.name);
-  if (names.length === 0) throw new Error(`theme.css has no ${wrapper ? `${wrapper} ` : ""}${selector} rule`);
-  return [...new Set(names)].sort();
-}
+const tokensUnder = (selector: string, wrapper?: string) => tokensIn(decls, selector, wrapper);
 
 test("the parser distinguishes the three token blocks", () => {
   // A sanity check on the walk itself: the blocks are found by exact
