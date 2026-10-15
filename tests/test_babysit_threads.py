@@ -860,7 +860,11 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         for code in ("- Blocker: src/app.py:3 drops the tab target.\n",
                      "  - Blocker: src/app.py:3 drops the tab target.\n",
                      "  Blocker: src/app.py:3 drops the tab target.\n",
-                     "    src/app.py:3 drops the tab target.\n"):
+                     "    src/app.py:3 drops the tab target.\n",
+                     "    `src/app.py:3` drops the tab target.\n",
+                     "    `src/app.py` drops the tab target.\n",
+                     "    [app.py](src/app.py#L3) drops the tab target.\n",
+                     "    **src/app.py:3** drops the tab target.\n"):
             with self.subTest(code=code):
                 self.setUp()
                 self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
@@ -875,7 +879,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                                     provider=self.provider())
 
                 self.assertEqual(fake.roles[5:], ["review"])
-                self.assertIn("src/app.py:3 drops the tab target", self.question())
+                self.assertIn(code.strip(), self.question())
 
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
         self.configure('[merge]\nmode = "pr"\n')

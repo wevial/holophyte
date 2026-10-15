@@ -16,7 +16,7 @@ DESCRIPTION_SUBJECT_RE = re.compile(
 
 FINDING_OPEN_RE = re.compile(
     r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?[(\[]?\s*(?:(?:p[0-3]|nit|blocker|major|minor)\b"
-    r"|(?:path:\s*\"?)?[\w./-]+\.\w+:\d+)", re.I)
+    r"|[`*_\[(]*(?:path:\s*\"?)?[`\[]*[\w./-]+\.\w+(?::\d|#L\d|`|\]\())", re.I)
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
