@@ -154,6 +154,34 @@ class ReviewBodyFindingTests(MergeModeFixture):
                                 " WHERE round = 2")[0]
         self.assertEqual(len(json.loads(findings)), 1)
 
+    def test_a_devin_analysis_triaged_as_a_finding_is_adjudicated_and_fixed(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("**Settings page shows the new preference without its help"
+                    " text** The settings page renders every user preference,"
+                    " so the new preference appears there without the help"
+                    " text and without the disabled state the ticket requires"
+                    " when emails are off.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([devin]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("initial work"), APPROVE, Idle(""),
+            Reply("THREAD 1: FINDING -- the settings page misses the help text"),
+            Reply("THREAD 1: ADDRESS -- add the help text there"),
+            Commit("add the help text"), Idle(""),
+            provider=self.provider())
+        self.assertIn("adjudicate", fake.roles)
+        adjudicate = len(fake.roles) - 1 - fake.roles[::-1].index("adjudicate")
+        self.assertIn("THREAD 1", fake.turns[adjudicate].goal)
+        self.assertIn("Settings page shows", fake.turns[adjudicate].goal)
+        self.assertEqual(fake.roles[adjudicate + 1], "implement")
+        self.assertIn("Settings page shows", fake.turns[adjudicate + 1].goal)
+        replies = [data["body"] for kind, data in self.api_calls()
+                   if kind == "reply" and "Triaged as a finding" in data["body"]]
+        self.assertEqual(len(replies), 1)
+        self.assertTrue(replies[0].startswith("---- Comment by "))
+
     def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         request = ("Devin tagged this as\n```\n<!-- devin-review-comment"
