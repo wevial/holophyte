@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import review_runner
+from holophyte.agents.agent_output import claude_result, streamed
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.harness import critic_seat
 from holophyte.agents.harness import seat as harness_seat
@@ -57,6 +58,7 @@ class ProbeResult:
     seat: str = "implementer"
     expected_commit: str = None
     entry: int = 0
+    answer: str = None
 
     @property
     def timed_out(self):
@@ -65,7 +67,8 @@ class ProbeResult:
     @property
     def ok(self):
         witness = self.expected_commit or PROBE_WORD
-        return self.returncode == 0 and witness in self.output.lower()
+        said = self.output if self.answer is None else self.answer
+        return self.returncode == 0 and witness in said.lower()
 
     def describe(self):
         shown = " ".join(shlex.quote(part) for part in self.command)
@@ -138,7 +141,9 @@ def probe_route(project, role, fallback, timeout, entry):
         cmd = ["default-review", review_profile(*pair)]
     cap = PROBE_TIMEOUT if timeout is None else timeout
     if role in ("implement", "trim"):
-        return probe_launch(project, cmd, cap, AGENT_CONFIG_KEYS[role], entry)
+        seat = harness_seat(project, role, fallback=fallback)
+        return probe_launch(project, cmd, cap, AGENT_CONFIG_KEYS[role], entry,
+                            claude=seat is not None and seat.name == "claude")
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
@@ -173,7 +178,7 @@ def probe_route(project, role, fallback, timeout, entry):
                        expected_commit=sha, entry=entry)
 
 
-def probe_launch(project, cmd, cap, seat, entry=0):
+def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
             code, out = launcher.launch(
@@ -188,7 +193,12 @@ def probe_launch(project, cmd, cap, seat, entry=0):
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
                                seat=seat, entry=entry)
-    return ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
+    probe = ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
+    if claude:
+        decoded = claude_result(probe.output)
+        probe = replace(probe, answer=decoded[0] if decoded else
+                        "" if streamed(probe.output) else probe.output)
+    return probe
 
 
 def probe_adversary_claude(project, timeout=None):

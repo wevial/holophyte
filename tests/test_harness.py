@@ -94,7 +94,8 @@ class ClaudeTableTests(unittest.TestCase):
     def assert_turn(self, argv, goal):
         self.assertEqual(argv[:2], ["-p", "--session-id"])
         self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "low",
-                                    "--output-format", "json", goal])
+                                    "--output-format", "stream-json", "--verbose",
+                                    goal])
         self.assertEqual(str(uuid.UUID(argv[2], version=4)), argv[2])
         self.assertEqual(self.session(), argv[2])
 
@@ -121,7 +122,7 @@ class ClaudeTableTests(unittest.TestCase):
         _, resumed = self.received()
         self.assertEqual(resumed[:-1], ["-p", "--resume", first[2], "--model",
                                         "sonnet", "--effort", "low",
-                                        "--output-format", "json"])
+                                        "--output-format", "stream-json", "--verbose"])
         self.assertTrue(resumed[-1].startswith("Reviewer findings:"))
         self.assertIn("REQUEST_CHANGES: a finding", resumed[-1])
         [(payload,)] = self.conn.execute(
@@ -646,7 +647,7 @@ class ContainerImplementerTests(unittest.TestCase):
         self.assertEqual(
             holophyte.agents.fix_session.resume_argv(self.target, self.conn, self.run),
             (["claude", "-p", "--resume", chosen, "--model", "sonnet",
-              "--effort", "low", "--output-format", "json"], None))
+              "--effort", "low", "--output-format", "stream-json", "--verbose"], None))
 
     def test_a_devin_turn_records_no_session(self):
         self.configure('[agents.implementer]\nharness = "devin"\n'
@@ -691,14 +692,15 @@ class TrimmerTableTests(unittest.TestCase):
         self.assertEqual(argv[:2], ["-p", "--session-id"])
         self.assertEqual(str(uuid.UUID(argv[2], version=4)), argv[2])
         self.assertEqual(argv[3:], ["--model", "sonnet", "--effort", "high",
-                                    "--output-format", "json", "trim the diff"])
+                                    "--output-format", "stream-json", "--verbose",
+                                    "trim the diff"])
 
     def test_a_claude_trimmer_resume_asks_for_the_json_result_document(self):
         self.target.config_path.write_text(TRIMMER_CONFIG)
         seat = holophyte.agents.harness.seat(self.target, "trim")
         self.assertEqual(seat.resume("a-session"), [
             "claude", "-p", "--resume", "a-session", "--model", "sonnet",
-            "--effort", "high", "--output-format", "json"])
+            "--effort", "high", "--output-format", "stream-json", "--verbose"])
 
     def test_startup_refuses_a_cursor_trimmer_naming_the_roles_cursor_serves(self):
         self.target.config_path.write_text(
@@ -713,7 +715,8 @@ class TrimmerTableTests(unittest.TestCase):
         argv = self.launch_turn(lambda: self.trim("trim the diff"))
         self.assertEqual(argv[0], "claude")
         self.assertEqual(argv[4:], ["--model", "sonnet", "--effort", "high",
-                                    "--output-format", "json", "trim the diff"])
+                                    "--output-format", "stream-json", "--verbose",
+                                    "trim the diff"])
 
 
 
