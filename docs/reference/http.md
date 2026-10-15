@@ -693,6 +693,9 @@ What needs the operator, computed where the store is:
   {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
    "pr_url": null, "triage": {"choice": "infra", "confidence": 0.92, "backend": "claude",
    "model": "sonnet", "requeued": true}, "level": "attention"},
+  {"kind": "stuck_wait", "ticket": "KO-n", "ticket_url": null, "title": "…", "dependency": "KO-m",
+   "dependency_state": "needs_spec", "reason": "critic: stale — already shipped by KO-l",
+   "behind": 4, "level": "attention"},
   {"kind": "supervisor", "state": "stale", "heartbeat_age_ms": 1200000, "level": "attention"}
 ]}
 ```
@@ -732,7 +735,20 @@ when the factory requeued the ticket on that answer; `choice` and
 run never asked. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
 null when it opened none, so a console can link the parked question to
-the PR it waits on. `project` is the project path, as on `/status`.
+the PR it waits on. A `stuck_wait` item is a `blocked_on_deps` ticket
+(`ticket`, `ticket_url`, `title`) whose wait only a person can end: its
+first `dependsOn` entry, of its own project, that is stuck, as
+`dependency`. `dependency_state` is `needs_spec`, `abandoned`, `parked`
+(`blocked_on_operator`, except a ticket served as `pr_open`) or `failed`
+(`in_flight` with no active run and a last run that failed). `reason` is
+one line of the dependency's newest `critic`, `stale` or `validation` note
+for `needs_spec`, its `cancel` note for `abandoned`, its question when
+parked and its last run's outcome reason when failed: the first `* `
+bullet without the marker, else the first non-empty line, null when there
+is none. `behind` counts the project's `blocked_on_deps` tickets waiting
+on the ticket directly or through other waits, each once; a ticket that
+waits only through another wait gets no item of its own. It carries no age. `project` is the project path, as on
+`/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it
 is `working` if any run is live. Items come in this order: `blocked` and
@@ -741,8 +757,8 @@ hours while it is its ticket's latest attempt and the ticket has neither
 merged nor started a new one (a requeue to `ready` keeps it), or at any
 age while it strands its ticket (its last run, the ticket `in_flight` with
 no active run, which only the operator will move on; a requeue ends this
-unbounded stay, not the 24 hours), oldest end first,
-`supervisor` when not live. A daemon older than this endpoint answers 404, and the
+unbounded stay, not the 24 hours), oldest end first, `stuck_wait` in
+waiting-ticket order, `supervisor` when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
 `/status`; any other failure of `/attention` is shown, never hidden.
 

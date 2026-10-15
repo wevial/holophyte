@@ -35,6 +35,22 @@ test("the time-box clause reads the agent clock when the daemon serves it", () =
   );
 });
 
+test("a stuck wait names its dependency, the dependency's state and reason, and the queue behind it", () => {
+  const base = { kind: "stuck_wait", level: "attention", ticket: "NAT-3", ticket_url: null, title: null, dependency: "NAT-2" };
+  const spec = { ...base, dependency_state: "needs_spec", reason: "critic: stale — already shipped by NAT-1", behind: 4 };
+  const gone = { ...base, dependency_state: "abandoned", reason: null, behind: 0 };
+  const first = describe(spec, thresholds);
+  expect(first.pill).toBe("stuck");
+  expect(first.actions).toEqual([]);
+  expect(first.body).toBe("Waits on NAT-2, which needs a spec: critic: stale — already shipped by NAT-1");
+  expect(first.meta).toBe("4 queued behind");
+  const second = describe(gone, thresholds);
+  expect(second.body).toBe("Waits on NAT-2, which was abandoned");
+  expect(second.meta).toBeNull();
+  expect(second.actions).toEqual([]);
+  expect(countsByKind([spec, gone]).stuck_wait).toBe(2);
+});
+
 test("newer-daemon fields show only when present", () => {
   const now = 1756900000000;
   const plain = describe({ kind: "blocked", level: "attention", ticket: "KO-240", question: "Which?" }, thresholds, { now });
@@ -52,5 +68,5 @@ test("newer-daemon fields show only when present", () => {
 });
 
 test("the fixture's counts are one per kind", () => {
-  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, paused: 0, stale_run: 1, failed: 1, supervisor: 1, unreachable: 0 });
+  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, paused: 0, stale_run: 1, failed: 1, stuck_wait: 0, supervisor: 1, unreachable: 0 });
 });

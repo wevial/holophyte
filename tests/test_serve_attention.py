@@ -11,6 +11,7 @@ import holophyte.host.supervisor
 import holophyte.serve.serve_actions
 import linear_provider
 import store
+import store.board
 import store.read
 import store.tickets
 from holophyte.loop.failure_triage import triage_failure
@@ -18,6 +19,8 @@ from provider import LinearBoard
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
+from tests.test_provider import ticket_body
+from tests.test_status import file_stuck_wait
 
 
 class FailedAttentionTests(ServeTestCase):
@@ -475,3 +478,121 @@ class CiParkAttentionTests(ServeTestCase):
         self.assertEqual((item["kind"], item["pr_url"], item["reason"]),
                          ("pr_open", self.URL, "pending checks"))
         self.assertEqual((item["pr"]["number"], item["pr"]["checks"]), (31, "pending"))
+
+
+class StuckWaitAttentionTests(ServeTestCase):
+    def test_a_wait_behind_a_needs_spec_dependency_is_one_stuck_wait(self):
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.init(conn)
+        file_stuck_wait(conn, store.tickets.ensure_project(
+            conn, "team-1", self.target), "NAT")
+        self.start()
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        stuck = [i for i in body["items"] if i["kind"] == "stuck_wait"]
+        self.assertEqual(len(stuck), 1, body["items"])
+        self.assertEqual(
+            {k: stuck[0].get(k) for k in ("ticket", "dependency",
+                                          "dependency_state", "reason",
+                                          "behind", "level")},
+            {"ticket": "NAT-3", "dependency": "NAT-2",
+             "dependency_state": "needs_spec",
+             "reason": "critic: stale — already shipped by NAT-1",
+             "behind": 2, "level": "attention"})
+
+
+class StuckWaitStatesTests(ServeTestCase):
+    URL = "https://github.com/example/repo/pull/41"
+
+    def setUp(self):
+        super().setUp()
+        self.now = int(time() * 1000)
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        self.project_id = store.tickets.ensure_project(
+            self.conn, "team-1", self.target)
+
+    def file(self, name, depends_on=None, status="ready"):
+        ticket = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id=f"issue-{name}",
+            linear_identifier=name, title=f"ticket {name}",
+            acceptance_criteria=["Given it, then it works"],
+            verification_commands=["echo ok"],
+            depends_on=[f"issue-{depends_on}"] if depends_on else [])
+        for step in {"ready": (), "blocked_on_deps": ("blocked_on_deps",),
+                     "in_flight": ("in_flight",),
+                     "abandoned": ("in_flight", "abandoned"),
+                     "blocked_on_operator": ("in_flight",
+                                             "blocked_on_operator")}[status]:
+            store.tickets.transition(self.conn, ticket, step)
+        return ticket
+
+    def wait_on(self, name, dependency):
+        return self.file(name, depends_on=dependency, status="blocked_on_deps")
+
+    def stuck_waits(self):
+        self.start()
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        return {item["ticket"]: (item["dependency"], item["dependency_state"],
+                                 item["reason"], item["level"])
+                for item in body["items"] if item["kind"] == "stuck_wait"}
+
+    def test_canceled_parked_and_failed_dependencies_are_stuck_waits(self):
+        canceled = self.file("NAT-1", status="abandoned")
+        store.record_note(self.conn, canceled, "cancel",
+                          "Superseded by the new importer.", "cancel:1")
+        self.wait_on("NAT-2", "NAT-1")
+        parked = self.file("NAT-3", status="blocked_on_operator")
+        store.set_question(self.conn, parked,
+                           "Which API version should it target?\nv1 or v2")
+        self.wait_on("NAT-4", "NAT-3")
+        failed = self.file("NAT-5", status="in_flight")
+        run = store.claim(self.conn, self.project_id, failed, now=self.now - MIN)
+        store.release(self.conn, run, "failed", reason="verify red: 3 tests",
+                      now=self.now)
+        self.wait_on("NAT-6", "NAT-5")
+        self.assertEqual(self.stuck_waits(), {
+            "NAT-2": ("NAT-1", "abandoned", "Superseded by the new importer.",
+                      "attention"),
+            "NAT-4": ("NAT-3", "parked", "Which API version should it target?",
+                      "attention"),
+            "NAT-6": ("NAT-5", "failed", "verify red: 3 tests", "attention")})
+
+    def test_a_dependency_that_will_move_or_a_shelved_wait_is_no_stuck_wait(self):
+        self.file("NAT-1")
+        self.wait_on("NAT-2", "NAT-1")
+        live = self.file("NAT-3", status="in_flight")
+        store.claim(self.conn, self.project_id, live, now=self.now)
+        self.wait_on("NAT-4", "NAT-3")
+        for n, kind in ((5, "pull_request"), (7, "ci")):
+            on_pr = self.file(f"NAT-{n}", status="in_flight")
+            run = store.claim(self.conn, self.project_id, on_pr, now=self.now)
+            store.tickets.transition(self.conn, on_pr, "blocked_on_operator")
+            store.set_question(self.conn, on_pr, f"PR open: {self.URL}")
+            park_run(self.conn, run, "awaiting_merge_approval", "checks",
+                     candidate_sha="a" * 40, pr_url=self.URL, park_kind=kind,
+                     now=self.now)
+            self.wait_on(f"NAT-{n + 1}", f"NAT-{n}")
+        store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="issue-NAT-9",
+            linear_identifier="NAT-9", title="ticket NAT-9",
+            acceptance_criteria=[], verification_commands=[])
+        shelved = self.wait_on("NAT-10", "NAT-9")
+        store.set_board_state(self.conn, shelved, "Backlog")
+        self.assertEqual(self.stuck_waits(), {})
+
+    def test_a_wait_filed_into_the_native_backlog_column_is_no_stuck_wait(self):
+        store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="issue-NAT-1",
+            linear_identifier="NAT-1", title="ticket NAT-1",
+            acceptance_criteria=[], verification_commands=[])
+        text = ticket_body("shelved", verify="echo ok").replace("Depends on: none",
+                                              "Depends on: NAT-1")
+        shelved = store.board.file_ticket(self.conn, self.project_id, "SHELF",
+                                          text, column="backlog")
+        self.assertEqual(store.read.ticket_by_identifier(
+            self.conn, shelved).status, "blocked_on_deps")
+        self.assertEqual(self.stuck_waits(), {})

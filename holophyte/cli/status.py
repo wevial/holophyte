@@ -15,6 +15,7 @@ from holophyte.loop.gates import merge_lock_path, read_merge_lock
 from holophyte.serve.console_build import console_state
 from holophyte.serve.serve_runs import json_host
 from holophyte.serve.server import CONSOLE_DIR
+from holophyte.serve.views import stuck_wait_items
 from holophyte.story.story_views import story_facts, story_lines
 from store.steer_notes import steers
 
@@ -44,6 +45,7 @@ def snapshot(target, conn, now=None):
         "stranded": [{"run": run.id, "ticket": run.linearIdentifier,
                       "reason": run.outcomeReason, "ended_ms": run.endedAt}
                      for run in store.read.stranded_runs(conn)],
+        "stuck": stuck_wait_items(conn),
         "ready": _ready(target, conn),
         "supervisor_lock": _supervisor_holder(supervisor_lock_path(target)),
         "merge_lock": _merge_holder(target, conn),
@@ -104,10 +106,25 @@ def render(snap):
         reason = "\\n".join((stranded["reason"] or "").splitlines())
         lines.append(f"stranded {stranded['ticket']} run {stranded['run']}:"
                      f" {reason or '(no reason)'}")
+    for stuck in snap["stuck"]:
+        behind = (f" ({stuck['behind']} queued behind)" if stuck["behind"]
+                  else "")
+        lines.append(f"stuck {stuck['ticket']}: {stuck_sentence(stuck)}"
+                     f"{behind}")
     lines.append(f"ready {snap['ready']}")
     lines.append(_lock_line("supervisor", snap["supervisor_lock"], "pid"))
     lines.append(_lock_line("merge", snap["merge_lock"], "run"))
     return lines
+
+
+STUCK_STATES = {"needs_spec": "needs a spec", "abandoned": "was abandoned",
+                "parked": "is parked for a person", "failed": "failed"}
+
+
+def stuck_sentence(stuck):
+    reason = f": {stuck['reason']}" if stuck["reason"] is not None else ""
+    return (f"waits on {stuck['dependency']}, which"
+            f" {STUCK_STATES[stuck['dependency_state']]}{reason}")
 
 
 def status_report(target, as_json=False, out=None, now=None):
