@@ -30,7 +30,6 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[]): ProjectGroup[] 
   );
 }
 
-/** "A went quiet. It is up in Needs you.", "A and B went quiet. They are up in Needs you." */
 function quietSentence(keys: string[]): string {
   const named = keys.length === 1 ? keys[0] : `${keys.slice(0, -1).join(", ")} and ${keys.at(-1)}`;
   return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Needs you.`;
@@ -161,7 +160,6 @@ function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
   );
 }
 
-/** A lane per project group, in the groups' order. */
 export function RunningLanes({ groups, now }: { groups: ProjectGroup[]; now: number }) {
   return (
     <div className="flex flex-col gap-[22px]">
