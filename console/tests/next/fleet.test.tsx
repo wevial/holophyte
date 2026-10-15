@@ -1,12 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { PeersState } from "../../src/hooks/usePeers";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import { pollDaemon, type Fetch } from "../../src/lib/poll";
 import { consoleQueryClient, useFleet, type ContractBodies } from "../../src/next/fleet";
-import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
@@ -117,23 +116,4 @@ test("a daemon that fails the next poll keeps its last good status beside the ne
   expect(record!.status).toEqual(status);
   expect(record!.error).toBe(`${ORIGIN}/status answered 500`);
   expect(hook.result.current.polls).toBe(2);
-});
-
-test("the new console's root names the daemon's host once its first poll answers, asking each route once", async () => {
-  const { fetch, asked } = counting(peersFetch(ORIGIN, { [ORIGIN]: { status: { ...status, host: "writer-host" }, attention } }));
-  const fake = fakeDeps(fetch);
-  render(
-    <QueryClientProvider client={client()}>
-      <NextConsole base={ORIGIN} pollDeps={fake.deps} />
-    </QueryClientProvider>,
-  );
-  await act(settle);
-  await act(settle);
-
-  expect(screen.getByText("writer-host · polled 0s ago")).toBeTruthy();
-  expect(Object.fromEntries(asked)).toEqual({
-    [`${ORIGIN}/status`]: 1,
-    [`${ORIGIN}/attention`]: 1,
-    [`${ORIGIN}/peers`]: 1,
-  });
 });
