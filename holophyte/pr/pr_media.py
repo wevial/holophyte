@@ -35,6 +35,12 @@ STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 QUOTED = re.compile(r"^Captured with `.*`\.[ \t\r]*\n+"
                     r"(?=Dropped `|No media remains |Media lives in )",
                     re.MULTILINE | re.DOTALL)
+VIDEO_BRIEF = (
+    " Playwright's own `page` and `context` fixtures save their video "
+    "automatically. A context the spec creates records with `recordVideo`; "
+    "after closing it, save only the page that shows the states, with "
+    "`page.video().saveAs(testInfo.outputPath('video-feature.webm'))`, and "
+    "never save a page opened for sign-in or a session warm-up.")
 CaptureFailure = collections.namedtuple("CaptureFailure", "kind sentence missing log")
 
 
@@ -53,6 +59,8 @@ def implementer_brief(project, ticket, task_id):
         where = (f"\n\nAdd or update a capture script under "
                  f"`{cfg.ui_capture_dir}` for this ticket, runnable by "
                  f"`{cfg.ui_capture}`.")
+    if cfg.ui_capture_video:
+        where += VIDEO_BRIEF
     return (where + " Produce one image "
             "per state, named NN-slug.png in state order (01, 02, ...), plus "
             "a recording when the states describe a flow. The harness receives "
