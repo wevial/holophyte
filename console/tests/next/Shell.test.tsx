@@ -100,6 +100,11 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   expect(expand.getAttribute("aria-expanded")).toBe("false");
   expect(pages().map((link) => link.textContent)).toEqual(["", "", "", ""]);
   expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
+  for (const name of ["holophyte", "Classic console"]) {
+    const link = screen.getByRole("link", { name });
+    expect(link.textContent).toBe("");
+    expect(link.getAttribute("title")).toBe(name);
+  }
   cleanup();
 
   await mount("#/");
@@ -155,6 +160,10 @@ test("with no stored choice the toggle follows a later system preference change"
 test("the footer names the host and how long ago it was polled, and reads polling before any answer", async () => {
   const pending: Fetch = () => new Promise(() => {});
   await mount("#/", pending);
+  expect(screen.getByText("polling…")).toBeTruthy();
+  cleanup();
+
+  await mount("#/", peersFetch(ORIGIN, { [ORIGIN]: { down: new Error("connection refused") } }));
   expect(screen.getByText("polling…")).toBeTruthy();
   cleanup();
 

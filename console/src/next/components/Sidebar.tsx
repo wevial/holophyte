@@ -6,6 +6,7 @@ import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
 import { keepScope, scopedHosts, useConsolePeers } from "../scope";
 import {
   ChevronIcon,
+  ClassicIcon,
   FindingsIcon,
   Mark,
   MoonIcon,
@@ -131,8 +132,8 @@ function PageLink({
   );
 }
 
-function pollLine(hostLabels: string[], polledAgo: number | null): string {
-  if (polledAgo == null) return "polling…";
+function pollLine(hostLabels: string[], answered: boolean, polledAgo: number | null): string {
+  if (!answered || polledAgo == null) return "polling…";
   const host = hostLabels.length === 1 ? hostLabels[0] : `${hostLabels.length} hosts`;
   return `${host} · polled ${formatDuration(polledAgo)} ago`;
 }
@@ -143,7 +144,8 @@ export function Sidebar() {
   const [folded, setFolded] = useState(readFolded);
   const needs = scopedHosts(hosts, project).reduce((total, host) => total + hostItems(host, now).length, 0);
   const failing = hosts.some((host) => host.error != null);
-  const polled = pollLine(groupByHost(hosts).map((group) => group.label), polledAgo);
+  const answered = hosts.some((host) => host.seen_ms != null);
+  const polled = pollLine(groupByHost(hosts).map((group) => group.label), answered, polledAgo);
 
   const fold = () => {
     setFolded(!folded);
@@ -158,17 +160,21 @@ export function Sidebar() {
         folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
-      <div className={`flex h-[60px] shrink-0 items-center border-b border-rule ${folded ? "justify-center" : "justify-between pl-4"}`}>
-        {!folded && (
-          <Link
-            to="/"
-            search={keepScope}
-            className="flex items-center gap-2 text-act"
-          >
-            <Mark />
-            <span className="text-[16px] font-semibold tracking-[0.02em] text-ink">holophyte</span>
-          </Link>
-        )}
+      <div
+        className={`flex shrink-0 items-center border-b border-rule ${
+          folded ? "flex-col justify-center py-2" : "h-[60px] justify-between pl-4"
+        }`}
+      >
+        <Link
+          to="/"
+          search={keepScope}
+          aria-label={folded ? "holophyte" : undefined}
+          title={folded ? "holophyte" : undefined}
+          className={`flex items-center gap-2 text-act ${folded ? "size-11 justify-center" : ""}`}
+        >
+          <Mark />
+          {!folded && <span className="text-[16px] font-semibold tracking-[0.02em] text-ink">holophyte</span>}
+        </Link>
         <button
           type="button"
           aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
@@ -193,7 +199,11 @@ export function Sidebar() {
           <SignalIcon className={failing ? "text-bad" : "text-live"} />
           {!folded && <span className="truncate">{polled}</span>}
         </p>
-        {!folded && (
+        {folded ? (
+          <a href="/" aria-label="Classic console" title="Classic console" className="flex size-11 items-center justify-center text-ink-2 hover:text-ink">
+            <ClassicIcon />
+          </a>
+        ) : (
           <a href="/" className="text-[12px] text-ink-2 underline-offset-2 hover:text-ink hover:underline">
             Classic console
           </a>
