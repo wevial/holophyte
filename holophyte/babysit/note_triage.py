@@ -10,8 +10,8 @@ from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 
 TRIAGE_LINE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(FINDING|NOTE)\b"
-    r"\s*(?:[-–—:,]+\s*)?(.*?)\s*$", re.IGNORECASE | re.MULTILINE)
+    r"^[ \t]*(?:[-*][ \t]*)?THREAD[ \t]+(\d+)[ \t]*[:.)-][ \t]*(FINDING|NOTE)\b"
+    r"[ \t]*(?:[-–—:,]+[ \t]*)?(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 UNPARSED = "the triage gave no verdict for this comment"
 NO_REASON = "no reason given"
 

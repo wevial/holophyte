@@ -248,5 +248,13 @@ class ReviewBodyFindingTests(MergeModeFixture):
         self.assertIn(reply, fake.turns[fake.roles.index("adjudicate")].goal)
 
 
+class NoteTriageParseTests(unittest.TestCase):
+    def test_a_verdict_without_a_reason_does_not_swallow_the_next_line(self):
+        from holophyte.babysit.note_triage import NO_REASON, parse
+        verdicts = parse("THREAD 1: FINDING --\nTHREAD 2: NOTE -- informational", 2)
+        self.assertEqual(verdicts, {1: ("FINDING", NO_REASON),
+                                    2: ("NOTE", "informational")})
+
+
 if __name__ == "__main__":
     unittest.main()
