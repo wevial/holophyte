@@ -232,14 +232,15 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
     AFTER_READY = "2026-10-09T12:00:05Z"
 
     @staticmethod
-    def e2e_required(*runs):
-        """Main's rules require `e2e-ok`; the head's check runs are `runs`."""
+    def e2e_required(*runs, required=("e2e-ok",)):
+        """Main's rules require `required`; the head's check runs are `runs`."""
         def rest(target, pull, method, path, payload=None):
             if "check-runs" in path:
                 return {"total_count": len(runs), "check_runs": list(runs)}
             if path.endswith("/rules/branches/main"):
                 return [{"type": "required_status_checks", "parameters": {
-                    "required_status_checks": [{"context": "e2e-ok"}]}}]
+                    "required_status_checks": [
+                        {"context": name} for name in required]}}]
             return {}
         return rest
 
@@ -248,11 +249,15 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         return {"name": name, "status": status, "started_at": started_at,
                 "conclusion": conclusion if status == "completed" else None}
 
-    def test_a_required_run_started_before_the_ready_event_is_missing(self):
+    def test_required_runs_only_from_before_the_ready_event_count(self):
         state = self._state_with_rest(self.e2e_required(
-            self.check_run("e2e-ok", self.BEFORE_READY)), ready_at=self.READY_AT)
+            self.check_run("A", self.BEFORE_READY),
+            self.check_run("B", self.BEFORE_READY, conclusion="skipped"),
+            self.check_run("C", self.BEFORE_READY),
+            self.check_run("e2e-ok", self.AFTER_READY),
+            required=("A", "B", "C")), ready_at=self.READY_AT)
         self.assertEqual((state.checks, state.missing_checks),
-                         ("pending", ("e2e-ok",)))
+                         ("success", ()))
 
     def test_a_required_run_started_after_the_ready_event_counts(self):
         running = self._state_with_rest(self.e2e_required(
