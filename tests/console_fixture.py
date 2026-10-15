@@ -12,8 +12,11 @@ COMMAND's code. A failed build, seed or daemon start exits 1 naming the
 step, and COMMAND does not run.
 
 `seed(home)` registers one native project, `demo`, whose store holds a
-ticket in each console column and two ended runs, all written through the
-store's own writers and dated relative to the seeding moment.
+ticket in each console column, a run working and one in review, a question
+park, a pull request parked on its checks and one ready for its merge, a
+stranded failure, and three ended runs, one merged since local midnight,
+all written through the store's own writers and dated relative to the
+seeding moment.
 """
 from __future__ import annotations
 
@@ -29,6 +32,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,6 +58,7 @@ QUESTION = ("merge? The reviewer passed round 1 and the pre-merge verify is"
             " green; approve with --approve DEMO-4.")
 FINDINGS = [{"path": "holophyte/serve/server.py", "line": 12, "severity": "p1",
              "criterion": "AC1", "message": "the route is unmatched"}]
+PULL = "https://github.com/example/demo/pull/"
 
 
 def seed(home):
@@ -106,8 +111,10 @@ def _serve_table(home):
 
 def _seed_store(path):
     """DEMO-1 in backlog, DEMO-2 ready, DEMO-3 worked now, DEMO-4 asking
-    the operator, DEMO-5 merged after two rounds, DEMO-6 failed; and a
-    supervisor beating now."""
+    the operator, DEMO-5 merged after two rounds, DEMO-6 failed, DEMO-7 in
+    review after changes requested, DEMO-8 parked on pending checks, DEMO-9
+    parked ready for its merge, DEMO-10 merged today, DEMO-11 failed and
+    still in flight; and a supervisor beating now."""
     import store
     import store.board
     import store.tickets
@@ -134,6 +141,17 @@ def _seed_store(path):
             run = store.claim(conn, project, ticket, now=at)
             store.set_phase(conn, run, "working", now=at + MIN)
             return ticket, run
+
+        def parked_on_pr(text, number, kind, question, checks, at):
+            ticket, run = claimed(body(text), at)
+            advance_phase(conn, run, "merge_gate", now=at + 30 * MIN)
+            store.park(conn, run, "awaiting_merge_approval",
+                       pr_url=f"{PULL}{number}", park_kind=kind,
+                       pr_seen=(now - 5 * MIN, 0, 0, None, checks,
+                                "approved", text),
+                       now=at + 31 * MIN)
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+            store.set_question(conn, ticket, f"PR open\n{question}")
 
         filed(DRAFT, column="backlog")
         filed(body("Stream the orders list as CSV"))
@@ -167,6 +185,37 @@ def _seed_store(path):
         store.release(conn, run, "failed", "verify failed: 2 tests red",
                       now=now - 7 * HOUR)
         store.tickets.transition(conn, ticket, "abandoned")
+
+        _, run = claimed(body("Name each worker's route"), now - 30 * MIN)
+        store.record_review_round(
+            conn, run, 1, "changes_requested", "reviewer-model",
+            findings=FINDINGS, started_at=now - 15 * MIN,
+            ended_at=now - 10 * MIN)
+        advance_phase(conn, run, "reviewing", now=now - 5 * MIN)
+        store.heartbeat(conn, run, now=now)
+
+        parked_on_pr("Show the merge ledger as a timeline", 41, "ci",
+                     "pending checks: unit", "pending", now - 2 * HOUR)
+        parked_on_pr("Link each run to its pull request", 42, "pull_request",
+                     "Waiting for a maintainer's merge", "success",
+                     now - 3 * HOUR)
+
+        midnight = datetime.fromtimestamp(now / SEC).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        ended = max(int(midnight.timestamp() * SEC), now - HOUR)
+        ticket, run = claimed(body("Sort the runs list by end"),
+                              ended - 2 * HOUR)
+        store.set_pull_request(conn, run, f"{PULL}43")
+        store.record_review_round(conn, run, 1, "pass", "reviewer-model",
+                                  started_at=ended - HOUR,
+                                  ended_at=ended - HOUR + 4 * MIN)
+        finish_run(conn, run, "merged", now=ended,
+                   merge_sha="0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c")
+        store.tickets.transition(conn, ticket, "merged")
+
+        _, run = claimed(body("Retry the board sync"), now - 2 * HOUR)
+        store.release(conn, run, "failed", "verify failed: 2 tests red",
+                      now=now - 50 * MIN)
 
         store.record_supervisor_heartbeat(conn, os.getpid(), now - HOUR,
                                           now=now)

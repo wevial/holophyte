@@ -726,6 +726,11 @@ Captures are the screenshots a console pull request carries, taken by
 host with the `demo` project, serves it from a real host daemon and runs one
 command with `CONSOLE_URL` naming it; that command is the console's
 `capture` script, `playwright test` from the pinned `@playwright/test`.
+`seed()` writes a ticket in backlog, one ready, a working run, a run in
+review after one changes-requested round, a question park, a pull request
+parked on CI, one parked ready for its merge, a stranded failure, a merge
+from today, an older merge and an abandoned failure, so a spec injects only
+the states beyond those.
 `console/playwright.config.ts` is Chromium only, one worker, no retries, a
 1440×900 light viewport, `baseURL` from `CONSOLE_URL`, and no `webServer`,
 since the fixture boots the daemon. A ticket's spec is
