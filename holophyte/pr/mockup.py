@@ -4,9 +4,11 @@ import io
 import json
 import os
 import shutil
+import socket
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 import zipfile
 import zlib
@@ -111,7 +113,8 @@ def filing_problems(project, ticket):
 
 
 def _record(conn, run_id, summary):
-    store.record_event(conn, run_id, "mockup", summary)
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "mockup", summary)
 
 
 def fetch(project, conn, run_id, wt, body):
@@ -219,33 +222,58 @@ class _StayUnder(HTTPRedirectHandler):
 def _download(link, base):
     content_type, signature, cap_mb = KINDS[link.kind]
     cap, deadline = cap_mb * MB, time.monotonic() + TIMEOUT_S
+    expired = threading.Event()
     try:
         with build_opener(_StayUnder(base)).open(
                 Request(link.url), timeout=TIMEOUT_S) as response:
-            served = response.headers.get_content_type()
-            if served != content_type:
-                raise Refused(f"served as {served}, not {content_type}")
-            length = response.headers.get("Content-Length", "")
-            if length.isdigit() and int(length) > cap:
-                raise Refused(f"larger than {cap_mb} MB")
-            data = bytearray()
-            while chunk := response.read(CHUNK):
-                data += chunk
-                if len(data) > cap:
-                    raise Refused(f"larger than {cap_mb} MB")
-                if time.monotonic() > deadline:
-                    raise Refused(f"took longer than {TIMEOUT_S} s")
+            timer = threading.Timer(max(deadline - time.monotonic(), 0),
+                                    _expire, (response, expired))
+            timer.start()
+            try:
+                data, length = _receive(response, link, cap, expired)
+            finally:
+                timer.cancel()
     except HTTPError as error:
         raise Refused(f"HTTP {error.code}") from None
-    except (URLError, OSError) as error:
-        raise Refused(str(getattr(error, "reason", error))) from None
-    except (ValueError, http.client.HTTPException) as error:
+    except (URLError, OSError, ValueError, http.client.HTTPException) as error:
+        if expired.is_set():
+            raise Refused(f"took longer than {TIMEOUT_S} s") from None
+        if isinstance(error, (URLError, OSError)):
+            raise Refused(str(getattr(error, "reason", error))) from None
         raise Refused(f"cannot be requested ({type(error).__name__})") from None
+    if expired.is_set():
+        raise Refused(f"took longer than {TIMEOUT_S} s")
     if length.isdigit() and len(data) != int(length):
         raise Refused(f"ended after {len(data)} of {length} bytes")
     if not data.startswith(signature):
         raise Refused(f"does not start with the {content_type} signature")
     return bytes(data)
+
+
+def _expire(response, expired):
+    expired.set()
+    sock = getattr(getattr(response.fp, "raw", None), "_sock", None)
+    if sock is not None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
+def _receive(response, link, cap, expired):
+    content_type, _, cap_mb = KINDS[link.kind]
+    served = response.headers.get_content_type()
+    if served != content_type:
+        raise Refused(f"served as {served}, not {content_type}")
+    length = response.headers.get("Content-Length", "")
+    if length.isdigit() and int(length) > cap:
+        raise Refused(f"larger than {cap_mb} MB")
+    data = bytearray()
+    while not expired.is_set() and (chunk := response.read1(CHUNK)):
+        data += chunk
+        if len(data) > cap:
+            raise Refused(f"larger than {cap_mb} MB")
+    return data, length
 
 
 def _unpack(data, directory):

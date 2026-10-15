@@ -7,11 +7,13 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import unittest
 import zipfile
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -89,7 +91,8 @@ BOARDS = {"project/canvas.json": b'{"boards": ["17-1", "17-2"]}',
 
 @contextmanager
 def media_server(routes):
-    """Serve `routes`, a path to (status, headers, body); every other path is 404."""
+    """Serve `routes`, a path to (status, headers, body or a writer of it);
+    every other path is 404."""
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -101,7 +104,7 @@ def media_server(routes):
                 for name, value in headers.items():
                     self.send_header(name, value)
                 self.end_headers()
-                self.wfile.write(payload)
+                payload(self.wfile) if callable(payload) else self.wfile.write(payload)
             except ConnectionError:
                 pass
 
@@ -261,6 +264,34 @@ class FetchTests(MockupEventsFixture):
             "mock-up: 1 snapshots and 0 bundles (0 boards) in .holophyte/mockup"])
         self.assertEqual((self.wt / ".holophyte/mockup/05.png").read_bytes(),
                          PNG + b"good")
+
+    def test_a_trickling_link_is_cut_off_at_the_deadline(self):
+        def trickle(stream):
+            stream.write(PNG)
+            for _ in range(60):
+                stream.write(b"x")
+                stream.flush()
+                time.sleep(0.05)
+
+        started = time.monotonic()
+        with patch.object(mockup, "TIMEOUT_S", 0.3):
+            base = self.fetch({"/mockups/slow.png": png(trickle),
+                               "/mockups/good.png": png(PNG + b"good")},
+                              ["BASE/slow.png", "BASE/good.png"])
+            elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 2)
+        self.assertEqual(self.events()[0],
+                         f"mock-up: {base}/slow.png not fetched: took longer "
+                         "than 0.3 s")
+        self.assertEqual((self.wt / ".holophyte/mockup/02.png").read_bytes(),
+                         PNG + b"good")
+
+    def test_a_run_without_a_store_fetches_and_warns_nowhere(self):
+        self.configure(merge_toml(BASE, ui_paths=False))
+        mockup.fetch(self.project, None, None, self.wt,
+                     major_body(f"{ARTIFACT}\n\n{APPROVAL}"))
+        self.assertEqual(self.events(), [])
 
     def test_a_hostile_bundle_or_redirect_is_skipped_and_writes_nothing_outside(self):
         link = zipfile.ZipInfo("project/17-1.dc.html")
