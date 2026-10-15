@@ -67,19 +67,12 @@ class StreamRecord:
 def read_stream(proc, cmd, timeout, quiet, reap):
     """Return `(returncode, kept lines)`; a quiet pipe raises `TurnStalled`."""
     record = StreamRecord()
-    started = heard = monotonic()
+    clocks = Clocks(cmd, timeout, quiet, reap, record)
     pending = b""
     with selectors.DefaultSelector() as selector:
         selector.register(proc.stdout.fileno(), selectors.EVENT_READ)
         while True:
-            now = monotonic()
-            if timeout is not None and now - started >= timeout:
-                reap()
-                raise subprocess.TimeoutExpired(cmd, timeout, output=record.tail())
-            if quiet and now - heard >= quiet:
-                reap()
-                raise TurnStalled(cmd, quiet, record.lines, record.last_tool,
-                                  output=record.tail())
+            clocks.check()
             if not selector.select(TICK_S):
                 if proc.poll() is not None:
                     break
@@ -91,12 +84,31 @@ def read_stream(proc, cmd, timeout, quiet, reap):
             for raw in complete:
                 record.take(raw)
             if complete:
-                heard = monotonic()
+                clocks.heard = monotonic()
     if pending:
         record.take(pending)
-    left = None if timeout is None else max(0, timeout - (monotonic() - started))
-    try:
-        return proc.wait(timeout=left), record.output()
-    except subprocess.TimeoutExpired:
-        reap()
-        raise subprocess.TimeoutExpired(cmd, timeout, output=record.tail()) from None
+    while True:
+        clocks.check()
+        try:
+            return proc.wait(timeout=TICK_S), record.output()
+        except subprocess.TimeoutExpired:
+            continue
+
+
+class Clocks:
+
+    def __init__(self, cmd, timeout, quiet, reap, record):
+        self.cmd, self.reap, self.record = cmd, reap, record
+        self.timeout, self.quiet = timeout, quiet
+        self.started = self.heard = monotonic()
+
+    def check(self):
+        now = monotonic()
+        if self.timeout is not None and now - self.started >= self.timeout:
+            self.reap()
+            raise subprocess.TimeoutExpired(self.cmd, self.timeout,
+                                            output=self.record.tail())
+        if self.quiet and now - self.heard >= self.quiet:
+            self.reap()
+            raise TurnStalled(self.cmd, self.quiet, self.record.lines,
+                              self.record.last_tool, output=self.record.tail())

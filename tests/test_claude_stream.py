@@ -227,6 +227,16 @@ class QuietWatchdogTests(StreamTurnCase):
         self.assertEqual(self.events("route_fallback"), [])
         self.assertFalse(self.fallback_log.exists())
 
+    def test_a_turn_that_closes_its_output_and_hangs_still_stalls(self):
+        self.harness(f"echo '{INIT}'\nexec >&- 2>&-\nsleep 30\n",
+                     agents="turn_quiet_sec = 2\n")
+        started = time.monotonic()
+        output, timed_out = self.timed()
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertTrue(timed_out)
+        self.assertEqual(len(self.events("turn_stalled")), 1)
+        self.assertEqual(self.events("turn_timeout"), [])
+
     def test_a_turn_printing_every_second_outlives_a_short_quiet_period(self):
         self.harness(f"for i in 1 2 3 4 5; do echo '{STATUS}'; sleep 1; done\n"
                      f"echo '{DONE}'\n", agents="turn_quiet_sec = 2\n")
