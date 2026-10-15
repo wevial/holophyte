@@ -120,7 +120,7 @@ test("the four sections stand in order with their counts and summaries", async (
   const labels = screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"));
   expect(labels).toEqual(["Needs you", "Running", "Pull requests", "Merged today"]);
   expect(sectionHeader("Needs you")).toBe("Needs you3oldest waiting 8h 02m");
-  expect(sectionHeader("Running")).toBe("Running21 queued");
+  expect(sectionHeader("Running")).toBe("Running22 of 2 workers busy · 1 queued");
   expect(sectionHeader("Pull requests")).toBe("Pull requests21 waits on you");
   expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
 });

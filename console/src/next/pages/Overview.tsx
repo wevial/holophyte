@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
-import { laneGroups, RunningLanes } from "../components/RunLane";
+import { laneGroups, laneRuns, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
 
@@ -71,6 +71,11 @@ export function Overview() {
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
   const lanes = laneGroups(view.hosts);
+  const busy = lanes.reduce((sum, group) => {
+    const { live, stale } = laneRuns(group, view.now);
+    return sum + live.length + stale.length;
+  }, 0);
+  const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   return (
     <div className="flex max-w-[880px] flex-col gap-6 px-8 py-7">
       {view.answered && (
@@ -105,7 +110,7 @@ export function Overview() {
         id="run"
         label="Running"
         count={view.running}
-        summary={queued === 0 ? "nothing queued" : `${queued} queued`}
+        summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
         empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
         isEmpty={!lanes.some((group) => group.runs.length > 0)}
       >

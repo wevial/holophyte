@@ -5,7 +5,8 @@ import { formatDuration, formatSettled } from "../../lib/format";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { agentMs, boxPercent, groupByProject, phaseLabel, type ProjectGroup } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
-import type { Queued, Run } from "../../lib/types";
+import type { StatusRun } from "../../lib/contract.gen";
+import type { Queued } from "../../lib/types";
 import type { ContractBodies } from "../fleet";
 import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
@@ -19,16 +20,30 @@ const ROW_GRID =
 const TITLE_CELL = "min-w-0 font-sans text-[13px] leading-[1.45] max-[820px]:col-span-full max-[820px]:row-start-2";
 const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 max-[820px]:row-start-1";
 
+export interface LaneGroup extends ProjectGroup {
+  runs: StatusRun[];
+  workers: number;
+}
+
 /** The project groups of the hosts that answered `/status` well. The
  *  lanes read no route labels, whose contract type the classic one lacks. */
-export function laneGroups(hosts: HostRecord<ContractBodies>[]): ProjectGroup[] {
-  return groupByProject(
-    hosts.flatMap((host) =>
-      host.status && !host.contract_error
-        ? [{ base: host.base, status: { ...host.status, route_labels: undefined }, seen_ms: host.seen_ms }]
-        : [],
-    ),
+export function laneGroups(hosts: HostRecord<ContractBodies>[]): LaneGroup[] {
+  const answered = hosts.flatMap((host) =>
+    host.status && !host.contract_error ? [{ base: host.base, status: host.status, seen_ms: host.seen_ms }] : [],
   );
+  const groups = groupByProject(answered.map((entry) => ({ ...entry, status: { ...entry.status, route_labels: undefined } })));
+  return groups.map((group) => {
+    const own = answered.filter((entry) => entry.base === group.base && entry.status.project === group.path);
+    return { ...group, runs: own.flatMap((entry) => entry.status.runs), workers: own[0]!.status.workers };
+  });
+}
+
+/** A lane's runs still beating and those gone quiet; each holds a worker. */
+export function laneRuns(group: LaneGroup, now: number) {
+  const sinceMs = sinceSeen(group.seen_ms, now);
+  const threshold = group.status.thresholds.heartbeat_stale_ms;
+  const quiet = (run: StatusRun) => isStale(run.heartbeat_age_ms + sinceMs, threshold);
+  return { sinceMs, live: group.runs.filter((run) => !quiet(run)), stale: group.runs.filter(quiet) };
 }
 
 function quietSentence(keys: string[]): string {
@@ -36,7 +51,7 @@ function quietSentence(keys: string[]): string {
   return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Needs you.`;
 }
 
-function RunLaneRow({ run, base, sinceMs }: { run: Run; base: string; sinceMs: number }) {
+function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinceMs: number }) {
   const stage = phaseLabel(run.phase);
   const used = agentMs(run, sinceMs);
   const box = run.time_box_ms;
@@ -54,7 +69,7 @@ function RunLaneRow({ run, base, sinceMs }: { run: Run; base: string; sinceMs: n
         className={`${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`}
       >
         <span className="min-w-0">
-          <StageChip run={{ phase: run.phase, round: (run.round ?? 0) + 1 }} />
+          <StageChip run={{ phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds }} />
         </span>
         <span className="whitespace-nowrap text-ink-2">{run.ticket}</span>
         <span className={TITLE_CELL}>
@@ -112,19 +127,15 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
 
 /** One project's live runs, the runs that went quiet named instead of
  *  drawn, and its queue behind a count that unfolds. */
-function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
+function RunLane({ group, now }: { group: LaneGroup; now: number }) {
   const [open, setOpen] = useState(false);
   const queueId = useId();
-  const sinceMs = sinceSeen(group.seen_ms, now);
-  const threshold = group.status.thresholds.heartbeat_stale_ms;
-  const quiet = (run: Run) => isStale(run.heartbeat_age_ms + sinceMs, threshold);
-  const live = group.runs.filter((run) => !quiet(run));
-  const stale = group.runs.filter(quiet);
+  const { sinceMs, live, stale } = laneRuns(group, now);
   const queued = group.queued ?? [];
   const held = group.status.admission === "held";
   return (
     <div role="group" aria-label={group.name}>
-      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${live.length} running`}>
+      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${live.length + stale.length} of ${group.workers} workers busy`}>
         {stale.length > 0 ? (
           <span>· {quietSentence(stale.map((run) => run.ticket))}</span>
         ) : (
@@ -158,7 +169,7 @@ function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
   );
 }
 
-export function RunningLanes({ groups, now }: { groups: ProjectGroup[]; now: number }) {
+export function RunningLanes({ groups, now }: { groups: LaneGroup[]; now: number }) {
   return (
     <div className="flex flex-col gap-[22px]">
       {groups.map((group) => (
