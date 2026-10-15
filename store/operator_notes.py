@@ -5,6 +5,8 @@ import store
 from store.operate import _release_parked
 from store.schema import _transaction
 
+BABYSIT_PHASES = ("merge_gate", "verifying", "reviewing")
+
 
 def _instruction(note, author, hint):
     if not isinstance(note, str) or not note.strip():
@@ -77,11 +79,10 @@ def note_live(conn, run_id, note, author, hint=False):
     with _transaction(conn):
         row = conn.execute(
             "SELECT 1 FROM tickets t JOIN runs r ON r.id = t.activeRunId"
-            " WHERE r.id = ? AND r.endedAt IS NULL AND r.phase = 'merge_gate'"
-            " AND r.prUrl IS NOT NULL", (run_id,)).fetchone()
+            " WHERE r.id = ? AND r.endedAt IS NULL AND r.phase IN (?, ?, ?)"
+            " AND r.prUrl IS NOT NULL", (run_id, *BABYSIT_PHASES)).fetchone()
         if row is None:
-            raise ValueError("run must be live at the merge gate on its pull"
-                             " request")
+            raise ValueError("run must be live, babysitting its pull request")
         _record_note(conn, run_id, data)
         return _latest_note(conn, run_id)
 

@@ -159,7 +159,7 @@ def _live(conn, ticket_id, key, live, kind, note, author, now, resume,
                                  (live,)).fetchone()
     closed = conn.execute("SELECT 1 FROM runEvents WHERE runId = ?"
                           " AND kind = 'steer_closed'", (live,)).fetchone()
-    if phase == "merge_gate" and pr_url:
+    if phase in operator_notes.BABYSIT_PHASES and pr_url:
         return _babysat(conn, ticket_id, key, live, kind, note, author, now,
                         interrupt)
     if phase not in LIVE_PHASES or pr_url or closed:

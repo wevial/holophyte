@@ -423,7 +423,8 @@ def withdraw_steers(target, identifier, note, out=None, author=None):
 def _interrupts(target, conn, ticket_id, out):
     live = store.read.ticket_by_id(conn, ticket_id).activeRunId
     run = live and store.read.run_detail(conn, live)
-    babysat = run is not None and run.phase == "merge_gate" and run.prUrl
+    babysat = (run is not None and run.phase in operator_notes.BABYSIT_PHASES
+               and run.prUrl)
     if run is None or not babysat and (
             run.phase not in steer_notes.LIVE_PHASES or run.prUrl):
         return True
