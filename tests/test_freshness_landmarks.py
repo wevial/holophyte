@@ -170,6 +170,14 @@ class PathWordTests(RepoCase):
         self.assertEqual(self.findings(notes_body("Edit `gates.py`.")),
                          ([], []))
 
+    def test_an_explicit_root_or_directory_path_is_no_bare_basename(self):
+        for path in ("./gates.py", "./nowhere.py", "nowhere/"):
+            with self.subTest(path=path):
+                stale, advisories = self.findings(notes_body(f"Edit `{path}`."))
+                self.assertEqual(len(stale), 1, stale)
+                self.assertIn(f"`{path}`", stale[0])
+                self.assertEqual(advisories, [])
+
     def test_a_bare_basename_matching_nothing_is_an_advisory(self):
         stale, advisories = self.findings(notes_body("Edit `nowhere.py`."))
         self.assertEqual(stale, [])

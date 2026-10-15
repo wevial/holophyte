@@ -85,7 +85,7 @@ def path_findings(tree, named):
         normalized = str(Path(path))
         if tree.has(normalized):
             continue
-        if "/" in normalized:
+        if "/" in path:
             stale.append(f"`{path}` (named in {label}) is not on main")
         elif normalized not in tree.basenames:
             advisories.append(f"`{path}` (named in {label}) matches no"
