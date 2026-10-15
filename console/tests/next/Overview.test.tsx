@@ -256,7 +256,7 @@ test("the Needs you count is --need above zero and every other count, or a zero 
   expect(classes(sectionCount("Needs you"))).not.toContain("text-need");
 });
 
-test("an empty section shows only its header's hairline, and the sections stand the board's 44 px apart", async () => {
+test("an empty section's sentence draws no border of its own, and the sections stand the board's 44 px apart", async () => {
   await mount("#/", fleet({ items: [] }, { items: [] }));
   const regions = screen.getAllByRole("region");
   for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
