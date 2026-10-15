@@ -31,6 +31,15 @@ test("todayMerges keeps only the merges of now's day in the pinned zone", () => 
   expect(todayMerges(rows, now, "UTC").map((kept) => kept.id)).toEqual([2]);
 });
 
+test("todayMerges orders the merges of several hosts newest first", () => {
+  const now = Date.UTC(2026, 8, 5, 12, 0);
+  const rows = [
+    { ...ROWS[0]!, id: 7, ended_ms: Date.UTC(2026, 8, 5, 1, 0), outcome: "merged" },
+    { ...ROWS[0]!, id: 9, ended_ms: Date.UTC(2026, 8, 5, 8, 0), outcome: "merged", daemon: "http://writer:7711" },
+  ];
+  expect(todayMerges(rows, now, "UTC").map((kept) => kept.id)).toEqual([9, 7]);
+});
+
 test("the bar is ok at or under 80 %, warn above 80 % to 100 %, over past it; the delta signs and tones follow", () => {
   expect([24, 25, 30, 38].map((actual) => boxRatio(actual, 30))).toEqual(["ok", "warn", "warn", "over"]);
   expect([24, 25, 30, 38].map((actual) => deltaLabel(actual, 30))).toEqual(["−6m", "−5m", "0m", "+8m"]);

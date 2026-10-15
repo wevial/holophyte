@@ -122,8 +122,7 @@ test("the four sections stand in order with their counts and summaries", async (
   expect(sectionHeader("Needs you")).toBe("Needs you3oldest waiting 8h 02m");
   expect(sectionHeader("Running")).toBe("Running21 queued");
   expect(sectionHeader("Pull requests")).toBe("Pull requests21 waits on you");
-  const clock = new Date(NOW - 30 * MINUTE).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  expect(sectionHeader("Merged today")).toBe(`Merged today1last at ${clock}`);
+  expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
 });
 
 test("a folded section stays folded across a remount, and folds with storage throwing", async () => {
@@ -134,6 +133,7 @@ test("a folded section stays folded across a remount, and folds with storage thr
   fireEvent.click(label());
   expect(label().getAttribute("aria-expanded")).toBe("false");
   expect(body().hidden).toBe(true);
+  expect(localStorage.getItem("holophyte.next.fold.run")).not.toBeNull();
   cleanup();
 
   await mount("#/", busy);
@@ -187,4 +187,5 @@ test("before any scoped host answers there is no heading and no count line", asy
   expect(heading()).toBeNull();
   expect(countLine()).toBeNull();
   expect(screen.queryByText("Nothing needs you.")).toBeNull();
+  expect(section("Needs you")).toBeTruthy();
 });
