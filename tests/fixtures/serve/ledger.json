@@ -1,0 +1,40 @@
+{
+  "entries": [
+    {
+      "run": 1,
+      "ticket": "KO-7",
+      "at": 1750000000000,
+      "kind": "round",
+      "source": "loop",
+      "text": "Round 1: ADDRESS operator_note event 2"
+    },
+    {
+      "at": 1750000000000,
+      "run": null,
+      "ticket": null,
+      "kind": "intervention",
+      "source": "factory",
+      "action": "migrate",
+      "tone": "neutral",
+      "text": "store schema 49 (migrated from 0 at 2025-06-15T15:06:40+00:00 by BUILD, pid 1, COMMAND)",
+      "schema_to": 49,
+      "schema_from": 0,
+      "project": "/repo",
+      "cleared": null,
+      "waited_ms": null
+    },
+    {
+      "run": 3,
+      "ticket": "KO-9",
+      "at": 1750000000000,
+      "kind": "intervention",
+      "source": "operator",
+      "text": "human approve: go",
+      "cleared": null,
+      "waited_ms": null
+    }
+  ],
+  "active_outages": [],
+  "since": 0,
+  "limit": 200
+}

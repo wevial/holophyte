@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shipped",
+  "description": "GET /shipped",
+  "$ref": "#/$defs/Shipped",
+  "$defs": {
+    "ShippedRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "rounds": {
+          "type": "integer"
+        },
+        "findings": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "actual_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "working_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_count": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "type": "integer"
+        },
+        "wall_min": {
+          "type": "number"
+        },
+        "turn_count": {
+          "type": "integer"
+        },
+        "estimate_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "merge_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commit_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "outcome_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "ticket_url",
+        "title",
+        "rounds",
+        "findings",
+        "started_ms",
+        "actual_min",
+        "working_ms",
+        "agent_ms",
+        "verify_ms",
+        "run_count",
+        "ended_ms",
+        "wall_min",
+        "turn_count",
+        "estimate_min",
+        "merge_sha",
+        "commit_url",
+        "outcome",
+        "outcome_reason",
+        "pr_url",
+        "host"
+      ],
+      "additionalProperties": true
+    },
+    "Shipped": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ShippedRow"
+          }
+        },
+        "next_before": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rows",
+        "next_before",
+        "limit"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

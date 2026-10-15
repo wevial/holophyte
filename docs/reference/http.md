@@ -22,9 +22,10 @@ those writing routes. A project with no store answers 503.
 
 `console/contract/` holds the machine-readable shapes of `GET /status`,
 `GET /attention` and `GET /peers`, of the host root's `GET /status`
-and `GET /attention`, and of the run routes `GET /runs/N`,
-`GET /runs/N/merge` and `GET /runs/N/asks`: one JSON Schema per route,
-generated from `holophyte/serve/contract.py`.
+and `GET /attention`, of the run routes `GET /runs/N`,
+`GET /runs/N/merge` and `GET /runs/N/asks`, and of the list routes
+`GET /shipped`, `GET /ledger`, `GET /board` and `GET /tickets/KEY`: one
+JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
 
