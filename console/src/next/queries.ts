@@ -1,4 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
+import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
 import { mergeReadinessSchema } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
@@ -12,6 +13,16 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
+
+/** One daemon route's cache key: the base it hangs off and its path. */
+export function routeKey(base: string, path: string): readonly ["route", string, string] {
+  return ["route", base, path];
+}
+
+/** One route's JSON, parsed with `schema` and abandoned at `REQUEST_TIMEOUT_MS`. */
+export function fetchRoute<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T> {
+  return fetchJson(fetch, url, schema, AbortSignal.timeout(REQUEST_TIMEOUT_MS));
+}
 
 const READINESS_INTERVAL_MS = MERGE_READINESS_POLLS * POLL_INTERVAL_MS;
 
@@ -40,8 +51,8 @@ export function useReadiness(hosts: HostRecord<PollBodies>[], deps: { fetch: Fet
   const parks = pullRequestParks(hosts);
   const results = useQueries({
     queries: parks.map((park) => ({
-      queryKey: ["route", park.base, park.path],
-      queryFn: () => fetchJson(deps.fetch, `${park.base}${park.path}`, mergeReadinessSchema, AbortSignal.timeout(REQUEST_TIMEOUT_MS)),
+      queryKey: routeKey(park.base, park.path),
+      queryFn: () => fetchRoute(deps.fetch, `${park.base}${park.path}`, mergeReadinessSchema),
       refetchInterval: READINESS_INTERVAL_MS,
       staleTime: READINESS_INTERVAL_MS,
     })),
