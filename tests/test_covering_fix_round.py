@@ -25,33 +25,6 @@ def changes(finding):
 
 class CoveringFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
 
-    def test_a_new_finding_on_the_fix_gets_an_automatic_round_and_merges(self):
-        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
-        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        new_changes = Reply(f"{NEW_FINDING}\n"
-                            "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
-                            "VERDICT: REQUEST_CHANGES")
-
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            Reply("THREAD 1: ADDRESS -- a real crash"),
-                            Commit("fix: default load()"), new_changes,
-                            Commit("fix: keep the empty-input default"), APPROVE,
-                            Idle(""), provider=self.provider())
-
-        self.assertEqual(fake.roles[4:7], ["implement", "review", "implement"])
-        self.assertIn("src/loader.py:4 drops the empty-input default",
-                      fake.turns[6].goal)
-        self.assertIn("Fix note from the review of the fix at", fake.turns[6].goal)
-        self.assertIn("Fix src/loader.py:4 — drops the empty-input default.\n"
-                      "Fix each point above on this branch and keep the ticket's"
-                      " verify commands passing.", fake.turns[6].goal)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertEqual(self.read("SELECT count(*) FROM runEvents"
-                                   " WHERE kind = 'covering_fix_round'"), [(1,)])
-        ledger = [text for text, in self.read("SELECT text FROM ledger")]
-        self.assertTrue(any("Automatic fix round 1 of 2" in text for text in ledger),
-                        ledger)
-
     def rejected_fix(self, merge, *after):
         self.configure('[merge]\nmode = "pr"\n' + merge)
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
@@ -66,6 +39,24 @@ class CoveringFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
 
     def merges(self):
         return [v for kind, v in self.api_calls() if kind == "merge"]
+
+    def test_a_new_finding_on_the_fix_gets_an_automatic_round_and_merges(self):
+        fake = self.rejected_fix('approve = "auto"\n',
+                                 Commit("fix: keep the empty-input default"),
+                                 APPROVE, Idle(""))
+
+        self.assertEqual(fake.roles[4:7], ["implement", "review", "implement"])
+        self.assertIn("src/loader.py:4 drops the empty-input default",
+                      fake.turns[6].goal)
+        self.assertIn("Fix note from the review of the fix at", fake.turns[6].goal)
+        self.assertIn("Fix src/loader.py:4 — drops the empty-input default.\n"
+                      "Fix each point above on this branch and keep the ticket's"
+                      " verify commands passing.", fake.turns[6].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.automatic_rounds(), 1)
+        ledger = [text for text, in self.read("SELECT text FROM ledger")]
+        self.assertTrue(any("Automatic fix round 1 of 2" in text for text in ledger),
+                        ledger)
 
     def test_a_repeated_finding_after_an_automatic_round_parks(self):
         fake = self.rejected_fix('approve = "auto"\n',
