@@ -1,65 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Attention, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
-
-const DEMO = "http://writer-host:7710";
-const WRITER = "http://writer-host:7711";
-const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
-const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
-const shippedRow = ((await Bun.file(new URL("shipped.json", SERVE)).json()) as { rows: ShippedRow[] }).rows[0]!;
-const ready = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const NOW = new Date(2026, 9, 15, 12, 0).getTime();
-
-type Item = Attention["items"][number];
-const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
-const park = served.items[0]!;
-const blocked: Item = {
-  kind: "blocked", level: "attention", ticket: "DEMO-4", ticket_url: null, question: "Which way?", run: 4,
-  asked_ms: NOW - (8 * HOUR + 2 * MINUTE), pr_url: null,
-};
-const failedAt = (run: number, attempt: number, endedMs: number): Item => ({
-  kind: "failed", level: "attention", run, ticket: "DEMO-11", ticket_url: null, reason: "verify failed",
-  ended_ms: endedMs, attempt, pr_url: null, triage: null,
-});
-const failed = [failedAt(11, 1, NOW - 3 * HOUR), failedAt(12, 2, NOW - 2 * HOUR)];
-const parkOf = (ticket: string, run: number, park_kind: string): Item => ({ ...park, ticket, run, park_kind, asked_ms: NOW - HOUR } as Item);
-const ciPark = parkOf("DEMO-8", 8, "ci");
-const prPark = parkOf("WRITER-9", 9, "pull_request");
-
-const run = (id: number, ticket: string) => ({ ...working.runs[0]!, id, ticket, heartbeat_age_ms: 30_000 });
-const queuedOf = (...tickets: string[]) => tickets.map((ticket) => ({ ...working.queued[0]!, ticket }));
-const merged = (id: number, ticket: string, endedMs: number, outcome = "merged"): ShippedRow => ({
-  ...shippedRow, id, ticket, ended_ms: endedMs, outcome,
-});
-
-interface Daemon {
-  items: Item[];
-  runs?: Status["runs"];
-  queued?: Status["queued"];
-  shipped?: ShippedRow[];
-}
-
-function fleet(demo: Daemon, writer: Daemon): Fetch {
-  const daemon = (project: string, body: Daemon) => ({
-    status: { ...working, project, runs: body.runs ?? [], queued: body.queued ?? [] },
-    attention: { level: body.items.length ? "attention" : "none", now: NOW, project, items: body.items },
-  });
-  const polls = peersFetch(DEMO, { [DEMO]: daemon("/srv/dev/demo", demo), [WRITER]: daemon("/srv/dev/writer", writer) });
-  return async (url) => {
-    if (url === `${WRITER}/runs/9/merge`) return Response.json({ ...ready, run: 9, ticket: "WRITER-9" });
-    if (url === `${DEMO}/shipped?limit=50`) return Response.json({ rows: demo.shipped ?? [], next_before: null, limit: 50 });
-    if (url === `${WRITER}/shipped?limit=50`) return Response.json({ rows: writer.shipped ?? [], next_before: null, limit: 50 });
-    return polls(url);
-  };
-}
+import { blocked, ciPark, DEMO, failed, fleet, merged, MINUTE, NOW, prPark, queuedOf, run, SERVE } from "./needsFleet";
 
 const busy = fleet(
   {
