@@ -191,3 +191,14 @@ test("the footer names the host and how long ago it was polled, and reads pollin
     globalThis.setInterval = realSetInterval;
   }
 });
+
+test("the four page icons differ from one another and from the All projects icon, unfolded and folded", async () => {
+  await mount("#/", peersFetch(ORIGIN, { [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf([]) } }));
+  const drawn = () => {
+    const switcher = screen.getByRole("button", { name: /^Project: All projects/ });
+    return [...pages(), switcher].map((control) => control.querySelector("svg")!.outerHTML);
+  };
+  expect(new Set(drawn()).size).toBe(5);
+  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+  expect(new Set(drawn()).size).toBe(5);
+});
