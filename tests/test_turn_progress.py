@@ -157,14 +157,12 @@ class LabelTests(StreamedTurnCase):
                 (tool_use("Bash", parent="toolu_01Parent", command="echo ok",
                           description="Print ok"),
                  "subagent running Print ok"),
+                (tool_use("Bash", command="echo hunter2-marker"),
+                 "running a command"),
                 (tool_use("WebFetch", url="https://example.invalid", prompt="p"),
                  "WebFetch")):
             with self.subTest(label):
                 self.assertEqual(self.label_of(line), label)
-
-    def test_a_bash_call_without_a_description_hides_its_command(self):
-        label = self.label_of(tool_use("Bash", command="echo hunter2-marker"))
-        self.assertEqual(label, "running a command")
 
     def test_a_line_without_a_tool_call_records_nothing_more(self):
         recorder = holophyte.agents.turn_progress.TurnProgress(
