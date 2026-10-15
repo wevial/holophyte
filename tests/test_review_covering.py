@@ -253,8 +253,8 @@ class CoveringScopeQuestionTests(CoveringReviewFixture):
 
 
 class CoveringPullRequestDescriptionTests(CoveringReviewFixture):
-    EVIDENCE_OWNED = ("the factory, which writes the capture shown in this "
-                      "prompt into it when this review passes")
+    EVIDENCE_OWNED = ("the factory and already holds the capture shown in "
+                      "this prompt")
 
     def test_prompt_carries_the_description_github_serves(self):
         rest = Mock(return_value={"body": DESCRIPTION})
