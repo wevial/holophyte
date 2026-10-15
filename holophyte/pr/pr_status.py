@@ -454,28 +454,27 @@ def _ready_ms(node):
     return _iso_ms(last.get("createdAt")) if isinstance(last, dict) else None
 
 
-def _started_before(run, ready):
-    started = _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
-    return started is not None and started < ready
+def _start_ms(run):
+    return _iso_ms(run.get("started_at")) if isinstance(run, dict) else None
 
 
 def _fold_by_ready(runs, node):
     ready = _ready_ms(node)
     if runs is None or ready is None:
         return runs, False
-    rerun = {run.get("name") for run in runs
-             if isinstance(run, dict) and not _started_before(run, ready)}
     newest = {}
     for run in runs:
-        if _started_before(run, ready) and run.get("name") not in rerun:
-            name = run.get("name")
-            if (name not in newest or _iso_ms(run.get("started_at"))
-                    >= _iso_ms(newest[name].get("started_at"))):
-                newest[name] = run
-    kept = [run for run in runs if not _started_before(run, ready)
-            or newest.get(run.get("name")) is run]
-    return kept, any(_started_before(run, ready)
-                     and run.get("name") in rerun for run in runs)
+        start = _start_ms(run)
+        if start is None:
+            continue
+        name = run.get("name")
+        if name not in newest or start >= _start_ms(newest[name]):
+            newest[name] = run
+    kept = [run for run in runs
+            if _start_ms(run) is None or newest[run.get("name")] is run]
+    stale = any(_start_ms(run) < ready <= _start_ms(newest[run.get("name")])
+                for run in runs if _start_ms(run) is not None)
+    return kept, stale
 
 
 def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
