@@ -7,7 +7,7 @@ from holophyte.pr import github, pr_media
 
 def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat_s):
     if not merge_config(project).ui_paths:
-        return
+        return ""
     states = ticket_template.parse(ticket).evidence_states
     with heartbeat_while(conn, run_id, beat_s):
         body = github.rest(project, pull, "GET",
@@ -17,7 +17,7 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat
             project, wt, task_id, evidence, evidence_states=states,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
         if section is None or section.rstrip() == evidence.rstrip():
-            return
+            return ""
         failure = pr_media.capture_failure(project, wt, task_id, states)
         github.edit_pr_body(project, pull, github.replace_pr_evidence(body, section))
     if failure:
@@ -29,3 +29,4 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat
         shown = pr_media.CAPTURED.search(section)
         text = f"Evidence on {pull.url}: captured at {shown[1] if shown else sha[:12]}"
     ledger(conn, run_id, task_id, "note", text, None)
+    return failure
