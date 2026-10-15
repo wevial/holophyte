@@ -13,8 +13,13 @@ from time import sleep, time
 import store
 import store.read
 import ticket_template
-from holophyte.agents.agent_output import killed_by_signal, transport_failure
+from holophyte.agents.agent_output import (
+    AgentOutput,
+    killed_by_signal,
+    transport_failure,
+)
 from holophyte.agents.agent_routes import routes
+from holophyte.agents.claude_stream import TurnStalled
 from holophyte.agents.fix_session import STEER_ASK, resume_argv
 from holophyte.agents.harness import ORCHESTRATION_BRIEFS, implementer_orchestrations
 from holophyte.agents.roles import agent, record_session
@@ -151,6 +156,9 @@ def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
                            on_start=kill.arm, conn=conn, run_id=run_id,
                            **({"argv": argv} if argv is not None else {}))
             timed_out = False
+        except TurnStalled as stalled:
+            output, timed_out = _stalled_output(project, conn, run_id, role,
+                                                stalled), True
         except subprocess.TimeoutExpired as expired:
             text = _limit_text(project, limit, budget_min)
             print(f"[holo2] task exceeded {text}")
@@ -175,6 +183,30 @@ def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
                         argv is not None or recorded is not None
                         or _session_of(conn, run_id) != before))
     return output, timed_out
+
+
+def _stalled_output(project, conn, run_id, role, stalled):
+    note = (f"{role} turn stalled: no stream event for {stalled.quiet} s"
+            f" ({stalled.lines} lines; last tool {stalled.last_tool or 'none'})")
+    print(f"[holo2] {note}")
+    if conn is not None and run_id is not None:
+        store.record_event(
+            conn, run_id, "turn_stalled", note, level="detail",
+            payload=json.dumps({"role": role, "quiet_s": stalled.quiet,
+                                "lines": stalled.lines,
+                                "last_tool": stalled.last_tool}))
+    partial = (stalled.output or "").strip()
+    register_matches(project, partial)
+    print("[holo2] output before the turn stalled:\n"
+          + (partial[-2000:] or "(no output before the turn stalled)"))
+    output = AgentOutput(partial, "", timed_out=True)
+    output.stalled = stalled
+    return output
+
+
+def _stall_note(out):
+    stalled = getattr(out, "stalled", None)
+    return stalled and f"no stream event for {stalled.quiet} s"
 
 
 def _session_of(conn, run_id):
@@ -270,7 +302,7 @@ def _announce(conn, run_id, kind, note):
 
 def _turn_end(out, timed_out, steered=False):
     if timed_out:
-        return "budget fired"
+        return "stalled" if _stall_note(out) else "budget fired"
     if steered:
         return "steered"
     if _killed_by_signal(out, timed_out):
@@ -364,7 +396,7 @@ def _drop_leftovers(project, conn, run_id, wt, cause, before, *,
                     mid_edit=False):
     if before is None or not (
             mid_edit or cause in ("crashed", "steered", "budget fired",
-                                  "ended")):
+                                  "stalled", "ended")):
         return
     gone = []
     try:
@@ -659,6 +691,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         out, timed_out = _retry_crashed(project, conn, run_id, beat_s, wt,
                                         branch, task_id, goal, out, deadline,
                                         budget_min, limit, start_sha)
+    stall = _stall_note(out)
     blast_radius.record_declared(conn, run_id, out)
     escalation.record_choice(conn, run_id, out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
@@ -674,23 +707,28 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
         print(f"[holo2] implementer made no commits for: {task}")
         _record_implementer_output(conn, run_id, out,
                                    known_secrets(project.config()))
-        fired = (f"; the turn exceeded the "
+        fired = (f"; the turn stalled ({stall})" if stall else
+                 f"; the turn exceeded the "
                  f"{_limit_text(project, limit, budget_min)}" if timed_out else "")
+        failure = InfraFailure if stall else RunFailure
+        kind = "infra" if stall else "budget" if timed_out else "no_commits"
         if fresh:
             sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
             sh(["git", "branch", "-D", branch], project.path)
-            raise RunFailure("implementer made no commits; the empty branch"
-                             f" and worktree were discarded{fired}",
-                             "budget" if timed_out else "no_commits")
-        raise RunFailure(f"implementer made no new commits; preserved work"
-                         f" kept on {branch} at {head[:12]}{fired}",
-                         "budget" if timed_out else "no_commits")
+            raise failure("implementer made no commits; the empty branch"
+                          f" and worktree were discarded{fired}", kind)
+        raise failure(f"implementer made no new commits; preserved work"
+                      f" kept on {branch} at {head[:12]}{fired}", kind)
     if head == start_sha:
         note = (f"candidate carried from a prior run; implementer added"
                 f" nothing to {branch} at {start_sha[:12]}")
         print(f"[holo2] {note}")
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "carried_candidate", note)
+    if stall:
+        raise InfraFailure(
+            f"implementer turn stalled: {stall} ([agents] turn_quiet_sec ="
+            f" {out.stalled.quiet}); work kept on {branch} at {head[:12]}")
     if timed_out:
         raise RunFailure(f"implementer exceeded the "
                          f"{_limit_text(project, limit, budget_min)}; work kept"
