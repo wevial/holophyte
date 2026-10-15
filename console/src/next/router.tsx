@@ -14,7 +14,7 @@ import { useFleet } from "./fleet";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
-import { PeersContext, PollDepsContext, validateScope } from "./scope";
+import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
   return (
@@ -86,10 +86,12 @@ export function NextConsole({
   const peers = useFleet(base, pollDeps);
   const [router] = useState(createConsoleRouter);
   return (
-    <PollDepsContext.Provider value={pollDeps}>
-      <PeersContext.Provider value={peers}>
-        <RouterProvider router={router} />
-      </PeersContext.Provider>
-    </PollDepsContext.Provider>
+    <OriginContext.Provider value={base}>
+      <PollDepsContext.Provider value={pollDeps}>
+        <PeersContext.Provider value={peers}>
+          <RouterProvider router={router} />
+        </PeersContext.Provider>
+      </PollDepsContext.Provider>
+    </OriginContext.Provider>
   );
 }

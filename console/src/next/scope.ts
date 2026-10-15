@@ -29,6 +29,8 @@ export function scopedHosts<R extends HostRecord<PollBodies>>(hosts: R[], projec
 /** The deps the root polls with, for every per-route query under it. */
 export const PollDepsContext = createContext<PollDeps>(defaultPollDeps);
 
+export const OriginContext = createContext<string>(window.location.origin);
+
 export const PeersContext = createContext<PeersState<ContractBodies> | null>(null);
 
 /** The one `useFleet()` poll the console's root shares with every view. */

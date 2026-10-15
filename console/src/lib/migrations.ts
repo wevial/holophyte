@@ -1,21 +1,25 @@
-import type { Ledgers } from "../hooks/useLedger";
 import type { HostRecord } from "./hosts";
 import { localMidnight, type LedgerRow } from "./ledger";
+import type { PollBodies } from "./poll";
+import type { Status } from "./types";
+
+type MigrationRow = Pick<LedgerRow, "action" | "at" | "project" | "schema_from" | "schema_to">;
+type MigrationHost = HostRecord<PollBodies & { status: Pick<Status, "host" | "schema_version"> }>;
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 /** Count stores, not migration events or daemon ports. Older daemons without
  * structured migration fields cannot contribute a schema summary. */
-export function migrationLines(hosts: HostRecord[], ledgers: Ledgers, now: number): string[] {
-  const groups = new Map<string, HostRecord[]>();
+export function migrationLines(hosts: MigrationHost[], ledgers: Record<string, { rows: MigrationRow[] }>, now: number): string[] {
+  const groups = new Map<string, MigrationHost[]>();
   for (const host of hosts) {
     const name = host.status?.host ?? host.address;
     groups.set(name, [...(groups.get(name) ?? []), host]);
   }
   const lines: string[] = [];
   for (const [name, siblings] of groups) {
-    const latest = new Map<string, LedgerRow>();
+    const latest = new Map<string, MigrationRow>();
     const migrated = new Set<string>();
     for (const host of siblings) {
       for (const row of ledgers[host.key]?.rows ?? []) {
@@ -26,7 +30,7 @@ export function migrationLines(hosts: HostRecord[], ledgers: Ledgers, now: numbe
         if (!latest.has(project) || latest.get(project)!.at < row.at) latest.set(project, row);
       }
     }
-    const versions = new Map<number, [string, LedgerRow][]>();
+    const versions = new Map<number, [string, MigrationRow][]>();
     for (const entry of latest) {
       if (now - entry[1].at >= SIX_HOURS) continue;
       const version = entry[1].schema_to!;
