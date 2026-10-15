@@ -127,7 +127,7 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
   const [primary, ...more] = labels;
   const pending = action.isPending ? action.variables?.label : undefined;
   const last = action.variables?.label;
-  const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) ? action.data.detail : null;
+  const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && last !== MERGE ? action.data.detail : null;
 
   const post = (label: string, route: string, body: Record<string, unknown>) =>
     action.mutateAsync({ label, base: host.base, route, body, said: saidFor(label, item, host) });
@@ -139,6 +139,7 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
     if (label === RESUME) return ticket == null ? undefined : () => setReasoning(label);
     if (label === ABORT || label === ABORT_CLOSE) return run == null ? undefined : () => setReasoning(label);
     const route = ROUTES[label];
+    if (label === "Requeue" && ticket == null) return undefined;
     return route == null ? undefined : () => void post(label, route, actionBody(label, ticket));
   };
   const titleOf = (label: string) => (label === OPEN_PR ? (prUrl == null ? NO_PR_URL : undefined) : ROUTES[label] == null && label !== RESUME ? NOT_WIRED : undefined);
