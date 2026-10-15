@@ -14,6 +14,10 @@ DESCRIPTION_SUBJECT_RE = re.compile(
     r'^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:(?:p[0-3]|nit|blocker|major|minor)\b'
     r'[^\w(\n]*)?[(\[]?\s*path:\s*"?(?:the\s+)?PR description\b', re.I)
 
+FINDING_OPEN_RE = re.compile(
+    r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?[(\[]?\s*(?:(?:p[0-3]|nit|blocker|major|minor)\b"
+    r"|(?:path:\s*\"?)?[\w./-]+\.\w+:\d+)", re.I)
+
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
 HEADING_RE = re.compile(
@@ -41,7 +45,9 @@ def description_findings(verdict, decision, unwitnessed):
 def _one_description_finding(block):
     first, *rest = block.splitlines()
     return bool(DESCRIPTION_SUBJECT_RE.match(first)) and all(
-        line[:1].isspace() for line in rest)
+        line[:1].isspace() and (not FINDING_OPEN_RE.match(line)
+                                or DESCRIPTION_SUBJECT_RE.match(line))
+        for line in rest)
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,

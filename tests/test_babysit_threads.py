@@ -856,20 +856,26 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertIn("it still names the handshake", self.question())
 
     def test_a_code_finding_beside_a_description_finding_skips_the_rewrite(self):
-        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
-        self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
-        mixed = Reply(
-            "- Blocker (path: \"PR description\" -- it names a handshake).\n"
-            "- Blocker: src/app.py:3 drops the tab target.\n"
-            "CRITERION 1: met — tests/test_thing.py::test_it_works\n"
-            "VERDICT: REQUEST_CHANGES")
+        described = "- Blocker (path: \"PR description\" -- it names a handshake).\n"
+        for code in ("- Blocker: src/app.py:3 drops the tab target.\n",
+                     "  - Blocker: src/app.py:3 drops the tab target.\n",
+                     "  Blocker: src/app.py:3 drops the tab target.\n",
+                     "    src/app.py:3 drops the tab target.\n"):
+            with self.subTest(code=code):
+                self.setUp()
+                self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+                self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
+                mixed = Reply(described + code + "CRITERION 1: met —"
+                              " tests/test_thing.py::test_it_works\n"
+                              "VERDICT: REQUEST_CHANGES")
 
-        fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
-                            Reply("THREAD 1: ADDRESS -- a real crash"),
-                            Commit("thread fix"), mixed, provider=self.provider())
+                fake, _ = self.loop(Commit("candidate"), APPROVE, Idle(""),
+                                    Reply("THREAD 1: ADDRESS -- a real crash"),
+                                    Commit("thread fix"), mixed,
+                                    provider=self.provider())
 
-        self.assertEqual(fake.roles[5:], ["review"])
-        self.assertIn("src/app.py:3 drops the tab target", self.question())
+                self.assertEqual(fake.roles[5:], ["review"])
+                self.assertIn("src/app.py:3 drops the tab target", self.question())
 
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
         self.configure('[merge]\nmode = "pr"\n')
