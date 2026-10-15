@@ -49,7 +49,8 @@ def profiled_run(run, task):
         view = scoped(project, candidate)
         with heartbeat_while(conn, run_id, beat_s):
             probe = probe_launch(view, seats[candidate].turn(PROBE_GOAL),
-                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{candidate}")
+                                 PROBE_TIMEOUT, f"{PROFILES_KEY}.{candidate}",
+                                 claude=seats[candidate].name == "claude")
         if probe.ok:
             name = candidate
             source = "classifier" if requested is None else None

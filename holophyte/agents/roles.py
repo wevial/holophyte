@@ -31,11 +31,13 @@ from holophyte.agents.review_workspace import (
     review_scratch,
     table_review,
 )
+from holophyte.agents.turn_progress import TurnProgress
 from holophyte.config.agent_settings import (
     agent_command,
     review_route,
     review_tier,
     turn_cap,
+    turn_quiet_sec,
 )
 from holophyte.config.config_tables import sweep_config
 from holophyte.config.reader import (
@@ -49,6 +51,7 @@ from holophyte.config.reader import (
 from holophyte.config.worktree_settings import carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
+from holophyte.pr.mockup import review_carry
 from holophyte.redact import known_secrets, outbound
 
 REVIEW_TIMEOUT = 1800
@@ -245,6 +248,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     if family_route is not None and not switched:
         turn, profile, tier = family_route, family_label(family_route), None
     cap = REVIEW_TIMEOUT if timeout is None else timeout
+    configured = carry_directories(project)
     options = {} if tier is None else {"service_tier": tier}
     if role == "adversary":
         options["multi_agent"] = True
@@ -263,7 +267,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 prompt=goal,
                 timeout=cap,
                 verdicts=None,
-                carry=carry_directories(project),
+                carry=configured + review_carry(cwd, configured),
                 on_start=kill.arm,
                 **turn,
                 **options,
@@ -299,6 +303,16 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         failure.tail = f"{e.output or ''}{e.stderr or ''}"[
             -review_runner.EVIDENCE_TAIL:]
         raise failure from e
+
+
+def stream_watch(project, streamed, role, cwd, conn, run_id):
+    if not streamed:
+        return {}
+    if conn is None or run_id is None:
+        return {"quiet": turn_quiet_sec(project)}
+    progress = TurnProgress(conn, run_id, role, cwd,
+                            known_secrets(project.config()))
+    return {"quiet": turn_quiet_sec(project), "on_event": progress.seen}
 
 
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
@@ -372,11 +386,13 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         # Recorded before launch, so a turn the budget kills still leaves it.
         import store
         store.record_agent_session(conn, run_id, session_id, role, "primary")
+    streamed = seat is not None and seat.name == "claude"
+    hook.update(stream_watch(project, streamed, role, cwd, conn, run_id))
     code, out = launcher.launch(launcher.turn_route(project, cmd), cwd,
                                  launcher.environment(project), cmd,
                                  timeout=cap, runner=run_capped, project=project,
                                  keep_session=True, **hook)
-    decoded = claude_result(out) if seat is not None and seat.name == "claude" else None
+    decoded = claude_result(out) if streamed else None
     if decoded is None:
         output = ImplementerOutput(out.strip(), code, dispatched_route)
     else:

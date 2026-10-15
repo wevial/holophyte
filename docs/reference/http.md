@@ -35,6 +35,7 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
   "schema_version": 35,
   "admission": "enabled",
   "hold_note": null,
+  "workers": 1,
   "active_routes": {"implementer": {"command": "claude"},
                     "reviewer": {"command": "claude", "fallback": "claude"},
                     "adjudicator": {"command": "codex"},
@@ -66,7 +67,8 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
      "working_ms": 61200, "work_started_ms": 1788450511675,
      "agent_ms": 61200, "verify_ms": 0, "run_count": 1,
      "verify_started_ms": null,
-     "time_box_ms": 1500000, "round": 0, "strikes": 0, "host": "writer-1",
+     "time_box_ms": 1500000, "round": 0, "max_rounds": 2, "strikes": 0,
+     "host": "writer-1",
      "stop_requested": null, "stop_action": null}
   ],
   "queued": [
@@ -86,7 +88,9 @@ so a run sent back to the babysitter, parked on CI, paused or failed and
 requeued counts toward the live one. `run_count` is the number of runs in
 the chain, 1 for a first attempt. `started_ms` is the chain's first run's
 start as epoch milliseconds; `round` is the review rounds the live run
-has recorded so far; `strikes` is
+has recorded so far, so a run in `reviewing` is in round `round + 1`;
+`max_rounds` is the review rounds the run may take, the cap its claim
+recorded or the default; `strikes` is
 the sweep's tally for the run, 0 when it is not under suspicion.
 `ticket_url` is the ticket's page on the board (`tickets.url`), null when
 the store has none. `elapsed_ms` is wall time since `started_ms`.
@@ -116,6 +120,8 @@ repository the daemon serves, as a path. `schema_version` is the
 store's schema version (its `PRAGMA user_version`). `admission` is the
 project's admission state (`store/enums.py` `ProjectAdmission`): `enabled`,
 `held` or `disabled`; while it is `disabled`, `runs` is empty.
+`workers` is the most runs the loop keeps at once, the project's
+`[loop] workers`.
 `queued` lists the project's tickets waiting for the next claim: `ready`,
 with no active run and an ended last run, oldest wait first, whatever the
 admission state. A ready ticket that never ran is not in it. Each entry

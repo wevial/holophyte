@@ -157,6 +157,12 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
+- `holophyte/agents/claude_stream.py` — a streaming Claude turn read line by
+  line, its `result` lines kept, and a turn quiet for `turn_quiet_sec` ended as
+  stalled.
+- `holophyte/agents/turn_progress.py` — a streaming Claude turn's tool calls
+  counted and labelled, recorded as a `turn_progress` event at most once a
+  minute.
 - `holophyte/review/briefs.py` — the scope, criteria, tests, trim and evidence
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
@@ -452,7 +458,10 @@ Each module, one line:
   filing checks against `[merge.media_bucket] public_base`, the download of
   each `.png` snapshot and `.zip` bundle into the task worktree's ignored
   `.holophyte/mockup/` with its `manifest.json`, and the implementer's brief
-  that lists them.
+  that lists them. `review_carry` names that directory and
+  `.holophyte/captured/` (the PNGs of the last UI capture) for every review
+  workspace to copy read-only, and `reviewer_brief` lists both with the
+  reviewer's design-match check.
 - `holophyte/capture_playwright.py` — a standalone Playwright capture runner a
   project can name as `[merge] ui_capture`: it runs the ticket's spec from a
   capture directory through a generated config that imports the project's

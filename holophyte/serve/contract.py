@@ -76,6 +76,7 @@ class StatusRun(TypedDict):
     verify_started_ms: int | None
     time_box_ms: int | None
     round: int
+    max_rounds: int
     strikes: int
     host: str | None
 
@@ -93,6 +94,7 @@ class Status(TypedDict):
     project: str
     admission: str
     hold_note: str | None
+    workers: int
     schema_version: int
     active_routes: dict[str, ActiveRoute]
     route_labels: RouteLabels

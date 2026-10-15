@@ -15,6 +15,7 @@ from holophyte.config.reader import (
     REVIEW_ROUTE_KEYS,
     REVIEW_TIER_KEYS,
     TURN_CAP_MIN,
+    TURN_QUIET_SEC,
     config_table,
 )
 
@@ -140,6 +141,15 @@ def turn_cap_min(project):
         raise SystemExit(
             f"[holo2] {project.config_path}: [agents] turn_cap_min must be a "
             f"whole number of minutes, at least 1, got {value!r}")
+    return value
+
+
+def turn_quiet_sec(project):
+    value = config_table(project, "agents").get("turn_quiet_sec", TURN_QUIET_SEC)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] turn_quiet_sec must be a "
+            f"whole number of seconds, at least 0, got {value!r}")
     return value
 
 

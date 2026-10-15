@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { matchRows, storeScope, switcherRows, type SwitcherRow } from "../projects";
-import { useConsolePeers } from "../scope";
-import { DropIcon, FolderIcon, OverviewIcon } from "./icons";
+import { matchRows, storeScope, type SwitcherRow } from "../projects";
+import { AllProjectsIcon, DropIcon, FolderIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
@@ -16,11 +15,11 @@ function iconColour(row: SwitcherRow): string {
 }
 
 function RowIcon({ row }: { row: SwitcherRow }) {
-  return <span className={`flex ${iconColour(row)}`}>{row.name == null ? <OverviewIcon /> : <FolderIcon />}</span>;
+  return <span className={`flex ${iconColour(row)}`}>{row.name == null ? <AllProjectsIcon /> : <FolderIcon />}</span>;
 }
 
 function HeldTag() {
-  return <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-wait">held</span>;
+  return <span className="font-mono text-[11px] font-normal text-wait">held</span>;
 }
 
 function buttonName(row: SwitcherRow): string {
@@ -35,8 +34,7 @@ function unknownRow(name: string): SwitcherRow {
   return { name, label: name, held: false, need: 0, open: 0, down: false };
 }
 
-export function ProjectSwitcher({ folded }: { folded: boolean }) {
-  const { hosts, now } = useConsolePeers();
+export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded: boolean }) {
   const { project } = useSearch({ from: "__root__" });
   const navigate = useNavigate();
   const id = useId();
@@ -46,7 +44,6 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
 
-  const rows = switcherRows(hosts, now);
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const matches = matchRows(rows, query);
   const at = Math.min(active, Math.max(0, matches.length - 1));
@@ -118,7 +115,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
   const findId = `${id}-find`;
 
   return (
-    <div className={`border-b border-rule ${folded ? "flex justify-center py-2" : "px-3 py-3"}`}>
+    <div className={`pt-3 pb-1 ${folded ? "flex justify-center" : "px-3"}`}>
       <button
         ref={buttonRef}
         type="button"
@@ -161,7 +158,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
           role="dialog"
           aria-label="Switch project"
           style={{ top: place.top, left: place.left, maxHeight: place.maxHeight, width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
-          className="fixed z-50 flex flex-col border border-rule bg-paper shadow-card"
+          className="fixed z-50 flex flex-col border border-rule bg-paper p-2 shadow-card"
           onMouseDown={(event) => {
             if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
           }}
@@ -189,12 +186,12 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
               setActive(0);
             }}
             onKeyDown={onFindKey}
-            className="min-h-11 border-b border-rule bg-transparent px-3 text-[13px] text-ink placeholder:text-ink-3 focus:outline-none"
+            className="min-h-9 border border-ink-3 bg-paper-2 px-2.5 text-[13px] text-ink placeholder:text-ink-2 focus:outline-2 focus:outline-act focus:-outline-offset-1!"
           />
           {matches.length === 0 ? (
-            <p className="px-3 py-3 text-[13px] text-ink-3">No project matches.</p>
+            <p className="mt-2 px-2 py-2.5 text-[13px] text-ink-3">No project matches.</p>
           ) : (
-            <ul id={listId} role="listbox" aria-label="Projects" className="flex max-h-[320px] min-h-0 flex-col overflow-y-auto py-1">
+            <ul id={listId} role="listbox" aria-label="Projects" className="mt-2 flex max-h-[320px] min-h-0 flex-col overflow-y-auto">
               {matches.map((row, index) => (
                 <li
                   key={row.name == null ? "all-projects-scope" : `project:${row.name}`}
@@ -204,7 +201,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
                   data-active={index === at}
                   onClick={() => pick(row)}
                   onMouseMove={() => setActive(index)}
-                  className="flex min-h-10 cursor-pointer items-center gap-2 px-3 text-[13px] text-ink data-[active=true]:bg-paper-2"
+                  className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-[13px] text-ink aria-selected:text-act data-[active=true]:bg-paper-2"
                 >
                   <RowIcon row={row} />
                   <span className="min-w-0 flex-1 truncate">{row.label}</span>

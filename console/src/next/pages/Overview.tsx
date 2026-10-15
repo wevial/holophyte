@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
 import { FocusCard, useHeldEntry } from "../components/FocusCard";
@@ -37,13 +37,14 @@ function queuedSentence(keys: string[]): string {
 }
 
 function Empty({ children }: { children: ReactNode }) {
-  return <p className="border-t border-rule pt-3 font-mono text-[13px] text-ink-3">{children}</p>;
+  return <p className="font-mono text-[13px] text-ink-3">{children}</p>;
 }
 
 function FoldingSection({
   id,
   label,
   count,
+  hot,
   summary,
   empty,
   isEmpty = count === 0,
@@ -52,13 +53,14 @@ function FoldingSection({
   id: string;
   label: string;
   count: number;
+  hot?: boolean;
   summary?: string;
   empty: string;
   isEmpty?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <Section label={label} count={count} summary={summary} defaultOpen={readOpen(id)} onToggle={(open) => writeOpen(id, open)}>
+    <Section label={label} count={count} hot={hot} summary={summary} defaultOpen={readOpen(id)} onToggle={(open) => writeOpen(id, open)}>
       {isEmpty ? <Empty>{empty}</Empty> : children}
     </Section>
   );
@@ -73,13 +75,17 @@ export function Overview() {
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
   const lanes = laneGroups(view.hosts);
+  const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
+  const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   return (
-    <div className="flex max-w-[880px] flex-col gap-6 px-8 py-7">
+    <div className="flex max-w-[880px] flex-col gap-8 px-8 py-7">
       {view.answered && (
-        <header className="flex flex-col gap-1">
-          <h1 className="font-sans text-[32px] font-bold leading-tight text-ink">
+        <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
+          <h1 className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">
             {need === 0 ? (
-              "Nothing needs you."
+              <>
+                <span className="text-live">Nothing</span> needs you.
+              </>
             ) : (
               <>
                 <span className="text-need">{need}</span> {need === 1 ? "needs" : "need"} you.
@@ -87,48 +93,58 @@ export function Overview() {
             )}
           </h1>
           <p data-count-line className="font-mono text-[13px] text-ink-2">
-            {[
-              `${view.running} running`,
-              counted(view.pullRequests.length, "open PR"),
-              `${queued} queued`,
-              `${view.mergedToday.length} merged today`,
-            ].join(" · ")}
+            {(
+              [
+                [view.running, "running"],
+                [view.pullRequests.length, view.pullRequests.length === 1 ? "open PR" : "open PRs"],
+                [queued, "queued"],
+                [view.mergedToday.length, "merged today"],
+              ] as const
+            ).map(([count, words], index) => (
+              <Fragment key={words}>
+                {index > 0 && <span className="text-ink-3"> · </span>}
+                <b className="font-semibold text-ink">{count}</b> {words}
+              </Fragment>
+            ))}
           </p>
         </header>
       )}
-      <FoldingSection
-        id="need"
-        label="Needs you"
-        count={need}
-        summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
-        empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
-      >
-        <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} />
-      </FoldingSection>
-      <FoldingSection
-        id="run"
-        label="Running"
-        count={view.running}
-        summary={queued === 0 ? "nothing queued" : `${queued} queued`}
-        empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-        isEmpty={!lanes.some((group) => group.runs.length > 0)}
-      >
-        <RunningLanes groups={lanes} now={view.now} />
-      </FoldingSection>
-      <FoldingSection
-        id="pr"
-        label="Pull requests"
-        count={view.pullRequests.length}
-        summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
-        empty="No pull requests open."
-      />
-      <FoldingSection
-        id="done"
-        label="Merged today"
-        count={view.mergedToday.length}
-        summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
-        empty="Nothing merged yet today."
-      />
+      <div className="flex flex-col gap-[44px]">
+        <FoldingSection
+          id="need"
+          label="Needs you"
+          count={need}
+          hot
+          summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
+          empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
+        >
+          <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} />
+        </FoldingSection>
+        <FoldingSection
+          id="run"
+          label="Running"
+          count={view.running}
+          summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
+          empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
+          isEmpty={!lanes.some((group) => group.runs.length > 0)}
+        >
+          <RunningLanes groups={lanes} now={view.now} />
+        </FoldingSection>
+        <FoldingSection
+          id="pr"
+          label="Pull requests"
+          count={view.pullRequests.length}
+          summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
+          empty="No pull requests open."
+        />
+        <FoldingSection
+          id="done"
+          label="Merged today"
+          count={view.mergedToday.length}
+          summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
+          empty="Nothing merged yet today."
+        />
+      </div>
     </div>
   );
 }
