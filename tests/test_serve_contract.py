@@ -23,6 +23,7 @@ from holophyte.serve.contract import (
     Status,
     main,
 )
+from holophyte.serve.contract_emit import ContractError, json_schema
 
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention")
@@ -133,6 +134,16 @@ class GeneratedFilesTests(unittest.TestCase):
             self.assertFalse((root / SCHEMA_DIR / "stale.schema.json").exists())
             self.assertEqual(self.generated(root), self.generated(ROOT))
             self.assertEqual(main(["--check"], root=root), 0)
+
+
+class Annotated(typing.TypedDict):
+    value: typing.Annotated[int, "metadata"]
+
+
+class EmitterTests(unittest.TestCase):
+    def test_an_annotation_with_no_mapping_stops_the_generator_naming_its_field(self):
+        with self.assertRaisesRegex(ContractError, r"^Annotated\.value: "):
+            json_schema(Annotated, "GET /annotated")
 
 
 class PinnedAnswerTests(unittest.TestCase):

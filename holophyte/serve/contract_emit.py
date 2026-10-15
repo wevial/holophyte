@@ -53,8 +53,8 @@ def _kinded(members):
 
 def _object(body, defs):
     name = body.__name__
-    hints = typing.get_type_hints(body)
-    properties = {key: _schema(hint, defs, f"{name}.{key}")
+    hints = typing.get_type_hints(body, include_extras=True)
+    properties = {key: _schema(_bare(hint), defs, f"{name}.{key}")
                   for key, hint in hints.items()}
     shape = {"type": "object", "properties": properties,
              "required": [key for key in hints
@@ -63,6 +63,12 @@ def _object(body, defs):
     if defs.setdefault(name, shape) != shape:
         raise ContractError(f"$defs/{name} names two shapes")
     return {"$ref": f"#/$defs/{name}"}
+
+
+def _bare(hint):
+    while typing.get_origin(hint) in (typing.NotRequired, typing.Required):
+        hint = typing.get_args(hint)[0]
+    return hint
 
 
 def render(routes, schema_dir, zod_file, command):
@@ -154,8 +160,10 @@ def _zod(shape):
         return _const(shape["$ref"].rsplit("/", 1)[1])
     if "const" in shape:
         return f"z.literal({json.dumps(shape['const'])})"
-    if "enum" in shape:
+    if "enum" in shape and all(isinstance(v, str) for v in shape["enum"]):
         return f"z.enum({json.dumps(shape['enum'])})"
+    if "enum" in shape:
+        return _union([{"const": value} for value in shape["enum"]])
     if "oneOf" in shape:
         members = ", ".join(_zod(member) for member in shape["oneOf"])
         return f'z.discriminatedUnion("{KIND}", [{members}])'
