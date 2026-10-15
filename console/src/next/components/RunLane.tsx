@@ -1,12 +1,12 @@
 import { useId, useState } from "react";
 import { TicketLink } from "../../components/TicketLink";
-import type { Status } from "../../lib/contract.gen";
 import { isStale } from "../../lib/derive";
 import { formatDuration, formatSettled } from "../../lib/format";
-import { sinceSeen } from "../../lib/hosts";
+import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { agentMs, boxPercent, groupByProject, phaseLabel, type ProjectGroup } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
 import type { Queued, Run } from "../../lib/types";
+import type { ContractBodies } from "../fleet";
 import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
@@ -19,16 +19,9 @@ const ROW_GRID =
 const TITLE_CELL = "min-w-0 font-sans text-[13px] leading-[1.45] max-[820px]:col-span-full max-[820px]:row-start-2";
 const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 max-[820px]:row-start-1";
 
-interface LaneSource {
-  base: string;
-  status: Status | null;
-  seen_ms: number | null;
-  contract_error?: boolean;
-}
-
 /** The project groups of the hosts that answered `/status` well. The
  *  lanes read no route labels, whose contract type the classic one lacks. */
-export function laneGroups(hosts: LaneSource[]): ProjectGroup[] {
+export function laneGroups(hosts: HostRecord<ContractBodies>[]): ProjectGroup[] {
   return groupByProject(
     hosts.flatMap((host) =>
       host.status && !host.contract_error
