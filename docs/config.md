@@ -1144,7 +1144,16 @@ and the brief names the spec `<ui_capture_dir>/<ticket key>.capture.ts`, which
 stays in the worktree and is never committed. A change to the local spec the
 capture would run reruns the capture at the same commit and counts as
 fix-round progress. Numbered images receive state captions; missing images
-are marked "not captured" in the PR and reviewer prompt.
+are marked "not captured" in the PR and reviewer prompt. A capture fails when
+its command exits nonzero or times out, when it writes no media, or, for a
+ticket that lists states, when it exits 0 without an `NN-` image for every
+state; its section then opens with "The UI capture saved N of M views; not
+captured: …". A ticket without states succeeds with any media file. The PR's
+Evidence section is rewritten when the pull request opens, when a review of
+its candidate approves, and before the covering review of each babysit fix
+that passed verify and touched `ui_paths` since the section's "Captured at"
+commit, whatever that review then decides. When the capture at the new head
+fails, the earlier images stay under a notice that they show an older commit.
 Tickets without the section keep the default capture.
 On a project that sets `ui_paths`, a ticket declaring `**UI change:** major`
 under What / Why / How must carry a `## Mock-up` section linking the approved
