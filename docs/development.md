@@ -527,6 +527,9 @@ Each module, one line:
   `[merge] retrigger_missing_checks`, and the park naming them (KO-652).
 - `holophyte/babysit/check_fix.py` — a red check's one fix turn per babysit: the
   brief with each failed Actions job's log tail, and the park otherwise.
+- `holophyte/babysit/description_review.py` — a covering review whose every
+  blocker is tagged `path: "PR description"`: the description rewritten with
+  those findings as input before the same commit is reviewed once more.
 - `holophyte/babysit/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.
