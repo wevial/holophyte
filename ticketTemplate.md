@@ -36,11 +36,18 @@
      `**UI change:** major`. Give the approved mock-up as one bare URL
      (https://claude.ai/artifact/ID, https://claude.ai/code/artifact/ID or
      a Lotuspod page, https://lotuspod.DOMAIN/NAME.html) and one approval
-     line. Delete the whole section otherwise. -->
+     line. Below it, link each exported board as a .png snapshot, or the
+     boards' .dc.html sources, canvas.json and PNGs as one .zip bundle,
+     uploaded under the project's [merge.media_bucket] public_base; on a
+     project with ui_paths and a bucket a major change needs at least one.
+     The factory downloads them for the implementer. Delete the whole
+     section otherwise. -->
 
 <https://claude.ai/artifact/ID>
 
 Approved <YYYY-MM-DD>: <what was approved>
+
+![<board name>](<public_base>/<board>.png)
 
 ## In scope
 

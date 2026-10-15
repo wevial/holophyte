@@ -448,6 +448,11 @@ Each module, one line:
   media publishing and evidence shared by PR descriptions and review prompts.
   See [merge configuration](config.md#merge) for capture commands, destinations
   and size limits.
+- `holophyte/pr/mockup.py` — a ticket's `## Mock-up` media links: the
+  filing checks against `[merge.media_bucket] public_base`, the download of
+  each `.png` snapshot and `.zip` bundle into the task worktree's ignored
+  `.holophyte/mockup/` with its `manifest.json`, and the implementer's brief
+  that lists them.
 - `holophyte/capture_playwright.py` — a standalone Playwright capture runner a
   project can name as `[merge] ui_capture`: it runs the ticket's spec from a
   capture directory through a generated config that imports the project's
