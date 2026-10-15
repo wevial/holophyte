@@ -343,3 +343,199 @@ export const hostAttentionSchema = z.looseObject({
   now: z.int(),
 });
 export type HostAttention = z.infer<typeof hostAttentionSchema>;
+
+export const runDetailRunSchema = z.looseObject({
+  id: z.int(),
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  title: z.string(),
+  phase: z.string(),
+  attempt: z.int(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+  outcome: z.string().nullable(),
+  elapsed_ms: z.int(),
+  working_ms: z.int().nullable(),
+  agent_ms: z.int().nullable(),
+  verify_ms: z.int().nullable(),
+  time_box_ms: z.int().nullable(),
+  branch: z.string().nullable(),
+  host: z.string().nullable(),
+  heartbeat_age_ms: z.int().nullable(),
+  merge_sha: z.string().nullable(),
+  commit_url: z.string().nullable(),
+  pr_url: z.string().nullable(),
+  work_started_ms: z.int().nullable(),
+  verify_started_ms: z.int().nullable(),
+  approved_at: z.int().nullable(),
+  approved_by: z.string().nullable(),
+  max_rounds: z.int(),
+});
+export type RunDetailRun = z.infer<typeof runDetailRunSchema>;
+
+export const findingFingerprintSchema = z.looseObject({
+  path: z.string(),
+  line: z.int().nullable().optional(),
+  severity: z.string(),
+});
+export type FindingFingerprint = z.infer<typeof findingFingerprintSchema>;
+
+export const instructionTriageSchema = z.looseObject({
+  decision: z.enum(["fix", "question", "unclear"]),
+  confidence: z.number().nullable(),
+  route: z.enum(["fix", "answer"]),
+  reason: z.string(),
+});
+export type InstructionTriage = z.infer<typeof instructionTriageSchema>;
+
+export const roundFindingSchema = z.looseObject({
+  path: z.string(),
+  line: z.int().nullable().optional(),
+  severity: z.string(),
+  criterion: z.string().nullable().optional(),
+  message: z.string(),
+  fingerprint: findingFingerprintSchema.optional(),
+  kind: z.enum(["thread", "finding"]).optional(),
+  author: z.string().optional(),
+  author_kind: z.string().optional(),
+  verdict: z.string().optional(),
+  summary: z.string().optional(),
+  raw: z.string().optional(),
+  url: z.string().optional(),
+  request: z.string().optional(),
+  triage: instructionTriageSchema.optional(),
+});
+export type RoundFinding = z.infer<typeof roundFindingSchema>;
+
+export const roundInstructionSchema = z.looseObject({
+  kind: z.literal("instruction"),
+  path: z.string(),
+  line: z.int().nullable(),
+  author: z.string(),
+  request: z.string(),
+  url: z.string(),
+  severity: z.string().optional(),
+  message: z.string().optional(),
+  triage: instructionTriageSchema.optional(),
+  outcome: z.enum(["changed", "kept", "asked"]).optional(),
+  reply: z.string().optional(),
+});
+export type RoundInstruction = z.infer<typeof roundInstructionSchema>;
+
+export const operatorNoteSchema = z.looseObject({
+  kind: z.literal("operator_note"),
+  event_id: z.int(),
+  note: z.string(),
+  author: z.string(),
+  hint: z.boolean().optional(),
+  consumed: z.boolean(),
+  run_id: z.int(),
+  round: z.int(),
+});
+export type OperatorNote = z.infer<typeof operatorNoteSchema>;
+
+export const roundSchema = z.looseObject({
+  round: z.int(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+  verdict: z.string(),
+  reviewer_model: z.string().nullable(),
+  findings: z.array(roundFindingSchema),
+  instructions: z.array(roundInstructionSchema),
+  operator_notes: z.array(operatorNoteSchema),
+});
+export type Round = z.infer<typeof roundSchema>;
+
+export const advisoryFindingSchema = z.looseObject({
+  tone: z.literal("advisory"),
+  message: z.string(),
+});
+export type AdvisoryFinding = z.infer<typeof advisoryFindingSchema>;
+
+export const runEventSchema = z.looseObject({
+  at: z.int(),
+  kind: z.string(),
+  summary: z.string(),
+});
+export type RunEvent = z.infer<typeof runEventSchema>;
+
+export const chainRoundSchema = z.looseObject({
+  round: z.int(),
+  verdict: z.string(),
+  reviewer_model: z.string().nullable(),
+});
+export type ChainRound = z.infer<typeof chainRoundSchema>;
+
+export const chainRunSchema = z.looseObject({
+  id: z.int(),
+  attempt: z.int(),
+  outcome: z.string().nullable(),
+  phase: z.string(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+  elapsed_ms: z.int(),
+  working_ms: z.int().nullable(),
+  agent_ms: z.int().nullable(),
+  verify_ms: z.int().nullable(),
+  max_rounds: z.int(),
+  turn_count: z.int(),
+  rounds: z.array(chainRoundSchema),
+});
+export type ChainRun = z.infer<typeof chainRunSchema>;
+
+export const runChainSchema = z.looseObject({
+  started_ms: z.int(),
+  elapsed_ms: z.int(),
+  working_ms: z.int().nullable(),
+  agent_ms: z.int().nullable(),
+  verify_ms: z.int().nullable(),
+  runs: z.array(chainRunSchema),
+});
+export type RunChain = z.infer<typeof runChainSchema>;
+
+export const runDetailSchema = z.looseObject({
+  run: runDetailRunSchema,
+  rounds: z.array(roundSchema),
+  findings: z.array(advisoryFindingSchema),
+  events: z.array(runEventSchema),
+  chain: runChainSchema.optional(),
+});
+export type RunDetail = z.infer<typeof runDetailSchema>;
+
+export const mergeFactSchema = z.looseObject({
+  name: z.string(),
+  ok: z.boolean(),
+  detail: z.string(),
+});
+export type MergeFact = z.infer<typeof mergeFactSchema>;
+
+export const mergeReadinessSchema = z.looseObject({
+  run: z.int(),
+  ticket: z.string().nullable(),
+  pr_url: z.string().nullable(),
+  head_sha: z.string().nullable(),
+  ready: z.boolean(),
+  reason: z.string().nullable(),
+  detail: z.string().nullable(),
+  facts: z.array(mergeFactSchema),
+});
+export type MergeReadiness = z.infer<typeof mergeReadinessSchema>;
+
+export const consoleAskSchema = z.looseObject({
+  id: z.int(),
+  question: z.string(),
+  author: z.string(),
+  asked_ms: z.int(),
+  answered_ms: z.int().nullable(),
+  url: z.string().nullable(),
+  answer: z.string().nullable(),
+});
+export type ConsoleAsk = z.infer<typeof consoleAskSchema>;
+
+export const runAsksSchema = z.looseObject({
+  run: z.int(),
+  ticket: z.string(),
+  pr_url: z.string().nullable(),
+  asks: z.array(consoleAskSchema),
+});
+export type RunAsks = z.infer<typeof runAsksSchema>;

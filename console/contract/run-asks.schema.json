@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunAsks",
+  "description": "GET /runs/N/asks",
+  "$ref": "#/$defs/RunAsks",
+  "$defs": {
+    "ConsoleAsk": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "question": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "asked_ms": {
+          "type": "integer"
+        },
+        "answered_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "author",
+        "asked_ms",
+        "answered_ms",
+        "url",
+        "answer"
+      ],
+      "additionalProperties": true
+    },
+    "RunAsks": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConsoleAsk"
+          }
+        }
+      },
+      "required": [
+        "run",
+        "ticket",
+        "pr_url",
+        "asks"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -277,9 +277,10 @@ Each module, one line:
   every project in `host.toml`, each under `/projects/NAME`, the root's
   `/status` and `/attention` for the host, the machine token, one
   project's failure its own 503 or `error`, and `run-sweep`'s host ledger.
-- `holophyte/serve/contract.py` — the poll routes' response types: one
-  `TypedDict` per body `/status`, `/attention` and `/peers` answer, a
-  project's and a host root's, `ROUTES` naming each, and `main()`, which
+- `holophyte/serve/contract.py` — the poll and run routes' response types:
+  one `TypedDict` per body `/status`, `/attention` and `/peers` answer, a
+  project's and a host root's, and `/runs/N`, `/runs/N/merge` and
+  `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
   writes their JSON Schema and zod or `--check`s them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
