@@ -1,5 +1,10 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
+import { applyTheme, readTheme } from "../lib/theme";
+import { NextConsole } from "./router";
+import "./theme.css";
+
+applyTheme(readTheme());
 
 const root = document.getElementById("root");
 if (!root) {
@@ -7,10 +12,6 @@ if (!root) {
 }
 createRoot(root).render(
   <StrictMode>
-    <main>
-      <h1>Holophyte</h1>
-      <p>The new console is being built here. Until it is ready, the classic console does everything.</p>
-      <a href="/">Open the classic console</a>
-    </main>
+    <NextConsole />
   </StrictMode>,
 );

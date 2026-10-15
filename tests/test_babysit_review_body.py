@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -21,6 +22,10 @@ FINGERPRINT = hashlib.sha1(
 MARKER = f"<!-- holophyte:review-finding {FINGERPRINT} -->"
 QUOTE = (f"> [Review by @coderabbitai](https://github.com/example/repo/pull/7"
          f"#pullrequestreview-1): src/app.py:40-52 (Major): {TITLE}")
+
+
+NOTE_REPLY = ((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
+               "Read as a note, not a finding: informational"),)
 
 
 class ReviewBodyFindingTests(MergeModeFixture):
@@ -143,16 +148,103 @@ class ReviewBodyFindingTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT, devin]),
                                 self.pr_state()])
         fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: NOTE -- informational"),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             Commit("guard the missing file"), Idle(""),
                             provider=self.provider())
-        adjudicate = fake.roles.index("adjudicate")
+        adjudicate = fake.roles.index("adjudicate", fake.roles.index("adjudicate") + 1)
         self.assertNotIn("THREAD 2", fake.turns[adjudicate].goal)
         self.assertNotIn("promises a retry", fake.turns[adjudicate].goal)
         self.assertIn("promises a retry", fake.turns[adjudicate + 1].goal)
         (findings,) = self.read("SELECT findings FROM reviewRounds"
                                 " WHERE round = 2")[0]
         self.assertEqual(len(json.loads(findings)), 1)
+
+    def test_a_devin_analysis_triaged_as_a_finding_is_adjudicated_and_fixed(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("**Settings page shows the new preference without its help"
+                    " text** The settings page renders every user preference,"
+                    " so the new preference appears there without the help"
+                    " text and without the disabled state the ticket requires"
+                    " when emails are off.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0001",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([devin]), self.pr_state()])
+        fake, _ = self.loop(
+            Commit("initial work"), APPROVE, Idle(""),
+            Reply("THREAD 1: FINDING -- the settings page misses the help text"),
+            Reply("THREAD 1: ADDRESS -- add the help text there"),
+            Commit("add the help text"), Idle(""),
+            provider=self.provider())
+        self.assertIn("adjudicate", fake.roles)
+        adjudicate = len(fake.roles) - 1 - fake.roles[::-1].index("adjudicate")
+        self.assertIn("THREAD 1", fake.turns[adjudicate].goal)
+        self.assertIn("Settings page shows", fake.turns[adjudicate].goal)
+        self.assertEqual(fake.roles[adjudicate + 1], "implement")
+        self.assertIn("Settings page shows", fake.turns[adjudicate + 1].goal)
+        replies = [data["body"] for kind, data in self.api_calls()
+                   if kind == "reply" and "Triaged as a finding" in data["body"]]
+        self.assertEqual(len(replies), 1)
+        self.assertTrue(replies[0].startswith("---- Comment by "))
+
+    def test_a_devin_analysis_triaged_as_a_note_is_answered_and_parks_ready(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("**Preference keys are read once per request** For context:"
+                    " the new preference is read with the others when the"
+                    " request starts, so a change takes effect on the next page"
+                    " load.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([devin]),
+                                self.pr_state([devin + (NOTE_REPLY,)])])
+        fake, _ = self.loop(
+            Commit("initial work"), APPROVE, Idle(""),
+            Reply("THREAD 1: NOTE -- informational; nothing in the candidate"
+                  " needs to change"),
+            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "adjudicate"])
+        kinds = [kind for kind, _ in self.api_calls()]
+        self.assertNotIn("resolve", kinds)
+        (reply,) = [data["body"] for kind, data in self.api_calls()
+                    if kind == "reply"]
+        self.assertTrue(reply.startswith("---- Comment by "))
+        self.assertIn("Read as a note, not a finding", reply)
+        self.assertIn("waiting for a human to say merge", self.question())
+
+    def test_a_note_triage_reply_restarts_the_quiet_wait_before_a_merge(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        analysis = ("For context: the preference is read once per request.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        quiet = (datetime.now(timezone.utc) - timedelta(seconds=301)).isoformat()
+        fresh = datetime.now(timezone.utc).isoformat()
+        self.fake_route(states=[
+            self.pr_state([devin], updated_at=quiet),
+            self.pr_state([devin + (NOTE_REPLY,)], updated_at=fresh)])
+        self.loop(Commit("initial work"), APPROVE, Idle(""),
+                  Reply("THREAD 1: NOTE -- informational"),
+                  provider=self.provider())
+        self.assertEqual([kind for kind, _ in self.api_calls()],
+                         ["state", "reply", "state"])
+        self.assertIn("quiet wait", self.question())
+
+    def test_a_stale_read_after_a_note_triage_does_not_triage_it_again(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("For context: the preference is read once per request.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([devin])])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: NOTE -- informational"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles.count("adjudicate"), 1)
+        self.assertEqual([kind for kind, _ in self.api_calls()].count("reply"), 1)
+        self.assertIn("waiting for a human to say merge", self.question())
 
     def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
@@ -192,6 +284,20 @@ class ReviewBodyFindingTests(MergeModeFixture):
                             Reply("THREAD 1: DECLINE -- empty input is guarded"),
                             provider=self.provider())
         self.assertIn(reply, fake.turns[fake.roles.index("adjudicate")].goal)
+
+
+class NoteTriageParseTests(unittest.TestCase):
+    def test_a_verdict_without_a_reason_does_not_swallow_the_next_line(self):
+        from holophyte.babysit.note_triage import NO_REASON, parse
+        verdicts = parse("THREAD 1: FINDING --\nTHREAD 2: NOTE -- informational", 2)
+        self.assertEqual(verdicts, {1: ("FINDING", NO_REASON),
+                                    2: ("NOTE", "informational")})
+
+    def test_a_note_without_a_reason_is_triaged_as_a_finding(self):
+        from holophyte.babysit.note_triage import parse
+        verdicts = parse("THREAD 1: NOTE --\nTHREAD 2: NOTE -- informational", 2)
+        self.assertEqual([kind for kind, _ in verdicts.values()],
+                         ["FINDING", "NOTE"])
 
 
 if __name__ == "__main__":

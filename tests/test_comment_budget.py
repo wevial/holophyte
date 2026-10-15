@@ -61,6 +61,7 @@ PINNED = {
     "holophyte/babysit/conversation_comments.py": 0,
     "holophyte/babysit/devin_notes.py": 0,
     "holophyte/babysit/main_checkout.py": 2,
+    "holophyte/babysit/note_triage.py": 0,
     "holophyte/babysit/maintainer_notes.py": 1,
     "holophyte/babysit/plain_text.py": 0,
     "holophyte/babysit/review_body.py": 0,
@@ -214,6 +215,8 @@ PINNED = {
 
     "holophyte/serve/__init__.py": 0,
     "holophyte/serve/console_build.py": 2,
+    "holophyte/serve/contract.py": 0,
+    "holophyte/serve/contract_emit.py": 0,
     "holophyte/serve/serve_actions.py": 4,
     "holophyte/serve/serve_ask.py": 0,
     "holophyte/serve/serve_board.py": 3,

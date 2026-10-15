@@ -1,0 +1,472 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HostStatus",
+  "description": "GET /status at a host daemon's root",
+  "$ref": "#/$defs/HostStatus",
+  "$defs": {
+    "Daemon": {
+      "type": "object",
+      "properties": {
+        "started_ms": {
+          "type": "integer"
+        },
+        "pid": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "started_ms",
+        "pid"
+      ],
+      "additionalProperties": true
+    },
+    "Build": {
+      "type": "object",
+      "properties": {
+        "daemon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sweep": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "daemon",
+        "sweep",
+        "head"
+      ],
+      "additionalProperties": true
+    },
+    "ConsoleBuild": {
+      "type": "object",
+      "properties": {
+        "served": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tree": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tried": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "served",
+        "tree",
+        "stale",
+        "reason",
+        "failed_ms",
+        "tried"
+      ],
+      "additionalProperties": true
+    },
+    "Sweep": {
+      "type": "object",
+      "properties": {
+        "started": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projects": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "none",
+            "unreadable",
+            "running",
+            "killed",
+            "fresh",
+            "stale"
+          ]
+        }
+      },
+      "required": [
+        "started",
+        "ended",
+        "revision",
+        "pid",
+        "exit",
+        "projects",
+        "error",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "Supervisor": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "live",
+            "stale",
+            "none"
+          ]
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "pid",
+        "heartbeat_age_ms",
+        "host"
+      ],
+      "additionalProperties": true
+    },
+    "HostRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "heartbeat_age_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "phase",
+        "heartbeat_age_ms"
+      ],
+      "additionalProperties": true
+    },
+    "HostProject": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "store": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "admission": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hold_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project_row": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supervisor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Supervisor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostRun"
+          }
+        },
+        "workers_on_previous_build": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "store",
+        "error",
+        "host",
+        "schema_version",
+        "admission",
+        "hold_note",
+        "project_row",
+        "supervisor",
+        "runs",
+        "workers_on_previous_build"
+      ],
+      "additionalProperties": true
+    },
+    "HostStatus": {
+      "type": "object",
+      "properties": {
+        "now": {
+          "type": "integer"
+        },
+        "daemon": {
+          "$ref": "#/$defs/Daemon"
+        },
+        "build": {
+          "$ref": "#/$defs/Build"
+        },
+        "console": {
+          "$ref": "#/$defs/ConsoleBuild"
+        },
+        "sweep": {
+          "$ref": "#/$defs/Sweep"
+        },
+        "actions": {
+          "type": "boolean"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostProject"
+          }
+        }
+      },
+      "required": [
+        "now",
+        "daemon",
+        "build",
+        "console",
+        "sweep",
+        "actions",
+        "projects"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

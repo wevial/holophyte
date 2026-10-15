@@ -1,0 +1,27 @@
+{
+  "level": "attention",
+  "items": [
+    {
+      "kind": "pr_open",
+      "ticket": "KO-10",
+      "ticket_url": null,
+      "title": "Reviewed ticket",
+      "run": 4,
+      "pr_url": "https://github.com/example/repo/pull/10",
+      "park_kind": "pull_request",
+      "reason": "",
+      "asked_ms": 1749999970000,
+      "pr": {
+        "number": 10,
+        "checks": null,
+        "review": null,
+        "threads": null,
+        "open_threads": null,
+        "title": null
+      },
+      "level": "attention"
+    }
+  ],
+  "now": 1750000000000,
+  "project": "/repo"
+}

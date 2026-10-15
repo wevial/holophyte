@@ -22,7 +22,7 @@ LINE_SUFFIX_RE = re.compile(r":(\d+)(?:[-\u2013](\d+))?$")
 
 
 def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
-                beat_s, pull, threads, ticket, reviewed):
+                beat_s, pull, threads, ticket, reviewed, park=True):
     from holophyte.babysit import babysitter
     from holophyte.loop.review_round import agent, sh
     from holophyte.pr.pullrequest import _park_on_pr
@@ -59,7 +59,7 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
                               **({"triage": thread.triage} if thread.triage else {})),
              answer=reply)
     remaining = tuple(t for t in threads if t not in asks)
-    if asks and not remaining:
+    if park and asks and not remaining:
         why = previous_park_reason(conn, run_id, branch)
         if why is not None:
             _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
