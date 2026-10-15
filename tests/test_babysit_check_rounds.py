@@ -22,9 +22,10 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
             "html_url": "https://github.com/example/repo/actions/runs/5/job/42",
             "id": 42, "app": {"slug": "github-actions"}}
 
-    def red_per_head(self, *logs, merge=""):
+    def red_per_head(self, *logs, merge="", first=None):
         """`UNIT` red on the n-th head with `logs[n]` as its job log, a new
-        job id on every read; green on every head past the last log."""
+        job id on every read, and `first` over it on the first head; green
+        on every head past the last log."""
         self.configure('[merge]\nmode = "pr"\n' + merge)
         self.fake_route()
         self.enterContext(patch.object(holophyte.pr.github, "SLEEP"))
@@ -36,7 +37,8 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
                     self.job_log.write_text(logs[len(heads) - 1])
             if len(heads) > len(logs):
                 return [dict(self.UNIT, conclusion="success")]
-            return [dict(self.UNIT, id=next(ids))]
+            return [dict(self.UNIT, id=next(ids), **(
+                (first or {}) if len(heads) == 1 else {}))]
         self.enterContext(patch("holophyte.pr.pr_status._check_runs_of", check_runs))
 
     def events(self, kind):
@@ -100,6 +102,28 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(len(self.fix_goals(fake)), 1)
         self.assertIn("a new failure, and the check fix rounds are used up"
                       " ([merge] check_fix_rounds = 1)", self.question())
+
+    def test_a_new_failure_on_each_of_three_heads_parks_after_two_rounds(self):
+        self.red_per_head(*(f"FAIL: test_{n} (tests.test_y.Case.test_{n})\n"
+                            for n in "abc"))
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: test_a"), Commit("fix: test_b"),
+                            Commit("fix: test_c"), provider=self.provider())
+        self.assertEqual(len(self.fix_goals(fake)), 2)
+        self.assertIn("check fix rounds are used up ([merge] check_fix_rounds = 2)",
+                      self.question())
+        self.assertEqual(self.merges(), [])
+
+    def test_a_red_after_the_first_round_is_not_rerun(self):
+        self.red_per_head("FAIL: test_a (tests.test_y.Case.test_a)\n",
+                          "FAIL: test_b (tests.test_y.Case.test_b)\n",
+                          first={"html_url": "https://github.com/example/repo/runs/42"})
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Commit("fix: test_a"), Commit("fix: test_b"),
+                            APPROVE, Idle(""), provider=self.provider())
+        self.assertEqual(len(self.fix_goals(fake)), 2)
+        self.assertNotIn("rerun-failed-jobs", "".join(self.recorded()))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_the_brief_lists_every_failure_and_ends_its_tail_at_the_error(self):
         stamp = "2026-10-15T10:00:00.0000000Z "

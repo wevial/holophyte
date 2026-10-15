@@ -68,7 +68,7 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     from holophyte.babysit.babysitter import _fix_threads
     _park_unless_fixable(run, pull, state, reviewed, group)
     stop_if_requested(run.conn, run.run_id, "merge_gate")
-    if group is None and not check_fix.reran and all(
+    if group is None and not check_fix.reran and not check_fix.handed and all(
             check.workflow_run_id for check in state.failed_checks):
         check_fix.reran = True
         check_fix.awaited = tuple(dict.fromkeys(
