@@ -1,6 +1,5 @@
 import json
 import re
-from dataclasses import dataclass
 
 import store
 import store.read
@@ -14,12 +13,6 @@ ROUND_KIND = "covering_fix_round"
 LEAD_RE = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
                      r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
                      r"[:\u2014-]?\s*)?(?:\*\*)?\s*", re.I)
-
-
-@dataclass(frozen=True)
-class Overlap:
-    shared: float
-    earlier: int | None
 
 
 def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
@@ -42,11 +35,11 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
         return None, asked + findings
     covering = _covering_findings(conn, run_id, rnd)
     threshold = sweep_config(project).review_overlap_threshold
-    overlap = repeat_overlap(conn, run_id, rnd, covering)
-    if overlap.shared >= threshold:
+    shared, earlier = repeat_overlap(conn, run_id, rnd, covering)
+    if shared >= threshold:
         return None, (f"the review of the fix at {sha[:12]} repeated its"
-                      f" findings (round {rnd} shares {overlap.shared:.2f} of"
-                      f" round {overlap.earlier}'s){findings}")
+                      f" findings (round {rnd} shares {shared:.2f} of"
+                      f" round {earlier}'s){findings}")
     made = sum(event.kind == ROUND_KIND
                for event in store.read.narrative_events(conn, run_id))
     if made >= cap:
@@ -55,7 +48,7 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
     store.record_event(conn, run_id, ROUND_KIND,
                        f"automatic fix round {made + 1} of {cap} after round"
                        f" {rnd}: its findings share at most"
-                       f" {overlap.shared:.2f} of any earlier round's"
+                       f" {shared:.2f} of any earlier round's"
                        f" (threshold {threshold:.2f})")
     ledger(conn, run_id, task_id, "round",
            f"Automatic fix round {made + 1} of {cap} after round {rnd} on"
@@ -76,7 +69,7 @@ def fix_goal(pull, ticket, verdict, label, note):
 
 def repeat_overlap(conn, run_id, rnd, covering):
     """The most the covering round's findings share with any earlier round's."""
-    best = Overlap(0.0, None)
+    best = (0.0, None)
     for earlier in store.read.rounds_of(conn, run_id):
         if earlier.round >= rnd or earlier.endedAt is None:
             continue
@@ -86,8 +79,8 @@ def repeat_overlap(conn, run_id, rnd, covering):
         shared = store.findings_overlap(findings, covering)
         if shared is None:
             shared = 1.0 if _unmet(covering) <= _unmet(findings) else 0.0
-        if shared >= best.shared:
-            best = Overlap(shared, earlier.round)
+        if shared >= best[0]:
+            best = (shared, earlier.round)
     return best
 
 
