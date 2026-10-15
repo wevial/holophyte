@@ -22,13 +22,13 @@ const ROW_BUTTON =
   "col-span-4 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
 const UNDER_TITLE = "max-[820px]:col-span-full";
 
-export interface PrRow {
+interface PrRow {
   item: AttentionItem;
   ageMs: number | null;
   facts: Fact[];
 }
 
-export interface PrLaneGroup {
+interface PrLaneGroup {
   host: Host;
   name: string;
   rows: PrRow[];
