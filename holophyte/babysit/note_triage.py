@@ -16,9 +16,15 @@ UNPARSED = "the triage gave no verdict for this comment"
 NO_REASON = "no reason given"
 
 
+def untriaged(state, merge):
+    if merge.bot_threads == "advisory":
+        return ()
+    return tuple(t for t in state.notes if devin_notes.triage(t) is None)
+
+
 def triage_notes(target, conn, run_id, beat_s, wt, sha, pull, state, ticket, merge):
-    pending = tuple(t for t in state.notes if devin_notes.triage(t) is None)
-    if not pending or merge.bot_threads == "advisory":
+    pending = untriaged(state, merge)
+    if not pending:
         return state
     from holophyte.loop.review_round import agent, sh
     from holophyte.loop.stop import stop_if_requested

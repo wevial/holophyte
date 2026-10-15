@@ -705,6 +705,28 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertNotIn("adjudicate", fake.roles)
         self.assertNotIn("reply", [kind for kind, _ in self.api_calls()])
 
+    def test_an_answered_ask_does_not_park_before_a_devin_analysis_is_triaged(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        ask = ("src/app.py", 30, ("operator", "User"),
+               "@holophyte ask: Can an existing guest be renamed?")
+        analysis = ("The description promises a retry the diff does not add.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0003",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.resume_with_conversation(self.pr_state([ask, devin]),
+                                      initial_state=self.pr_state(checks="FAILURE"))
+        fake, _ = self.loop(
+            Reply("Yes: src/app.py:30. A change is not warranted."),
+            Reply("THREAD 1: NOTE -- informational"),
+            provider=self.provider())
+        self.assertEqual(fake.roles, ["adjudicate", "adjudicate"])
+        self.assertIn("promises a retry", fake.turns[1].goal)
+        replies = [data["body"] for kind, data in self.api_calls() if kind == "reply"]
+        self.assertEqual(len(replies), 2)
+        self.assertIn("Read as a note, not a finding", replies[1])
+        self.assertEqual(self.read("SELECT phase FROM runs ORDER BY id DESC")[0][0],
+                         "awaiting_merge_approval")
+
     def test_allowance_refresh_keeps_original_address_and_retry_context(self):
         self.resume_rejected_fix()
         self.serve(self.pr_state([self.DEFECT]), self.pr_state())
