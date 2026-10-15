@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { matchRows, storeScope, switcherRows, ALL_PROJECTS, type SwitcherRow } from "../projects";
+import { matchRows, storeScope, switcherRows, type SwitcherRow } from "../projects";
 import { useConsolePeers } from "../scope";
 import { DropIcon, FolderIcon, OverviewIcon } from "./icons";
 
@@ -186,7 +186,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
             <ul id={listId} role="listbox" aria-label="Projects" className="flex max-h-[320px] flex-col overflow-y-auto py-1">
               {matches.map((row, index) => (
                 <li
-                  key={row.name ?? ALL_PROJECTS}
+                  key={row.label}
                   id={optionId(index)}
                   role="option"
                   aria-selected={row.name === current.name}

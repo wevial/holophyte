@@ -11,7 +11,7 @@ export interface SwitcherRow {
   down: boolean;
 }
 
-export const ALL_PROJECTS = "All projects";
+const ALL_PROJECTS = "All projects";
 
 function rowOf(name: string | null, hosts: HostRecord[], now: number): SwitcherRow {
   return {
