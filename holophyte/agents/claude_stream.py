@@ -24,7 +24,8 @@ class TurnStalled(subprocess.TimeoutExpired):
 
 class StreamRecord:
 
-    def __init__(self):
+    def __init__(self, on_event):
+        self.on_event = on_event
         self.kept = []
         self.partial = []
         self.lines = 0
@@ -41,6 +42,12 @@ class StreamRecord:
             return
         if not isinstance(event, dict):
             return
+        if self.on_event is not None:
+            try:
+                self.on_event(event)
+            except Exception as error:
+                print(f"[stream] dropped the turn's event hook: {error}", flush=True)
+                self.on_event = None
         if event.get("type", "result") == "result":
             self.kept.append(line)
         elif event.get("type") == "assistant":
@@ -64,9 +71,9 @@ class StreamRecord:
         return "\n".join(self.partial)[-TAIL_CHARS:]
 
 
-def read_stream(proc, cmd, timeout, quiet, reap):
+def read_stream(proc, cmd, timeout, quiet, reap, on_event):
     """Return `(returncode, kept lines)`; a quiet pipe raises `TurnStalled`."""
-    record = StreamRecord()
+    record = StreamRecord(on_event)
     clocks = Clocks(proc, cmd, timeout, quiet, reap, record)
     pending = b""
     with selectors.DefaultSelector() as selector:
