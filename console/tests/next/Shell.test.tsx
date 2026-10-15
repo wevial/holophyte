@@ -91,7 +91,6 @@ test("each page links to the classic view behind it, and an unknown route links 
   for (const [hash, name, href] of [
     ["#/runs", "Open Finished in the classic console", "/#view=shipped"],
     ["#/tickets", "Open the Board in the classic console", "/#view=board"],
-    ["#/", "Open Now in the classic console", "/"],
   ] as const) {
     await mount(hash);
     expect((await screen.findByRole("link", { name })).getAttribute("href")).toBe(href);

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>State icons</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+.t-night{color-scheme:dark;--ask:#f0cf62;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--need:#f5a3c7;--live:#86d993;--wait:#aaa7ec;--bad:#ff7b72;--done:#7b84a1}
+.t-dawn{color-scheme:light;--ask:#8a6500;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--need:#b02f6b;--live:#1f7a35;--wait:#5653a6;--bad:#c0321f;--done:#8b90a8}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live)}
+svg:has(> path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]) > circle{fill:var(--live);stroke:var(--live)}
+path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]{stroke:var(--canvas);stroke-width:1.8}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.big{width:32px;height:32px}
+.ants-r{fill:none;stroke:var(--wait);stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+.cell{display:inline-block;width:9px;height:9px;flex:none;position:relative;box-sizing:border-box}
+.c-stale{background:linear-gradient(90deg,var(--need) 0 30%,transparent 30% 70%,var(--need) 70%) top/100% 1.5px no-repeat,linear-gradient(90deg,var(--need) 0 30%,transparent 30% 70%,var(--need) 70%) bottom/100% 1.5px no-repeat,linear-gradient(0deg,var(--need) 0 30%,transparent 30% 70%,var(--need) 70%) left/1.5px 100% no-repeat,linear-gradient(0deg,var(--need) 0 30%,transparent 30% 70%,var(--need) 70%) right/1.5px 100% no-repeat}
+.c-fade{background:var(--need);animation:fade 3.2s ease-in-out infinite}
+@keyframes fade{50%{opacity:.35}}
+.c-tick{box-shadow:inset 0 0 0 1.5px var(--need);opacity:.6;background:linear-gradient(var(--need),var(--need)) 50% 20%/1.5px 35% no-repeat,linear-gradient(var(--need),var(--need)) 78% 50%/35% 1.5px no-repeat}
+.kc{display:flex;flex-direction:column;gap:7px;padding:10px 12px 11px;border:1px solid #3a4675;background:#161f38;box-shadow:0 1px 2px rgba(0,0,0,.18)}
+.t-dawn .kc{border-color:#bdb8d0;background:#ffffff}
+.kk{font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.kt{font:600 14px/1.3 'Archivo','Helvetica Neue',sans-serif;color:var(--ink)}
+.ks{display:flex;align-items:center;gap:7px;font:500 11.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.kn{margin-top:4px;font-size:12.5px;line-height:1.4;color:var(--ink-2)}
+.kc-m{background:color-mix(in srgb,var(--live) 9%,#161f38);border-color:var(--rule);box-shadow:none}
+.t-dawn .kc-m{background:color-mix(in srgb,var(--live) 9%,#ffffff)}.kc-m .kt{color:var(--ink-2)}
+.kc-l{border:2px solid var(--live);padding:9px 11px 10px;background:color-mix(in srgb,var(--live) 8%,#161f38)}
+.t-dawn .kc-l{background:color-mix(in srgb,var(--live) 7%,#ffffff)}
+.kc-b{background:transparent!important;border-style:dashed;box-shadow:none}.kc-b .kt{color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1200px; height: 1220px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · one icon per state · green dot = merged (solid) or live (ringed, with a stage)</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">State icons</h2>
+</div>
+<section aria-label="Run states" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--paper); border: 1px solid var(--rule)">
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); color: var(--bad)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">failed</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Ended without a merge.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); color: var(--ask)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M6.2 6.3a1.9 1.9 0 1 1 2.7 1.7c-.6.3-.9.7-.9 1.2v.3M8 11.4v.1"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">question</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">The run asks you something.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--rule-2); color: var(--ask)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M6.6 5.6v4.8M9.4 5.6v4.8"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">paused</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Waiting for you to resume it.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); color: var(--live)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">ready to merge</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Green and approved; yours to merge.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); color: var(--need)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">stale</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">No heartbeat. Held still, no motion.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--rule-2); color: var(--ask)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8v3.6M8 11.1v.1"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">needs you</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Any other ask: supervisor, token.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); color: var(--live)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">running</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Green dot, ringed; the ring pulses softly. Always with its stage.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2); color: var(--wait)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">queued</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Waiting its turn; the row says why.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--rule-2); color: var(--wait)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><rect class="ants-r" x="1.5" y="1.5" width="13" height="13" pathLength="16" style="stroke-width: 1.4"></rect><path d="M8 4.8V8l2.3 1.6"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">on CI</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Checks running; the outline flows.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); color: var(--wait)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.3 8h.1M8 8h.1M10.7 8h.1"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">parked</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">PR open; waiting on a thread.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; border-right: 1px solid var(--rule-2); color: var(--wait)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M6.6 5.6v4.8M9.4 5.6v4.8"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">held</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Project on hold; nothing new claims.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 16px 20px; color: var(--live)"><svg class="ico big" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.2 8.3 7.2 10.3 10.9 6.3"></path></svg><div><div style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink)">merged</div><div style="margin-top: 3px; font-size: 13px; color: var(--ink-2)">Solid green dot with a check; the row stays quiet.</div></div></div>
+</section>
+
+<section aria-label="Card states" style="padding: 20px 24px 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Card states · the card itself changes, not only the marker</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 16px">
+<div class="kc kc-m"><span class="kk">HOLO-225</span><span class="kt">Name the stale run in the console</span><span class="ks"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.2 8.3 7.2 10.3 10.9 6.3"></path></svg>merged yesterday</span><span class="kn">Merged · faint green tint, hairline border, title one step down, meta muted</span></div>
+<div class="kc kc-l"><span class="kk">HOLO-231</span><span class="kt">The sweep frees a silent lease</span><span class="ks" style="color: var(--live)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>reviewing · round 2 of 3</span><span class="kn">In progress · green border and wash, ringed live dot, stage</span></div>
+<div class="kc"><span class="kk">HOLO-235</span><span class="kt">A stale heartbeat pages you once</span><span class="ks" style="color: var(--ink-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle></svg>waiting on HOLO-231</span><span class="kn">To do · the full-strength default card, hollow ring</span></div>
+<div class="kc kc-b"><span class="kk">HOLO-232</span><span class="kt">The night report lists freed leases</span><span class="ks"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke-dasharray="2 2.4"></circle></svg>backlog</span><span class="kn">Backlog · no surface, dashed border, faded text, dashed ring</span></div>
+</div>
+</section>
+
+<section aria-label="Stale alternatives" style="padding: 20px 24px 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Stale · alternatives · the alert triangle above is the default</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 16px">
+<div style="display: flex; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--rule-2)"><span style="flex: none; display: grid; place-items: center; width: 40px; height: 40px"><i class="cell c-fade" aria-hidden="true" style="transform: scale(3)"></i></span><div><div style="font: 600 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">A · slow fade</div><div style="margin-top: 4px; font-size: 13px; color: var(--ink-2)">The fill dims and returns every 3.2s; nothing moves.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--rule-2)"><span style="flex: none; display: grid; place-items: center; width: 40px; height: 40px"><i class="cell c-stale" aria-hidden="true" style="transform: scale(3)"></i></span><div><div style="font: 600 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">B · broken outline</div><div style="margin-top: 4px; font-size: 13px; color: var(--ink-2)">Static. Gaps in each side read as a lost signal.</div></div></div>
+<div style="display: flex; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--rule-2)"><span style="flex: none; display: grid; place-items: center; width: 40px; height: 40px"><i class="cell c-tick" aria-hidden="true" style="transform: scale(3)"></i></span><div><div style="font: 600 12px/1.3 'IBM Plex Mono', ui-monospace, monospace">C · dimmed, with a clock tick</div><div style="margin-top: 4px; font-size: 13px; color: var(--ink-2)">Static. Says time has passed without a beat.</div></div></div>
+</div>
+</section>
+
+<section aria-label="Navigation icons" style="padding: 20px 24px 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Navigation · same 1.6 stroke</div>
+<div style="display: flex; flex-wrap: wrap; gap: 14px 36px; margin-top: 16px; font: 400 12.5px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink)"><path d="M2 9.5h3.5l1 2h3l1-2H14"></path><path d="M3.6 3h8.8L14 9.5V13H2V9.5z"></path></svg>Overview</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink)"><circle cx="8" cy="8" r="6.5"></circle><path d="M6.6 5.4v5.2L10.8 8z"></path></svg>Runs</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink)"><path d="M2.5 2.5h3v11h-3zM6.5 2.5h3v8h-3zM10.5 2.5h3v5h-3z"></path></svg>Board</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink)"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4"></path></svg>Tickets</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink)"><path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5"></path></svg>Findings</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink-3)"><circle cx="8" cy="8" r="6.5" stroke-dasharray="2 2.4"></circle></svg>backlog</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--live)"><path d="M2 4.5h4.2l1.5 1.5H14v7.5H2z"></path></svg>project · enabled</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--wait)"><path d="M2 4.5h4.2l1.5 1.5H14v7.5H2z"></path></svg>project · held</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg>host answering</span>
+<span style="display: inline-flex; align-items: center; gap: 10px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 20px; height: 20px; color: var(--ink)"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>theme</span>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1200,"height":1220}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>

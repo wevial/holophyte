@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent panel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--need:#f5a3c7;--live:#86d993;--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--need:#b02f6b;--live:#1f7a35;--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}.btn.danger.fill:not(.busy){color:var(--bi)}.btn.danger.fill:not(.busy)::before{transform:scaleX(1)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+textarea:focus{outline:2px solid var(--act);outline-offset:-1px}
+textarea::placeholder{color:var(--ink-2)}
+.think{display:inline-flex;gap:4px}.think i{display:inline-block;width:7px;height:7px;background:var(--rule);animation:think 1.2s steps(1,end) infinite}
+.think i:nth-child(2){animation-delay:.2s}.think i:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,100%{background:var(--rule)}33%{background:var(--ink-2)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1280px; height: 1080px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · run page</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Agent panel</h2>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; align-items: start">
+
+<section aria-label="Steer, at rest" style="padding: 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Agent · steer</div>
+<div style="margin-top: 8px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><b style="color: var(--ink); font-weight: 500">implementer · claude opus</b><br>idle until round 2 returns, in about 2m</div>
+<div style="display: flex; flex-direction: column; gap: 10px; margin: 16px 0">
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--ink-3); background: var(--paper-2); margin-left: 24px"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">You · steer · 16:40</span>Don't add a new flag for the dry run; reuse --act.<span style="display: block; margin-top: 6px; font: 400 12px/1.45 'IBM Plex Mono', ui-monospace, monospace; color: var(--live)">→ the agent read it at 16:41</span></div>
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--rule); background: var(--canvas)"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">Agent · 16:48</span>Round 1 asked me to keep the dry run read-only. I moved the write behind --act.</div>
+</div>
+<div role="group" aria-label="Message kind" style="display: inline-flex; border: 1px solid var(--ink-3)"><button type="button" aria-pressed="true" style="min-height: 36px; padding: 0 14px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--paper); background: var(--ink)">Steer</button><button type="button" aria-pressed="false" style="min-height: 36px; padding: 0 14px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); background: transparent">Ask</button></div>
+<label for="n1" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Note to the agent</label>
+<textarea id="n1" placeholder="Tell the agent what to change…" style="display: block; box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; margin-top: 10px; padding: 10px; border: 1px solid var(--ink-3); background: var(--paper-2); color: var(--ink); font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif"></textarea>
+<div style="display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 4px; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink)"><label style="display: inline-flex; gap: 8px; align-items: center; min-height: 40px"><input type="checkbox" style="margin: 0; accent-color: var(--act)">Just a hint</label><label style="display: inline-flex; gap: 8px; align-items: center; min-height: 40px"><input type="checkbox" style="margin: 0; accent-color: var(--bad)">Stop it now</label></div>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px"><span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Read on its next turn.</span><button type="button" class="btn">Send</button></div>
+</section>
+
+<section aria-label="Ask, agent thinking" style="padding: 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Agent · ask</div>
+<div style="margin-top: 8px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><b style="color: var(--ink); font-weight: 500">implementer · claude opus</b><br>idle until round 2 returns, in about 2m</div>
+<div style="display: flex; flex-direction: column; gap: 10px; margin: 16px 0">
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--ink-3); background: var(--paper-2); margin-left: 24px"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">You · ask · 16:53</span>Does the dry run print anything?</div>
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--rule); background: var(--canvas)"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">Agent</span><span class="think" aria-label="thinking"><i></i><i></i><i></i></span></div>
+</div>
+<div role="group" aria-label="Message kind" style="display: inline-flex; border: 1px solid var(--ink-3)"><button type="button" aria-pressed="false" style="min-height: 36px; padding: 0 14px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); background: transparent">Steer</button><button type="button" aria-pressed="true" style="min-height: 36px; padding: 0 14px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--paper); background: var(--ink)">Ask</button></div>
+<label for="n2" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Question for the agent</label>
+<textarea id="n2" placeholder="Ask about this run…" style="display: block; box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; margin-top: 10px; padding: 10px; border: 1px solid var(--ink-3); background: var(--paper-2); color: var(--ink); font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif"></textarea>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px"><span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">The run keeps going.</span><button type="button" class="btn">Send</button></div>
+</section>
+
+<section aria-label="Steer, stop it now" style="padding: 22px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Agent · stop and steer</div>
+<div style="margin-top: 8px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><b style="color: var(--ink); font-weight: 500">implementer · claude opus</b><br><span style="color: var(--live)">working · turn 3 · 4m in</span></div>
+<div style="display: flex; flex-direction: column; gap: 10px; margin: 16px 0">
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--rule); background: var(--canvas)"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">Agent · 17:02</span>Adding a --verbose flag so the dry run can stay silent by default.</div>
+</div>
+<div role="group" aria-label="Message kind" style="display: inline-flex; border: 1px solid var(--ink-3)"><button type="button" aria-pressed="true" style="min-height: 36px; padding: 0 14px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--paper); background: var(--ink)">Steer</button><button type="button" aria-pressed="false" style="min-height: 36px; padding: 0 14px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); background: transparent">Ask</button></div>
+<label for="n3" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Note to the agent</label>
+<textarea id="n3" value="{{draft}}" onChange="{{noop}}" style="display: block; box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; margin-top: 10px; padding: 10px; border: 1px solid var(--ink-3); background: var(--paper-2); color: var(--ink); font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif"></textarea>
+<div style="display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 4px; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink)"><label style="display: inline-flex; gap: 8px; align-items: center; min-height: 40px"><input type="checkbox" style="margin: 0; accent-color: var(--act)">Just a hint</label><label style="display: inline-flex; gap: 8px; align-items: center; min-height: 40px"><input type="checkbox" checked="{{yes}}" onChange="{{noop}}" style="margin: 0; accent-color: var(--bad)">Stop it now</label></div>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px"><span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--bad)">Stops now and restarts with your note. Nothing is lost.</span><button type="button" class="btn danger fill">Stop and send</button></div>
+</section>
+</div>
+
+<section aria-label="What Send does" style="padding: 18px 22px; background: var(--paper); border: 1px solid var(--rule); font: 400 13px/1.5 'IBM Plex Mono', ui-monospace, monospace">
+<div class="label">What Send does</div>
+<div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 8px 16px; margin-top: 12px; color: var(--ink)">
+<span style="color: var(--ink-2)">Steer</span><span>The agent reads it on its next turn.</span>
+<span style="color: var(--ink-2)">Ask</span><span>You get an answer; the run keeps going.</span>
+<span style="color: var(--ink-2)">After sending</span><span style="color: var(--live)">→ 1 note waiting, until the agent reads it</span>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1280,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      themeClass: 't-' + (this.props.theme || 'night'),
+      draft: 'No new flag. Keep the one-line report and drop --verbose.',
+      yes: true,
+      noop: () => {}
+    };
+  }
+}
+</script>
+</body>
+</html>

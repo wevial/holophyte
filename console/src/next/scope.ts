@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { PeersState } from "../hooks/usePeers";
-import type { PollBodies } from "../lib/poll";
+import { defaultPollDeps, type PollBodies, type PollDeps } from "../lib/poll";
 import { projectName } from "../lib/derive";
 import type { HostRecord } from "../lib/hosts";
 import type { ContractBodies } from "./fleet";
@@ -25,6 +25,9 @@ export function scopedHosts<R extends HostRecord<PollBodies>>(hosts: R[], projec
   if (project == null) return hosts;
   return hosts.filter((host) => host.project != null && projectName(host.project) === project);
 }
+
+/** The deps the root polls with, for every per-route query under it. */
+export const PollDepsContext = createContext<PollDeps>(defaultPollDeps);
 
 export const PeersContext = createContext<PeersState<ContractBodies> | null>(null);
 
