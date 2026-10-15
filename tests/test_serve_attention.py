@@ -18,6 +18,7 @@ from provider import LinearBoard
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
+from tests.test_status import file_stuck_wait
 
 
 class FailedAttentionTests(ServeTestCase):
@@ -482,26 +483,8 @@ class StuckWaitAttentionTests(ServeTestCase):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         store.init(conn)
-        project = store.tickets.ensure_project(conn, "team-1", self.target)
-
-        def file(n, specced=True):
-            return store.tickets.mirror_ticket(
-                conn, project, linear_issue_id=f"issue-nat-{n}",
-                linear_identifier=f"NAT-{n}", title=f"ticket NAT-{n}",
-                acceptance_criteria=["Given it, then it works"] if specced else [],
-                verification_commands=["echo ok"] if specced else [],
-                depends_on=[f"issue-nat-{n - 1}"] if n > 1 else [])
-
-        merged = file(1)
-        store.tickets.transition(conn, merged, "in_flight")
-        store.tickets.transition(conn, merged, "merged")
-        stale = file(2, specced=False)
-        store.record_note(
-            conn, stale, "critic",
-            "**Not claimed: this ticket is out of date with main**\n\n"
-            "* critic: stale — already shipped by NAT-1\n", "critic-1")
-        for n in (3, 4, 5):
-            store.tickets.transition(conn, file(n), "blocked_on_deps")
+        file_stuck_wait(conn, store.tickets.ensure_project(
+            conn, "team-1", self.target), "NAT")
         self.start()
         code, _, body = self.request("GET", "/attention")
         self.assertEqual(code, 200)
