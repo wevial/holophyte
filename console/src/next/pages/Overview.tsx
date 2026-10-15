@@ -1,7 +1,9 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
 import { FocusCard, useHeldEntry } from "../components/FocusCard";
+import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
 import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
@@ -77,6 +79,19 @@ export function Overview() {
   const lanes = laneGroups(view.hosts);
   const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
+  const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
+  const card = useRef<HTMLElement>(null);
+  const [needMount, setNeedMount] = useState(0);
+  const showNeed = (index: number) => {
+    flushSync(() => {
+      if (!readOpen("need")) {
+        writeOpen("need", true);
+        setNeedMount((count) => count + 1);
+      }
+      held.hold(index);
+    });
+    card.current?.focus();
+  };
   return (
     <div className="flex max-w-[880px] flex-col gap-8 px-8 py-7">
       {view.answered && (
@@ -111,6 +126,7 @@ export function Overview() {
       )}
       <div className="flex flex-col gap-[44px]">
         <FoldingSection
+          key={needMount}
           id="need"
           label="Needs you"
           count={need}
@@ -118,7 +134,7 @@ export function Overview() {
           summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
           empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
         >
-          <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} />
+          <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} cardRef={card} />
         </FoldingSection>
         <FoldingSection
           id="run"
@@ -136,7 +152,10 @@ export function Overview() {
           count={view.pullRequests.length}
           summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
           empty="No pull requests open."
-        />
+          isEmpty={!prLanes.some((group) => group.rows.length > 0)}
+        >
+          <PullRequestLanes groups={prLanes} readiness={view.readiness} needs={view.needs} onShow={showNeed} />
+        </FoldingSection>
         <FoldingSection
           id="done"
           label="Merged today"
