@@ -14,6 +14,7 @@ from holophyte.babysit.adjudicator_outage import adjudicate_or_park
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
+from holophyte.babysit.description_review import TAG_BRIEF, fix_summary, rereviewed
 from holophyte.babysit.main_checkout import detached_main
 from holophyte.babysit.note_triage import triage_notes, untriaged
 from holophyte.babysit.thread_answers import answer_asks, post
@@ -276,7 +277,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
-    check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
+    check_fix = CheckFix()  # One rerun, capped fix rounds per babysit.
     pass_no, refreshes, triaged = 0, 0, {}
     marked, released = False, None
     approved_sha = reviewed if approved else None
@@ -477,6 +478,7 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
             + tests_brief(wt)
             + scope_brief(wt, ticket, covered, sha, candidate_only=True)
             + evidence
+            + TAG_BRIEF
             + "Do not modify anything. End your reply with exactly one "
             "line:\n"
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
@@ -541,9 +543,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
     if not _fixes_reviewed(merge):
         recovered = _fix_answers(conn, run_id, _next_round(conn, run_id), fix_note)
         answered = "\n".join(part for part in (fix_context, recovered) if part)
-        if not answered:
-            base = reviewed or main_merge_base(wt, sha)
-            answered = sh(["git", "log", "--format=%s", f"{base}..{sha}"], cwd=wt)
+        answered = fix_summary(answered, wt, reviewed, sha)
         refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
@@ -558,18 +558,18 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
     if stale:
         stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
         verdict, decision, unwitnessed, rnd = _covering_review(*review, stale)
-        stale = stale_approvals(decision, unwitnessed)
     recovered = _fix_answers(conn, run_id, rnd, fix_note)
     answered = "\n".join(part for part in (fix_context, recovered) if part)
+    (verdict, decision, unwitnessed, rnd), fix_note = rereviewed(
+        _covering_review, review, (verdict, decision, unwitnessed, rnd), fix_note,
+        budget_min, answered)
+    stale = stale_approvals(decision, unwitnessed)
     if not unwitnessed and decision == "APPROVE":
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: APPROVE of the fix at {sha} on {pull.url}\n"
                f"Reviewer verdict:\n{verdict}", provider)
         print(f"[holo2] the fix at {sha[:12]} is approved")
-        if not answered:
-            answered = sh(["git", "log", "--format=%s",
-                           f"{reviewed or main_merge_base(wt, sha)}..{sha}"],
-                          cwd=wt)
+        answered = fix_summary(answered, wt, reviewed, sha)
         refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
         return sha
