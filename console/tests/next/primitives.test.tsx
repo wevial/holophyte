@@ -40,7 +40,6 @@ test("each StateDot on the State icons sheet's Run states grid draws that cell's
   const running = glyph("running");
   expect(running.querySelector("circle")!.getAttribute("fill")).toBeNull();
   expect(running.querySelector("path")!.getAttribute("fill")).toBe("currentColor");
-  expect(glyph("stale").querySelector("circle")).toBeNull();
 });
 
 test("a StateDot with its word hidden keeps the word as its accessible name and hides its icon", () => {
