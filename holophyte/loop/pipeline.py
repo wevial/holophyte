@@ -39,6 +39,7 @@ from holophyte.loop.steering import close as close_steering
 from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import Aborted, continuation
 from holophyte.loop.trim import trim
+from holophyte.pr import mockup
 from holophyte.pr.pullrequest import _opens_draft, _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
 from holophyte.review import reproduce
@@ -95,6 +96,7 @@ def _run_stages(run, task):
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     _setup_worktree(project, conn, run_id, provider, task_id, task, branch, wt,
                     fresh, beat_s)
+    mockup.fetch(project, conn, run_id, wt, body)
 
     # Preserved commits were never approved, so the review base is main.
     base_sha = sh(["git", "rev-parse", "main"], project.path)
