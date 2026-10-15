@@ -146,6 +146,13 @@ export function collapseFailed(items: AttentionItem[]): BandEntry[] {
   return entries;
 }
 
+/** The key an entry is held by: its run for a question, its ticket for a
+ *  failed ticket's attempts, its position when it names neither. */
+export function entryKey({ item, attempts }: BandEntry, index: number): string {
+  const tail = attempts ? item.ticket : (item.run ?? item.ticket);
+  return `${String(item.daemon ?? "")}-${item.kind}-${String(tail ?? index)}`;
+}
+
 export type Counts = Record<KindFilter, number>;
 
 export function countsByKind(items: AttentionItem[]): Counts {
