@@ -34,21 +34,21 @@ test("merge", async ({ browser, baseURL }) => {
       pr: { number: pr, checks: "success", review, threads: 0, title },
     });
     body.items = [...body.items,
-      parked(47, "DEMO-7", 31, "Show the merge ledger as a timeline", "approved", 40 * 60_000),
-      parked(48, "DEMO-8", 32, "Name each worker's route on the Floor", "review_required", 12 * 60_000)];
+      parked(47, "DEMO-47", 31, "Show the merge ledger as a timeline", "approved", 40 * 60_000),
+      parked(48, "DEMO-48", 32, "Name each worker's route on the Floor", "review_required", 12 * 60_000)];
     if (body.level === "none") body.level = "attention";
     await route.fulfill({ response, json: body });
   });
-  await page.route("**/runs/47/merge", (route) => route.fulfill({ json: readiness(47, "DEMO-7", 31, true) }));
-  await page.route("**/runs/48/merge", (route) => route.fulfill({ json: readiness(48, "DEMO-8", 32, false) }));
+  await page.route("**/runs/47/merge", (route) => route.fulfill({ json: readiness(47, "DEMO-47", 31, true) }));
+  await page.route("**/runs/48/merge", (route) => route.fulfill({ json: readiness(48, "DEMO-48", 32, false) }));
   await page.route("**/actions/merge", (route) => route.fulfill({
-    json: { action: "merge", ok: true, run: 47, detail: "DEMO-7 approved: run 47 released" },
+    json: { action: "merge", ok: true, run: 47, detail: "DEMO-47 approved: run 47 released" },
   }));
 
   await page.goto("/");
   const table = page.getByRole("region", { name: "Pull requests" });
-  const ready = table.getByRole("row").filter({ hasText: "DEMO-7" });
-  const waiting = table.getByRole("row").filter({ hasText: "DEMO-8" });
+  const ready = table.getByRole("row").filter({ hasText: "DEMO-47" });
+  const waiting = table.getByRole("row").filter({ hasText: "DEMO-48" });
   await expect(ready.getByRole("button", { name: "Merge", exact: true })).toBeVisible();
   await expect(waiting.getByText("waiting on review approval")).toBeVisible();
   await table.scrollIntoViewIfNeeded();
@@ -61,7 +61,7 @@ test("merge", async ({ browser, baseURL }) => {
   await table.screenshot({ path: path.join(out, "02-confirm-merge.png") });
 
   await ready.getByRole("button", { name: "Confirm merge" }).click();
-  await expect(ready.getByRole("status")).toHaveText("DEMO-7 approved: run 47 released");
+  await expect(ready.getByRole("status")).toHaveText("DEMO-47 approved: run 47 released");
   await expect(ready.getByRole("button", { name: "Merge", exact: true })).toHaveCount(0);
   await table.screenshot({ path: path.join(out, "03-merge-accepted.png") });
 
