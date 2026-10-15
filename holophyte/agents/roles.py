@@ -302,10 +302,6 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         raise failure from e
 
 
-def claude_seat(seat):
-    return seat is not None and seat.name == "claude"
-
-
 def stream_watch(project, streamed):
     return {"quiet": turn_quiet_sec(project)} if streamed else {}
 
@@ -381,7 +377,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         # Recorded before launch, so a turn the budget kills still leaves it.
         import store
         store.record_agent_session(conn, run_id, session_id, role, "primary")
-    streamed = claude_seat(seat)
+    streamed = seat is not None and seat.name == "claude"
     hook.update(stream_watch(project, streamed))
     code, out = launcher.launch(launcher.turn_route(project, cmd), cwd,
                                  launcher.environment(project), cmd,
