@@ -475,3 +475,43 @@ class CiParkAttentionTests(ServeTestCase):
         self.assertEqual((item["kind"], item["pr_url"], item["reason"]),
                          ("pr_open", self.URL, "pending checks"))
         self.assertEqual((item["pr"]["number"], item["pr"]["checks"]), (31, "pending"))
+
+
+class StuckWaitAttentionTests(ServeTestCase):
+    def test_a_wait_behind_a_needs_spec_dependency_is_one_stuck_wait(self):
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.tickets.ensure_project(conn, "team-1", self.target)
+
+        def file(n, specced=True):
+            return store.tickets.mirror_ticket(
+                conn, project, linear_issue_id=f"issue-nat-{n}",
+                linear_identifier=f"NAT-{n}", title=f"ticket NAT-{n}",
+                acceptance_criteria=["Given it, then it works"] if specced else [],
+                verification_commands=["echo ok"] if specced else [],
+                depends_on=[f"issue-nat-{n - 1}"] if n > 1 else [])
+
+        merged = file(1)
+        store.tickets.transition(conn, merged, "in_flight")
+        store.tickets.transition(conn, merged, "merged")
+        stale = file(2, specced=False)
+        store.record_note(
+            conn, stale, "critic",
+            "**Not claimed: this ticket is out of date with main**\n\n"
+            "* critic: stale — already shipped by NAT-1\n", "critic-1")
+        for n in (3, 4, 5):
+            store.tickets.transition(conn, file(n), "blocked_on_deps")
+        self.start()
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        stuck = [i for i in body["items"] if i["kind"] == "stuck_wait"]
+        self.assertEqual(len(stuck), 1, body["items"])
+        self.assertEqual(
+            {k: stuck[0].get(k) for k in ("ticket", "dependency",
+                                          "dependency_state", "reason",
+                                          "behind", "level")},
+            {"ticket": "NAT-3", "dependency": "NAT-2",
+             "dependency_state": "needs_spec",
+             "reason": "critic: stale — already shipped by NAT-1",
+             "behind": 2, "level": "attention"})
