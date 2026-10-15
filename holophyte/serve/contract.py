@@ -369,6 +369,9 @@ class InstructionTriage(TypedDict):
     reason: str
 
 
+InstructionOutcome = Literal["changed", "kept", "asked"]
+
+
 class FindingFingerprint(TypedDict):
     path: str
     line: NotRequired[int | None]
@@ -391,7 +394,7 @@ class RoundFinding(TypedDict):
     url: NotRequired[str]
     request: NotRequired[str]
     triage: NotRequired[InstructionTriage]
-    outcome: NotRequired[Literal["changed", "kept", "asked"]]
+    outcome: NotRequired[InstructionOutcome]
     reply: NotRequired[str]
 
 
@@ -405,7 +408,7 @@ class RoundInstruction(TypedDict):
     severity: NotRequired[str]
     message: NotRequired[str]
     triage: NotRequired[InstructionTriage]
-    outcome: NotRequired[Literal["changed", "kept", "asked"]]
+    outcome: NotRequired[InstructionOutcome]
     reply: NotRequired[str]
 
 
