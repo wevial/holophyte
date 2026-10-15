@@ -246,7 +246,7 @@ class QuietWatchdogTests(StreamTurnCase):
 
     def test_a_turn_that_exits_while_a_child_holds_its_pipe_is_not_stalled(self):
         self.harness(f"echo '{DONE}'\n(sleep 8 &)\nexit 0\n",
-                     agents="turn_quiet_sec = 2\n")
+                     agents="turn_quiet_sec = 1\n")
         output, timed_out = self.timed()
         self.assertEqual((str(output), timed_out), ("finished", False))
         self.assertEqual(self.events("turn_stalled"), [])
@@ -270,6 +270,10 @@ class StreamProbeTests(StreamTurnCase):
     def test_a_ready_word_outside_the_result_fails_the_probe(self):
         self.assertIn("ready", COMMANDS_CHANGED)
         self.assertFalse(self.probe_answering("not now").ok)
+
+    def test_a_ready_line_with_no_result_fails_the_probe(self):
+        self.harness(f"echo '{INIT}'\necho '{COMMANDS_CHANGED}'\necho ready\n")
+        self.assertFalse(holophyte.agents.probes.probe_implementer(self.project).ok)
 
     def test_a_ready_result_passes_the_probe(self):
         self.assertTrue(self.probe_answering("ready").ok)

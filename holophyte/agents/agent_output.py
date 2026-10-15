@@ -59,9 +59,8 @@ def json_line(line):
         return None
 
 
-def plain_lines(output):
-    return "\n".join(line for line in output.splitlines()
-                     if json_line(line) is None)
+def streamed(output):
+    return any(isinstance(json_line(line), dict) for line in output.splitlines())
 
 
 def chosen_result(documents):

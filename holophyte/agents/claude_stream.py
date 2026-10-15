@@ -67,7 +67,7 @@ class StreamRecord:
 def read_stream(proc, cmd, timeout, quiet, reap):
     """Return `(returncode, kept lines)`; a quiet pipe raises `TurnStalled`."""
     record = StreamRecord()
-    clocks = Clocks(cmd, timeout, quiet, reap, record)
+    clocks = Clocks(proc, cmd, timeout, quiet, reap, record)
     pending = b""
     with selectors.DefaultSelector() as selector:
         selector.register(proc.stdout.fileno(), selectors.EVENT_READ)
@@ -97,8 +97,8 @@ def read_stream(proc, cmd, timeout, quiet, reap):
 
 class Clocks:
 
-    def __init__(self, cmd, timeout, quiet, reap, record):
-        self.cmd, self.reap, self.record = cmd, reap, record
+    def __init__(self, proc, cmd, timeout, quiet, reap, record):
+        self.proc, self.cmd, self.reap, self.record = proc, cmd, reap, record
         self.timeout, self.quiet = timeout, quiet
         self.started = self.heard = monotonic()
 
@@ -108,7 +108,8 @@ class Clocks:
             self.reap()
             raise subprocess.TimeoutExpired(self.cmd, self.timeout,
                                             output=self.record.tail())
-        if self.quiet and now - self.heard >= self.quiet:
+        if (self.quiet and now - self.heard >= self.quiet
+                and self.proc.poll() is None):
             self.reap()
             raise TurnStalled(self.cmd, self.quiet, self.record.lines,
                               self.record.last_tool, output=self.record.tail())

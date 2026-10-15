@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import review_runner
-from holophyte.agents.agent_output import claude_result, plain_lines
+from holophyte.agents.agent_output import claude_result, streamed
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.harness import critic_seat
 from holophyte.agents.harness import seat as harness_seat
@@ -196,8 +196,8 @@ def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
     probe = ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
     if claude:
         decoded = claude_result(probe.output)
-        probe = replace(probe, answer=decoded[0] if decoded
-                        else plain_lines(probe.output))
+        probe = replace(probe, answer=decoded[0] if decoded else
+                        "" if streamed(probe.output) else probe.output)
     return probe
 
 
