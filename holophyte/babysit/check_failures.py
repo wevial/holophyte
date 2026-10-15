@@ -15,13 +15,9 @@ _HEX = re.compile(r"[0-9a-fA-F]{7,}")
 _CHARS = re.compile(r"\[\d+ chars\]")
 
 
-def unstamped(line):
-    return _STAMP.sub("", line)
-
-
 def failure_lines(log):
     """A job log's test failure headers and error lines, first seen first."""
-    found = (unstamped(line).strip() for line in (log or "").splitlines())
+    found = (_STAMP.sub("", line).strip() for line in (log or "").splitlines())
     return list(dict.fromkeys(line for line in found if _FAILURE.match(line)))
 
 
