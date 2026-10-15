@@ -1,36 +1,44 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { THEME_KEY } from "../../src/lib/theme";
-import type { Fetch } from "../../src/lib/poll";
-import type { Attention, AttentionItem, Status } from "../../src/lib/types";
-import { NO_ATTENTION, fakeDeps, fixture, peersFetch, settle } from "../harness";
+import { TICK_MS, type Fetch } from "../../src/lib/poll";
+import type { Attention, Status } from "../../src/lib/contract.gen";
+import { fakeDeps, peersFetch, settle } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
 const PEER = "http://writer-host:7711";
 
-const working = await fixture<Status>("working.json");
-const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
+const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
+const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
 
 const happyDOM = (window as unknown as {
   happyDOM: { settings: { device: { prefersColorScheme: string } }; setViewport: (viewport: { width: number }) => void };
 }).happyDOM;
 const device = happyDOM.settings.device;
 
+type Item = Attention["items"][number];
 const statusOf = (project: string): Status => ({ ...working, host: "writer-host", project });
-const attentionOf = (items: AttentionItem[]): Attention => ({ level: items.length ? "attention" : "none", now: 0, items });
+const attentionOf = (items: Item[], project = "/srv/dev/demo"): Attention => ({ level: items.length ? "attention" : "none", now: 0, project, items });
 
-function daemons(demoItems: AttentionItem[], writerItems: AttentionItem[]) {
+function daemons(demoItems: Item[], writerItems: Item[]) {
   return peersFetch(ORIGIN, {
     [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf(demoItems) },
-    [PEER]: { status: statusOf("/srv/dev/writer"), attention: attentionOf(writerItems) },
+    [PEER]: { status: statusOf("/srv/dev/writer"), attention: attentionOf(writerItems, "/srv/dev/writer") },
   });
 }
 
 async function mount(hash: string, fetchImpl: Fetch = daemons([], [])) {
   window.location.hash = hash;
   const fake = fakeDeps(fetchImpl);
-  render(<NextConsole base={ORIGIN} pollDeps={fake.deps} />);
+  render(
+    <QueryClientProvider client={consoleQueryClient()}>
+      <NextConsole base={ORIGIN} pollDeps={fake.deps} />
+    </QueryClientProvider>,
+  );
   await act(settle);
   await act(settle);
   return fake;
@@ -62,7 +70,8 @@ test("a scoped hash opens its page, marks its link current and keeps the scope o
 });
 
 test("the Overview badge counts the scope's attention items and hides at zero", async () => {
-  const [one, two, three] = allKinds.attention.items as [AttentionItem, AttentionItem, AttentionItem];
+  const one = served.items[0]!;
+  const [two, three] = [{ ...one, run: 2 }, { ...one, run: 3 }];
   await mount("#/", daemons([one, two], [three]));
   expect(screen.getByRole("link", { name: "Overview, 3 need you" })).toBeTruthy();
   expect(badge()!.textContent).toBe("3");
@@ -167,10 +176,20 @@ test("the footer names the host and how long ago it was polled, and reads pollin
   expect(screen.getByText("polling…")).toBeTruthy();
   cleanup();
 
-  const { clock, fireTick } = await mount("#/", peersFetch(ORIGIN, {
-    [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: NO_ATTENTION },
-  }));
-  clock.now = 4000;
-  act(fireTick);
-  expect(screen.getByText("writer-host · polled 4s ago")).toBeTruthy();
+  const realSetInterval = globalThis.setInterval;
+  const seconds: (() => void)[] = [];
+  globalThis.setInterval = ((fn: () => void, ms?: number) => {
+    if (ms === TICK_MS) seconds.push(fn);
+    return realSetInterval(fn, ms);
+  }) as typeof setInterval;
+  try {
+    const { clock } = await mount("#/", peersFetch(ORIGIN, {
+      [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf([]) },
+    }));
+    clock.now = 4000;
+    act(() => seconds.forEach((tick) => tick()));
+    expect(screen.getByText("writer-host · polled 4s ago")).toBeTruthy();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
 });

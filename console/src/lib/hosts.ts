@@ -1,7 +1,7 @@
 import type { ProjectChoice } from "./attention";
 import { isSupervisorStale, isStale } from "./derive";
-import type { PollFailure, ProjectAnswer } from "./poll";
-import type { Attention, AttentionItem, HostStatus, Status } from "./types";
+import type { ClassicBodies, PollBodies, PollFailure, ProjectAnswer } from "./poll";
+import type { AttentionItem, Status } from "./types";
 
 /** One project the console polls, at the base its routes hang off: a
  *  project daemon (the origin that served the page, then each address
@@ -10,7 +10,7 @@ import type { Attention, AttentionItem, HostStatus, Status } from "./types";
  *  projects are a record each, so every view keyed by `base` -- run
  *  detail, the Board, the ledger of finished runs -- tells two projects on
  *  one daemon apart; the host card groups them again by `address`. */
-export interface HostRecord {
+export interface HostRecord<B extends PollBodies = ClassicBodies> {
   /** The record's identity: the address for a project daemon, the
    *  address and `/projects/NAME` for a project behind a host daemon. */
   key: string;
@@ -30,15 +30,15 @@ export interface HostRecord {
   name?: string | null;
   /** Under a host daemon: the daemon's last good root `/status` and
    *  `/attention`, which every project record of it shares. */
-  host_status?: HostStatus | null;
-  host_attention?: Attention | null;
+  host_status?: B["host"] | null;
+  host_attention?: B["hostAttention"] | null;
   /** Under a host daemon: the last poll's failure was the daemon's root,
    *  not this project alone. */
   root_failed?: boolean;
   /** The last good `/status`, kept beside a later error. */
-  status: Status | null;
+  status: B["status"] | null;
   /** The last good `/attention`, kept beside a later error. */
-  attention: Attention | null;
+  attention: B["attention"] | null;
   /** Clock reading when this record was last written, good or bad. */
   polled_ms: number;
   /** Clock reading of the last good answer, null before the first. */
@@ -120,20 +120,20 @@ export function baseOf(address: string): string {
 /** One poll's answer for one address: a project daemon's two bodies, a
  *  host daemon's root answers with each project's own, or the failure of
  *  the daemon's root. */
-export type PollResult =
-  | { address: string; base: string; ok: true; status: Status; attention: Attention }
-  | { address: string; base: string; ok: true; host: HostStatus; host_attention: Attention; projects: ProjectAnswer[] }
+export type PollResult<B extends PollBodies = ClassicBodies> =
+  | { address: string; base: string; ok: true; status: B["status"]; attention: B["attention"] }
+  | { address: string; base: string; ok: true; host: B["host"]; host_attention: B["hostAttention"]; projects: ProjectAnswer<B>[] }
   | ({ address: string; base: string } & PollFailure);
 
 /** The project a host serves, from its last good `/status`. */
-export function hostProject(status: Status | null): string | null {
+export function hostProject(status: Pick<Status, "project"> | null): string | null {
   return status ? status.project : null;
 }
 
 type Where = Pick<HostRecord, "key" | "address" | "base">;
 
 /** A record for a good answer at `where`. */
-function answered(where: Where, answer: { status: Status; attention: Attention }, now: number): HostRecord {
+function answered<B extends PollBodies>(where: Where, answer: { status: B["status"]; attention: B["attention"] }, now: number): HostRecord<B> {
   return {
     ...where,
     label: where.address,
@@ -150,7 +150,7 @@ function answered(where: Where, answer: { status: Status; attention: Attention }
 
 /** A record for a failed answer at `where`, keeping `before`'s last good
  *  bodies; a 401 is `needs_token` rather than an error. */
-function failed(where: Where, failure: PollFailure, before: HostRecord | undefined, now: number): HostRecord {
+function failed<B extends PollBodies>(where: Where, failure: PollFailure, before: HostRecord<B> | undefined, now: number): HostRecord<B> {
   const needsToken = failure.status === 401;
   return {
     ...before,
@@ -181,9 +181,9 @@ function failed(where: Where, failure: PollFailure, before: HostRecord | undefin
  *  broken entries stay in view. A 401 is not a failure to reach the
  *  daemon: the record is marked `needs_token` with no error, and
  *  `token_rejected` when the request carried a saved token. */
-export function mergeHosts(previous: HostRecord[], results: PollResult[], now: number): HostRecord[] {
+export function mergeHosts<B extends PollBodies = ClassicBodies>(previous: HostRecord<B>[], results: PollResult<B>[], now: number): HostRecord<B>[] {
   const byKey = new Map(previous.map((host) => [host.key, host]));
-  return results.flatMap((result): HostRecord[] => {
+  return results.flatMap((result): HostRecord<B>[] => {
     const { address, base } = result;
     if (!result.ok) {
       const had = previous.filter((host) => host.address === address);
@@ -216,26 +216,26 @@ export function visibleHosts(hosts: HostRecord[], project: ProjectChoice): HostR
 /** The name the page shows for a host: what `/status` calls it (a host
  *  daemon's root, before a project has answered, by its first project's
  *  label), else the host part of its address. */
-export function hostName(host: HostRecord): string {
+export function hostName(host: HostRecord<PollBodies>): string {
   const rootLabel = host.host_status?.projects.find((project) => project.host != null)?.host;
   return host.status?.host ?? rootLabel ?? host.address.replace(/:\d+$/, "");
 }
 
 /** The daemons under one host label: the card the rail draws. */
-export interface HostGroup {
+export interface HostGroup<R extends HostRecord<PollBodies> = HostRecord> {
   /** What `/status` calls the host, else the host part of the address. */
   label: string;
   /** The records on that host, in poll order. */
-  hosts: HostRecord[];
+  hosts: R[];
 }
 
 /** Host records grouped by their label, in the order each label is first
  *  seen; a daemon that never answered groups under its address's host.
  *  Every project of one host daemon lands in the group its first project
  *  opened, whatever label a later one reports: one daemon, one card. */
-export function groupByHost(hosts: HostRecord[]): HostGroup[] {
-  const groups: HostGroup[] = [];
-  const byAddress = new Map<string, HostGroup>();
+export function groupByHost<R extends HostRecord<PollBodies>>(hosts: R[]): HostGroup<R>[] {
+  const groups: HostGroup<R>[] = [];
+  const byAddress = new Map<string, HostGroup<R>>();
   for (const host of hosts) {
     const label = hostName(host);
     let group = byAddress.get(host.address) ?? groups.find((candidate) => candidate.label === label);
@@ -297,7 +297,7 @@ export const SWEEP_OK = new Set(["fresh", "running"]);
 
 /** Whether `host` is the record a host daemon's own items ride on: its
  *  first project the registry names, else the daemon's own record. */
-function carriesHostItems(host: HostRecord): boolean {
+function carriesHostItems(host: HostRecord<PollBodies>): boolean {
   if (host.host_status == null) return false;
   const first = host.host_status.projects.find((project) => project.name != null);
   return (first?.name ?? null) === (host.name ?? null);
@@ -307,7 +307,7 @@ function carriesHostItems(host: HostRecord): boolean {
  *  `supervisor` item, since on a host the sweep is the supervisor, and an
  *  `unreachable` item for each registered project whose config gives no
  *  name, which no prefix routes to and no record stands for. */
-function rootItems(host: HostRecord, project: string, now: number): AttentionItem[] {
+function rootItems(host: HostRecord<PollBodies>, project: string, now: number): AttentionItem[] {
   if (!carriesHostItems(host)) return [];
   const sweep = (host.host_attention?.items ?? [])
     .filter((item) => item.kind === "sweep_stale")
@@ -343,7 +343,7 @@ function rootItems(host: HostRecord, project: string, now: number): AttentionIte
  *  `supervisor` item under a host daemon is the sweep's: `host_sweep`
  *  marks it for "Run sweep". `now` is the console's clock, for the
  *  unreachable item's `since_ms`. */
-export function hostItems(host: HostRecord, now: number): AttentionItem[] {
+export function hostItems(host: HostRecord<PollBodies>, now: number): AttentionItem[] {
   const project = host.project ?? host.address;
   const onHost = host.name != null;
   const items: AttentionItem[] = (host.attention?.items ?? []).map((item) => ({
@@ -392,7 +392,7 @@ export function toilLines(toil: NonNullable<Status["toil"]>): { rates: string; a
 }
 
 /** The oldest `polled_ms` across hosts, null before the first poll. */
-export function oldestPoll(hosts: HostRecord[]): number | null {
+export function oldestPoll(hosts: HostRecord<PollBodies>[]): number | null {
   if (hosts.length === 0) return null;
   return hosts.reduce((least, host) => Math.min(least, host.polled_ms), Number.POSITIVE_INFINITY);
 }

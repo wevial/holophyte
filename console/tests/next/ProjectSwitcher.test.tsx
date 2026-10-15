@@ -1,15 +1,21 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
-import type { Attention, AttentionItem, Status } from "../../src/lib/types";
-import { fakeDeps, fixture, peersFetch, settle } from "../harness";
+import type { Attention, Status } from "../../src/lib/contract.gen";
+import { fakeDeps, peersFetch, settle } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
 const PEER = "http://writer-host:7711";
 
-const working = await fixture<Status>("working.json");
-const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
-const [one, two] = allKinds.attention.items as [AttentionItem, AttentionItem];
+const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
+const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
+
+type Item = Attention["items"][number];
+const one = served.items[0]!;
+const two: Item = { ...one, ticket: "KO-11", run: 5 };
 
 function statusOf(project: string, runs: number, admission: string): Status {
   const run = working.runs[0]!;
@@ -22,16 +28,20 @@ function statusOf(project: string, runs: number, admission: string): Status {
   };
 }
 
-const attentionOf = (items: AttentionItem[]): Attention => ({ level: items.length ? "attention" : "none", now: 0, items });
+const attentionOf = (items: Item[], project: string): Attention => ({ level: items.length ? "attention" : "none", now: 0, project, items });
 
 const daemons = peersFetch(ORIGIN, {
-  [ORIGIN]: { status: statusOf("/srv/dev/demo", 1, "held"), attention: attentionOf([one, two]) },
-  [PEER]: { status: statusOf("/srv/dev/writer", 2, "enabled"), attention: attentionOf([]) },
+  [ORIGIN]: { status: statusOf("/srv/dev/demo", 1, "held"), attention: attentionOf([one, two], "/srv/dev/demo") },
+  [PEER]: { status: statusOf("/srv/dev/writer", 2, "enabled"), attention: attentionOf([], "/srv/dev/writer") },
 });
 
 async function mount(hash: string) {
   window.location.hash = hash;
-  render(<NextConsole base={ORIGIN} pollDeps={fakeDeps(daemons).deps} />);
+  render(
+    <QueryClientProvider client={consoleQueryClient()}>
+      <NextConsole base={ORIGIN} pollDeps={fakeDeps(daemons).deps} />
+    </QueryClientProvider>,
+  );
   await act(settle);
   await act(settle);
 }

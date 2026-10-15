@@ -1,5 +1,7 @@
 import { projectName } from "../lib/derive";
 import { hostItems, type HostRecord } from "../lib/hosts";
+import type { PollBodies } from "../lib/poll";
+import type { Status } from "../lib/types";
 
 /** One row of the project switcher; `name` is null for "All projects". */
 export interface SwitcherRow {
@@ -13,7 +15,13 @@ export interface SwitcherRow {
 
 const ALL_PROJECTS = "All projects";
 
-function rowOf(name: string | null, hosts: HostRecord[], now: number): SwitcherRow {
+interface SwitcherBodies extends PollBodies {
+  status: Pick<Status, "project" | "host" | "admission" | "runs">;
+}
+
+type SwitcherHost = HostRecord<SwitcherBodies>;
+
+function rowOf(name: string | null, hosts: SwitcherHost[], now: number): SwitcherRow {
   return {
     name,
     label: name ?? ALL_PROJECTS,
@@ -26,8 +34,8 @@ function rowOf(name: string | null, hosts: HostRecord[], now: number): SwitcherR
 
 /** "All projects", then one row per project name in the order the hosts
  *  first name them, pooling the hosts that serve the same name. */
-export function switcherRows(hosts: HostRecord[], now: number): SwitcherRow[] {
-  const byName = new Map<string, HostRecord[]>();
+export function switcherRows(hosts: SwitcherHost[], now: number): SwitcherRow[] {
+  const byName = new Map<string, SwitcherHost[]>();
   for (const host of hosts) {
     if (host.project == null) continue;
     const name = projectName(host.project);
