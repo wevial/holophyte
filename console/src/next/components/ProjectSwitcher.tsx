@@ -4,6 +4,9 @@ import { matchRows, storeScope, switcherRows, type SwitcherRow } from "../projec
 import { useConsolePeers } from "../scope";
 import { DropIcon, FolderIcon, OverviewIcon } from "./icons";
 
+const DIALOG_WIDTH = 264;
+const EDGE = 8;
+
 function iconColour(row: SwitcherRow): string {
   if (row.name == null) return "text-ink-2";
   if (row.down) return "text-bad";
@@ -61,10 +64,20 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
   const show = () => {
     const rect = buttonRef.current!.getBoundingClientRect();
     const rail = buttonRef.current!.closest("aside")?.getBoundingClientRect() ?? rect;
-    setPlace(folded ? { top: rect.top, left: rail.right + 4 } : { top: rect.bottom + 4, left: rect.left });
+    const room = window.innerWidth - DIALOG_WIDTH - EDGE;
+    const beside = folded && rail.right + 4 <= room;
+    setPlace(
+      beside
+        ? { top: rect.top, left: rail.right + 4 }
+        : { top: rect.bottom + 4, left: Math.max(EDGE, Math.min(rect.left, room)) },
+    );
     setQuery("");
     setActive(Math.max(0, rows.indexOf(current)));
   };
+
+  useEffect(() => {
+    if (open) document.getElementById(`${id}-option-${at}`)?.scrollIntoView?.({ block: "nearest" });
+  }, [open, at, id]);
 
   const close = () => {
     setPlace(null);
@@ -147,7 +160,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
           ref={dialogRef}
           role="dialog"
           aria-label="Switch project"
-          style={{ top: place.top, left: place.left, width: 264 }}
+          style={{ top: place.top, left: place.left, width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
           className="fixed z-50 flex flex-col border border-rule bg-paper shadow-card"
           onMouseDown={(event) => {
             if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
