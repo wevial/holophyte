@@ -279,6 +279,12 @@ class NoteTriageParseTests(unittest.TestCase):
         self.assertEqual(verdicts, {1: ("FINDING", NO_REASON),
                                     2: ("NOTE", "informational")})
 
+    def test_a_note_without_a_reason_is_triaged_as_a_finding(self):
+        from holophyte.babysit.note_triage import parse
+        verdicts = parse("THREAD 1: NOTE --\nTHREAD 2: NOTE -- informational", 2)
+        self.assertEqual([kind for kind, _ in verdicts.values()],
+                         ["FINDING", "NOTE"])
+
 
 if __name__ == "__main__":
     unittest.main()

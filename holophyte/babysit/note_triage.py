@@ -14,6 +14,7 @@ TRIAGE_LINE_RE = re.compile(
     r"[ \t]*(?:[-–—:,]+[ \t]*)?(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
 UNPARSED = "the triage gave no verdict for this comment"
 NO_REASON = "no reason given"
+NOTE_WITHOUT_REASON = "the triage called it a note but gave no reason"
 
 
 def untriaged(state, merge):
@@ -58,8 +59,10 @@ def parse(reply, count):
     verdicts = {}
     for m in TRIAGE_LINE_RE.finditer(str(reply or "")):
         n = int(m.group(1))
+        kind, reason = m.group(2).upper(), m.group(3)
         if 1 <= n <= count and n not in verdicts:
-            verdicts[n] = (m.group(2).upper(), m.group(3) or NO_REASON)
+            verdicts[n] = ((kind, reason or NO_REASON) if reason or kind == "FINDING"
+                           else ("FINDING", NOTE_WITHOUT_REASON))
     return {n: verdicts.get(n, ("FINDING", UNPARSED)) for n in range(1, count + 1)}
 
 
