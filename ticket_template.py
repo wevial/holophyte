@@ -429,6 +429,7 @@ PREPOSITIONS = frozenset(
 NEW_GAP_RE = re.compile(
     r"\s*(?P<words>(?:\w[\w-]*\s+)*(?:\w[\w-]*)?)\s*[,:(]?\s*"
     r"(?:\0+\s*(?:,\s*(?:(?:and|or)\s+)?|(?:and|or)\s+))*", re.I)
+TRAILING_NEW_RE = re.compile(r"\s*\((?:a\s+)?new\b[^)]*\)", re.I)
 
 
 def _declarable(path, directory):
@@ -464,6 +465,8 @@ def _new_paths(t):
             directory = _governing_new(text, marked,
                                        span.start() - len(sentence),
                                        span.start())
+            if directory is None and TRAILING_NEW_RE.match(text, span.end()):
+                directory = False
             if directory is not None and _declarable(path, directory):
                 normalized = str(Path(path))
                 files.add(normalized)
@@ -929,8 +932,9 @@ def main(argv):
             from holophyte.leak_guard import ticket_problems
             from holophyte.review.freshness import landmark_reasons
             prefix = ADVISORY_PREFIX if ticket.depends_on else ""
-            problems += [prefix + reason
-                         for reason in landmark_reasons(repo, text)]
+            stale, advised = landmark_reasons(repo, text)
+            problems += [prefix + reason for reason in stale]
+            problems += [ADVISORY_PREFIX + advisory for advisory in advised]
             from holophyte.config.project import Project
             from holophyte.isolation.launcher import container_docker_problems
             from holophyte.loop.implementer_profile import filing_problems
