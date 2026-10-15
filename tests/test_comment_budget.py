@@ -40,6 +40,7 @@ PINNED = {
 
     "holophyte/agents/__init__.py": 0,
     "holophyte/agents/agent_output.py": 0,
+    "holophyte/agents/claude_stream.py": 1,
     "holophyte/agents/agent_routes.py": 6,
     "holophyte/agents/agent_turns.py": 1,
     "holophyte/agents/fallback.py": 4,

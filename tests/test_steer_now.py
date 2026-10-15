@@ -180,7 +180,8 @@ class SteerNowTests(SweepTestCase):
         session = first[first.index("--session-id") + 1]
         *resumed, prompt = self.argv(2)
         self.assertEqual(resumed, ["-p", "--resume", session, "--model", "m1",
-                                   "--effort", "high", "--output-format", "json"])
+                                   "--effort", "high",
+                                   "--output-format", "stream-json", "--verbose"])
         self.assertIn(NOTE, prompt)
         self.assertNotIn("Implement the goal.", prompt)
         self.assertEqual(self.notes(), [(1, self.run_id)])

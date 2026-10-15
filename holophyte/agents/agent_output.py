@@ -42,30 +42,65 @@ def claude_usage(document):
     )
 
 
-def claude_result(output):
+def result_documents(output):
     try:
         document = json.loads(output)
     except ValueError:
+        return [document for document in map(json_line, output.splitlines())
+                if isinstance(document, dict)
+                and document.get("type", "result") == "result"]
+    return [document] if isinstance(document, dict) else []
+
+
+def json_line(line):
+    try:
+        return json.loads(line)
+    except ValueError:
         return None
-    if not isinstance(document, dict) or not isinstance(document.get("result"), str):
+
+
+def plain_lines(output):
+    return "\n".join(line for line in output.splitlines()
+                     if json_line(line) is None)
+
+
+def chosen_result(documents):
+    answered = [document for document in documents
+                if isinstance(document.get("result"), str) and document["result"]]
+    return (answered or documents or [None])[-1]
+
+
+def summed(values):
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
+def claude_result(output):
+    documents = result_documents(output)
+    chosen = chosen_result(documents)
+    if chosen is None or not isinstance(chosen.get("result"), str):
         return None
-    return document["result"], dict(claude_usage(document),
-                                    num_turns=count(document.get("num_turns")))
+    usages = [claude_usage(document) for document in documents]
+    return chosen["result"], dict(
+        input_tokens=summed(usage["input_tokens"] for usage in usages),
+        output_tokens=summed(usage["output_tokens"] for usage in usages),
+        cost_usd=usages[-1]["cost_usd"],
+        num_turns=summed(count(document.get("num_turns"))
+                         for document in documents))
 
 
 def claude_json_turn(argv, harness=None):
+    pairs = list(map(list, zip(argv, argv[1:])))
     return ((harness or Path(argv[0]).name) == "claude"
-            and ("--output-format=json" in argv
-                 or ["--output-format", "json"] in map(list, zip(argv, argv[1:]))))
+            and any(f"--output-format={kind}" in argv
+                    or ["--output-format", kind] in pairs
+                    for kind in ("json", "stream-json")))
 
 
 def claude_marked_error(output):
-    try:
-        document = json.loads(output)
-    except ValueError:
-        return False
-    return (isinstance(document, dict) and document.get("type") == "result"
-            and document.get("is_error") is True)
+    chosen = chosen_result(result_documents(output))
+    return (chosen is not None and chosen.get("type") == "result"
+            and chosen.get("is_error") is True)
 
 
 class AgentOutput(str):

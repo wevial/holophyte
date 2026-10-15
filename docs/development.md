@@ -157,6 +157,9 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
+- `holophyte/agents/claude_stream.py` — a streaming Claude turn read line by
+  line, its `result` lines kept, and a turn quiet for `turn_quiet_sec` ended as
+  stalled.
 - `holophyte/review/briefs.py` — the scope, criteria, tests, trim and evidence
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
