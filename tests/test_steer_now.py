@@ -180,7 +180,8 @@ class SteerNowTests(SweepTestCase):
         session = first[first.index("--session-id") + 1]
         *resumed, prompt = self.argv(2)
         self.assertEqual(resumed, ["-p", "--resume", session, "--model", "m1",
-                                   "--effort", "high", "--output-format", "json"])
+                                   "--effort", "high",
+                                   "--output-format", "stream-json", "--verbose"])
         self.assertIn(NOTE, prompt)
         self.assertNotIn("Implement the goal.", prompt)
         self.assertEqual(self.notes(), [(1, self.run_id)])
@@ -236,8 +237,15 @@ class SteerNowTests(SweepTestCase):
                          "the stopped turn reported no session")
 
     def test_a_babysit_fix_turn_is_stopped_and_resumed_carrying_the_note(self):
+        self.assert_fix_turn_resumed_with_the_note(
+            ("verifying", "reviewing", "merge_gate"))
+
+    def test_a_fix_turn_after_a_review_asks_for_changes_is_resumed_with_the_note(self):
+        self.assert_fix_turn_resumed_with_the_note(("verifying", "reviewing"))
+
+    def assert_fix_turn_resumed_with_the_note(self, phases):
         self.claude()
-        for phase in ("verifying", "reviewing", "merge_gate"):
+        for phase in phases:
             store.set_phase(self.conn, self.run_id, phase)
         store.set_pull_request(self.conn, self.run_id,
                                "https://github.com/example/repo/pull/7")

@@ -72,7 +72,7 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(REVIEW_FALLBACK_KEYS) | frozenset(REVIEW_TIER_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
-                  "turn_cap_min",
+                  "turn_cap_min", "turn_quiet_sec",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
                   "implementer_resume", "review_mode", "adversary_credential",
@@ -100,6 +100,7 @@ KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)
 TURN_CAP_MIN = ticket_template.MAX_ESTIMATE_MIN
+TURN_QUIET_SEC = 900
 REVIEW_MODES = ("single", "verified")
 
 

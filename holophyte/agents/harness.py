@@ -68,7 +68,8 @@ class Claude(Adapter):
 
     @staticmethod
     def output_format(role):
-        return ["--output-format", "json"] if role in WRITING_ROLES else []
+        return (["--output-format", "stream-json", "--verbose"]
+                if role in WRITING_ROLES else [])
 
     @staticmethod
     def route(options):
