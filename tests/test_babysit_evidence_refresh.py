@@ -35,6 +35,7 @@ class BabysitEvidenceRefreshTests(cases.BabysitHelpers, MergeModeFixture):
             f"open({str(captures)!r}, 'a').write(head + '\\n')\n"
             "Path(sys.argv[1], head[:12] + '.png').write_bytes(b'png')\n")
         self.configure('[merge]\nmode = "pr"\nui_paths = ["ui/**"]\n'
+                       'covering_fix_rounds = 0\n'
                        f'ui_capture = "{sys.executable} {script}"\n')
         self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
                                        return_value=False))
@@ -68,6 +69,7 @@ class BabysitEvidenceRefreshTests(cases.BabysitHelpers, MergeModeFixture):
             f"open({str(self.captures)!r}, 'a').write(head + '\\n')\n"
             + capture.replace("PR_BODY", repr(str(self.pr_body))))
         self.configure('[merge]\nmode = "pr"\nui_paths = ["ui/**"]\n'
+                       'covering_fix_rounds = 0\n'
                        f'ui_capture = "{sys.executable} {script}"\n')
         self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
                                        return_value=False))
