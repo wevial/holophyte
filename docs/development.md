@@ -547,6 +547,11 @@ Each module, one line:
   rounds per babysit, up to `[merge] check_fix_rounds`: the brief with each
   failed Actions job's failure lines and log tail, the round's event and
   ledger line, and the park on a repeated failure or spent rounds.
+- `holophyte/babysit/capture_fix.py` — the capture fix round before the
+  covering review of a babysit fix whose capture from a local spec failed,
+  up to `[merge] capture_fix_rounds`: the brief with the missing views,
+  failing lines and capture log tail, the round's event and ledger line, the
+  capture again at the round's head, and the park when it still fails.
 - `holophyte/babysit/check_failures.py` — a job log's failure lines (test
   failure headers and error lines), their normalized signature, and the
   test whether a red read repeats a failure an earlier round was handed.
