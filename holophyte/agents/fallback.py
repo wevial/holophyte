@@ -1,6 +1,7 @@
 import json
 import threading
 
+from holophyte.agents.agent_output import AgentOutput
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.probes import (
     container_fallback_profile,
@@ -41,6 +42,14 @@ def failed_turn(output):
     return (getattr(output, "timed_out", False)
             or getattr(output, "is_error", False)
             or getattr(output, "exit_code", None) != 0)
+
+
+def failure_line(output):
+    if isinstance(output, AgentOutput) and failed_turn(output):
+        return (outage_reason(output.command, output)
+                or ("timed out" if output.timed_out
+                    else f"exit status {output.exit_code}"))
+    return None
 
 
 def record_pending_switch(project, role, conn, run_id):
