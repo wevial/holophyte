@@ -178,6 +178,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
 
     def test_conflict_covering_review_and_park_steps(self):
         review = self.conflict_refusal(conflict=True)
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         self.loop(self.ratchet_work(), review, Idle(""),
                   Commit("Resolve main", path="tests/test_file_sizes.py",
                          body="branch's line\nmain's line\n"), REQUEST_CHANGES,
@@ -529,6 +530,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
 
     def test_rejected_resume_exhausts_fix_allowance_and_parks_with_findings(self):
         self.rejected_resume_with_stale_approval()
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         review = cases.SpentCapReview(self.db, REQUEST_CHANGES)
         fake, _ = self.loop(review, Commit("attempt review fix"), REQUEST_CHANGES,
                             provider=self.provider())
@@ -542,7 +544,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
     def test_a_wake_on_bot_status_comments_alone_runs_no_fix_turn(self):
         import store
         from holophyte.host import reconcile
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
@@ -570,7 +572,7 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertIn("asked for changes", self.question())
 
     def test_explicit_approval_of_rejected_candidate_skips_review(self):
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),

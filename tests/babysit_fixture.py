@@ -206,11 +206,12 @@ class BabysitHelpers:
         return old, fake, naps
 
     def resume_rejected_fix(self):
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""),
                   Reply("THREAD 1: ADDRESS -- a real crash"), Commit("thread fix"),
                   REQUEST_CHANGES, provider=self.provider())
+        self.configure('[merge]\nmode = "pr"\n')
         for path in self.api_dir.iterdir():
             path.unlink()
         # Supervisor context remains available to re-review fix rounds.

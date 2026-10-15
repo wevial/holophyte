@@ -399,7 +399,7 @@ class MergeConfigTests(ConfigTestCase):
         self.assertTrue(config.strip_attribution)
         self.assertEqual(config[1:],
                          ("auto", "local", 5, 10, "merge", 180, 300, 1800, 600, False,
-                          900, True, "", False, False, False,
+                          900, True, "", False, False, 2, False,
                           (), "", "e2e/capture", False, False, "", None, 10, 20,
                           "park", "act", (), "holophyte", (), (),
                           ("devin-ai-integration", "coderabbitai", "greptile-apps",
@@ -560,6 +560,7 @@ class MergeConfigTests(ConfigTestCase):
                           ("pr_style = true", "pr_style"),
                           ('pr_quiet_sec = "300"', "pr_quiet_sec"),
                           ("pr_quiet_sec = -1", "pr_quiet_sec"),
+                          ("covering_fix_rounds = -1", "covering_fix_rounds"),
                           ('human_threads = "reply"', "human_threads"),
                           ('bot_authors = "x"', "bot_authors"),
                           ('bot_authors = [1]', "bot_authors"),

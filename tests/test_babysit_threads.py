@@ -520,7 +520,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
 
     def test_human_review_fixes_rejection_parks_without_approval(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
-                       'review_fixes = true\n')
+                       'review_fixes = true\ncovering_fix_rounds = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
         fake, _ = self.loop(
             Commit("the scripted work"), APPROVE, Idle(""),
@@ -638,7 +638,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
 
     def test_a_fix_round_the_reviewer_rejects_parks_instead_of_merging(self):
         """An initial PR pass rejection parks; only a resume gets the allowance."""
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
 
@@ -786,12 +786,14 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
 
     def test_babysit_second_rejection_parks_without_another_fix(self):
         self.resume_rejected_fix()
-        fake, _ = self.loop(REQUEST_CHANGES, Commit("review fix"), REQUEST_CHANGES,
+        cited = Reply("Blocker: src/loader.py:4 drops the empty-input default.\n"
+                      "VERDICT: REQUEST_CHANGES")
+        fake, _ = self.loop(cited, Commit("review fix"), cited,
                             provider=self.provider())
         self.assertEqual(fake.roles, ["review", "implement", "review"])
         self.assertFalse([v for kind, v in self.api_calls() if kind == "merge"])
         self.assertIn("the review of the fix at "
-                      + fake.turns[2].candidate_sha[:12] + " asked for changes",
+                      + fake.turns[2].candidate_sha[:12] + " repeated its findings",
                       self.question())
 
     def test_a_description_only_finding_rewrites_the_text_and_reviews_again(self):
@@ -905,7 +907,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                      "**P1 Empty input crashes the parser**\n"):
             with self.subTest(code=code):
                 self.setUp()
-                self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
+                self.configure('[merge]\nmode = "pr"\napprove = "auto"\n'
+                               'covering_fix_rounds = 0\n')
                 self.fake_route(states=[self.pr_state([self.DEFECT]), self.pr_state()])
                 mixed = Reply(described + code + "CRITERION 1: met —"
                               " tests/test_thing.py::test_it_works\n"
@@ -920,7 +923,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                 self.assertIn(code.strip(), self.question())
 
     def test_the_review_of_a_fix_is_held_to_the_criteria(self):
-        self.configure('[merge]\nmode = "pr"\n')
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state()])
 

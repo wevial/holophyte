@@ -725,6 +725,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
         self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.project.config_path.write_text(
             '[merge]\nmode = "pr"\napprove = "auto"\nui_paths = ["ui/**"]\n'
+            'covering_fix_rounds = 0\n'
             f"ui_capture = '{shlex.join([sys.executable, str(script)])}'\n"
             "ui_capture_local = true\n")
         self.conn = open_store(self.project)

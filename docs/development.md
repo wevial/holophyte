@@ -527,6 +527,10 @@ Each module, one line:
   `[merge] retrigger_missing_checks`, and the park naming them (KO-652).
 - `holophyte/babysit/check_fix.py` — a red check's one fix turn per babysit: the
   brief with each failed Actions job's log tail, and the park otherwise.
+- `holophyte/babysit/covering_fix.py` — what follows a covering review of a
+  babysit fix that asks for changes: the operator note's fix, an automatic
+  fix round with the review's findings as the note, or the park when the
+  findings repeat or `[merge] covering_fix_rounds` is spent.
 - `holophyte/babysit/description_review.py` — a covering review whose every
   blocker is tagged `path: "PR description"`: the description rewritten with
   those findings as input before the same commit is reviewed once more.
