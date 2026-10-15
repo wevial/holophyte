@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit --noUnusedLocals --noUnusedParameters --noFallthroughCasesInSwitch"
   },
   "dependencies": {
+    "@tanstack/react-query": "5.104.2",
     "@tanstack/react-router": "1.170.44",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

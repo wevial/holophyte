@@ -23,9 +23,10 @@ export function stubFetch(bodies: { status: Status; attention: Attention }): Fet
   };
 }
 
-/** A daemon a multi-daemon stub answers for: its bodies, or `down` with
- *  the error every request to it rejects with. */
-export type StubDaemon = { status: Status; attention: Attention } | { down: Error };
+/** A daemon a multi-daemon stub answers for: its bodies, as either
+ *  contract types them, or `down` with the error every request to it
+ *  rejects with. */
+export type StubDaemon = { status: object; attention: object } | { down: Error };
 
 /** A `fetch` for several daemons keyed by base URL: `/peers` from the
  *  origin names every other base, and each base answers its own bodies
