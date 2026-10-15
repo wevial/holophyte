@@ -1,5 +1,5 @@
 import { formatAge, formatClock, formatSpan } from "./format";
-import { agentMs } from "./runs";
+import { agentMs, runKey } from "./runs";
 import type { AttentionItem, Run, Status } from "./types";
 
 /** The item kinds `/attention` sends today (holophyte/serve/server.py `attention()`),
@@ -492,4 +492,30 @@ export function splitPullRequests(items: AttentionItem[]): { needsYou: Attention
     needsYou: items.filter(item => item.kind !== "pr_open"),
     pullRequests: items.filter(item => item.kind === "pr_open"),
   };
+}
+
+/** Whether a pull request park waits only on the maintainer's merge, by
+ *  `runKey` of the item's `daemon` and `run`. */
+export type ReadinessMap = ReadonlyMap<string, { ready: boolean }>;
+
+/** One Needs you entry: a band entry, and whether it is a pull request
+ *  ready to merge. */
+export interface NeedsYouEntry extends BandEntry {
+  readyToMerge: boolean;
+}
+
+function readyToMerge(item: AttentionItem, readiness: ReadinessMap): boolean {
+  const daemon = str(item.daemon);
+  const run = num(item.run);
+  if (item.park_kind !== "pull_request" || daemon == null || run == null) return false;
+  return readiness.get(runKey(daemon, run))?.ready === true;
+}
+
+/** What needs you in the new console: every item but a pull request park,
+ *  save a `pull_request` park `readiness` holds ready, with each ticket's
+ *  failed attempts as one entry, longest-waited first. */
+export function needsYouEntries(items: AttentionItem[], readiness: ReadinessMap, now: number): NeedsYouEntry[] {
+  const kept = items.filter((item) => item.kind !== "pr_open" || readyToMerge(item, readiness));
+  const entries = collapseFailed(kept).map((entry) => ({ ...entry, readyToMerge: entry.item.kind === "pr_open" }));
+  return orderByAge(entries, (entry) => ageOf(entry.item, now));
 }

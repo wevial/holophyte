@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { countsByKind, describe } from "../src/lib/attention";
+import { countsByKind, describe, needsYouEntries, type ReadinessMap } from "../src/lib/attention";
+import { runKey } from "../src/lib/runs";
 import type { Attention, Status } from "../src/lib/types";
 import { fixture } from "./harness";
 
@@ -69,4 +70,47 @@ test("newer-daemon fields show only when present", () => {
 
 test("the fixture's counts are one per kind", () => {
   expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, paused: 0, stale_run: 1, failed: 1, stuck_wait: 0, supervisor: 1, unreachable: 0 });
+});
+
+const HOUR = 3_600_000;
+const NOW = 100 * HOUR;
+const DAEMON = "writer-host:7710";
+const needsYouItems = [
+  { kind: "pr_open", level: "attention", daemon: DAEMON, ticket: "DEMO-8", run: 8, park_kind: "ci", asked_ms: NOW - 4 * HOUR },
+  { kind: "blocked", level: "attention", daemon: DAEMON, ticket: "DEMO-4", run: 4, asked_ms: NOW - 2 * HOUR },
+  { kind: "failed", level: "attention", daemon: DAEMON, ticket: "DEMO-11", run: 12, ended_ms: NOW - HOUR },
+  { kind: "stale_run", level: "attention", daemon: DAEMON, ticket: "DEMO-3", run: 3, heartbeat_age_ms: 20 * 60_000 },
+  { kind: "pr_open", level: "attention", daemon: DAEMON, ticket: "DEMO-9", run: 9, park_kind: "pull_request", asked_ms: NOW - 90 * 60_000 },
+  { kind: "failed", level: "attention", daemon: DAEMON, ticket: "DEMO-11", run: 11, ended_ms: NOW - 5 * HOUR },
+  { kind: "unreachable", level: "critical", daemon: "writer-host:7711", asked_ms: NOW - 3 * HOUR },
+];
+const shape = (map: ReadinessMap) =>
+  needsYouEntries(needsYouItems, map, NOW).map((entry) => ({
+    kind: entry.item.kind,
+    ticket: entry.item.ticket ?? null,
+    run: entry.item.run ?? null,
+    attempts: entry.attempts?.map((attempt) => attempt.run),
+    readyToMerge: entry.readyToMerge,
+  }));
+
+test("needs you keeps every item but a pull request park, one entry per failed ticket, longest-waited first", () => {
+  expect(shape(new Map())).toEqual([
+    { kind: "unreachable", ticket: null, run: null, attempts: undefined, readyToMerge: false },
+    { kind: "blocked", ticket: "DEMO-4", run: 4, attempts: undefined, readyToMerge: false },
+    { kind: "failed", ticket: "DEMO-11", run: 12, attempts: [11, 12], readyToMerge: false },
+    { kind: "stale_run", ticket: "DEMO-3", run: 3, attempts: undefined, readyToMerge: false },
+  ]);
+});
+
+test("needs you keeps a pull_request park only while its run is ready to merge, and never a ci park", () => {
+  const ready = new Map([[runKey(DAEMON, 8), { ready: true }], [runKey(DAEMON, 9), { ready: true }]]);
+  expect(shape(ready).map((entry) => [entry.ticket, entry.readyToMerge])).toEqual([
+    [null, false],
+    ["DEMO-4", false],
+    ["DEMO-9", true],
+    ["DEMO-11", false],
+    ["DEMO-3", false],
+  ]);
+  const notReady = new Map([[runKey(DAEMON, 8), { ready: true }], [runKey(DAEMON, 9), { ready: false }]]);
+  expect(shape(notReady).map((entry) => entry.ticket)).toEqual([null, "DEMO-4", "DEMO-11", "DEMO-3"]);
 });
