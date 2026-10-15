@@ -156,6 +156,13 @@ class PathWordTests(RepoCase):
             "Given `web/src/page-swap.ts` (new), then it swaps")
         self.assertEqual(self.findings(body), ([], []))
 
+    def test_a_trailing_new_directory_declares_its_children_new(self):
+        for spelled in ("holophyte/newpkg", "holophyte/newpkg/"):
+            body = criteria_body(
+                f"Given `{spelled}` (new directory), then it holds"
+                " `holophyte/newpkg/tool.py`")
+            self.assertEqual(self.findings(body), ([], []), spelled)
+
     def test_new_inside_other_parentheses_declares_nothing(self):
         body = criteria_body(
             "Given `web/src/other.ts` (see the new build), then it works")
