@@ -13,7 +13,6 @@ import {
   OverviewIcon,
   RunsIcon,
   SignalIcon,
-  SunIcon,
   TicketsIcon,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -79,9 +78,9 @@ function ThemeToggle({ folded }: { folded: boolean }) {
         applyTheme(other);
         setStored(other);
       }}
-      className="flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule px-3 text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink"
+      className="flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink"
     >
-      {theme === "dark" ? <MoonIcon /> : <SunIcon />}
+      <MoonIcon />
       {!folded && <span>{name}</span>}
     </button>
   );
@@ -157,12 +156,12 @@ export function Sidebar() {
     <aside
       aria-label="Console"
       data-folded={folded}
-      className={`flex w-full shrink-0 flex-col border-b border-rule bg-canvas min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-r min-[720px]:border-b-0 ${
+      className={`flex w-full shrink-0 flex-col border-b border-rule-2 bg-canvas min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-r min-[720px]:border-b-0 ${
         folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
       <div
-        className={`flex shrink-0 items-center border-b border-rule ${
+        className={`flex shrink-0 items-center border-b border-rule-2 ${
           folded ? "flex-col justify-center py-2" : "h-[60px] justify-between pl-4"
         }`}
       >
@@ -189,13 +188,13 @@ export function Sidebar() {
 
       <ProjectSwitcher folded={folded} />
 
-      <nav aria-label="Pages" className="flex flex-col py-3">
+      <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
         {PAGES.map((page) => (
           <PageLink key={page.to} {...page} badge={page.to === "/" ? needs : 0} folded={folded} />
         ))}
       </nav>
 
-      <footer className={`mt-auto flex flex-col gap-2 border-t border-rule py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
+      <footer className={`mt-auto flex flex-col gap-2 border-t border-rule-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
         <p className="flex min-w-0 items-center gap-1 font-mono text-[11px] tracking-[-0.02em] whitespace-nowrap text-ink-3" title={folded ? polled : undefined}>
           <SignalIcon className={failing ? "text-bad" : "text-live"} />
           {!folded && <span className="truncate">{polled}</span>}
