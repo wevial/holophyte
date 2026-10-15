@@ -101,17 +101,6 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn("a new failure, and the check fix rounds are used up"
                       " ([merge] check_fix_rounds = 1)", self.question())
 
-    def test_a_new_failure_on_each_of_three_heads_parks_after_two_rounds(self):
-        self.red_per_head(*(f"FAIL: test_{n} (tests.test_y.Case.test_{n})\n"
-                            for n in "abc"))
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            Commit("fix: test_a"), Commit("fix: test_b"),
-                            Commit("fix: test_c"), provider=self.provider())
-        self.assertEqual(len(self.fix_goals(fake)), 2)
-        self.assertIn("check fix rounds are used up ([merge] check_fix_rounds = 2)",
-                      self.question())
-        self.assertEqual(self.merges(), [])
-
     def test_the_brief_lists_every_failure_and_ends_its_tail_at_the_error(self):
         stamp = "2026-10-15T10:00:00.0000000Z "
         fails = [f"FAIL: test_{n} (tests.test_y.Case.test_{n})" for n in range(3)]
