@@ -4,8 +4,44 @@ import { Btn } from "../../src/next/components/Btn";
 import { Section } from "../../src/next/components/Section";
 import { StageChip } from "../../src/next/components/StageChip";
 import { StateDot } from "../../src/next/components/StateDot";
+import { STATES, type State } from "../../src/next/state";
 
 afterEach(cleanup);
+
+const sheet = new DOMParser().parseFromString(
+  await Bun.file(new URL("../../design/Comp-Cells.dc.html", import.meta.url)).text(),
+  "text/html",
+);
+const themeCss = await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text();
+const GEOMETRY = ["d", "cx", "cy", "r", "x", "y", "width", "height", "pathLength", "stroke-dasharray"];
+
+function shapes(svg: Element) {
+  return [...svg.children].map((shape) => [
+    shape.tagName.toLowerCase(),
+    ...GEOMETRY.map((name) => shape.getAttribute(name)),
+  ]);
+}
+
+test("each StateDot on the State icons sheet's Run states grid draws that cell's glyph", () => {
+  const cells = [...sheet.querySelectorAll('section[aria-label="Run states"] > div')];
+  expect(cells.length).toBe(12);
+  const byWord = new Map(Object.entries(STATES).map(([state, { word }]) => [word, state as State]));
+  for (const cell of cells) {
+    const word = cell.querySelector("svg + div > div")!.textContent!;
+    const state = byWord.get(word);
+    expect(state, word).toBeDefined();
+    const { container } = render(<StateDot state={state!} />);
+    expect(shapes(container.querySelector("svg")!), word).toEqual(shapes(cell.querySelector("svg")!));
+    cleanup();
+  }
+  const glyph = (state: State) => render(<StateDot state={state} />).container.querySelector("svg")!;
+  const merged = glyph("merged");
+  expect(merged.querySelector("circle")!.getAttribute("fill")).toBe("currentColor");
+  const running = glyph("running");
+  expect(running.querySelector("circle")!.getAttribute("fill")).toBeNull();
+  expect(running.querySelector("path")!.getAttribute("fill")).toBe("currentColor");
+  expect(glyph("stale").querySelector("circle")).toBeNull();
+});
 
 test("a StateDot with its word hidden keeps the word as its accessible name and hides its icon", () => {
   render(<StateDot state="on_ci" hideWord />);
@@ -62,4 +98,31 @@ test("a StageChip reads the review round against its cap, and a merge gate with 
   );
   expect(reviewing.textContent).toBe("reviewing · round 2 of 3");
   expect(gate.textContent).toBe("monitoring PR");
+});
+
+test("disabled and busy buttons keep their own variant's edge, and a disabled one is at half opacity", () => {
+  const style = document.createElement("style");
+  style.textContent = themeCss.replace(/@import[^;]*;/, "");
+  document.head.appendChild(style);
+  try {
+    const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    for (const [variant, edge] of [["primary", "--act"], ["quiet", "--ink-3"], ["danger", "--bad"]] as const) {
+      const colour = token(edge);
+      render(
+        <>
+          <Btn variant={variant} disabled>Off</Btn>
+          <Btn variant={variant} busy>On</Btn>
+        </>,
+      );
+      const disabled = getComputedStyle(screen.getByRole("button", { name: "Off" }));
+      const busy = getComputedStyle(screen.getByRole("button", { name: "On" }));
+      expect(disabled.boxShadow, variant).toBe(`inset 0 0 0 1px ${colour}`);
+      expect(disabled.opacity, variant).toBe("0.5");
+      expect(busy.getPropertyValue("--btn-edge").trim(), variant).toBe(colour);
+      expect(busy.color, variant).toBe(colour);
+      cleanup();
+    }
+  } finally {
+    style.remove();
+  }
 });
