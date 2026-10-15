@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Run stage</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+.t-night{color-scheme:dark;--ask:#f0cf62;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--need:#f5a3c7;--live:#86d993;--wait:#aaa7ec;--bad:#ff7b72;--done:#7b84a1}
+.t-dawn{color-scheme:light;--ask:#8a6500;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--need:#b02f6b;--live:#1f7a35;--wait:#5653a6;--bad:#c0321f;--done:#8b90a8}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live)}
+svg:has(> path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]) > circle{fill:var(--live);stroke:var(--live)}
+path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]{stroke:var(--canvas);stroke-width:1.8}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ants-r{fill:none;stroke:var(--wait);stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important}}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1280px; height: 780px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · run page</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Run stage</h2>
+</div>
+
+<section aria-label="Stage chip states" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 20px; padding: 22px 24px; background: var(--paper); border: 1px solid var(--rule); font: 500 12.5px/1.3 'IBM Plex Mono', ui-monospace, monospace; white-space: nowrap">
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>Implement · turn 1<span style="color: var(--ink-3); font-weight: 400">· 6m</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>Verify · test_sweep<span style="color: var(--ink-3); font-weight: 400">· 1m</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>Review · round 2 of 3<span style="color: var(--ink-3); font-weight: 400">· 2m</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4"></path><path d="M3.2 2.6v2.6h2.6"></path></svg>Back to implement<span style="color: var(--ink-3); font-weight: 400">· after round 1</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--wait)"><rect class="ants-r" x="1.5" y="1.5" width="13" height="13" pathLength="16" style="stroke-width: 1.4"></rect><path d="M8 4.8V8l2.3 1.6"></path></svg>On CI · PR #524<span style="color: var(--ink-3); font-weight: 400">· 3 of 4 passed</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>Ready for your merge<span style="color: var(--ink-3); font-weight: 400">· PR #521</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ask)"><circle cx="8" cy="8" r="6.5"></circle><path d="M6.6 5.6v4.8M9.4 5.6v4.8"></path></svg>Paused in review<span style="color: var(--ink-3); font-weight: 400">· by you</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--bad)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>Failed at verify<span style="color: var(--ink-3); font-weight: 400">· 2 tests red</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg>Stale in implement<span style="color: var(--ink-3); font-weight: 400">· no beat 15m</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--wait)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg>Queued<span style="color: var(--ink-3); font-weight: 400">· next free worker</span></span>
+<span style="justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.2 8.3 7.2 10.3 10.9 6.3"></path></svg>Merged<span style="color: var(--ink-3); font-weight: 400">· 7b1c0f2</span></span>
+</section>
+
+<section aria-label="Stage on the run page" style="display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; padding: 22px 24px; background: var(--paper); border: 1px solid var(--rule)">
+<div>
+<div class="label">Progress · the history shows each loop</div>
+<div style="margin-top: 12px; font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace">
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:39</time><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg><span style="color: var(--ink-2)">Implement · turn 1</span></div>
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:44</time><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><span style="color: var(--ink-2)">Verify passed · test_sweep 8 OK</span></div>
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:45</time><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--bad)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg><span style="color: var(--ink-2)">Review round 1 · changes requested · 1 P1</span></div>
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:45</time><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4"></path><path d="M3.2 2.6v2.6h2.6"></path></svg><span style="color: var(--ink)">Back to implement · turn 2</span></div>
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:49</time><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><span style="color: var(--ink-2)">Verify passed · PR #524 opened as a draft</span></div>
+<div style="display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:50</time><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg><span style="color: var(--ink-2)">Review round 2 started</span></div>
+</div>
+</div>
+<div>
+<div class="label">In Details · shadow as one line</div>
+<p style="margin: 12px 0 0; font: 400 12.5px/1.6 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Shadow run · claude sonnet · verify passed · +71 −8 · compared at review</p>
+<div class="label" style="margin-top: 22px">On the run page</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px"><span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Stage</span><span style="display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper-2); font: 500 12.5px/1.3 'IBM Plex Mono', ui-monospace, monospace; white-space: nowrap"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>Review · round 2 of 3<span style="color: var(--ink-3); font-weight: 400">· 1 loop back</span></span></div>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1280,"height":780}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>
