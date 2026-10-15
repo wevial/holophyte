@@ -82,6 +82,10 @@ def contract_answers(case):
         park_run(conn, reviewed, "awaiting_merge_approval", "PR open\nAwaiting review",
                  candidate_sha="b" * 40, pr_url="https://github.com/example/repo/pull/10",
                  park_kind="pull_request", now=NOW - 30_000)
+        conn.execute(
+            "UPDATE runs SET workingMs = NULL, verifyMs = NULL WHERE id = ?",
+            (unestimated_run,))
+        conn.commit()
     case.null_host(unestimated_run)
     target = Project.locate(case.target)
     answers = {}

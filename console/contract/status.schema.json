@@ -269,7 +269,14 @@
           "type": "integer"
         },
         "working_ms": {
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "work_started_ms": {
           "anyOf": [
@@ -282,10 +289,24 @@
           ]
         },
         "agent_ms": {
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "verify_ms": {
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "run_count": {
           "type": "integer"

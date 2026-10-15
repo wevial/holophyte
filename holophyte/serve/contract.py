@@ -68,10 +68,10 @@ class StatusRun(TypedDict):
     started_ms: int
     heartbeat_age_ms: int
     elapsed_ms: int
-    working_ms: int
+    working_ms: int | None
     work_started_ms: int | None
-    agent_ms: int
-    verify_ms: int
+    agent_ms: int | None
+    verify_ms: int | None
     run_count: int
     verify_started_ms: int | None
     time_box_ms: int | None
