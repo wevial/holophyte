@@ -147,7 +147,7 @@ test("a host daemon that answered with no projects draws the heading and a zero 
 });
 
 const classes = (element: Element | null | undefined) => element?.getAttribute("class")?.split(/\s+/) ?? [];
-const sectionCount = (name: string) => section(name).querySelector("header > span")!;
+const sectionCount = (name: string) => section(name).querySelector("h2 > span")!;
 
 test("the heading is the board's 20 px Archivo 600 title in a header closed by an 18 px pad and a rule hairline", async () => {
   await mount("#/", busy);
@@ -184,6 +184,20 @@ test("the count line sets each number in --ink at weight 600 and its words in --
   const separators = [...line.children].filter((child) => child.textContent === " · ");
   expect(separators).toHaveLength(3);
   for (const separator of separators) expect(classes(separator)).toContain("text-ink-3");
+});
+
+test("a section heading is the board's chevron, 19 px Archivo 700 name, mono count and mono summary over no rule", async () => {
+  await mount("#/", busy);
+  const header = section("Needs you").querySelector("header")!;
+  const name = within(header).getByRole("button", { name: "Needs you" });
+  expect(name.querySelector("svg[data-chevron]")).toBeTruthy();
+  expect(classes(name)).toEqual(expect.arrayContaining(["font-sans", "text-[19px]", "font-bold", "text-ink"]));
+  expect(sectionCount("Needs you").textContent).toBe("3");
+  expect(classes(sectionCount("Needs you"))).toEqual(expect.arrayContaining(["font-mono", "text-need"]));
+  const summary = within(header).getByText(/^oldest waiting /);
+  expect(classes(summary)).toEqual(expect.arrayContaining(["font-mono", "text-ink-3"]));
+  expect(classes(header).filter((name) => name.startsWith("border"))).toEqual([]);
+  expect(header.nextElementSibling!.id).toBe(name.getAttribute("aria-controls")!);
 });
 
 test("the Needs you count is --need above zero and every other count, or a zero Needs you, is --ink-3", async () => {

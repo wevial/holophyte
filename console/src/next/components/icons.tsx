@@ -138,3 +138,23 @@ export function DropIcon() {
     </Stroke>
   );
 }
+
+export function FoldChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      data-chevron
+      className={`size-3.5 shrink-0 text-ink-3 transition-transform duration-150 group-hover:text-ink ${open ? "rotate-90" : ""}`}
+    >
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  );
+}
