@@ -12,7 +12,7 @@ from holophyte.review.reply_parsing import (
 DESCRIPTION_SUBJECT_RE = re.compile(
     r'^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:\[\s*(?:p[0-3]|nit|blocker|major|minor)'
     r'\s*\]\s*)?(?:(?:p[0-3]|nit|blocker|major|minor)\b'
-    r'[^\w(\n]*)?[(\[]?\s*path:\s*"?(?:the\s+)?PR description\b', re.I)
+    r'[^\w(\n]*)?[(\[]?\s*path:\s*"PR description"', re.I)
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 

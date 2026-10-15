@@ -56,5 +56,13 @@ class DescriptionFindingsTests(unittest.TestCase):
             f"{bracketed}\n- [P2] src/app.py:3 drops the tab target.{TAIL}",
             "REQUEST_CHANGES", []), [])
 
+    def test_a_code_path_beginning_with_the_tag_subject_is_a_code_finding(self):
+        for code in ('- [P2] path: "PR description.py":3 — load() crashes.',
+                     '- [P2] path: "PR descriptions/app.py":3 — it crashes.'):
+            with self.subTest(code=code):
+                self.assertEqual(description_findings(
+                    f"{code}{TAIL}", "REQUEST_CHANGES", []), [])
+
+
 if __name__ == "__main__":
     unittest.main()
