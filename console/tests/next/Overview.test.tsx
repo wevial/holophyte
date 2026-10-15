@@ -214,6 +214,8 @@ test("the Needs you count is --need above zero and every other count, or a zero 
   expect(sectionCount("Needs you").textContent).toBe("0");
   expect(classes(sectionCount("Needs you"))).toContain("text-ink-3");
   expect(classes(sectionCount("Needs you"))).not.toContain("text-need");
+  expect(classes(sectionCount("Running"))).toContain("text-ink-3");
+  expect(classes(sectionCount("Running"))).not.toContain("text-need");
 });
 
 test("an empty section's sentence draws no border of its own, and the sections stand the board's 44 px apart", async () => {
