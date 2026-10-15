@@ -7,8 +7,7 @@ import type { ContractBodies } from "./fleet";
 
 type Host = HostRecord<ContractBodies>;
 
-const SHORT_SHA = 7;
-const short = (sha: string | null | undefined) => (sha == null ? "unknown" : sha.slice(0, SHORT_SHA));
+const short = (sha: string | null | undefined) => (sha == null ? "unknown" : sha.slice(0, 7));
 
 export interface StaleConsole {
   title: string;
@@ -83,8 +82,7 @@ const answeringOf = (hosts: Host[]) => {
 };
 
 function sweepPart(hosts: Host[], now: number): FooterLine["tail"] {
-  const rooted = hosts.filter((host) => host.host_status != null);
-  const host = rooted.reduce<Host | null>((newest, record) => ((newest?.seen_ms ?? -1) >= (record.seen_ms ?? -1) ? newest : record), null);
+  const host = hosts.filter((record) => record.host_status != null).reduce<Host | null>((newest, record) => ((newest?.seen_ms ?? -1) >= (record.seen_ms ?? -1) ? newest : record), null);
   if (!host) {
     const polled = oldestPoll(hosts);
     return polled == null ? null : { text: `polled ${formatAge(Math.max(0, now - polled))} ago`, bad: false };
