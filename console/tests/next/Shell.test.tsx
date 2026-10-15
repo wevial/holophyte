@@ -12,8 +12,10 @@ const PEER = "http://writer-host:7711";
 const working = await fixture<Status>("working.json");
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
 
-const device = (window as unknown as { happyDOM: { settings: { device: { prefersColorScheme: string } } } })
-  .happyDOM.settings.device;
+const happyDOM = (window as unknown as {
+  happyDOM: { settings: { device: { prefersColorScheme: string } }; setViewport: (viewport: { width: number }) => void };
+}).happyDOM;
+const device = happyDOM.settings.device;
 
 const statusOf = (project: string): Status => ({ ...working, host: "writer-host", project });
 const attentionOf = (items: AttentionItem[]): Attention => ({ level: items.length ? "attention" : "none", now: 0, items });
@@ -134,6 +136,20 @@ test("the theme toggle follows a dark system preference, then stores and stamps 
   expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   expect(localStorage.getItem(THEME_KEY)).toBe("light");
   expect(screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" }).textContent).toBe("Dawn");
+});
+
+test("with no stored choice the toggle follows a later system preference change", async () => {
+  await mount("#/");
+  expect(screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" })).toBeTruthy();
+  device.prefersColorScheme = "dark";
+  try {
+    act(() => happyDOM.setViewport({ width: 1000 }));
+    fireEvent.click(screen.getByRole("button", { name: "Colour theme: night. Switch to dawn" }));
+    expect(localStorage.getItem(THEME_KEY)).toBe("light");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  } finally {
+    happyDOM.setViewport({ width: 1024 });
+  }
 });
 
 test("the footer names the host and how long ago it was polled, and reads polling before any answer", async () => {

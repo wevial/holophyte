@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { formatDuration } from "../../lib/format";
 import { groupByHost, hostItems } from "../../lib/hosts";
@@ -44,16 +44,27 @@ function writeFolded(folded: boolean): void {
 
 type Shown = "light" | "dark";
 
-function shownTheme(): Shown {
-  const stored = readTheme();
-  if (stored !== "system") return stored;
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+function systemDark(): boolean {
+  return window.matchMedia?.(DARK_QUERY).matches ?? false;
 }
 
 const THEME_NAMES: Record<Shown, string> = { light: "Dawn", dark: "Night" };
 
 function ThemeToggle({ folded }: { folded: boolean }) {
-  const [theme, setTheme] = useState<Shown>(shownTheme);
+  const [stored, setStored] = useState(readTheme);
+  const [dark, setDark] = useState(systemDark);
+  useEffect(() => {
+    if (stored !== "system") return;
+    const query = window.matchMedia?.(DARK_QUERY);
+    if (!query) return;
+    const follow = () => setDark(query.matches);
+    follow();
+    query.addEventListener("change", follow);
+    return () => query.removeEventListener("change", follow);
+  }, [stored]);
+  const theme: Shown = stored === "system" ? (dark ? "dark" : "light") : stored;
   const other: Shown = theme === "dark" ? "light" : "dark";
   const name = THEME_NAMES[theme];
   return (
@@ -64,7 +75,7 @@ function ThemeToggle({ folded }: { folded: boolean }) {
       onClick={() => {
         writeTheme(other);
         applyTheme(other);
-        setTheme(other);
+        setStored(other);
       }}
       className="flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule px-3 text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink"
     >

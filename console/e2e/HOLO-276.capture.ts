@@ -27,6 +27,9 @@ test("the new console's shell: sidebar, rail, narrow layout and a scoped route",
   await expect(page.getByRole("complementary", { name: "Console" })).toHaveCSS("width", "390px");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: path.join(out, "04-shell-390.png"), fullPage: true });
+  await page.goto(`/next.html#/runs?project=${"a".repeat(200)}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Runs" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/next.html#/runs?project=demo");
