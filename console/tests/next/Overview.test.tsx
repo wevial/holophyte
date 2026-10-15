@@ -145,3 +145,72 @@ test("a host daemon that answered with no projects draws the heading and a zero 
   expect(heading()).toBe("Nothing needs you.");
   expect(countLine()).toBe("0 running · 0 open PRs · 0 queued · 0 merged today");
 });
+
+const classes = (element: Element | null | undefined) => element?.getAttribute("class")?.split(/\s+/) ?? [];
+const sectionCount = (name: string) => section(name).querySelector("header > span")!;
+
+test("the heading is the board's 20 px Archivo 600 title in a header closed by an 18 px pad and a rule hairline", async () => {
+  await mount("#/", busy);
+  const h1 = screen.getByRole("heading", { level: 1 });
+  expect(classes(h1)).toEqual(expect.arrayContaining(["font-sans", "text-[20px]", "font-semibold", "text-ink"]));
+  expect(classes(h1)).not.toContain("text-[32px]");
+  expect(classes(h1)).not.toContain("font-bold");
+  expect(classes(h1.parentElement)).toEqual(expect.arrayContaining(["pb-[18px]", "border-b", "border-rule"]));
+  expect(h1.parentElement!.contains(document.querySelector("[data-count-line]"))).toBe(true);
+  const number = within(h1).getByText("3");
+  expect(classes(number)).toContain("text-need");
+});
+
+test("at zero the heading draws Nothing in --live and leaves needs you. in the heading's ink", async () => {
+  await mount("#/", fleet({ items: [] }, { items: [] }));
+  const h1 = screen.getByRole("heading", { level: 1 });
+  expect(h1.textContent).toBe("Nothing needs you.");
+  const nothing = within(h1).getByText("Nothing");
+  expect(nothing).not.toBe(h1);
+  expect(classes(nothing)).toContain("text-live");
+  const rest = [...h1.childNodes].filter((node) => node !== nothing);
+  expect(rest.map((node) => node.nodeType)).toEqual(rest.map(() => Node.TEXT_NODE));
+  expect(classes(h1)).toContain("text-ink");
+});
+
+test("the count line sets each number in --ink at weight 600 and its words in --ink-2", async () => {
+  await mount("#/", busy);
+  const line = document.querySelector("[data-count-line]")!;
+  expect(line.textContent).toBe("2 running · 2 open PRs · 1 queued · 1 merged today");
+  expect(classes(line)).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "text-ink-2"]));
+  const numbers = [...line.children].filter((child) => /^\d+$/.test(child.textContent ?? ""));
+  expect(numbers.map((child) => child.textContent)).toEqual(["2", "2", "1", "1"]);
+  for (const number of numbers) expect(classes(number)).toEqual(expect.arrayContaining(["text-ink", "font-semibold"]));
+  const separators = [...line.children].filter((child) => child.textContent === " · ");
+  expect(separators).toHaveLength(3);
+  for (const separator of separators) expect(classes(separator)).toContain("text-ink-3");
+});
+
+test("the Needs you count is --need above zero and every other count, or a zero Needs you, is --ink-3", async () => {
+  await mount("#/", busy);
+  expect(sectionCount("Needs you").textContent).toBe("3");
+  expect(classes(sectionCount("Needs you"))).toContain("text-need");
+  for (const name of ["Running", "Pull requests", "Merged today"]) {
+    expect(classes(sectionCount(name))).toContain("text-ink-3");
+    expect(classes(sectionCount(name))).not.toContain("text-need");
+  }
+  cleanup();
+
+  await mount("#/", fleet({ items: [] }, { items: [] }));
+  expect(sectionCount("Needs you").textContent).toBe("0");
+  expect(classes(sectionCount("Needs you"))).toContain("text-ink-3");
+  expect(classes(sectionCount("Needs you"))).not.toContain("text-need");
+});
+
+test("an empty section's sentence draws no border of its own, and the sections stand the board's 44 px apart", async () => {
+  await mount("#/", fleet({ items: [] }, { items: [] }));
+  const regions = screen.getAllByRole("region");
+  for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
+    const sentence = section(name).querySelector("p")!;
+    expect(sentence).toBeTruthy();
+    expect(classes(sentence).filter((name) => name.startsWith("border"))).toEqual([]);
+  }
+  const column = regions[0]!.parentElement!;
+  expect(regions.every((region) => region.parentElement === column)).toBe(true);
+  expect(classes(column)).toContain("gap-[44px]");
+});
