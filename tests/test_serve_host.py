@@ -33,6 +33,7 @@ import store.schema
 import store.tickets
 from holophyte.config.project import Project
 from holophyte.host.registry import Host, settings
+from holophyte.serve.contract import ROUTES
 from holophyte.serve.serve_host import (
     HostServer,
     host_attention,
@@ -43,6 +44,7 @@ from holophyte.serve.serve_host import (
 from holophyte.serve.serve_watch import adopted_socket
 from store.schema import SCHEMA_VERSION
 from tests.host_fixture import HostFixture, factory_checkout, git
+from tests.test_serve_contract import walk
 
 NOW = 1_750_000_000_000
 SEC = 1000
@@ -464,6 +466,22 @@ class HostContractTests(HostServeCase):
                 self.assertEqual(code, 200)
                 expected = json.loads((FIXTURES / f"{name}.json").read_text())
                 self.assertEqual(normalize(body, str(self.root)), expected)
+
+    def test_an_unreadable_project_config_still_fits_the_root_types(self):
+        self.config("beta", "[[[\n")
+        server = types.SimpleNamespace(
+            host=Host.locate(), settings=settings(Host.locate()),
+            started_ms=NOW, actions=False, code_check=None,
+            console_dir=self.root / "no-console" / "dist")
+        for name, answer in (("host-status", host_status),
+                             ("host-attention", host_attention)):
+            with self.subTest(endpoint=name):
+                code, body = answer(server, now=NOW)
+                self.assertEqual(code, 200)
+                self.assertIn(None, [item.get("name", item.get("project"))
+                                     for item in body.get("projects",
+                                                          body.get("items"))])
+                walk(body, ROUTES[name][0], name)
 
 
 class SocketHandoffTests(HostServeCase):

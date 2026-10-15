@@ -274,7 +274,7 @@ export const hostRunSchema = z.looseObject({
 export type HostRun = z.infer<typeof hostRunSchema>;
 
 export const hostProjectSchema = z.looseObject({
-  name: z.string(),
+  name: z.string().nullable(),
   path: z.string(),
   store: z.string().nullable(),
   error: z.string().nullable(),
@@ -312,7 +312,7 @@ export type SweepStaleItem = z.infer<typeof sweepStaleItemSchema>;
 
 export const projectErrorItemSchema = z.looseObject({
   kind: z.literal("project_error"),
-  project: z.string(),
+  project: z.string().nullable(),
   path: z.string(),
   level: z.literal("attention"),
   error: z.string(),

@@ -267,7 +267,7 @@ class HostRun(TypedDict):
 
 
 class HostProject(TypedDict):
-    name: str
+    name: str | None
     path: str
     store: str | None
     error: str | None
@@ -302,7 +302,7 @@ class SweepStaleItem(TypedDict):
 
 class ProjectErrorItem(TypedDict):
     kind: Literal["project_error"]
-    project: str
+    project: str | None
     path: str
     level: Literal["attention"]
     error: str
