@@ -15,9 +15,13 @@ DESCRIPTION_SUBJECT_RE = re.compile(
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
+HEADING_WORDS = (r"(?:(?:review|open|remaining|description)\s+)?"
+                 r"(?:findings|blockers|issues|comments|notes|problems)"
+                 r"|summary|required\s+changes|changes\s+requested")
+
 HEADING_RE = re.compile(
-    r"^[ \t]*(?:#{1,6}[ \t]+[\w ]{1,40}:?|\*\*[\w ]{1,40}:?\*\*:?"
-    r"|\w[\w ]{0,39}:)[ \t]*$", re.M)
+    rf"^[ \t]*(?:#{{1,6}}[ \t]+)?(?:\*\*)?(?:{HEADING_WORDS})[ \t]*:?"
+    r"(?:\*\*)?:?[ \t]*$", re.M | re.I)
 
 TAG_BRIEF = ("List each blocker as its own item, and tag one about the pull"
              " request description rather than the code with"

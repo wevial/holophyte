@@ -895,7 +895,8 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
                      "    [app.py](src/app.py#L3) drops the tab target.\n",
                      "    **src/app.py:3** drops the tab target.\n",
                      "    path: \"src/app.py\" drops the tab target.\n",
-                     "    \"src/app.py\" drops the tab target.\n"):
+                     "    \"src/app.py\" drops the tab target.\n",
+                     "**P1 Empty input crashes the parser**\n"):
             with self.subTest(code=code):
                 self.setUp()
                 self.configure('[merge]\nmode = "pr"\napprove = "auto"\n')
