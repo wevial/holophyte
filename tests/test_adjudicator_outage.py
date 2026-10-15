@@ -87,14 +87,13 @@ class AdjudicatorOutageTests(MergeModeFixture):
         self.assertNotIn("the adjudicator turn failed", question)
 
 
-# The park is aged past `pr_poll_sec` (180) so only the route wait decides.
 PARKED_S = 200
 RETRY_S = 900
 
 
 class RouteParkWakeTests(MergeModeFixture):
-    def route_parked(self):
-        self.configure(f'[merge]\nmode = "pr"\nroute_retry_sec = {RETRY_S}\n')
+    def route_parked(self, retry_s=RETRY_S, aged_s=PARKED_S):
+        self.configure(f'[merge]\nmode = "pr"\nroute_retry_sec = {retry_s}\n')
         self.fake_route(states=[self.pr_state([self.DEFECT])])
         with patch.object(sys, "stdout", io.StringIO()):
             self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -103,7 +102,7 @@ class RouteParkWakeTests(MergeModeFixture):
         conn = store.open(self.db)
         with conn:
             conn.execute("UPDATE runs SET lastHeartbeat = lastHeartbeat - ?",
-                         (PARKED_S * 1000,))
+                         (aged_s * 1000,))
         conn.close()
 
     def reconcile(self, later_s):
@@ -134,6 +133,13 @@ class RouteParkWakeTests(MergeModeFixture):
                          [("awaiting_merge_approval", "route")])
 
         self.reconcile(later_s=RETRY_S - PARKED_S)
+        self.assertEqual(self.wakes(),
+                         [("retrying the adjudicator after a route outage",)])
+
+    def test_a_route_retry_shorter_than_pr_poll_sec_wakes_when_due(self):
+        self.route_parked(retry_s=1, aged_s=0)
+
+        self.reconcile(later_s=2)
         self.assertEqual(self.wakes(),
                          [("retrying the adjudicator after a route outage",)])
 
