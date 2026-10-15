@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ACTIONS_OFF, NOT_WIRED, ROUTES, actionBase, postAction } from "../lib/actions";
+import { ACTIONS_OFF, NOT_WIRED, ROUTES, actionBase, actionBody, postAction } from "../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME } from "../lib/attention";
 import type { Fetch } from "../lib/poll";
 import { ActionButton } from "./ActionButton";
@@ -19,12 +19,6 @@ export interface RowDaemon {
   base: string;
   actions: boolean;
   fetch?: Fetch;
-}
-
-/** The body one wired label posts: the row's ticket for "Requeue"
- *  (holophyte/serve/server.py `requeue_action()`), nothing for the unit actions. */
-function bodyFor(label: string, ticket: string | null): Record<string, unknown> {
-  return label === "Requeue" && ticket != null ? { ticket } : {};
 }
 
 /** Shared action wiring for attention rows and the pull request table. */
@@ -48,7 +42,7 @@ export function RowActions({ kind, actions, ticket, prUrl, daemon, runId }: {
     if (!daemon || !daemon.actions || route == null) return undefined;
     return async () => {
       setDetail(null);
-      const result = await postAction(actionBase(label, daemon.base), route, bodyFor(label, ticket), daemon.fetch ?? pageFetch);
+      const result = await postAction(actionBase(label, daemon.base), route, actionBody(label, ticket), daemon.fetch ?? pageFetch);
       setDetail({ text: result.detail, ok: result.ok });
     };
   };

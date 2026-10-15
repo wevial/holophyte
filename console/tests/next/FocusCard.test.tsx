@@ -1,13 +1,17 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { Attention, RunDetail, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
+import { addressOf } from "../../src/lib/hosts";
+import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import { fakeFetch } from "../actionFakes";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
 const DEMO = "http://writer-host:7710";
+const TOKEN = "tok-286";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const detail = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
@@ -33,11 +37,18 @@ interface Daemon {
   items: Item[];
   runs?: Status["runs"];
   details?: Record<number, RunDetail>;
+  actions?: boolean;
+  /** Answers every `POST /actions/...`. */
+  act?: Fetch;
+  /** Every URL the daemon was asked for, in order. */
+  asked?: string[];
 }
 
 /** One project daemon whose bodies the test may change between polls. */
 function daemon(state: Daemon): Fetch {
-  return async (url) => {
+  return async (url, init) => {
+    state.asked?.push(url);
+    if (url.includes("/actions/") && state.act) return state.act(url, init);
     const merge = url.match(/\/runs\/(\d+)\/merge$/);
     if (merge) return Response.json({ ...ready, run: Number(merge[1]) });
     const match = url.match(/\/runs\/(\d+)$/);
@@ -47,7 +58,7 @@ function daemon(state: Daemon): Fetch {
     }
     return peersFetch(DEMO, {
       [DEMO]: {
-        status: { ...working, thresholds: { ...working.thresholds, strikes: 3 }, now: NOW, project: "/srv/dev/demo", runs: state.runs ?? [], queued: [] },
+        status: { ...working, actions: state.actions ?? false, thresholds: { ...working.thresholds, strikes: 3 }, now: NOW, project: "/srv/dev/demo", runs: state.runs ?? [], queued: [] },
         attention: { level: state.items.length ? "attention" : "none", now: NOW, project: "/srv/dev/demo", items: state.items },
       },
     })(url);
@@ -82,7 +93,10 @@ const card = () => screen.getByRole("article", { name: "Focus" });
 const cardText = () => card().textContent ?? "";
 const rows = () => within(screen.getByRole("list", { name: "Then" })).getAllByRole("button").map((row) => row.getAttribute("aria-label"));
 
+beforeEach(() => storeToken(addressOf(DEMO), TOKEN));
+
 afterEach(() => {
+  localStorage.clear();
   cleanup();
   client?.clear();
   client = null;
@@ -211,4 +225,172 @@ test("an unreachable host's card says it is not answering and when it was last s
   expect(cardText()).not.toContain("PR");
   expect(cardText()).not.toContain("pull request");
   expect(within(card()).queryByRole("list", { name: "Latest progress" })).toBeNull();
+});
+
+const TICKET_URL = "https://linear.app/demo/issue/DEMO-11";
+const failedAt = (extra: object = {}): Item => ({ ...failed(code), ticket_url: TICKET_URL, ...extra } as Item);
+const stale = {
+  kind: "stale_run", level: "attention", run: 7, ticket: "DEMO-7", ticket_url: null, phase: "working", heartbeat_age_ms: 20 * MINUTE,
+  pr_url: "https://github.com/example/demo/pull/40",
+} as Item;
+const park = {
+  kind: "pr_open", level: "attention", ticket: "DEMO-9", ticket_url: null, title: "Link each run to its pull request", run: 9,
+  park_kind: "pull_request", asked_ms: NOW - HOUR, reason: "PR open", pr_url: "https://github.com/example/demo/pull/42",
+  pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run" },
+} as Item;
+const paused = {
+  kind: "paused", level: "attention", ticket: "DEMO-6", ticket_url: null, title: "Hold the migration", note: "hold", run: 6, asked_ms: NOW - HOUR, pr_url: null,
+} as Item;
+
+const inCard = (name: string) => within(card()).getByRole("button", { name }) as HTMLButtonElement;
+const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
+const attentionReads = (asked: string[]) => asked.filter((url) => url.endsWith("/attention")).length;
+const press = async (button: HTMLElement) => {
+  await act(async () => {
+    fireEvent.click(button);
+  });
+  for (let round = 0; round < 3; round += 1) await act(settle);
+};
+
+test("the card's primary is the entry's first action, the rest sit under More, and Open run and Open ticket follow", async () => {
+  await mount(daemon({ items: [failedAt()], actions: true }));
+  const primary = inCard("Requeue");
+  expect(primary.dataset.variant).toBe("primary");
+  expect(within(card()).queryByRole("button", { name: "Mark needs_spec" })).toBeNull();
+  const more = inCard("More");
+  fireEvent.click(more);
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  const needsSpec = within(screen.getByRole("group", { name: "More actions" })).getByRole("button", { name: "Mark needs_spec" });
+  expect(needsSpec.hasAttribute("disabled")).toBe(true);
+  expect(needsSpec.getAttribute("title")).toBe("not wired yet");
+  fireEvent.keyDown(needsSpec, { key: "Escape" });
+  expect(screen.queryByRole("group", { name: "More actions" })).toBeNull();
+  expect(document.activeElement).toBe(more);
+  expect(within(card()).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(`/#run=12&daemon=${encodeURIComponent(DEMO)}`);
+  const ticket = within(card()).getByRole("link", { name: "Open ticket" });
+  expect(ticket.getAttribute("href")).toBe(TICKET_URL);
+  expect(ticket.getAttribute("target")).toBe("_blank");
+  cleanup();
+
+  await mount(daemon({ items: [stale], actions: true }));
+  expect(inCard("Abort").dataset.variant).toBe("danger");
+  fireEvent.click(inCard("More"));
+  const staleMore = within(screen.getByRole("group", { name: "More actions" })).getAllByRole("button");
+  expect(staleMore.map((button) => button.textContent)).toEqual(["Abort and close", "Requeue"]);
+  cleanup();
+
+  await mount(daemon({ items: [park], actions: true, details: { 9: { ...detail, events: [] } } }));
+  expect(inCard("Merge").dataset.variant).toBe("primary");
+  fireEvent.click(inCard("More"));
+  expect(within(screen.getByRole("group", { name: "More actions" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Open PR"]);
+});
+
+test("Merge asks first in a dialog listing why it is safe; Esc posts nothing and Confirm posts the run once with the bearer", async () => {
+  const action = fakeFetch({ ok: true, detail: "approved" });
+  await mount(daemon({ items: [park], actions: true, act: action.fetchImpl, details: { 9: { ...detail, events: [] } } }));
+  const merge = inCard("Merge");
+  await press(merge);
+  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
+  const facts = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
+  expect([...facts].map((fact) => fact.textContent)).toEqual((ready.facts as { detail: string }[]).map((fact) => fact.detail));
+  expect(facts).toHaveLength(8);
+  expect(dialog.textContent).toContain("The console cannot undo a merge");
+  const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+  const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
+  expect(document.activeElement).toBe(cancel);
+  fireEvent.keyDown(cancel, { key: "Tab" });
+  expect(document.activeElement).toBe(confirm);
+  fireEvent.keyDown(confirm, { key: "Tab" });
+  expect(document.activeElement).toBe(cancel);
+  fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(confirm);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(merge);
+  expect(action.seen).toEqual([]);
+
+  await press(merge);
+  await press(within(screen.getByRole("dialog")).getByRole("button", { name: "Merge PR #42" }));
+  expect(action.seen.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
+    { url: `${DEMO}/actions/merge`, body: { run: 9 }, authorization: `Bearer ${TOKEN}` },
+  ]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(toast()).toBe("Approved PR #42. The loop merges it on its next claim.");
+});
+
+test("a refused merge keeps the dialog open with the daemon's reason and its confirm pressable again", async () => {
+  const action = fakeFetch({ ok: false, detail: "GitHub's review decision is REVIEW_REQUIRED" });
+  await mount(daemon({ items: [park], actions: true, act: action.fetchImpl, details: { 9: { ...detail, events: [] } } }));
+  await press(inCard("Merge"));
+  await press(within(screen.getByRole("dialog")).getByRole("button", { name: "Merge PR #42" }));
+  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
+  expect(within(dialog).getByRole("alert").textContent).toBe("GitHub's review decision is REVIEW_REQUIRED");
+  const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
+  expect(confirm.hasAttribute("disabled")).toBe(false);
+  expect(confirm.getAttribute("aria-busy")).toBe("false");
+  expect(toast()).toBe("");
+  await press(confirm);
+  expect(action.seen).toHaveLength(2);
+});
+
+test("a host without actions draws no button on the card, says so, and still links the run", async () => {
+  await mount(daemon({ items: [failedAt()] }));
+  expect(within(card()).queryAllByRole("button").filter((button) => !button.closest("[data-pager]"))).toEqual([]);
+  expect(cardText()).toContain("Actions are off on this host");
+  expect(within(card()).getByRole("link", { name: "Open run" })).toBeTruthy();
+});
+
+test("a taken requeue says so in the toast and re-reads the fleet at once; a refused one shows the daemon's reason on the card", async () => {
+  const asked: string[] = [];
+  const state: Daemon = { items: [failedAt(), blocked("DEMO-4", 4, HOUR)], actions: true, asked };
+  const taken = fakeFetch({ ok: true, detail: "requeued" });
+  state.act = async (url, init) => {
+    state.items = [blocked("DEMO-4", 4, HOUR)];
+    return taken.fetchImpl(url, init);
+  };
+  await mount(daemon(state));
+  const reads = attentionReads(asked);
+  await press(inCard("Requeue"));
+  expect(taken.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-11" } }]);
+  expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe("Requeued DEMO-11.");
+  expect(attentionReads(asked)).toBeGreaterThan(reads);
+  expect(card().getAttribute("data-focus")).toBe("DEMO-4");
+  cleanup();
+
+  const refused = fakeFetch({ ok: false, detail: "ticket DEMO-11 has a live run" });
+  await mount(daemon({ items: [failedAt()], actions: true, act: refused.fetchImpl }));
+  await press(inCard("Requeue"));
+  expect(card().getAttribute("data-focus")).toBe("DEMO-11");
+  expect(within(card()).getByRole("status").textContent).toBe("ticket DEMO-11 has a live run");
+  expect(toast()).toBe("");
+});
+
+test("Resume opens a reason box on the card whose Send posts the ticket and the note once, then toasts and re-reads the fleet", async () => {
+  const asked: string[] = [];
+  const action = fakeFetch({ ok: true, detail: "resumed" });
+  await mount(daemon({ items: [paused], actions: true, act: action.fetchImpl, asked }));
+  const reads = attentionReads(asked);
+  await press(inCard("Resume"));
+  fireEvent.change(within(card()).getByRole("textbox", { name: "Reason to resume" }), { target: { value: "window is open" } });
+  await press(inCard("Send"));
+  expect(action.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/resume`, body: { ticket: "DEMO-6", note: "window is open" } }]);
+  expect(toast()).toBe("Resumed DEMO-6.");
+  expect(attentionReads(asked)).toBeGreaterThan(reads);
+});
+
+test("a host sweep card on a host with no named projects reads the root's actions and posts Run sweep at the root", async () => {
+  const hostStatus = await Bun.file(new URL("host-status.json", SERVE)).json();
+  const action = fakeFetch({ ok: true, detail: "started" });
+  const sweep = { kind: "sweep_stale", project: null, state: "killed", started: NOW - 200_000, ended: null, level: "attention" };
+  await mount(async (url, init) => {
+    if (url === `${DEMO}/peers`) return Response.json({ self: addressOf(DEMO), peers: [] });
+    if (url === `${DEMO}/status`) return Response.json({ ...hostStatus, now: NOW, actions: true, projects: [] });
+    if (url === `${DEMO}/attention`) return Response.json({ level: "attention", now: NOW, items: [sweep] });
+    if (url.includes("/actions/")) return action.fetchImpl(url, init);
+    return new Response("not found", { status: 404 });
+  });
+  expect(cardText()).not.toContain("Actions are off");
+  await press(inCard("Run sweep"));
+  expect(action.seen.map(({ url }) => url)).toEqual([`${DEMO}/actions/run-sweep`]);
+  expect(toast()).toBe("Started a host sweep on writer-host.");
 });

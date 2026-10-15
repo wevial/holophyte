@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useState, type Ref } from "react";
 import { ageOf, describe, entryKey, prFacts, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import type { Triage } from "../../lib/contract.gen";
 import { formatAge, formatClock, formatSettled } from "../../lib/format";
@@ -11,6 +11,7 @@ import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
 import { STATES, stateOf } from "../state";
 import { Btn } from "./Btn";
+import { CardActions } from "./CardActions";
 import { ChevronIcon } from "./icons";
 import { StateDot } from "./StateDot";
 
@@ -124,7 +125,23 @@ function Pager({ index, count, hold }: { index: number; count: number; hold: (in
   );
 }
 
-function Card({ entry, index, count, hosts, now, hold }: { entry: NeedsYouEntry; index: number; count: number; hosts: Host[]; now: number; hold: (index: number) => void }) {
+function Card({
+  entry,
+  index,
+  count,
+  hosts,
+  now,
+  hold,
+  cardRef,
+}: {
+  entry: NeedsYouEntry;
+  index: number;
+  count: number;
+  hosts: Host[];
+  now: number;
+  hold: (index: number) => void;
+  cardRef?: Ref<HTMLElement>;
+}) {
   const deps = useContext(PollDepsContext);
   const { item } = entry;
   const host = hostOf(hosts, item);
@@ -138,7 +155,7 @@ function Card({ entry, index, count, hosts, now, hold }: { entry: NeedsYouEntry;
   const seen = num(item.last_seen_ms);
   const title = unreachable ? description.body : (namedTitle(item, host) ?? str(run.data?.run.title) ?? key);
   return (
-    <article aria-label="Focus" data-focus={key ?? undefined} className="flex flex-col border border-rule bg-paper px-7 pb-6 pt-[26px] max-[720px]:px-4">
+    <article ref={cardRef} tabIndex={-1} aria-label="Focus" data-focus={key ?? undefined} className="flex flex-col border border-rule bg-paper px-7 pb-6 pt-[26px] max-[720px]:px-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[12.5px] text-ink-3">
         <StateDot state={stateOfEntry(entry)} />
         {key != null &&
@@ -163,6 +180,7 @@ function Card({ entry, index, count, hosts, now, hold }: { entry: NeedsYouEntry;
             <PullRequestLine item={item} />
             {runId != null && <LatestEvents run={run} />}
           </div>
+          <CardActions entry={entry} host={host} actions={description.actions} title={title} />
         </>
       )}
     </article>
@@ -203,19 +221,21 @@ export function FocusCard({
   hold,
   hosts,
   now,
+  cardRef,
 }: {
   entries: NeedsYouEntry[];
   index: number;
   hold: (index: number) => void;
   hosts: Host[];
   now: number;
+  cardRef?: Ref<HTMLElement>;
 }) {
   const entry = entries[index];
   if (entry == null) return null;
   const last = index === entries.length - 1;
   return (
     <div className="flex flex-col gap-2.5">
-      <Card key={entryKey(entry, index)} entry={entry} index={index} count={entries.length} hosts={hosts} now={now} hold={hold} />
+      <Card key={entryKey(entry, index)} entry={entry} index={index} count={entries.length} hosts={hosts} now={now} hold={hold} cardRef={cardRef} />
       {!last && (
         <div className="flex justify-end">
           <Btn onClick={() => hold(index + 1)}>Later, show the next one</Btn>
