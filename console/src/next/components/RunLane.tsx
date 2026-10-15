@@ -38,14 +38,6 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[]): LaneGroup[] {
   });
 }
 
-/** A lane's runs still beating and those gone quiet; each holds a worker. */
-export function laneRuns(group: LaneGroup, now: number) {
-  const sinceMs = sinceSeen(group.seen_ms, now);
-  const threshold = group.status.thresholds.heartbeat_stale_ms;
-  const quiet = (run: StatusRun) => isStale(run.heartbeat_age_ms + sinceMs, threshold);
-  return { sinceMs, live: group.runs.filter((run) => !quiet(run)), stale: group.runs.filter(quiet) };
-}
-
 function quietSentence(keys: string[]): string {
   const named = keys.length === 1 ? keys[0] : `${keys.slice(0, -1).join(", ")} and ${keys.at(-1)}`;
   return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Needs you.`;
@@ -130,12 +122,16 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
 function RunLane({ group, now }: { group: LaneGroup; now: number }) {
   const [open, setOpen] = useState(false);
   const queueId = useId();
-  const { sinceMs, live, stale } = laneRuns(group, now);
+  const sinceMs = sinceSeen(group.seen_ms, now);
+  const threshold = group.status.thresholds.heartbeat_stale_ms;
+  const quiet = (run: StatusRun) => isStale(run.heartbeat_age_ms + sinceMs, threshold);
+  const live = group.runs.filter((run) => !quiet(run));
+  const stale = group.runs.filter(quiet);
   const queued = group.queued ?? [];
   const held = group.status.admission === "held";
   return (
     <div role="group" aria-label={group.name}>
-      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${live.length + stale.length} of ${group.workers} workers busy`}>
+      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${group.runs.length} of ${group.workers} workers busy`}>
         {stale.length > 0 ? (
           <span>· {quietSentence(stale.map((run) => run.ticket))}</span>
         ) : (
