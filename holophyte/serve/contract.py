@@ -391,6 +391,8 @@ class RoundFinding(TypedDict):
     url: NotRequired[str]
     request: NotRequired[str]
     triage: NotRequired[InstructionTriage]
+    outcome: NotRequired[Literal["changed", "kept", "asked"]]
+    reply: NotRequired[str]
 
 
 class RoundInstruction(TypedDict):

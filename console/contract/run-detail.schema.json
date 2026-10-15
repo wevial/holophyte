@@ -359,6 +359,16 @@
         },
         "triage": {
           "$ref": "#/$defs/InstructionTriage"
+        },
+        "outcome": {
+          "enum": [
+            "changed",
+            "kept",
+            "asked"
+          ]
+        },
+        "reply": {
+          "type": "string"
         }
       },
       "required": [

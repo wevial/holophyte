@@ -404,6 +404,8 @@ export const roundFindingSchema = z.looseObject({
   url: z.string().optional(),
   request: z.string().optional(),
   triage: instructionTriageSchema.optional(),
+  outcome: z.enum(["changed", "kept", "asked"]).optional(),
+  reply: z.string().optional(),
 });
 export type RoundFinding = z.infer<typeof roundFindingSchema>;
 
