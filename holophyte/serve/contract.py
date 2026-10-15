@@ -334,12 +334,204 @@ class HostAttention(TypedDict):
     now: int
 
 
+class RunDetailRun(TypedDict):
+    id: int
+    ticket: str
+    ticket_url: str | None
+    title: str
+    phase: str
+    attempt: int
+    started_ms: int
+    ended_ms: int | None
+    outcome: str | None
+    elapsed_ms: int
+    working_ms: int | None
+    agent_ms: int | None
+    verify_ms: int | None
+    time_box_ms: int | None
+    branch: str | None
+    host: str | None
+    heartbeat_age_ms: int | None
+    merge_sha: str | None
+    commit_url: str | None
+    pr_url: str | None
+    work_started_ms: int | None
+    verify_started_ms: int | None
+    approved_at: int | None
+    approved_by: str | None
+    max_rounds: int
+
+
+class InstructionTriage(TypedDict):
+    decision: Literal["fix", "question", "unclear"]
+    confidence: float | None
+    route: Literal["fix", "answer"]
+    reason: str
+
+
+InstructionOutcome = Literal["changed", "kept", "asked"]
+
+
+class FindingFingerprint(TypedDict):
+    path: str
+    line: NotRequired[int | None]
+    severity: str
+
+
+class RoundFinding(TypedDict):
+    path: str
+    line: NotRequired[int | None]
+    severity: str
+    criterion: NotRequired[str | None]
+    title: NotRequired[str]
+    message: str
+    evidence_only: NotRequired[bool]
+    evidence: NotRequired[Literal["reproduced", "traced", "concern"]]
+    reviewer: NotRequired[str]
+    stale_approval: NotRequired[str]
+    fingerprint: NotRequired[FindingFingerprint]
+    kind: NotRequired[Literal["thread", "finding"]]
+    author: NotRequired[str]
+    author_kind: NotRequired[str]
+    verdict: NotRequired[str]
+    summary: NotRequired[str]
+    raw: NotRequired[str]
+    url: NotRequired[str]
+    request: NotRequired[str]
+    triage: NotRequired[InstructionTriage]
+    outcome: NotRequired[InstructionOutcome]
+    reply: NotRequired[str]
+
+
+class RoundInstruction(TypedDict):
+    kind: Literal["instruction"]
+    path: str
+    line: int | None
+    author: str
+    request: str
+    url: str
+    severity: NotRequired[str]
+    message: NotRequired[str]
+    triage: NotRequired[InstructionTriage]
+    outcome: NotRequired[InstructionOutcome]
+    reply: NotRequired[str]
+
+
+class OperatorNote(TypedDict):
+    kind: Literal["operator_note"]
+    event_id: int
+    note: str
+    author: str
+    hint: NotRequired[bool]
+    consumed: bool
+    run_id: int
+    round: int
+
+
+class Round(TypedDict):
+    round: int
+    started_ms: int
+    ended_ms: int | None
+    verdict: str
+    reviewer_model: str | None
+    findings: list[RoundFinding]
+    instructions: list[RoundInstruction]
+    operator_notes: list[OperatorNote]
+
+
+class AdvisoryFinding(TypedDict):
+    tone: Literal["advisory"]
+    message: str
+
+
+class RunEvent(TypedDict):
+    at: int
+    kind: str
+    summary: str
+
+
+class ChainRound(TypedDict):
+    round: int
+    verdict: str
+    reviewer_model: str | None
+
+
+class ChainRun(TypedDict):
+    id: int
+    attempt: int
+    outcome: str | None
+    phase: str
+    started_ms: int
+    ended_ms: int | None
+    elapsed_ms: int
+    working_ms: int | None
+    agent_ms: int | None
+    verify_ms: int | None
+    max_rounds: int
+    turn_count: int
+    rounds: list[ChainRound]
+
+
+class RunChain(TypedDict):
+    started_ms: int
+    elapsed_ms: int
+    working_ms: int | None
+    agent_ms: int | None
+    verify_ms: int | None
+    runs: list[ChainRun]
+
+
+class RunDetail(TypedDict):
+    run: RunDetailRun
+    rounds: list[Round]
+    findings: list[AdvisoryFinding]
+    events: list[RunEvent]
+    chain: NotRequired[RunChain]
+
+
+class MergeFact(TypedDict):
+    name: str
+    ok: bool
+    detail: str
+
+
+class MergeReadiness(TypedDict):
+    run: int
+    ticket: str | None
+    pr_url: str | None
+    head_sha: str | None
+    ready: bool
+    reason: str | None
+    detail: str | None
+    facts: list[MergeFact]
+
+
+class ConsoleAsk(TypedDict):
+    id: int
+    question: str
+    author: str
+    asked_ms: int
+    answered_ms: int | None
+    url: str | None
+    answer: str | None
+
+
+class RunAsks(TypedDict):
+    run: int
+    ticket: str
+    pr_url: str | None
+    asks: list[ConsoleAsk]
+
+
 ROUTES = {
     "status": (Status, "GET /status"),
     "attention": (Attention, "GET /attention"),
     "peers": (Peers, "GET /peers"),
     "host-status": (HostStatus, "GET /status at a host daemon's root"),
     "host-attention": (HostAttention, "GET /attention at a host daemon's root"),
+    "run-detail": (RunDetail, "GET /runs/N"),
+    "run-merge": (MergeReadiness, "GET /runs/N/merge"),
+    "run-asks": (RunAsks, "GET /runs/N/asks"),
 }
 
 
