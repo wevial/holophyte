@@ -189,3 +189,13 @@ test("before any scoped host answers there is no heading and no count line", asy
   expect(screen.queryByText("Nothing needs you.")).toBeNull();
   expect(section("Needs you")).toBeTruthy();
 });
+
+test("a host daemon that answered with no projects draws the heading and a zero count line", async () => {
+  const hostStatus = await Bun.file(new URL("host-status.json", SERVE)).json();
+  const empty = peersFetch(DEMO, {
+    [DEMO]: { status: { ...hostStatus, projects: [] }, attention: { level: "none", now: NOW, items: [] } },
+  });
+  await mount("#/", empty);
+  expect(heading()).toBe("Nothing needs you.");
+  expect(countLine()).toBe("0 running · 0 open PRs · 0 queued · 0 merged today");
+});

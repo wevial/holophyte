@@ -16,7 +16,7 @@ export interface Overview {
   project: string | undefined;
   now: number;
   hosts: HostRecord<ContractBodies>[];
-  /** Whether some scoped host has answered `/status` at least once. */
+  /** Whether some scoped host has answered well at least once. */
   answered: boolean;
   items: AttentionItem[];
   needs: NeedsYouEntry[];
@@ -58,7 +58,7 @@ export function useOverview(): Overview {
     project,
     now,
     hosts,
-    answered: statuses.length > 0,
+    answered: hosts.some((host) => host.seen_ms != null),
     items,
     needs: needsYouEntries(items, readiness, now),
     pullRequests: items.filter((item) => item.kind === "pr_open"),
