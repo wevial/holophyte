@@ -82,7 +82,8 @@ def run_shadow(project, conn, run_id, brief):
 
 
 def _attempt(project, run_id, seat, brief, branch, wt, result, cut):
-    probe = probe_launch(project, seat.turn(PROBE_GOAL), PROBE_TIMEOUT, SHADOW_KEY)
+    probe = probe_launch(project, seat.turn(PROBE_GOAL), PROBE_TIMEOUT, SHADOW_KEY,
+                         claude=seat.name == "claude")
     if not probe.ok:
         result["outcome"] = "route_down"
         result["detail"] = probe_diagnostic(project, probe)

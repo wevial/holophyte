@@ -14,7 +14,13 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, FakeAgent, no_agent_processes  # noqa: E402
 from isolation_fixture import IsolationCase  # noqa: E402
-from loop_fixture import BRANCH, LoopFixture, StubProvider, a_task  # noqa: E402
+from loop_fixture import (  # noqa: E402
+    BRANCH,
+    VALID_BODY,
+    LoopFixture,
+    StubProvider,
+    a_task,
+)
 from sweep_fixture import SweepTestCase  # noqa: E402
 
 import holophyte.agents.probes  # noqa: E402
@@ -35,6 +41,8 @@ EDIT = json.dumps({"type": "assistant", "session_id": "S",
                    "message": {"role": "assistant", "content": [
                        {"type": "tool_use", "id": "toolu_1", "name": "Edit",
                         "input": {"file_path": "stalled-edit.txt"}}]}})
+NOT_NOW = json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                      "num_turns": 1, "result": "not now", "session_id": "S"})
 WIP = "WIP: implementer stalled mid-edit (KO-131); not verified"
 
 
@@ -76,6 +84,33 @@ class StalledTurnTests(LoopFixture):
         self.assertEqual(kind, "infra")
         self.assertTrue(reason.startswith(
             "implementer turn stalled: no stream event for 2 s"), reason)
+
+    def test_a_profile_probe_reads_the_result_not_a_ready_word_elsewhere(self):
+        script = self.db.parent / "claude-harness"
+        script.write_text(
+            "#!/bin/sh\n"
+            'for last; do :; done\n'
+            'case "$last $*" in "Reply with the single word: ready"*sonnet*) '
+            f"echo '{COMMANDS_CHANGED}'; echo '{NOT_NOW}'; exit 0;; "
+            f"\"Reply with the single word: ready\"*) echo '{READY}'; exit 0;; esac\n"
+            f"echo '{INIT}'\nsleep 60\n")
+        script.chmod(0o755)
+        self.configure('[agents]\nturn_quiet_sec = 2\n'
+                       '[agents.implementer]\nharness = "claude"\n'
+                       '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+                       'model = "sonnet"\n'
+                       f'[harnesses]\nclaude = "{script}"\n')
+        body = VALID_BODY.replace("Depends on: none\n",
+                                  "Depends on: none\nImplementer: sonnet\n")
+        provider = StubProvider(dict(a_task(), body=body))
+        with no_agent_processes(), \
+                patch.dict(sys.modules, {"linear_provider": provider}):
+            holophyte.cli.operator.main(self.project, provider)
+        [(payload,)] = self.read("SELECT payload FROM runEvents"
+                                 " WHERE kind = 'implementer_profile'")
+        event = json.loads(payload)
+        self.assertEqual((event["profile"], event["requested"]), (None, "sonnet"))
+        self.assertIn("probe failed", event["why"])
 
 
 FIXTURE = HERE / "fixtures" / "claude_stream" / "turn.jsonl"
@@ -195,6 +230,13 @@ class QuietWatchdogTests(StreamTurnCase):
     def test_a_turn_printing_every_second_outlives_a_short_quiet_period(self):
         self.harness(f"for i in 1 2 3 4 5; do echo '{STATUS}'; sleep 1; done\n"
                      f"echo '{DONE}'\n", agents="turn_quiet_sec = 2\n")
+        output, timed_out = self.timed()
+        self.assertEqual((str(output), timed_out), ("finished", False))
+        self.assertEqual(self.events("turn_stalled"), [])
+
+    def test_a_turn_that_exits_while_a_child_holds_its_pipe_is_not_stalled(self):
+        self.harness(f"echo '{DONE}'\n(sleep 8 &)\nexit 0\n",
+                     agents="turn_quiet_sec = 2\n")
         output, timed_out = self.timed()
         self.assertEqual((str(output), timed_out), ("finished", False))
         self.assertEqual(self.events("turn_stalled"), [])

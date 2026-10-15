@@ -81,6 +81,8 @@ def read_stream(proc, cmd, timeout, quiet, reap):
                 raise TurnStalled(cmd, quiet, record.lines, record.last_tool,
                                   output=record.tail())
             if not selector.select(TICK_S):
+                if proc.poll() is not None:
+                    break
                 continue
             chunk = os.read(proc.stdout.fileno(), CHUNK)
             if not chunk:

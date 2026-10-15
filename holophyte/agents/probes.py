@@ -141,13 +141,9 @@ def probe_route(project, role, fallback, timeout, entry):
         cmd = ["default-review", review_profile(*pair)]
     cap = PROBE_TIMEOUT if timeout is None else timeout
     if role in ("implement", "trim"):
-        probe = probe_launch(project, cmd, cap, AGENT_CONFIG_KEYS[role], entry)
         seat = harness_seat(project, role, fallback=fallback)
-        if seat is not None and seat.name == "claude":
-            decoded = claude_result(probe.output)
-            probe = replace(probe, answer=decoded[0] if decoded
-                            else plain_lines(probe.output))
-        return probe
+        return probe_launch(project, cmd, cap, AGENT_CONFIG_KEYS[role], entry,
+                            claude=seat is not None and seat.name == "claude")
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
@@ -182,7 +178,7 @@ def probe_route(project, role, fallback, timeout, entry):
                        expected_commit=sha, entry=entry)
 
 
-def probe_launch(project, cmd, cap, seat, entry=0):
+def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
             code, out = launcher.launch(
@@ -197,7 +193,12 @@ def probe_launch(project, cmd, cap, seat, entry=0):
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
                                seat=seat, entry=entry)
-    return ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
+    probe = ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
+    if claude:
+        decoded = claude_result(probe.output)
+        probe = replace(probe, answer=decoded[0] if decoded
+                        else plain_lines(probe.output))
+    return probe
 
 
 def probe_adversary_claude(project, timeout=None):
