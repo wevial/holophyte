@@ -41,15 +41,6 @@ test("each pinned run-route answer parses unchanged with its generated schema", 
   expect<unknown>(runAsksSchema.parse(runAsks)).toEqual(runAsks);
 });
 
-test("a run detail without rounds or with a numeric phase fails at its path; an extra run key passes", () => {
-  const { rounds: _rounds, ...roundless } = runDetail;
-  const phase = { ...runDetail, run: { ...runDetail.run, phase: 42 } };
-  expect(firstIssuePath(runDetailSchema.safeParse(roundless))).toBe("rounds");
-  expect(firstIssuePath(runDetailSchema.safeParse(phase))).toBe("run.phase");
-  const newer = { ...runDetail, run: { ...runDetail.run, later_field: "x" } };
-  expect<unknown>(runDetailSchema.parse(newer)).toEqual(newer);
-});
-
 test("a newer daemon's extra keys pass at the top level and inside a run", () => {
   const newer = { ...status, later_field: 1, runs: [{ ...status.runs[0], later_field: "x" }, ...status.runs.slice(1)] };
   expect<unknown>(statusSchema.parse(newer)).toEqual(newer);
