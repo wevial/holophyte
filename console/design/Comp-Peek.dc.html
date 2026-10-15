@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ticket peek panel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--card:#161f38;--card-edge:#3a4675}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--card:#ffffff;--card-edge:#bdb8d0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live)}
+svg:has(> path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]) > circle{fill:var(--live);stroke:var(--live)}
+path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]{stroke:var(--canvas);stroke-width:1.8}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.cap{font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:30px;padding:0 10px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper-2);font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink);white-space:nowrap}
+.facts{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px 12px;align-items:baseline;margin:16px 0 0}
+.facts dt{font:400 12px/1.4 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.01em;color:var(--ink-3)}
+.facts dd{margin:0;font:500 14px/1.4 'Archivo','Helvetica Neue',sans-serif;color:var(--ink)}
+.facts .num{font:500 13px/1.4 'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.pk{display:flex;flex-direction:column;width:420px;height:820px;box-sizing:border-box;background:var(--paper);border-left:1px solid var(--rule);box-shadow:-8px 0 24px rgba(0,0,0,.28)}
+.pk-hd{display:flex;align-items:center;gap:8px;min-height:56px;padding:0 10px 0 20px;border-bottom:1px solid var(--rule-2)}
+.pk-k{font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.pk-x{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:40px;min-height:40px;padding:0 10px;box-sizing:border-box;border:1px solid var(--rule);background:transparent;color:var(--ink-2);cursor:pointer;text-decoration:none;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.pk-b{flex:1 1 auto;min-height:0;overflow:hidden;padding:18px 20px 28px}
+.pk-t{margin:0;font-family:'Archivo','Helvetica Neue',sans-serif;font-weight:800;font-stretch:108%;font-size:22px;line-height:1.15;letter-spacing:-.01em}
+.pk-ask{margin-top:16px;padding:12px 14px 14px;border:1px solid var(--rule-2);background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+.pk-ask p{margin:6px 0 12px;font-size:14px;line-height:1.45}
+.pk-ask-l{font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--need)}
+.pk-go{min-height:40px;padding:0 16px;border:0;cursor:pointer;background:var(--act);color:var(--paper);font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.06em}
+.pk-stg{display:flex;width:fit-content;margin-top:6px}
+.pk-sum{margin:10px 0 0;font-size:14px;line-height:1.5;color:var(--ink)}
+.pk-ac{list-style:none;margin:8px 0 0;padding:0}
+.pk-ac li{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule-2);font-size:13.5px;line-height:1.4}
+.pk-ac .ico{margin-top:2px}
+.rules{margin:0;padding:0;list-style:none}
+.rules li{padding:10px 0;border-bottom:1px solid var(--rule-2);font-size:14px;line-height:1.45;color:var(--ink-2)}
+.rules b{color:var(--ink);font-weight:500}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1400px; height: 1100px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 26px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · board, tickets list, story graph · a click opens it</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Ticket peek panel</h2>
+</div>
+<div style="display: flex; gap: 40px; align-items: flex-start">
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span class="cap">In flight · no ask</span>
+<div class="pk" role="dialog" aria-modal="false" aria-labelledby="p1H">
+<div class="pk-hd"><span class="pk-k">HOLO-231</span><span style="display: flex; gap: 6px; margin-left: auto"><a class="pk-x" href="#"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"></path></svg>Expand<span class="sr"> to the full ticket page</span></a><button type="button" class="pk-x" aria-label="Close preview"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"></path></svg></button></span></div>
+<div class="pk-b">
+<h3 id="p1H" class="pk-t">The sweep frees a silent lease</h3>
+<div style="margin-top: 12px"><span class="chip"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>In flight</span></div>
+<dl class="facts">
+<dt>Project</dt><dd>holophyte</dd>
+<dt>Estimate</dt><dd><span class="num">3</span> points</dd>
+<dt>Run</dt><dd><span class="num">run 231</span><span class="chip pk-stg"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>reviewing · round 2 of 3</span></dd>
+</dl>
+<div class="label" style="margin-top: 20px">Summary</div>
+<p class="pk-sum">A lease past its heartbeat threshold should be recovered by the next sweep, so nobody has to requeue it by hand. A dry run only reports.</p>
+<div class="label" style="margin-top: 18px">Acceptance criteria <span style="color: var(--ink); letter-spacing: 0.04em">3 of 4 met</span></div>
+<ul class="pk-ac">
+<li><svg class="ico" viewBox="0 0 16 16" role="img" aria-label="met" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><span>Sweep with --act requeues a lease past its threshold.</span></li>
+<li><svg class="ico" viewBox="0 0 16 16" role="img" aria-label="met" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><span>The requeue's interventions row names the sweep.</span></li>
+<li><svg class="ico" viewBox="0 0 16 16" role="img" aria-label="met" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><span>A lease inside its threshold is left alone.</span></li>
+<li><svg class="ico" viewBox="0 0 16 16" role="img" aria-label="not yet witnessed" style="color: var(--wait)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg><span>--sweep without --act changes nothing.</span></li>
+</ul>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<span class="cap">Needs you · the ask and its one action first</span>
+<div class="pk" role="dialog" aria-modal="false" aria-labelledby="p2H">
+<div class="pk-hd"><span class="pk-k">HOLO-228</span><span style="display: flex; gap: 6px; margin-left: auto"><a class="pk-x" href="#"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"></path></svg>Expand<span class="sr"> to the full ticket page</span></a><button type="button" class="pk-x" aria-label="Close preview"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"></path></svg></button></span></div>
+<div class="pk-b">
+<h3 id="p2H" class="pk-t">Cache the board read</h3>
+<div style="margin-top: 12px"><span class="chip"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--need)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.6v4.2M8 11.3v.1"></path></svg>Needs you</span></div>
+<div class="pk-ask"><div class="pk-ask-l">Needs you</div><p>Verify failed twice: test_board_cache sees a stale card after a write.</p><button type="button" class="pk-go">Requeue</button></div>
+<dl class="facts">
+<dt>Project</dt><dd>holophyte</dd>
+<dt>Estimate</dt><dd><span class="num">2</span> points</dd>
+<dt>Run</dt><dd><span class="num">run 228</span><span class="chip pk-stg"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--bad)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>failed at verify</span></dd>
+</dl>
+<div class="label" style="margin-top: 20px">Summary</div>
+<p class="pk-sum">The board query reads every ticket on each poll. Cache it for one poll interval.</p>
+<div class="label" style="margin-top: 18px">Acceptance criteria <span style="color: var(--ink); letter-spacing: 0.04em">1 of 2 met</span></div>
+<ul class="pk-ac">
+<li><svg class="ico" viewBox="0 0 16 16" role="img" aria-label="met" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg><span>Two polls inside the interval read the store once.</span></li>
+<li><svg class="ico" viewBox="0 0 16 16" role="img" aria-label="not yet witnessed" style="color: var(--wait)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg><span>A ticket write clears the cache.</span></li>
+</ul>
+</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px; flex: 1; min-width: 0">
+<span class="cap">Behaviour</span>
+<ul class="rules">
+<li><b>Opens on a click</b> on a Board card, a Tickets row or a Story graph node. Docks to the right edge over the page; no dim, and the page behind stays live and scrollable.</li>
+<li><b>One at a time.</b> Clicking another card swaps the ticket in place; the open card gets a pink outline.</li>
+<li><b>Expand</b> opens the full Ticket page. A modified click on a card (Cmd or Ctrl) still opens the ticket in a new tab.</li>
+<li><b>Close</b> with × or Esc; focus goes back to the card that opened it.</li>
+<li><b>Order:</b> key, title, board state, then the ask with its one action if the ticket needs you, then project, estimate and run with its stage chip, a four-line summary, and the criteria checklist.</li>
+<li><b>Facts:</b> labels in Archivo, small and muted; values in Archivo at full contrast. Only codes and numbers (keys, run numbers, estimates, times) stay mono with tabular figures.</li>
+<li><b>Surface:</b> paper, a 1px rule on the left, and the light shadow kept for floating surfaces. Full width on a phone.</li>
+</ul>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1400,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Modals and toast</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16;--done:#7b84a1;--scrim:rgba(5,7,15,.74)}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff;--done:#8b90a8;--scrim:rgba(236,234,243,.8)}
+.cm{position:absolute;width:12px;height:12px;pointer-events:none}
+.cm::before,.cm::after{content:"";position:absolute;background:var(--ink-3)}
+.cm::before{width:12px;height:1px;top:5.5px}.cm::after{width:1px;height:12px;left:5.5px}
+.cm.tl{top:-6.5px;left:-6.5px}.cm.tr{top:-6.5px;right:-6.5px}.cm.bl{bottom:-6.5px;left:-6.5px}.cm.br{bottom:-6.5px;right:-6.5px}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.btn.fill{color:var(--bi,var(--act-ink))}.btn.fill::before{transform:scaleX(1)}.btn.fill:hover{filter:brightness(1.08)}
+.cell{display:inline-block;width:9px;height:9px;flex:none;position:relative;box-sizing:border-box}
+.c-live{background:var(--live)}.c-need{background:var(--need)}.c-done{background:var(--done)}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}.btn.danger.fill:not(.busy){color:var(--bi)}.btn.danger.fill:not(.busy)::before{transform:scaleX(1)}
+.btn.quiet.on-ink{--b:var(--paper);--bi:var(--ink);color:var(--paper)}.btn.quiet.on-ink:hover,.btn.quiet.on-ink:focus-visible{color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+textarea::placeholder{color:var(--ink-3)}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1360px; height: 860px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · overlays</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Modals and toast</h2>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+<div style="display: flex; justify-content: center; padding: 28px; background: var(--scrim); border: 1px solid var(--rule-2)">
+<section role="dialog" aria-modal="true" aria-labelledby="mH" style="position: relative; box-sizing: border-box; width: 100%; max-width: 520px; background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px 24px">
+<i class="cm tl" aria-hidden="true"></i><i class="cm tr" aria-hidden="true"></i><i class="cm bl" aria-hidden="true"></i><i class="cm br" aria-hidden="true"></i>
+<div class="label">Merge · holophyte</div>
+<h3 id="mH" style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 112%; font-size: 30px; line-height: 1.05">Merge PR #521?</h3>
+<p style="margin: 10px 0 0; color: var(--ink-2)">Compare primary and shadow implementers per ticket · <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px">HOLO-233</span></p>
+<ul style="list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>checks pass · unit, lint, leak-guard, docs</li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>review approved · no open threads</li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>mergeable · head unchanged at 7b1c0f2</li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ask)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8v3.6M8 11.1v.1"></path></svg>holophyte merges on a human's approval: this one is yours</li>
+</ul>
+<p style="margin: 14px 0 0; font-size: 14px; color: var(--ink-2)">Squash-merges into main and closes the run. The console cannot undo a merge.</p>
+<div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px"><button type="button" class="btn quiet">Cancel</button><button type="button" class="btn fill">Merge PR #521</button></div>
+</section>
+</div>
+<div style="display: flex; justify-content: center; padding: 28px; background: var(--scrim); border: 1px solid var(--rule-2)">
+<section role="dialog" aria-modal="true" aria-labelledby="aH" style="position: relative; box-sizing: border-box; width: 100%; max-width: 520px; background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px 24px">
+<i class="cm tl" aria-hidden="true"></i><i class="cm tr" aria-hidden="true"></i><i class="cm bl" aria-hidden="true"></i><i class="cm br" aria-hidden="true"></i>
+<div class="label">Abort · holophyte</div>
+<h3 id="aH" style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 112%; font-size: 30px; line-height: 1.05">Abort run 231?</h3>
+<p style="margin: 10px 0 0; color: var(--ink-2)">Review round 2 stops now. The branch and draft PR #524 are kept, and HOLO-231 waits for you to requeue it.</p>
+<label for="why" style="display: block; margin-top: 16px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Reason · saved with the run</label>
+<textarea id="why" placeholder="Why stop it?" style="display: block; box-sizing: border-box; width: 100%; min-height: 72px; resize: vertical; margin-top: 8px; padding: 10px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif"></textarea>
+<div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px"><button type="button" class="btn quiet">Keep running</button><button type="button" class="btn danger fill">Abort run</button></div>
+</section>
+</div>
+</div>
+<section aria-label="Toasts" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; padding: 22px 28px; background: var(--paper); border: 1px solid var(--rule)">
+<div><div class="label">Toast · undoable for 6s</div>
+<div role="status" style="display: inline-flex; align-items: center; gap: 16px; margin-top: 14px; padding: 8px 8px 8px 16px; background: var(--ink); color: var(--paper); font: 500 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace"><span>Requeued HOLO-228. Attempt 2 of 2.</span><button type="button" class="btn quiet on-ink">Undo</button></div>
+<div style="margin-top: 10px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">requeue · resume · approve</div>
+</div>
+<div><div class="label">Toast · final</div>
+<div role="status" style="display: inline-flex; align-items: center; gap: 16px; margin-top: 14px; padding: 8px 16px; min-height: 44px; box-sizing: border-box; background: var(--ink); color: var(--paper); font: 500 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace"><span>Merged PR #521 into main as 7b1c0f2.</span></div>
+<div style="margin-top: 10px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">merge · abort: confirmed first, so no undo</div>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1360,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>
