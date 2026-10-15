@@ -330,6 +330,22 @@
         "message": {
           "type": "string"
         },
+        "evidence_only": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "enum": [
+            "reproduced",
+            "traced",
+            "concern"
+          ]
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "stale_approval": {
+          "type": "string"
+        },
         "fingerprint": {
           "$ref": "#/$defs/FindingFingerprint"
         },

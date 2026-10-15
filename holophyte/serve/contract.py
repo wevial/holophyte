@@ -385,6 +385,10 @@ class RoundFinding(TypedDict):
     criterion: NotRequired[str | None]
     title: NotRequired[str]
     message: str
+    evidence_only: NotRequired[bool]
+    evidence: NotRequired[Literal["reproduced", "traced", "concern"]]
+    reviewer: NotRequired[str]
+    stale_approval: NotRequired[str]
     fingerprint: NotRequired[FindingFingerprint]
     kind: NotRequired[Literal["thread", "finding"]]
     author: NotRequired[str]
