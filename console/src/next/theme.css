@@ -324,7 +324,7 @@ body {
   cursor: not-allowed;
 }
 
-.btn:is([data-variant="primary"], [data-variant="danger-fill"]):disabled {
+.btn[data-variant="primary"]:disabled {
   color: var(--btn-edge);
 }
 

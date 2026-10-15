@@ -99,7 +99,7 @@ test("a StageChip reads the review round against its cap, and a merge gate with 
   expect(gate.textContent).toBe("monitoring PR");
 });
 
-test("disabled and busy buttons keep their own variant's edge, and a disabled one is at half opacity", () => {
+test("disabled and busy buttons keep their own variant's edge and label, and a disabled one is at half opacity", () => {
   const style = document.createElement("style");
   style.textContent = themeCss.replace(/@import[^;]*;/, "");
   document.head.appendChild(style);
@@ -123,6 +123,8 @@ test("disabled and busy buttons keep their own variant's edge, and a disabled on
       expect(busy.color, variant).toBe(colour);
       cleanup();
     }
+    render(<Btn variant="danger-fill" disabled>Abort run</Btn>);
+    expect(getComputedStyle(screen.getByRole("button", { name: "Abort run" })).color).toBe(token("--bad-ink"));
   } finally {
     style.remove();
   }
