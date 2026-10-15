@@ -1,0 +1,85 @@
+{
+  "columns": [
+    {
+      "state": "needs_spec",
+      "tickets": []
+    },
+    {
+      "state": "blocked_on_deps",
+      "tickets": []
+    },
+    {
+      "state": "ready",
+      "tickets": [
+        {
+          "ticket": "KO-9",
+          "ticket_url": null,
+          "title": "Approved ticket",
+          "time_box_ms": null,
+          "run": null,
+          "question": null,
+          "waits_on": [],
+          "mirrored_ms": 1750000000000,
+          "column": null,
+          "priority": null,
+          "labels": [],
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "state": "blocked_on_operator",
+      "tickets": [
+        {
+          "ticket": "KO-10",
+          "ticket_url": null,
+          "title": "Reviewed ticket",
+          "time_box_ms": null,
+          "run": null,
+          "question": null,
+          "waits_on": [],
+          "mirrored_ms": 1750000000000,
+          "column": null,
+          "priority": null,
+          "labels": [],
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "state": "in_flight",
+      "tickets": [
+        {
+          "ticket": "KO-7",
+          "ticket_url": null,
+          "title": "ticket 7",
+          "time_box_ms": 1500000,
+          "run": 1,
+          "question": null,
+          "waits_on": [],
+          "mirrored_ms": 1750000000000,
+          "column": null,
+          "priority": null,
+          "labels": [],
+          "revision": 1
+        },
+        {
+          "ticket": "KO-8",
+          "ticket_url": null,
+          "title": "Unestimated ticket",
+          "time_box_ms": null,
+          "run": 2,
+          "question": null,
+          "waits_on": [],
+          "mirrored_ms": 1750000000000,
+          "column": null,
+          "priority": null,
+          "labels": [],
+          "revision": 1
+        }
+      ]
+    }
+  ],
+  "editable": false,
+  "now": 1750000000000
+}

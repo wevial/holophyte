@@ -20,6 +20,9 @@ from holophyte.serve.contract import (
     ROUTES,
     SCHEMA_DIR,
     ZOD_FILE,
+    Board,
+    BoardColumn,
+    BoardTicket,
     Round,
     RunDetail,
     Status,
@@ -30,7 +33,8 @@ from holophyte.serve.contract_emit import ContractError, json_schema
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
-           "run-merge-bypassable", "run-asks")
+           "run-merge-bypassable", "run-asks", "shipped", "ledger", "board",
+           "ticket")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -123,9 +127,10 @@ class GeneratedFilesTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in before
                                 if path.parent == SCHEMA_DIR),
                          [f"{stem}.schema.json" for stem in (
-                             "attention", "host-attention", "host-status",
-                             "peers", "run-asks", "run-detail", "run-merge",
-                             "status")])
+                             "attention", "board", "host-attention",
+                             "host-status", "ledger", "peers", "run-asks",
+                             "run-detail", "run-merge", "shipped", "status",
+                             "ticket")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -195,6 +200,19 @@ class PinnedAnswerTests(unittest.TestCase):
         with self.assertRaisesRegex(
                 AssertionError, r"^run-detail\.rounds\.0\.operator_notes: undeclared$"):
             walk(body, typing.TypedDict("RunDetail", detail), "run-detail")
+
+    def test_a_board_ticket_type_without_waits_on_fails_the_board_walk(self):
+        hints = typing.get_type_hints(BoardTicket, include_extras=True)
+        narrower = typing.TypedDict("BoardTicket", {key: hint for key, hint
+                                                    in hints.items()
+                                                    if key != "waits_on"})
+        column = typing.get_type_hints(BoardColumn, include_extras=True)
+        column["tickets"] = list[narrower]
+        board = typing.get_type_hints(Board, include_extras=True)
+        board["columns"] = list[typing.TypedDict("BoardColumn", column)]
+        with self.assertRaisesRegex(AssertionError, r"^board\.columns\.2"
+                                    r"\.tickets\.0\.waits_on: undeclared$"):
+            walk(pinned("board"), typing.TypedDict("Board", board), "board")
 
 
 if __name__ == "__main__":

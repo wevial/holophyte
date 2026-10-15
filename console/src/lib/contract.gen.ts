@@ -546,3 +546,158 @@ export const runAsksSchema = z.looseObject({
   asks: z.array(consoleAskSchema),
 });
 export type RunAsks = z.infer<typeof runAsksSchema>;
+
+export const shippedRowSchema = z.looseObject({
+  id: z.int(),
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  title: z.string(),
+  rounds: z.int(),
+  findings: z.int(),
+  started_ms: z.int(),
+  actual_min: z.number().nullable(),
+  working_ms: z.int().nullable(),
+  agent_ms: z.int().nullable(),
+  verify_ms: z.int().nullable(),
+  run_count: z.int(),
+  ended_ms: z.int(),
+  wall_min: z.number(),
+  turn_count: z.int(),
+  estimate_min: z.number().nullable(),
+  merge_sha: z.string().nullable(),
+  commit_url: z.string().nullable(),
+  outcome: z.string(),
+  outcome_reason: z.string().nullable(),
+  pr_url: z.string().nullable(),
+  host: z.string().nullable(),
+});
+export type ShippedRow = z.infer<typeof shippedRowSchema>;
+
+export const shippedSchema = z.looseObject({
+  rows: z.array(shippedRowSchema),
+  next_before: z.int().nullable(),
+  limit: z.int(),
+});
+export type Shipped = z.infer<typeof shippedSchema>;
+
+export const ledgerEntrySchema = z.looseObject({
+  at: z.int(),
+  run: z.int().nullable(),
+  ticket: z.string().nullable(),
+  kind: z.string(),
+  source: z.string(),
+  text: z.string(),
+  cleared: z.string().nullable().optional(),
+  waited_ms: z.int().nullable().optional(),
+  action: z.string().optional(),
+  tone: z.string().optional(),
+  schema_to: z.int().optional(),
+  schema_from: z.int().optional(),
+  project: z.string().optional(),
+});
+export type LedgerEntry = z.infer<typeof ledgerEntrySchema>;
+
+export const activeOutageSchema = z.looseObject({
+  project: z.int(),
+  run: z.null(),
+  ticket: z.null(),
+  kind: z.literal("route_down"),
+  source: z.string(),
+  at: z.int(),
+  reason: z.string(),
+  text: z.string(),
+});
+export type ActiveOutage = z.infer<typeof activeOutageSchema>;
+
+export const ledgerSchema = z.looseObject({
+  entries: z.array(ledgerEntrySchema),
+  active_outages: z.array(activeOutageSchema),
+  since: z.int(),
+  limit: z.int(),
+});
+export type Ledger = z.infer<typeof ledgerSchema>;
+
+export const boardTicketSchema = z.looseObject({
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  title: z.string(),
+  time_box_ms: z.int().nullable(),
+  run: z.int().nullable(),
+  question: z.string().nullable(),
+  waits_on: z.array(z.string()),
+  mirrored_ms: z.int(),
+  column: z.string().nullable(),
+  priority: z.int().nullable(),
+  labels: z.array(z.string()),
+  revision: z.int(),
+});
+export type BoardTicket = z.infer<typeof boardTicketSchema>;
+
+export const boardColumnSchema = z.looseObject({
+  state: z.enum(["backlog", "needs_spec", "blocked_on_deps", "ready", "blocked_on_operator", "in_flight"]),
+  tickets: z.array(boardTicketSchema),
+});
+export type BoardColumn = z.infer<typeof boardColumnSchema>;
+
+export const boardSchema = z.looseObject({
+  columns: z.array(boardColumnSchema),
+  editable: z.boolean(),
+  now: z.int(),
+});
+export type Board = z.infer<typeof boardSchema>;
+
+export const ticketRevisionSchema = z.looseObject({
+  revision: z.int(),
+  at: z.int(),
+  author: z.string(),
+  title: z.string(),
+  body: z.string(),
+  priority: z.int().nullable(),
+  labels: z.array(z.string()),
+  column: z.string().nullable(),
+});
+export type TicketRevision = z.infer<typeof ticketRevisionSchema>;
+
+export const claimedSnapshotSchema = z.looseObject({
+  revision: z.null(),
+  title: z.string(),
+  acceptance_criteria: z.array(z.string()),
+  verification_commands: z.array(z.string()),
+});
+export type ClaimedSnapshot = z.infer<typeof claimedSnapshotSchema>;
+
+export const revisionStampSchema = z.looseObject({
+  revision: z.int(),
+  at: z.int(),
+  author: z.string(),
+});
+export type RevisionStamp = z.infer<typeof revisionStampSchema>;
+
+export const ticketNoteSchema = z.looseObject({
+  id: z.int(),
+  at: z.int(),
+  author: z.string(),
+  kind: z.string(),
+  text: z.string(),
+  posted_ms: z.int().nullable(),
+  post_error: z.string().nullable(),
+});
+export type TicketNote = z.infer<typeof ticketNoteSchema>;
+
+export const ticketDetailSchema = z.looseObject({
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  title: z.string(),
+  status: z.string(),
+  body: z.string(),
+  acceptance_criteria: z.array(z.string()),
+  verification_commands: z.array(z.string()),
+  time_box_ms: z.int().nullable(),
+  run: z.int().nullable(),
+  mirrored_ms: z.int(),
+  current: ticketRevisionSchema.nullable(),
+  claimed: z.union([ticketRevisionSchema, claimedSnapshotSchema]).nullable(),
+  revisions: z.array(revisionStampSchema),
+  notes: z.array(ticketNoteSchema),
+});
+export type TicketDetail = z.infer<typeof ticketDetailSchema>;

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ledger",
+  "description": "GET /ledger",
+  "$ref": "#/$defs/Ledger",
+  "$defs": {
+    "LedgerEntry": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ticket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "cleared": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waited_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "tone": {
+          "type": "string"
+        },
+        "schema_to": {
+          "type": "integer"
+        },
+        "schema_from": {
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "run",
+        "ticket",
+        "kind",
+        "source",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "ActiveOutage": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "integer"
+        },
+        "run": {
+          "type": "null"
+        },
+        "ticket": {
+          "type": "null"
+        },
+        "kind": {
+          "const": "route_down"
+        },
+        "source": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "run",
+        "ticket",
+        "kind",
+        "source",
+        "at",
+        "reason",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "Ledger": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LedgerEntry"
+          }
+        },
+        "active_outages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ActiveOutage"
+          }
+        },
+        "since": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entries",
+        "active_outages",
+        "since",
+        "limit"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

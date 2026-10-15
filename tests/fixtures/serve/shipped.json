@@ -1,0 +1,30 @@
+{
+  "rows": [
+    {
+      "id": 1,
+      "ticket": "KO-9",
+      "ticket_url": null,
+      "title": "Approved ticket",
+      "rounds": 0,
+      "findings": 0,
+      "started_ms": 1750000000000,
+      "actual_min": 0.0,
+      "working_ms": 0,
+      "agent_ms": 0,
+      "verify_ms": 0,
+      "run_count": 1,
+      "ended_ms": 1750000000000,
+      "wall_min": 2.0,
+      "turn_count": 0,
+      "estimate_min": null,
+      "merge_sha": null,
+      "commit_url": null,
+      "outcome": "abandoned",
+      "outcome_reason": "approved for merge; the next claim resumes the candidate at the merge gate",
+      "pr_url": "https://github.com/example/repo/pull/9",
+      "host": "writer"
+    }
+  ],
+  "next_before": null,
+  "limit": 50
+}
