@@ -7,9 +7,9 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { usePeers } from "../hooks/usePeers";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { Sidebar } from "./components/Sidebar";
+import { useFleet } from "./fleet";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { PeersContext, validateScope } from "./scope";
@@ -79,7 +79,7 @@ export function NextConsole({
   base?: string;
   pollDeps?: PollDeps;
 }) {
-  const peers = usePeers(base, pollDeps);
+  const peers = useFleet(base, pollDeps);
   const [router] = useState(createConsoleRouter);
   return (
     <PeersContext.Provider value={peers}>
