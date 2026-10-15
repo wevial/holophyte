@@ -164,6 +164,15 @@ class LabelTests(StreamedTurnCase):
             with self.subTest(label):
                 self.assertEqual(self.label_of(line), label)
 
+    def test_a_credential_cut_by_the_description_limit_is_still_redacted(self):
+        recorder = holophyte.agents.turn_progress.TurnProgress(
+            self.conn, self.run, "implement", self.repo, frozenset({SECRET}))
+        with patch.object(holophyte.agents.turn_progress, "PROGRESS_EVERY_S", 0):
+            recorder.seen(tool_use("Bash", description="x" * 56 + SECRET))
+        [summary] = self.progress()
+        self.assertEqual(summary, "implement turn: 1 tool call; last: running "
+                                  + "x" * 56 + "[redacted]")
+
     def test_a_line_without_a_tool_call_records_nothing_more(self):
         recorder = holophyte.agents.turn_progress.TurnProgress(
             self.conn, self.run, "implement", self.repo, frozenset())

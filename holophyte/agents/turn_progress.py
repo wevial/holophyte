@@ -53,8 +53,8 @@ class TurnProgress:
         given = block.get("input")
         given = given if isinstance(given, dict) else {}
         description = given.get("description")
-        description = (description[:DESCRIPTION_CHARS].strip()
-                       if isinstance(description, str) else "")
+        description = (outbound(description, self.secrets)[:DESCRIPTION_CHARS]
+                       .strip() if isinstance(description, str) else "")
         if name in EDITING or name == "Read":
             path = given.get("file_path") or given.get("notebook_path")
             verb = "reading" if name == "Read" else "editing"
