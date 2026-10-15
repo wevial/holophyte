@@ -123,8 +123,7 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
   const ticketUrl = str(item.ticket_url);
   const prUrl = str(item.pr_url);
   const on = host.status?.actions === true;
-  const labels = entry.readyToMerge ? [MERGE, ...actions.filter((label) => label !== MERGE)] : actions;
-  const [primary, ...more] = labels;
+  const [primary, ...more] = entry.readyToMerge ? [MERGE, ...actions.filter((label) => label !== MERGE)] : actions;
   const pending = action.isPending ? action.variables?.label : undefined;
   const last = action.variables?.label;
   const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && last !== MERGE ? action.data.detail : null;
@@ -181,7 +180,6 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
     );
   };
 
-  const reasonBody = reasoning === RESUME ? { ticket } : { run, close: reasoning === ABORT_CLOSE };
   return (
     <div data-card-actions className="mt-[22px] flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -215,7 +213,7 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
           key={reasoning}
           daemon={{ base: host.base, actions: true }}
           route={reasoning === RESUME ? "/actions/resume" : ROUTES[reasoning]!}
-          body={reasonBody}
+          body={reasoning === RESUME ? { ticket } : { run, close: reasoning === ABORT_CLOSE }}
           label={reasoning}
           defaultOpen
           post={(route, body) => post(reasoning, route, body)}
