@@ -4,17 +4,18 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import type { Attention, Status } from "../../src/lib/contract.gen";
+import type { Fetch } from "../../src/lib/poll";
 import { fakeDeps, peersFetch, settle } from "../harness";
+import { blocked, needsDaemons } from "./needsFleet";
 
 const ORIGIN = "http://writer-host:7710";
 const PEER = "http://writer-host:7711";
 
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
-const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
 
 type Item = Attention["items"][number];
-const one = served.items[0]!;
+const one = blocked;
 const two: Item = { ...one, ticket: "KO-11", run: 5 };
 
 function statusOf(project: string, runs: number, admission: string): Status {
@@ -35,11 +36,11 @@ const daemons = peersFetch(ORIGIN, {
   [PEER]: { status: statusOf("/srv/dev/writer", 2, "enabled"), attention: attentionOf([], "/srv/dev/writer") },
 });
 
-async function mount(hash: string) {
+async function mount(hash: string, fetchImpl: Fetch = daemons) {
   window.location.hash = hash;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
-      <NextConsole base={ORIGIN} pollDeps={fakeDeps(daemons).deps} />
+      <NextConsole base={ORIGIN} pollDeps={fakeDeps(fetchImpl).deps} />
     </QueryClientProvider>,
   );
   await act(settle);
@@ -53,6 +54,7 @@ const location = () => {
 const switcher = () => screen.getByRole("button", { name: /Switch project$/ });
 const find = () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
 const activeName = () => document.getElementById(find().getAttribute("aria-activedescendant")!)?.textContent;
+const badge = () => screen.getByRole("navigation", { name: "Pages" }).querySelector("[data-badge]");
 const optionNames = () => screen.getAllByRole("option").map((option) => option.textContent);
 
 async function key(target: HTMLElement, name: string) {
@@ -134,6 +136,22 @@ test("a held scope shows its tag and need count, and picking All projects drops 
   expect(location()).toEqual({ path: "/tickets", project: null });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 need you. Switch project");
+});
+
+test("each row counts its project's Needs you entries, so a pull request not ready to merge counts nowhere", async () => {
+  await mount("#/runs", needsDaemons());
+  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 3 need you. Switch project");
+  fireEvent.click(switcher());
+  await act(settle);
+  expect(optionNames()).toEqual(["All projects30 open", "demo20 open", "writer10 open"]);
+  cleanup();
+
+  await mount("#/runs", needsDaemons(false));
+  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 need you. Switch project");
+  expect(badge()!.textContent).toBe("2");
+  fireEvent.click(switcher());
+  await act(settle);
+  expect(optionNames()).toEqual(["All projects20 open", "demo20 open", "writer0 open"]);
 });
 
 test("a bare open restores the session's scope on Overview, while a named route stays as linked", async () => {

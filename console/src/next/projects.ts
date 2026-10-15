@@ -1,3 +1,4 @@
+import { needsYouEntries, type ReadinessMap } from "../lib/attention";
 import { projectName } from "../lib/derive";
 import { hostItems, type HostRecord } from "../lib/hosts";
 import type { PollBodies } from "../lib/poll";
@@ -21,12 +22,13 @@ interface SwitcherBodies extends PollBodies {
 
 type SwitcherHost = HostRecord<SwitcherBodies>;
 
-function rowOf(name: string | null, hosts: SwitcherHost[], now: number): SwitcherRow {
+function rowOf(name: string | null, hosts: SwitcherHost[], now: number, readiness: ReadinessMap): SwitcherRow {
+  const items = hosts.flatMap((host) => hostItems(host, now));
   return {
     name,
     label: name ?? ALL_PROJECTS,
     held: name != null && hosts.some((host) => host.status?.admission === "held"),
-    need: hosts.reduce((total, host) => total + hostItems(host, now).length, 0),
+    need: needsYouEntries(items, readiness, now).length,
     open: hosts.reduce((total, host) => total + (host.status?.runs.length ?? 0), 0),
     down: name != null && hosts.every((host) => host.error != null),
   };
@@ -34,14 +36,14 @@ function rowOf(name: string | null, hosts: SwitcherHost[], now: number): Switche
 
 /** "All projects", then one row per project name in the order the hosts
  *  first name them, pooling the hosts that serve the same name. */
-export function switcherRows(hosts: SwitcherHost[], now: number): SwitcherRow[] {
+export function switcherRows(hosts: SwitcherHost[], now: number, readiness: ReadinessMap): SwitcherRow[] {
   const byName = new Map<string, SwitcherHost[]>();
   for (const host of hosts) {
     if (host.project == null) continue;
     const name = projectName(host.project);
     byName.set(name, [...(byName.get(name) ?? []), host]);
   }
-  return [rowOf(null, hosts, now), ...[...byName].map(([name, pooled]) => rowOf(name, pooled, now))];
+  return [rowOf(null, hosts, now, readiness), ...[...byName].map(([name, pooled]) => rowOf(name, pooled, now, readiness))];
 }
 
 export function matchRows(rows: SwitcherRow[], query: string): SwitcherRow[] {
