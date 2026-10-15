@@ -276,7 +276,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         project, conn, run_id, provider, task_id, branch, sha, beat_s, pull,
         reviewed) if just_pushed else None)
     refresh = {}  # Only the known main-refresh update inherits the quiet clock.
-    check_fix = CheckFix()  # One rerun, one fix per babysit: red cannot loop.
+    check_fix = CheckFix()  # One rerun, capped fix rounds per babysit.
     pass_no, refreshes, triaged = 0, 0, {}
     marked, released = False, None
     approved_sha = reviewed if approved else None

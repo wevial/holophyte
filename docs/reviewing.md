@@ -374,8 +374,13 @@ One pass:
    still running, or a required check not yet reported, is pending even
    when the rollup already says success -- seconds after a PR opens only
    the instant checks have reported -- and so is a read of the runs or
-   the rules the babysitter could not make. Red checks park the run, green
-   ones are "ready to merge": the PR is merged through its merge API, pinned to the
+   the rules the babysitter could not make. Red Actions checks are rerun
+   once a pass; still red, they get a check fix round, an implementer turn
+   handed the failure lines of each job log and its tail. A red read on
+   the fix's commit gets another round only when its failure is new and
+   `[merge] check_fix_rounds` is not spent; a repeated failure, spent
+   rounds, a red status that is no Actions job or a round that makes no
+   commit park the run. Green checks are "ready to merge": the PR is merged through its merge API, pinned to the
    candidate's sha so a push that races the pass is refused rather than
    landed, under `[merge] approve = "auto"` or after the operator's
    `--approve`, and parks for the human under `approve = "human"`.
