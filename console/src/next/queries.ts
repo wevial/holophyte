@@ -1,9 +1,11 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
-import { mergeReadinessSchema, runDetailSchema } from "../lib/contract.gen";
+import { ledgerSchema, mergeReadinessSchema, runDetailSchema, type Ledger, type LedgerEntry } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
+import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
 import {
+  AnswerError,
   defaultPollDeps,
   fetchJson,
   MERGE_READINESS_POLLS,
@@ -82,4 +84,45 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
+}
+
+export interface DayLedger {
+  /** Each scoped host's last good `/ledger` answer, by its record `key`. */
+  answers: Map<string, Ledger>;
+  /** Every host's entries since local midnight, newest first. */
+  entries: LedgerEntry[];
+}
+
+/** A daemon without the route answers 404: no lines, not a failure. */
+async function ledgerOrNone(fetch: Fetch, url: string): Promise<Ledger | null> {
+  try {
+    return await fetchRoute(fetch, url, ledgerSchema);
+  } catch (failure) {
+    if (failure instanceof AnswerError && failure.status === 404) return null;
+    throw failure;
+  }
+}
+
+/** Every `/ledger` entry of every answering host since local midnight
+ *  before `now`, of any kind, so each answer also carries its outages. */
+export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): DayLedger {
+  const asked = hosts.filter((host) => host.status != null);
+  const path = `/ledger?since=${localMidnight(now)}&limit=${LEDGER_LIMIT}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => ledgerOrNone(deps.fetch, `${host.base}${path}`),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const answers = new Map<string, Ledger>();
+  asked.forEach((host, index) => {
+    const data = results[index]?.data;
+    if (data) answers.set(host.key, data);
+  });
+  const entries = Array.from(answers.values())
+    .flatMap((answer) => answer.entries)
+    .sort((a, b) => b.at - a.at);
+  return { answers, entries };
 }

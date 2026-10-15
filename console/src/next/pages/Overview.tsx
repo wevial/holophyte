@@ -1,12 +1,16 @@
-import { Fragment, useRef, useState, type ReactNode } from "react";
+import { Fragment, useContext, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
+import { DayLog } from "../components/DayLog";
 import { FocusCard, useHeldEntry } from "../components/FocusCard";
+import { MergedToday } from "../components/MergedToday";
 import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
 import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
+import { useDayLedger } from "../queries";
+import { PollDepsContext } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
 
@@ -79,6 +83,7 @@ function FoldingSection({
 
 export function Overview() {
   const view = useOverview();
+  const log = useDayLedger(view.hosts, view.now, useContext(PollDepsContext));
   const held = useHeldEntry(view.needs);
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
@@ -104,79 +109,84 @@ export function Overview() {
     card.current?.focus();
   };
   return (
-    <div className="flex max-w-[880px] flex-col gap-8 px-8 py-7">
-      {view.answered && (
-        <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
-          <h1 className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">
-            {need === 0 ? (
-              <>
-                <span className="text-live">Nothing</span> needs you.
-              </>
-            ) : (
-              <>
-                <span className="text-need">{need}</span> {need === 1 ? "needs" : "need"} you.
-              </>
-            )}
-          </h1>
-          <p data-count-line className="font-mono text-[13px] text-ink-2">
-            {(
-              [
-                [view.running, "running"],
-                [view.pullRequests.length, view.pullRequests.length === 1 ? "open PR" : "open PRs"],
-                [queued, "queued"],
-                [view.mergedToday.length, "merged today"],
-              ] as const
-            ).map(([count, words], index) => (
-              <Fragment key={words}>
-                {index > 0 && <span className="text-ink-3"> · </span>}
-                <b className="font-semibold text-ink">{count}</b> {words}
-              </Fragment>
-            ))}
-          </p>
-        </header>
-      )}
-      <div className="flex flex-col gap-[44px]">
-        <FoldingSection
-          key={needMount}
-          id="need"
-          open={needOpen}
-          onFold={setNeedOpen}
-          label="Needs you"
-          count={need}
-          hot
-          summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
-          empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
-        >
-          <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} cardRef={card} />
-        </FoldingSection>
-        <FoldingSection
-          id="run"
-          label="Running"
-          count={view.running}
-          summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
-          empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-          isEmpty={!lanes.some((group) => group.runs.length > 0)}
-        >
-          <RunningLanes groups={lanes} now={view.now} />
-        </FoldingSection>
-        <FoldingSection
-          id="pr"
-          label="Pull requests"
-          count={view.pullRequests.length}
-          summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
-          empty="No pull requests open."
-          isEmpty={!prLanes.some((group) => group.rows.length > 0)}
-        >
-          <PullRequestLanes groups={prLanes} readiness={view.readiness} needs={view.needs} onShow={showNeed} />
-        </FoldingSection>
-        <FoldingSection
-          id="done"
-          label="Merged today"
-          count={view.mergedToday.length}
-          summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
-          empty="Nothing merged yet today."
-        />
+    <div className="overview gap-8 px-8 py-7">
+      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-8">
+        {view.answered && (
+          <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
+            <h1 className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">
+              {need === 0 ? (
+                <>
+                  <span className="text-live">Nothing</span> needs you.
+                </>
+              ) : (
+                <>
+                  <span className="text-need">{need}</span> {need === 1 ? "needs" : "need"} you.
+                </>
+              )}
+            </h1>
+            <p data-count-line className="font-mono text-[13px] text-ink-2">
+              {(
+                [
+                  [view.running, "running"],
+                  [view.pullRequests.length, view.pullRequests.length === 1 ? "open PR" : "open PRs"],
+                  [queued, "queued"],
+                  [view.mergedToday.length, "merged today"],
+                ] as const
+              ).map(([count, words], index) => (
+                <Fragment key={words}>
+                  {index > 0 && <span className="text-ink-3"> · </span>}
+                  <b className="font-semibold text-ink">{count}</b> {words}
+                </Fragment>
+              ))}
+            </p>
+          </header>
+        )}
+        <div className="flex flex-col gap-[44px]">
+          <FoldingSection
+            key={needMount}
+            id="need"
+            open={needOpen}
+            onFold={setNeedOpen}
+            label="Needs you"
+            count={need}
+            hot
+            summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
+            empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
+          >
+            <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} cardRef={card} />
+          </FoldingSection>
+          <FoldingSection
+            id="run"
+            label="Running"
+            count={view.running}
+            summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
+            empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
+            isEmpty={!lanes.some((group) => group.runs.length > 0)}
+          >
+            <RunningLanes groups={lanes} now={view.now} />
+          </FoldingSection>
+          <FoldingSection
+            id="pr"
+            label="Pull requests"
+            count={view.pullRequests.length}
+            summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
+            empty="No pull requests open."
+            isEmpty={!prLanes.some((group) => group.rows.length > 0)}
+          >
+            <PullRequestLanes groups={prLanes} readiness={view.readiness} needs={view.needs} onShow={showNeed} />
+          </FoldingSection>
+          <FoldingSection
+            id="done"
+            label="Merged today"
+            count={view.mergedToday.length}
+            summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
+            empty="Nothing merged yet today."
+          >
+            <MergedToday rows={view.mergedToday} />
+          </FoldingSection>
+        </div>
       </div>
+      <DayLog entries={log.entries} />
     </div>
   );
 }
