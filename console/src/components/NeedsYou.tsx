@@ -6,6 +6,7 @@ import {
   collapseFailed,
   countsByKind,
   describe,
+  entryKey,
   filterItems,
   orderByAge,
   splitPullRequests,
@@ -25,13 +26,6 @@ import { Chip } from "./Chip";
 
 /** Rows shown before "Show all N". */
 export const ROW_CAP = 4;
-
-/** The key one row toggles its card by: its run for a question, its
- *  ticket for a failed ticket's attempts. */
-function rowKey({ item, attempts }: BandEntry, index: number): string {
-  const tail = attempts ? item.ticket : (item.run ?? item.ticket);
-  return `${String(item.daemon ?? "")}-${item.kind}-${String(tail ?? index)}`;
-}
 
 /** The band that opens the Now view: what needs a human across every host
  *  in view, each item stamped with its daemon's project, plus one critical
@@ -172,7 +166,7 @@ export function NeedsYou({
       <ul className="mt-3">
         {rows.map((entry, index) => {
           const { item } = entry;
-          const key = rowKey(entry, index);
+          const key = entryKey(entry, index);
           return (
             <AttentionRow
               key={key}

@@ -1,7 +1,7 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
-import { mergeReadinessSchema } from "../lib/contract.gen";
+import { mergeReadinessSchema, runDetailSchema } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import {
   defaultPollDeps,
@@ -63,4 +63,17 @@ export function useReadiness(hosts: HostRecord<PollBodies>[], deps: { fetch: Fet
     if (result?.status === "success") readiness.set(park.key, { ready: result.data.ready });
   });
   return readiness;
+}
+
+/** `/runs/N` at `base`, read again every `POLL_INTERVAL_MS` while mounted;
+ *  idle with no run. */
+export function useRun(base: string | null, id: number | null, deps: { fetch: Fetch } = defaultPollDeps) {
+  const path = `/runs/${String(id)}`;
+  return useQuery({
+    queryKey: routeKey(base ?? "", path),
+    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runDetailSchema),
+    enabled: base != null && id != null,
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
 }
