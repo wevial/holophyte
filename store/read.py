@@ -728,13 +728,12 @@ def stuck_waits(conn):
     for ticket in rows:
         if ticket.status != "blocked_on_deps":
             continue
-        deps = [by_issue[ticket.projectId, issue] for issue in ticket.dependsOn
-                if (ticket.projectId, issue) in by_issue]
-        stuck = next(((dep, _stuck_state(dep)) for dep in deps
-                      if _stuck_state(dep) is not None), None)
-        if stuck is None:
+        deps = [by_issue.get((ticket.projectId, issue))
+                for issue in ticket.dependsOn]
+        dep = next((dep for dep in deps if dep and _stuck_state(dep)), None)
+        if dep is None:
             continue
-        dep, state = stuck
+        state = _stuck_state(dep)
         waiting = [row for row in rows if row.projectId == ticket.projectId
                    and row.status == "blocked_on_deps"]
         waits.append(StuckWait(
