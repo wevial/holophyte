@@ -47,7 +47,8 @@ def failed_turn(output):
 def failure_line(output):
     if isinstance(output, AgentOutput) and failed_turn(output):
         return (outage_reason(output.command, output)
-                or f"exit status {output.exit_code}")
+                or ("timed out" if output.timed_out
+                    else f"exit status {output.exit_code}"))
     return None
 
 

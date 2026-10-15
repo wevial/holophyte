@@ -34,12 +34,13 @@ class AdjudicatorTurn:
 
     text: str
     exit_code: int = 1
+    timed_out: bool = False
 
     role = REVIEW_ROLES
 
     def play(self, cwd, turn):
-        return AgentOutput(self.text + "\n", "claude -p",
-                           exit_code=self.exit_code)
+        return AgentOutput(self.text + "\n" if self.text else "", "claude -p",
+                           exit_code=self.exit_code, timed_out=self.timed_out)
 
 
 class AdjudicatorOutageTests(MergeModeFixture):
@@ -60,6 +61,18 @@ class AdjudicatorOutageTests(MergeModeFixture):
         self.assertNotIn("a thread needs a human's answer", question)
         self.assertEqual(
             [kind for kind, _ in self.api_calls() if kind == "reply"], [])
+
+    def test_an_empty_timed_out_turn_parks_naming_the_timeout(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route(states=[self.pr_state([self.DEFECT])])
+
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  AdjudicatorTurn("", timed_out=True), provider=self.provider())
+
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("route",)])
+        question = self.question()
+        self.assertIn("the adjudicator turn failed: timed out", question)
+        self.assertNotIn("exit status", question)
 
     def test_a_reply_judging_neither_thread_parks_as_a_route_outage(self):
         self.configure('[merge]\nmode = "pr"\n')
