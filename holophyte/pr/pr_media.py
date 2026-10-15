@@ -1,4 +1,5 @@
 import base64
+import collections
 import fnmatch
 import hashlib
 import json
@@ -27,12 +28,14 @@ from holophyte.pr import github, mockup
 CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
 TAIL_LINES = 20
-RECEIPT_VERSION = 7
+LOG_LINES = 400
+RECEIPT_VERSION = 8
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 QUOTED = re.compile(r"^Captured with `.*`\.[ \t\r]*\n+"
                     r"(?=Dropped `|No media remains |Media lives in )",
                     re.MULTILINE | re.DOTALL)
+CaptureFailure = collections.namedtuple("CaptureFailure", "kind sentence missing log")
 
 
 def implementer_brief(project, ticket, task_id):
@@ -162,11 +165,22 @@ def matches(wt, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def _tail(output, project):
+def _redacted(output, project):
     if isinstance(output, bytes):
         output = output.decode(errors='replace')
     document = project.config() if project is not None else None
-    text = redact.outbound(output or '', redact.known_secrets(document))
+    return redact.outbound(output or '', redact.known_secrets(document))
+
+
+def _keep_log(output, project, log_path):
+    if log_path is not None:
+        lines = _redacted(output, project).splitlines()[-LOG_LINES:]
+        log_path.write_text(''.join(f'{line}\n' for line in lines))
+    return output
+
+
+def _tail(output, project):
+    text = _redacted(output, project)
     lines = [line for line in text.splitlines() if line.strip()][-TAIL_LINES:]
     if not lines:
         return ''
@@ -183,7 +197,7 @@ def _failed(code, output, project):
     return sentence + _tail(output, project)
 
 
-def _capture(command, wt, output, task_id, states, *, project=None):
+def _capture(command, wt, output, task_id, states, *, project=None, log_path=None):
     route = launcher.route_for(project) if project is not None else launcher.Route()
     if route.backend == 'container':
         env = dict(launcher.environment(project) or {})
@@ -210,7 +224,8 @@ def _capture(command, wt, output, task_id, states, *, project=None):
                                              timeout=CAPTURE_TIMEOUT,
                                              mounts=[runner], carry=carry)
         except subprocess.TimeoutExpired as expired:
-            return _failed(None, expired.output, project)
+            return _failed(None, _keep_log(expired.output, project, log_path), project)
+        _keep_log(printed, project, log_path)
         return _failed(code, printed, project) if code else ''
     with tempfile.TemporaryFile() as log:
         process = subprocess.Popen(shlex.split(command) + [str(output)],
@@ -221,10 +236,11 @@ def _capture(command, wt, output, task_id, states, *, project=None):
         except subprocess.TimeoutExpired:
             code = None
         _stop(process)  # Nothing the capture started outlives it.
-        if code == 0:
+        if code == 0 and log_path is None:
             return ''
         log.seek(0)
-        return _failed(code, log.read(), project)
+        printed = _keep_log(log.read(), project, log_path)
+        return '' if code == 0 else _failed(code, printed, project)
 
 
 def _stop(process):
@@ -438,8 +454,10 @@ def _produce(project, wt, task_id, command, note, cfg, states):
         output = Path(tmp)
         if isolated:
             (output / '.gitignore').write_text('*\n')
-        error = _capture(command, wt, output, task_id, states, project=project)
+        error = _capture(command, wt, output, task_id, states, project=project,
+                         log_path=note.with_suffix('.log'))
         if error:
+            _record_kind(note, 'capture', _unsaved(_images(output), states))
             note.write_text(f'Ran `{command}`.\n\n{error}')
             # `refresh()` folds the failure onto one line: the sentence only.
             return (_missing('## Evidence\n\n' + error, states),
@@ -450,16 +468,20 @@ def _produce(project, wt, task_id, command, note, cfg, states):
                        and file.resolve().is_relative_to(output))
         if not files:
             error = 'The UI capture produced no media files.'
+            _record_kind(note, 'capture', _unsaved((), states))
             note.write_text(f'Ran `{command}`.\n\n{error}')
             return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
         partial = _partial(files, states)
+        if partial:
+            _record_kind(note, 'capture', _unsaved(files, states))
         if cleared:
             mockup.keep_captured(wt, output, files)
         lines = ['## Evidence', *partial[:1]]
         lines.extend(dropped)
         if not files:
             error = 'No media remains within the evidence size limits.'
+            _record_kind(note, 'limits', _unsaved(files, states))
             lines.append(error)
             return _missing('\n\n'.join(lines), states), error
         if cfg.media_bucket:
@@ -490,11 +512,24 @@ def _media_slot(wt, task_id, cfg):
     return f"{task_id}-{sh(['git', 'rev-parse', 'HEAD'], cwd=wt)[:12]}"
 
 
-def _partial(files, states):
+def _images(output):
+    return [file for file in output.rglob('*.png')
+            if file.is_file() and not file.is_symlink()]
+
+
+def _unsaved(files, states):
     saved = {int(file.name[:2]) for file in files
              if re.match(r'^\d{2}-.+\.png$', file.name)}
-    missing = [f'{number:02d} {state}' for number, state in enumerate(states, 1)
-               if number not in saved]
+    return [f'{number:02d} {state}' for number, state in enumerate(states, 1)
+            if number not in saved]
+
+
+def _record_kind(note, kind, missing):
+    note.with_suffix('.kind').write_text(json.dumps({'kind': kind, 'missing': missing}))
+
+
+def _partial(files, states):
+    missing = _unsaved(files, states)
     if not missing:
         return []
     return [f'The UI capture saved {len(states) - len(missing)} of {len(states)}'
@@ -554,6 +589,8 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
     note = receipt.with_suffix('.note')
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
+        for kept in ('.kind', '.log'):
+            receipt.with_suffix(kept).unlink(missing_ok=True)
         try:
             section, failure = _produce(project, wt, task_id, cfg.ui_capture, note,
                                         cfg, evidence_states)
@@ -566,6 +603,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
             failure = (f'The UI capture failed to publish evidence{destination}'
                        f' ({type(error).__name__}{detail}).')
             section = _missing('## Evidence\n\n' + failure, evidence_states)
+            _record_kind(note, 'infra', _unsaved((), evidence_states))
         failed.unlink(missing_ok=True)
         if failure:
             failed.write_text(failure)
@@ -576,8 +614,15 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
 
 
 def capture_failure(project, wt, task_id, evidence_states):
-    failed = _receipt(project, wt, task_id, evidence_states)[0].with_suffix('.failed')
-    return failed.read_text() if failed.exists() else ''
+    receipt = _receipt(project, wt, task_id, evidence_states)[0]
+    failed, kind, log = (receipt.with_suffix(suffix)
+                         for suffix in ('.failed', '.kind', '.log'))
+    if not failed.exists():
+        return None
+    record = json.loads(kind.read_text()) if kind.exists() else {}
+    return CaptureFailure(record.get('kind', ''), failed.read_text(),
+                          tuple(record.get('missing', ())),
+                          log.read_text() if log.exists() else '')
 
 
 def _touched(wt, captured, patterns):

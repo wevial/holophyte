@@ -2,6 +2,7 @@
 before the covering review."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -46,18 +47,20 @@ class SpecFix:
     the covering review instead, it asks for changes as that review would."""
     role = ("implement", "review", "adjudicate")
 
-    def __init__(self):
+    def __init__(self, spec="FIXED"):
         self.fake = None
+        self.spec = spec
 
     def play(self, cwd, turn):
         if self.fake.turns[turn - 1].role != "implement":
             return REQUEST_CHANGES.play(cwd, turn)
-        (cwd / SPEC).write_text("FIXED")
+        (cwd / SPEC).write_text(self.spec)
         return "Clicked the second view's tab before it closed."
 
 
 class CaptureFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
-    def test_a_failed_capture_at_a_fix_head_is_fixed_before_its_review(self):
+    def broken_spec(self, merge='approve = "auto"\n', evidence=None):
+        """A parked fix whose local spec stops the capture after `01`."""
         (self.target / "ui").mkdir()
         (self.target / "ui" / "app.txt").write_text("first\n")
         self.git("add", "-A")
@@ -69,14 +72,29 @@ class CaptureFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
         (wt / SPEC).write_text("BROKEN")
         script = self.db.parent / "capture.py"
         script.write_text(CAPTURE)
-        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n'
+        self.configure('[merge]\nmode = "pr"\n' + merge.split("\n[", 1)[0] + "\n"
                        'ui_paths = ["ui/**"]\nui_capture_local = true\n'
-                       f'ui_capture = "{sys.executable} {script}"\n')
+                       f'ui_capture = "{sys.executable} {script}"\n'
+                       + ("\n[" + merge.split("\n[", 1)[1] if "\n[" in merge
+                          else ""))
         self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
                                        return_value=False))
-        self.pr_body.write_text(holophyte.pr.github.pr_body_written(
-            "Old.", "KO-131", None))
+        a = self.git("rev-parse", BRANCH).strip()[:12]
+        self.pr_body.write_text(holophyte.pr.pr_media.append(
+            holophyte.pr.github.pr_body_written("Old.", "KO-131", None),
+            (evidence or "").format(a=a)))
         self.BODY = TWO_VIEWS
+        return a
+
+    def evidence(self):
+        return holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
+
+    def merges(self):
+        return [variables for kind, variables in self.api_calls()
+                if kind == "merge"]
+
+    def test_a_failed_capture_at_a_fix_head_is_fixed_before_its_review(self):
+        self.broken_spec()
         fix = SpecFix()
         fake = fix.fake = FakeAgent(
             REQUEST_CHANGES, Commit("ui fix", path="ui/app.txt"), fix, APPROVE,
@@ -84,7 +102,8 @@ class CaptureFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
         self.loop(fake=fake, provider=self.provider())
 
         capture_fixes = [turn for turn in fake.turns[2:]
-                         if turn.role == "implement"]
+                         if turn.role == "implement"
+                         and not turn.goal.startswith("Write the pull request")]
         self.assertEqual(len(capture_fixes), 1, fake.roles)
         goal = capture_fixes[0].goal
         self.assertIn("Not captured: 02", goal)
@@ -96,12 +115,77 @@ class CaptureFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"
                                    " ORDER BY id DESC LIMIT 1"), [("merged",)])
         self.assertIn("merge", [kind for kind, _ in self.api_calls()])
-        merged = self.git("rev-parse", BRANCH).strip()[:12]
-        evidence = holophyte.pr.github.split_pr_body(self.pr_body.read_text())[2]
-        self.assertIn(f"Captured at {merged}\n\n", evidence)
+        merged = review.candidate_sha[:12]
+        self.assertIn(f"Captured at {merged}\n\n", self.evidence())
         self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
                                    " WHERE kind = 'capture_fix_round'"), [(1,)])
         rounds = [text for text, in self.read(
             "SELECT text FROM ledger WHERE kind = 'round'")]
         self.assertTrue(any(text.startswith("Capture fix round 1 of 1")
                             for text in rounds), rounds)
+
+    def test_a_capture_still_failing_after_its_round_parks_unreviewed(self):
+        a = self.broken_spec(evidence="## Evidence\n\nCaptured at {a}\n\n"
+                                      "![screen](https://example/{a}.png)")
+        fix = SpecFix("STILL BROKEN")
+        fake = fix.fake = FakeAgent(
+            REQUEST_CHANGES, Commit("ui fix", path="ui/app.txt"), fix)
+        self.loop(fake=fake, provider=self.provider())
+
+        self.assertEqual(fake.roles, ["review", "implement", "implement"])
+        b = self.git("rev-parse", BRANCH).strip()[:12]
+        self.assertIn(f"the UI capture at {b} still fails after capture fix"
+                      " round 1 of 1: The UI capture failed (exit 1).",
+                      self.question())
+        self.assertEqual(self.read("SELECT phase FROM runs"
+                                   " ORDER BY id DESC LIMIT 1"),
+                         [("awaiting_merge_approval",)])
+        self.assertIn(f"This Evidence shows {a}; the candidate has moved to {b},"
+                      " and capturing it failed", self.evidence())
+        self.assertEqual(self.merges(), [])
+
+    def test_no_capture_fix_rounds_reviews_the_failed_capture(self):
+        self.broken_spec('approve = "auto"\ncapture_fix_rounds = 0\n')
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("ui fix", path="ui/app.txt"),
+                            REQUEST_CHANGES, provider=self.provider())
+
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertIn("failed (exit 1)", fake.turns[2].goal)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
+                                   " WHERE kind = 'capture_fix_round'"), [(0,)])
+
+    def test_a_capture_that_fails_to_publish_gets_no_round(self):
+        from test_media_store import CREDS
+        self.enterContext(patch.dict(os.environ))
+        for name in CREDS:
+            os.environ.pop(name, None)
+        self.broken_spec('approve = "auto"\n\n[merge.media_bucket]\n'
+                         'endpoint = "https://objects.example.invalid"\n'
+                         'bucket = "evidence"\n'
+                         'public_base = "https://media.example.invalid"\n')
+        wt = holophyte.config.project.worktree_path(self.project, BRANCH)
+        (wt / SPEC).write_text("FIXED")
+        fake, _ = self.loop(REQUEST_CHANGES, Commit("ui fix", path="ui/app.txt"),
+                            REQUEST_CHANGES, provider=self.provider())
+
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertIn("failed to publish evidence to media bucket",
+                      fake.turns[2].goal)
+        self.assertIn("asked for changes", self.question())
+
+    def test_a_repaired_capture_under_human_approval_parks_for_the_human(self):
+        self.broken_spec('approve = "human"\nreview_fixes = true\n')
+        fix = SpecFix()
+        fake = fix.fake = FakeAgent(
+            REQUEST_CHANGES, Commit("ui fix", path="ui/app.txt"), fix, APPROVE,
+            Idle(""))
+        self.loop(fake=fake, provider=self.provider())
+
+        self.assertEqual(fake.roles[:4], ["review", "implement", "implement",
+                                          "review"])
+        reviewed = fake.turns[3].candidate_sha
+        self.assertIn("waiting for a human to say merge", self.question())
+        self.assertEqual(self.read("SELECT phase, approvedSha FROM runs"
+                                   " ORDER BY id DESC LIMIT 1"),
+                         [("awaiting_merge_approval", reviewed)])
+        self.assertEqual(self.merges(), [])
