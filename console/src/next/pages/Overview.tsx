@@ -3,6 +3,7 @@ import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
 import { DayLog } from "../components/DayLog";
 import { MergedToday } from "../components/MergedToday";
+import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
 import { useDayLedger } from "../queries";
@@ -48,6 +49,7 @@ function FoldingSection({
   count,
   summary,
   empty,
+  isEmpty = count === 0,
   children,
 }: {
   id: string;
@@ -55,11 +57,12 @@ function FoldingSection({
   count: number;
   summary?: string;
   empty: string;
+  isEmpty?: boolean;
   children?: ReactNode;
 }) {
   return (
     <Section label={label} count={count} summary={summary} defaultOpen={readOpen(id)} onToggle={(open) => writeOpen(id, open)}>
-      {count === 0 ? <Empty>{empty}</Empty> : children}
+      {isEmpty ? <Empty>{empty}</Empty> : children}
     </Section>
   );
 }
@@ -72,6 +75,7 @@ export function Overview() {
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
+  const lanes = laneGroups(view.hosts);
   return (
     <div className="overview gap-8 px-8 py-7">
       <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-6">
@@ -109,7 +113,10 @@ export function Overview() {
           count={view.running}
           summary={queued === 0 ? "nothing queued" : `${queued} queued`}
           empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-        />
+          isEmpty={!lanes.some((group) => group.runs.length > 0)}
+        >
+          <RunningLanes groups={lanes} now={view.now} />
+        </FoldingSection>
         <FoldingSection
           id="pr"
           label="Pull requests"
