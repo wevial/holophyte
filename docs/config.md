@@ -1148,7 +1148,9 @@ are marked "not captured" in the PR and reviewer prompt. A capture fails when
 its command exits nonzero or times out, when it writes no media, or, for a
 ticket that lists states, when it exits 0 without an `NN-` image for every
 state; its section then opens with "The UI capture saved N of M views; not
-captured: …". A ticket without states succeeds with any media file. The PR's
+captured: …", and its media is published beside the ticket's earlier media
+(`pr-media/<ticket>-<head>`, or `<ticket>-<head>/` under `media_repo`) rather
+than over it. A ticket without states succeeds with any media file. The PR's
 Evidence section is rewritten when the pull request opens, when a review of
 its candidate approves, and before the covering review of each babysit fix
 that passed verify and touched `ui_paths` since the section's "Captured at"

@@ -1,7 +1,9 @@
 """A babysit fix's capture reaches the pull request's Evidence before its review."""
 from __future__ import annotations
 
+import subprocess
 import sys
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,6 +12,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))  # factory.py imports store/ticket_template by name
 sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402
+import test_pr_media  # noqa: E402
 from fake_agent import REQUEST_CHANGES, Commit  # noqa: E402
 from loop_fixture import BRANCH, VALID_BODY, MergeModeFixture  # noqa: E402
 
@@ -62,7 +65,8 @@ class BabysitEvidenceRefreshTests(cases.BabysitHelpers, MergeModeFixture):
         script.write_text(
             "import subprocess, sys\nfrom pathlib import Path\nhead = subprocess"
             ".check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()\n"
-            f"open({str(self.captures)!r}, 'a').write(head + '\\n')\n" + capture)
+            f"open({str(self.captures)!r}, 'a').write(head + '\\n')\n"
+            + capture.replace("PR_BODY", repr(str(self.pr_body))))
         self.configure('[merge]\nmode = "pr"\nui_paths = ["ui/**"]\n'
                        f'ui_capture = "{sys.executable} {script}"\n')
         self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
@@ -131,3 +135,51 @@ class BabysitEvidenceRefreshTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertTrue(before_review)
         self.assertEqual(set(before_review), {(False, ())})
         self.assertEqual(self.evidence().rstrip(), self.old_evidence)
+
+    def test_a_description_edit_during_the_capture_survives_its_publication(self):
+        self.pr_at_a("body = Path(PR_BODY)\n"
+                     "body.write_text(body.read_text().replace('Old.', 'Edited.'))\n"
+                     "Path(sys.argv[1], head[:12] + '.png').write_bytes(b'png')\n")
+        b, _ = self.rejected_fix()
+        body = self.pr_body.read_text()
+        self.assertIn("Edited.", body)
+        self.assertIn(f"Captured at {b}\n\n", self.evidence())
+
+
+class PartialCaptureMediaTests(unittest.TestCase):
+    setUp = test_pr_media.MediaTests.setUp
+    git = test_pr_media.MediaTests.git
+    STATES = ["First view", "Second view"]
+
+    def capture_at(self, names):
+        (self.repo / "console" / "src").mkdir(parents=True, exist_ok=True)
+        (self.repo / "console" / "src" / "App.tsx").write_text(repr(names))
+        (self.repo / "capture.py").write_text(
+            "import subprocess, sys\nfrom pathlib import Path\nhead = subprocess"
+            ".check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()\n"
+            f"for name in {names!r}:\n"
+            "    Path(sys.argv[1], name).write_bytes(head.encode())\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "ui")
+        with (patch.object(holophyte.pr.pr_media, "repo_is_private",
+                           return_value=False),
+              patch.object(holophyte.pr.github, "origin_url",
+                           return_value="https://github.com/example/repo.git")):
+            return holophyte.pr.pr_media.prepare(self.target, self.repo, "KO-9",
+                                                 evidence_states=self.STATES)
+
+    def published(self, ref):
+        return subprocess.run(
+            ["git", "--git-dir", str(self.remote), "show", ref],
+            capture_output=True).stdout
+
+    def test_a_partial_capture_keeps_the_media_the_earlier_evidence_links(self):
+        self.capture_at(["01-first.png", "02-second.png"])
+        a = self.git("rev-parse", "HEAD")
+        section = self.capture_at(["01-first.png"])
+        b = self.git("rev-parse", "HEAD")
+        for name in ("01-first.png", "02-second.png"):
+            self.assertEqual(self.published(f"pr-media/KO-9:{name}"), a.encode())
+        self.assertEqual(self.published(f"pr-media/KO-9-{b[:12]}:01-first.png"),
+                         b.encode())
+        self.assertIn(f"pr-media/KO-9-{b[:12]}/01-first.png)", section)

@@ -467,7 +467,9 @@ def _produce(project, wt, task_id, command, note, cfg, states):
                 project, output, files, task_id, cfg.media_bucket)
         else:
             description, urls = _publish_git(
-                project, wt, output, files, task_id, note, cfg.media_repo)
+                project, wt, output, files,
+                _media_slot(wt, task_id, cfg) if partial else task_id,
+                note, cfg.media_repo)
         lines.append(description)
         state_lines, matched = _state_media(states, urls)
         lines.extend(state_lines)
@@ -478,6 +480,14 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             label = name.replace('[', r'\[').replace(']', r'\]')
             lines.append(f'{"!" if file.suffix == ".png" else ""}[{label}]({url})')
         return '\n\n'.join(lines), ' '.join(partial)
+
+
+def _media_slot(wt, task_id, cfg):
+    published = cfg.media_repo or sh(
+        ['git', 'ls-remote', github.REMOTE, f'refs/heads/pr-media/{task_id}'], cwd=wt)
+    if not published:
+        return task_id
+    return f"{task_id}-{sh(['git', 'rev-parse', 'HEAD'], cwd=wt)[:12]}"
 
 
 def _partial(files, states):
