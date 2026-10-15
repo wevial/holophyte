@@ -58,6 +58,7 @@ PINNED = {
     "holophyte/babysit/babysitter.py": 21,
     "holophyte/babysit/bot_threads.py": 0,
     "holophyte/babysit/check_fix.py": 1,
+    "holophyte/babysit/covering_fix.py": 2,
     "holophyte/babysit/conversation_comments.py": 0,
     "holophyte/babysit/description_review.py": 1,
     "holophyte/babysit/devin_notes.py": 0,

@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 
 import store
@@ -9,6 +10,10 @@ from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.review.reply_parsing import UNPARSED_PATH
 
 ROUND_KIND = "covering_fix_round"
+
+LEAD_RE = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
+                     r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
+                     r"[:\u2014-]?\s*)?(?:\*\*)?\s*", re.I)
 
 
 @dataclass(frozen=True)
@@ -95,13 +100,20 @@ def fix_note_of(findings):
 
 def _change(finding):
     message = " ".join(str(finding.get("message", "")).split())
-    path = finding.get("path", "")
+    path, line = finding.get("path", ""), finding.get("line")
     if path == store.CRITERIA_PATH:
-        return f"Meet and witness the acceptance criterion: {message}"
-    if not path or path.startswith(UNPARSED_PATH) or path in message:
-        return message
-    line = finding.get("line")
-    return f"In {path}{f':{line}' if line else ''}: {message}"
+        criterion = str(finding.get("message", "")).partition("\n")[2]
+        return (f"Meet acceptance criterion {line} and name the test that"
+                f" witnesses it: {' '.join(criterion.split()) or message}")
+    if message.startswith(f"SCOPE {path}:"):
+        return (f"Keep {path} to what the ticket needs, or take its change"
+                " off this branch.")
+    rest = LEAD_RE.sub("", message, count=1)
+    if not path or path.startswith(UNPARSED_PATH):
+        return f"Fix \u2014 {rest}"
+    rest = re.sub(rf"^[`*\"']*{re.escape(path)}(?::\d+)?[`*\"']*\s*[:,\u2014-]?\s*",
+                  "", rest, count=1)
+    return f"Fix {path}{f':{line}' if line else ''} \u2014 {rest}"
 
 
 def _covering_findings(conn, run_id, rnd):

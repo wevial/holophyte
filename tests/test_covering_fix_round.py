@@ -42,6 +42,9 @@ class CoveringFixRoundTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn("src/loader.py:4 drops the empty-input default",
                       fake.turns[6].goal)
         self.assertIn("Fix note from the review of the fix at", fake.turns[6].goal)
+        self.assertIn("Fix src/loader.py:4 — drops the empty-input default.\n"
+                      "Fix each point above on this branch and keep the ticket's"
+                      " verify commands passing.", fake.turns[6].goal)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual(self.read("SELECT count(*) FROM runEvents"
                                    " WHERE kind = 'covering_fix_round'"), [(1,)])
