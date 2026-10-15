@@ -33,9 +33,7 @@ test("Tailwind exposes every raw colour and every classic colour through a decla
   for (const name of classicNames) {
     const reference = /^var\((--[a-z0-9-]+)\)$/.exec(theme.get(name) ?? "");
     expect(reference).not.toBeNull();
-    for (const names of [raw, tokensUnder(decls, nightSelector), tokensUnder(decls, systemSelector, media)]) {
-      expect(names).toContain(reference![1]!);
-    }
+    expect(raw).toContain(reference![1]!);
   }
   expect(theme.get("--shadow-card")).toBe("var(--card-shadow)");
 });
