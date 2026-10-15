@@ -10,9 +10,9 @@
     "ended_ms": null,
     "outcome": null,
     "elapsed_ms": 0,
-    "working_ms": 0,
-    "agent_ms": 0,
-    "verify_ms": 0,
+    "working_ms": null,
+    "agent_ms": null,
+    "verify_ms": null,
     "time_box_ms": null,
     "branch": null,
     "host": null,
@@ -32,9 +32,9 @@
   "chain": {
     "started_ms": 1750000000000,
     "elapsed_ms": 0,
-    "working_ms": 0,
-    "agent_ms": 0,
-    "verify_ms": 0,
+    "working_ms": null,
+    "agent_ms": null,
+    "verify_ms": null,
     "runs": [
       {
         "id": 1,
@@ -44,9 +44,9 @@
         "started_ms": 1750000000000,
         "ended_ms": null,
         "elapsed_ms": 0,
-        "working_ms": 0,
-        "agent_ms": 0,
-        "verify_ms": 0,
+        "working_ms": null,
+        "agent_ms": null,
+        "verify_ms": null,
         "max_rounds": 2,
         "turn_count": 0,
         "rounds": []

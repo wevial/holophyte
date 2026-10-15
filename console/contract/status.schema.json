@@ -1,0 +1,521 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Status",
+  "description": "GET /status",
+  "$ref": "#/$defs/Status",
+  "$defs": {
+    "ActiveRoute": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "down": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "additionalProperties": true
+    },
+    "RouteLabels": {
+      "type": "object",
+      "properties": {
+        "implementer": {
+          "type": "string"
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "reviewer_fallback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adjudicator": {
+          "type": "string"
+        },
+        "writer": {
+          "type": "string"
+        },
+        "trimmer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "implementer",
+        "reviewer",
+        "reviewer_fallback",
+        "adjudicator",
+        "writer",
+        "trimmer"
+      ],
+      "additionalProperties": true
+    },
+    "ToilWindow": {
+      "type": "object",
+      "properties": {
+        "interventions": {
+          "type": "integer"
+        },
+        "merged": {
+          "type": "integer"
+        },
+        "per_merge": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "by_action": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "by_actor": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "interventions",
+        "merged",
+        "per_merge",
+        "by_action",
+        "by_actor"
+      ],
+      "additionalProperties": true
+    },
+    "Toil": {
+      "type": "object",
+      "properties": {
+        "24h": {
+          "$ref": "#/$defs/ToilWindow"
+        },
+        "7d": {
+          "$ref": "#/$defs/ToilWindow"
+        }
+      },
+      "required": [
+        "24h",
+        "7d"
+      ],
+      "additionalProperties": true
+    },
+    "Daemon": {
+      "type": "object",
+      "properties": {
+        "started_ms": {
+          "type": "integer"
+        },
+        "pid": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "started_ms",
+        "pid"
+      ],
+      "additionalProperties": true
+    },
+    "Supervisor": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": [
+            "live",
+            "stale",
+            "none"
+          ]
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "pid",
+        "heartbeat_age_ms",
+        "host"
+      ],
+      "additionalProperties": true
+    },
+    "Thresholds": {
+      "type": "object",
+      "properties": {
+        "heartbeat_stale_ms": {
+          "type": "integer"
+        },
+        "strikes": {
+          "type": "integer"
+        },
+        "run_cap": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "heartbeat_stale_ms",
+        "strikes",
+        "run_cap"
+      ],
+      "additionalProperties": true
+    },
+    "StatusRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "stop_requested": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stop_action": {
+          "anyOf": [
+            {
+              "enum": [
+                "pause",
+                "abort",
+                "abort_close"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "heartbeat_age_ms": {
+          "type": "integer"
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        },
+        "working_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_count": {
+          "type": "integer"
+        },
+        "verify_started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_box_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "type": "integer"
+        },
+        "strikes": {
+          "type": "integer"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "ticket_url",
+        "title",
+        "phase",
+        "stop_requested",
+        "stop_action",
+        "started_ms",
+        "heartbeat_age_ms",
+        "elapsed_ms",
+        "working_ms",
+        "work_started_ms",
+        "agent_ms",
+        "verify_ms",
+        "run_count",
+        "verify_started_ms",
+        "time_box_ms",
+        "round",
+        "strikes",
+        "host"
+      ],
+      "additionalProperties": true
+    },
+    "QueuedTicket": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waiting_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ticket",
+        "ticket_url",
+        "title",
+        "reason",
+        "pr_url",
+        "waiting_ms"
+      ],
+      "additionalProperties": true
+    },
+    "Status": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "admission": {
+          "type": "string"
+        },
+        "hold_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "active_routes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ActiveRoute"
+          }
+        },
+        "route_labels": {
+          "$ref": "#/$defs/RouteLabels"
+        },
+        "workers_on_previous_build": {
+          "type": "integer"
+        },
+        "host": {
+          "type": "string"
+        },
+        "now": {
+          "type": "integer"
+        },
+        "toil": {
+          "$ref": "#/$defs/Toil"
+        },
+        "daemon": {
+          "$ref": "#/$defs/Daemon"
+        },
+        "supervisor": {
+          "$ref": "#/$defs/Supervisor"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/Thresholds"
+        },
+        "actions": {
+          "type": "boolean"
+        },
+        "config_edit": {
+          "type": "boolean"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StatusRun"
+          }
+        },
+        "queued": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QueuedTicket"
+          }
+        }
+      },
+      "required": [
+        "project",
+        "admission",
+        "hold_note",
+        "schema_version",
+        "active_routes",
+        "route_labels",
+        "workers_on_previous_build",
+        "host",
+        "now",
+        "toil",
+        "daemon",
+        "supervisor",
+        "thresholds",
+        "actions",
+        "config_edit",
+        "runs",
+        "queued"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
