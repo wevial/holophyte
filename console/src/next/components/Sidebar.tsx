@@ -3,7 +3,7 @@ import { Link, useSearch } from "@tanstack/react-router";
 import { formatDuration } from "../../lib/format";
 import { groupByHost, hostItems } from "../../lib/hosts";
 import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
-import { scopedHosts, useConsolePeers } from "../scope";
+import { keepScope, scopedHosts, useConsolePeers } from "../scope";
 import {
   ChevronIcon,
   FindingsIcon,
@@ -50,7 +50,7 @@ function shownTheme(): Shown {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-const THEME_NAMES: Record<Shown, string> = { light: "dawn", dark: "night" };
+const THEME_NAMES: Record<Shown, string> = { light: "Dawn", dark: "Night" };
 
 function ThemeToggle({ folded }: { folded: boolean }) {
   const [theme, setTheme] = useState<Shown>(shownTheme);
@@ -59,8 +59,8 @@ function ThemeToggle({ folded }: { folded: boolean }) {
   return (
     <button
       type="button"
-      aria-label={`Colour theme: ${name}. Switch to ${THEME_NAMES[other]}`}
-      title={folded ? `${name[0]!.toUpperCase()}${name.slice(1)}` : undefined}
+      aria-label={`Colour theme: ${name.toLowerCase()}. Switch to ${THEME_NAMES[other].toLowerCase()}`}
+      title={folded ? name : undefined}
       onClick={() => {
         writeTheme(other);
         applyTheme(other);
@@ -69,7 +69,7 @@ function ThemeToggle({ folded }: { folded: boolean }) {
       className="flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule px-3 text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink"
     >
       {theme === "dark" ? <MoonIcon /> : <SunIcon />}
-      {!folded && <span>{theme === "dark" ? "Night" : "Dawn"}</span>}
+      {!folded && <span>{name}</span>}
     </button>
   );
 }
@@ -90,7 +90,7 @@ function PageLink({
   return (
     <Link
       to={to}
-      search={(previous) => ({ project: previous.project })}
+      search={keepScope}
       activeOptions={{ exact: true, includeSearch: false }}
       aria-label={badge > 0 ? `${label}, ${badge} need you` : label}
       title={folded ? label : undefined}
@@ -151,7 +151,7 @@ export function Sidebar() {
         {!folded && (
           <Link
             to="/"
-            search={(previous) => ({ project: previous.project })}
+            search={keepScope}
             className="flex items-center gap-2 text-act"
           >
             <Mark />

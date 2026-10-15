@@ -1,4 +1,5 @@
 import { Link, useSearch } from "@tanstack/react-router";
+import { keepScope } from "../scope";
 
 export function Placeholder({
   title,
@@ -30,7 +31,7 @@ export function NotFound() {
       <p className="text-[14px] text-ink-2">There is no page here.</p>
       <Link
         to="/"
-        search={(previous) => ({ project: previous.project })}
+        search={keepScope}
         className="self-start text-[13px] font-medium text-act underline underline-offset-2"
       >
         Go to Overview

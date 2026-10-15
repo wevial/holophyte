@@ -15,6 +15,8 @@ export function validateScope(search: Record<string, unknown>): ScopeSearch {
   return typeof project === "string" && project.length > 0 && project.length <= PROJECT_MAX ? { project } : {};
 }
 
+export const keepScope = (previous: ScopeSearch): ScopeSearch => ({ project: previous.project });
+
 /** Every host with no scope, else the hosts whose project bears that name;
  *  a host that never answered has no project and so no name to match. */
 export function scopedHosts(hosts: HostRecord[], project: string | undefined): HostRecord[] {
