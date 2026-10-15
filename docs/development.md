@@ -760,6 +760,9 @@ classic sidebar links to it. The classic console opens on the view a
 `#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
 console page can link to the classic view behind it.
 
+Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
+Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than
