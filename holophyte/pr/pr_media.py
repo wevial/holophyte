@@ -565,7 +565,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
 
 
-def capture_failure(project, wt, task_id, evidence_states=()):
+def capture_failure(project, wt, task_id, evidence_states):
     failed = _receipt(project, wt, task_id, evidence_states)[0].with_suffix('.failed')
     return failed.read_text() if failed.exists() else ''
 
