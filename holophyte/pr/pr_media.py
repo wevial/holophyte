@@ -433,7 +433,7 @@ def _produce(project, wt, task_id, command, note, cfg, states):
     isolated = launcher.route_for(project).backend == 'container'
     directory = ({'dir': Path(wt).resolve(), 'prefix': '.holophyte-capture-'}
                  if isolated else {'prefix': 'pr-media-'})
-    kept = mockup.clear_captured(wt)
+    cleared = mockup.clear_captured(wt)
     with tempfile.TemporaryDirectory(**directory) as tmp:
         output = Path(tmp)
         if isolated:
@@ -453,7 +453,8 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             note.write_text(f'Ran `{command}`.\n\n{error}')
             return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
-        mockup.keep_captured(kept, files)
+        if cleared:
+            mockup.keep_captured(wt, files)
         lines = ['## Evidence']
         lines.extend(dropped)
         if not files:

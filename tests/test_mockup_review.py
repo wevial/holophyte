@@ -64,7 +64,8 @@ def fetched_mockup(wt):
 def a_capture(wt):
     shot = Path(tempfile.mkdtemp(dir=wt.parent)) / "01-gate.png"
     shot.write_bytes(PNG)
-    mockup.keep_captured(mockup.clear_captured(wt), [shot])
+    mockup.clear_captured(wt)
+    mockup.keep_captured(wt, [shot])
 
 
 class ReviewPromptTests(unittest.TestCase):
@@ -128,6 +129,16 @@ class CapturedScreenshotTests(unittest.TestCase):
         self.assertIn("failed", self.prepare())
         self.assertEqual(list(captured.glob("*.png")), [])
         self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_a_link_the_capture_plants_is_never_written_through(self):
+        outside = self.root / "outside.png"
+        self.candidate(script="import os, sys\nfrom pathlib import Path\n"
+                       f"os.symlink({str(outside)!r}, "
+                       f"Path({mockup.CAPTURED!r}, '01-gate.png'))\n"
+                       f'Path(sys.argv[1], "01-gate.png").write_bytes({PNG!r})\n')
+        self.assertIn("01-gate.png", self.prepare())
+        self.assertTrue((self.repo / mockup.CAPTURED / "01-gate.png").is_symlink())
+        self.assertFalse(outside.exists())
 
 
 class ContainerReviewCarryTests(SweepTestCase):

@@ -427,27 +427,49 @@ def clear_captured(wt):
         finally:
             shutil.rmtree(staging, ignore_errors=True)
     except (Refused, OSError, subprocess.CalledProcessError):
-        return None
-    return target
+        return False
+    return True
 
 
-def keep_captured(directory, files):
-    if directory is None:
+def keep_captured(wt, files):
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        _refuse_unsafe(Path(wt), CAPTURED)
+        parent = os.open(Path(wt) / ".holophyte", flags)
+        try:
+            directory = os.open(Path(CAPTURED).name, flags, dir_fd=parent)
+        finally:
+            os.close(parent)
+    except (Refused, OSError, subprocess.CalledProcessError):
         return
-    for file in files:
-        if file.suffix == ".png" and not (directory / file.name).exists():
-            try:
-                shutil.copyfile(file, directory / file.name)
-            except OSError:
-                return
+    try:
+        for file in files:
+            if file.suffix == ".png":
+                _copy_new(file, directory)
+    except OSError:
+        pass
+    finally:
+        os.close(directory)
+
+
+def _copy_new(file, directory):
+    try:
+        fd = os.open(file.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o644, dir_fd=directory)
+    except FileExistsError:
+        return
+    with os.fdopen(fd, "wb") as out, open(file, "rb") as source:
+        shutil.copyfileobj(source, out)
 
 
 def review_carry(wt):
     root = Path(wt)
-    if (root / ".holophyte").is_symlink():
+    try:
+        _refuse_unsafe(root)
+        _refuse_unsafe(root, CAPTURED)
+    except (Refused, OSError, subprocess.CalledProcessError):
         return []
-    return [entry for entry in (DIRECTORY, CAPTURED)
-            if (root / entry).is_dir() and not (root / entry).is_symlink()]
+    return [entry for entry in (DIRECTORY, CAPTURED) if (root / entry).is_dir()]
 
 
 def release_review_carry(checkout):
