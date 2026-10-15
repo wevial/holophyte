@@ -13,6 +13,7 @@ import review_runner
 from holophyte.agents.agent_output import AgentOutput
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.loop.gates import InfraFailure, run_capped, sh
+from holophyte.pr.mockup import release_review_carry, review_carry
 from holophyte.redact import safe_print as print
 
 PUBLISHING = threading.Lock()
@@ -69,6 +70,7 @@ def review_scratch(repo):
                 for path in review_worktrees(repo, env=env):
                     if path.resolve().is_relative_to(Path(scratch).resolve()):
                         try:
+                            release_review_carry(path)
                             sh(["git", "worktree", "remove", "--force", "--force",
                                 str(path)], cwd=repo, env=env)
                         except (OSError, RuntimeError) as exc:
@@ -115,6 +117,7 @@ def table_review(seat, goal, repo, scratch, cap, env, role, *, run_id=None,
     checkout = Path(scratch) / "candidate"
     sh(["git", "worktree", "add", "--detach", "--quiet", str(checkout),
         review_refs(run_id)[1]], cwd=repo, env=scratch_git_environment())
+    review_runner._carry_into(Path(repo), checkout, review_carry(repo))
 
     def remaining():
         return max(0.0, deadline - time.monotonic())

@@ -22,7 +22,7 @@ from holophyte.config.config_tables import merge_config
 from holophyte.config.worktree_settings import capture_environment, carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import InfraFailure, sh
-from holophyte.pr import github
+from holophyte.pr import github, mockup
 
 CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
@@ -433,6 +433,7 @@ def _produce(project, wt, task_id, command, note, cfg, states):
     isolated = launcher.route_for(project).backend == 'container'
     directory = ({'dir': Path(wt).resolve(), 'prefix': '.holophyte-capture-'}
                  if isolated else {'prefix': 'pr-media-'})
+    kept = mockup.clear_captured(wt)
     with tempfile.TemporaryDirectory(**directory) as tmp:
         output = Path(tmp)
         if isolated:
@@ -452,6 +453,7 @@ def _produce(project, wt, task_id, command, note, cfg, states):
             note.write_text(f'Ran `{command}`.\n\n{error}')
             return _missing('## Evidence\n\n' + error, states), error
         files, dropped = _cap_files(output, files, cfg)
+        mockup.keep_captured(kept, files)
         lines = ['## Evidence']
         lines.extend(dropped)
         if not files:

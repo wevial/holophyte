@@ -49,6 +49,7 @@ from holophyte.config.reader import (
 from holophyte.config.worktree_settings import carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
+from holophyte.pr.mockup import review_carry
 from holophyte.redact import known_secrets, outbound
 
 REVIEW_TIMEOUT = 1800
@@ -263,7 +264,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 prompt=goal,
                 timeout=cap,
                 verdicts=None,
-                carry=carry_directories(project),
+                carry=carry_directories(project) + review_carry(cwd),
                 on_start=kill.arm,
                 **turn,
                 **options,
