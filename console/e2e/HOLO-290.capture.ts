@@ -17,12 +17,9 @@ test("the new console's Overview: Merged today's rows and the day's log beside t
   await page.goto("/next.html#/");
   await expect(merged(page).getByRole("listitem").filter({ hasText: "DEMO-10" })).toBeVisible();
   await expect(log(page).getByRole("listitem").first()).toBeVisible();
-  const wide = async () => {
-    const column = await merged(page).boundingBox();
-    const rail = await log(page).boundingBox();
-    expect(rail!.x).toBeGreaterThan(column!.x + column!.width);
-  };
-  await wide();
+  const column = await merged(page).boundingBox();
+  const rail = await log(page).boundingBox();
+  expect(rail!.x).toBeGreaterThan(column!.x + column!.width);
   await shot(page, "01-today-dawn.png");
 
   await page.getByRole("button", { name: "Colour theme: dawn. Switch to night" }).click();
@@ -31,9 +28,9 @@ test("the new console's Overview: Merged today's rows and the day's log beside t
   await page.getByRole("button", { name: "Colour theme: night. Switch to dawn" }).click();
 
   await page.setViewportSize({ width: 1100, height: 900 });
-  const column = await merged(page).boundingBox();
-  const rail = await log(page).boundingBox();
-  expect(rail!.y).toBeGreaterThan(column!.y + column!.height);
+  const narrowColumn = await merged(page).boundingBox();
+  const narrowRail = await log(page).boundingBox();
+  expect(narrowRail!.y).toBeGreaterThan(narrowColumn!.y + narrowColumn!.height);
   await log(page).scrollIntoViewIfNeeded();
   await shot(page, "03-today-1100.png");
 
