@@ -393,6 +393,7 @@ export const roundFindingSchema = z.looseObject({
   line: z.int().nullable().optional(),
   severity: z.string(),
   criterion: z.string().nullable().optional(),
+  title: z.string().optional(),
   message: z.string(),
   fingerprint: findingFingerprintSchema.optional(),
   kind: z.enum(["thread", "finding"]).optional(),

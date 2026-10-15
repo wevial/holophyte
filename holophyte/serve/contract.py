@@ -383,6 +383,7 @@ class RoundFinding(TypedDict):
     line: NotRequired[int | None]
     severity: str
     criterion: NotRequired[str | None]
+    title: NotRequired[str]
     message: str
     fingerprint: NotRequired[FindingFingerprint]
     kind: NotRequired[Literal["thread", "finding"]]
