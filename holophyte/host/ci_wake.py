@@ -13,6 +13,8 @@ EXPIRED = object()
 
 
 def wake_reason(target, conn, ticket, pull, status, latest_s):
+    if ticket.parkKind == "route":
+        return _route_retry(target, ticket)
     if ticket.parkKind != "ci":
         return None
     merge = merge_config(target)
@@ -30,6 +32,13 @@ def wake_reason(target, conn, ticket, pull, status, latest_s):
                 f" {merge.check_wait_sec}s on the pull request",
                 held_for_frontend(target, status))
         return EXPIRED
+    return None
+
+
+def _route_retry(target, ticket):
+    retry_ms = merge_config(target).route_retry_sec * 1000
+    if time() * 1000 - (ticket.askedMs or 0) >= retry_ms:
+        return "retrying the adjudicator after a route outage"
     return None
 
 

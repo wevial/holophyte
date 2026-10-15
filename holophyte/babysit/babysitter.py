@@ -9,7 +9,12 @@ import ticket_template
 from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent_route
-from holophyte.babysit import babysitter, maintainer_notes, thread_mentions
+from holophyte.babysit import (
+    adjudicator_outage,
+    babysitter,
+    maintainer_notes,
+    thread_mentions,
+)
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
@@ -719,6 +724,10 @@ def _answer_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                               babysitter.conventions(wt), run_id=run_id), wt, conn=conn,
                           base_sha=base_sha, candidate_sha=sha, run_id=run_id)
     stop_if_requested(conn, run_id, "merge_gate")
+    outage = judged and adjudicator_outage.outage_line(reply, len(judged))
+    if outage:
+        adjudicator_outage.park_outage(project, conn, run_id, provider, task_id,
+                                       branch, sha, pull, outage, judged, reviewed)
     verdicts = _verdicts_by_kind(
         threads, judged, babysitter.parse_verdicts(reply, len(judged)))
     record_round(project, conn, run_id, rnd, "review",

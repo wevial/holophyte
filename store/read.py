@@ -640,7 +640,7 @@ def claimable(conn, project_id, order="identifier"):
 
 def parked_on_pull_request(outcome, pr_url, park_kind):
     return (outcome != "paused" and bool(pr_url)
-            and park_kind in ("pull_request", "ci"))
+            and park_kind in ("pull_request", "ci", "route"))
 
 _STUCK_NOTE_KINDS = {"needs_spec": ("critic", "stale", "validation"),
                      "abandoned": ("cancel",)}

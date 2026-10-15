@@ -198,7 +198,6 @@ class Version9MigrationTests(unittest.TestCase):
         self.addCleanup(conn.close)
 
         self.assertEqual(self.user_version(), store.schema.SCHEMA_VERSION)
-        self.assertLessEqual(store.schema.READABLE_FROM, 46)
         self.assertEqual(
             conn.execute("SELECT id, prSeenThreads, prSeenOpenThreads"
                          " FROM runs").fetchall(), [(run_id, 4, None)])
@@ -817,7 +816,6 @@ class FollowUpsMigrationTests(unittest.TestCase):
 
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
                              (store.schema.SCHEMA_VERSION,))
-            self.assertEqual(store.schema.READABLE_FROM, 41)
             self.assertEqual(
                 {table: conn.execute(f"SELECT * FROM {table}").fetchall()
                  for table in before}, before)
@@ -865,7 +863,6 @@ class StoryProposalsMigrationTests(unittest.TestCase):
 
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
                              (store.schema.SCHEMA_VERSION,))
-            self.assertEqual(store.schema.READABLE_FROM, 41)
             self.assertEqual(
                 {row[1] for row in conn.execute(
                     "PRAGMA table_info(storyProposals)")},

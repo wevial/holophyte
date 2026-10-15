@@ -63,6 +63,7 @@ class ParkKind(str, Enum):
     QUESTION = 'question'
     NOT_REPRODUCED = 'not_reproduced'
     CI = 'ci'
+    ROUTE = 'route'
 
 
 class RunOutcome(str, Enum):
