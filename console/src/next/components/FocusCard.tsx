@@ -11,6 +11,7 @@ import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
 import { STATES, stateOf } from "../state";
 import { Btn } from "./Btn";
+import { CardActions } from "./CardActions";
 import { ChevronIcon } from "./icons";
 import { StateDot } from "./StateDot";
 
@@ -179,6 +180,7 @@ function Card({
             <PullRequestLine item={item} />
             {runId != null && <LatestEvents run={run} />}
           </div>
+          <CardActions entry={entry} host={host} actions={description.actions} title={title} />
         </>
       )}
     </article>

@@ -845,6 +845,9 @@ the one poll. Every body is parsed with the generated schemas in
 fails at the fetch with a contract error naming the endpoint and field. A
 view that reads another route adds its own query keyed by the daemon base
 and the path, parsed with that route's generated schema.
+An action is a mutation, `useAction()` in `console/src/next/actions.ts`:
+when the daemon takes it, it invalidates the fleet query and every route
+query of that daemon base, so the view re-reads at once, not at the next poll.
 
 The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
 sets that scope. Its rows come from `switcherRows()` in

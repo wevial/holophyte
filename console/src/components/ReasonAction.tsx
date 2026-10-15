@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ACTIONS_OFF, postAction } from "../lib/actions";
+import { ACTIONS_OFF, postAction, type ActionResult } from "../lib/actions";
 import type { RowDaemon } from "./RowActions";
 import { ActionButton } from "./ActionButton";
 
@@ -7,9 +7,10 @@ import { ActionButton } from "./ActionButton";
  *  default "Reason to <label>"), Send stays disabled while it is blank and
  *  posts `body` plus the `note` to `route`, and the daemon's `detail` shows
  *  under it. `children` draw between the box and Send; `onClose` runs when
- *  the box closes. A daemon without `actions` draws `label` disabled,
- *  titled `ACTIONS_OFF`. */
-export function ReasonAction({ daemon, route, body, label, boxLabel = `Reason to ${label.toLowerCase()}`, children, onClose }: {
+ *  the box closes; `defaultOpen` draws the box at once. `post` sends it,
+ *  by default straight to the daemon. A daemon without `actions` draws
+ *  `label` disabled, titled `ACTIONS_OFF`. */
+export function ReasonAction({ daemon, route, body, label, boxLabel = `Reason to ${label.toLowerCase()}`, children, onClose, defaultOpen = false, post }: {
   daemon: RowDaemon;
   route: string;
   body: Record<string, unknown>;
@@ -17,13 +18,17 @@ export function ReasonAction({ daemon, route, body, label, boxLabel = `Reason to
   boxLabel?: string;
   children?: ReactNode;
   onClose?: () => void;
+  defaultOpen?: boolean;
+  post?: (route: string, body: Record<string, unknown>) => Promise<ActionResult>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [note, setNote] = useState("");
   const [detail, setDetail] = useState("");
   if (!daemon.actions) return <ActionButton title={ACTIONS_OFF}>{label}</ActionButton>;
   const send = async () => {
-    const result = await postAction(daemon.base, route, { ...body, note }, daemon.fetch ?? ((url, init) => globalThis.fetch(url, init)));
+    const result = post
+      ? await post(route, { ...body, note })
+      : await postAction(daemon.base, route, { ...body, note }, daemon.fetch ?? ((url, init) => globalThis.fetch(url, init)));
     setDetail(result.detail);
     if (result.ok) close();
   };
