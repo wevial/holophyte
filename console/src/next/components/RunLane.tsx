@@ -7,7 +7,6 @@ import { agentMs, boxPercent, groupByProject, phaseLabel, type ProjectGroup } fr
 import { prLabel } from "../../lib/shipped";
 import type { Queued, Run } from "../../lib/types";
 import type { ContractBodies } from "../fleet";
-import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
 
@@ -125,7 +124,10 @@ function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
   const held = group.status.admission === "held";
   return (
     <div role="group" aria-label={group.name}>
-      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${live.length} running`}>
+      <div data-lane-head className="mb-2 flex flex-wrap items-center gap-x-3.5 gap-y-1 px-0.5 font-mono text-[12px] leading-[1.3] text-ink-3">
+        <span className="font-sans text-[11.5px] font-semibold uppercase tracking-[0.1em] text-ink-2">{group.name}</span>
+        {held && <span className="text-wait">held{group.status.hold_note ? ` · ${group.status.hold_note}` : ""}</span>}
+        <span>{live.length} running</span>
         {stale.length > 0 ? (
           <span>· {quietSentence(stale.map((run) => run.ticket))}</span>
         ) : (
@@ -142,7 +144,7 @@ function RunLane({ group, now }: { group: ProjectGroup; now: number }) {
             {queued.length} queued
           </button>
         )}
-      </LaneHead>
+      </div>
       {live.length > 0 && (
         <ul className="border border-rule bg-paper">
           {live.map((run) => (
