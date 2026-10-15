@@ -100,6 +100,11 @@ test("a stale console the page's own host daemon built opens the strip with its 
   expect(text.getByRole("button", { name: "Reload" })).toBeTruthy();
   cleanup();
 
+  await mount(hostDaemon(stale, [{ name: "demo", failing: true }], NOW), NOW);
+  expect(screen.getByText("Asking writer-host for its projects…")).toBeTruthy();
+  expect(within(banners("stale-console")[0] as HTMLElement).getByText("This console is older than writer-host's daemon.")).toBeTruthy();
+  cleanup();
+
   await mount(hostDaemon({ ...stale, console: { ...stale.console, stale: false } }, [{ name: "demo" }], NOW), NOW);
   expect(banners("stale-console")).toHaveLength(0);
   expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
@@ -153,6 +158,12 @@ test("a host that stopped answering gets a banner dated from its last answer, an
   const [never] = banners("host-silent");
   expect(within(never as HTMLElement).getByText("writer-host-2 is not answering.")).toBeTruthy();
   expect(within(never as HTMLElement).getByText("It has not answered since this page opened.")).toBeTruthy();
+  cleanup();
+
+  await mount(peersFetch(DEMO, { [DEMO]: { down: new Error("connection refused") } }), at(16, 48));
+  const [lone] = banners("host-silent");
+  expect(within(lone as HTMLElement).getByText("writer-host is not answering.")).toBeTruthy();
+  expect(within(lone as HTMLElement).getByText("It has not answered since this page opened.")).toBeTruthy();
 });
 
 test("before any host /peers lists answers the sections show bare labels under an asking line, which goes at the first answer", async () => {
@@ -180,6 +191,17 @@ test("before any host /peers lists answers the sections show bare labels under a
 
   await mount(peersFetch(DEMO, { [DEMO]: refused, [SECOND]: refused }), NOW);
   expect(asking()).toEqual(["Asking 2 hosts for their projects…"]);
+  cleanup();
+
+  for (const [listed, line] of [
+    [{ [DEMO]: refused, [SAME_HOST]: refused }, "Asking writer-host for its projects…"],
+    [{ [DEMO]: refused, [SECOND]: refused }, "Asking 2 hosts for their projects…"],
+  ] as const) {
+    const answersPeers = peersFetch(DEMO, listed);
+    await mount((url, init) => (url === `${DEMO}/peers` ? answersPeers(url, init) : new Promise<Response>(() => {})), NOW);
+    expect(asking()).toEqual([line]);
+    cleanup();
+  }
 });
 
 test("the footer counts a host daemon's answering projects and ages its sweep, toning a stale one bad", async () => {

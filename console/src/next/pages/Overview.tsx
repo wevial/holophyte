@@ -11,7 +11,7 @@ import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole } from "../notices";
 import { useOverview } from "../overview";
-import { useDayLedger } from "../queries";
+import { useDayLedger, usePeerList } from "../queries";
 import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
@@ -87,10 +87,12 @@ function FoldingSection({
 
 export function Overview() {
   const view = useOverview();
-  const log = useDayLedger(view.hosts, view.now, useContext(PollDepsContext));
+  const deps = useContext(PollDepsContext);
+  const log = useDayLedger(view.hosts, view.now, deps);
   const origin = useContext(OriginContext);
   const { hosts: everyHost } = useConsolePeers();
-  const asking = firstLoadLine(view.hosts, origin);
+  const peers = usePeerList(origin, everyHost.length === 0, deps);
+  const asking = firstLoadLine(view.hosts, origin, peers);
   const firstLoad = asking != null;
   const held = useHeldEntry(view.needs);
   const need = view.needs.length;
@@ -149,15 +151,12 @@ export function Overview() {
             </p>
           </header>
         )}
-        {asking != null ? (
-          <FirstLoad line={asking} />
-        ) : (
-          <Notices
-            stale={staleConsole(everyHost, origin)}
-            silent={silentHosts(view.hosts, view.now)}
-            lines={noticeLines(view.hosts, log.answers, view.now)}
-          />
-        )}
+        {asking != null && <FirstLoad line={asking} />}
+        <Notices
+          stale={staleConsole(everyHost, origin)}
+          silent={silentHosts(view.hosts, view.now)}
+          lines={noticeLines(view.hosts, log.answers, view.now)}
+        />
         <div className="flex flex-col gap-[44px]">
           <FoldingSection
             loading={firstLoad}

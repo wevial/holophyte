@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
-import { ledgerSchema, mergeReadinessSchema, runDetailSchema, type Ledger, type LedgerEntry } from "../lib/contract.gen";
+import { ledgerSchema, mergeReadinessSchema, peersSchema, runDetailSchema, type Ledger, type LedgerEntry, type Peers } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
 import {
@@ -125,4 +125,16 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
     .flatMap((answer) => answer.entries)
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
+}
+
+/** `/peers` at `origin`, read once while `enabled`: the hosts the first
+ *  load names before the fleet's whole poll settles. */
+export function usePeerList(origin: string, enabled: boolean, deps: { fetch: Fetch }): Peers | null {
+  const { data } = useQuery({
+    queryKey: routeKey(origin, "/peers"),
+    queryFn: () => fetchRoute(deps.fetch, `${origin}/peers`, peersSchema),
+    enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  return data ?? null;
 }

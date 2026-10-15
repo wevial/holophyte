@@ -1,7 +1,7 @@
-import type { Ledger } from "../lib/contract.gen";
+import type { Ledger, Peers } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatAge, formatClock } from "../lib/format";
-import { addressOf, groupByHost, hostName, oldestPoll, rootOf, sinceSeen, SWEEP_OK, type HostRecord } from "../lib/hosts";
+import { groupByHost, hostName, oldestPoll, peerAddresses, rootOf, sinceSeen, SWEEP_OK, type HostRecord } from "../lib/hosts";
 import { migrationLines } from "../lib/migrations";
 import type { ContractBodies } from "./fleet";
 
@@ -62,11 +62,14 @@ export function silentHosts(hosts: Host[], now: number): SilentHost[] {
     });
 }
 
-/** The line while no host has answered, null once one has; before
- *  `/peers` names any host it asks the page's own. */
-export function firstLoadLine(hosts: Host[], origin: string): string | null {
+/** The line while no host has answered, null once one has. Before the
+ *  first poll settles it names the hosts `peers` lists, else the page's own. */
+export function firstLoadLine(hosts: Host[], origin: string, peers: Peers | null): string | null {
   if (hosts.some((host) => host.seen_ms != null)) return null;
-  const labels = hosts.length === 0 ? [addressOf(origin).replace(/:\d+$/, "")] : groupByHost(hosts).map((group) => group.label);
+  const labels =
+    hosts.length === 0
+      ? [...new Set(peerAddresses(origin, peers).map(({ address }) => address.replace(/:\d+$/, "")))]
+      : groupByHost(hosts).map((group) => group.label);
   return labels.length === 1 ? `Asking ${labels[0]} for its projects…` : `Asking ${labels.length} hosts for their projects…`;
 }
 
