@@ -47,6 +47,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
   const rows = switcherRows(hosts, now);
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const matches = matchRows(rows, query);
+  const at = Math.min(active, Math.max(0, matches.length - 1));
   const open = place != null;
 
   useEffect(() => {
@@ -61,7 +62,8 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
 
   const show = () => {
     const rect = buttonRef.current!.getBoundingClientRect();
-    setPlace(folded ? { top: rect.top, left: rect.right + 8 } : { top: rect.bottom + 4, left: rect.left });
+    const rail = buttonRef.current!.closest("aside")?.getBoundingClientRect() ?? rect;
+    setPlace(folded ? { top: rect.top, left: rail.right + 4 } : { top: rect.bottom + 4, left: rect.left });
     setQuery("");
     setActive(Math.max(0, rows.indexOf(current)));
   };
@@ -87,11 +89,13 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
     const count = matches.length;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      if (count > 0) setActive((active + (event.key === "ArrowDown" ? 1 : count - 1)) % count);
+      if (count > 0) setActive((at + (event.key === "ArrowDown" ? 1 : count - 1)) % count);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const row = matches[active];
+      const row = matches[at];
       if (row) pick(row);
+    } else if (event.key === "Tab") {
+      setPlace(null);
     } else if (event.key === "Escape") {
       event.preventDefault();
       close();
@@ -151,7 +155,8 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
             if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
           }}
           onBlur={(event) => {
-            if (!dialogRef.current?.contains(event.relatedTarget as Node | null)) setPlace(null);
+            const next = event.relatedTarget as Node | null;
+            if (!dialogRef.current?.contains(next) && next !== buttonRef.current) setPlace(null);
           }}
         >
           <label htmlFor={findId} className="sr-only">
@@ -164,7 +169,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
             aria-expanded="true"
             aria-controls={listId}
             aria-autocomplete="list"
-            aria-activedescendant={matches.length > 0 ? optionId(active) : undefined}
+            aria-activedescendant={matches.length > 0 ? optionId(at) : undefined}
             placeholder="Find a project"
             autoComplete="off"
             value={query}
@@ -185,7 +190,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
                   id={optionId(index)}
                   role="option"
                   aria-selected={row.name === current.name}
-                  data-active={index === active}
+                  data-active={index === at}
                   onClick={() => pick(row)}
                   onMouseMove={() => setActive(index)}
                   className="flex min-h-10 cursor-pointer items-center gap-2 px-3 text-[13px] text-ink data-[active=true]:bg-paper-2"
