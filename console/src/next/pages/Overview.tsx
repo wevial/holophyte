@@ -66,7 +66,7 @@ function FoldingSection({
 
 export function Overview() {
   const view = useOverview();
-  const logEntries = useDayLedger(view.hosts, view.now, useContext(PollDepsContext));
+  const log = useDayLedger(view.hosts, view.now, useContext(PollDepsContext));
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
@@ -127,7 +127,7 @@ export function Overview() {
           <MergedToday rows={view.mergedToday} />
         </FoldingSection>
       </div>
-      <DayLog entries={logEntries} />
+      <DayLog entries={log.entries} />
     </div>
   );
 }

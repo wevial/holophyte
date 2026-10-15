@@ -1,16 +1,21 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { LedgerEntry, ShippedRow, Status } from "../../src/lib/contract.gen";
+import type { ReactNode } from "react";
+import { addressOf } from "../../src/lib/hosts";
+import type { Status as PolledStatus } from "../../src/lib/types";
+import type { ActiveOutage, LedgerEntry, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
+import { useDayLedger } from "../../src/next/queries";
 import { NextConsole } from "../../src/next/router";
-import { fakeDeps, peersFetch, settle } from "../harness";
+import { fakeDeps, hostOf, peersFetch, settle } from "../harness";
 
 const DEMO = "http://writer-host:7710";
 const WRITER = "http://writer-host:7711";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const polled = (await Bun.file(new URL("status.json", SERVE)).json()) as PolledStatus;
 const shippedRow = ((await Bun.file(new URL("shipped.json", SERVE)).json()) as { rows: ShippedRow[] }).rows[0]!;
 
 const NOW = new Date(2026, 9, 15, 12, 0).getTime();
@@ -174,4 +179,21 @@ test("a host whose ledger read fails after a good answer keeps its lines", async
 
   expect(demoAsks()).toBeGreaterThan(before);
   expect(logLines()).toEqual(["11:15DEMO-10 · MERGED to main as 5acc138."]);
+});
+
+test("each host's whole ledger answer stays readable by its key beside the folded entries, outages included", async () => {
+  const outage: ActiveOutage = { project: 1, run: null, ticket: null, kind: "route_down", source: "loop", at: at(9, 0), reason: "probe failed", text: "reviewer route down" };
+  const quiet = () => Response.json({ entries: [], active_outages: [outage], since: MIDNIGHT, limit: 1000 });
+  const { fetch } = fleet({ ledger: quiet }, { ledger: ledgerOf(entry(at(10, 0), "merge", "loop", "WRITER-4", "MERGED to main as 3c9a2f1.")) });
+  const hosts = [DEMO, WRITER].map((base) => hostOf(polled, { level: "none", now: NOW, items: [] }, base));
+  const queries = consoleQueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queries}>{children}</QueryClientProvider>;
+  const hook = renderHook(() => useDayLedger(hosts, NOW, { fetch }), { wrapper });
+  await act(settle);
+  await act(settle);
+
+  expect(hook.result.current.entries.map((line) => line.ticket)).toEqual(["WRITER-4"]);
+  expect(hook.result.current.answers.get(addressOf(DEMO))?.active_outages).toEqual([outage]);
+  expect(hook.result.current.answers.get(addressOf(WRITER))?.entries).toHaveLength(1);
+  queries.clear();
 });
