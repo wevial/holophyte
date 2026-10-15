@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Findings rows</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--need:#f5a3c7;--live:#86d993;--ask:#f0cf62;--wait:#aaa7ec;--p1:#ff9e85;--p2:#ecdc86;--p3:#4a5687;--p3-ink:#f0f2fa;--tag:#d3cbf6}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--need:#b02f6b;--live:#1f7a35;--ask:#8a6500;--wait:#5653a6;--p1:#ffb199;--p2:#eee38a;--p3:#c9c4dc;--p3-ink:#171a2c;--tag:#e3dcfb}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live)}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.edge{background-image:repeating-linear-gradient(0deg,var(--need) 0 8px,transparent 8px 11px)}
+summary{list-style:none;cursor:pointer}summary::-webkit-details-marker{display:none}
+.fr > summary:hover{background:var(--paper-2)}
+.chev{transition:transform .15s}details[open] > summary .chev{transform:rotate(90deg)}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1240px; height: 1040px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 24px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · findings page</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Findings rows</h2>
+</div>
+
+<section aria-label="Chips and fates" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; padding: 20px 24px; background: var(--paper); border: 1px solid var(--rule)">
+<div><div class="label">Severity</div><div style="display: flex; gap: 6px; margin-top: 12px"><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--p1)">P1</span><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--p2)">P2</span><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--p3-ink); background: var(--p3)">P3</span></div><div style="margin-top: 8px; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">must fix · should fix · may fix</div></div>
+<div><div class="label">Kind</div><div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px"><span style="padding: 3px 6px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--tag)">tests</span><span style="padding: 3px 6px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--tag)">guardrail</span><span style="padding: 3px 6px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--tag)">feature</span><span style="padding: 2px 5px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--rule)">AC4</span></div></div>
+<div><div class="label">Fate</div><div style="display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<span style="display: inline-flex; align-items: center; gap: 6px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>being fixed</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ask)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8v3.6M8 11.1v.1"></path></svg>open</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--wait)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg>follow-up</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ink-3)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>fixed</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ink-3)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>declined</span>
+</div></div>
+</section>
+
+<section aria-label="Finding rows" style="padding: 6px 24px 8px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label" style="margin: 12px 0 6px">All projects · each row names its project · a sidebar project filters to it</div>
+<details class="fr" open style="border-bottom: 1px solid var(--rule-2)">
+<summary style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 52px; padding: 6px 4px">
+<svg class="ico chev" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--ink-3)"><path d="M6 4l4 4-4 4"></path></svg>
+<span style="flex: 0 0 96px; display: flex; gap: 4px"><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--p1)">P1</span><span style="padding: 2px 5px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--rule)">AC4</span></span>
+<span style="flex: 1 1 260px; min-width: 0; font-weight: 500">Dry run writes to interventions</span>
+<span style="display: inline-flex; align-items: center; gap: 5px; font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--live)"><path d="M2 4.5h4.2l1.5 1.5H14v7.5H2z"></path></svg>holophyte</span>
+<span style="font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">sweep/lease.py</span>
+<span role="img" aria-label="being fixed" style="display: inline-flex; color: var(--live)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg></span>
+</summary>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; padding: 2px 4px 16px 140px">
+<div style="min-width: 0"><div style="color: var(--ink-2)">The dry run writes an interventions row.</div><div style="margin-top: 4px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">holophyte/sweep/lease.py:142 · HOLO-231 · round 1</div><div style="margin-top: 4px; font: 500 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--live)">being fixed · 9b27c4d is in review round 2</div></div>
+<a class="link" href="#">Open run</a>
+</div>
+</details>
+<details class="fr" style="border-bottom: 1px solid var(--rule-2)">
+<summary style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 52px; padding: 6px 4px">
+<svg class="ico chev" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--ink-3)"><path d="M6 4l4 4-4 4"></path></svg>
+<span style="flex: 0 0 96px; display: flex; gap: 4px"><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--p2)">P2</span><span style="padding: 3px 6px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--tag)">tests</span></span>
+<span style="flex: 1 1 260px; min-width: 0"><span style="font-weight: 500">Backoff test sleeps for real</span> <span style="font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">· fix: use the injected clock</span></span>
+<span style="display: inline-flex; align-items: center; gap: 5px; font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--wait)"><path d="M2 4.5h4.2l1.5 1.5H14v7.5H2z"></path></svg>relos</span>
+<span style="font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">webhooks/test_retry.py</span>
+<span role="img" aria-label="open, nobody fixing it" style="display: inline-flex; color: var(--ask)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8v3.6M8 11.1v.1"></path></svg></span>
+</summary>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; padding: 2px 4px 16px 140px">
+<div style="min-width: 0"><div style="color: var(--ink-2)">The backoff test sleeps for real; use the injected clock.</div><div style="margin-top: 4px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">tests/webhooks/test_retry.py:57 · RELOS-88 · round 1</div><div style="margin-top: 4px; font: 500 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ask)">open · the run is stale, so nobody is fixing it</div></div>
+<button type="button" class="btn quiet">Steer into next run</button>
+</div>
+</details>
+<details class="fr" style="border-bottom: 1px solid var(--rule-2)">
+<summary style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 52px; padding: 6px 4px">
+<svg class="ico chev" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--ink-3)"><path d="M6 4l4 4-4 4"></path></svg>
+<span style="flex: 0 0 96px; display: flex; gap: 4px"><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--p3-ink); background: var(--p3)">P3</span><span style="padding: 3px 6px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--tag)">feature</span></span>
+<span style="flex: 1 1 260px; min-width: 0; font-weight: 500">Shadow diff size beside the primary</span>
+<span style="display: inline-flex; align-items: center; gap: 5px; font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--live)"><path d="M2 4.5h4.2l1.5 1.5H14v7.5H2z"></path></svg>holophyte</span>
+<span style="font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">cli/shadow_report.py</span>
+<span role="img" aria-label="follow-up" style="display: inline-flex; color: var(--wait)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg></span>
+</summary>
+<div style="padding: 2px 4px 16px 140px"><div style="color: var(--ink-2)">Show the shadow implementer's diff size next to the primary's.</div><div style="margin-top: 4px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">holophyte/cli/shadow_report.py:88 · HOLO-233</div><div style="margin-top: 4px; font: 500 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">becomes a Backlog draft when PR #521 merges</div></div>
+</details>
+<details class="fr">
+<summary style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 52px; padding: 6px 4px">
+<svg class="ico chev" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--ink-3)"><path d="M6 4l4 4-4 4"></path></svg>
+<span style="flex: 0 0 96px; display: flex; gap: 4px"><span style="padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--p3-ink); background: var(--p3)">P3</span><span style="padding: 3px 6px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--tag)">naming</span></span>
+<span style="flex: 1 1 260px; min-width: 0; font-weight: 500">Rename lease_age_ms</span>
+<span style="display: inline-flex; align-items: center; gap: 5px; font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; color: var(--live)"><path d="M2 4.5h4.2l1.5 1.5H14v7.5H2z"></path></svg>holophyte</span>
+<span style="font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">sweep/lease.py</span>
+<span role="img" aria-label="declined" style="display: inline-flex; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg></span>
+</summary>
+<div style="padding: 2px 4px 16px 140px"><div style="color: var(--ink-2)">Rename lease_age_ms to lease_idle_ms.</div><div style="margin-top: 4px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">holophyte/sweep/lease.py:20 · HOLO-231</div><div style="margin-top: 4px; font: 500 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">declined · the store column is lease_age_ms, and renaming one side splits the vocabulary</div></div>
+</details>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+<section aria-label="Pattern" style="display: grid; grid-template-columns: 6px minmax(0, 1fr); border: 1px solid var(--rule); background: var(--paper)">
+<div class="edge" aria-hidden="true"></div>
+<div style="padding: 16px 18px">
+<div class="label">Pattern · seen 3× this week</div>
+<p style="margin: 6px 0 12px; color: var(--ink-2)">Tests assert log text instead of the behavior behind it (HOLO-226, HOLO-229, LOTUS-52).</p>
+<button type="button" class="btn">Draft guardrail ticket</button>
+</div>
+</section>
+<section aria-label="Clean review" style="padding: 16px 18px; border: 1px solid var(--rule); background: var(--paper)">
+<div class="label">Clean review · what was checked</div>
+<p style="margin: 10px 0 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>HOLO-230 passed round 1 with no findings.</p>
+<p style="margin: 4px 0 0; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">checked AC1–AC3 witnessed · verify green · no files outside the ticket's scope</p>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1240,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>

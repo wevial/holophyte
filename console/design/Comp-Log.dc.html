@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Progress log</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--need:#f5a3c7;--live:#86d993;--live-wash:rgba(134,217,147,.10);--live-glow:rgba(134,217,147,.6);--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--done:#7b84a1}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--need:#b02f6b;--live:#1f7a35;--live-wash:rgba(31,122,53,.08);--live-glow:rgba(31,122,53,.3);--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--done:#8b90a8}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live)}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.cell{display:inline-block;width:9px;height:9px;flex:none;position:relative;box-sizing:border-box}
+.c-live{background:var(--live)}
+.ping::after{content:"";position:absolute;inset:0;box-shadow:0 0 0 1px var(--live);animation:ping 2.8s cubic-bezier(.2,.7,.2,1) infinite}
+@keyframes ping{0%{transform:scale(1);opacity:.7}80%,100%{transform:scale(2.6);opacity:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important}}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1200px; height: 760px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · run page</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Progress log</h2>
+</div>
+<section aria-label="Log line kinds" style="padding: 22px 28px; background: var(--paper); border: 1px solid var(--rule)">
+<div class="label">Progress <span style="display: inline-flex; align-items: center; gap: 6px; color: var(--live); letter-spacing: 0.1em"><svg viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>live</span></div>
+<div style="margin-top: 12px; font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace">
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">event</span><time style="color: var(--ink-3)">16:36</time><span style="color: var(--ink-2)">Claimed by worker 1 on writer-host; shadow run started on claude sonnet</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">fan-out</span><time style="color: var(--ink-3)">16:39</time><span style="color: var(--ink-2)">Implementer fanned out: subagent <b style="color: var(--ink); font-weight: 500">tests</b>, subagent <b style="color: var(--ink); font-weight: 500">docs</b></span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">steer</span><time style="color: var(--ink-3)">16:40</time><span style="color: var(--act)">You steered: don't add a new flag for the dry run; reuse --act</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span></span><time></time><span style="color: var(--live); padding-left: 14px">→ reached turn 1 before its first commit; recorded as AC5</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">commit</span><time style="color: var(--ink-3)">16:43</time><span style="color: var(--ink-2)">Commit <b style="color: var(--ink); font-weight: 500">3e1f0a2</b>: the sweep requeues a lease past its threshold (+84 −6, 3 files)</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">review</span><time style="color: var(--ink-3)">16:45</time><span style="color: var(--ink-2)">Review round 1: <b style="color: var(--ink); font-weight: 500">changes requested</b>, 1 must-fix</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span></span><time></time><span style="color: var(--ink-3); padding-left: 14px">P1 · the dry run writes an interventions row · holophyte/sweep/lease.py:142</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">ask</span><time style="color: var(--ink-3)">16:47</time><span style="color: var(--ink-2)">You asked: does the dry run print anything?</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span></span><time></time><span style="color: var(--ink-3); padding-left: 14px">→ answered between turns: one "would requeue" line per lease</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">failure</span><time style="color: var(--ink-3)">08:50</time><span style="color: var(--bad)">HOLO-228 verify failed: 2 tests red in tests/test_board_cache.py</span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">merge</span><time style="color: var(--ink-3)">11:15</time><span style="color: var(--ink-3)">HOLO-230 merged to main as <b style="color: var(--ink-2); font-weight: 500">5acc138</b></span></div>
+<div style="display: grid; grid-template-columns: 120px 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--rule-2); background: var(--live-wash)"><span style="color: var(--ink-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase">just in</span><time style="color: var(--ink-3)">16:52</time><span style="color: var(--ink-2)">Check <b style="color: var(--ink); font-weight: 500">unit</b> passed (412 tests). CI and bots: 4 of 4 green</span></div>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1200,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>

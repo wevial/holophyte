@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Holophyte · Run 231</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--star:rgba(226,232,255,.2);--star-dim:rgba(226,232,255,.1);--act:#f5a3c7;--act-ink:#1b0d16;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--need-glow:rgba(245,163,199,.55);--live:#86d993;--live-wash:rgba(134,217,147,.10);--live-glow:rgba(134,217,147,.6);--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16;--bad-wash:rgba(255,123,114,.09);--done:#7b84a1;--p1:#ff9e85;--p2:#ecdc86;--p3:#2a3354;--p3-ink:#d5daea;--tag:#d3cbf6;--scrim:rgba(5,7,15,.74)}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--star:rgba(23,26,44,.1);--star-dim:rgba(23,26,44,.05);--act:#b02f6b;--act-ink:#ffffff;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--need-glow:rgba(176,47,107,.22);--live:#1f7a35;--live-wash:rgba(31,122,53,.08);--live-glow:rgba(31,122,53,.3);--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff;--bad-wash:rgba(192,50,31,.07);--done:#8b90a8;--p1:#ffb199;--p2:#eee38a;--p3:#e3e1ec;--p3-ink:#171a2c;--tag:#e3dcfb;--scrim:rgba(236,234,243,.8)}
+.sky{background-image:radial-gradient(circle at 23px 41px,var(--star) 0 .8px,transparent 1.4px),radial-gradient(circle at 131px 17px,var(--star-dim) 0 .8px,transparent 1.4px),radial-gradient(circle at 212px 88px,var(--star) 0 .6px,transparent 1.2px),radial-gradient(circle at 67px 163px,var(--star-dim) 0 .8px,transparent 1.4px),radial-gradient(circle at 248px 201px,var(--star) 0 .7px,transparent 1.3px),radial-gradient(circle at 160px 254px,var(--star-dim) 0 .6px,transparent 1.2px),radial-gradient(circle at 311px 77px,var(--star) 0 1.1px,transparent 2px),radial-gradient(circle at 54px 329px,var(--star-dim) 0 1px,transparent 1.8px);background-size:290px 290px,290px 290px,290px 290px,290px 290px,290px 290px,290px 290px,430px 430px,430px 430px;background-repeat:repeat}
+.headsky{position:relative;overflow:hidden}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.cm{position:absolute;width:12px;height:12px;pointer-events:none}
+.cm::before,.cm::after{content:"";position:absolute;background:var(--ink-3)}
+.cm::before{width:12px;height:1px;top:5.5px}.cm::after{width:1px;height:12px;left:5.5px}
+.cm.tl{top:-6.5px;left:-6.5px}.cm.tr{top:-6.5px;right:-6.5px}.cm.bl{bottom:-6.5px;left:-6.5px}.cm.br{bottom:-6.5px;right:-6.5px}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]{fill:var(--live);stroke:none}
+svg:has(> path[d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"]) > circle{stroke:var(--live);transform-box:fill-box;transform-origin:center;animation:ring 2.6s ease-in-out infinite}
+@keyframes ring{50%{transform:scale(.84);stroke-opacity:.3}}
+svg:has(> path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]) > circle{fill:var(--live);stroke:var(--live)}
+path[d="M5.2 8.3 7.2 10.3 10.9 6.3"]{stroke:var(--canvas);stroke-width:1.8}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.cell{display:inline-block;width:9px;height:9px;flex:none;position:relative;box-sizing:border-box}
+.c-need{background:var(--need)}.c-live{background:var(--live)}.c-bad{background:var(--bad)}.c-done{background:var(--done)}
+.c-wait{box-shadow:inset 0 0 0 1.5px var(--wait)}
+.c-held{background:linear-gradient(90deg,var(--wait) 0 3px,transparent 3px 6px,var(--wait) 6px)}
+.c-todo{box-shadow:inset 0 0 0 1px var(--ink-3)}
+.c-unmet{box-shadow:inset 0 0 0 1.5px var(--need)}
+.chip{position:relative;white-space:nowrap;display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 12px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper-2);font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}.btn.danger.fill:not(.busy){color:var(--bi)}.btn.danger.fill:not(.busy)::before{transform:scaleX(1)}
+.btn.busy{pointer-events:none;color:var(--b,var(--act));box-shadow:none;clip-path:none}
+.btn.busy::before,.btn.busy::after{display:none}
+.btn .ants-o{display:none}.btn.busy .ants-o{display:block}.btn .ants-r{stroke:var(--b,var(--act))}
+.ants-o{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.ants-o rect{width:calc(100% - 1.5px);height:calc(100% - 1.5px)}
+.ants-r{fill:none;stroke:var(--wait);stroke-width:1.5;stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.nav-a:hover{color:var(--ink)!important}
+.shell{--pg-t:20px;--pg-x:24px;--pg-b:32px;--hd-t:12px;--hd-b:12px;--sec:14px;height:100vh;overflow:hidden}
+.pg-title{margin:0;font:600 20px/1.25 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em;color:var(--ink)}
+.shell > aside{height:100vh;box-sizing:border-box}.shell > aside nav{flex:0 1 auto;min-height:0;overflow-y:auto}
+.shell > .pad-main{height:100vh;overflow-y:auto}
+.pg-w{position:relative}
+.pg-t{position:absolute;right:4px;top:6px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--ink-3)}
+.pg-sub{list-style:none;margin:2px 0 6px 20px;padding:0;border-left:1px solid var(--rule-2)}
+.st-a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;min-height:44px;padding:7px 8px 8px 12px;box-sizing:border-box;text-decoration:none}
+.st-k,.st-p{font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-t{grid-column:1 / -1;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif}
+@media (max-width:720px){.shell{height:auto;overflow:visible}.shell > aside,.shell > .pad-main{height:auto;overflow:visible}}
+.sw{position:relative;margin:12px 0 4px}
+.sw-b{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px 0 12px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-align:left;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-b .tag,.sw-o .tag{color:var(--wait);font-size:11px;font-weight:400}
+.sw-need{margin-left:auto;color:var(--need);font-weight:600}
+.sw-c{margin-left:6px;color:var(--ink-3)}.sw-need[hidden]+.sw-c{margin-left:auto}
+.sw-back{position:fixed;inset:0;z-index:55;border:0;padding:0;background:transparent;cursor:default}
+.sw-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:264px;box-sizing:border-box;padding:8px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.sw-q{display:block;box-sizing:border-box;width:100%;min-height:36px;padding:0 10px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sw-q:focus{outline:2px solid var(--act);outline-offset:-1px}.sw-q::placeholder{color:var(--ink-2)}
+.sw-l{list-style:none;margin:8px 0 0;padding:0}
+.sw-o{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 8px;cursor:pointer;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-o:hover{background:var(--paper-2)!important}.sw-o[aria-selected="true"]{color:var(--act)}
+.sw-cnt{margin-left:auto;display:inline-flex;gap:10px;font-weight:400;font-size:12px;color:var(--ink-3)}.sw-cnt b{color:var(--need);font-weight:600}
+.sw-none{margin:0;padding:10px 8px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.pg-a{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 10px 0 12px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.pg-a .badge{margin-left:auto;color:var(--need);letter-spacing:0;font-weight:600}
+.rail .sw-b{justify-content:center;padding:0}.rail .sw-need{position:absolute;right:2px;top:3px;font-size:10px}.rail .pg-a{justify-content:center;padding:0}.rail .pg-a .badge{position:absolute;right:4px;top:4px;font-size:10px}
+textarea:focus{outline:2px solid var(--act);outline-offset:-1px}
+textarea::placeholder{color:var(--ink-2)}
+summary{list-style:none;cursor:pointer}summary::-webkit-details-marker{display:none}
+.disc::before{content:"";width:0;height:0;border-left:6px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s}
+details[open] > .disc::before{transform:rotate(90deg)}
+.think{display:inline-flex;gap:4px}.think i{display:inline-block;width:7px;height:7px;background:var(--rule);animation:think 1.2s steps(1,end) infinite}
+.think i:nth-child(2){animation-delay:.2s}.think i:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,100%{background:var(--rule)}33%{background:var(--ink-3)}}
+.msg-in{animation:msg-in .5s cubic-bezier(.2,.7,.2,1)}
+@keyframes msg-in{from{transform:translateY(6px)}}
+.log-new{animation:log-new 1.2s cubic-bezier(.2,.7,.2,1)}
+@keyframes log-new{from{background:var(--live-wash);transform:translateY(3px)}}
+.wipe{position:relative;isolation:isolate}.wipe::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--live-wash);transform-origin:left;animation:wipe .5s cubic-bezier(.2,.7,.2,1)}
+@keyframes wipe{from{transform:scaleX(0)}}
+@media (max-width:720px){.pad-main{padding:16px 8px 32px!important}.pad-x{padding-left:16px!important;padding-right:16px!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}.e-live{stroke-dasharray:none}}
+</style>
+</helmet>
+<div class="{{themeClass}} shell" style="min-height: 100vh; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: stretch; background-color: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+
+<aside aria-label="Console" class="{{asideCls}}" style="flex: 1 1 {{sideW}}; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; background: var(--canvas); border-right: 1px solid var(--rule-2); padding: 0 8px 16px">
+<div style="display: flex; align-items: center; gap: 8px; min-height: 60px; margin: 0 -8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--rule-2)">
+<a href="Main.dc.html" aria-label="Holophyte console, overview" style="display: flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink); flex: 1; min-width: 0">
+<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="flex: none"><g style="fill: var(--act); stroke: var(--canvas); stroke-width: 1.1; stroke-linejoin: round"><path d="M12 17 C7.4 17.6 3.6 15.6 2 12.2 C5.6 11.8 9.4 13.6 12 17Z"></path><path d="M12 17 C16.6 17.6 20.4 15.6 22 12.2 C18.4 11.8 14.6 13.6 12 17Z"></path><path d="M12 17 C8.2 16.6 5.6 13 6 8 C9 9.2 11.2 12.6 12 17Z"></path><path d="M12 17 C15.8 16.6 18.4 13 18 8 C15 9.2 12.8 12.6 12 17Z"></path><path d="M12 4 C15.2 7.2 15.2 13 12 17 C8.8 13 8.8 7.2 12 4Z"></path></g><path d="M6 20.2 H18" style="fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-linecap: round"></path></svg>
+<sc-if value="{{full}}" hint-placeholder-val="{{ true }}"><b style="font: 600 15px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.01em">holophyte</b></sc-if>
+</a>
+<button type="button" onClick="{{toggleRail}}" aria-label="{{railLabel}}" aria-expanded="{{full}}" style="flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink-3); cursor: pointer"><svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true" style="transform: {{railFlip}}"><path d="M6.5 2 3.5 5 6.5 8" style="fill: none; stroke: currentColor; stroke-width: 1.5"></path></svg></button>
+</div>
+<div class="sw" onKeyDown="{{sw.key}}">
+<button type="button" class="nav-a sw-b" onClick="{{sw.toggle}}" aria-haspopup="listbox" aria-expanded="{{sw.open}}" aria-label="{{sw.aria}}" title="{{sw.title}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{sw.iconColor}}"><path d="{{sw.icon}}"></path></svg><span hidden="{{sw.rail}}">{{sw.name}}</span><span class="tag" hidden="{{sw.noTag}}">held</span><span class="sw-need" hidden="{{sw.noNeed}}">{{sw.need}}</span><svg class="ico sw-c" hidden="{{sw.rail}}" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></button>
+<sc-if value="{{sw.open}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="sw-back" tabindex="-1" aria-hidden="true" onClick="{{sw.close}}"></button>
+<div class="sw-pop" role="dialog" aria-label="Switch project">
+<label class="sr" for="swq">Find a project</label>
+<input id="swq" class="sw-q" type="text" value="{{sw.q}}" onChange="{{sw.onQ}}" placeholder="Find a project" autocomplete="off" autoFocus="{{ true }}" role="combobox" aria-expanded="true" aria-controls="swl" aria-activedescendant="{{sw.activeId}}">
+<ul id="swl" role="listbox" aria-label="Projects" class="sw-l">
+<sc-for list="{{sw.items}}" as="it" hint-placeholder-count="4"><li id="{{it.id}}" role="option" aria-selected="{{it.sel}}" class="sw-o" onClick="{{it.pick}}" style="background: {{it.bg}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{it.iconColor}}"><path d="{{it.icon}}"></path></svg><span>{{it.name}}</span><span class="tag" hidden="{{it.noTag}}">held</span><span class="sw-cnt"><b hidden="{{it.noNeed}}">{{it.need}}</b><span>{{it.runs}}</span></span></li></sc-for>
+</ul>
+<p class="sw-none" hidden="{{sw.hasItems}}">No project matches.</p>
+</div>
+</sc-if>
+</div>
+<nav aria-label="Pages" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px">
+<sc-for list="{{pages}}" as="p" hint-placeholder-count="6"><div class="pg-w"><a href="{{p.href}}" class="nav-a pg-a" aria-current="{{p.cur}}" aria-label="{{p.aria}}" style="color: {{p.color}}; background: {{p.bg}}; box-shadow: {{p.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="{{p.d1}}"></path><path d="{{p.d2}}"></path></svg><span hidden="{{p.rail}}">{{p.label}}</span><span class="badge" hidden="{{p.noBadge}}">{{p.badge}}</span></a><sc-if value="{{p.hasSub}}" hint-placeholder-val="{{ false }}"><button type="button" class="nav-a pg-t" aria-expanded="{{p.subOpen}}" aria-controls="nav-stories" aria-label="{{p.subAria}}" onClick="{{p.toggleSub}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; transform: {{p.subRot}}"><path d="M6 4l4 4-4 4"></path></svg></button></sc-if><sc-if value="{{p.subShow}}" hint-placeholder-val="{{ false }}"><ul id="nav-stories" class="pg-sub" aria-label="Stories"><sc-for list="{{p.subs}}" as="st" hint-placeholder-count="3"><li><a href="Story.dc.html" class="nav-a st-a" aria-current="{{st.cur}}" aria-label="{{st.aria}}" onClick="{{st.go}}" style="color: {{st.color}}; background: {{st.bg}}"><span class="st-k">{{st.key}}</span><span class="st-p">{{st.prog}}</span><span class="st-t">{{st.title}}</span></a></li></sc-for></ul></sc-if></div></sc-for>
+</nav>
+<div style="margin: auto -8px 0; padding: 14px 8px 0; border-top: 1px solid var(--rule-2); display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+<div style="display: flex; align-items: center; gap: 14px; padding-left: 16px; font: 400 11px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg><sc-if value="{{full}}" hint-placeholder-val="{{ true }}"><span>writer-host · polled 4s ago</span></sc-if></div>
+<button type="button" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}" style="margin-left: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-2); cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 8px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>{{themeWord}}</button>
+</div>
+</aside>
+
+<div class="pad-main" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: var(--pg-t) var(--pg-x) var(--pg-b)">
+<main style="max-width: 1180px; margin: 0 auto">
+<section aria-labelledby="runH" style="position: relative">
+
+<div class="headsky pad-x" style="padding: var(--hd-t) 0 var(--hd-b); border-bottom: 1px solid var(--rule)">
+<div style="position: relative; z-index: 1; font: 400 12px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><a href="Runs.dc.html" style="color: var(--ink-3)">Runs</a> / <a href="Issues.dc.html" style="color: var(--ink-3)">holophyte issues</a> / <a href="Ticket.dc.html" style="color: var(--ink-3)">HOLO-231</a> / run 231</div>
+<div style="position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 24px; margin-top: 8px">
+<h1 id="runH" class="pg-title" style="flex: 1 1 420px">The sweep frees a silent lease</h1>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<a href="#agent" class="btn quiet">Steer or ask</a>
+<sc-if value="{{liveRun}}" hint-placeholder-val="{{ true }}"><button type="button" class="btn quiet {{pBusy}}" onClick="{{togglePause}}">{{pLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button><button type="button" class="btn danger" onClick="{{openAbort}}">Abort</button></sc-if>
+<sc-if value="{{aborted}}" hint-placeholder-val="{{ false }}"><button type="button" class="btn {{rqBusy}}" onClick="{{requeue}}">{{rqLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></sc-if>
+</div>
+</div>
+<div style="position: relative; z-index: 1; margin-top: 12px; font: 400 12px/1.7 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><b style="color: var(--ink-2); font-weight: 500">HOLO-231</b> · run 231 · holophyte on writer-host · started 16:36 PT · <b style="color: var(--ink-2); font-weight: 500">16m</b> of a 25m box · implementer claude opus · reviewer codex gpt-6-sol</div>
+<div style="position: relative; z-index: 1; display: flex; gap: 14px; align-items: flex-start; margin-top: 18px">
+<svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 4px; width: 16px; height: 16px; color: {{vColor}}"><circle cx="8" cy="8" r="6.5"></circle><path d="{{vPath}}"></path></svg>
+<p role="status" style="margin: 0; font-size: 17px; line-height: 1.45; max-width: 64ch">{{verdict}}</p>
+</div>
+
+<div style="position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: 18px">
+<span id="stageH" style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Stage</span>
+<span class="chip"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{stColor}}"><circle cx="8" cy="8" r="6.5"></circle><path d="{{stPath}}"></path></svg><span>{{stText}}<span style="color: var(--ink-3); font-weight: 400"> · {{stSub}}</span></span></span>
+<a href="#progress" style="font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">history in Progress</a>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; margin-top: var(--sec); background: var(--paper); border: 1px solid var(--rule)">
+<div class="pad-x" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 22px 32px 32px; border-right: 1px solid var(--rule)">
+
+<div>
+<div class="label">Pull request</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; font: 400 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace">
+<span style="color: var(--ink)">PR #524</span><span style="color: var(--ink-3)">draft ·</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; color: var(--live)"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg>{{ciPassed}}</span>
+<sc-if value="{{ciRun}}" hint-placeholder-val="{{ true }}"><span style="position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; color: var(--wait)"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" style="fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg>1 running<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="40"></rect></svg></span></sc-if>
+<span style="color: var(--ink-3)">· 0 open threads</span>
+</div>
+</div>
+
+<div style="margin-top: 26px">
+<div class="label">Ticket</div>
+<p style="margin: 12px 0 0; color: var(--ink-2); max-width: 70ch">A lease past its heartbeat threshold should be recovered by the next sweep, so nobody has to requeue it by hand. A dry run (<span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--sweep</span> without <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--act</span>) only reports.</p>
+</div>
+
+<div style="margin-top: 26px">
+<div class="label">Acceptance criteria <span style="color: var(--ink); letter-spacing: 0.04em">3 of 4 met</span></div>
+<ol style="list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--rule-2)">
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--live)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="met" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC1</span><span style="flex: 1; min-width: 0">Sweep with <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--act</span> requeues a lease past its threshold.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--live)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="met" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC2</span><span style="flex: 1; min-width: 0">The requeue's interventions row names the sweep.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--live)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="met" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M5 8.3 7.1 10.4 11 6.2"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC3</span><span style="flex: 1; min-width: 0">A lease inside its threshold is left alone.</span></li>
+<li style="display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rule-2)"><span style="display: inline-flex; color: var(--wait)"><svg width="16" height="16" viewBox="0 0 16 16" role="img" aria-label="not yet witnessed" style="flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8V8l2.3 1.6"></path></svg></span><span style="flex: none; width: 34px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">AC4</span><span style="flex: 1; min-width: 0"><span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--sweep</span> without <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">--act</span> changes nothing.</span><span style="flex: none; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">waits on round 2</span></li>
+</ol>
+<details style="margin-top: 10px">
+<summary class="disc" style="display: flex; align-items: center; gap: 10px; min-height: 44px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2)">Evidence <span style="letter-spacing: 0.04em; text-transform: none; color: var(--ink-3)">3 tests</span></summary>
+<ul style="list-style: none; margin: 0; padding: 0; font: 400 12px/1.8 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2); overflow-wrap: anywhere">
+<li>AC1 · tests/test_sweep.py::test_silent_lease_requeued</li>
+<li>AC2 · tests/test_sweep.py::test_requeue_records_intervention</li>
+<li>AC3 · tests/test_sweep.py::test_live_lease_untouched · real git</li>
+</ul>
+</details>
+</div>
+
+<div id="progress" style="margin-top: 26px">
+<div class="label">Progress<span style="display: inline-flex; align-items: center; gap: 6px; color: var(--live); letter-spacing: 0.1em"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z"></path></svg>live</span></div>
+<ol aria-live="polite" style="list-style: none; margin: 12px 0 0; padding: 0; font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace">
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:36</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Claimed by worker 1 on writer-host</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:37</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Worktree ready on <b style="color: var(--ink); font-weight: 500">task/holo-231-the-sweep-frees-a-silent-lease</b></span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:39</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Implement · turn 1, fanned out: subagent <b style="color: var(--ink); font-weight: 500">tests</b>, subagent <b style="color: var(--ink); font-weight: 500">docs</b></span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:40</time><span style="color: var(--act); overflow-wrap: anywhere">You steered: don't add a new flag for the dry run; reuse --act</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:43</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Commit <b style="color: var(--ink); font-weight: 500">3e1f0a2</b>: the sweep requeues a lease past its threshold (+84 −6, 3 files)</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:44</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Verify passed: ruff clean, test_sweep 8 OK</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:45</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Review round 1: <b style="color: var(--ink); font-weight: 500">changes requested</b>, 1 must-fix</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)"></time><span style="color: var(--ink-3); padding-left: 14px; overflow-wrap: anywhere">P1 · the dry run writes an interventions row · holophyte/sweep/lease.py:142</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:45</time><span style="display: inline-flex; align-items: center; gap: 8px; color: var(--ink); overflow-wrap: anywhere"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4"></path><path d="M3.2 2.6v2.6h2.6"></path></svg>Back to implement · turn 2</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:48</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Commit <b style="color: var(--ink); font-weight: 500">9b27c4d</b>: keep --sweep read-only without --act (ADDRESS P1)</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:49</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Verify passed: test_sweep 9 OK. Pushed; PR #524 opened as a draft</span></li>
+<li style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">16:50</time><span style="color: var(--ink-2); overflow-wrap: anywhere">Review round 2 started</span></li>
+<sc-for list="{{extraLog}}" as="e" hint-placeholder-count="0">
+<li class="log-new" style="display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--rule-2)"><time style="color: var(--ink-3)">{{e.t}}</time><span style="color: {{e.color}}; overflow-wrap: anywhere">{{e.text}}</span></li>
+</sc-for>
+</ol>
+</div>
+
+<details style="margin-top: 28px; border-top: 1px solid var(--rule)">
+<summary class="disc" style="display: flex; align-items: center; gap: 10px; min-height: 44px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2)">Details <span style="color: var(--ink-3); letter-spacing: 0.04em; text-transform: none">diff · review rounds · shadow · transcript</span></summary>
+<div class="label" style="margin: 18px 0 8px">Files changed · 4</div>
+<div style="font: 400 12.5px/1.8 'IBM Plex Mono', ui-monospace, monospace">
+<div style="display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--rule-2)"><span>holophyte/sweep/lease.py</span><span><span style="color: var(--live)">+61</span> <span style="color: var(--bad)">−9</span></span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--rule-2)"><span>holophyte/sweep/run.py</span><span><span style="color: var(--live)">+12</span> <span style="color: var(--bad)">−2</span></span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--rule-2)"><span>tests/test_sweep.py</span><span><span style="color: var(--live)">+48</span> <span style="color: var(--bad)">−0</span></span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--rule-2)"><span>docs/reference/cli.md</span><span><span style="color: var(--live)">+3</span> <span style="color: var(--bad)">−1</span></span></div>
+</div>
+<div style="font: 600 12px/1 'IBM Plex Mono', ui-monospace, monospace; margin: 18px 0 8px; color: var(--ink-2)">holophyte/sweep/lease.py · round 1 fix</div>
+<div style="border: 1px solid var(--rule); font: 400 12px/1.6 'IBM Plex Mono', ui-monospace, monospace; overflow: hidden">
+<div style="padding: 7px 10px; border-bottom: 1px solid var(--rule); color: var(--ink-3); background: var(--paper-2)">@@ def free_silent_leases(store, now, act) @@</div>
+<div style="display: grid; grid-template-columns: 34px 14px minmax(0, 1fr); padding-right: 10px"><span style="color: var(--ink-3); text-align: right; padding-right: 8px">139</span><span></span><code style="font: inherit; white-space: pre-wrap">        report.append(lease.ticket)</code></div>
+<div style="display: grid; grid-template-columns: 34px 14px minmax(0, 1fr); padding-right: 10px; background: var(--bad-wash)"><span style="color: var(--ink-3); text-align: right; padding-right: 8px">140</span><span style="color: var(--bad)">−</span><code style="font: inherit; white-space: pre-wrap">        store.record_intervention(lease.run, "sweep", "requeue")</code></div>
+<div style="display: grid; grid-template-columns: 34px 14px minmax(0, 1fr); padding-right: 10px; background: var(--live-wash)"><span style="color: var(--ink-3); text-align: right; padding-right: 8px">140</span><span style="color: var(--live)">+</span><code style="font: inherit; white-space: pre-wrap">        if not act:</code></div>
+<div style="display: grid; grid-template-columns: 34px 14px minmax(0, 1fr); padding-right: 10px; background: var(--live-wash)"><span style="color: var(--ink-3); text-align: right; padding-right: 8px">141</span><span style="color: var(--live)">+</span><code style="font: inherit; white-space: pre-wrap">            continue</code></div>
+<div style="display: grid; grid-template-columns: 34px 14px minmax(0, 1fr); padding-right: 10px; background: var(--live-wash)"><span style="color: var(--ink-3); text-align: right; padding-right: 8px">142</span><span style="color: var(--live)">+</span><code style="font: inherit; white-space: pre-wrap">        store.record_intervention(lease.run, "sweep", "requeue")</code></div>
+<div style="display: grid; grid-template-columns: 34px 14px minmax(0, 1fr); padding-right: 10px"><span style="color: var(--ink-3); text-align: right; padding-right: 8px">143</span><span></span><code style="font: inherit; white-space: pre-wrap">        store.requeue(lease.ticket, actor="sweep")</code></div>
+</div>
+<div class="label" style="margin: 18px 0 8px">Review rounds</div>
+<div style="padding: 10px 0; border-bottom: 1px dashed var(--rule-2); font-size: 14px"><b>Round 1</b>: changes requested <span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">· codex gpt-6-sol · 16:45 · 1 finding</span><br><span style="display: inline-block; padding: 3px 6px; font: 600 11px/1 'IBM Plex Mono', ui-monospace, monospace; color: #171a2c; background: var(--p1)">P1</span> The dry run writes an interventions row. <span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">· fixed in 9b27c4d</span></div>
+<div style="padding: 10px 0; border-bottom: 1px dashed var(--rule-2); font-size: 14px"><b>Round 2</b>: in progress <span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">· started 16:50 · max 3 rounds</span></div>
+<p style="margin: 18px 0 0; padding: 0 0 10px; border-bottom: 1px dashed var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Shadow run · claude sonnet · verify passed · +71 −8 · compared at review</p>
+<div class="label" style="margin: 18px 0 8px">Transcript · 3 turns</div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span>implementer · claude opus · turn 1</span><span>6m 12s</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span>reviewer · codex gpt-6-sol · round 1</span><span>1m 40s</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span>implementer · claude opus · turn 2</span><span>3m 05s</span></div>
+</details>
+</div>
+
+<aside id="agent" aria-labelledby="agentH" class="pad-x" style="flex: 1 1 320px; min-width: 0; box-sizing: border-box; padding: 22px 22px 24px; background: var(--paper); border-top: 1px solid var(--rule-2)">
+<div class="label" id="agentH">Agent</div>
+<div style="margin-top: 8px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><b style="color: var(--ink); font-weight: 500">implementer · claude opus</b><br>{{agentState}}</div>
+<div style="display: flex; flex-direction: column; gap: 10px; margin: 16px 0">
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--ink-3); background: var(--paper-2); margin-left: 24px"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">You · steer · 16:40</span>Don't add a new flag for the dry run; reuse --act.<span style="display: block; margin-top: 6px; font: 400 12px/1.45 'IBM Plex Mono', ui-monospace, monospace; color: var(--live)">→ the agent read it at 16:41</span></div>
+<div style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid var(--rule); background: var(--canvas)"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">Agent · 16:48</span>Round 1 asked me to keep the dry run read-only. I moved the write behind <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px">--act</span>. The dry run now prints "would requeue HOLO-n" for each lease, unless you want it silent.</div>
+<sc-for list="{{msgs}}" as="m" hint-placeholder-count="0">
+<div class="msg-in" style="padding: 10px 12px; font-size: 14px; line-height: 1.45; border: 1px solid {{m.border}}; background: {{m.bg}}; margin-left: {{m.indent}}"><span style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px">{{m.by}}</span><sc-if value="{{m.thinking}}" hint-placeholder-val="{{ false }}"><span class="think" aria-label="thinking"><i></i><i></i><i></i></span></sc-if><span>{{m.text}}</span><sc-if value="{{m.effectOn}}" hint-placeholder-val="{{ false }}"><span style="display: block; margin-top: 6px; font: 400 12px/1.45 'IBM Plex Mono', ui-monospace, monospace; color: var(--live)">{{m.effect}}</span></sc-if></div>
+</sc-for>
+</div>
+<div role="group" aria-label="Message kind" style="display: inline-flex; border: 1px solid var(--ink-3)">
+<button type="button" aria-pressed="{{isSteer}}" onClick="{{modeSteer}}" style="min-height: 36px; padding: 0 12px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: {{segSteer.color}}; background: {{segSteer.bg}}">Steer</button>
+<button type="button" aria-pressed="{{isAsk}}" onClick="{{modeAsk}}" style="min-height: 36px; padding: 0 12px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: {{segAsk.color}}; background: {{segAsk.bg}}">Ask</button>
+</div>
+<label for="note" class="sr">Note to the agent</label>
+<textarea id="note" value="{{note}}" onChange="{{onNote}}" placeholder="{{placeholder}}" style="display: block; box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; margin-top: 10px; padding: 10px; border: 1px solid var(--ink-3); background: var(--paper-2); color: var(--ink); font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif"></textarea>
+<sc-if value="{{isSteer}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 4px; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink)">
+<label style="display: inline-flex; gap: 8px; align-items: center; min-height: 40px; cursor: pointer"><input type="checkbox" checked="{{hint}}" onChange="{{toggleHint}}" style="margin: 0; accent-color: var(--act)">Just a hint</label>
+<label style="display: inline-flex; gap: 8px; align-items: center; min-height: 40px; cursor: pointer"><input type="checkbox" checked="{{stopNow}}" onChange="{{toggleStop}}" style="margin: 0; accent-color: var(--bad)">Stop it now</label>
+</div>
+</sc-if>
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px">
+<span style="font: 400 11.5px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: {{hintColor}}">{{sendHint}}</span>
+<button type="button" class="btn {{sendKind}}" onClick="{{send}}">{{sendLabel}}</button>
+</div>
+</aside>
+</div>
+</section>
+</main>
+</div>
+
+<sc-if value="{{abortOn}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim)">
+<section role="dialog" aria-modal="true" aria-labelledby="abortH" style="position: relative; box-sizing: border-box; width: 100%; max-width: 520px; background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px 24px; box-shadow: 0 24px 60px rgba(0,0,0,.45)">
+<i class="cm tl" aria-hidden="true"></i><i class="cm tr" aria-hidden="true"></i><i class="cm bl" aria-hidden="true"></i><i class="cm br" aria-hidden="true"></i>
+<div class="label">Abort · holophyte</div>
+<h2 id="abortH" style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 112%; font-size: 30px; line-height: 1.05; letter-spacing: -0.01em">Abort run 231?</h2>
+<p style="margin: 10px 0 0; color: var(--ink-2)">Review round 2 stops now. The branch <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13px">task/holo-231-the-sweep-frees-a-silent-lease</span> and draft PR #524 are kept, and HOLO-231 waits for you to requeue it.</p>
+<label for="abortWhy" style="display: block; margin-top: 16px; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Reason · saved with the run</label>
+<textarea id="abortWhy" placeholder="Why stop it?" style="display: block; box-sizing: border-box; width: 100%; min-height: 72px; resize: vertical; margin-top: 8px; padding: 10px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); font: 400 14px/1.45 'IBM Plex Sans', system-ui, sans-serif"></textarea>
+<div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px">
+<button type="button" class="btn quiet" onClick="{{closeAbort}}">Keep running</button>
+<button type="button" class="btn danger fill {{aBusy}}" onClick="{{confirmAbort}}">{{aLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button>
+</div>
+</section>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1440,"height":2080}}'>
+const VERDICTS = {
+  live: 'Reviewing round 2 of 3. Three of four criteria are met; the fourth was fixed after round 1 and waits on this review. Nothing needs you.',
+  green: 'Reviewing round 2 of 3. All four checks are green; AC4 waits on this review. Nothing needs you.',
+  paused: 'Pause requested by you. The run stops when review round 2 returns and waits for you to resume it.',
+  aborted: 'Aborted by you at 16:53. The branch and draft PR #524 are kept; HOLO-231 waits for you to requeue it.',
+  requeued: 'Requeued by you. HOLO-231 claims on the next free holophyte worker, with round 1 and your steer notes carried over.'
+};
+const P_PLAY = 'M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z';
+const STAGES = {
+  live: ['Review · round 2 of 3', '1 loop back', 'var(--live)', P_PLAY],
+  green: ['Review · round 2 of 3', 'CI green', 'var(--live)', P_PLAY],
+  paused: ['Paused in review', 'by you', 'var(--ask)', 'M6.6 5.6v4.8M9.4 5.6v4.8'],
+  aborted: ['Stopped in review', 'aborted by you', 'var(--bad)', 'M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4'],
+  requeued: ['Queued', 'next free worker', 'var(--wait)', 'M8 4.8V8l2.3 1.6']
+};
+const NAV_GRID = 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z';
+const NAV_FOLDER = 'M2 4.5h4.2l1.5 1.5H14v7.5H2z';
+const NAV_PAGES = [
+  ['overview', 'Overview', 'M2 9.5h3.5l1 2h3l1-2H14', 'M3.6 3h8.8L14 9.5V13H2V9.5z', 'Main.dc.html'],
+  ['runs', 'Runs', 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z', 'M6.6 5.4v5.2L10.8 8z', 'Runs.dc.html'],
+  ['issues', 'Issues', 'M3.5 1.5h6l3 3v10h-9z', 'M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4', 'Issues.dc.html'],
+  ['findings', 'Findings', 'M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5', '', 'Findings.dc.html']
+];
+const NAV_SCOPES = [['', 'All projects', 'var(--ink-2)', '', 'All'], ['holophyte', 'holophyte', 'var(--live)', '', 'H'], ['lotuspod', 'lotuspod', 'var(--live)', '', 'L'], ['relos', 'relos', 'var(--wait)', 'held', 'R']];
+const NAV_RUNS = { '': 14, holophyte: 9, lotuspod: 3, relos: 2 };
+const NAV_NEED = { '': 5, holophyte: 4, lotuspod: 0, relos: 1 };
+const NAV_FIND = { '': 2, holophyte: 1, lotuspod: 0, relos: 1 };
+function readScope(fallback) { try { const v = window.sessionStorage.getItem('holo.scope'); if (v !== null) return v; } catch (e) {} return fallback; }
+function saveScope(v) { try { window.sessionStorage.setItem('holo.scope', v); } catch (e) {} }
+const NAV_HELD = { relos: true };
+const NAV_STORIES = [['HOLO-220', 'Unattended runs recover themselves', 'holophyte', '4/7'], ['HOLO-241', 'The console tells the truth', 'holophyte', '1/7'],
+  ['HOLO-245', 'Findings become guardrails', 'holophyte', '1/5'], ['LOTUS-50', 'Two-way pages', 'lotuspod', '1/5']];
+function navSub(cmp, id, screen, scope, rail, opt) {
+  if (id !== 'issues') return { hasSub: false, subShow: false, subs: [] };
+  let open = cmp.state.navSt;
+  if (open === undefined) { open = true; try { open = window.sessionStorage.getItem('holo.stories') !== '0'; } catch (e) {} }
+  const toggle = () => { const v = !open; try { window.sessionStorage.setItem('holo.stories', v ? '1' : '0'); } catch (e) {} cmp.setState({ navSt: v }); };
+  const subs = NAV_STORIES.filter((x) => !scope || x[2] === scope).map((x) => {
+    const cur = screen === 'issues' && opt.story === x[0];
+    return { key: x[0], title: x[1], prog: x[3], cur: cur ? 'page' : null, color: cur ? 'var(--act)' : 'var(--ink-2)', bg: cur ? 'var(--act-wash)' : 'transparent',
+      aria: x[0] + ' ' + x[1] + ', ' + x[3].replace('/', ' of ') + ' merged',
+      go: (e) => { try { window.sessionStorage.setItem('holo.story', x[0]); } catch (err) {} if (opt.onStory) { if (e) e.preventDefault(); opt.onStory(x[0]); } } };
+  });
+  const has = !rail && subs.length > 0;
+  return { hasSub: has, subShow: has && open, subOpen: open ? 'true' : 'false', subRot: open ? 'rotate(90deg)' : 'none',
+    subAria: (open ? 'Hide' : 'Show') + ' the story list', toggleSub: toggle, subs: subs };
+}
+function navVals(cmp, screen, scope, rail, onScope, o) {
+  const opt = o || {};
+  const needs = opt.need || NAV_NEED, runs = opt.runs || NAV_RUNS, finds = opt.find || NAV_FIND, held = opt.held || NAV_HELD;
+  const sw = cmp.state.sw || { open: false, q: '', i: 0 };
+  const setSw = (p) => cmp.setState({ sw: Object.assign({}, cmp.state.sw || { open: false, q: '', i: 0 }, p) });
+  const pick = (id) => { saveScope(id); setSw({ open: false, q: '', i: 0 }); onScope(id); };
+  const q = sw.q.trim().toLowerCase();
+  const list = NAV_SCOPES.filter((x) => !q || x[1].toLowerCase().indexOf(q) >= 0);
+  const i = Math.min(sw.i, Math.max(list.length - 1, 0));
+  const colorOf = (id) => (held[id] ? 'var(--wait)' : (id ? 'var(--live)' : 'var(--ink-2)'));
+  const items = list.map((x, k) => ({ id: 'sw-' + (x[0] || 'all'), name: x[1], icon: x[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(x[0]),
+    noTag: !held[x[0]], need: String(needs[x[0]]), noNeed: !needs[x[0]], runs: runs[x[0]] + ' open', sel: x[0] === scope ? 'true' : 'false',
+    bg: k === i ? 'var(--paper-2)' : 'transparent', pick: () => pick(x[0]) }));
+  const cur = NAV_SCOPES.filter((x) => x[0] === scope)[0] || NAV_SCOPES[0];
+  const key = (e) => {
+    if (e.key === 'Escape') { if (sw.open) { e.preventDefault(); setSw({ open: false }); } return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sw.open) { setSw({ open: true, q: '', i: 0 }); return; }
+      const n = list.length;
+      if (n) setSw({ i: (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+      return;
+    }
+    if (e.key === 'Enter' && sw.open && list[i] && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); pick(list[i][0]); }
+  };
+  const pages = NAV_PAGES.map((p) => {
+    const isCur = p[0] === screen, n = p[0] === 'overview' ? needs[scope] : (p[0] === 'findings' ? finds[scope] : 0);
+    return { href: p[0] === 'overview' && opt.overviewHref ? opt.overviewHref : p[4], label: p[1], d1: p[2], d2: p[3], cur: isCur ? 'page' : null,
+      aria: p[1] + (n ? ', ' + n + (p[0] === 'overview' ? ' need you' : ' open') : ''),
+      color: isCur ? 'var(--act)' : 'var(--ink-2)', bg: isCur ? 'var(--act-wash)' : 'transparent', sh: isCur ? 'inset 2px 0 0 var(--act)' : 'none',
+      badge: n ? String(n) : '', noBadge: !n, rail: rail, ...navSub(cmp, p[0], screen, scope, rail, opt) };
+  });
+  return {
+    sw: { open: sw.open, q: sw.q, name: cur[1], icon: cur[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(cur[0]),
+      noTag: !held[cur[0]] || rail, need: String(needs[cur[0]]), noNeed: !needs[cur[0]], rail: rail,
+      aria: 'Project: ' + cur[1] + (held[cur[0]] ? ', held' : '') + (needs[cur[0]] ? ', ' + needs[cur[0]] + ' need you' : '') + '. Switch project',
+      title: cur[1] + (needs[cur[0]] ? ' · ' + needs[cur[0]] + ' need you' : ''),
+      items: items, hasItems: items.length > 0, activeId: items[i] ? items[i].id : '',
+      toggle: () => setSw({ open: !sw.open, q: '', i: 0 }), close: () => setSw({ open: false }),
+      onQ: (e) => setSw({ q: e.target.value, i: 0, open: true }), key: key },
+    pages: pages
+  };
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, scope: readScope(''), rail: false, ci: false, mode: 'steer', note: '', hint: false, stopNow: false, msgs: [], log: [],
+      paused: false, pBusy: false, abort: false, aBusy: false, aborted: false, rqBusy: false, requeued: false, sending: false };
+    this.timers = [];
+    let reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    this.fast = reduce;
+  }
+  componentDidMount() {
+    this.later(() => {
+      this.setState((s) => ({ ci: true, log: s.log.concat([{ t: '16:52', text: 'Check unit passed (412 tests). CI and bots: 4 of 4 green', color: 'var(--ink-2)' }]) }));
+    }, 7000);
+  }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); }
+  later(fn, ms) { this.timers.push(setTimeout(fn, this.fast ? 0 : ms)); }
+  send() {
+    const s = this.state, text = s.note.trim();
+    if (!text || s.sending) return;
+    const steer = s.mode === 'steer';
+    const by = (steer ? 'You · ' + (s.hint ? 'hint' : 'steer') : 'You · ask') + ' · 16:53';
+    const effect = steer ? (s.stopNow ? '→ stopping now; it restarts with your note' : '→ 1 note waiting, until the agent reads it') : '';
+    const mine = { by: by, text: text, border: 'var(--ink-3)', bg: 'var(--paper-2)', indent: '24px', thinking: false, effectOn: !!effect, effect: effect };
+    const wait = { by: 'Agent', text: '', border: 'var(--rule)', bg: 'var(--canvas)', indent: '0px', thinking: true, effectOn: false, effect: '' };
+    const logLine = steer ? { t: '16:53', text: 'You steered: ' + text, color: 'var(--act)' } : { t: '16:53', text: 'You asked: ' + text, color: 'var(--ink-2)' };
+    this.setState({ msgs: s.msgs.concat([mine, wait]), note: '', sending: true, log: s.log.concat([logLine]) });
+    this.later(() => {
+      const reply = steer
+        ? 'Noted. Turn 3 reads this first if round 2 asks for changes. If round 2 passes, it goes in the PR as a follow-up.'
+        : 'The dry run prints one line per lease and writes nothing. Round 2 checks that against AC4.';
+      this.setState((st) => {
+        const m = st.msgs.slice();
+        m[m.length - 1] = { by: 'Agent · 16:53', text: reply, border: 'var(--rule)', bg: 'var(--canvas)', indent: '0px', thinking: false, effectOn: false, effect: '' };
+        return { msgs: m, sending: false };
+      });
+    }, 1400);
+  }
+  renderVals() {
+    const s = this.state;
+    const theme = s.theme || this.props.theme || 'night';
+    const steer = s.mode === 'steer';
+    let key = s.ci ? 'green' : 'live';
+    if (s.paused) key = 'paused';
+    if (s.aborted) key = s.requeued ? 'requeued' : 'aborted';
+    const live = !s.aborted;
+    let sendHint = 'The run keeps going.';
+    if (steer) sendHint = s.stopNow ? 'Stops now and restarts with your note. Nothing is lost.' : (s.hint ? 'The agent may take it or leave it.' : 'Read on its next turn.');
+    const seg = (on) => ({ color: on ? 'var(--paper)' : 'var(--ink-2)', bg: on ? 'var(--ink)' : 'transparent' });
+    return {
+      themeClass: 't-' + theme,
+      ...navVals(this, 'runs', s.scope, s.rail, (id) => this.setState({ scope: id })),
+      asideCls: s.rail ? 'rail' : '',
+      themeWord: theme === 'dawn' ? 'Dawn' : 'Night',
+      themeLabel: theme === 'dawn' ? 'Colour theme: dawn. Switch to night' : 'Colour theme: night. Switch to dawn',
+      toggleTheme: () => this.setState({ theme: theme === 'dawn' ? 'night' : 'dawn' }),
+      full: !s.rail, sideW: s.rail ? '56px' : '232px', railFlip: s.rail ? 'scaleX(-1)' : 'none', openPad: s.rail ? '16px' : '40px',
+      railLabel: s.rail ? 'Expand sidebar' : 'Collapse sidebar', toggleRail: () => this.setState({ rail: !s.rail }),
+      verdict: VERDICTS[key],
+      vColor: s.aborted ? (s.requeued ? 'var(--wait)' : 'var(--bad)') : (s.paused ? 'var(--ask)' : 'var(--live)'),
+      vPath: s.aborted ? (s.requeued ? 'M8 4.8V8l2.3 1.6' : 'M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4') : (s.paused ? 'M6.6 5.6v4.8M9.4 5.6v4.8' : P_PLAY),
+      liveRun: live, aborted: s.aborted && !s.requeued,
+      pBusy: s.pBusy ? 'busy' : '', pLabel: s.pBusy ? 'Pausing…' : (s.paused ? 'Resume' : 'Pause'),
+      togglePause: () => {
+        if (s.paused) { this.setState({ paused: false }); return; }
+        this.setState({ pBusy: true });
+        this.later(() => this.setState((st) => ({ pBusy: false, paused: true, log: st.log.concat([{ t: '16:53', text: 'Pause requested by you; takes effect when round 2 returns', color: 'var(--act)' }]) })), 900);
+      },
+      openAbort: () => this.setState({ abort: true }),
+      abortOn: s.abort, aBusy: s.aBusy ? 'busy' : '', aLabel: s.aBusy ? 'Aborting…' : 'Abort run',
+      closeAbort: () => this.setState({ abort: false }),
+      confirmAbort: () => {
+        if (s.aBusy) return;
+        this.setState({ aBusy: true });
+        this.later(() => this.setState((st) => ({ aBusy: false, abort: false, aborted: true, log: st.log.concat([{ t: '16:53', text: 'Aborted by you. Branch and PR #524 kept', color: 'var(--bad)' }]) })), 1000);
+      },
+      rqBusy: s.rqBusy ? 'busy' : '', rqLabel: s.rqBusy ? 'Requeuing…' : 'Requeue',
+      requeue: () => {
+        if (s.rqBusy) return;
+        this.setState({ rqBusy: true });
+        this.later(() => this.setState((st) => ({ rqBusy: false, requeued: true, log: st.log.concat([{ t: '16:54', text: 'Requeued by you; claims on the next free worker', color: 'var(--wait)' }]) })), 900);
+      },
+      stText: STAGES[key][0], stSub: STAGES[key][1], stColor: STAGES[key][2], stPath: STAGES[key][3],
+      ciRun: !s.ci, ciOk: s.ci, ciPassed: s.ci ? '4 of 4 passed' : '3 passed',
+      extraLog: s.log,
+      agentState: s.aborted ? 'stopped with the run' : 'idle until round 2 returns, in about 2m',
+      msgs: s.msgs,
+      isSteer: steer, isAsk: !steer, segSteer: seg(steer), segAsk: seg(!steer),
+      modeSteer: () => this.setState({ mode: 'steer' }), modeAsk: () => this.setState({ mode: 'ask' }),
+      note: s.note, onNote: (e) => this.setState({ note: e.target.value }),
+      placeholder: steer ? 'Tell the agent what to change…' : 'Ask about this run…',
+      hint: s.hint, stopNow: s.stopNow,
+      toggleHint: () => this.setState({ hint: !s.hint }), toggleStop: () => this.setState({ stopNow: !s.stopNow }),
+      sendHint: sendHint, hintColor: steer && s.stopNow ? 'var(--bad)' : 'var(--ink-2)',
+      sendKind: steer && s.stopNow ? 'danger fill' : '', sendLabel: steer && s.stopNow ? 'Stop and send' : 'Send',
+      send: () => this.send()
+    };
+  }
+}
+</script>
+</body>
+</html>

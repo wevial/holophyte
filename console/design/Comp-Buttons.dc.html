@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buttons</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--live:#86d993;--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--live:#1f7a35;--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible,.btn.is-hover{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before,.btn.is-hover::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover,.btn.is-hover:not(.quiet):not(.danger){filter:brightness(1.08)}.btn.danger.fill:not(.busy){color:var(--bi)}.btn.danger.fill:not(.busy)::before{transform:scaleX(1)}
+.btn.busy{pointer-events:none;color:var(--b,var(--act));box-shadow:none;clip-path:none}
+.btn.busy::before,.btn.busy::after{display:none}
+.btn .ants-o{display:none}.btn.busy .ants-o{display:block}.btn .ants-r{stroke:var(--b,var(--act))}
+.ants-o{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.ants-o rect{width:calc(100% - 1.5px);height:calc(100% - 1.5px)}
+.ants-r{fill:none;stroke:var(--wait);stroke-width:1.5;stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+.btn[disabled]{cursor:not-allowed;opacity:.5}.btn[disabled]::before{display:none}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;cursor:pointer;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+.link:hover{color:var(--ink);border-bottom-color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="width: 1200px; height: 800px; box-sizing: border-box; padding: 56px; display: flex; flex-direction: column; gap: 28px; background: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+<div>
+<div class="label">Components · actions</div>
+<h2 style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 118%; font-size: 40px; line-height: 1; letter-spacing: -0.02em">Buttons</h2>
+</div>
+<section aria-label="Button states" style="padding: 28px; background: var(--paper); border: 1px solid var(--rule)">
+<div style="display: grid; grid-template-columns: 150px repeat(4, minmax(0, 1fr)); gap: 22px 20px; align-items: center">
+<span></span>
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Rest</span>
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Hover · focus</span>
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">In flight</span>
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Unavailable</span>
+
+<span style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Primary · filled<br><span style="color: var(--ink-3); font-weight: 400">one per row or dialog</span></span>
+<div><button type="button" class="btn">Merge</button></div>
+<div><button type="button" class="btn is-hover">Merge</button></div>
+<div><button type="button" class="btn busy">Merging…<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></div>
+<div><button type="button" class="btn" disabled>Merge</button></div>
+
+<span style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Quiet · outlined<br><span style="color: var(--ink-3); font-weight: 400">secondary, cancel</span></span>
+<div><button type="button" class="btn quiet">Pause</button></div>
+<div><button type="button" class="btn quiet is-hover">Pause</button></div>
+<div><button type="button" class="btn quiet busy">Pausing…<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></div>
+<div><button type="button" class="btn quiet" disabled>Pause</button></div>
+
+<span style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Danger · outlined<br><span style="color: var(--ink-3); font-weight: 400">opens a confirm</span></span>
+<div><button type="button" class="btn danger">Abort</button></div>
+<div><button type="button" class="btn danger is-hover">Abort</button></div>
+<div><button type="button" class="btn danger busy">Aborting…<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></div>
+<div><button type="button" class="btn danger" disabled>Abort</button></div>
+
+<span style="font: 500 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">Danger · filled<br><span style="color: var(--ink-3); font-weight: 400">a dialog's confirm only</span></span>
+<div><button type="button" class="btn danger fill">Abort run</button></div>
+<div><button type="button" class="btn danger fill" style="filter: brightness(1.08)">Abort run</button></div>
+<div><button type="button" class="btn danger fill busy">Aborting…<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></div>
+<div><button type="button" class="btn danger fill" disabled>Abort run</button></div>
+</div>
+</section>
+
+<section aria-label="Small controls" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 24px 28px; background: var(--paper); border: 1px solid var(--rule)">
+<div style="display: flex; flex-direction: column; gap: 12px; align-items: flex-start">
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Text link</span>
+<a class="link" href="#">Open run</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px; align-items: flex-start">
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Icon only</span>
+<button type="button" aria-label="Collapse sidebar" style="display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--rule); background: var(--canvas); color: var(--ink-3); cursor: pointer"><svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true"><path d="M6.5 2 3.5 5 6.5 8" style="fill: none; stroke: currentColor; stroke-width: 1.5"></path></svg></button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px; align-items: flex-start">
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Segmented</span>
+<div role="group" aria-label="Message kind" style="display: inline-flex; border: 1px solid var(--ink-3)"><button type="button" aria-pressed="true" style="min-height: 36px; padding: 0 12px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--paper); background: var(--ink)">Steer</button><button type="button" aria-pressed="false" style="min-height: 36px; padding: 0 12px; border: 0; cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); background: transparent">Ask</button></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px; align-items: flex-start">
+<span style="font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">Theme</span>
+<button type="button" aria-label="Colour theme: night. Switch to dawn" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink-2); cursor: pointer; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>Night</button>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"$preview":{"width":1200,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: 't-' + (this.props.theme || 'night') };
+  }
+}
+</script>
+</body>
+</html>
