@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Peers",
+  "description": "GET /peers",
+  "$ref": "#/$defs/Peers",
+  "$defs": {
+    "Peers": {
+      "type": "object",
+      "properties": {
+        "self": {
+          "type": "string"
+        },
+        "peers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "self",
+        "peers"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
