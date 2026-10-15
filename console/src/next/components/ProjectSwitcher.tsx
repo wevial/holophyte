@@ -4,8 +4,6 @@ import { matchRows, storeScope, switcherRows, type SwitcherRow } from "../projec
 import { useConsolePeers } from "../scope";
 import { DropIcon, FolderIcon, OverviewIcon } from "./icons";
 
-const DIALOG_WIDTH = 264;
-
 function iconColour(row: SwitcherRow): string {
   if (row.name == null) return "text-ink-2";
   if (row.down) return "text-bad";
@@ -149,7 +147,7 @@ export function ProjectSwitcher({ folded }: { folded: boolean }) {
           ref={dialogRef}
           role="dialog"
           aria-label="Switch project"
-          style={{ top: place.top, left: place.left, width: DIALOG_WIDTH }}
+          style={{ top: place.top, left: place.left, width: 264 }}
           className="fixed z-50 flex flex-col border border-rule bg-paper shadow-card"
           onMouseDown={(event) => {
             if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
