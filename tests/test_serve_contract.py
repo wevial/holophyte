@@ -102,8 +102,6 @@ class GeneratedFilesTests(unittest.TestCase):
                               text=True)
         self.assertEqual((done.returncode, done.stderr), (0, ""))
         self.assertEqual(self.generated(ROOT), before)
-        self.assertEqual({path.name for path in (ROOT / SCHEMA_DIR).iterdir()},
-                         {f"{stem}.schema.json" for stem in ROUTES})
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:

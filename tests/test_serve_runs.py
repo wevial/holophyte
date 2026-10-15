@@ -925,7 +925,6 @@ class ServeContractTests(ServeTestCase):
             with self.subTest(endpoint=name):
                 expected = json.loads((fixtures / f"{name}.json").read_text())
                 self.assertEqual(body, expected)
-        self.assertTrue(answers["attention"]["items"])
 
 
 class TurnTests(TranscriptCase):

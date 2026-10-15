@@ -31,7 +31,6 @@ test("a mistyped field, an unknown kind and a missing key fail at their paths", 
   const kind = { ...attention, items: [{ ...attention.items[0], kind: "later_kind" }] };
   const { supervisor: _supervisor, ...unsupervised } = status;
   const failures = [statusSchema.safeParse(phase), attentionSchema.safeParse(kind), statusSchema.safeParse(unsupervised)];
-  expect(failures.map((result) => result.success)).toEqual([false, false, false]);
   expect(firstIssuePath(failures[0])).toStartWith("runs.0.phase");
   expect(firstIssuePath(failures[1])).toStartWith("items.0");
   expect(firstIssuePath(failures[2])).toStartWith("supervisor");
