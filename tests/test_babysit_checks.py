@@ -465,7 +465,9 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
     def test_a_check_fix_turn_is_handed_a_devin_analysis_as_context(self):
         analysis = ("The description promises a retry the diff does not add.\n"
                     '<!-- devin-review-comment {"kind": "analysis"} -->')
-        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis,
+                 ((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
+                   "Read as a note, not a finding: informational"),))
         self.red_check(self.UNIT, self.FAILED, states=[self.pr_state([devin])])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Idle("The runner is flaky."), provider=self.provider())

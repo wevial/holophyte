@@ -456,8 +456,12 @@ Each module, one line:
 - `holophyte/babysit/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysit/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.
-- `holophyte/babysit/devin_notes.py` — a Devin review comment marked `analysis`:
-  fix-turn context, not an open finding.
+- `holophyte/babysit/devin_notes.py` — a Devin review comment marked `analysis`,
+  told apart by the factory's triage reply: a note stays fix-turn context, a
+  finding is an open thread, and one with no reply is untriaged.
+- `holophyte/babysit/note_triage.py` — one read-only `adjudicate` triage of the
+  untriaged Devin `analysis` comments as FINDING or NOTE, each answered on its
+  thread; a FINDING joins the open threads.
 - `holophyte/babysit/review_body.py` — bot review-body outside-diff findings, their
   fingerprints and answer markers.
 - `holophyte/babysit/thread_answers.py` — read-only mention answers and thread replies.

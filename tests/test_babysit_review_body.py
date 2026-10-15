@@ -143,10 +143,11 @@ class ReviewBodyFindingTests(MergeModeFixture):
         self.fake_route(states=[self.pr_state([self.DEFECT, devin]),
                                 self.pr_state()])
         fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: NOTE -- informational"),
                             Reply("THREAD 1: ADDRESS -- a real crash"),
                             Commit("guard the missing file"), Idle(""),
                             provider=self.provider())
-        adjudicate = fake.roles.index("adjudicate")
+        adjudicate = fake.roles.index("adjudicate", fake.roles.index("adjudicate") + 1)
         self.assertNotIn("THREAD 2", fake.turns[adjudicate].goal)
         self.assertNotIn("promises a retry", fake.turns[adjudicate].goal)
         self.assertIn("promises a retry", fake.turns[adjudicate + 1].goal)
@@ -181,6 +182,31 @@ class ReviewBodyFindingTests(MergeModeFixture):
                    if kind == "reply" and "Triaged as a finding" in data["body"]]
         self.assertEqual(len(replies), 1)
         self.assertTrue(replies[0].startswith("---- Comment by "))
+
+    def test_a_devin_analysis_triaged_as_a_note_is_answered_and_parks_ready(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        analysis = ("**Preference keys are read once per request** For context:"
+                    " the new preference is read with the others when the"
+                    " request starts, so a change takes effect on the next page"
+                    " load.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        self.fake_route(states=[self.pr_state([devin])])
+        fake, _ = self.loop(
+            Commit("initial work"), APPROVE, Idle(""),
+            Reply("THREAD 1: NOTE -- informational; nothing in the candidate"
+                  " needs to change"),
+            provider=self.provider())
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "adjudicate"])
+        kinds = [kind for kind, _ in self.api_calls()]
+        self.assertNotIn("resolve", kinds)
+        (reply,) = [data["body"] for kind, data in self.api_calls()
+                    if kind == "reply"]
+        self.assertTrue(reply.startswith("---- Comment by "))
+        self.assertIn("Read as a note, not a finding", reply)
+        self.assertIn("waiting for a human to say merge", self.question())
 
     def test_a_persons_thread_quoting_a_devin_marker_stays_open(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')

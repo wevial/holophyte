@@ -14,6 +14,7 @@ from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
 from holophyte.babysit.main_checkout import detached_main
+from holophyte.babysit.note_triage import triage_notes
 from holophyte.babysit.thread_answers import answer_asks, post
 from holophyte.babysit.thread_findings import thread_finding
 from holophyte.babysit.thread_text import (  # noqa: F401
@@ -289,6 +290,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
         state = replace(state, threads=answer_asks(
             project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             pull, thread_mentions.classified(state.threads, merge), ticket, reviewed))
+        state = triage_notes(project, conn, run_id, beat_s, wt, sha, pull, state,
+                             ticket, merge)
         if state.mergeable == "CONFLICTING":
             # UNKNOWN is not a conflict.
             sha, pushed_state, reviewed = _merge_origin_main(
