@@ -141,7 +141,6 @@ function PrLaneRow({
  *  detail; a row also in Needs you points back to it. */
 function PrLane({ group, readiness, needs, onShow }: { group: PrLaneGroup; readiness: ReadinessMap; needs: NeedsYouEntry[]; onShow: (index: number) => void }) {
   const status = group.host.status!;
-  const needIndex = (item: AttentionItem) => needs.findIndex((entry) => entry.item === item);
   return (
     <div role="group" aria-label={group.name}>
       <LaneHead name={group.name} held={status.admission === "held"} holdNote={status.hold_note} meta={`${group.rows.length} open`}>
@@ -155,7 +154,7 @@ function PrLane({ group, readiness, needs, onShow }: { group: PrLaneGroup; readi
               row={row}
               host={group.host}
               readiness={readiness}
-              needIndex={needIndex(row.item)}
+              needIndex={needs.findIndex((entry) => entry.item === row.item)}
               onShow={onShow}
             />
           ))}
