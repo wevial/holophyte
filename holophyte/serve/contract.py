@@ -615,10 +615,13 @@ class Board(TypedDict):
     now: int
 
 
-class TicketRevision(TypedDict):
+class RevisionStamp(TypedDict):
     revision: int
     at: int
     author: str
+
+
+class TicketRevision(RevisionStamp):
     title: str
     body: str
     priority: int | None
@@ -631,12 +634,6 @@ class ClaimedSnapshot(TypedDict):
     title: str
     acceptance_criteria: list[str]
     verification_commands: list[str]
-
-
-class RevisionStamp(TypedDict):
-    revision: int
-    at: int
-    author: str
 
 
 class TicketNote(TypedDict):
