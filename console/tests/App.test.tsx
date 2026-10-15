@@ -4,6 +4,7 @@ import { App } from "../src/App";
 import { THEME_KEY } from "../src/lib/theme";
 import type { Attention, Status } from "../src/lib/types";
 import type { Fetch } from "../src/lib/poll";
+import runDetail from "../../tests/fixtures/serve/run-detail.json";
 import { NO_ATTENTION, fakeDeps, fixture, peersFetch, settle, stubFetch } from "./harness";
 
 const BASE = "http://writer:7710";
@@ -233,6 +234,13 @@ test("both daemons failing on the first poll: Now still opens with one critical 
   expect(within(rows[1]!).getByText("writer-2:7710 · never answered · Failed to fetch")).toBeTruthy();
 });
 
+/** Puts the console's URL at `hash` before it mounts; happy-dom queues a
+ *  hashchange for the assignment, so it is let fire before the render. */
+async function openAt(hash: string) {
+  window.location.hash = hash;
+  await new Promise((done) => setTimeout(done, 0));
+}
+
 const pressed = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) }).getAttribute("aria-pressed");
 
 test.each([
@@ -240,7 +248,7 @@ test.each([
   ["shipped", "Finished", "Finished"],
   ["hosts", "Hosts", "Hosts & daemons"],
 ])("loaded at #view=%s, the console presses %s and shows its view", async (hash, button, heading) => {
-  window.location.hash = `#view=${hash}`;
+  await openAt(`#view=${hash}`);
   try {
     await mount({ status: working, attention: NO_ATTENTION });
     expect(pressed(button)).toBe("true");
@@ -250,7 +258,7 @@ test.each([
 });
 
 test("a #view= naming no view opens Now or keeps the view shown, and a later #view=board shows the Board", async () => {
-  window.location.hash = "#view=nowhere";
+  await openAt("#view=nowhere");
   try {
     await mount({ status: working, attention: NO_ATTENTION });
     expect(pressed("Now")).toBe("true");
@@ -260,5 +268,25 @@ test("a #view= naming no view opens Now or keeps the view shown, and a later #vi
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Board");
     await act(async () => { window.location.hash = "#view=nowhere"; window.dispatchEvent(new Event("hashchange")); });
     expect(pressed("Board")).toBe("true");
+  } finally { window.location.hash = ""; }
+});
+
+test("a #run= link opens the run detail from its serving daemon, and an empty hash returns to Now", async () => {
+  await openAt("#run=1");
+  const seen: string[] = [];
+  const answer = stubFetch({ status: idle, attention: NO_ATTENTION });
+  const { deps } = fakeDeps(async (url, init) => {
+    seen.push(url);
+    return url === `${BASE}/runs/1` ? Response.json(runDetail) : answer(url, init);
+  });
+  try {
+    render(<App base={BASE} pollDeps={deps} />);
+    await act(settle);
+    expect(screen.getByRole("region", { name: "Run 1" })).toBeTruthy();
+    expect(screen.getByRole("article", { name: "run 1" })).toBeTruthy();
+    expect(seen).toContain(`${BASE}/runs/1`);
+    await act(async () => { window.location.hash = ""; window.dispatchEvent(new Event("hashchange")); });
+    expect(screen.queryByRole("region", { name: "Run 1" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Floor" })).toBeTruthy();
   } finally { window.location.hash = ""; }
 });
