@@ -776,5 +776,32 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                          [("awaiting_merge_approval", "ci")])
 
 
+    def test_a_note_triage_reply_is_not_carried_past_a_conflict_merge(self):
+        review = self.conflict_refusal()
+        (self.calls.parent / "refused").touch()
+        analysis = ("For context: the preference is read once per request.\n"
+                    '<!-- devin-review-comment {"id": "ANALYSIS_0002",'
+                    ' "kind": "analysis"} -->')
+        devin = ("src/app.py", 1, ("devin-ai-integration[bot]", "Bot"), analysis)
+        noted = devin + (((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
+                           "Read as a note, not a finding: informational"),),)
+        def stamp(seconds):
+            return datetime.fromtimestamp(seconds, timezone.utc).isoformat()
+        self.serve(self.pr_state([devin], mergeable="CONFLICTING",
+                                 updated_at=stamp(800)),
+                   self.pr_state([noted], checks="PENDING", updated_at=stamp(1000)),
+                   self.pr_state([noted], updated_at=stamp(1000)))
+        naps = []
+        with patch.object(holophyte.pr.github, "SLEEP", naps.append), \
+                patch("holophyte.babysit.babysitter.time",
+                      side_effect=lambda: 1000 + sum(naps)):
+            self.loop(Commit("candidate"), review, Idle(""),
+                      Reply("THREAD 1: NOTE -- informational"),
+                      provider=self.provider())
+        self.assertEqual(self.last_fake.roles,
+                         ["implement", "review", "implement", "adjudicate"])
+        self.assertGreaterEqual(sum(naps), 300)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
 if __name__ == "__main__":
     unittest.main()
