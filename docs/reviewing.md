@@ -48,6 +48,18 @@ reviewer's brief says so and tells it not to rerun the full suite, which runs
 as a pull request check, but to run only the focused tests a specific concern
 needs.
 
+A ticket whose mock-up the factory fetched gives every reviewer two more
+read-only directories, whatever the route: `.holophyte/mockup/`, the
+approved snapshots and board sources, and `.holophyte/captured/`, the
+screenshots the `[merge] ui_capture` run took at the reviewed head (empty
+when that capture failed or made nothing). The container stage carries them
+after the `[worktree] carry` entries, a seat reviewer's scratch checkout gets
+copies with their write bits cleared, and a wrapper reviewer already runs in
+the task worktree that holds them. The review prompt lists each file and
+asks for a design-match check: a visible difference between the candidate's
+UI and the approved design is a finding unless the ticket text asks for it,
+and a board no screenshot shows is compared with its `.dc.html` source.
+
 How many review rounds a run gets is decided per run, before its first
 review, from the size of the candidate's diff and the `[loop]` review keys
 (`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`; see

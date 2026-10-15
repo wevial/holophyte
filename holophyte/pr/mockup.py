@@ -28,6 +28,8 @@ import ticket_template
 from holophyte.config.config_tables import merge_config
 
 DIRECTORY = ".holophyte/mockup"
+CAPTURED = ".holophyte/captured"
+DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 MOCKUP_IMAGE_MAX_MB = 10
 MOCKUP_BUNDLE_MAX_MB = 25
 BUNDLE_MAX_MEMBERS = 200
@@ -50,6 +52,15 @@ BRIEF_TAIL = (
     "own components and styles. Where the ticket text and the design "
     "disagree, the ticket text wins; name each such difference in your "
     "final reply.")
+
+DESIGN_CHECK = (
+    "Design-match check: open every approved image and every captured "
+    "screenshot. A visible difference between the candidate's UI and the "
+    "approved design (layout, copy, a missing or extra state, a control's "
+    "place or style) is a finding unless the ticket text asks for it; name "
+    "the board or snapshot and the screenshot. Where no screenshot shows a "
+    "board, compare the diff's markup and copy with the board's .dc.html "
+    "source.\n\n")
 
 
 class Link(NamedTuple):
@@ -156,25 +167,30 @@ def fetch(project, conn, run_id, wt, body):
             f"{len(bundles)} bundles ({boards} boards) in {DIRECTORY}")
 
 
-def _refuse_unsafe(root):
-    for path in (root / DIRECTORY).parent, root / DIRECTORY:
+def _refuse_unsafe(root, directory=DIRECTORY):
+    for path in (root / directory).parent, root / directory:
         if path.is_symlink():
             raise Refused(f"{path.relative_to(root)} is a symlink")
     tracked = subprocess.run(
-        ["git", "ls-files", "-z", "--", str(PurePosixPath(DIRECTORY).parent)],
+        ["git", "ls-files", "-z", "--", str(PurePosixPath(directory).parent)],
         cwd=root, capture_output=True, text=True, check=True).stdout
     for name in filter(None, tracked.split("\0")):
-        if name in (".holophyte", DIRECTORY) or name.startswith(DIRECTORY + "/"):
+        if name in (".holophyte", directory) or name.startswith(directory + "/"):
             raise Refused(f"{name} is tracked by git")
+
+
+def _ignored_staging(target):
+    target.parent.mkdir(exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
+    staging.chmod(0o755)
+    (staging / ".gitignore").write_text("*\n")
+    return staging
 
 
 def _rebuild(root, links, base, warn):
     target = root / DIRECTORY
-    target.parent.mkdir(exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".mockup-", dir=target.parent))
+    staging = _ignored_staging(target)
     try:
-        staging.chmod(0o755)
-        (staging / ".gitignore").write_text("*\n")
         items = []
         for number, link in enumerate(links, 1):
             try:
@@ -192,8 +208,9 @@ def _rebuild(root, links, base, warn):
 def _swap(staging, target):
     old = None
     if target.exists():
-        old = Path(tempfile.mkdtemp(prefix=".mockup-old-", dir=target.parent))
-        os.rename(target, old / "mockup")
+        old = Path(tempfile.mkdtemp(prefix=f".{target.name}-old-",
+                                    dir=target.parent))
+        os.rename(target, old / target.name)
     os.rename(staging, target)
     if old is not None:
         shutil.rmtree(old, ignore_errors=True)
@@ -378,7 +395,7 @@ def _extract(bundle, info, directory, budget):
     return budget
 
 
-def implementer_brief(wt):
+def _design(wt):
     directory = Path(wt) / DIRECTORY
     try:
         _refuse_unsafe(Path(wt))
@@ -392,7 +409,122 @@ def implementer_brief(wt):
                   for path in item["boards"]]
     except (Refused, OSError, subprocess.CalledProcessError, ValueError,
             KeyError, TypeError):
+        return []
+    return images + boards
+
+
+def implementer_brief(wt):
+    design = _design(wt)
+    return BRIEF_HEAD + "\n".join(design) + "\n" + BRIEF_TAIL if design else ""
+
+
+def clear_captured(wt):
+    target = Path(wt) / CAPTURED
+    try:
+        _refuse_unsafe(Path(wt), CAPTURED)
+        staging = _ignored_staging(target)
+        try:
+            (staging / ".head").write_text(_head(wt))
+            _swap(staging, target)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    except (Refused, OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
+def _head(wt):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=wt, capture_output=True,
+                          text=True, check=True).stdout.strip()
+
+
+def keep_captured(wt, output, files):
+    try:
+        _refuse_unsafe(Path(wt), CAPTURED)
+        parent = os.open(Path(wt) / ".holophyte", DIRECTORY_FLAGS)
+        try:
+            directory = os.open(Path(CAPTURED).name, DIRECTORY_FLAGS, dir_fd=parent)
+        finally:
+            os.close(parent)
+    except (Refused, OSError, subprocess.CalledProcessError):
+        return
+    try:
+        for file in files:
+            if file.suffix == ".png":
+                _copy_new(file, file.relative_to(output).parts, directory)
+    except OSError:
+        pass
+    finally:
+        os.close(directory)
+
+
+def _copy_new(file, parts, directory):
+    opened = []
+    try:
+        for part in parts[:-1]:
+            try:
+                os.mkdir(part, 0o755, dir_fd=directory)
+            except FileExistsError:
+                pass
+            directory = os.open(part, DIRECTORY_FLAGS, dir_fd=directory)
+            opened.append(directory)
+        try:
+            fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                         | os.O_NOFOLLOW, 0o644, dir_fd=directory)
+        except FileExistsError:
+            return
+        with os.fdopen(fd, "wb") as out, open(file, "rb") as source:
+            shutil.copyfileobj(source, out)
+    finally:
+        for fd in opened:
+            os.close(fd)
+
+
+def review_carry(wt, configured=()):
+    root = Path(wt)
+    try:
+        _refuse_unsafe(root)
+        _refuse_unsafe(root, CAPTURED)
+    except (Refused, OSError, subprocess.CalledProcessError):
+        return []
+    taken = [Path(entry).parts for entry in configured]
+    return [entry for entry in (DIRECTORY, CAPTURED) if (root / entry).is_dir()
+            and not any(_nested(Path(entry).parts, other) for other in taken)]
+
+
+def _nested(one, other):
+    shorter = min(len(one), len(other))
+    return one[:shorter] == other[:shorter]
+
+
+def release_review_carry(checkout):
+    for entry in review_carry(checkout):
+        for root, _, _ in os.walk(Path(checkout) / entry):
+            os.chmod(root, os.stat(root).st_mode | stat.S_IWUSR)
+
+
+def _captured(wt):
+    directory = Path(wt) / CAPTURED
+    try:
+        _refuse_unsafe(Path(wt), CAPTURED)
+        if (directory / ".head").is_symlink() or (
+                (directory / ".head").read_text() != _head(wt)):
+            return []
+        return sorted((Path(root) / name).relative_to(directory).as_posix()
+                      for root, _, names in os.walk(directory) for name in names
+                      if name.endswith(".png")
+                      and not (Path(root) / name).is_symlink())
+    except (Refused, OSError, subprocess.CalledProcessError):
+        return []
+
+
+def reviewer_brief(wt):
+    design = _design(wt)
+    if not design:
         return ""
-    if not images and not boards:
-        return ""
-    return (BRIEF_HEAD + "\n".join(images + boards) + "\n" + BRIEF_TAIL)
+    captured = [f"- `{CAPTURED}/{name}`" for name in _captured(wt)]
+    shown = ("The candidate's UI as captured at this head:\n"
+             + "\n".join(captured) if captured
+             else "No UI capture was made at this head.")
+    return ("The approved design, downloaded by the factory (read-only):\n"
+            + "\n".join(design) + f"\n{shown}\n" + DESIGN_CHECK)
