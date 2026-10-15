@@ -24,7 +24,7 @@ class TurnStalled(subprocess.TimeoutExpired):
 
 class StreamRecord:
 
-    def __init__(self, on_event=None):
+    def __init__(self, on_event):
         self.on_event = on_event
         self.kept = []
         self.partial = []
@@ -74,7 +74,7 @@ class StreamRecord:
         return "\n".join(self.partial)[-TAIL_CHARS:]
 
 
-def read_stream(proc, cmd, timeout, quiet, reap, on_event=None):
+def read_stream(proc, cmd, timeout, quiet, reap, on_event):
     """Return `(returncode, kept lines)`; a quiet pipe raises `TurnStalled`."""
     record = StreamRecord(on_event)
     clocks = Clocks(proc, cmd, timeout, quiet, reap, record)
