@@ -140,6 +140,17 @@ def merge_toml(base, ui_paths=True):
             f'public_base = "{base}"\n')
 
 
+def mockup_section(base, links):
+    return f"{ARTIFACT}\n\n{APPROVAL}\n\n" + "\n".join(
+        link.replace("BASE", base) for link in links)
+
+
+class MockupEventsFixture(LoopFixture):
+    def events(self):
+        return [summary for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'mockup' ORDER BY seq")]
+
+
 class FilingTests(LoopFixture):
     def problems(self, mockup_section):
         return [p for p in store.board.ticket_problems(
@@ -175,7 +186,7 @@ class FilingTests(LoopFixture):
         self.assertIn(f"upload them under {BASE}", checked.stdout)
 
 
-class FetchTests(LoopFixture):
+class FetchTests(MockupEventsFixture):
     """A real git task worktree, a real store run and a real HTTP server."""
 
     def setUp(self):
@@ -197,16 +208,10 @@ class FetchTests(LoopFixture):
         with media_server(routes) as (host, requests):
             base = f"{host}/mockups"
             self.configure(merge_toml(base, ui_paths=False))
-            section = f"{ARTIFACT}\n\n{APPROVAL}\n\n" + "\n".join(
-                link.replace("BASE", base) for link in links)
             mockup.fetch(self.project, self.conn, self.run_id, self.wt,
-                         major_body(section))
+                         major_body(mockup_section(base, links)))
         self.requests = requests
         return base
-
-    def events(self):
-        return [summary for (summary,) in self.conn.execute(
-            "SELECT summary FROM runEvents WHERE kind = 'mockup' ORDER BY seq")]
 
     def files(self, root):
         return sorted(str(path.relative_to(root)) for path in root.rglob("*")
@@ -298,20 +303,14 @@ class FetchTests(LoopFixture):
         self.assertEqual(list(outside.iterdir()), [])
 
 
-class ImplementTurnTests(LoopFixture):
+class ImplementTurnTests(MockupEventsFixture):
     def run_major(self, links, routes=None):
         with media_server(routes or {}) as (host, _):
             base = f"{host}/mockups"
             self.configure(merge_toml(base))
-            section = f"{ARTIFACT}\n\n{APPROVAL}\n\n" + "\n".join(
-                link.replace("BASE", base) for link in links)
             fake, _ = self.loop(Commit(), APPROVE, provider=StubProvider(
-                dict(a_task(), body=major_body(section))))
+                dict(a_task(), body=major_body(mockup_section(base, links)))))
         return fake.turns[0]
-
-    def events(self):
-        return [summary for (summary,) in self.read(
-            "SELECT summary FROM runEvents WHERE kind = 'mockup' ORDER BY seq")]
 
     def test_an_already_filed_ticket_without_media_still_claims_and_is_warned(self):
         with media_server({}) as (host, _):
