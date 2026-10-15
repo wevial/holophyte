@@ -63,20 +63,16 @@ class RepoCase(unittest.TestCase):
         return landmark_reasons(self.repo, body)
 
 
-class LibraryNameTests(unittest.TestCase):
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.repo = Path(tmp.name)
-        commit_main(self.repo, {
-            "holophyte/serve/views.py": "BACKLOG = 'backlog'\n",
-            "holophyte/serve/contract.py": "from typing import Literal\n",
-        })
+class LibraryNameTests(RepoCase):
+    FILES = {
+        "holophyte/serve/views.py": "BACKLOG = 'backlog'\n",
+        "holophyte/serve/contract.py": "from typing import Literal\n",
+    }
 
     def test_a_library_name_found_elsewhere_on_main_is_no_stale_reason(self):
         body = notes_body("A column's `state` is a `Literal` of `BACKLOG` in"
                           " `holophyte/serve/views.py`.")
-        reasons, _ = landmark_reasons(self.repo, body)
+        reasons, _ = self.findings(body)
         self.assertFalse([r for r in reasons if "`Literal`" in r], reasons)
 
 
