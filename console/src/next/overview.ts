@@ -50,7 +50,6 @@ export function useOverview(): Overview {
   const hosts = scopedHosts(peers.hosts, project);
   const items = hosts.flatMap((host) => hostItems(host, now));
   const readiness = useReadiness(hosts, deps);
-  const mergedToday = useMergedToday(hosts, now, deps.fetch);
   const statuses = hosts.flatMap((host) => (host.status ? [host.status] : []));
   return {
     project,
@@ -60,6 +59,6 @@ export function useOverview(): Overview {
     pullRequests: items.filter((item) => item.kind === "pr_open"),
     running: statuses.reduce((sum, status) => sum + runCounts(status).active, 0),
     queued: statuses.flatMap((status) => status.queued),
-    mergedToday,
+    mergedToday: useMergedToday(hosts, now, deps.fetch),
   };
 }
