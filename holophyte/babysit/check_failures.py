@@ -22,8 +22,8 @@ def failure_lines(log):
 
 
 def normalized(line):
-    line = _RETRY.sub("", _DURATION.sub("", line))
-    return " ".join(_CHARS.sub("[N chars]", _HEX.sub("HEX", line)).split())
+    line = _CHARS.sub("[N chars]", _RETRY.sub("", _DURATION.sub("", line)))
+    return " ".join(_HEX.sub("HEX", line).split())
 
 
 @dataclass(frozen=True)

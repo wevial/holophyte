@@ -186,5 +186,14 @@ class PlaywrightRepeatTests(unittest.TestCase):
                      retry=" (retry #1)")), 1)
 
 
+class CharCountRepeatTests(unittest.TestCase):
+    def test_a_seven_digit_char_count_still_reads_as_the_same_failure(self):
+        def failure(count):
+            return Failure.read(["unit"], [
+                "FAIL: test_a (tests.test_y.Case.test_a)\n"
+                f"AssertionError: 'x' != 'y' [{count} chars]\n"])
+        self.assertEqual(failure(1000000).repeated_round([failure(999999)]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
