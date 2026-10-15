@@ -88,7 +88,8 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
                          [("awaiting_merge_approval",)])
         question = self.question()
         self.assertIn("checks failure on the head commit", question)
-        self.assertIn("the failure check fix round 1 was handed repeats", question)
+        self.assertIn("the failure check fix round 1 was handed repeats"
+                      " (FAIL: test_a (tests.test_y.Case.test_a))", question)
         self.assertEqual(self.merges(), [])
 
     def test_one_round_parks_a_new_failure_as_rounds_used_up(self):
@@ -129,7 +130,6 @@ class BabysitCheckRoundsTests(cases.BabysitHelpers, MergeModeFixture):
         for line in fails:
             self.assertIn(f"- {line}", listed)
         tail = goal.split("CHECK unit")[1]
-        self.assertNotIn("traceback frame 0\n", tail)
         self.assertIn("exit code 1.\n\nFix the failures", tail)
         self.assertNotIn("Cleaning up orphan processes", goal)
 

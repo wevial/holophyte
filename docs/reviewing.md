@@ -380,8 +380,8 @@ One pass:
    the fix's commit gets another round only when its failure is new and
    `[merge] check_fix_rounds` is not spent; a repeated failure, spent
    rounds, a red status that is no Actions job or a round that makes no
-   commit park the run. Green checks are "ready to merge": the PR is merged through its merge API, pinned to the
-   candidate's sha so a push that races the pass is refused rather than
+   commit park the run. Green checks are "ready to merge": the PR is
+   merged through its merge API, pinned to the candidate's sha so a push that races the pass is refused rather than
    landed, under `[merge] approve = "auto"` or after the operator's
    `--approve`, and parks for the human under `approve = "human"`.
 6. **Review the fix.** A fix round moved the candidate past the sha the
