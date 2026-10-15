@@ -1,8 +1,12 @@
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
+import { DayLog } from "../components/DayLog";
+import { MergedToday } from "../components/MergedToday";
 import { Section } from "../components/Section";
 import { useOverview } from "../overview";
+import { useDayLedger } from "../queries";
+import { PollDepsContext } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
 
@@ -62,62 +66,68 @@ function FoldingSection({
 
 export function Overview() {
   const view = useOverview();
+  const log = useDayLedger(view.hosts, view.now, useContext(PollDepsContext));
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
   return (
-    <div className="flex max-w-[880px] flex-col gap-6 px-8 py-7">
-      {view.answered && (
-        <header className="flex flex-col gap-1">
-          <h1 className="font-sans text-[32px] font-bold leading-tight text-ink">
-            {need === 0 ? (
-              "Nothing needs you."
-            ) : (
-              <>
-                <span className="text-need">{need}</span> {need === 1 ? "needs" : "need"} you.
-              </>
-            )}
-          </h1>
-          <p data-count-line className="font-mono text-[13px] text-ink-2">
-            {[
-              `${view.running} running`,
-              counted(view.pullRequests.length, "open PR"),
-              `${queued} queued`,
-              `${view.mergedToday.length} merged today`,
-            ].join(" · ")}
-          </p>
-        </header>
-      )}
-      <FoldingSection
-        id="need"
-        label="Needs you"
-        count={need}
-        summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
-        empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
-      />
-      <FoldingSection
-        id="run"
-        label="Running"
-        count={view.running}
-        summary={queued === 0 ? "nothing queued" : `${queued} queued`}
-        empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-      />
-      <FoldingSection
-        id="pr"
-        label="Pull requests"
-        count={view.pullRequests.length}
-        summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
-        empty="No pull requests open."
-      />
-      <FoldingSection
-        id="done"
-        label="Merged today"
-        count={view.mergedToday.length}
-        summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
-        empty="Nothing merged yet today."
-      />
+    <div className="overview gap-8 px-8 py-7">
+      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-6">
+        {view.answered && (
+          <header className="flex flex-col gap-1">
+            <h1 className="font-sans text-[32px] font-bold leading-tight text-ink">
+              {need === 0 ? (
+                "Nothing needs you."
+              ) : (
+                <>
+                  <span className="text-need">{need}</span> {need === 1 ? "needs" : "need"} you.
+                </>
+              )}
+            </h1>
+            <p data-count-line className="font-mono text-[13px] text-ink-2">
+              {[
+                `${view.running} running`,
+                counted(view.pullRequests.length, "open PR"),
+                `${queued} queued`,
+                `${view.mergedToday.length} merged today`,
+              ].join(" · ")}
+            </p>
+          </header>
+        )}
+        <FoldingSection
+          id="need"
+          label="Needs you"
+          count={need}
+          summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
+          empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
+        />
+        <FoldingSection
+          id="run"
+          label="Running"
+          count={view.running}
+          summary={queued === 0 ? "nothing queued" : `${queued} queued`}
+          empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
+        />
+        <FoldingSection
+          id="pr"
+          label="Pull requests"
+          count={view.pullRequests.length}
+          summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
+          empty="No pull requests open."
+        />
+        <FoldingSection
+          id="done"
+          label="Merged today"
+          count={view.mergedToday.length}
+          summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
+          empty="Nothing merged yet today."
+        >
+          <MergedToday rows={view.mergedToday} />
+        </FoldingSection>
+      </div>
+      <DayLog entries={log.entries} />
     </div>
   );
 }

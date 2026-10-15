@@ -302,6 +302,28 @@ body {
   cursor: not-allowed;
 }
 
+.overview {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview > .day-log {
+  max-width: 880px;
+}
+
+@media (min-width: 1200px) {
+  .overview {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .overview > .day-log {
+    flex: 0 0 290px;
+    position: sticky;
+    top: 20px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important;
