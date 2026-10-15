@@ -283,13 +283,14 @@ def tests_brief(root):
 
 def evidence_brief(target, wt, task_id, evidence_states=()):
     from holophyte.config.config_tables import merge_config
-    from holophyte.pr import pr_media
+    from holophyte.pr import mockup, pr_media
 
-    if merge_config(target).mode != "pr":
-        return ""
-    section = pr_media.prepare(target, wt, task_id, evidence_states=evidence_states)
-    return ("\n\n" + section + "\n\nMissing or failed visual evidence counts against "
-            "the candidate; report it as a review finding.\n" if section else "")
+    section = (pr_media.prepare(target, wt, task_id, evidence_states=evidence_states)
+               if merge_config(target).mode == "pr" else "")
+    evidence = ("\n\n" + section + "\n\nMissing or failed visual evidence counts "
+                "against the candidate; report it as a review finding.\n\n"
+                if section else "")
+    return evidence + mockup.reviewer_brief(wt)
 
 
 def pr_description_brief(target, pull, evidence):
