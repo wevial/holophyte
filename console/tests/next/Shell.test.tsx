@@ -89,7 +89,6 @@ test("the Overview badge counts the scope's Needs you entries, as the heading do
 test("each page links to the classic view behind it, and an unknown route links back to Overview", async () => {
   for (const [hash, name, href] of [
     ["#/runs", "Open Finished in the classic console", "/#view=shipped"],
-    ["#/tickets", "Open the Board in the classic console", "/#view=board"],
   ] as const) {
     await mount(hash);
     expect((await screen.findByRole("link", { name })).getAttribute("href")).toBe(href);

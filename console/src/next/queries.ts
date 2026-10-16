@@ -1,7 +1,19 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
-import { ledgerSchema, mergeReadinessSchema, peersSchema, runDetailSchema, type Ledger, type LedgerEntry, type Peers } from "../lib/contract.gen";
+import { SHIPPED_PAGE } from "../hooks/useShipped";
+import {
+  boardSchema,
+  ledgerSchema,
+  mergeReadinessSchema,
+  peersSchema,
+  runDetailSchema,
+  shippedSchema,
+  type Board,
+  type Ledger,
+  type LedgerEntry,
+  type Peers,
+} from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
 import {
@@ -15,6 +27,8 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
+import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
+import type { ShippedRow } from "../lib/types";
 
 /** One daemon route's cache key: the base it hangs off and its path. */
 export function routeKey(base: string, path: string): readonly ["route", string, string] {
@@ -137,4 +151,44 @@ export function usePeerList(origin: string, enabled: boolean, deps: { fetch: Fet
     staleTime: Number.POSITIVE_INFINITY,
   });
   return data ?? null;
+}
+
+/** Every host's merges since local midnight before `now`, newest first:
+ *  one `/shipped` query per host, shared by every page that reads it. */
+export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fetch: Fetch): ShippedRow[] {
+  const path = shippedUrl("", SHIPPED_PAGE, undefined, "merged");
+  const results = useQueries({
+    queries: hosts.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => fetchRoute(fetch, `${host.base}${path}`, shippedSchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const rows = hosts.flatMap((host, index) => {
+    const result = results[index];
+    return result?.status === "success" ? tagRows(host, result.data.rows) : [];
+  });
+  return todayMerges(rows, now);
+}
+
+/** Each host that has answered `/status` with its last good `/board`, in
+ *  fleet order; a host whose board never answered is left out. */
+export function useBoards<R extends HostRecord<PollBodies>>(
+  hosts: R[],
+  deps: { fetch: Fetch } = defaultPollDeps,
+): { host: R; board: Board }[] {
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, "/board"),
+      queryFn: () => fetchRoute(deps.fetch, `${host.base}/board`, boardSchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  return asked.flatMap((host, index) => {
+    const board = results[index]?.data;
+    return board ? [{ host, board }] : [];
+  });
 }
