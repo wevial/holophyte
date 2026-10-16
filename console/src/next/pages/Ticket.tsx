@@ -12,6 +12,7 @@ import { SteerBox } from "../components/SteerBox";
 import { SteerNotes } from "../components/SteerNotes";
 import { StoryPanel } from "../components/StoryPanel";
 import { Chip, Fact, NUMBER } from "../components/TicketPeek";
+import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
@@ -100,6 +101,7 @@ export function TicketPage() {
                 Steer
               </Btn>
             )}
+            <TicketMoves key={`${project}/${key}`} project={project} ticketKey={key} ticket={ticket} host={page.host} liveRun={page.liveRun} />
           </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} base={page.host.base} />}
