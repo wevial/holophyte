@@ -189,6 +189,68 @@ test("a long entry shows its first line clamped, opens in place to its full text
   expect(log().textContent).not.toContain("timeout");
 });
 
+/** happy-dom lays nothing out, so every element gets a stand-in layout: a
+ *  40-character column at 18px a line, cut to two lines under `line-clamp-2`. */
+async function wrapAt40(run: () => Promise<void>) {
+  const line = 18;
+  const lines = (element: HTMLElement) => Math.max(1, Math.ceil((element.textContent ?? "").length / 40));
+  const saved = ["scrollHeight", "clientHeight"].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return lines(this) * line;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return Math.min(lines(this), this.classList.contains("line-clamp-2") ? 2 : Infinity) * line;
+    },
+  });
+  try {
+    await run();
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, name, descriptor);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+    }
+  }
+}
+
+test("a single line wrapping past the two-line clamp opens to its full text; one that fits is no button", async () => {
+  const long = Array.from({ length: 30 }, (_, index) => `word${index}`).join(" ");
+  await wrapAt40(async () => {
+    const { fetch } = fleet(
+      { ledger: ledgerOf(entry(at(11, 0), "intervention", "operator", "DEMO-9", long), entry(at(10, 0), "round", "loop", "DEMO-8", "review round 2")) },
+      {},
+    );
+    await mount("#/", fetch);
+    const opener = within(log()).getByRole("button", { name: `DEMO-9 · ${long}` });
+    expect(within(log()).getAllByRole("button")).toEqual([opener]);
+
+    await act(async () => opener.click());
+    expect(log().querySelector("pre")?.textContent).toBe(long);
+  });
+});
+
+test("an opened entry stays open when a newer entry arrives above it", async () => {
+  const failed = "capture failed for DEMO-7\n\n```\n└─ timeout\n```";
+  const first = entry(at(11, 0), "failure", "loop", "DEMO-7", failed);
+  let answer = ledgerOf(first);
+  const queries = await mount("#/", fleet({ ledger: () => answer() }, {}).fetch);
+  await act(async () => within(log()).getByRole("button", { name: "DEMO-7 · capture failed for DEMO-7" }).click());
+
+  answer = ledgerOf(first, entry(at(11, 30), "merge", "loop", "DEMO-10", "MERGED to main as 5acc138."));
+  await act(async () => {
+    await queries.refetchQueries();
+    await settle();
+  });
+
+  expect(logLines()[0]).toBe("11:30DEMO-10 · MERGED to main as 5acc138.");
+  expect(within(log()).getByRole("button", { name: "DEMO-7 · capture failed for DEMO-7" }).getAttribute("aria-expanded")).toBe("true");
+  expect(log().textContent).toContain("└─ timeout");
+});
+
 test("a host whose ledger read fails after a good answer keeps its lines", async () => {
   let answer = ledgerOf(entry(at(11, 15), "merge", "loop", "DEMO-10", "MERGED to main as 5acc138."));
   const { fetch, asked } = fleet({ ledger: () => answer() }, {});
