@@ -323,13 +323,13 @@ def _drop_clause_paths(clause, candidate, main_sha):
 
 def _drop_clause(clause, candidate, main, main_sha):
     kept, names = _drop_clause_modules(clause, candidate, main)
-    if kept is None or main_sha is None:
+    if kept is None:
         return kept, names, []
     kept, paths = _drop_clause_paths(kept, candidate, main_sha)
     return kept, names, paths
 
 
-def drop_candidate_modules(command, candidate, main, main_sha=None):
+def drop_candidate_modules(command, candidate, main, main_sha):
     lines, modules, paths, dropped, trimmed = [], [], [], {}, {}
     for line in (command or "").splitlines():
         parts = _CLAUSE_OPERATOR.split(line)
