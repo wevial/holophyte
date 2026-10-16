@@ -30,6 +30,8 @@
   --p3-ink: #171a2c;
   --tag: #e3dcfb;
   --scrim: rgba(236, 234, 243, 0.8);
+  --edge: #7d8299;
+  --edge-dim: #c9c6d6;
   --card-shadow: 0 8px 24px rgba(23, 26, 44, 0.12);
 }
 
@@ -63,6 +65,8 @@
   --p3-ink: #d5daea;
   --tag: #d3cbf6;
   --scrim: rgba(5, 7, 15, 0.74);
+  --edge: #5a6488;
+  --edge-dim: #2e3758;
   --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
@@ -97,6 +101,8 @@
     --p3-ink: #d5daea;
     --tag: #d3cbf6;
     --scrim: rgba(5, 7, 15, 0.74);
+    --edge: #5a6488;
+    --edge-dim: #2e3758;
     --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
   }
 }
@@ -133,6 +139,8 @@
   --color-p3-ink: var(--p3-ink);
   --color-tag: var(--tag);
   --color-scrim: var(--scrim);
+  --color-edge: var(--edge);
+  --color-edge-dim: var(--edge-dim);
 
   --color-card: var(--paper);
   --color-card-header: var(--paper-2);
