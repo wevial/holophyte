@@ -2,7 +2,7 @@ import ticket_template
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
-from holophyte.pr import github, pr_media
+from holophyte.pr import github, image_fetch, pr_media
 
 
 def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat_s):
@@ -20,7 +20,11 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat
         if section is None or section.rstrip() == evidence.rstrip():
             return failure
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
-        github.edit_pr_body(project, pull, github.replace_pr_evidence(body, section))
+        body = github.replace_pr_evidence(body, section)
+        github.edit_pr_body(project, pull, body)
+        notes = image_fetch.check(project, pull, body)
+    for note in notes:
+        ledger(conn, run_id, task_id, "note", note, None)
     if failure:
         captured = pr_media.CAPTURED.search(evidence)
         old = captured[1] if captured else "an earlier commit"

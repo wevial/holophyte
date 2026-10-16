@@ -24,6 +24,8 @@ GH_NEVER_CONNECTED = ("dial tcp", "connection refused", "no such host",
                       "network is unreachable")
 GH_RETRY_S = (5, 15)
 API = "https://api.github.com"
+JSON = "application/vnd.github+json"
+HTML_JSON = "application/vnd.github.html+json"
 # A call unanswered this long is a route down: fail rather than hold a lease.
 PR_TIMEOUT = 120
 CHECK_POLL_S = 30
@@ -526,6 +528,13 @@ def rest(target, pull, method, path, payload=None):
     return _call(target, pull.host, method, path, payload)
 
 
+def pull_body_html(target, pull):
+    answer = _call(target, pull.host, "GET",
+                   f"repos/{pull.repo}/pulls/{pull.number}", None,
+                   accept=HTML_JSON)
+    return answer.get("body_html") or ""
+
+
 def job_log(target, pull, job_id):
     """The endpoint redirects to plain text, not JSON."""
     path = f"repos/{pull.owner}/{pull.name}/actions/jobs/{job_id}/logs"
@@ -534,10 +543,10 @@ def job_log(target, pull, job_id):
     return _api_output(pull.host, "GET", path, None, _route_token())
 
 
-def _call(target, host, method, path, payload):
+def _call(target, host, method, path, payload, accept=JSON):
     if shutil.which(GH) is not None:
-        return _call_with_gh(target, host, method, path, payload)
-    return _call_with_api(host, method, path, payload, _route_token())
+        return _call_with_gh(target, host, method, path, payload, accept)
+    return _call_with_api(host, method, path, payload, _route_token(), accept)
 
 
 def _route_token():
@@ -548,8 +557,8 @@ def _route_token():
     return token
 
 
-def _call_with_gh(target, host, method, path, payload):
-    stdout = _gh_output(target, host, method, path, payload)
+def _call_with_gh(target, host, method, path, payload, accept):
+    stdout = _gh_output(target, host, method, path, payload, accept)
     try:
         return json.loads(stdout) if stdout.strip() else {}
     except ValueError:
@@ -557,9 +566,11 @@ def _call_with_gh(target, host, method, path, payload):
                            f" JSON: {_short(stdout)}") from None
 
 
-def _gh_output(target, host, method, path, payload):
+def _gh_output(target, host, method, path, payload, accept=JSON):
     deadline.admit(f"GitHub's {method} {path} request")
     argv = [GH, "api", "--hostname", host, "--method", method, path]
+    if accept != JSON:
+        argv[2:2] = ["-H", f"Accept: {accept}"]
     body = None
     if payload is not None:
         argv += ["--input", "-"]
@@ -593,8 +604,8 @@ def _never_connected(stderr):
     return any(pattern in text for pattern in GH_NEVER_CONNECTED)
 
 
-def _call_with_api(host, method, path, payload, token):
-    text = _api_output(host, method, path, payload, token)
+def _call_with_api(host, method, path, payload, token, accept):
+    text = _api_output(host, method, path, payload, token, accept)
     try:
         return json.loads(text) if text.strip() else {}
     except ValueError:
@@ -616,7 +627,7 @@ class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
         return new
 
 
-def _api_output(host, method, path, payload, token):
+def _api_output(host, method, path, payload, token, accept=JSON):
     deadline.admit(f"GitHub's {method} {path} request")
     base = API if host == "github.com" else f"https://{host}/api/v3"
     if path == "graphql":
@@ -628,7 +639,7 @@ def _api_output(host, method, path, payload, token):
     request = urllib.request.Request(
         url, data=data, method=method,
         headers={"Authorization": f"Bearer {token}",
-                 "Accept": "application/vnd.github+json",
+                 "Accept": accept,
                  "Content-Type": "application/json",
                  "User-Agent": "holophyte"})
     try:
