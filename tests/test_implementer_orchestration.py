@@ -74,7 +74,7 @@ TODAYS_BRIEF = (
     " Do the rest of the ticket, commit it, and end the reply with one line "
     "per such criterion, numbered as the ticket lists its acceptance criteria"
     " from 1, with a one-line reason naming what is missing or what "
-    "conflicts:\nCONTRADICTION: criterion N — reason")
+    "contradicts it:\nCONTRADICTION: criterion N — reason")
 
 CODEX = '[agents.implementer]\nharness = "codex"\n'
 CLAUDE = '[agents.implementer]\nharness = "claude"\n'

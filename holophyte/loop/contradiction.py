@@ -18,7 +18,7 @@ BRIEF = ("\n\nWhen an acceptance criterion cannot be met as written (the data "
          "asserts a substitute. Do the rest of the ticket, commit it, and end "
          "the reply with one line per such criterion, numbered as the ticket "
          "lists its acceptance criteria from 1, with a one-line reason naming "
-         "what is missing or what conflicts:\n"
+         "what is missing or what contradicts it:\n"
          "CONTRADICTION: criterion N — reason")
 ANSWERS = ("Amend the ticket (holo file --update {key} FILE), then holo requeue"
            " {key} -n NOTE; or holo requeue {key} -n NOTE saying how to meet it"

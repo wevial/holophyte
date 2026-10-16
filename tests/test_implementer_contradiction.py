@@ -107,7 +107,11 @@ class RequeueAfterContradictionTests(LoopFixture):
 
         fake, _ = self.loop(Commit("render the amended word"), APPROVE)
 
+        self.assertIn("CONTRADICTION: criterion N", fake.turns[0].goal)
         self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
+                                   " WHERE runId = 2 AND kind = 'contradiction'"),
+                         [(0,)])
         self.assertEqual(self.read("SELECT status FROM tickets"), [("merged",)])
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("abandoned",), ("merged",)])
@@ -146,6 +150,18 @@ class CancelAfterContradictionTests(LoopFixture):
                          [("abandoned",)])
 
 
+class PauseDeclareTwo(DeclareTwo):
+    """A fix turn that requests a cooperative pause before its reply lands."""
+
+    def play(self, cwd, turn):
+        conn = store.open(self.db)
+        try:
+            store.pause(conn, 1, "reboot writer")
+        finally:
+            conn.close()
+        return super().play(cwd, turn)
+
+
 class FixTurnContradictionTests(LoopFixture):
 
     def test_a_fix_turn_contradiction_parks_before_a_second_review(self):
@@ -169,6 +185,20 @@ class FixTurnContradictionTests(LoopFixture):
                       " a field", first)
         self.assertIn("criterion 3 cannot be met as written: the file-size"
                       " pin forbids it", first)
+
+    def test_a_pause_requested_in_the_fix_turn_still_parks_the_contradiction(self):
+        fix = PauseDeclareTwo("address the finding")
+        fix.db = str(self.db)
+
+        fake, _ = self.loop(Commit("render the parked word"), REQUEST_CHANGES,
+                            fix, APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertEqual(self.read("SELECT phase, parkKind, outcome FROM runs"),
+                         [("blocked_on_operator", "contradiction", None)])
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM runEvents WHERE kind = 'contradiction'"),
+            [(1,)])
 
 
 if __name__ == "__main__":
