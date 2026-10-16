@@ -180,6 +180,37 @@ def open_tickets(conn, project_id=None):
 
 
 @dataclass(frozen=True)
+class StoryMember:
+    linearIdentifier: str
+    status: str
+
+
+@dataclass(frozen=True)
+class OpenStory:
+    linearIdentifier: str
+    title: str
+    children: tuple[StoryMember, ...]
+
+
+def open_stories(conn):
+    rows = conn.execute(
+        "SELECT p.linearIdentifier, p.title, c.linearIdentifier, c.status"
+        " FROM stories s JOIN tickets p ON p.id = s.ticketId"
+        " LEFT JOIN (SELECT DISTINCT storyId, ticketId FROM storyChildren) k"
+        " ON k.storyId = s.ticketId LEFT JOIN tickets c ON c.id = k.ticketId"
+        " WHERE p.status NOT IN ('merged', 'abandoned')"
+        " ORDER BY p.linearIdentifier, c.linearIdentifier").fetchall()
+    stories = {}
+    for parent, title, child, status in rows:
+        children = stories.setdefault(parent, (title, []))[1]
+        if child is not None:
+            children.append(StoryMember(child, status))
+    return [OpenStory(linearIdentifier=parent, title=title,
+                      children=tuple(children))
+            for parent, (title, children) in stories.items()]
+
+
+@dataclass(frozen=True)
 class MirroredTicket:
     id: int
     linearIdentifier: str

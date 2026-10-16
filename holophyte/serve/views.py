@@ -242,6 +242,7 @@ def board(project, now=None, editable=False):
     conn = store.read.open_readonly(project.store_path)
     try:
         tickets = store.read.open_tickets(conn)
+        stories = store.read.open_stories(conn)
     finally:
         conn.close()
     native = board_mode(project).kind == "native"
@@ -261,7 +262,15 @@ def board(project, now=None, editable=False):
             "revision": ticket.revision})
     return 200, {"columns": [{"state": state, "tickets": columns[state]}
                              for state in states],
+                 "stories": [story_json(story) for story in stories],
                  "editable": editable and native, "now": now}
+
+
+def story_json(story):
+    return {"ticket": story.linearIdentifier, "title": story.title,
+            "children": [child.linearIdentifier for child in story.children],
+            "merged": sum(child.status == "merged" for child in story.children),
+            "total": len(story.children)}
 
 
 def ticket_detail(project, identifier):

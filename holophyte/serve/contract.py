@@ -611,8 +611,17 @@ class BoardColumn(TypedDict):
     tickets: list[BoardTicket]
 
 
+class BoardStory(TypedDict):
+    ticket: str
+    title: str
+    children: list[str]
+    merged: int
+    total: int
+
+
 class Board(TypedDict):
     columns: list[BoardColumn]
+    stories: list[BoardStory]
     editable: bool
     now: int
 

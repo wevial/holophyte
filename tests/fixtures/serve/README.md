@@ -15,7 +15,8 @@ ticket's ended run.
 `ledger.json` pins its `/ledger?since=0`: a round, an operator approval and
 the store's migration row, whose build, pid and command become `BUILD`,
 1 and `COMMAND`.
-`board.json` pins its `/board`, a store-mirror board with no backlog column.
+`board.json` pins its `/board`, a store-mirror board with no backlog column,
+and one story, KO-20, unspecced, over KO-8 and KO-9.
 `ticket.json` pins its `/tickets/KO-8`: the unestimated ticket, claimed at
 its current revision, with one posted note.
 

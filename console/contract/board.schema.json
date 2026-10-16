@@ -134,6 +134,37 @@
       ],
       "additionalProperties": true
     },
+    "BoardStory": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "merged": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ticket",
+        "title",
+        "children",
+        "merged",
+        "total"
+      ],
+      "additionalProperties": true
+    },
     "Board": {
       "type": "object",
       "properties": {
@@ -141,6 +172,12 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/BoardColumn"
+          }
+        },
+        "stories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BoardStory"
           }
         },
         "editable": {
@@ -152,6 +189,7 @@
       },
       "required": [
         "columns",
+        "stories",
         "editable",
         "now"
       ],

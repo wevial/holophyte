@@ -184,6 +184,8 @@ EXPECTED_READ = [
     # KO-280: the `serve` daemon's `/board` read of the open tickets.
     "open_tickets",
     "open_readonly",
+    # The `/board` read of the open stories and their children.
+    "open_stories",
     # KO-747: the store-mode notes the host sweep has yet to post.
     "pending_notes",
     # Whether a parked ticket waits on its pull request, which
