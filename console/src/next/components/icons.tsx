@@ -1,3 +1,4 @@
+import type { RunCriterion } from "../../lib/contract.gen";
 import type { ReactNode } from "react";
 
 function Stroke({ children, className }: { children: ReactNode; className?: string }) {
@@ -174,6 +175,27 @@ export function FactIcon({ ok }: { ok: boolean }) {
       <circle cx="8" cy="8" r="6.5" />
       <path d={ok ? "M5 8.3 7.1 10.4 11 6.2" : "M8 4.8v3.6M8 11.1v.1"} />
     </Stroke>
+  );
+}
+
+const CRITERION_MARKS = {
+  met: { name: "met", tone: "live", path: "M5 8.3 7.1 10.4 11 6.2" },
+  unwitnessed: { name: "not yet witnessed", tone: "wait", path: "M8 4.8V8l2.3 1.6" },
+  not_met: { name: "unmet", tone: "need", path: "M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4" },
+};
+
+export function CriterionMark({ status }: { status: RunCriterion["status"] }) {
+  const mark = CRITERION_MARKS[status];
+  return (
+    <svg
+      viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor"
+      strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
+      role="img" aria-label={mark.name} data-tone={mark.tone}
+      className="size-4 shrink-0" style={{ color: `var(--${mark.tone})` }}
+    >
+      <circle cx="8" cy="8" r="6.5" />
+      <path d={mark.path} />
+    </svg>
   );
 }
 

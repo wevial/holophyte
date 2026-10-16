@@ -5,6 +5,7 @@ import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { leadParagraph } from "../../lib/ticket";
 import { AgentPanel } from "../components/AgentPanel";
+import { CriteriaList } from "../components/CriteriaList";
 import { SECTION_LABEL } from "../components/Criteria";
 import { ProgressLog } from "../components/ProgressLog";
 import { RunPullRequest } from "../components/RunPullRequest";
@@ -161,6 +162,7 @@ export function RunPage() {
             />
           )}
           <RunTicket base={page.base} ticket={run.ticket} />
+          <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
           <ProgressLog key={run.id} lines={page.progress} live={page.live} />
         </div>
         <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks} />
