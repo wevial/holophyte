@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { useQueries } from "@tanstack/react-query";
-import type { RouteLabels, RunDetail, TicketDetail } from "../lib/contract.gen";
+import type { RouteLabels, RunCriterion, TicketDetail } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { useBoards, useReadiness, useRun, ticketQuery } from "./queries";
 import type { ContractBodies } from "./fleet";
@@ -29,7 +29,7 @@ export type TicketPage =
       chip: BoardChip | null;
       liveRun: number | null;
       labels: RouteLabels | null;
-      run: RunDetail | null;
+      judged: RunCriterion[] | "loading" | "unavailable";
       now: number;
     };
 
@@ -83,7 +83,7 @@ export function useTicketPage(project: string, key: string): TicketPage {
     chip: card == null ? statusChip(ticket) : cardChip(card, now),
     liveRun: card?.run?.id ?? null,
     labels: status?.route_labels ?? null,
-    run: run.data ?? null,
+    judged: run.data?.criteria ?? (ticket.run == null ? [] : run.isError ? "unavailable" : "loading"),
     now,
   };
 }

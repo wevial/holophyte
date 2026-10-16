@@ -54,7 +54,7 @@ const criteria = [standing(1, "met"), standing(2, "met"), standing(3, "unwitness
 
 /** DEMO serves the board above, runs DEMO-3 as run 9 reviewing round 2 of 3
  *  and mirrors `tickets`; WRITER, of another project, mirrors nothing. */
-function ticketFetch(): Fetch {
+function ticketFetch(runAnswer?: () => Response): Fetch {
   const polls = fleet({ items: [], runs: [{ ...run(9, "DEMO-3"), phase: "reviewing", round: 1, max_rounds: 3 }] }, { items: [] });
   return async (url) => {
     if (url === `${DEMO}/status`) {
@@ -64,15 +64,16 @@ function ticketFetch(): Fetch {
     if (url === `${DEMO}/board`) return Response.json(board);
     const key = url.startsWith(`${DEMO}/tickets/`) ? decodeURIComponent(url.slice(`${DEMO}/tickets/`.length)) : null;
     if (key != null) return key in tickets ? Response.json(tickets[key]) : new Response("not found", { status: 404 });
+    if (url === `${DEMO}/runs/9` && runAnswer != null) return runAnswer();
     if (url === `${DEMO}/runs/9`) return Response.json({ ...servedRun, run: { ...servedRun.run, id: 9, ticket: "DEMO-3" }, criteria });
     if (url.endsWith("/board")) return new Response("not found", { status: 404 });
     return polls(url);
   };
 }
 
-async function mount(hash: string) {
+async function mount(hash: string, runAnswer?: () => Response) {
   window.location.hash = hash;
-  const fake = fakeDeps(ticketFetch());
+  const fake = fakeDeps(ticketFetch(runAnswer));
   fake.clock.now = NOW;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
@@ -128,6 +129,14 @@ test("the panel shows the summary, keyed criteria counted in their run, the fold
   expect(fact("Reviewer").textContent).toBe("codex gpt-6-sol");
   expect(fact("Filed").textContent).toEndWith(" by maintainer");
   expect(within(facts()).queryByText("Waits on")).toBeNull();
+});
+
+test("a run whose criteria have not answered withholds the met count and every standing", async () => {
+  await mount("#/tickets/demo/DEMO-3", () => new Response("down", { status: 500 }));
+  const list = screen.getByRole("region", { name: "Acceptance criteria" });
+  expect(list.querySelector("[data-met-count]")!.textContent).toBe("run 9 unavailable");
+  expect(list.querySelectorAll("[data-standing]").length).toBe(0);
+  expect(within(list).getAllByRole("listitem")).toHaveLength(3);
 });
 
 test("a ticket waiting on another with no run reads blocked, counts criteria with no run and names what it waits on", async () => {

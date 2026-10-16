@@ -72,7 +72,7 @@ export function TicketPage() {
       </Page>
     );
   }
-  const { ticket, chip, labels, run, now } = page;
+  const { ticket, chip, labels, judged, now } = page;
   const commands = ticket.verification_commands;
   const first = [...ticket.revisions].sort((a, b) => a.revision - b.revision)[0];
   const waitsOn = page.card?.waitsOn ?? [];
@@ -92,7 +92,12 @@ export function TicketPage() {
           <div className={SECTION_LABEL}>Summary</div>
           <p className="m-0 mt-3 max-w-[70ch] font-sans text-[14px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
           <div className="mt-[26px]">
-            <Criteria rows={criteriaRows(ticket.acceptance_criteria, run?.criteria ?? [], ticket.run != null)} keys run={ticket.run} />
+            <Criteria
+              rows={criteriaRows(ticket.acceptance_criteria, typeof judged === "string" ? [] : judged, ticket.run != null)}
+              keys
+              run={ticket.run}
+              held={typeof judged === "string" ? judged : null}
+            />
           </div>
           <details className="mt-2.5">
             <summary className="flex min-h-11 cursor-pointer items-center gap-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-2">
