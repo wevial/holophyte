@@ -42,7 +42,7 @@ const runs: Record<number, RunDetail> = {
 const park = {
   kind: "pr_open", level: "attention", run: 8, ticket: "DEMO-8", ticket_url: null, title: "Free stale leases",
   pr_url: PR_88, park_kind: "pull_request", reason: "", asked_ms: NOW - 30 * MINUTE,
-  pr: { number: 88, checks: "success", review: "approved", threads: 1, open_threads: 1, title: "Free stale leases" },
+  pr: { state: null, number: 88, checks: "success", review: "approved", threads: 1, open_threads: 1, title: "Free stale leases" },
 } as Attention["items"][number];
 
 const revision = (body: string) => ({ ...servedTicket.current!, body });
