@@ -28,11 +28,11 @@ const finding = (title: string, severity: string, facts: Partial<Round["findings
   ...facts,
 });
 
-const round = (n: number, findings: Round["findings"] = [], reviewer = "reviewer"): Round => ({
+const round = (n: number, findings: Round["findings"] = [], reviewer = "reviewer", at = AT + n * MINUTE): Round => ({
   ...pinnedRound,
   round: n,
-  started_ms: AT + n * MINUTE,
-  ended_ms: AT + n * MINUTE,
+  started_ms: at,
+  ended_ms: at,
   verdict: findings.length === 0 ? "pass" : "changes_requested",
   reviewer_model: reviewer,
   findings,
@@ -119,10 +119,13 @@ afterEach(() => {
 const lease = finding("Lease never expires", "p1", { path: "holophyte/serve/server.py", line: 142, criterion: "AC4" });
 const demo7 = runOf(7, "DEMO-7", [round(1, [lease])]);
 const demo11 = runOf(11, "DEMO-11", [round(1, [finding("Flag is ignored", "p2")])], { phase: "failed", outcome: "failed" });
-const writer3 = runOf(3, "WRITER-3", [round(1, [finding("Retry loops forever", "p1")]), round(2, [finding("Retry loops forever", "p1")])]);
+const writer3 = runOf(3, "WRITER-3", [
+  round(1, [finding("Retry loops forever", "p1")], "reviewer", AT - 20 * MINUTE),
+  round(2, [finding("Retry loops forever", "p1")], "reviewer", AT - 10 * MINUTE),
+]);
 const reviewing7 = [{ ...run(7, "DEMO-7"), phase: "reviewing", round: 1, max_rounds: 3, heartbeat_age_ms: 30_000 }];
 
-test("open rows read worst first, then newest round first, each pill coloured by severity and naming its project until one is picked", async () => {
+test("open rows read worst first, then the higher round first even when it ended earlier, each pill coloured by severity and naming its project until one is picked", async () => {
   await mount("#/findings", fleet({ runs: [demo11, demo7], live: reviewing7 }, { runs: [writer3] }));
   expect(titles("Open")).toEqual(["Retry loops forever", "Lease never expires", "Flag is ignored"]);
   const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);

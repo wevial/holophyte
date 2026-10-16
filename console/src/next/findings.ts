@@ -139,7 +139,7 @@ function idleOf(run: FindingsRun, live: { state: State }[]): Idle | null {
 
 const RANK = { must: 0, should: 1, nit: 2 };
 const worstFirst = (a: TaggedFinding, b: TaggedFinding) =>
-  RANK[severityOf(a.entry.finding)] - RANK[severityOf(b.entry.finding)] || b.at - a.at || b.round - a.round;
+  RANK[severityOf(a.entry.finding)] - RANK[severityOf(b.entry.finding)] || b.round - a.round || b.at - a.at;
 const pendingFirst = (a: FollowUp, b: FollowUp) => Number(b.pending) - Number(a.pending) || b.at - a.at;
 
 const IDLE_WORDS: Record<Idle, string> = {
