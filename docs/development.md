@@ -829,7 +829,9 @@ that PATH, so nothing in the loop changes. The writer host runs Bun 1.4.2.
 The new console is built beside the classic one until it replaces it. It
 lives in `console/src/next/`, with its tests under `console/tests/next/`,
 and is served at `/next.html` beside the classic console at `/`; the
-classic sidebar links to it. The classic console opens on the view a
+classic rail's "New view" and the new sidebar's "Classic console" swap
+between them, and `/` reopens the one chosen last (`console/src/lib/view.ts`)
+unless the address carries `?classic`. The classic console opens on the view a
 `#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
 console page can link to the classic view behind it.
 

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { Rail } from "../src/components/Rail";
 import type { HostRecord } from "../src/lib/hosts";
 import type { Status } from "../src/lib/types";
+import { VIEW_KEY } from "../src/lib/view";
 import { NO_ATTENTION, fixture, hostOf } from "./harness";
 
 const working = await fixture<Status>("working.json");
@@ -88,8 +89,17 @@ test("the brand mark is the cosmic lotus logo, drawn without inverting it", () =
   expect(brand.classList.contains("invert")).toBe(false);
 });
 
-test("the rail's foot links to the new console", () => {
-  mountRail([]);
-  const link = screen.getByRole("link", { name: "Try the new console" });
-  expect(link.getAttribute("href")).toBe("/next.html");
+test("New view remembers the new view and loads its page with the same hash", () => {
+  localStorage.clear();
+  location.href = "http://console.test/#view=board";
+  try {
+    mountRail([]);
+    fireEvent.click(screen.getByRole("button", { name: "New view" }));
+    expect(localStorage.getItem(VIEW_KEY)).toBe("next");
+    expect(location.pathname).toBe("/next.html");
+    expect(location.hash).toBe("#view=board");
+  } finally {
+    localStorage.clear();
+    location.href = "about:blank";
+  }
 });

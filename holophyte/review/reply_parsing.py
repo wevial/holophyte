@@ -281,8 +281,10 @@ def _scan_witness(file, cls, name):
         return _scan_go_subtest(file.read_text(errors="replace"), name)
     if file.suffix != ".py":
         text = file.read_text(errors="replace")
-        return (None if any(spelling in text for spelling in _quoted_spellings(name))
-                else f'no test named "{name}"')
+        found = (any(spelling in text for spelling in _quoted_spellings(name))
+                 or file.suffix != ".go" and any(
+                     form.fullmatch(name) for form in _template_patterns(text)))
+        return None if found else f'no test named "{name}"'
     lines = file.read_text(errors="replace").splitlines()
     if cls is None:
         return (None if any(re.match(rf"\s*def {name}\(", line) for line in lines)
@@ -296,6 +298,68 @@ def _scan_witness(file, cls, name):
 def _quoted_spellings(name):
     doubled = name.replace("\\", "\\\\")
     return [name, *(doubled.replace(quote, "\\" + quote) for quote in "\"'`")]
+
+
+_JS_QUOTED = re.compile(r"""(['"])(?:(?!\1)[^\\\n]|\\.)*\1""")
+
+
+_JS_SKIPPED = re.compile(_JS_QUOTED.pattern + r"|//[^\n]*|/\*.*?\*/", re.S)
+
+
+_JS_REGEX = re.compile(r"/(?![/*])(?:[^/\\\n\[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+/")
+
+
+_REGEX_AFTER = frozenset([*"(,=:[!&|?{};", "return", "typeof", "case", "do", "else",
+                          "in", "of", "new", "delete", "void", "throw",
+                          "instanceof", "yield", "await"])
+
+
+def _template_patterns(text):
+    patterns = []
+    _code_end(text, 0, patterns, depth=None)
+    return patterns
+
+
+def _code_end(text, i, patterns, depth=1):
+    while i < len(text) and depth != 0:
+        skipped = _JS_SKIPPED.match(text, i) or (
+            text[i] == "/" and _previous_token(text, i) in _REGEX_AFTER
+            and _JS_REGEX.match(text, i))
+        if skipped:
+            i = skipped.end()
+        elif text[i] == "`":
+            literals, i = _template_literals(text, i + 1, patterns)
+            i += 1
+            if len(literals) > 1:
+                patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
+        else:
+            if depth is not None:
+                depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+    return i
+
+
+def _previous_token(text, i):
+    stripped = text[max(0, i - 200):i].rstrip()
+    word = re.search(r"\w+$", stripped)
+    return word.group() if word else stripped[-1:] or "("
+
+
+def _template_literals(text, i, patterns):
+    literals, piece = [], []
+    while i < len(text) and text[i] != "`":
+        if text[i] == "\\":
+            piece.append(text[i + 1:i + 2])
+            i += 2
+        elif text.startswith("${", i):
+            literals.append("".join(piece))
+            piece = []
+            i = _code_end(text, i + 2, patterns)
+        else:
+            piece.append(text[i])
+            i += 1
+    literals.append("".join(piece))
+    return literals, i
 
 
 _GO_STRING = r'"((?:[^"\\\n]|\\.)*)"'

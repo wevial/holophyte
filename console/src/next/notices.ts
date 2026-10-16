@@ -1,8 +1,9 @@
 import type { Ledger, Peers } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatAge, formatClock } from "../lib/format";
-import { groupByHost, hostName, oldestPoll, peerAddresses, rootOf, sinceSeen, SWEEP_OK, type HostRecord } from "../lib/hosts";
+import { addressOf, groupByHost, hostName, oldestPoll, peerAddresses, rootOf, sinceSeen, SWEEP_OK, type HostRecord } from "../lib/hosts";
 import { migrationLines } from "../lib/migrations";
+import { tokenFor } from "../lib/token";
 import type { ContractBodies } from "./fleet";
 
 type Host = HostRecord<ContractBodies>;
@@ -71,6 +72,11 @@ export function firstLoadLine(hosts: Host[], origin: string, peers: Peers | null
       ? [...new Set(peerAddresses(origin, peers).map(({ address }) => address.replace(/:\d+$/, "")))]
       : groupByHost(hosts).map((group) => group.label);
   return labels.length === 1 ? `Asking ${labels[0]} for its projects…` : `Asking ${labels.length} hosts for their projects…`;
+}
+
+/** The request addresses whose daemon answered 401 and holds no token. */
+export function tokenWanted(hosts: Host[]): string[] {
+  return [...new Set(hosts.filter((host) => host.needs_token).map((host) => addressOf(host.base)))].filter((address) => tokenFor(address) == null);
 }
 
 export interface FooterLine {
