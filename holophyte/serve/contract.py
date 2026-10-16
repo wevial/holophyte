@@ -346,6 +346,9 @@ class RunDetailRun(TypedDict):
     started_ms: int
     ended_ms: int | None
     outcome: str | None
+    outcome_reason: str | None
+    failure_kind: str | None
+    park_kind: str | None
     elapsed_ms: int
     working_ms: int | None
     agent_ms: int | None
@@ -483,12 +486,26 @@ class RunChain(TypedDict):
     runs: list[ChainRun]
 
 
+class SteerNote(TypedDict):
+    id: int
+    kind: Literal["amendment", "hint"]
+    note: str
+    author: str
+    at: int
+    run: int | None
+    consumed_by: int | None
+    consumed_ms: int | None
+    interrupt: bool
+    withdrawn: bool
+
+
 class RunDetail(TypedDict):
     run: RunDetailRun
     rounds: list[Round]
     findings: list[AdvisoryFinding]
     events: list[RunEvent]
     chain: NotRequired[RunChain]
+    steer_notes: list[SteerNote]
 
 
 class MergeFact(TypedDict):

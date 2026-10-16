@@ -55,6 +55,36 @@
             }
           ]
         },
+        "outcome_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "park_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "elapsed_ms": {
           "type": "integer"
         },
@@ -212,6 +242,9 @@
         "started_ms",
         "ended_ms",
         "outcome",
+        "outcome_reason",
+        "failure_kind",
+        "park_kind",
         "elapsed_ms",
         "working_ms",
         "agent_ms",
@@ -774,6 +807,78 @@
       ],
       "additionalProperties": true
     },
+    "SteerNote": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "amendment",
+            "hint"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consumed_by": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consumed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interrupt": {
+          "type": "boolean"
+        },
+        "withdrawn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "note",
+        "author",
+        "at",
+        "run",
+        "consumed_by",
+        "consumed_ms",
+        "interrupt",
+        "withdrawn"
+      ],
+      "additionalProperties": true
+    },
     "RunDetail": {
       "type": "object",
       "properties": {
@@ -800,13 +905,20 @@
         },
         "chain": {
           "$ref": "#/$defs/RunChain"
+        },
+        "steer_notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SteerNote"
+          }
         }
       },
       "required": [
         "run",
         "rounds",
         "findings",
-        "events"
+        "events",
+        "steer_notes"
       ],
       "additionalProperties": true
     }

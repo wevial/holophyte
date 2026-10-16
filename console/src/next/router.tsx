@@ -16,6 +16,7 @@ import { useFleet } from "./fleet";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
+import { Tickets } from "./pages/Tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
@@ -53,11 +54,7 @@ const routeTree = rootRoute.addChildren([
     sentence: "Active and finished runs come here next.",
     classic: { href: classicHref("#view=shipped"), label: "Open Finished in the classic console" },
   }),
-  placeholderRoute("/tickets", {
-    title: "Tickets",
-    sentence: "The board and the ticket list come here.",
-    classic: { href: classicHref("#view=board"), label: "Open the Board in the classic console" },
-  }),
+  pageRoute("/tickets", Tickets),
   placeholderRoute("/findings", {
     title: "Findings",
     sentence: "Findings across runs come here. Until then, each run's findings are on its page in the classic console.",

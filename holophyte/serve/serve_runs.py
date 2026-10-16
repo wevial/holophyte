@@ -18,6 +18,7 @@ from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.loop.runs import MAX_ROUNDS
 from store.operator_notes import round_notes
+from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
 
 # A `?`, `#`, `@`, `:` or space would ride into the link as a query,
@@ -270,6 +271,7 @@ def run_detail(project, run_id, now=None):
             detail_kinds=("implementer_output", "operator_note_consumed",
                           "crash"))
         chain = chain_detail(conn, run.id, now)
+        steered = chain_notes(conn, run.ticketId, chain["started_ms"])
     finally:
         conn.close()
     live = run.endedAt is None
@@ -280,6 +282,9 @@ def run_detail(project, run_id, now=None):
                 "title": run.title, "phase": run.phase,
                 "attempt": run.attempt, "started_ms": run.startedAt,
                 "ended_ms": run.endedAt, "outcome": run.outcome,
+                "outcome_reason": (run.outcomeReason[:400]
+                                   if run.outcomeReason is not None else None),
+                "failure_kind": run.failureKind, "park_kind": run.parkKind,
                 **run_clocks(run, now),
                 "time_box_ms": (int(run.timeBoxMs * scale)
                                 if run.timeBoxMs else run.timeBoxMs),
@@ -297,6 +302,12 @@ def run_detail(project, run_id, now=None):
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
                    for e in events],
         "chain": chain,
+        "steer_notes": [{"id": n.id, "kind": n.kind, "note": n.note,
+                         "author": n.author, "at": n.at, "run": n.run_id,
+                         "consumed_by": n.consumed_by,
+                         "consumed_ms": n.consumed_at,
+                         "interrupt": n.interrupt, "withdrawn": n.withdrawn}
+                        for n in steered],
     }
 
 
