@@ -28,6 +28,12 @@ export function switchView(view: ConsoleView, hash: string): void {
   location.assign(PAGES[view] + hash);
 }
 
+/** A link into the classic view at `hash` that opens it whatever view is
+ *  remembered, without changing the remembered choice. */
+export function classicHref(hash = ""): string {
+  return `${PAGES.classic}?classic${hash}`;
+}
+
 /** At the classic entry: replace the page with the new view when it was
  *  chosen last, unless the address asks for `?classic`. True when the
  *  page is being replaced and should not render. */

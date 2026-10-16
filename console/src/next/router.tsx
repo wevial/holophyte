@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
+import { classicHref } from "../lib/view";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
@@ -50,17 +51,17 @@ const routeTree = rootRoute.addChildren([
   placeholderRoute("/runs", {
     title: "Runs",
     sentence: "Active and finished runs come here next.",
-    classic: { href: "/#view=shipped", label: "Open Finished in the classic console" },
+    classic: { href: classicHref("#view=shipped"), label: "Open Finished in the classic console" },
   }),
   placeholderRoute("/tickets", {
     title: "Tickets",
     sentence: "The board and the ticket list come here.",
-    classic: { href: "/#view=board", label: "Open the Board in the classic console" },
+    classic: { href: classicHref("#view=board"), label: "Open the Board in the classic console" },
   }),
   placeholderRoute("/findings", {
     title: "Findings",
     sentence: "Findings across runs come here. Until then, each run's findings are on its page in the classic console.",
-    classic: { href: "/", label: "Open the classic console" },
+    classic: { href: classicHref(), label: "Open the classic console" },
   }),
 ]);
 

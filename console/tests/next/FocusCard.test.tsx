@@ -266,7 +266,7 @@ test("the card's primary is the entry's first action, the rest sit under More, a
   fireEvent.keyDown(needsSpec, { key: "Escape" });
   expect(screen.queryByRole("group", { name: "More actions" })).toBeNull();
   expect(document.activeElement).toBe(more);
-  expect(within(card()).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(`/#run=12&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(card()).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(`/?classic#run=12&daemon=${encodeURIComponent(DEMO)}`);
   const ticket = within(card()).getByRole("link", { name: "Open ticket" });
   expect(ticket.getAttribute("href")).toBe(TICKET_URL);
   expect(ticket.getAttribute("target")).toBe("_blank");

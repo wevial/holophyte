@@ -7,6 +7,7 @@ import { agentMs, boxPercent, groupByProject, phaseLabel, type ProjectGroup } fr
 import { prLabel } from "../../lib/shipped";
 import type { StatusRun } from "../../lib/contract.gen";
 import type { Queued } from "../../lib/types";
+import { classicHref } from "../../lib/view";
 import type { ContractBodies } from "../fleet";
 import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
@@ -56,7 +57,7 @@ function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinc
   return (
     <li className="border-rule-2 [&+&]:border-t">
       <a
-        href={`/#run=${run.id}&daemon=${encodeURIComponent(base)}`}
+        href={classicHref(`#run=${run.id}&daemon=${encodeURIComponent(base)}`)}
         aria-label={`${run.ticket} ${title}, ${stage}${spoken}`}
         className={`${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`}
       >
