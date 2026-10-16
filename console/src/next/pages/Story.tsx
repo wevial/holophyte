@@ -1,9 +1,10 @@
-import { useContext } from "react";
-import { Link, useParams } from "@tanstack/react-router";
+import { useContext, useEffect } from "react";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { StateDot } from "../components/StateDot";
 import { StoryGraph } from "../components/StoryGraph";
-import { useReadiness, useStory } from "../queries";
-import { PollDepsContext, useConsolePeers } from "../scope";
+import { storeScope } from "../projects";
+import { useBoardStories, useReadiness, useStory } from "../queries";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
 import { KIND_ORDER, storyNodes, storyState, type NodeKind, type StoryNode } from "../story";
 
 const SEGMENT: Record<NodeKind, string> = {
@@ -13,6 +14,8 @@ const SEGMENT: Record<NodeKind, string> = {
   ready: "bg-wait",
   backlog: "border border-rule",
 };
+
+const STORY_HINT = "A story is a parent ticket with children. File one with child tickets and its graph shows here.";
 
 function countsLine(nodes: StoryNode[]): string {
   const flight = nodes.filter((node) => node.kind === "flight").length;
@@ -66,9 +69,7 @@ function Missing({ project, storyKey }: { project: string; storyKey: string }) {
       <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] [overflow-wrap:anywhere] text-ink">
         No story {storyKey} in {project}.
       </h1>
-      <p className="mt-2.5 max-w-[60ch] text-[14px] text-ink-2">
-        A story is a parent ticket with children. File one with child tickets and its graph shows here.
-      </p>
+      <p className="mt-2.5 max-w-[60ch] text-[14px] text-ink-2">{STORY_HINT}</p>
     </section>
   );
 }
@@ -95,6 +96,49 @@ export function Story() {
       <p className="mt-3.5 border-t border-rule py-3.5 font-mono text-[12px] leading-[1.4] text-ink-3">
         Tickets with no dependency start the graph on the left. Pick another story from Stories in the sidebar.
       </p>
+    </div>
+  );
+}
+
+function NoStories({ project }: { project: string | undefined }) {
+  return (
+    <section aria-labelledby="page-title" className="border border-rule bg-paper px-6 py-7">
+      <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] [overflow-wrap:anywhere] text-ink">
+        No stories in {project ?? "all projects"}
+      </h1>
+      <p className="mt-2.5 max-w-[60ch] text-[14px] text-ink-2">{STORY_HINT}</p>
+      {project != null && (
+        <Link
+          to="/stories"
+          search={{}}
+          onClick={() => storeScope(null)}
+          className="mt-3.5 inline-flex min-h-8 items-center font-mono text-[12.5px] font-medium text-act underline underline-offset-2"
+        >
+          Show all projects
+        </Link>
+      )}
+    </section>
+  );
+}
+
+export function StoriesIndex() {
+  const { project } = useSearch({ from: "__root__" });
+  const deps = useContext(PollDepsContext);
+  const { hosts, polls } = useConsolePeers();
+  const boards = useBoardStories(scopedHosts(hosts, project), deps);
+  const answered = polls > 0 && boards.answered;
+  const { stories } = boards;
+  const navigate = useNavigate();
+  const first = stories[0];
+  const firstProject = first?.project;
+  const firstKey = first?.ticket;
+  useEffect(() => {
+    if (!answered || firstProject == null || firstKey == null) return;
+    void navigate({ to: "/stories/$project/$key", params: { project: firstProject, key: firstKey }, search: keepScope, replace: true });
+  }, [answered, firstProject, firstKey, navigate]);
+  return (
+    <div className="mx-auto flex w-full max-w-[1320px] flex-col px-8 py-7">
+      {answered && first == null && <NoStories project={project} />}
     </div>
   );
 }

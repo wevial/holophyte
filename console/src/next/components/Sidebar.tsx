@@ -1,11 +1,11 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
 import { classicHref, writeView } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { switcherRows } from "../projects";
-import { useReadiness } from "../queries";
+import { useBoardStories, useReadiness, type ListedStory } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
 import {
   ChevronIcon,
@@ -21,6 +21,7 @@ import {
 import { ProjectSwitcher } from "./ProjectSwitcher";
 
 const RAIL_KEY = "holophyte.next.rail";
+const STORIES_KEY = "holophyte.next.stories";
 
 const PAGES = [
   { to: "/", label: "Overview", icon: <OverviewIcon />, noun: "need you" },
@@ -29,18 +30,18 @@ const PAGES = [
   { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
 ] as const;
 
-function readFolded(): boolean {
+function readFolded(key = RAIL_KEY): boolean {
   try {
-    return localStorage.getItem(RAIL_KEY) === "folded";
+    return localStorage.getItem(key) === "folded";
   } catch {
     return false;
   }
 }
 
-function writeFolded(folded: boolean): void {
+function writeFolded(folded: boolean, key = RAIL_KEY): void {
   try {
-    if (folded) localStorage.setItem(RAIL_KEY, "folded");
-    else localStorage.removeItem(RAIL_KEY);
+    if (folded) localStorage.setItem(key, "folded");
+    else localStorage.removeItem(key);
   } catch {
     // Storage may be disabled; the fold still holds for this page.
   }
@@ -96,6 +97,7 @@ function PageLink({
   noun,
   badge,
   folded,
+  active,
 }: {
   to: (typeof PAGES)[number]["to"];
   label: string;
@@ -103,12 +105,14 @@ function PageLink({
   noun: string;
   badge: number;
   folded: boolean;
+  active: boolean;
 }) {
   return (
     <Link
       to={to}
       search={keepScope}
       activeOptions={{ exact: to === "/", includeSearch: false }}
+      {...(active ? { "data-status": "active", "aria-current": "page" as const } : {})}
       aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
       title={folded ? label : undefined}
       className={`relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:border-act data-[status=active]:bg-act-wash data-[status=active]:text-act ${
@@ -137,11 +141,62 @@ function PageLink({
   );
 }
 
+function StoryList({ stories }: { stories: ListedStory[] }) {
+  const [hidden, setHidden] = useState(() => readFolded(STORIES_KEY));
+  const toggle = () => {
+    setHidden(!hidden);
+    writeFolded(!hidden, STORIES_KEY);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={!hidden}
+        aria-controls={hidden ? undefined : "sidebar-stories"}
+        aria-label={hidden ? "Show the story list" : "Hide the story list"}
+        onClick={toggle}
+        className="absolute top-1.5 right-2 flex size-8 items-center justify-center text-ink-3 hover:text-ink"
+      >
+        <span className={hidden ? "rotate-180" : "-rotate-90"}>
+          <ChevronIcon folded={false} />
+        </span>
+      </button>
+      {!hidden && (
+        <ul id="sidebar-stories" aria-label="Stories" className="ml-5 flex flex-col border-l border-rule-2">
+          {stories.map((story) => (
+            <li key={`${story.project}/${story.ticket}`}>
+              <Link
+                to="/stories/$project/$key"
+                params={{ project: story.project, key: story.ticket }}
+                search={keepScope}
+                activeOptions={{ exact: true, includeSearch: false }}
+                aria-label={`${story.ticket} ${story.title}, ${story.merged} of ${story.total} merged`}
+                className="flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:bg-act-wash data-[status=active]:text-act"
+              >
+                <span className="flex justify-between gap-2 font-mono text-[11px] leading-[1.3] font-medium text-ink-3">
+                  <span>{story.ticket}</span>
+                  <span>
+                    {story.merged}/{story.total}
+                  </span>
+                </span>
+                <span className="truncate font-sans text-[13px] leading-[1.3]">{story.title}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 export function Sidebar() {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const [folded, setFolded] = useState(readFolded);
-  const readiness = useReadiness(hosts, useContext(PollDepsContext));
+  const deps = useContext(PollDepsContext);
+  const readiness = useReadiness(hosts, deps);
+  const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
+  const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const open = useOpenCount(scopedHosts(hosts, project), now);
@@ -192,9 +247,16 @@ export function Sidebar() {
       <ProjectSwitcher rows={rows} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
-        {PAGES.map((page) => (
-          <PageLink key={page.to} {...page} badge={badges[page.to] ?? 0} folded={folded} />
-        ))}
+        {PAGES.map((page) =>
+          page.to === "/tickets" ? (
+            <div key={page.to} className="relative">
+              <PageLink {...page} badge={badges[page.to] ?? 0} folded={folded} active={onStory} />
+              {!folded && stories.length > 0 && <StoryList stories={stories} />}
+            </div>
+          ) : (
+            <PageLink key={page.to} {...page} badge={badges[page.to] ?? 0} folded={folded} active={false} />
+          ),
+        )}
       </nav>
 
       <footer className={`mt-auto flex flex-col gap-2 border-t border-rule-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
