@@ -168,6 +168,7 @@ test("the new console's root names the daemon's host once its first poll answers
   expect(Object.fromEntries(asked)).toEqual({
     [`${ORIGIN}/status`]: 1,
     [`${ORIGIN}/attention`]: 1,
+    [`${ORIGIN}/board`]: 1,
     [`${ORIGIN}/peers`]: 1,
     [`${ORIGIN}/runs/4/merge`]: 1,
     [`${ORIGIN}/findings?since=${weekSince(0)}`]: 1,
