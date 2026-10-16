@@ -7,6 +7,7 @@ import type { Attention, Status } from "../../src/lib/contract.gen";
 import { pollDaemon, tokenedFetch, type Fetch } from "../../src/lib/poll";
 import { tokenKey } from "../../src/lib/token";
 import { consoleQueryClient, useFleet, type ContractBodies } from "../../src/next/fleet";
+import { weekSince } from "../../src/next/queries";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
@@ -169,6 +170,7 @@ test("the new console's root names the daemon's host once its first poll answers
     [`${ORIGIN}/attention`]: 1,
     [`${ORIGIN}/peers`]: 1,
     [`${ORIGIN}/runs/4/merge`]: 1,
+    [`${ORIGIN}/findings?since=${weekSince(0)}`]: 1,
   });
 });
 
