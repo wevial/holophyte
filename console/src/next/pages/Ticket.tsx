@@ -51,12 +51,8 @@ function BoardLine({ chip, liveRun, base }: { chip: BoardChip; liveRun: number |
   );
 }
 
-function sameDay(a: number, b: number): boolean {
-  return new Date(a).toDateString() === new Date(b).toDateString();
-}
-
 function filedAt(at: number, now: number): string {
-  return sameDay(at, now) ? formatClock(at) : new Date(at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  return new Date(at).toDateString() === new Date(now).toDateString() ? formatClock(at) : new Date(at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function TicketPage() {
