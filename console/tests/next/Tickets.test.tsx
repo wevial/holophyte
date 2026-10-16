@@ -185,11 +185,12 @@ test("the Overview and the Tickets page share one /shipped request per host", as
 
 test("an in-flight card shows its key, time box, title and the run's phase and review round in the running tone", async () => {
   const board = boardOf({ ready: ["DEMO-2"], in_flight: ["DEMO-3"] }, { "DEMO-3": { time_box_ms: 25 * MINUTE, run: 3 } });
-  const reviewing = { ...run(3, "DEMO-3"), phase: "reviewing", round: 2, max_rounds: 3 };
+  const reviewing = { ...run(3, "DEMO-3"), phase: "reviewing", round: 1, max_rounds: 3 };
   await mount("#/tickets?project=demo", fleet({ board, runs: [reviewing] }).fetch);
   const card = cardOf("DEMO-3");
   expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
   expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
+  expect(within(card).getByRole("heading").classList).toContain("font-plex");
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");

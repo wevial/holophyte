@@ -32,7 +32,7 @@ export function BoardCard({ card, column, now }: { card: TicketCard; column: Col
           </span>
         )}
       </div>
-      <h3 className={`mt-[9px] break-words font-sans text-[14px] font-medium leading-[1.45] ${LOOKS[look].title}`}>{card.title}</h3>
+      <h3 className={`mt-[9px] break-words font-plex text-[14px] font-medium leading-[1.45] ${LOOKS[look].title}`}>{card.title}</h3>
       <p data-state-line className="mt-3 flex min-w-0 items-center gap-[7px] font-mono text-[12px] leading-[1.3]">
         <StateDot state={state} hideWord tone={tone} />
         <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[wordTone]}`}>{cardWord(card, now)}</span>

@@ -71,7 +71,7 @@ export function cardWord(card: TicketCard, now: number): string {
   switch (state) {
     case "running":
       if (card.run == null) return STATES.running.word;
-      return card.run.phase === "reviewing" ? `${phaseLabel(card.run.phase)} · round ${card.run.round} of ${card.run.max_rounds}` : phaseLabel(card.run.phase);
+      return card.run.phase === "reviewing" ? `${phaseLabel(card.run.phase)} · round ${card.run.round + 1} of ${card.run.max_rounds}` : phaseLabel(card.run.phase);
     case "on_ci":
     case "parked":
       return `${STATES[state].word}${pr}`;
