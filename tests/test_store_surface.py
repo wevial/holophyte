@@ -319,7 +319,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # captured pending and settled at the merge.
                                  # HOLO-252: `settle_superseded`, a row a later
                                  # fix turn's ADDRESS(follow-up N) line fixed.
+                                 # HOLO-344: `follow_ups_since`, the
+                                 # findings window's follow-up rows.
                                  (store.follow_ups, ["filed_drafts",
+                                                     "follow_ups_since",
                                                      "pending_follow_ups",
                                                      "record_follow_up",
                                                      "settle_duplicate",
