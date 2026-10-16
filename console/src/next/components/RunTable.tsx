@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 import { formatClock, formatSettled } from "../../lib/format";
 import { localMidnight } from "../../lib/ledger";
 import { classicHref } from "../../lib/view";
@@ -35,7 +34,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
     "data-need": need ? "" : undefined,
     className: `${GRID} border-b border-rule-2 p-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`,
   };
-  const cells: ReactNode = (
+  const cells = (
     <>
       <span className={`${MONO} text-ink-2`}>{row.id}</span>
       <span className="min-w-0">
