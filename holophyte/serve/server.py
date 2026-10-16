@@ -67,6 +67,7 @@ from holophyte.serve.serve_runs import (
     runs,
     shipped,
 )
+from holophyte.serve.serve_stories import STORY_PATH, story_detail
 from holophyte.serve.serve_watch import (
     CODE_CHECK_SEC,
     DRAIN_SEC,
@@ -232,6 +233,7 @@ SHAPED_ROUTES = (
     (RUN_MERGE_PATH, run_merge),
     (RUN_ASKS_PATH, run_asks),
     (TICKET_PATH, ticket_detail),
+    (STORY_PATH, story_detail),
 )
 
 

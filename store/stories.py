@@ -31,6 +31,14 @@ StoryWitness = collections.namedtuple("StoryWitness", WITNESS_COLUMNS)
 StoryChild = collections.namedtuple("StoryChild", CHILD_COLUMNS)
 StoryDecision = collections.namedtuple("StoryDecision", DECISION_COLUMNS)
 WitnessResult = collections.namedtuple("WitnessResult", RESULT_COLUMNS)
+PlanChild = collections.namedtuple(
+    "PlanChild", ("ticketId", "identifier", "title", "status", "boardColumn",
+                  "timeBoxMs", "activeRunId", "mergedAt", "role",
+                  "witnessKeys", "dependsOn"))
+DecisionRecord = collections.namedtuple(
+    "DecisionRecord", ("id", "kind", "ticket", "question", "options",
+                       "defaultOption", "answer", "answeredBy", "answeredAt",
+                       "at"))
 
 OPEN_STATES = ("approved", "parked")
 CLOSED_STATUSES = ("merged", "abandoned")
@@ -111,6 +119,39 @@ def story(conn, ticket_id):
             (fields["ticketId"],)))
     return Story(**fields, witnesses=witnesses, children=children,
                  decisions=decisions)
+
+
+def story_children(conn, story_id):
+    rows = conn.execute(
+        "SELECT t.id, t.linearIdentifier, t.title, t.status, t.boardColumn,"
+        " t.timeBoxMs, (SELECT MAX(r.id) FROM runs r WHERE r.ticketId = t.id"
+        " AND r.endedAt IS NULL), (SELECT r.endedAt FROM runs r"
+        " WHERE r.ticketId = t.id AND r.outcome = 'merged'"
+        " ORDER BY r.endedAt DESC, r.id DESC LIMIT 1),"
+        " c.role, c.witnessKey, t.dependsOn, t.linearIssueId"
+        " FROM storyChildren c JOIN tickets t ON t.id = c.ticketId"
+        " WHERE c.storyId = ? ORDER BY t.id, c.witnessKey",
+        (story_id,)).fetchall()
+    names = {row[11]: row[1] for row in rows}
+    children = {}
+    for *fields, role, key, depends, _ in rows:
+        child = children.setdefault(fields[0], PlanChild(
+            *fields, role, [], [names[issue] for issue in json.loads(depends)
+                                if issue in names]))
+        if key:
+            child.witnessKeys.append(key)
+    return list(children.values())
+
+
+def story_decisions(conn, story_id):
+    return [DecisionRecord(row[0], row[1], row[2], row[3],
+                           tuple(json.loads(row[4])), *row[5:])
+            for row in conn.execute(
+                "SELECT d.id, d.kind, t.linearIdentifier, d.question,"
+                " d.options, d.defaultOption, d.answer, d.answeredBy,"
+                " d.answeredAt, d.at FROM storyDecisions d"
+                " LEFT JOIN tickets t ON t.id = d.ticketId"
+                " WHERE d.storyId = ? ORDER BY d.at, d.id", (story_id,))]
 
 
 def story_frontier(conn, story_id, max_parallel):

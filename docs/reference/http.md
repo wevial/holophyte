@@ -875,6 +875,42 @@ the store has never mirrored is 404 with an empty object, like an absent
 run. The endpoint reads the store's mirror and nothing more; it never
 calls the provider.
 
+## `GET /stories/KO-n`
+
+One story by its parent ticket's identifier: what the console's Story
+board draws as a dependency graph, with the story's witnesses and
+decisions under it.
+
+```json
+{"ticket": "KO-n", "title": "…", "state": "approved", "generation": 2,
+ "children": [{"ticket": "KO-m", "title": "…", "status": "in_flight",
+               "column": "in_progress", "time_box_ms": 1800000, "run": 52,
+               "merged_ms": null, "role": "advances",
+               "witness_keys": ["W1"], "depends_on": ["KO-l"]}],
+ "witnesses": [{"key": "W1", "criterion": "…", "verdict": "red",
+                "main_sha": "b1c2…", "at": 1788449000000}],
+ "decisions": [{"id": 3, "kind": "regressed", "ticket": "KO-m",
+                "question": "…", "options": ["replan", "abandon"],
+                "default_option": "replan", "answer": "replan",
+                "answered_by": "maintainer", "answered_ms": 1788449100000,
+                "at": 1788449050000}]}
+```
+
+`state` and `generation` are the story's; `children` come in the order
+the plan lists them, merged ones included. A child's `column` is its board
+column, `run` its run with no end (null when none is working it),
+`merged_ms` the end of its newest merged run (null before one), `role` and
+`witness_keys` its place in the plan, and `depends_on` the identifiers of
+the story's own children its dependencies name, in their order; a
+dependency outside the story is left out. `witnesses` come by key, each
+read at the newest main sha the store holds a result for: `verdict`,
+`main_sha` and `at` are that result's, all null for a witness never run
+there. `decisions` come oldest first, open and answered: `ticket` is the
+child the decision is about, null for the whole story, and `answer`,
+`answered_by` and `answered_ms` are null while it is open. An identifier
+the store has never mirrored, or one that is not a story's parent (a
+child's included), is 404 with an empty object.
+
 ## `POST /actions/steer`
 
 Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
