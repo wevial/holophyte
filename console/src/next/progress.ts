@@ -54,13 +54,17 @@ function roundLines(detail: RunDetail): ProgressLine[] {
   });
 }
 
-/** A ticket's note made after this run ended is for the run that follows, unless this run read it. */
+/** Notes and asks are the ticket's: one made after this run ended is for the run that follows. */
+function afterEnd(detail: RunDetail, at: number): boolean {
+  const { outcome, ended_ms: ended } = detail.run;
+  return outcome != null && ended != null && at > ended;
+}
+
 function steerLines(detail: RunDetail): ProgressLine[] {
-  const { id, outcome, ended_ms: ended } = detail.run;
-  const after = (at: number) => outcome != null && ended != null && at > ended;
+  const { id } = detail.run;
   return detail.steer_notes
     .filter((note) => !note.withdrawn || note.consumed_ms != null)
-    .filter((note) => note.consumed_by === id || !after(note.at))
+    .filter((note) => note.consumed_by === id || !afterEnd(detail, note.at))
     .map((note) => ({
       at: note.at,
       kind: "steer",
@@ -69,8 +73,8 @@ function steerLines(detail: RunDetail): ProgressLine[] {
     }));
 }
 
-function askLines(asks: ConsoleAsk[]): ProgressLine[] {
-  return asks.map((ask) => ({
+function askLines(detail: RunDetail, asks: ConsoleAsk[]): ProgressLine[] {
+  return asks.filter((ask) => !afterEnd(detail, ask.asked_ms)).map((ask) => ({
     at: ask.asked_ms,
     kind: "ask",
     text: `You asked: ${ask.question}`,
@@ -94,6 +98,6 @@ function endLine(detail: RunDetail, now: number): ProgressLine[] {
 /** The run's story oldest first: its events, ended review rounds with their
  *  findings, steer notes, asks, and its end once it has one. */
 export function progressLines(detail: RunDetail, asks: ConsoleAsk[], now: number): ProgressLine[] {
-  const lines = [...eventLines(detail), ...roundLines(detail), ...steerLines(detail), ...askLines(asks), ...endLine(detail, now)];
+  const lines = [...eventLines(detail), ...roundLines(detail), ...steerLines(detail), ...askLines(detail, asks), ...endLine(detail, now)];
   return lines.sort((a, b) => a.at - b.at || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
 }

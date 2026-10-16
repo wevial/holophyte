@@ -127,13 +127,14 @@ test("a live run's label says live and only a line a later poll adds is marked n
   expect(fresh).toEqual(["Fix applied · verifying"]);
 });
 
-test("an ended run shows no live mark and its last line names its outcome, past a note steered after it ended", async () => {
+test("an ended run shows no live mark and its last line names its outcome, past a note steered and a question asked after it ended", async () => {
   const failed: RunDetail = {
     ...liveDetail,
     run: { ...liveDetail.run, phase: "failed", outcome: "failed", failure_kind: "verify", outcome_reason: "2 tests red\nmore", ended_ms: at(16, 55) },
     steer_notes: [...liveDetail.steer_notes, { ...note, id: 4, kind: "amendment", note: "for the retry: keep --act", at: at(17, 0) }],
   };
-  await mount(progressFetch({ detail: failed, asks }));
+  const later = { ...asks.asks[0]!, id: 5, question: "is the retry green?", asked_ms: at(17, 2), answered_ms: null, answer: null };
+  await mount(progressFetch({ detail: failed, asks: { ...asks, asks: [...asks.asks, later] } }));
   expect(section().querySelector("[data-live]")).toBeNull();
   expect(section().querySelector("h2")!.textContent).toBe("Progress");
   expect(line(items().at(-1)!)).toEqual({ time: "16:55", kind: "failure", text: "Failed at verify: 2 tests red", sub: [] });
