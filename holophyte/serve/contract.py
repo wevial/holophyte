@@ -734,6 +734,29 @@ class TicketNote(TypedDict):
     post_error: str | None
 
 
+class TicketRun(TypedDict):
+    run: int
+    attempt: int
+    phase: str
+    outcome: str | None
+    rounds: int
+    pr_url: str | None
+    started_ms: int
+    ended_ms: int | None
+
+
+class TicketSteer(TypedDict):
+    id: int
+    kind: Literal["amendment", "hint"]
+    note: str
+    author: str
+    at: int
+    run: int | None
+    read_by: int | None
+    read_ms: int | None
+    withdrawn: bool
+
+
 class TicketDetail(TypedDict):
     ticket: str
     ticket_url: str | None
@@ -749,6 +772,8 @@ class TicketDetail(TypedDict):
     claimed: TicketRevision | ClaimedSnapshot | None
     revisions: list[RevisionStamp]
     notes: list[TicketNote]
+    runs: list[TicketRun]
+    steers: list[TicketSteer]
 
 
 ROUTES = {

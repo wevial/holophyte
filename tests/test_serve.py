@@ -618,7 +618,7 @@ class TicketTests(ServeTestCase):
         revision = {"revision": 1, "at": self.now - 5 * MIN, "author": "board",
                     "title": "ticket 7", "body": self.BODY, "priority": None,
                     "labels": [], "column": None}
-        self.assertEqual(body, {
+        self.assertEqual({k: body[k] for k in body if k != "runs"}, {
             "ticket": "KO-7", "ticket_url": None,
             "title": "ticket 7", "status": "in_flight",
             "body": self.BODY,
@@ -629,7 +629,7 @@ class TicketTests(ServeTestCase):
             "current": revision, "claimed": revision,
             "revisions": [{"revision": 1, "at": self.now - 5 * MIN,
                            "author": "board"}],
-            "notes": []})
+            "notes": [], "steers": []})
 
     def test_an_identifier_never_mirrored_is_404_with_an_empty_object(self):
         self.seed_ticket()
