@@ -25,14 +25,16 @@ const steeredFate = (ticket: string): RowFate => ({
 });
 
 /** What the row's action posts, held by the row so its pending post
- *  outlives a fold: a taken post sets `done` to the row's new fate, a
+ *  outlives a fold: a taken post sets `done` to the row's new fate over
+ *  the `polled` fate line it replaced, until a poll reads another; a
  *  refusal says its reason in the toast and leaves the button enabled. */
-function useRowAction(action: RowAction | null) {
+function useRowAction(action: RowAction | null, polled: string) {
   const steer = useAction();
   const deps = useContext(PollDepsContext);
   const toast = useToast();
   const [filing, setFiling] = useState(false);
-  const [done, setDone] = useState<RowFate | null>(null);
+  const [taken, setTaken] = useState<{ fate: RowFate; over: string } | null>(null);
+  const setDone = (fate: RowFate) => setTaken({ fate, over: polled });
   const busy = steer.isPending || filing;
 
   const press = async () => {
@@ -55,7 +57,7 @@ function useRowAction(action: RowAction | null) {
       toast("problems" in result ? (result.problems[0] ?? "The daemon refused the ticket.") : result.error);
     }
   };
-  return { busy, done, press };
+  return { busy, done: taken != null && taken.over === polled ? taken.fate : null, press };
 }
 
 function RowActionButton({ action, busy, press }: { action: RowAction; busy: boolean; press: () => Promise<void> }) {
@@ -78,7 +80,7 @@ function RowActionButton({ action, busy, press }: { action: RowAction; busy: boo
  *  stands while the page is mounted. */
 export function FindingRow({ row, showProject, quiet = false }: { row: FindingRowView; showProject: boolean; quiet?: boolean }) {
   const [open, setOpen] = useState(false);
-  const { busy, done, press } = useRowAction(row.action);
+  const { busy, done, press } = useRowAction(row.action, row.fate.line);
   const body = useId();
   const pill = row.severity == null ? null : PILL[row.severity];
   const fate = done ?? row.fate;

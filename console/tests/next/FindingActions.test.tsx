@@ -68,7 +68,7 @@ function daemon(opts: { runs: FindingsRun[]; actions: boolean | null; live?: Sta
   const posts: Post[] = [];
   const base = opts.projectDaemon ? DEMO : PROJECT;
   const { actions: _served, ...rest } = working;
-  const status = { ...rest, project: "/srv/dev/demo", ...(opts.actions == null ? {} : { actions: opts.actions }), runs: opts.live ?? [], queued: [], now: NOW };
+  const status = () => ({ ...rest, project: "/srv/dev/demo", ...(opts.actions == null ? {} : { actions: opts.actions }), runs: opts.live ?? [], queued: [], now: NOW });
   const listed = [{ ...hostStatus.projects[0]!, name: "demo", path: "/srv/dev/demo", host: "writer-host" }];
   const fetch: Fetch = async (url, init) => {
     if (init?.method === "POST") {
@@ -79,7 +79,7 @@ function daemon(opts: { runs: FindingsRun[]; actions: boolean | null; live?: Sta
     if (url === `${DEMO}/peers`) return Response.json({ self: "writer-host:7710", peers: [] });
     if (!opts.projectDaemon && url === `${DEMO}/status`) return Response.json({ ...hostStatus, now: NOW, projects: listed });
     if (!opts.projectDaemon && url === `${DEMO}/attention`) return Response.json({ level: "none", now: NOW, items: [] });
-    if (url === `${base}/status`) return Response.json(status);
+    if (url === `${base}/status`) return Response.json(status());
     if (url === `${base}/attention`) return Response.json({ level: "none", now: NOW, project: "/srv/dev/demo", items: [] });
     if (url.startsWith(`${base}/findings?`)) return Response.json({ ...pinned, since: 0, runs: opts.runs, follow_ups: [] });
     return new Response("not found", { status: 404 });
@@ -150,6 +150,23 @@ test("Steer into next run posts the open finding as DEMO-11's amendment, reads S
   expect(row.querySelector("[data-fate] .stamp")).not.toBeNull();
   expect(buttonOf(row, /Steer/)).toBeUndefined();
   expect(toast()).toBe("Steered DEMO-11 with the finding.");
+});
+
+test("once a poll reads another fate for the steered finding, the row reads it instead of the steered line", async () => {
+  const opts: Parameters<typeof daemon>[0] = { runs: [demo11], actions: true };
+  opts.answer = async () => {
+    opts.runs = [{ ...demo11, phase: "working", outcome: null }];
+    opts.live = [{ ...run(11, "DEMO-11"), phase: "working", heartbeat_age_ms: 30_000 }];
+    return Response.json({ ok: true, detail: "DEMO-11 steered" });
+  };
+  await mount(daemon(opts).fetch);
+  const row = unfold("Open", "Flag is ignored");
+  await act(async () => {
+    fireEvent.click(buttonOf(row, /^Steer into next run$/)!);
+    await settle();
+  });
+  for (let step = 0; step < 6; step += 1) await act(settle);
+  expect(fateOf(row)!.startsWith("being fixed")).toBe(true);
 });
 
 test("a refused steer keeps the button enabled and the fate line, and says the daemon's reason", async () => {
