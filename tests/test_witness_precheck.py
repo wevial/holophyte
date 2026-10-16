@@ -47,6 +47,17 @@ class Mixed(unittest.TestCase):
     def test_it_draws(self):
         pass
 """
+MIXIN = """import unittest
+
+
+class _Draws:
+    def test_it_draws(self):
+        self.assertTrue(True)
+
+
+class Drawing(_Draws, unittest.TestCase):
+    pass
+"""
 
 
 class Repository(unittest.TestCase):
@@ -167,6 +178,28 @@ class Ran(Repository):
         self.assertEqual(entries[1]["gaps"], [
             "criterion 2 names `tests/test_other.py`; the verify commands run"
             " no test from it"])
+
+
+class RanPerFile(Repository):
+
+    def test_each_file_a_glob_matches_is_checked_on_its_own(self):
+        self.commit({"tests/test_docs_runs.py": RUNS,
+                     "tests/test_docs_gated.py": GATED})
+
+        _, (entry,) = self.check(["`tests/test_docs_*.py` pass"])
+
+        self.assertEqual(entry["gaps"], [
+            "criterion 1 names `tests/test_docs_gated.py`; its tests ran only "
+            "skipped in verify (needs a browser)"])
+
+    def test_an_added_mixin_test_run_through_its_test_case_ran(self):
+        self.commit({"tests/test_drawing.py": MIXIN})
+
+        _, (entry,) = self.check(
+            ["A test in `tests/test_drawing.py` witnesses it."])
+
+        self.assertEqual(entry["checks"][0]["ran"], "ran")
+        self.assertEqual(entry["gaps"], [])
 
 
 class Unchecked(Repository):

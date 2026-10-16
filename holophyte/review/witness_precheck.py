@@ -58,9 +58,9 @@ def named_files(criteria):
     return named
 
 
-def _missed(test, mine, output):
-    own = [result for result in mine
-           if (result.cls, result.name) == (test.cls, test.name)]
+def _missed(test, mine, output, source):
+    own = [result for result in mine if result.name == test.name
+           and not skipped_tests.elsewhere(result, test, source)]
     if any(not result.skipped for result in own):
         return None
     return (next((result.reason for result in own if result.reason), None)
@@ -68,14 +68,13 @@ def _missed(test, mine, output):
             or skipped_tests.NOT_COLLECTED)
 
 
-def _ran(paths, probed):
-    if probed is None or not all(path.endswith(".py") for path in paths):
+def _ran(path, probed):
+    if probed is None or not path.endswith(".py"):
         return "unchecked", []
-    output, results, added = probed
-    modules = [skipped_tests.module_name(path) for path in paths]
+    output, results, added, source = probed
+    module = skipped_tests.module_name(path)
     mine = [result for result in results
-            if any(skipped_tests.in_module(module, result)
-                   for module in modules)]
+            if skipped_tests.in_module(module, result)]
     if not mine:
         return "not_run", []
     if all(result.skipped for result in mine if result.name not in FIXTURES):
@@ -83,8 +82,8 @@ def _ran(paths, probed):
             result.reason or "no reason given"
             for result in mine if result.skipped))
     missed = [{"test": test.id(), "reason": reason} for test in added
-              if test.path in paths
-              and (reason := _missed(test, mine, output))]
+              if test.path == path
+              and (reason := _missed(test, mine, output, source))]
     return ("added_skipped", missed) if missed else ("ran", [])
 
 
@@ -112,10 +111,16 @@ def _file(n, path, existing, tree, changed, sha, probed):
     gaps = ([] if result["changed"] is not False else
             [f"criterion {n} names `{path}`; this branch neither adds nor "
              "changes it"])
-    result["ran"], detail = _ran(matches, probed)
-    if detail:
-        result["detail"] = detail
-    return result, gaps + _gaps(n, path, result["ran"], detail)
+    runs = {match: _ran(match, probed) for match in matches}
+    details = {match: detail for match, (_, detail) in runs.items() if detail}
+    if glob:
+        result["ran"] = {match: ran for match, (ran, _) in runs.items()}
+    else:
+        result["ran"] = runs[path][0]
+    if details:
+        result["detail"] = details if glob else details[path]
+    return result, gaps + [gap for match, (ran, detail) in runs.items()
+                           for gap in _gaps(n, match, ran, detail)]
 
 
 def _probed(wt, base, sha, verify_cmd, wanted, probe):
@@ -128,7 +133,7 @@ def _probed(wt, base, sha, verify_cmd, wanted, probe):
         return None
     source = skipped_tests.Source(wt, sha)
     return (output, skipped_tests.parse_results(output),
-            skipped_tests.added_tests(source, base))
+            skipped_tests.added_tests(source, base), source)
 
 
 def check(wt, base, sha, criteria, verify_cmd, probe):

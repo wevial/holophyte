@@ -109,7 +109,7 @@ def _own_defs(tree, cls, name):
              and child.name == name] for holder in holders]
 
 
-def _elsewhere(ran, test, source):
+def elsewhere(ran, test, source):
     found = False
     for path, module in source.modules.items():
         if not in_module(module, ran):
@@ -268,7 +268,7 @@ def skipped_on_base(output, added, source):
         named = {result[:3]: result for result in results
                  if result.name == test.name}
         apart = {key for key, result in named.items()
-                 if _elsewhere(result, test, source)}
+                 if elsewhere(result, test, source)}
         own = [result for result in results if result.name == test.name
                and result[:3] not in apart]
         if any(not result.skipped for result in own):
