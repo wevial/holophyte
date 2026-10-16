@@ -174,7 +174,7 @@ export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fet
 
 /** Each host that has answered `/status` with its last good `/board`, in
  *  fleet order; a host whose board never answered is left out. */
-export function useBoards(hosts: HostRecord<PollBodies>[], deps: { fetch: Fetch }): { host: HostRecord<PollBodies>; board: Board }[] {
+export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; board: Board }[] {
   const asked = hosts.filter((host) => host.status != null);
   const results = useQueries({
     queries: asked.map((host) => ({
