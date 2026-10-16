@@ -18,6 +18,7 @@ import { Findings } from "./pages/Findings";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
+import { Runs } from "./pages/Runs";
 import { Tickets } from "./pages/Tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
@@ -62,11 +63,7 @@ function TicketPlaceholder() {
 
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
-  placeholderRoute("/runs", {
-    title: "Runs",
-    sentence: "Active and finished runs come here next.",
-    classic: { href: classicHref("#view=shipped"), label: "Open Finished in the classic console" },
-  }),
+  pageRoute("/runs", Runs),
   pageRoute("/tickets", Tickets),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPlaceholder }),
   pageRoute("/findings", Findings),
