@@ -116,6 +116,8 @@ class BlockedTicket:
 
 
 def blocked_tickets(conn, project_id=None):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    pr_state = "r.prSeenState" if "prSeenState" in columns else "NULL AS prSeenState"
     where, params = "t.status = 'blocked_on_operator'", ()
     if project_id is not None:
         where += " AND t.projectId = ?"
@@ -127,7 +129,7 @@ def blocked_tickets(conn, project_id=None):
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
         " r.prSeenThreads, t.url, t.boardState, r.parkKind, r.prSeenTitle,"
         " t.title, r.outcome, r.prSeenOpenThreads, r.prSeenOpenThreadsFloor,"
-        " r.prSeenState"
+        f" {pr_state}"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],

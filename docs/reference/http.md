@@ -870,7 +870,7 @@ What needs the operator, computed where the store is:
    "pr_url": null, "park_kind": "question", "pr": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
    "pr_url": "https://github.com/example/repo/pull/2170", "park_kind": "pull_request", "reason": "…", "asked_ms": 1788449000000,
-   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…"},
+   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…", "state": "ready"},
    "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},

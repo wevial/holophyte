@@ -451,6 +451,21 @@ class PullRequestTitleTests(ServeTestCase):
         self.assertEqual((item["pr"]["title"], item["title"]),
                          (None, "ticket 7"))
 
+    def test_attention_reads_version_50_without_migrating_pull_request_state(self):
+        self.read_status(self.TITLE, isDraft=True)
+        self.conn.execute("ALTER TABLE runs DROP COLUMN prSeenState")
+        self.conn.execute("PRAGMA user_version = 50")
+        self.conn.commit()
+        before = list(self.conn.iterdump())
+        self.start()
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        item = next(item for item in body["items"] if item["kind"] == "pr_open")
+        self.assertEqual(item["run"], self.run)
+        self.assertEqual(item["pr"]["title"], self.TITLE)
+        self.assertIsNone(item["pr"]["state"])
+        self.assertEqual(list(self.conn.iterdump()), before)
+
     def test_first_draft_read_and_unchanged_ready_read_store_and_serve_state(self):
         for draft, expected, facts_only in ((True, "draft", False),
                                              (False, "ready", True)):
