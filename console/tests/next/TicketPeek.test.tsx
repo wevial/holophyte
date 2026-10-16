@@ -115,7 +115,7 @@ const marks = () => within(peek()!).getAllByRole("img").filter((mark) => mark.ha
 const metCount = () => peek()!.querySelector("[data-met-count]")!.textContent;
 
 test("the peek shows the ticket's summary clamped to four lines and each criterion marked by its run's latest standing", async () => {
-  await mount("#/tickets", boardFetch(demo3, [standing(1, "met")]));
+  await mount("#/tickets", boardFetch(demo3, [standing(1, "met"), standing(2, "unwitnessed")]));
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
   for (let round = 0; round < 3; round += 1) await act(settle);
 
@@ -126,6 +126,15 @@ test("the peek shows the ticket's summary clamped to four lines and each criteri
   expect(metCount()).toBe("1 of 2 met");
   expect(marks().map((mark) => mark.getAttribute("aria-label"))).toEqual(["met", "not yet witnessed"]);
   expect(within(peek()!).getAllByRole("listitem").map((row) => row.textContent)).toEqual(CRITERIA);
+});
+
+test("a run with no recorded standings marks every criterion not yet witnessed", async () => {
+  await mount("#/tickets", boardFetch(demo3, []));
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  for (let round = 0; round < 3; round += 1) await act(settle);
+
+  expect(metCount()).toBe("0 of 2 met");
+  expect(marks().map((mark) => mark.getAttribute("aria-label"))).toEqual(["not yet witnessed", "not yet witnessed"]);
 });
 
 test("a ticket the daemon has not mirrored says so and shows no criteria", async () => {
