@@ -75,6 +75,12 @@ test("the Findings entry counts the switcher's open findings, not settled ones, 
   expect(findingsBadge()!.textContent).toBe("1");
 });
 
+test("with no open findings, only a settled one, the Findings entry has no badge and is named Findings", async () => {
+  await mount("#/", fleet([flagged(5, "DEMO-5", { phase: "done", outcome: "merged" })], []));
+  expect(findingsLink().getAttribute("aria-label")).toBe("Findings");
+  expect(findingsBadge()).toBeNull();
+});
+
 test("on the folded rail the Findings entry shows the corner count and keeps its counted name", async () => {
   localStorage.setItem("holophyte.next.rail", "folded");
   await mount("#/", fleet([flagged(7, "DEMO-7"), flagged(11, "DEMO-11")], []));
