@@ -125,7 +125,7 @@ export function RunPage() {
         </div>
       </header>
       <div data-run-body className="mt-3.5 min-h-40 border border-rule bg-paper px-8 pb-8 pt-[22px] max-[720px]:px-4">
-        <ProgressLog lines={page.progress} live={page.live} />
+        <ProgressLog key={run.id} lines={page.progress} live={page.live} />
       </div>
     </Page>
   );
