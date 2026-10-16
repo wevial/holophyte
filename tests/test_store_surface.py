@@ -213,6 +213,9 @@ EXPECTED_READ = [
     "ticket_revisions",
     # KO-747: a ticket's notes, oldest first, for `/tickets/KO-n`.
     "ticket_notes",
+    # HOLO-350: a ticket's runs with their round counts, newest first, for
+    # `/tickets/KO-n`.
+    "ticket_runs",
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
