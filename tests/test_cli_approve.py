@@ -209,10 +209,11 @@ class ApproveCliTests(unittest.TestCase):
         self.github.rulesets = {
             24: {"name": "human-review", "current_user_can_bypass": "exempt"}}
 
-        out, _ = self.cli("--approve", "KO-1")
+        out, _ = self.cli("--approve", "KO-1", "--note", "ready to land")
 
         self.assertIn(f"KO-1 approved: run {self.run}", out)
         self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertEqual(self.intervention_note(), "ready to land")
         self.assertEqual(self.run_row()[2], "merge_gate")
         self.assertEqual(self.ticket_row(), ("ready", None, self.run))
 
