@@ -20,7 +20,7 @@ type Page = Extract<RunPage, { kind: "run" }>;
 function labelsOf(page: Page): string[] {
   const { run, chain } = page.detail;
   if (page.state === "paused") return [RESUME];
-  if (page.live != null) return page.live.stop_requested == null && !PARKED.has(page.state) ? [PAUSE, ABORT] : [];
+  if (page.liveRun != null) return page.liveRun.stop_requested == null && !PARKED.has(page.state) ? [PAUSE, ABORT] : [];
   const newest = chain?.runs.at(-1)?.id === run.id;
   return ENDED.has(run.outcome ?? "") && newest && !page.liveTicket ? [REQUEUE] : [];
 }

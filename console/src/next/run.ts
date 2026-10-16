@@ -25,7 +25,7 @@ export type RunPage =
       base: string;
       detail: RunDetail;
       host: HostRecord<ContractBodies>;
-      live: StatusRun | null;
+      liveRun: StatusRun | null;
       liveTicket: boolean;
       actions: boolean;
       stops: string;
@@ -205,7 +205,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
     base: host.base,
     detail,
     host,
-    live,
+    liveRun: live,
     liveTicket: status.runs.some((each) => each.ticket === detail.run.ticket),
     actions: status.actions === true,
     stops: stopsWord(phase, live),

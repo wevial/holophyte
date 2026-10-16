@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { ConfirmDialog } from "../../src/next/components/ConfirmDialog";
 import { Btn } from "../../src/next/components/Btn";
 import { Section } from "../../src/next/components/Section";
 import { StageChip } from "../../src/next/components/StageChip";
@@ -141,4 +142,25 @@ test("disabled and busy buttons keep their own variant's edge and label, and a d
   } finally {
     style.remove();
   }
+});
+
+
+test("a confirm defaults to Cancel and primary, and supports a focused Keep running cancel with a filled danger action", () => {
+  const cancel = mock(() => {});
+  const confirm = mock(() => {});
+  const props = { label: "Abort · demo", heading: "Abort run 12?", confirm: "Abort run", busyLabel: "Aborting…", busy: false, onCancel: cancel, onConfirm: confirm, children: "The branch is kept." };
+  const { rerender } = render(<ConfirmDialog {...props} />);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Abort run" }).getAttribute("data-variant")).toBe("primary");
+  rerender(<ConfirmDialog {...props} cancelLabel="Keep running" confirmVariant="danger-fill" />);
+  const keep = screen.getByRole("button", { name: "Keep running" });
+  expect(document.activeElement).toBe(keep);
+  expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  const abort = screen.getByRole("button", { name: "Abort run" });
+  expect(abort.getAttribute("data-variant")).toBe("danger-fill");
+  fireEvent.click(keep);
+  expect(cancel).toHaveBeenCalledTimes(1);
+  expect(confirm).not.toHaveBeenCalled();
+  fireEvent.click(abort);
+  expect(confirm).toHaveBeenCalledTimes(1);
 });
