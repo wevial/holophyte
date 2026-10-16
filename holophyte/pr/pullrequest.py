@@ -319,7 +319,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
         store.record_event(conn, run_id, "pull_request",
                            f"pushing {branch} to {github.REMOTE} and opening its"
                            " pull request")
-    adopted, written = False, text
+    adopted = False
     leak_guard.refuse_private_text(project, pull_request_title=title,
                                    pull_request_body=text)
     with heartbeat_while(conn, run_id, beat_s):
@@ -344,8 +344,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
             # The PR is the run's `prUrl` from now, even for a run that never parks.
             store.set_pull_request(conn, run_id, url)
     with heartbeat_while(conn, run_id, beat_s):
-        if adopted:
-            written = _adopt_evidence(project, url, text)
+        written = _adopt_evidence(project, url, text) if adopted else text
         pull = pr_status.parse_pr_url(url)
         notes = image_fetch.check(project, pull, written) if pull else []
     if conn is not None and run_id is not None:

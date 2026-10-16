@@ -65,10 +65,6 @@ def relinked(url):
     return urllib.parse.urlunsplit(parts._replace(query=query))
 
 
-def _linked(body, url, new):
-    return re.sub(re.escape(url) + r"(?=[)\s\"'>]|\Z)", lambda _: new, body)
-
-
 def check(target, pull, body):
     lines = []
     if "![" not in (body or ""):
@@ -103,7 +99,8 @@ def _relink_short(target, pull, lines):
         watched = set()
         for url, (served, full) in short.items():
             new, before = relinked(url), written
-            written = _linked(written, url, new)
+            written = re.sub(re.escape(url) + r"(?=[)\s\"'>]|\Z)",
+                             lambda _: new, written)
             if written != before:
                 watched.add(new)
                 lines.append(f"GitHub's image proxy served {served} of {full}"
