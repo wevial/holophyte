@@ -105,6 +105,33 @@ def steer_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
     return head
 
 
+WITNESS_ASK = ('For each one, add or fix the test that witnesses the criterion '
+               'in the file it names, so the ticket\'s verify commands run it, '
+               'and commit. Don\'t add or edit a test only to satisfy this '
+               'check. If an existing test there already witnesses the '
+               'criterion unchanged, or the skip is right where verify runs, '
+               'change nothing for it and say why in your reply. Keep the '
+               'ticket\'s verify commands passing.')
+
+
+def witness_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
+                 gaps, *, timed, check_cap):
+    ask = ('The factory\'s witness pre-check ran before review and found '
+           'these gaps:\n' + ''.join(f'{gap}\n' for gap in gaps) + '\n'
+           + WITNESS_ASK)
+    fresh = ('The ticket you are working on is the contract, acceptance '
+             f'criteria included:\n\n{ticket}\n\n' + ask)
+    print(f'[holo2] witness turn: {len(gaps)} gaps at {sha[:12]}')
+    _, timed_out = _session_turn(target, conn, run_id, beat_s, wt, budget_min,
+                                 sha, ask, fresh, timed=timed,
+                                 check_cap=check_cap, record=False)
+    head = sh(['git', 'rev-parse', 'HEAD'], cwd=wt)
+    if timed_out:
+        raise RunFailure(f'witness turn timed out; work kept at {head[:12]}',
+                         'budget')
+    return head
+
+
 def _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha, resumed,
                   fresh, *, timed, check_cap, record=True):
     arm = select_arm(loop_config(target).fix_session, run_id)

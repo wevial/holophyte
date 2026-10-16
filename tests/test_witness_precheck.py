@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -18,6 +19,7 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402 - after sys.path
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
+import holophyte.loop.witness_turns  # noqa: E402 - as above
 from holophyte.review import witness_precheck  # noqa: E402 - as above
 
 VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
@@ -253,6 +255,9 @@ class InTheLoop(LoopFixture):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "a running test")
         self.base = self.git("rev-parse", "main").strip()
+        turns = patch.object(holophyte.loop.witness_turns, "WITNESS_TURNS", 0)
+        turns.start()
+        self.addCleanup(turns.stop)
 
     def run_task(self, verify, *after):
         task = dict(a_task(), verify=verify, criteria=[self.CRITERION])

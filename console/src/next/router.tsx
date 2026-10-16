@@ -6,6 +6,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useParams,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { classicHref } from "../lib/view";
@@ -48,10 +49,22 @@ function placeholderRoute<TPath extends string>(path: TPath, page: Parameters<ty
   return pageRoute(path, () => <Placeholder {...page} />);
 }
 
+function TicketPlaceholder() {
+  const { key } = useParams({ from: "/tickets/$project/$key" });
+  return (
+    <Placeholder
+      title={key}
+      sentence="The ticket page comes here."
+      classic={{ href: classicHref("#view=board"), label: "Open the Board in the classic console" }}
+    />
+  );
+}
+
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
   pageRoute("/runs", Runs),
   pageRoute("/tickets", Tickets),
+  createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPlaceholder }),
   placeholderRoute("/findings", {
     title: "Findings",
     sentence: "Findings across runs come here. Until then, each run's findings are on its page in the classic console.",
