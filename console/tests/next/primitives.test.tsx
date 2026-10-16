@@ -103,6 +103,15 @@ test("a StageChip reads the review round against its cap, and a merge gate with 
   expect(gate.textContent).toBe("monitoring PR");
 });
 
+test("a StageChip given a label draws its state's icon and its sub after a dot, a running icon by default", () => {
+  const { container: merged } = render(<StageChip label="Merged · 5acc138" state="merged" />);
+  const { container: review } = render(<StageChip label="Review · round 2 of 3" sub="1 loop back" />);
+  expect(merged.textContent).toBe("Merged · 5acc138");
+  expect(merged.querySelector("[data-state]")!.getAttribute("data-state")).toBe("merged");
+  expect(review.textContent).toBe("Review · round 2 of 3 · 1 loop back");
+  expect(review.querySelector("[data-state]")!.getAttribute("data-state")).toBe("running");
+});
+
 test("disabled and busy buttons keep their own variant's edge and label, and a disabled one is at half opacity", () => {
   const style = document.createElement("style");
   style.textContent = themeCss.replace(/@import[^;]*;/, "");
