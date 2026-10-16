@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
+import { RunActions } from "../components/RunActions";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
 import { useRunPage } from "../run";
@@ -75,7 +76,10 @@ export function RunPage() {
           {" / "}
           <span>run {run.id}</span>
         </nav>
-        <h1 className="m-0 mt-2 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">{run.title}</h1>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <h1 className="m-0 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">{run.title}</h1>
+          <RunActions page={page} project={project} />
+        </div>
         <p data-run-facts className="m-0 mt-3 font-mono text-[12px] leading-[1.7] text-ink-3 [overflow-wrap:anywhere]">
           <span className={STRONG}>{run.ticket}</span>
           <Dot />

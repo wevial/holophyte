@@ -2,11 +2,12 @@ import { useContext } from "react";
 import { describe, needsYouEntries } from "../lib/attention";
 import type { RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { formatClock, formatSettled } from "../lib/format";
-import { hostItems, sinceSeen } from "../lib/hosts";
+import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
 import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
+import type { ContractBodies } from "./fleet";
 import { failureWord } from "./history";
 import { useReadiness, useRun } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
@@ -19,6 +20,11 @@ export type RunPage =
   | {
       kind: "run";
       detail: RunDetail;
+      host: HostRecord<ContractBodies>;
+      live: StatusRun | null;
+      liveTicket: boolean;
+      actions: boolean;
+      stops: string;
       state: State;
       /** The run's agent clock and its box, both null when the daemon gave none. */
       agentMs: number | null;
@@ -60,8 +66,16 @@ interface Facts {
   now: number;
 }
 
+const stepOf = (phase: string) => STEPS[phase] ?? { stage: capital(phaseLabel(phase)), doing: capital(phaseLabel(phase)) };
+
+/** What an abort stops, said the way the verdict says the step. */
+function stopsWord(phase: string, live: StatusRun | null): string {
+  const step = stepOf(phase);
+  return phase === "reviewing" && live != null ? `${step.stage} round ${live.round + 1}` : step.doing;
+}
+
 function liveWords({ live, phase }: Facts): { stage: string; sentence: string } {
-  const step = STEPS[phase] ?? { stage: capital(phaseLabel(phase)), doing: capital(phaseLabel(phase)) };
+  const step = stepOf(phase);
   const round = phase === "reviewing" && live != null ? `round ${live.round + 1} of ${live.max_rounds}` : null;
   const stop = live?.stop_requested == null ? null : clause(live.stop_action === "pause" ? "Pause requested" : "Abort requested", live.stop_requested);
   return {
@@ -147,6 +161,11 @@ export function useRunPage(project: string, run: number | null): RunPage {
   return {
     kind: "run",
     detail,
+    host,
+    live,
+    liveTicket: status.runs.some((each) => each.ticket === detail.run.ticket),
+    actions: status.actions === true,
+    stops: stopsWord(phase, live),
     state,
     agentMs: live == null ? agentMs(detail.run) : agentMs(live, since),
     boxMs: live?.time_box_ms ?? detail.run.time_box_ms,
