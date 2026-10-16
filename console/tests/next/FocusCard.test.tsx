@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { Attention, RunDetail, Status } from "../../src/lib/contract.gen";
@@ -93,6 +93,10 @@ const card = () => screen.getByRole("article", { name: "Focus" });
 const cardText = () => card().textContent ?? "";
 const rows = () => within(screen.getByRole("list", { name: "Then" })).getAllByRole("button").map((row) => row.getAttribute("aria-label"));
 
+const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+
+beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
+afterAll(() => happyDOM.setURL("about:blank"));
 beforeEach(() => storeToken(addressOf(DEMO), TOKEN));
 
 afterEach(() => {
@@ -252,6 +256,14 @@ const press = async (button: HTMLElement) => {
   for (let round = 0; round < 3; round += 1) await act(settle);
 };
 
+test("pressing Open run on a failed run's card opens that run's Run page", async () => {
+  const run40 = { ...detail, run: { ...detail.run, id: 40, ticket: "DEMO-40", title: "Write the notes", phase: "failed", outcome: "failed" } };
+  await mount(daemon({ items: [{ ...failed(null), run: 40, ticket: "DEMO-40" } as Item], details: { 40: run40 } }));
+  await press(within(card()).getByRole("link", { name: "Open run" }));
+  expect(window.location.hash).toStartWith("#/runs/demo/40");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Write the notes");
+});
+
 test("the card's primary is the entry's first action, the rest sit under More, and Open run and Open ticket follow", async () => {
   await mount(daemon({ items: [failedAt()], actions: true }));
   const primary = inCard("Requeue");
@@ -266,7 +278,7 @@ test("the card's primary is the entry's first action, the rest sit under More, a
   fireEvent.keyDown(needsSpec, { key: "Escape" });
   expect(screen.queryByRole("group", { name: "More actions" })).toBeNull();
   expect(document.activeElement).toBe(more);
-  expect(within(card()).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(`/?classic#run=12&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(card()).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/12");
   const ticket = within(card()).getByRole("link", { name: "Open ticket" });
   expect(ticket.getAttribute("href")).toBe(TICKET_URL);
   expect(ticket.getAttribute("target")).toBe("_blank");
