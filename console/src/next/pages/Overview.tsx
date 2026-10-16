@@ -15,19 +15,21 @@ import { useDayLedger, usePeerList } from "../queries";
 import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
+const FOLDED_BY_DEFAULT = new Set(["done"]);
 
 function readOpen(id: string): boolean {
+  const fallback = !FOLDED_BY_DEFAULT.has(id);
   try {
-    return localStorage.getItem(FOLD_KEY + id) !== "folded";
+    const stored = localStorage.getItem(FOLD_KEY + id);
+    return stored === "open" ? true : stored === "folded" ? false : fallback;
   } catch {
-    return true;
+    return fallback;
   }
 }
 
 function writeOpen(id: string, open: boolean): void {
   try {
-    if (open) localStorage.removeItem(FOLD_KEY + id);
-    else localStorage.setItem(FOLD_KEY + id, "folded");
+    localStorage.setItem(FOLD_KEY + id, open ? "open" : "folded");
   } catch {
     // Storage may be disabled; the fold still holds for this page.
   }
