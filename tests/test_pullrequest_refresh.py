@@ -72,6 +72,18 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.assertEqual(self.pr_body.read_text(),
                          "Requests no longer hang.\n\nLinear: KO-131\n")
 
+    def test_refresh_without_title_records_the_change_summary(self):
+        self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
+        self.fake_route()
+        self.pr_body.write_text("Old description.\n\nLinear: KO-131\n")
+        self.refresh(("Requests no longer hang.\n\n"
+                      "## Changes since first review\n- Requests finish promptly.",
+                      False))
+        self.assertEqual(self.pr_body.read_text(),
+                         "Requests no longer hang.\n\n"
+                         "## Changes since first review\n"
+                         "- Round 1: Requests finish promptly.\n\nLinear: KO-131\n")
+
     def test_refresh_omits_history_by_default_and_removes_existing_rounds(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route()
@@ -302,7 +314,7 @@ class PullRequestRefreshTests(MergeModeFixture):
                     "Capture\n<!-- bot -->tail\n")
         self.pr_body.write_text(original)
         for answer, reason in [(("", True), "ran out of time"),
-                               (("No title line", False), "no `TITLE:` line"),
+                               (("No title line", False), "missing behaviour summary"),
                                (("TITLE: Valid\nNew prose", False),
                                 "missing behaviour summary"),
                                (("TITLE: Valid\nNew prose\n\n"

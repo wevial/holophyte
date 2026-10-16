@@ -155,7 +155,8 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     reply, timed_out = _timed(project, conn, run_id, beat_s, wt, minutes,
                               goal, role="write")
     stop_if_requested(conn, run_id, "merge_gate")
-    parsed = None if timed_out else github.parse_pr_text(reply)
+    parsed = None if timed_out else github.parse_pr_text(
+        reply, title_optional=refresh is not None)
     parsed = _with_own_key(parsed, task_id) if refresh is None else parsed
     leaks = parsed and leak_guard.text_leaks(project, "written pull request text",
                                              "\n".join(parsed))
@@ -165,6 +166,8 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         why = ("the turn ran out of time" if timed_out
                else "the reply holds text the project does not publish"
                if leaks
+               else "the reply has an invalid title or an empty body"
+               if refresh is not None
                else "the reply has no `TITLE:` line, an empty title, or a"
                f" title over {github.PR_TITLE_MAX} characters, or an empty body")
         if refresh is not None:
