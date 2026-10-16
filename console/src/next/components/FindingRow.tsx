@@ -71,12 +71,12 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
 /** A review round that raised nothing, and who reviewed it. */
 export function CleanReviewLine({ ticket, round, reviewer }: { ticket: string; round: number; reviewer: string | null }) {
   return (
-    <li data-clean className="py-1.5">
-      <p className="flex items-center gap-2 font-plex text-[14px] text-ink-2">
-        <FactIcon ok />
-        {`${ticket} passed round ${round} with no findings.`}
+    <li data-clean className="flex items-baseline gap-2 py-1.5">
+      <span className="self-center"><FactIcon ok /></span>
+      <p className="min-w-0 font-plex text-[14px] text-ink-2 [overflow-wrap:anywhere]">
+        <span data-sentence>{`${ticket} passed round ${round} with no findings.`}</span>
+        {reviewer != null && <span data-reviewer className="ml-2 font-mono text-[12px] text-ink-3">reviewed by {reviewer}</span>}
       </p>
-      {reviewer != null && <p className="mt-0.5 pl-6 font-mono text-[12px] text-ink-3">reviewed by {reviewer}</p>}
     </li>
   );
 }

@@ -192,10 +192,10 @@ function followUpFate(row: FollowUpRow, run: FindingsRun | undefined): RowFate {
   }
 }
 
-/** The bold lead, else the text's first sentence, over the text. */
+/** The bold lead, else the text's first sentence, over the text and the requirement a criterion finding failed. */
 function titled(message: string): { title: string; text: string } {
-  const { title, body } = findingParts(message);
-  if (title != null) return { title, text: body };
+  const { title, body, criterion } = findingParts(message);
+  if (title != null) return { title, text: criterion == null ? body : [body, criterion].filter(Boolean).join("\n\n") };
   const sentence = /^[\s\S]*?[.!?](?=\s|$)/.exec(body.trim());
   return { title: (sentence?.[0] ?? body).trim(), text: body };
 }

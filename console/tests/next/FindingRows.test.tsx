@@ -213,8 +213,16 @@ test("follow-ups read their state's fate, the pending ones first", async () => {
 test("a clean review reads as one sentence and its reviewer", async () => {
   await mount("#/findings", fleet({ runs: [runOf(10, "DEMO-10", [round(1, [], "reviewer-model")])] }));
   const [line] = group("Clean reviews").querySelectorAll("[data-clean]");
-  expect([...line!.querySelectorAll("p")].map((p) => p.textContent)).toEqual([
-    "DEMO-10 passed round 1 with no findings.",
-    "reviewed by reviewer-model",
-  ]);
+  expect(line!.querySelectorAll("p")).toHaveLength(1);
+  expect(line!.querySelector("[data-sentence]")!.textContent).toBe("DEMO-10 passed round 1 with no findings.");
+  expect(line!.querySelector("[data-reviewer]")!.textContent).toBe("reviewed by reviewer-model");
+});
+
+test("a criterion finding unfolds to its reason and the requirement it failed", async () => {
+  const message = "CRITERION 1: unwitnessed — no CRITERION line in the reply\nGiven a stale run, the sweep releases its lease.";
+  const unwitnessed = runOf(9, "DEMO-9", [round(1, [finding("unused", "p1", { message })])], { phase: "failed", outcome: "failed" });
+  await mount("#/findings", fleet({ runs: [unwitnessed] }));
+  const [row] = unfoldAll("Open");
+  expect(row!.querySelector("[data-title]")!.textContent).toBe("Criterion 1 · unwitnessed");
+  expect(row!.querySelector("[data-text]")!.textContent).toBe("no CRITERION line in the reply\n\nGiven a stale run, the sweep releases its lease.");
 });
