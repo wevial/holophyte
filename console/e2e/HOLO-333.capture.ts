@@ -14,7 +14,7 @@ const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first"
 async function open(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/next.html#/runs");
+  await page.goto("/next.html#/runs?state=all");
   await expect(runs(page).first()).toBeVisible();
 }
 
