@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
+import { ProgressLog } from "../components/ProgressLog";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
 import { useRunPage } from "../run";
@@ -33,6 +34,12 @@ function Notice({ label, text }: { label: string; text: string }) {
       </Link>
     </Page>
   );
+}
+
+/** The console routes on the hash, so the in-page link scrolls instead of navigating. */
+function toProgress(event: MouseEvent<HTMLAnchorElement>) {
+  event.preventDefault();
+  document.getElementById("progress")?.scrollIntoView({ block: "start" });
 }
 
 function Dot() {
@@ -112,9 +119,14 @@ export function RunPage() {
           <span role="group" aria-label="Stage">
             <StageChip label={page.stage.label} state={page.state} sub={page.stage.sub} />
           </span>
+          <a href="#progress" onClick={toProgress} className="font-mono text-[12px] leading-[1.3] text-ink-2 underline underline-offset-2 hover:text-ink">
+            history in Progress
+          </a>
         </div>
       </header>
-      <div data-run-body className="mt-3.5 min-h-40 border border-rule bg-paper" />
+      <div data-run-body className="mt-3.5 min-h-40 border border-rule bg-paper px-8 pb-8 pt-[22px] max-[720px]:px-4">
+        <ProgressLog lines={page.progress} live={page.live} />
+      </div>
     </Page>
   );
 }
