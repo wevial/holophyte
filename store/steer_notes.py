@@ -52,6 +52,19 @@ class SteerRow(NamedTuple):
     withdrawn_by: int | None
 
 
+class ChainNote(NamedTuple):
+    id: int
+    kind: str
+    note: str
+    author: str
+    at: int
+    run_id: int | None
+    consumed_by: int | None
+    consumed_at: int | None
+    interrupt: bool
+    withdrawn: bool
+
+
 def steer(conn, ticket_id, note, author, hint=False, now=None,
           interrupt=False):
     for name, text in (("note", note), ("author", author)):
@@ -275,6 +288,28 @@ def consume(conn, note_ids, run_id, now=None):
                          (run_id, now, note_id))
 
 
+_READER = (" LEFT JOIN runEvents c ON c.id = (SELECT MIN(e.id) FROM runEvents e"
+           " WHERE e.kind = 'operator_note_consumed'"
+           " AND json_extract(e.payload, '$.event_id') = s.eventId)")
+
+
+def chain_notes(conn, ticket_id, since):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(steerNotes)")}
+    if not columns:
+        return []
+    interrupt = "s.interrupt = 1" if "interrupt" in columns else "0"
+    withdrawn = ("s.withdrawnBy IS NOT NULL" if "withdrawnBy" in columns
+                 else "0")
+    return [ChainNote(*row[:8], bool(row[8]), bool(row[9])) for row in conn.execute(
+        "SELECT s.id, s.kind, s.note, s.author, s.at,"
+        " CASE WHEN r.endedAt IS NULL OR r.endedAt >= s.at THEN r.id END,"
+        " COALESCE(s.consumedBy, c.runId), COALESCE(s.consumedAt, c.at),"
+        f" {interrupt}, {withdrawn} FROM steerNotes s"
+        " LEFT JOIN runs r ON r.id = s.runId" + _READER
+        + " WHERE s.ticketId = ? AND s.at >= ? ORDER BY s.at, s.id",
+        (ticket_id, since))]
+
+
 def steers(conn):
     columns = {row[1] for row in conn.execute("PRAGMA table_info(steerNotes)")}
     if not columns:
@@ -284,8 +319,4 @@ def steers(conn):
         "SELECT s.id, t.linearIdentifier, s.kind, s.author, s.note, s.at,"
         " s.runId, s.eventId, COALESCE(s.consumedBy, c.runId),"
         f" COALESCE(s.consumedAt, c.at), {withdrawn} FROM steerNotes s"
-        " JOIN tickets t ON t.id = s.ticketId"
-        " LEFT JOIN runEvents c ON c.id = (SELECT MIN(e.id) FROM runEvents e"
-        " WHERE e.kind = 'operator_note_consumed'"
-        " AND json_extract(e.payload, '$.event_id') = s.eventId)"
-        " ORDER BY s.id")]
+        " JOIN tickets t ON t.id = s.ticketId" + _READER + " ORDER BY s.id")]

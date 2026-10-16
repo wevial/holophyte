@@ -304,6 +304,7 @@ the parameter.
          "title": "The sweep frees a silent lease",
          "phase": "done", "attempt": 1, "started_ms": 1788450461675,
          "ended_ms": 1788451661675, "outcome": "merged",
+         "outcome_reason": null, "failure_kind": null, "park_kind": null,
          "elapsed_ms": 1200000, "working_ms": 912000, "agent_ms": 840000,
          "verify_ms": 72000, "time_box_ms": 1500000,
          "branch": "task/ko-219-the-sweep-frees-a-silent-lease", "host": "writer-1",
@@ -356,7 +357,12 @@ the parameter.
    "turn_count": 4,
    "rounds": [{"round": 1, "verdict": "changes_requested", "reviewer_model": "reviewer-model"},
               {"round": 2, "verdict": "pass", "reviewer_model": "reviewer-model"}]}
- ]}}
+ ]},
+ "steer_notes": [
+  {"id": 4, "kind": "hint", "note": "Reuse the sweep's lease query",
+   "author": "maintainer", "at": 1788450561675, "run": 52, "consumed_by": 52,
+   "consumed_ms": 1788450571675, "interrupt": false, "withdrawn": false}
+ ]}
 ```
 
 One run in full, by id: what the console shows when a run is expanded.
@@ -405,6 +411,12 @@ long) is 404 with `run` echoing the path segment as typed. `host` passes
 through `[report] host_label`. `commit_url` and `pr_url` are as
 `/shipped` carries them: the merge commit's page on `origin` and the
 pull request the run opened, each null when there is none.
+`outcome_reason` is the run's stored outcome reason cut at 400
+characters, as `/shipped` cuts it, null when there is none;
+`failure_kind` is the class of a failed run's failure (`verify`,
+`budget`, `infra` and the like) and `park_kind` what a parked run waits
+on (`pull_request`, `ci`, `question` and the like), each null when the
+run recorded none.
 
 `chain` is the ticket's chain of runs up to run N, as `/shipped` defines
 it: every run of the ticket after its last merged run before N, through
@@ -419,6 +431,15 @@ carries them, `max_rounds`, `turn_count` (the turns `/runs/ID/turns`
 lists) and `rounds`, each round's `round`, `verdict` and
 `reviewer_model`. A run with no earlier run in its chain has a chain of
 itself alone, whose clocks equal `run`'s.
+
+`steer_notes` are the maintainer's steer notes (`holo steer`) on run N's
+ticket recorded at or after `chain.started_ms`, oldest first, `[]` when
+there are none: each with its `id`, `kind` (`amendment` or `hint`),
+`note`, `author` and `at` (epoch milliseconds); `run`, the run the note
+was routed to, null when it waited for the next run; `consumed_by` and
+`consumed_ms`, the run whose agent read it and when, both null until
+read; `interrupt`, true when it was sent with `--now`; and `withdrawn`,
+true when a later withdrawal took the amendment back.
 
 ## `GET /runs/N/files`
 

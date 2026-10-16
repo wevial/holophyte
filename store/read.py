@@ -342,6 +342,10 @@ class RunDetail:
     ticketUrl: str | None = None
     approvedAt: int | None = None
     approvedBy: str | None = None
+    ticketId: int | None = None
+    outcomeReason: str | None = None
+    failureKind: str | None = None
+    parkKind: str | None = None
 
 
 def run_detail(conn, run_id):
@@ -350,7 +354,8 @@ def run_detail(conn, run_id):
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
         " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl,"
         " r.workingMs, r.workStartedAt, t.url, r.approvedAt, r.approvedBy,"
-        " r.verifyMs, r.verifyStartedAt"
+        " r.verifyMs, r.verifyStartedAt, r.ticketId, r.outcomeReason,"
+        " r.failureKind, r.parkKind"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -362,7 +367,9 @@ def run_detail(conn, run_id):
                      mergeSha=row[12], reviewRoundCap=row[13],
                      prUrl=row[14], workingMs=row[15], workStartedAt=row[16],
                      ticketUrl=row[17], approvedAt=row[18], approvedBy=row[19],
-                     verifyMs=row[20], verifyStartedAt=row[21])
+                     verifyMs=row[20], verifyStartedAt=row[21],
+                     ticketId=row[22], outcomeReason=row[23],
+                     failureKind=row[24], parkKind=row[25])
 
 
 @dataclass(frozen=True)
