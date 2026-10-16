@@ -58,6 +58,14 @@ class _Draws:
 class Drawing(_Draws, unittest.TestCase):
     pass
 """
+MODULE_SKIPPED = """import pytest
+
+pytest.skip("needs a browser", allow_module_level=True)
+
+
+def test_it_draws():
+    pass
+"""
 
 
 class Repository(unittest.TestCase):
@@ -200,6 +208,24 @@ class RanPerFile(Repository):
 
         self.assertEqual(entry["checks"][0]["ran"], "ran")
         self.assertEqual(entry["gaps"], [])
+
+
+class RanUnderPytest(Repository):
+
+    @unittest.skipIf(subprocess.run(["python3", "-c", "import pytest"],
+                                    capture_output=True).returncode,
+                     "pytest is not installed for python3")
+    def test_a_module_skipped_at_collection_keeps_its_reason(self):
+        self.commit({"tests/test_runs.py": RUNS,
+                     "tests/test_gated.py": MODULE_SKIPPED})
+
+        _, (entry,) = self.check(
+            ["A test in `tests/test_gated.py` witnesses it."],
+            verify="python3 -m pytest -q tests")
+
+        self.assertEqual(entry["gaps"], [
+            "criterion 1 names `tests/test_gated.py`; its tests ran only "
+            "skipped in verify (needs a browser)"])
 
 
 class Unchecked(Repository):

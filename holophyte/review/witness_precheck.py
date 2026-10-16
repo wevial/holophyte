@@ -76,7 +76,11 @@ def _ran(path, probed):
     mine = [result for result in results
             if skipped_tests.in_module(module, result)]
     if not mine:
-        return "not_run", []
+        collected = [reason for where, reason in
+                     skipped_tests.PYTEST_SKIP.findall(output)
+                     if skipped_tests.same_file(path, where)]
+        return (("skipped", list(dict.fromkeys(collected))) if collected
+                else ("not_run", []))
     if all(result.skipped for result in mine if result.name not in FIXTURES):
         return "skipped", list(dict.fromkeys(
             result.reason or "no reason given"

@@ -236,7 +236,7 @@ def _ran_unseen(output):
                    for count in PYTEST_RAN.findall(summary)) > pytest)
 
 
-def _same_file(path, other):
+def same_file(path, other):
     return f"/{path}".endswith(f"/{other}") or f"/{other}".endswith(f"/{path}")
 
 
@@ -253,7 +253,7 @@ def fixture_reason(test, mine, output):
         if reason:
             return reason
     return next((reason for where, reason in PYTEST_SKIP.findall(output)
-                 if _same_file(test.path, where)), None)
+                 if same_file(test.path, where)), None)
 
 
 def skipped_on_base(output, added, source):
