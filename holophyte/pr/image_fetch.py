@@ -96,15 +96,16 @@ def _relink_short(target, pull, lines):
             return
         endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
         written = github.rest(target, pull, "GET", endpoint)["body"] or ""
-        watched = set()
+        watched, relinks = set(), []
         for url, (served, full) in short.items():
             new, before = relinked(url), written
             written = re.sub(re.escape(url) + r"(?=[)\s\"'>]|\Z)",
                              lambda _: new, written)
             if written != before:
                 watched.add(new)
-                lines.append(f"GitHub's image proxy served {served} of {full}"
-                             f" bytes for {url}; re-linked as {new}")
+                relinks.append(f"GitHub's image proxy served {served} of {full}"
+                               f" bytes for {url}; re-linked as {new}")
         if not watched:
             return
         github.edit_pr_body(target, pull, written)
+        lines.extend(relinks)

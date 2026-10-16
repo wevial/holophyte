@@ -137,6 +137,15 @@ class ImageFetchTests(unittest.TestCase):
                          ["image fetch check skipped: gh api failed"])
         self.assertEqual(self.writes, [])
 
+    def test_a_refused_relink_records_only_the_skip(self):
+        url = f"{self.base}/full.png"
+        self.fake_github(f"![screen]({url})\n")
+        self.serve(lambda canonical: CUT)
+        image_fetch.github.edit_pr_body.side_effect = InfraFailure("gh pr edit failed")
+        self.assertEqual(image_fetch.check(PROJECT, PULL, self.body),
+                         ["image fetch check skipped: gh pr edit failed"])
+        self.assertEqual(self.body, f"![screen]({url})\n")
+
 
 if __name__ == "__main__":
     unittest.main()
