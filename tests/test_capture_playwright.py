@@ -36,18 +36,18 @@ else:
     open(written, 'wb').close()
 sys.exit(int(os.environ.get('FAKE_EXIT', '0')))
 """
-# Writes 01-a.png into CAPTURE_OUT and each FAKE_VIDEOS [test, bytes] pair as
-# test/video.webm under the config's outputDir, one second apart, and records
-# that directory in recordings.txt.
+# Writes 01-a.png into CAPTURE_OUT and each FAKE_VIDEOS [path, bytes] pair at
+# that path under the config's outputDir, one second apart, and records that
+# directory in recordings.txt.
 VIDEO_FAKE = """\
 import json, os, re, sys
 config = open(sys.argv[sys.argv.index('--config') + 1]).read()
 recordings = re.search(r'outputDir: "([^"]+)"', config)[1]
 open('recordings.txt', 'w').write(recordings)
 open(os.path.join(os.environ['CAPTURE_OUT'], '01-a.png'), 'wb').close()
-for number, (test, data) in enumerate(json.loads(os.environ['FAKE_VIDEOS'])):
-    os.makedirs(os.path.join(recordings, test))
-    video = os.path.join(recordings, test, 'video.webm')
+for number, (path, data) in enumerate(json.loads(os.environ['FAKE_VIDEOS'])):
+    video = os.path.join(recordings, path)
+    os.makedirs(os.path.dirname(video), exist_ok=True)
     open(video, 'w').write(data)
     written = (1_700_000_000 + number) * 10**9
     os.utime(video, ns=(written, written))
@@ -308,7 +308,8 @@ class FakeBootTests(unittest.TestCase):
 
     def test_recordings_are_copied_in_written_order_and_their_directory_removed(self):
         result = self.capture(boot=(sys.executable, "video_fake.py"), video=True,
-                              videos=[["z-first", "first"], ["a-second", "second"]])
+                              videos=[["z-first/video.webm", "first"],
+                                      ["a-second/video.webm", "second"]])
 
         self.assertEqual(result.returncode, 0, result.stderr)
         output = self.repo / "out"
@@ -319,6 +320,22 @@ class FakeBootTests(unittest.TestCase):
         recordings = (self.repo / "recordings.txt").read_text()
         self.assertFalse(os.path.exists(recordings), recordings)
         self.assertEqual(self.leftovers(), ["KO-7.capture.ts"])
+
+    def test_only_the_video_a_spec_saved_is_published_not_page_scratch_files(self):
+        # Playwright names a recorded context's per-page scratch file after the
+        # page, page@<hex>.webm; the real-Playwright tests pin that naming.
+        result = self.capture(boot=(sys.executable, "video_fake.py"), video=True,
+                              videos=[["capture/video/page@3f2a9c.webm", "warm-up"],
+                                      ["capture/video/page@9c1e07.webm", "scratch"],
+                                      ["capture/video-feature.webm", "feature"]])
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = self.repo / "out"
+        self.assertEqual(sorted(p.name for p in output.glob("*.webm")),
+                         ["video-01.webm"])
+        self.assertEqual((output / "video-01.webm").read_text(), "feature")
+        self.assertIn("skipped 2 page recording(s)", result.stderr)
+        self.assertIn("video.saveAs()", result.stderr)
 
     def test_a_video_run_that_recorded_nothing_still_passes_and_says_so(self):
         result = self.capture(boot=(sys.executable, "video_fake.py"), video=True)
@@ -350,6 +367,34 @@ export default defineConfig({
 });
 """
 SPEC = "import { test } from '@playwright/test';\n\ntest('%s', async () => {});\n"
+PAGE_FIXTURE_SPEC = """\
+import { test } from '@playwright/test';
+
+test('capture', async ({ page }) => {
+  await page.setContent('<h1>feature</h1>');
+  await page.screenshot({ path: `${process.env.CAPTURE_OUT}/01-feature.png` });
+  await page.waitForTimeout(1000);
+});
+"""
+# Records a warm-up page and a feature page in one context it makes itself,
+# and saves only the feature page's video.
+RECORDED_CONTEXT_SPEC = """\
+import { test } from '@playwright/test';
+
+test('capture', async ({ browser }, testInfo) => {
+  const context = await browser.newContext(
+    { recordVideo: { dir: testInfo.outputPath('video') } });
+  const warmUp = await context.newPage();
+  await warmUp.setContent('<h1>warm-up</h1>');
+  await warmUp.close();
+  const page = await context.newPage();
+  await page.setContent('<h1>feature</h1>');
+  await page.screenshot({ path: `${process.env.CAPTURE_OUT}/01-feature.png` });
+  await page.waitForTimeout(2000);
+  await context.close();
+  await page.video().saveAs(testInfo.outputPath('video-feature.webm'));
+});
+"""
 
 
 class RealPlaywrightTests(unittest.TestCase):
@@ -428,6 +473,38 @@ class RealPlaywrightTests(unittest.TestCase):
             [".gitignore"])
         self.assertEqual([p.name for p in Path(factory.name).iterdir()],
                          ["CAPTURE-0.capture.ts"])
+
+    def captured_with_video(self, spec):
+        (self.repo / ".holophyte-capture" / "KO-8.capture.ts").write_text(spec)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HOLOPHYTE_")}
+        return subprocess.run(
+            [sys.executable, str(RUNNER),
+             "--boot", "npx playwright test --reporter=line --timeout=60000",
+             "out"],
+            cwd=self.repo, capture_output=True, text=True, timeout=180,
+            env={**env, "HOLOPHYTE_TICKET": "KO-8",
+                 "HOLOPHYTE_CAPTURE_VIDEO": "1"})
+
+    def test_the_page_fixture_video_is_published_without_a_save(self):
+        result = self.captured_with_video(PAGE_FIXTURE_SPEC)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sorted(p.name for p in (self.repo / "out").glob("*.webm")),
+                         ["video-01.webm"])
+
+    def test_a_page_the_spec_did_not_save_is_not_published(self):
+        if not shutil.which("ffprobe"):
+            self.skipTest("ffprobe is not installed")
+        result = self.captured_with_video(RECORDED_CONTEXT_SPEC)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        videos = sorted(p.name for p in (self.repo / "out").glob("*.webm"))
+        self.assertEqual(videos, ["video-01.webm"])
+        duration = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(self.repo / "out" / "video-01.webm")],
+            capture_output=True, text=True, check=True).stdout
+        self.assertGreaterEqual(float(duration), 1.5)
 
 
 def _suites(suites):

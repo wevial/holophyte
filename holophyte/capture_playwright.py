@@ -21,6 +21,7 @@ ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SHOT = "[0-9][0-9]-*.png"
 # Playwright reads a positional filter as a JavaScript regular expression.
 REGEX_SPECIAL = re.compile(r"[.*+?^${}()|[\]\\]")
+SCRATCH_VIDEO = re.compile(r"page@[0-9a-f]+\.webm")
 
 # The imported config's relative paths resolve against this file's directory,
 # so a helper project's `testDir` is made absolute against the project's own.
@@ -165,9 +166,14 @@ def _boot(command, argv, env):
 
 
 def _copy_videos(recordings, output):
-    videos = sorted((video for video in recordings.rglob("*.webm")
-                     if video.is_file()),
+    found = [video for video in recordings.rglob("*.webm") if video.is_file()]
+    videos = sorted((video for video in found
+                     if not SCRATCH_VIDEO.fullmatch(video.name)),
                     key=lambda video: (video.stat().st_mtime_ns, str(video)))
+    if skipped := len(found) - len(videos):
+        print(f"capture_playwright: skipped {skipped} page recording(s) the "
+              "spec did not save; a page's video is published only when the "
+              "spec saves it with video.saveAs()", file=sys.stderr)
     if not videos:
         print("capture_playwright: no video was recorded", file=sys.stderr)
     for number, video in enumerate(videos, 1):

@@ -92,6 +92,19 @@ class MediaTests(unittest.TestCase):
             config_path=self.root / "config.toml",
         )
 
+    def test_the_brief_says_which_page_video_to_save_only_with_video_on(self):
+        ticket = "# Edit name\n\n## Evidence\n\nDialog open\n"
+        for video in (True, False):
+            with self.subTest(video=video):
+                self.config["merge"]["ui_capture_video"] = video
+
+                brief = pr_media.implementer_brief(self.target, ticket, "KO-9")
+
+                self.assertIn("01: Dialog open", brief)
+                self.assertEqual("video().saveAs(" in brief, video)
+                self.assertEqual("never save a page opened for sign-in or a "
+                                 "session warm-up" in brief, video)
+
     def git(self, *args):
         return subprocess.check_output(
             ["git", *args], cwd=self.repo, stderr=subprocess.STDOUT, text=True
