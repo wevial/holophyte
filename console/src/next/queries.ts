@@ -108,19 +108,6 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
   });
 }
 
-/** `/stories/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
- *  mounted; idle with no key. */
-export function useStory(base: string | null, key: string | null, deps: { fetch: Fetch }) {
-  const path = `/stories/${encodeURIComponent(key ?? "")}`;
-  return useQuery({
-    queryKey: routeKey(base ?? "", path),
-    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, storyDetailSchema),
-    enabled: base != null && key != null,
-    refetchInterval: POLL_INTERVAL_MS,
-    staleTime: POLL_INTERVAL_MS,
-  });
-}
-
 /** A route's 404 is null, not a failure: a daemon without the route, or
  *  without the thing it names. */
 async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
@@ -155,19 +142,24 @@ export interface StoryAnswer<R> {
   story: StoryDetail | null | undefined;
 }
 
-/** `/stories/KEY` of the one host whose project is `project`, read again
- *  every `POLL_INTERVAL_MS` while mounted; idle when no host serves it. */
-export function useStory<R extends HostRecord<PollBodies>>(hosts: R[], project: string, key: string, deps: { fetch: Fetch }): StoryAnswer<R> {
-  const host = scopedHosts(hosts, project)[0] ?? null;
-  const base = host?.base ?? "";
-  const path = `/stories/${encodeURIComponent(key)}`;
-  const { data } = useQuery({
-    queryKey: routeKey(base, path),
+/** `/stories/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
+ *  mounted; null once it answered 404, idle with no key. */
+export function useStoryAt(base: string | null, key: string | null, deps: { fetch: Fetch }) {
+  const path = `/stories/${encodeURIComponent(key ?? "")}`;
+  return useQuery({
+    queryKey: routeKey(base ?? "", path),
     queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, storyDetailSchema),
-    enabled: host != null,
+    enabled: base != null && key != null,
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
+}
+
+/** `/stories/KEY` of the one host whose project is `project`; idle when no
+ *  host serves it. */
+export function useStory<R extends HostRecord<PollBodies>>(hosts: R[], project: string, key: string, deps: { fetch: Fetch }): StoryAnswer<R> {
+  const host = scopedHosts(hosts, project)[0] ?? null;
+  const { data } = useStoryAt(host?.base ?? null, key, deps);
   return { host, story: host == null ? undefined : data };
 }
 
