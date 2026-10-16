@@ -22,6 +22,7 @@ import { Runs } from "./pages/Runs";
 import { StoriesIndex, Story } from "./pages/Story";
 import { TicketPage } from "./pages/Ticket";
 import { Tickets } from "./pages/Tickets";
+import { validateTicketsSearch } from "./tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
@@ -52,7 +53,7 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run", component: RunPage }),
-  pageRoute("/tickets", Tickets),
+  createRoute({ getParentRoute: () => rootRoute, path: "/tickets", validateSearch: validateTicketsSearch, component: Tickets }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
   pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),

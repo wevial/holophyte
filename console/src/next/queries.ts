@@ -11,6 +11,8 @@ import {
   peersSchema,
   runAsksSchema,
   runDetailSchema,
+  runFilesSchema,
+  runTurnsSchema,
   shippedSchema,
   storyDetailSchema,
   ticketDetailSchema,
@@ -107,6 +109,28 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
     queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runDetailSchema),
     enabled: base != null && id != null,
     refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+export function useRunFiles(base: string, id: number, open: boolean, live: boolean, deps: { fetch: Fetch }) {
+  const path = `/runs/${id}/files`;
+  return useQuery({
+    queryKey: [...routeKey(base, path), live],
+    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runFilesSchema),
+    enabled: open,
+    refetchInterval: live ? POLL_INTERVAL_MS : false,
+    staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+export function useRunTurns(base: string, id: number, open: boolean, live: boolean, deps: { fetch: Fetch }) {
+  const path = `/runs/${id}/turns`;
+  return useQuery({
+    queryKey: [...routeKey(base, path), live],
+    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runTurnsSchema),
+    enabled: open,
+    refetchInterval: live ? POLL_INTERVAL_MS : false,
     staleTime: POLL_INTERVAL_MS,
   });
 }
