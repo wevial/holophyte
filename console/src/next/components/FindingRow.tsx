@@ -1,8 +1,13 @@
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
+import { fileTicket } from "../../lib/boardWrites";
 import type { Severity } from "../../lib/findings";
-import type { FindingRowView } from "../findings";
+import { useAction } from "../actions";
+import { filedFate, type FindingRowView, type RowAction, type RowFate } from "../findings";
+import { PollDepsContext } from "../scope";
+import { Btn } from "./Btn";
 import { FactIcon, FoldChevron, FolderIcon } from "./icons";
 import { StateDot, TONE_TEXT } from "./StateDot";
+import { useToast } from "./Toast";
 
 const PILL: Record<Severity, { text: string; className: string }> = {
   must: { text: "P1", className: "bg-p1 text-[#171a2c]" },
@@ -12,11 +17,73 @@ const PILL: Record<Severity, { text: string; className: string }> = {
 
 const lastTwo = (path: string) => path.split("/").filter(Boolean).slice(-2).join("/");
 
-/** One finding, follow-up or advisory thread on a line that folds open to its text, place and fate. */
+const steeredFate = (ticket: string): RowFate => ({
+  state: "running",
+  word: "steered into the next run",
+  line: `steered · ${ticket} reads it on its next run`,
+  tone: "live",
+});
+
+/** What the row's action posts, held by the row so its pending post
+ *  outlives a fold: a taken post sets `done` to the row's new fate over
+ *  the `polled` fate line it replaced, until a poll reads another; a
+ *  refusal says its reason in the toast and leaves the button enabled. */
+function useRowAction(action: RowAction | null, polled: string) {
+  const steer = useAction();
+  const deps = useContext(PollDepsContext);
+  const toast = useToast();
+  const [filing, setFiling] = useState(false);
+  const [taken, setTaken] = useState<{ fate: RowFate; over: string } | null>(null);
+  const setDone = (fate: RowFate) => setTaken({ fate, over: polled });
+  const busy = steer.isPending || filing;
+
+  const press = async () => {
+    if (action == null || busy) return;
+    if (action.kind === "steer") {
+      const said = `Steered ${action.ticket} with the finding.`;
+      const body = { ticket: action.ticket, note: action.note, hint: false };
+      const result = await steer.mutateAsync({ label: "Steer", base: action.base, route: "/actions/steer", body, said });
+      if (result.ok) setDone(steeredFate(action.ticket));
+      else toast(result.detail);
+      return;
+    }
+    setFiling(true);
+    const result = await fileTicket(action.base, action.body, null, deps.fetch, "backlog");
+    setFiling(false);
+    if (result.ok) {
+      toast(`Filed ${result.ticket} in Backlog.`);
+      setDone(filedFate(result.ticket));
+    } else {
+      toast("problems" in result ? (result.problems[0] ?? "The daemon refused the ticket.") : result.error);
+    }
+  };
+  return { busy, done: taken != null && taken.over === polled ? taken.fate : null, press };
+}
+
+function RowActionButton({ action, busy, press }: { action: RowAction; busy: boolean; press: () => Promise<void> }) {
+  const steering = action.kind === "steer";
+  return (
+    <Btn
+      busy={busy}
+      busyLabel={steering ? "Steering…" : "Filing…"}
+      disabled={action.off != null}
+      title={action.off ?? undefined}
+      onClick={action.off != null ? undefined : () => void press()}
+    >
+      {steering ? "Steer into next run" : "File ticket"}
+    </Btn>
+  );
+}
+
+/** One finding, follow-up or advisory thread on a line that folds open to
+ *  its text, place and fate, and its one action. A taken action's fate
+ *  stands while the page is mounted. */
 export function FindingRow({ row, showProject, quiet = false }: { row: FindingRowView; showProject: boolean; quiet?: boolean }) {
   const [open, setOpen] = useState(false);
+  const { busy, done, press } = useRowAction(row.action, row.fate.line);
   const body = useId();
   const pill = row.severity == null ? null : PILL[row.severity];
+  const fate = done ?? row.fate;
   return (
     <li data-finding-row className="border-b border-rule-2">
       <button
@@ -46,7 +113,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
           </span>
         )}
         {row.path != null && <span data-path className="min-w-0 font-mono text-[12px] [overflow-wrap:anywhere] text-ink-3">{lastTwo(row.path)}</span>}
-        <StateDot state={row.fate.state} label={row.fate.word} hideWord tone={quiet ? "ink-3" : undefined} />
+        <StateDot state={fate.state} label={fate.word} hideWord tone={quiet ? "ink-3" : undefined} />
       </button>
       <div id={body} hidden={!open} className="pb-4 pl-[142px] pr-1 pt-0.5 max-[720px]:pl-1">
         {open && (
@@ -54,13 +121,18 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
             <div className="min-w-0 font-plex text-[14px] leading-[1.5] [overflow-wrap:anywhere]">
               {row.text !== "" && <p data-text className="whitespace-pre-line text-ink-2">{row.text}</p>}
               <p data-place className="mt-1 font-mono text-[12px] text-ink-3">{row.place}</p>
-              <p data-fate className={`mt-1 font-mono text-[12px] font-medium leading-[1.4] ${TONE_TEXT[row.fate.tone]}`}>{row.fate.line}</p>
+              <p data-fate className={`mt-1 font-mono text-[12px] font-medium leading-[1.4] ${TONE_TEXT[fate.tone]}`}>
+                {done == null ? fate.line : <span className="stamp">{fate.line}</span>}
+              </p>
             </div>
-            {row.href != null && (
-              <a href={row.href} className="border-b border-rule pb-0.5 font-mono text-[12px] font-medium leading-[1.3] text-ink-2 no-underline hover:text-ink">
-                Open run
-              </a>
-            )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {row.href != null && (
+                <a href={row.href} className="border-b border-rule pb-0.5 font-mono text-[12px] font-medium leading-[1.3] text-ink-2 no-underline hover:text-ink">
+                  Open run
+                </a>
+              )}
+              {row.action != null && done == null && <RowActionButton action={row.action} busy={busy} press={press} />}
+            </div>
           </div>
         )}
       </div>

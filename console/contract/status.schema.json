@@ -518,7 +518,6 @@
         "daemon",
         "supervisor",
         "thresholds",
-        "actions",
         "config_edit",
         "runs",
         "queued"

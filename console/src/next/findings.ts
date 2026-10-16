@@ -1,9 +1,10 @@
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
 import type { AdvisoryFinding, Findings, FindingsRun, FollowUpRow, Status, StatusRun } from "../lib/contract.gen";
+import { ACTIONS_OFF } from "../lib/actions";
 import { projectName } from "../lib/derive";
 import { findingKey, findingParts, findingPath, findingsHistory, severityOf, type HistoryFinding, type Severity } from "../lib/findings";
-import type { HostRecord } from "../lib/hosts";
+import { underHost, type HostRecord } from "../lib/hosts";
 import type { LedgerRow } from "../lib/ledger";
 import { phaseLabel } from "../lib/runs";
 import { prLabel } from "../lib/shipped";
@@ -21,13 +22,25 @@ import { stateOf, type State, type Tone } from "./state";
 export type Idle = "stale" | "failed" | "paused" | "not_running";
 
 /** What became of a row, as its icon and its one fate line. */
-interface RowFate {
+export interface RowFate {
   state: State;
   /** The icon's accessible name. */
   word: string;
   line: string;
   tone: Tone;
 }
+
+export const filedFate = (ticket: string): RowFate => ({ state: "ready_to_merge", word: "filed", line: `filed as ${ticket} · Backlog`, tone: "live" });
+
+/** The title of "File ticket" on a project daemon, which has no `POST /tickets`. */
+export const HOST_ONLY = "Only a host daemon files tickets";
+
+/** The row's one button: steer an open finding nobody is fixing into its
+ *  ticket's next run, or file an advisory thread as a Backlog ticket, at
+ *  the row's daemon `base`. `off` is the title of a button drawn disabled. */
+export type RowAction =
+  | { kind: "steer"; base: string; ticket: string; note: string; off: string | null }
+  | { kind: "file"; base: string; body: string; off: string | null };
 
 /** One folding row of the page, built from a finding, a follow-up or an advisory thread. */
 export interface FindingRowView {
@@ -42,6 +55,7 @@ export interface FindingRowView {
   fate: RowFate;
   /** The classic run view, on finding rows only. */
   href: string | null;
+  action: RowAction | null;
 }
 
 interface TaggedFinding {
@@ -180,7 +194,7 @@ function followUpFate(row: FollowUpRow, run: FindingsRun | undefined): RowFate {
       return { ...waiting, line: `becomes a Backlog draft when ${when} merges` };
     }
     case "filed":
-      return { state: "ready_to_merge", word: "filed", line: `filed as ${row.filed_as ?? "a ticket"} · Backlog`, tone: "live" };
+      return filedFate(row.filed_as ?? "a ticket");
     case "duplicate":
       return { state: "ready_to_merge", word: "already filed", line: `already in Backlog as ${row.duplicate_of ?? "a ticket"}`, tone: "ink-2" };
     case "ledger":
@@ -215,7 +229,15 @@ function findingRow(project: string, base: string, run: FindingsRun, found: Entr
     place: `${placeOf(path, finding.line)} · ${run.ticket} · round ${found.round}`,
     fate,
     href: classicHref(`#run=${run.run}&daemon=${encodeURIComponent(base)}`),
+    action: null,
   };
+}
+
+/** Steering an open finding hands it, as it stands, to its ticket's next run as an amendment. */
+function steerAction(base: string, ticket: string, found: Entry, actions: boolean): RowAction {
+  const { finding } = found.entry;
+  const note = `Review finding from round ${found.round}, still open: ${placeOf(findingPath(finding), finding.line)} — ${finding.message}`;
+  return { kind: "steer", base, ticket, note, off: actions ? null : ACTIONS_OFF };
 }
 
 /** The finding a follow-up came from, when its run's rounds still hold it. */
@@ -237,11 +259,23 @@ function followUpRow(project: string, base: string, row: FollowUpRow, run: Findi
     place: row.path == null ? row.ticket : `${placeOf(row.path, row.line)} · ${row.ticket}`,
     fate: followUpFate(row, run),
     href: null,
+    action: null,
   };
 }
 
-function advisoryRow(project: string, base: string, run: FindingsRun, advisory: AdvisoryFinding, index: number): FindingRowView {
+// A bot thread's summary leads with the link to its thread.
+const THREAD_LINK_RE = /^\s*https?:\/\/\S+?:\s+/;
+
+/** The Backlog ticket an advisory thread files as: its first line as the title, the whole thread, and where it was raised. */
+function threadTicket(run: FindingsRun, message: string): string {
+  const head = message.replace(THREAD_LINK_RE, "").trim().split("\n")[0]!.trim();
+  const where = run.pr_url ? ` on ${prLabel(run.pr_url)}` : "";
+  return `# ${head}\n\n## Summary\n\n${message.trim()}\n\nRaised as an advisory thread${where} for ${run.ticket}.\n`;
+}
+
+function advisoryRow(project: string, base: string, run: FindingsRun, advisory: AdvisoryFinding, index: number, actions: boolean): FindingRowView {
   const pr = run.pr_url ? `${prLabel(run.pr_url)} · ` : "";
+  const off = !actions ? ACTIONS_OFF : underHost(base) ? null : HOST_ONLY;
   return {
     key: `${base} ${run.run} advisory ${index}`,
     severity: null,
@@ -252,6 +286,7 @@ function advisoryRow(project: string, base: string, run: FindingsRun, advisory: 
     place: `${pr}${run.ticket} · advisory`,
     fate: { state: "queued", word: "advisory", line: "noted, not acted on", tone: "wait" },
     href: null,
+    action: { kind: "file", base, body: threadTicket(run, advisory.message), off },
   };
 }
 
@@ -260,6 +295,7 @@ const newestRound = (run: FindingsRun) => Math.max(0, ...run.rounds.map((round) 
 function addHost(page: FindingsPage, host: Host, answer: Findings, since: number): void {
   const project = host.project == null ? host.label : projectName(host.project);
   const status = host.contract_error ? undefined : (host.status ?? undefined);
+  const actions = host.status?.actions === true;
   for (const run of answer.runs) {
     const windowed = run.rounds.filter((round) => inWindow(round, since));
     page.reviews += windowed.length;
@@ -279,13 +315,15 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
       if (entry.fate === "open" && !merged) {
         const idle = idleOf(run, live);
         const fixing = live.find((each) => each.state === "running")?.run;
-        page.open.push({ ...tagged, idle, row: findingRow(project, host.base, run, found, openFate(idle, fixing)) });
+        const row = findingRow(project, host.base, run, found, openFate(idle, fixing));
+        if (idle != null) row.action = steerAction(host.base, run.ticket, found, actions);
+        page.open.push({ ...tagged, idle, row });
       } else {
         page.settled.push({ ...tagged, row: findingRow(project, host.base, run, found, settledFate(found, merged)) });
       }
     }
     run.advisories.forEach((advisory, index) => {
-      page.followUps.push({ pending: false, at: newestRound(run), row: advisoryRow(project, host.base, run, advisory, index) });
+      page.followUps.push({ pending: false, at: newestRound(run), row: advisoryRow(project, host.base, run, advisory, index, actions) });
     });
   }
   for (const row of answer.follow_ups) {
