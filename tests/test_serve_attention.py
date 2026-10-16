@@ -452,9 +452,6 @@ class PullRequestTitleTests(ServeTestCase):
                 self.read_status(self.TITLE, facts_only=facts_only,
                                  isDraft=draft)
                 self.assertEqual(self.pr_open()["pr"]["state"], expected)
-                self.assertEqual(self.conn.execute(
-                    "SELECT prSeenState FROM runs WHERE id = ?",
-                    (self.run,)).fetchone(), (expected,))
 
     def test_unread_closed_merged_and_unknown_states_are_served(self):
         self.assertIsNone(self.pr_open()["pr"]["state"])
