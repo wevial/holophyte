@@ -30,19 +30,15 @@ def declared(reply):
             for number, reason in DECLARED_RE.findall(str(reply or ""))]
 
 
-def question(task_id, criteria):
-    first = "implementer: " + "; ".join(
-        f"criterion {number} cannot be met as written: {reason}"
-        for number, reason in criteria)
-    return first, f"{first}\n{ANSWERS.format(key=task_id)}"
-
-
 def park(conn, run_id, provider, task_id, wt, turn, reply, timed_out):
     criteria = declared(reply)
     if timed_out or not criteria:
         return
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    first, asked = question(task_id, criteria)
+    first = "implementer: " + "; ".join(
+        f"criterion {number} cannot be met as written: {reason}"
+        for number, reason in criteria)
+    asked = f"{first}\n{ANSWERS.format(key=task_id)}"
     print(f"[holo2] {first}; parked at {head[:12]} for the operator")
     if conn is None or run_id is None:
         print(f"[holo2] no store to park the run in:\n{asked}")
