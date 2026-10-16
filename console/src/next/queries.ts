@@ -109,8 +109,6 @@ export interface DayLedger {
   entries: LedgerEntry[];
 }
 
-const ledgerOrNone = (fetch: Fetch, url: string) => orNone(fetch, url, ledgerSchema);
-
 /** Every `/ledger` entry of every answering host since local midnight
  *  before `now`, of any kind, so each answer also carries its outages. */
 export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): DayLedger {
@@ -119,7 +117,7 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
-      queryFn: () => ledgerOrNone(deps.fetch, `${host.base}${path}`),
+      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
     })),
