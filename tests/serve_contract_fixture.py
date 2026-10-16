@@ -9,6 +9,7 @@ import holophyte.serve.views
 import store
 from holophyte.config.project import Project
 from store.operator_notes import consume
+from store.steer_notes import steer
 from tests.phase_fixture import park_run
 
 NOW = 1_750_000_000_000
@@ -73,6 +74,7 @@ def contract_answers(case):
             title="Unestimated ticket", acceptance_criteria=["Run without an estimate"],
             verification_commands=["echo ok"], time_box_ms=None)
         store.tickets.transition(conn, ticket, "in_flight")
+        steer(conn, ticket, "Keep the estimate", "operator", now=NOW - 1)
         unestimated_run = store.claim(conn, project, ticket, now=NOW)
         store.mark_note_posted(conn, store.record_note(
             conn, ticket, "escalation", "Needs an estimate", "estimate",

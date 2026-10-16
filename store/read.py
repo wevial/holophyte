@@ -279,6 +279,26 @@ def ticket_notes(conn, ticket_id):
 
 
 @dataclass(frozen=True)
+class TicketRun:
+    id: int
+    attempt: int
+    phase: str
+    outcome: str | None
+    rounds: int
+    prUrl: str | None
+    startedAt: int
+    endedAt: int | None
+
+
+def ticket_runs(conn, ticket_id):
+    return [TicketRun(*row) for row in conn.execute(
+        "SELECT r.id, r.attempt, r.phase, r.outcome,"
+        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
+        " r.prUrl, r.startedAt, r.endedAt FROM runs r WHERE r.ticketId = ?"
+        " ORDER BY r.attempt DESC, r.id DESC", (ticket_id,))]
+
+
+@dataclass(frozen=True)
 class ReviewRound:
     id: int
     linearIdentifier: str

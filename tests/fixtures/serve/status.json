@@ -34,29 +34,31 @@
   "now": 1750000000000,
   "toil": {
     "24h": {
-      "interventions": 1,
+      "interventions": 2,
       "merged": 0,
       "per_merge": null,
       "by_action": {
-        "approve": 1
+        "approve": 1,
+        "steer": 1
       },
       "by_actor": {
         "maintainer": 0,
-        "operator": 1,
+        "operator": 2,
         "supervisor": 0,
         "unknown": 0
       }
     },
     "7d": {
-      "interventions": 1,
+      "interventions": 2,
       "merged": 0,
       "per_merge": null,
       "by_action": {
-        "approve": 1
+        "approve": 1,
+        "steer": 1
       },
       "by_actor": {
         "maintainer": 0,
-        "operator": 1,
+        "operator": 2,
         "supervisor": 0,
         "unknown": 0
       }
