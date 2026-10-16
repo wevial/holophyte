@@ -21,7 +21,7 @@ import { stateOf, type State, type Tone } from "./state";
 export type Idle = "stale" | "failed" | "paused" | "not_running";
 
 /** What became of a row, as its icon and its one fate line. */
-export interface RowFate {
+interface RowFate {
   state: State;
   /** The icon's accessible name. */
   word: string;
@@ -61,7 +61,6 @@ export interface OpenFinding extends TaggedFinding {
 }
 
 interface FollowUp {
-  project: string;
   pending: boolean;
   at: number;
   row: FindingRowView;
@@ -293,12 +292,12 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
       }
     }
     run.advisories.forEach((advisory, index) => {
-      page.followUps.push({ project, pending: false, at: newestRound(run), row: advisoryRow(project, host.base, run, advisory, index) });
+      page.followUps.push({ pending: false, at: newestRound(run), row: advisoryRow(project, host.base, run, advisory, index) });
     });
   }
   for (const row of answer.follow_ups) {
     const run = answer.runs.find((each) => each.run === row.run);
-    page.followUps.push({ project, pending: row.state === "pending", at: row.created_ms, row: followUpRow(project, host.base, row, run) });
+    page.followUps.push({ pending: row.state === "pending", at: row.created_ms, row: followUpRow(project, host.base, row, run) });
     if (row.kind === "feature" && row.state === "pending") page.drafts += 1;
   }
 }
