@@ -30,6 +30,8 @@ export interface RowFate {
   tone: Tone;
 }
 
+export const filedFate = (ticket: string): RowFate => ({ state: "ready_to_merge", word: "filed", line: `filed as ${ticket} · Backlog`, tone: "live" });
+
 /** The title of "File ticket" on a project daemon, which has no `POST /tickets`. */
 export const HOST_ONLY = "Only a host daemon files tickets";
 
@@ -192,7 +194,7 @@ function followUpFate(row: FollowUpRow, run: FindingsRun | undefined): RowFate {
       return { ...waiting, line: `becomes a Backlog draft when ${when} merges` };
     }
     case "filed":
-      return { state: "ready_to_merge", word: "filed", line: `filed as ${row.filed_as ?? "a ticket"} · Backlog`, tone: "live" };
+      return filedFate(row.filed_as ?? "a ticket");
     case "duplicate":
       return { state: "ready_to_merge", word: "already filed", line: `already in Backlog as ${row.duplicate_of ?? "a ticket"}`, tone: "ink-2" };
     case "ledger":

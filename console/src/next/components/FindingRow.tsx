@@ -2,7 +2,7 @@ import { useContext, useId, useState } from "react";
 import { fileTicket } from "../../lib/boardWrites";
 import type { Severity } from "../../lib/findings";
 import { useAction } from "../actions";
-import type { FindingRowView, RowAction, RowFate } from "../findings";
+import { filedFate, type FindingRowView, type RowAction, type RowFate } from "../findings";
 import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { FactIcon, FoldChevron, FolderIcon } from "./icons";
@@ -23,8 +23,6 @@ const steeredFate = (ticket: string): RowFate => ({
   line: `steered · ${ticket} reads it on its next run`,
   tone: "live",
 });
-
-const filedFate = (ticket: string): RowFate => ({ state: "ready_to_merge", word: "filed", line: `filed as ${ticket} · Backlog`, tone: "live" });
 
 /** The row's button and what it posts: a taken post hands `onDone` the
  *  row's new fate, a refusal says its reason in the toast and leaves the
