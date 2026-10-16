@@ -165,3 +165,14 @@ test("a host daemon with no projects counts as answered, so #/stories still open
   await mount("#/stories", peersFetch(DEMO, { [DEMO]: emptyRoot }));
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("No stories in all projects");
 });
+
+test("a peer that asks for its token does not hold #/stories back from a listed story", async () => {
+  const project = { ...working, project: "/srv/dev/demo", runs: [], queued: [], now: NOW };
+  const polls = peersFetch(DEMO, { [DEMO]: { status: project, attention: { level: "none", now: NOW, project: "/srv/dev/demo", items: [] } }, [WRITER]: { status: project, attention: { level: "none", now: NOW, items: [] } } });
+  await mount("#/stories", async (url) => {
+    if (url.startsWith(`${WRITER}/`)) return new Response("token required", { status: 401 });
+    if (url === `${DEMO}/board`) return Response.json({ ...pinned, stories: demoStories });
+    return polls(url);
+  });
+  expect(window.location.hash).toBe("#/stories/demo/DEMO-12");
+});

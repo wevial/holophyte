@@ -302,9 +302,8 @@ export interface ListedStory extends BoardStory {
 }
 
 /** Every story on the `/board` of each of `hosts`, with its host's project
- *  name, ordered by key. `answered` is whether every host has settled: its
- *  `/status` poll failed, it answered as a host daemon with no project, or
- *  its board answered or failed. */
+ *  name, ordered by key. `answered` is whether every board asked has
+ *  answered or failed; a host with no `/status` has no board to wait on. */
 export function useBoardStories(hosts: HostRecord<PollBodies>[], deps: { fetch: Fetch }): { answered: boolean; stories: ListedStory[] } {
   const { asked, results } = useBoardResults(hosts, deps);
   const stories = asked.flatMap((host, index) => {
@@ -313,7 +312,6 @@ export function useBoardStories(hosts: HostRecord<PollBodies>[], deps: { fetch: 
     return board && project != null ? board.stories.map((story) => ({ ...story, project: projectName(project) })) : [];
   });
   stories.sort((a, b) => a.ticket.localeCompare(b.ticket, undefined, { numeric: true }));
-  const settled = asked.every((_, index) => results[index]?.status !== "pending");
-  const answered = settled && hosts.every((host) => host.status != null || host.error != null || host.host_status != null);
+  const answered = asked.every((_, index) => results[index]?.status !== "pending");
   return { answered, stories };
 }
