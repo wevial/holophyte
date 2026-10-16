@@ -105,7 +105,7 @@ function PageLink({
     <Link
       to={to}
       search={keepScope}
-      activeOptions={{ exact: true, includeSearch: false }}
+      activeOptions={{ exact: to === "/", includeSearch: false }}
       aria-label={badge > 0 ? `${label}, ${badge} need you` : label}
       title={folded ? label : undefined}
       className={`relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:border-act data-[status=active]:bg-act-wash data-[status=active]:text-act ${

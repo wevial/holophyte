@@ -16,6 +16,14 @@ export type ColumnId = "backlog" | "ready" | "in_flight" | "needs_you" | "done";
 
 export const COLUMN_IDS: ColumnId[] = ["backlog", "ready", "in_flight", "needs_you", "done"];
 
+export const COLUMN_HEADS: Record<ColumnId, { label: string; state: State }> = {
+  backlog: { label: "Backlog", state: "backlog" },
+  ready: { label: "Ready", state: "queued" },
+  in_flight: { label: "In flight", state: "running" },
+  needs_you: { label: "Needs you", state: "needs_you" },
+  done: { label: "Done today", state: "merged" },
+};
+
 /** One ticket of one host; `state` is its `/board` state, or `merged` for
  *  a merge of today, which `/board` never lists. */
 export interface TicketCard {
@@ -28,6 +36,7 @@ export interface TicketCard {
   /** The ticket's pull request park while it is no Needs you entry. */
   park: AttentionItem | null;
   run: StatusRun | null;
+  runId: number | null;
   staleMs: number;
   queuedReason: string | null;
   held: boolean;
@@ -151,6 +160,7 @@ export function useTicketBoard(): TicketBoard {
           need: needs.get(ticket.ticket) ?? null,
           park: parks.get(ticket.ticket) ?? null,
           run: runs.get(ticket.ticket) ?? null,
+          runId: runs.get(ticket.ticket)?.id ?? ticket.run,
           staleMs: status?.thresholds.heartbeat_stale_ms ?? Infinity,
           queuedReason: queued.get(ticket.ticket) ?? null,
           held: status?.admission === "held",
@@ -166,7 +176,7 @@ export function useTicketBoard(): TicketBoard {
   for (const row of merged) {
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, key: row.ticket, title: row.title ?? "", project: row.project, state: "merged", need: null,
-      park: null, run: null, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
+      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);
   }
