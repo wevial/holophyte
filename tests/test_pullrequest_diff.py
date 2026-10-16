@@ -1,4 +1,3 @@
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from holophyte.pr.pullrequest import _written_pr_text
+from tests.host_fixture import git
 
 
 class WrittenPullRequestDiffTests(unittest.TestCase):
@@ -20,14 +20,6 @@ class WrittenPullRequestDiffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             origin, wt, other = (root / name for name in ("origin.git", "wt", "other"))
-
-            def git(cwd, *args):
-                return subprocess.run(
-                    ["git", "-c", "user.name=Test", "-c",
-                     "user.email=test@example.invalid", "-c",
-                     "commit.gpgsign=false", *args],
-                    cwd=cwd, check=True, capture_output=True, text=True,
-                ).stdout.strip()
 
             def commit(cwd, name):
                 (cwd / name).write_text(f"{name}\n")
