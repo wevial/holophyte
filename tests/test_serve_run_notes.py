@@ -42,12 +42,15 @@ class RunNotesTests(ServeTestCase):
         store.set_phase(self.conn, run, "working", now=at)
         return run
 
-    def detail(self, run):
+    def details(self, *runs):
         self.conn.commit()
         self.start()
-        code, _, body = self.request("GET", f"/runs/{run}")
-        self.assertEqual(code, 200, body)
-        return body
+        bodies = []
+        for run in runs:
+            code, _, body = self.request("GET", f"/runs/{run}")
+            self.assertEqual(code, 200, body)
+            bodies.append(body)
+        return bodies
 
     def test_failed_run_has_its_kind_and_cut_reason_parked_run_its_park_kind(self):
         failed = self.claim(self.ticket("DEMO-7"), self.now - 10 * MIN)
@@ -60,8 +63,8 @@ class RunNotesTests(ServeTestCase):
                  pr_url="https://example.test/pull/8", park_kind="ci",
                  now=self.now - 4 * MIN)
 
-        failed_run = self.detail(failed)["run"]
-        parked_run = self.detail(parked)["run"]
+        failed_run, parked_run = (body["run"]
+                                  for body in self.details(failed, parked))
 
         self.assertEqual(failed_run["failure_kind"], "verify")
         self.assertEqual(failed_run["outcome_reason"], reason[:400])
@@ -75,19 +78,20 @@ class RunNotesTests(ServeTestCase):
         store.steer_notes.steer(self.conn, ticket, "before any run",
                                 "maintainer", now=self.now - 30 * MIN)
         abandoned = self.claim(ticket, self.now - 20 * MIN)
-        finish_run(self.conn, abandoned, "abandoned", "operator abandoned",
-                   now=self.now - 15 * MIN)
-        live = self.claim(ticket, self.now - 10 * MIN, queued=False)
         hint = store.steer_notes.steer(self.conn, ticket, "reuse the lease query",
                                        "maintainer", hint=True,
-                                       now=self.now - 9 * MIN)
+                                       now=self.now - 15 * MIN)
+        finish_run(self.conn, abandoned, "abandoned", "operator abandoned",
+                   now=self.now - 12 * MIN)
+        live = self.claim(ticket, self.now - 10 * MIN, queued=False)
         read_at = self.now - 8 * MIN + 17 * SEC
         store.steer_notes.consume(self.conn, [hint.id], live, now=read_at)
         amendment = store.steer_notes.steer(
             self.conn, ticket, "also cover the empty case", "maintainer",
             now=self.now - 2 * MIN, interrupt=True)
 
-        notes = self.detail(live)["steer_notes"]
+        (body,) = self.details(live)
+        notes = body["steer_notes"]
 
         self.assertEqual([note["note"] for note in notes],
                          ["reuse the lease query", "also cover the empty case"])
@@ -95,7 +99,8 @@ class RunNotesTests(ServeTestCase):
         self.assertEqual(
             {k: first[k] for k in ("id", "kind", "run", "consumed_by",
                                    "consumed_ms", "interrupt", "withdrawn")},
-            {"id": hint.id, "kind": "hint", "run": live, "consumed_by": live,
+            {"id": hint.id, "kind": "hint", "run": abandoned,
+             "consumed_by": live,
              "consumed_ms": read_at, "interrupt": False, "withdrawn": False})
         self.assertEqual(
             {k: second[k] for k in ("id", "kind", "run", "consumed_by",
@@ -103,7 +108,7 @@ class RunNotesTests(ServeTestCase):
             {"id": amendment.id, "kind": "amendment", "run": live,
              "consumed_by": None, "consumed_ms": None, "interrupt": True,
              "withdrawn": False})
-        self.assertEqual(first["at"], self.now - 9 * MIN)
+        self.assertEqual(first["at"], self.now - 15 * MIN)
         self.assertEqual(first["author"], "maintainer")
 
 
