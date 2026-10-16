@@ -870,7 +870,7 @@ What needs the operator, computed where the store is:
    "pr_url": null, "park_kind": "question", "pr": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
    "pr_url": "https://github.com/example/repo/pull/2170", "park_kind": "pull_request", "reason": "…", "asked_ms": 1788449000000,
-   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…"},
+   "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…", "state": "ready"},
    "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
@@ -913,8 +913,11 @@ unresolved (the string `"100+"` when the read that counted it saw more
 threads than the first page of 100 it counts over,
 `runs.prSeenOpenThreadsFloor`), and `title`, the pull
 request's title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
-`prSeenOpenThreads`, `prSeenTitle`); all five facts are null for a run
-never polled, and `open_threads` for one polled before it was recorded. The
+`prSeenOpenThreads`, `prSeenTitle`), and `state` (`runs.prSeenState`):
+`draft`, `ready` (open and ready for review), `closed` (closed without
+merging), or `merged`. State is null when the read could not determine it.
+All six facts are null for a run never polled, and `open_threads` for one
+polled before it was recorded. The
 item's own `title` is the ticket's title, which the console shows when
 `pr.title` is null. A `failed` item's `attempt` is the run's 1-based
 attempt number. Its `triage` is the run's cause question under

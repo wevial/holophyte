@@ -143,7 +143,7 @@ def _pull_request_facts(ticket):
             "review": ticket.prSeenReview,
             "threads": ticket.prSeenThreads,
             "open_threads": _open_threads(ticket),
-            "title": ticket.prSeenTitle}
+            "title": ticket.prSeenTitle, "state": ticket.prSeenState}
 
 
 def _open_threads(ticket):

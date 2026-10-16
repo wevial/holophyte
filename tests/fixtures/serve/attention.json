@@ -17,7 +17,8 @@
         "review": null,
         "threads": null,
         "open_threads": null,
-        "title": null
+        "title": null,
+        "state": null
       },
       "level": "attention"
     }
