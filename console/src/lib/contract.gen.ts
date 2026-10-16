@@ -104,7 +104,7 @@ export const statusSchema = z.looseObject({
   daemon: daemonSchema,
   supervisor: supervisorSchema,
   thresholds: thresholdsSchema,
-  actions: z.boolean(),
+  actions: z.boolean().optional(),
   config_edit: z.boolean(),
   runs: z.array(statusRunSchema),
   queued: z.array(queuedTicketSchema),

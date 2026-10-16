@@ -45,9 +45,9 @@ const board: Board = {
 
 let requested: string[] = [];
 
-/** DEMO runs DEMO-3 as run 9, with `actions` on its `/status` as given and
- *  every `POST /actions/...` answered by `act`. */
-async function mount(key: string, { actions = true, act: answer }: { actions?: boolean; act?: Fetch } = {}) {
+/** DEMO runs DEMO-3 as run 9, with `actions` on its `/status` as given, or
+ *  absent for null, and every `POST /actions/...` answered by `act`. */
+async function mount(key: string, { actions = true, act: answer }: { actions?: boolean | null; act?: Fetch } = {}) {
   window.location.hash = `#/tickets/demo/${key}`;
   const polls = fleet({ items: [], runs: [{ ...run(9, "DEMO-3"), phase: "working" }] }, { items: [] });
   requested = [];
@@ -56,7 +56,8 @@ async function mount(key: string, { actions = true, act: answer }: { actions?: b
     if (url.includes("/actions/") && answer != null) return answer(url, init);
     if (url === `${DEMO}/status`) {
       const status = (await (await polls(url)).json()) as Status;
-      return Response.json({ ...status, actions });
+      const { actions: _served, ...rest } = status;
+      return Response.json(actions == null ? rest : { ...rest, actions });
     }
     if (url === `${DEMO}/board`) return Response.json(board);
     const ticket = url.startsWith(`${DEMO}/tickets/`) ? decodeURIComponent(url.slice(`${DEMO}/tickets/`.length)) : null;
@@ -153,12 +154,30 @@ test("a refused steer keeps the box open with the typed note, shows the daemon's
   expect(toast()).toBe("");
 });
 
-test("Steer is disabled with ACTIONS_OFF on a host whose actions are off, and a merged ticket draws no Steer button", async () => {
-  await mount("DEMO-3", { actions: false });
+test("Steer is disabled with ACTIONS_OFF on a host whose /status has no actions, and a merged ticket draws no Steer button", async () => {
+  await mount("DEMO-3", { actions: null });
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-3 title");
   expect(steerButton().hasAttribute("disabled")).toBe(true);
   expect(steerButton().getAttribute("title")).toBe(ACTIONS_OFF);
   cleanup();
   await mount("DEMO-10");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-10 title");
   expect(screen.queryByRole("button", { name: "Steer" })).toBeNull();
+});
+
+test("a draft stays with its ticket: moving to another ticket's page closes the box and opens it there empty", async () => {
+  const action = fakeFetch({ ok: true, detail: "DEMO-2 amended" });
+  await mount("DEMO-3", { act: action.fetchImpl });
+  await press("Steer", document.body);
+  await type("reuse --act");
+  await act(async () => {
+    window.location.hash = "#/tickets/demo/DEMO-2";
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  for (let round = 0; round < 6; round += 1) await act(settle);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-2 title");
+  expect(screen.queryByRole("region", { name: "Steer · amend this ticket" })).toBeNull();
+  await press("Steer", document.body);
+  expect((within(box()).getByRole("textbox", { name: "Steer note" }) as HTMLTextAreaElement).value).toBe("");
+  expect(action.seen).toEqual([]);
 });

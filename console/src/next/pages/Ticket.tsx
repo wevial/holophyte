@@ -66,7 +66,7 @@ const SETTLED = new Set(["merged", "abandoned"]);
 export function TicketPage() {
   const { project, key } = useParams({ from: "/tickets/$project/$key" });
   const page = useTicketPage(project, key);
-  const [steering, setSteering] = useState(false);
+  const [steeringKey, setSteeringKey] = useState<string | null>(null);
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "loading") return <Page project={project} ticketKey={key} />;
   if (page.kind === "not_mirrored") {
@@ -86,6 +86,7 @@ export function TicketPage() {
   const first = [...ticket.revisions].sort((a, b) => a.revision - b.revision)[0];
   const waitsOn = page.card?.waitsOn ?? [];
   const actionsOn = page.host.status?.actions === true;
+  const steering = steeringKey === `${project}/${key}`;
   return (
     <Page project={project} ticketKey={key}>
       <div className="border-b border-rule pb-3">
@@ -95,7 +96,7 @@ export function TicketPage() {
           </h1>
           <div data-ticket-actions className="flex flex-wrap gap-2">
             {!SETTLED.has(ticket.status) && (
-              <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={() => setSteering((open) => !open)}>
+              <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={() => setSteeringKey(steering ? null : `${project}/${key}`)}>
                 Steer
               </Btn>
             )}
@@ -104,7 +105,7 @@ export function TicketPage() {
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} base={page.host.base} />}
       </div>
       {steering && actionsOn && !SETTLED.has(ticket.status) && (
-        <SteerBox ticketKey={key} base={page.host.base} liveRun={page.liveRun} onClose={() => setSteering(false)} />
+        <SteerBox key={`${project}/${key}`} ticketKey={key} base={page.host.base} liveRun={page.liveRun} onClose={() => setSteeringKey(null)} />
       )}
       <div className="mt-3.5 grid border border-rule bg-paper min-[860px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 border-b border-rule px-8 pb-8 pt-[22px] max-[720px]:px-5 min-[860px]:border-b-0 min-[860px]:border-r">
