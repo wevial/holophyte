@@ -137,7 +137,7 @@ export function CardActions({
   const { item } = entry;
   if (item.kind === UNREACHABLE || host == null) return null;
   const run = num(item.run);
-  const runTarget = run == null ? null : runPage(host, run);
+  const runTarget = run == null || host.status == null ? null : runPage(host.status.project, run);
   const ticket = str(item.ticket);
   const ticketUrl = str(item.ticket_url);
   const prUrl = str(item.pr_url);

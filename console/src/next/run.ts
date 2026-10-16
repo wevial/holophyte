@@ -29,11 +29,9 @@ export type RunPage =
       stage: { label: string; sub: string | null };
     };
 
-/** Run `id`'s page as a `Link` target that keeps the sidebar's scope; null
- *  while its host has not answered `/status` and so has no project name. */
-export function runPage(host: { status?: { project: string } | null }, id: number) {
-  const project = host.status?.project;
-  if (project == null) return null;
+/** Run `id`'s page, on the project at path `project`, as a `Link` target
+ *  that keeps the sidebar's scope. */
+export function runPage(project: string, id: number) {
   return { to: "/runs/$project/$run", params: { project: projectName(project), run: String(id) }, search: keepScope } as const;
 }
 

@@ -28,7 +28,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
   const quiet = row.state === "merged" || row.state === "abandoned";
   const need = NEEDS_YOU.has(row.state);
   const host = useConsolePeers().hosts.find((each) => each.base === row.base);
-  const target = host == null ? null : runPage(host, row.id);
+  const target = host?.status == null ? null : runPage(host.status.project, row.id);
   const props = {
     "aria-label": `Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`,
     "data-run": row.id,
