@@ -44,6 +44,7 @@ from holophyte.serve.serve_config import (
     require_tomlkit,
     write_config,
 )
+from holophyte.serve.serve_history import history
 from holophyte.serve.serve_levers import LEVERS
 from holophyte.serve.serve_merge import (
     MERGE_ACTION,
@@ -108,7 +109,7 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".map": "application/json"}
 OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
-JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger",
+JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history",
                         "/attention", "/board", "/report"})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
@@ -252,7 +253,7 @@ def window_report(project, query):
 
 
 QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
-                "/report": window_report}
+                "/history": history, "/report": window_report}
 
 
 def shaped_route(path):

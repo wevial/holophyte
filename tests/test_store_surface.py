@@ -300,6 +300,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # route's park facts.
                                                     "park_facts",
                                                     "recent_failed_runs",
+                                                    # HOLO-331: `/history`'s
+                                                    # open and recent runs.
+                                                    "recent_runs",
                                                     # HOLO-109: a run's chain
                                                     # of its ticket's runs.
                                                     "run_chains",
