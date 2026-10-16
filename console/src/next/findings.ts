@@ -25,18 +25,18 @@ export interface OpenFinding {
   idle: Idle | null;
 }
 
-export interface TaggedFinding {
+interface TaggedFinding {
   project: string;
   ticket: string;
   run: number;
   entry: HistoryFinding;
 }
 
-export type FollowUp =
+type FollowUp =
   | { project: string; kind: "row"; row: FollowUpRow }
   | { project: string; kind: "advisory"; ticket: string; run: number; advisory: AdvisoryFinding };
 
-export interface CleanReview {
+interface CleanReview {
   project: string;
   ticket: string;
   run: number;

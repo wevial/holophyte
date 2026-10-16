@@ -38,7 +38,7 @@ function settledSentence(page: FindingsPage): string {
   return `No open findings. ${reviews} raised ${word(page.findings)} ${plural(page.findings, "finding")}, ${settled}.`;
 }
 
-export function verdictOf(page: FindingsPage): { sentence: string; state: State } {
+function verdictOf(page: FindingsPage): { sentence: string; state: State } {
   const drafts =
     page.drafts === 0
       ? ""
