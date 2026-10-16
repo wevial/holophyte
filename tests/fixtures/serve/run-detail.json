@@ -9,6 +9,9 @@
     "started_ms": 1750000000000,
     "ended_ms": null,
     "outcome": null,
+    "outcome_reason": null,
+    "failure_kind": null,
+    "park_kind": null,
     "elapsed_ms": 120000,
     "working_ms": 0,
     "agent_ms": 0,
@@ -128,5 +131,16 @@
         ]
       }
     ]
-  }
+  },
+  "steer_notes": [],
+  "criteria": [
+    {
+      "n": 1,
+      "text": "Given input, then it is validated",
+      "status": "not_met",
+      "note": "input unvalidated",
+      "run": 1,
+      "round": 1
+    }
+  ]
 }

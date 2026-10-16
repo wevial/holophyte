@@ -23,8 +23,10 @@ those writing routes. A project with no store answers 503.
 `console/contract/` holds the machine-readable shapes of `GET /status`,
 `GET /attention` and `GET /peers`, of the host root's `GET /status`
 and `GET /attention`, of the run routes `GET /runs/N`,
-`GET /runs/N/merge` and `GET /runs/N/asks`, and of the list routes
-`GET /shipped`, `GET /ledger`, `GET /board` and `GET /tickets/KEY`: one
+`GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
+`GET /runs/N/turns`, and of the list routes
+`GET /shipped`, `GET /history`, `GET /ledger`, `GET /board` and
+`GET /tickets/KEY`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -51,9 +53,10 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
                    "by_action": {"requeue": 2, "babysit": 1},
                    "by_actor": {"maintainer": 1, "operator": 2, "supervisor": 1,
                                 "unknown": 0}},
-           "7d": {"interventions": 4, "merged": 3, "per_merge": 1.3333333333333333,
-                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1},
-                  "by_actor": {"maintainer": 1, "operator": 3, "supervisor": 1,
+           "7d": {"interventions": 5, "merged": 3, "per_merge": 1.6666666666666667,
+                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1,
+                                "steer": 1},
+                  "by_actor": {"maintainer": 1, "operator": 4, "supervisor": 1,
                                "unknown": 0}}},
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
@@ -249,6 +252,53 @@ null for a run that opened none, including every run merged locally.
 Nothing is read from GitHub: the URL is the one the factory itself
 opened, so its last path segment is the PR number.
 
+## `GET /history?since=MS&limit=N`
+
+```json
+{"rows": [
+  {"id": 231, "ticket": "KO-260", "ticket_url": "https://linear.app/example/issue/KO-260",
+   "title": "Run page: chain strip", "attempt": 2, "phase": "reviewing",
+   "outcome": null, "outcome_reason": null, "failure_kind": null,
+   "park_kind": null, "started_ms": 1788478203000, "ended_ms": null,
+   "elapsed_ms": 540000, "heartbeat_age_ms": 12000, "rounds": 1,
+   "max_rounds": 2, "pr_url": null, "host": "writer-1"},
+  {"id": 225, "ticket": "KO-255", "ticket_url": null,
+   "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
+   "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
+   "failure_kind": "verify", "park_kind": null,
+   "started_ms": 1788470000000, "ended_ms": 1788471200000,
+   "elapsed_ms": 1200000, "heartbeat_age_ms": null, "rounds": 0,
+   "max_rounds": 2, "pr_url": null, "host": "writer-1"}
+], "since": 1788393600000, "limit": 200, "truncated": false,
+ "now": 1788478743000}
+```
+
+Runs one row per run, for the console's Runs page: every run that has not
+ended, whenever it started, plus every run that started at or after
+`since`, ordered by `started_ms` descending then `id` descending. A run
+that a later run of its ticket continues keeps its own row; nothing is
+folded into a chain as `/shipped` folds it. A run that ended before
+`since` is absent, a paused one included.
+
+`since` is required and is epoch milliseconds. Each row is the run's
+`id`, `ticket`, `ticket_url`, `title`, `attempt` and `phase`; `outcome`
+(null while open); `outcome_reason` (the stored reason cut at 400
+characters, null when absent); `failure_kind` (the failed run's kind,
+null unless it failed); `park_kind` (what a parked run waits on, as the
+store recorded it); `started_ms` and `ended_ms` (null while open);
+`elapsed_ms`, from the start to `ended_ms`, or to `now` while open;
+`heartbeat_age_ms`, `now` minus the run's last heartbeat while open, else
+null; `rounds`, the run's own review rounds (those not in error);
+`max_rounds`, its cap, or the loop's base as `/runs/N` answers it; and
+`pr_url` and `host`, as `/shipped` spells them.
+
+The body echoes `since` and the `limit` applied, and carries `now`, the
+daemon's clock the open rows were measured against. `limit` defaults to
+200 and is capped at 500; `truncated` is true when more runs matched than
+`limit`, and there is no paging past it. A missing or non-integer `since`,
+or a non-positive or non-integer `limit`, is 400 with an `error` naming
+the parameter.
+
 ## `GET /runs/N`
 
 ```json
@@ -256,6 +306,7 @@ opened, so its last path segment is the PR number.
          "title": "The sweep frees a silent lease",
          "phase": "done", "attempt": 1, "started_ms": 1788450461675,
          "ended_ms": 1788451661675, "outcome": "merged",
+         "outcome_reason": null, "failure_kind": null, "park_kind": null,
          "elapsed_ms": 1200000, "working_ms": 912000, "agent_ms": 840000,
          "verify_ms": 72000, "time_box_ms": 1500000,
          "branch": "task/ko-219-the-sweep-frees-a-silent-lease", "host": "writer-1",
@@ -308,7 +359,20 @@ opened, so its last path segment is the PR number.
    "turn_count": 4,
    "rounds": [{"round": 1, "verdict": "changes_requested", "reviewer_model": "reviewer-model"},
               {"round": 2, "verdict": "pass", "reviewer_model": "reviewer-model"}]}
- ]}}
+ ]},
+ "steer_notes": [
+  {"id": 4, "kind": "hint", "note": "Reuse the sweep's lease query",
+   "author": "maintainer", "at": 1788450561675, "run": 52, "consumed_by": 52,
+   "consumed_ms": 1788450571675, "interrupt": false, "withdrawn": false}
+ ],
+ "criteria": [
+  {"n": 1, "text": "Given an expired lease, then the run is requeued",
+   "status": "met", "note": "tests/test_lease.py::test_expired_lease_requeues",
+   "run": 52, "round": 2},
+  {"n": 2, "text": "Given a requeue, then the ledger names it",
+   "status": "met", "note": "tests/test_lease.py::test_requeue_is_ledgered",
+   "run": 52, "round": 2}
+ ]}
 ```
 
 One run in full, by id: what the console shows when a run is expanded.
@@ -357,6 +421,12 @@ long) is 404 with `run` echoing the path segment as typed. `host` passes
 through `[report] host_label`. `commit_url` and `pr_url` are as
 `/shipped` carries them: the merge commit's page on `origin` and the
 pull request the run opened, each null when there is none.
+`outcome_reason` is the run's stored outcome reason cut at 400
+characters, as `/shipped` cuts it, null when there is none;
+`failure_kind` is the class of a failed run's failure (`verify`,
+`budget`, `infra` and the like) and `park_kind` what a parked run waits
+on (`pull_request`, `ci`, `question` and the like), each null when the
+run recorded none.
 
 `chain` is the ticket's chain of runs up to run N, as `/shipped` defines
 it: every run of the ticket after its last merged run before N, through
@@ -371,6 +441,24 @@ carries them, `max_rounds`, `turn_count` (the turns `/runs/ID/turns`
 lists) and `rounds`, each round's `round`, `verdict` and
 `reviewer_model`. A run with no earlier run in its chain has a chain of
 itself alone, whose clocks equal `run`'s.
+
+`steer_notes` are the maintainer's steer notes (`holo steer`) on run N's
+ticket recorded at or after `chain.started_ms`, oldest first, `[]` when
+there are none: each with its `id`, `kind` (`amendment` or `hint`),
+`note`, `author` and `at` (epoch milliseconds); `run`, the run the note
+was routed to, null when it waited for the next run; `consumed_by` and
+`consumed_ms`, the run whose agent read it and when, both null until
+read; `interrupt`, true when it was sent with `--now`; and `withdrawn`,
+true when a later withdrawal took the amendment back.
+
+`criteria` is the newest review's judgement of the ticket's acceptance
+criteria over the chain: run N's latest round when it has judged them,
+else the latest round of the newest earlier run of the chain that did, so
+a requeued run starts from what its predecessor's last review said. Each
+criterion, in order, has its number `n`, its `text`, its `status` (`met`,
+`not_met` or `unwitnessed`) and the reviewer's `note`, which for a met
+criterion names its witness; `run` and `round` name the review that
+judged it. `[]` until a round of the chain has judged them.
 
 ## `GET /runs/N/files`
 
@@ -426,6 +514,34 @@ recorded has neither a worktree nor a ref (a preserved branch deleted by
 hand; the error names the branch).
 504 when git does not answer within its cap. The endpoint serves no file
 contents or diff hunks and writes nothing to the repository.
+
+## `GET /runs/N/turns`
+
+```json
+{"turns": [
+  {"id": 4410, "role": "implement", "route": "primary",
+   "label": "claude opus", "seconds": 372.5,
+   "session_id": "0198c2a4-5e1f-7b3a-9d6e-2f4c8a1b3d5e"},
+  {"id": 4433, "role": "review", "route": "fallback",
+   "label": "codex gpt-5.6-sol", "seconds": 95.25, "session_id": null}
+ ]}
+```
+
+The agent turns of run N, oldest first: one entry per implementer,
+reviewer, adjudicator, writer or trimmer turn the loop recorded when the
+turn ended, so a turn still running is not listed yet. `id` is the turn's
+event id, which `/runs/N/turns/T/transcript` takes as `T`. `role` is
+`implement`, `review`, `adjudicate`, `write` or `trim`. `label` names
+what ran, as `route_labels` labels a seat on `/status`: the command's
+first word plus its `-m`/`--model` value, null for a turn recorded
+without one. `route` is `primary`, or `fallback` when the seat ran its
+configured `*_fallback`. `seconds` is how long the turn ran, null when
+its record carries no duration. `session_id` is the agent session the
+turn ran in, null when none was recorded beside it. A run with no turns
+answers an empty list.
+
+`N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
+is 404 carrying `run`. The route writes nothing.
 
 ## `GET /runs/N/merge`
 
@@ -626,6 +742,61 @@ and null `run` and `ticket`. The array is empty for ticket-filtered requests
 or kinds other than `intervention`; it is included for unfiltered requests.
 Launch-loop interventions at or after an ongoing outage's start are suppressed
 from history.
+
+## `GET /findings?since=MS`
+
+```json
+{"since": 1788450000000, "limit": 100,
+ "runs": [
+  {"run": 52, "ticket": "KO-219", "title": "Serve the findings window",
+   "phase": "done", "outcome": "merged", "ended_ms": 1788451661675,
+   "pr_url": "https://github.com/OWNER/REPO/pull/12",
+   "rounds": [
+    {"round": 1, "started_ms": 1788450641675, "ended_ms": 1788450941675,
+     "verdict": "changes_requested", "reviewer_model": "reviewer-model",
+     "findings": [{"severity": "p1", "message": "the limit is not echoed",
+                   "path": "holophyte/serve/serve_findings.py", "line": 40}],
+     "instructions": [], "operator_notes": []}],
+   "ledger": [
+    {"at": 1788450941675, "kind": "round",
+     "text": "Round 1: changes_requested · reviewer reviewer-model\nImplementer response:\nDECLINE: covered elsewhere",
+     "source": "loop"}],
+   "advisories": [{"tone": "advisory", "message": "https://github.com/OWNER/REPO/pull/12#discussion_r1: nit"}]}
+ ],
+ "follow_ups": [
+  {"id": 7, "run": 52, "ticket": "KO-219", "kind": "feature",
+   "text": "page the window", "path": "holophyte/serve/serve_findings.py",
+   "line": 30, "created_ms": 1788451661675, "settled_ms": 1788451661675,
+   "state": "filed", "filed_as": "KO-230", "duplicate_of": null,
+   "error": null}
+ ]}
+```
+
+Review findings across runs, from `since` on, in one read: what the
+console's Findings page polls. `since` is required and is epoch
+milliseconds. `runs` holds every run with a review round whose `ended_ms`
+is at or after `since`, ordered by its newest round's end, newest first,
+at most `limit` of them (default 100, capped at 500). Each carries the
+run's `run`, `ticket`, `title`, `phase`, `outcome`, `ended_ms` and
+`pr_url`; its `rounds`, every round of the run oldest first, exactly as
+`/runs/N` answers them; its `ledger`, the run's `round` and `adjudication`
+entries oldest first as `/runs/N/ledger` spells them, whose text keeps the
+"Implementer response:" lines with the DECLINE and FOLLOW_UP adjudications;
+and its `advisories`, the bot threads `/runs/N` answers as `findings`.
+
+`follow_ups` holds the FOLLOW_UP rows a merged run's fix commits left,
+every row created at or after `since` plus every row still unsettled,
+newest first. Each is its `id`, `run`, `ticket`, `kind` (`feature` or
+`guardrail`), `text`, `path`, `line`, `created_ms`, `settled_ms`, `state`,
+`filed_as`, `duplicate_of` and `error`. `state` is `pending` until the
+row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
+`unfiled`, read from the event that settled it; a row settled before
+those events named their row reads `ledger` for a `guardrail` and
+`superseded` for a `feature`. The route serves rows, not fates: which
+group a finding falls in is the console's to work out.
+
+A missing or non-integer `since`, or a bad `limit`, is 400 with an
+`error` naming the parameter; a project with no store is 503.
 
 ## `GET /report?since=SPAN`
 
@@ -846,7 +1017,19 @@ console shows when the operator opens a ticket without leaving for Linear.
  "body": "# The store mirrors a ticket's body…\n\n## Summary\n…",
  "acceptance_criteria": ["Given …, when …, then …"],
  "verification_commands": ["ruff check ."],
- "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000}
+ "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000,
+ "runs": [{"run": 52, "attempt": 2, "phase": "reviewing", "outcome": null,
+           "rounds": 2, "pr_url": "https://github.com/…/pull/9",
+           "started_ms": 1788449000000, "ended_ms": null},
+          {"run": 47, "attempt": 1, "phase": "failed", "outcome": "failed",
+           "rounds": 1, "pr_url": null, "started_ms": 1788362000000,
+           "ended_ms": 1788365000000}],
+ "steers": [{"id": 4, "kind": "hint", "note": "…", "author": "maintainer",
+             "at": 1788449100000, "run": 52, "read_by": 52,
+             "read_ms": 1788449200000, "withdrawn": false},
+            {"id": 3, "kind": "amendment", "note": "…",
+             "author": "maintainer", "at": 1788400000000, "run": null,
+             "read_by": null, "read_ms": null, "withdrawn": false}]}
 ```
 
 `ticket` is the identifier as the store mirrors it; `status` is the
@@ -857,7 +1040,14 @@ run worked from, which Linear's current text may no longer be (empty for
 a ticket mirrored before the store kept bodies); `acceptance_criteria`
 and `verification_commands` are the lists the mirror parsed from it;
 `run` is the ticket's active run, null when none is working it;
-`mirrored_ms` is when the store last mirrored the ticket. An identifier
+`mirrored_ms` is when the store last mirrored the ticket. `runs` is every
+run of the ticket, newest attempt first, each with its phase, outcome
+(null while it runs), count of review rounds, pull request and clocks.
+`steers` is every steer note on the ticket, newest first: `kind` is
+`amendment` or `hint`, `run` the run it was sent to (null when none was in
+flight), `read_by` and `read_ms` the run that read it and when (null while
+unread), and `withdrawn` whether a later `holo steer --withdraw` withdrew
+it, which only an amendment can be. An identifier
 the store has never mirrored is 404 with an empty object, like an absent
 run. The endpoint reads the store's mirror and nothing more; it never
 calls the provider.
@@ -1353,7 +1543,7 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and, on a host daemon, `/tickets`, `/tickets/ID/move` and `/tickets/ID/cancel`, and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |

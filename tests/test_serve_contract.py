@@ -25,6 +25,8 @@ from holophyte.serve.contract import (
     BoardTicket,
     Round,
     RunDetail,
+    RunTurn,
+    RunTurns,
     Status,
     main,
 )
@@ -33,8 +35,8 @@ from holophyte.serve.contract_emit import ContractError, json_schema
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
-           "run-merge-bypassable", "run-asks", "shipped", "ledger", "board",
-           "ticket")
+           "run-merge-bypassable", "run-asks", "run-files", "run-turns",
+           "shipped", "history", "ledger", "board", "ticket")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -127,9 +129,10 @@ class GeneratedFilesTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in before
                                 if path.parent == SCHEMA_DIR),
                          [f"{stem}.schema.json" for stem in (
-                             "attention", "board", "host-attention",
-                             "host-status", "ledger", "peers", "run-asks",
-                             "run-detail", "run-merge", "shipped", "status",
+                             "attention", "board", "history",
+                             "host-attention", "host-status", "ledger",
+                             "peers", "run-asks", "run-detail", "run-files",
+                             "run-merge", "run-turns", "shipped", "status",
                              "ticket")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
@@ -213,6 +216,18 @@ class PinnedAnswerTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"^board\.columns\.0"
                                     r"\.tickets\.0\.waits_on: undeclared$"):
             walk(pinned("board"), typing.TypedDict("Board", board), "board")
+
+    def test_a_turn_type_without_route_fails_the_run_turns_walk(self):
+        hints = typing.get_type_hints(RunTurn, include_extras=True)
+        narrower = typing.TypedDict("RunTurn", {key: hint for key, hint
+                                                in hints.items()
+                                                if key != "route"})
+        turns = typing.get_type_hints(RunTurns, include_extras=True)
+        turns["turns"] = list[narrower]
+        with self.assertRaisesRegex(AssertionError,
+                                    r"^run-turns\.turns\.0\.route: undeclared$"):
+            walk(pinned("run-turns"), typing.TypedDict("RunTurns", turns),
+                 "run-turns")
 
 
 if __name__ == "__main__":

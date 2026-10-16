@@ -13,16 +13,19 @@ from store.run_reads import (  # noqa: F401
     SQLITE_INT64_MIN,
     ApprovedCandidate,
     ChainRun,
+    CriteriaEvent,
     EndedRun,
     FailedAttempt,
     LiveRun,
     MergedRun,
     ParkFacts,
     RecentFailedRun,
+    RecentRun,
     RunSnapshot,
     Toil,
     approved_candidate,
     babysit_note,
+    criteria_events,
     ended_runs,
     failed_attempts_since,
     finished_runs,
@@ -33,6 +36,7 @@ from store.run_reads import (  # noqa: F401
     newest_run_id,
     park_facts,
     recent_failed_runs,
+    recent_runs,
     run_chains,
     run_snapshot,
     stranded_runs,
@@ -306,6 +310,26 @@ def ticket_notes(conn, ticket_id):
 
 
 @dataclass(frozen=True)
+class TicketRun:
+    id: int
+    attempt: int
+    phase: str
+    outcome: str | None
+    rounds: int
+    prUrl: str | None
+    startedAt: int
+    endedAt: int | None
+
+
+def ticket_runs(conn, ticket_id):
+    return [TicketRun(*row) for row in conn.execute(
+        "SELECT r.id, r.attempt, r.phase, r.outcome,"
+        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id),"
+        " r.prUrl, r.startedAt, r.endedAt FROM runs r WHERE r.ticketId = ?"
+        " ORDER BY r.attempt DESC, r.id DESC", (ticket_id,))]
+
+
+@dataclass(frozen=True)
 class ReviewRound:
     id: int
     linearIdentifier: str
@@ -371,6 +395,10 @@ class RunDetail:
     ticketUrl: str | None = None
     approvedAt: int | None = None
     approvedBy: str | None = None
+    ticketId: int | None = None
+    outcomeReason: str | None = None
+    failureKind: str | None = None
+    parkKind: str | None = None
 
 
 def run_detail(conn, run_id):
@@ -379,7 +407,8 @@ def run_detail(conn, run_id):
         " r.startedAt, r.endedAt, r.lastHeartbeat, r.outcome, r.timeBoxMs,"
         " r.branch, r.host, r.mergeSha, r.reviewRoundCap, r.prUrl,"
         " r.workingMs, r.workStartedAt, t.url, r.approvedAt, r.approvedBy,"
-        " r.verifyMs, r.verifyStartedAt"
+        " r.verifyMs, r.verifyStartedAt, r.ticketId, r.outcomeReason,"
+        " r.failureKind, r.parkKind"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.id = ?", (run_id,)).fetchone()
     if row is None:
@@ -391,7 +420,9 @@ def run_detail(conn, run_id):
                      mergeSha=row[12], reviewRoundCap=row[13],
                      prUrl=row[14], workingMs=row[15], workStartedAt=row[16],
                      ticketUrl=row[17], approvedAt=row[18], approvedBy=row[19],
-                     verifyMs=row[20], verifyStartedAt=row[21])
+                     verifyMs=row[20], verifyStartedAt=row[21],
+                     ticketId=row[22], outcomeReason=row[23],
+                     failureKind=row[24], parkKind=row[25])
 
 
 @dataclass(frozen=True)

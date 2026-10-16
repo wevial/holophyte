@@ -15,6 +15,7 @@ from holophyte.loop.runs import MAX_ROUNDS
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
+from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
 
 # A failure that strands its ticket in flight stays past it: only the
@@ -283,6 +284,10 @@ def ticket_detail(project, identifier):
                      else store.read.ticket_revisions(conn, ticket.id))
         notes = ([] if ticket is None
                  else store.read.ticket_notes(conn, ticket.id))
+        runs = ([] if ticket is None
+                else store.read.ticket_runs(conn, ticket.id))
+        steered = ([] if ticket is None
+                   else chain_notes(conn, ticket.id, 0)[::-1])
     finally:
         conn.close()
     if ticket is None:
@@ -302,7 +307,17 @@ def ticket_detail(project, identifier):
                  "notes": [{"id": n.id, "at": n.at, "author": n.author,
                             "kind": n.kind, "text": n.text,
                             "posted_ms": n.postedAt,
-                            "post_error": n.postError} for n in notes]}
+                            "post_error": n.postError} for n in notes],
+                 "runs": [{"run": r.id, "attempt": r.attempt,
+                           "phase": r.phase, "outcome": r.outcome,
+                           "rounds": r.rounds, "pr_url": r.prUrl,
+                           "started_ms": r.startedAt, "ended_ms": r.endedAt}
+                          for r in runs],
+                 "steers": [{"id": n.id, "kind": n.kind, "note": n.note,
+                             "author": n.author, "at": n.at, "run": n.run_id,
+                             "read_by": n.consumed_by,
+                             "read_ms": n.consumed_at,
+                             "withdrawn": n.withdrawn} for n in steered]}
 
 
 def revision_json(revision):

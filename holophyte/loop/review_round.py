@@ -13,6 +13,7 @@ from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
+from holophyte.loop import witness_turns
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import (
     InfraFailure,
@@ -118,7 +119,8 @@ def _record_mode(conn, run_id, mode, rnd):
 
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
-                 verify_cmd, criteria, mode, ok, out, stale=(), evidence=True):
+                 verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
+                 witness=""):
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
         f"{review_refs(run_id)[0]} as the frozen base and "
@@ -129,6 +131,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         f"{ticket}\n\n"
         + _verify_brief(verify_cmd, ok, out)
         + criteria_brief(criteria)
+        + witness
         + stale_approval_brief(stale)
         + verified_brief(mode)
         + tests_brief(wt)
@@ -145,14 +148,15 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
-            leaks=()):
+            leaks=(), witness=""):
     round_started = int(time() * 1000)
     scope = scope_files(wt, ticket, base_sha, sha)
     _record_mode(conn, run_id, mode, rnd)
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
-                          verify_cmd, criteria, mode, ok, out, stale)
+                          verify_cmd, criteria, mode, ok, out, stale,
+                          witness=witness)
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,
@@ -225,6 +229,31 @@ def _steer_approved(project, conn, run_id, provider, task_id, wt, beat_s, sha,
                       timed=_timed, check_cap=_check_run_cap) or sha
 
 
+def _verify(project, conn, run_id, beat_s, wt, verify_cmd, contracts, rnd):
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(verify_cmd, wt, contracts,
+                             verify_config(project).timeout_sec,
+                             conn=conn, run_id=run_id, project=project)
+        ok, out = with_baseline(project, wt, verify_cmd, ok, out, conn, run_id)
+    if ok:
+        print(f"[holo2] verify ok before round {rnd}")
+    else:
+        print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
+    return ok, out
+
+
+def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
+              sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd):
+    checks = partial(_verify, project, conn, run_id, beat_s, wt, verify_cmd,
+                     contracts, rnd)
+    ok, out = checks()
+    if rnd != 1:
+        return sha, ok, out, ""
+    return witness_turns.before_review(
+        project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
+        ticket, verify_cmd, criteria, budget_min, ok, out, checks)
+
+
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
@@ -237,7 +266,6 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                                      budget_min, ticket, sha, pending)
         reviewed = reviewed_ticket(conn, run_id, ticket)
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
-        leaks = leak_guard.branch_leaks(project, wt, sha)
         if rnd == 1:
             unresolved = merge_conflicts(wt)
             if unresolved:
@@ -249,20 +277,16 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" branch {branch} preserved at {sha[:12]}")
         if pending.get("phase") in ("reviewing", "addressing"):
             ok, out = pending.get("ok", False), pending.get("out", "")
+            witness = pending.get("witness", "")
         else:
-            with heartbeat_while(conn, run_id, beat_s):
-                ok, out = run_verify(verify_cmd, wt, contracts,
-                                     verify_config(project).timeout_sec,
-                                     conn=conn, run_id=run_id, project=project)
-                ok, out = with_baseline(project, wt, verify_cmd, ok, out,
-                                       conn, run_id)
-            if ok:
-                print(f"[holo2] verify ok before round {rnd}")
-            else:
-                print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
+            sha, ok, out, witness = _verified(
+                project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
+                sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd)
+        leaks = leak_guard.branch_leaks(project, wt, sha)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
-                 **({"stale": pending["stale"]} if "stale" in pending else {}))
+                 **({"stale": pending["stale"]} if "stale" in pending else {}),
+                 **({"witness": witness} if witness else {}))
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         if pending.get("phase") == "addressing":
             verdict = pending["verdict"]
@@ -270,7 +294,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             verdict, decision, unwitnessed = _review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 reviewed, verify_cmd, criteria, mode, rnd, ok, out,
-                pending.get("stale", ()), leaks)
+                pending.get("stale", ()), leaks, witness)
             if ok and not unwitnessed and decision == "APPROVE":
                 if steer_pending(conn, run_id):
                     sha, pending = _steer_approved(

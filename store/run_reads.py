@@ -305,6 +305,44 @@ def finished_runs(conn, limit, before=None, outcomes=None):
 
 
 @dataclass(frozen=True)
+class RecentRun:
+    id: int
+    linearIdentifier: str
+    ticketUrl: str | None
+    title: str
+    attempt: int
+    phase: str
+    outcome: str | None
+    outcomeReason: str | None
+    failureKind: str | None
+    parkKind: str | None
+    startedAt: int
+    endedAt: int | None
+    lastHeartbeat: int
+    reviewRoundCount: int
+    reviewRoundCap: int | None
+    prUrl: str | None
+    host: str | None
+
+
+def recent_runs(conn, since, limit):
+    since = max(SQLITE_INT64_MIN, min(since, SQLITE_INT64_MAX))
+    rows = conn.execute(
+        "SELECT r.id, t.linearIdentifier, t.url, t.title, r.attempt, r.phase,"
+        " r.outcome, r.outcomeReason, r.failureKind, r.parkKind, r.startedAt,"
+        " r.endedAt, r.lastHeartbeat,"
+        " CASE WHEN r.endedAt IS NULL THEN (SELECT COUNT(*) FROM reviewRounds rr"
+        "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
+        " ELSE r.reviewRoundCount END,"
+        " r.reviewRoundCap, r.prUrl, r.host"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.endedAt IS NULL OR r.startedAt >= ?"
+        " ORDER BY r.startedAt DESC, r.id DESC LIMIT ?",
+        (since, limit)).fetchall()
+    return [RecentRun(*row) for row in rows]
+
+
+@dataclass(frozen=True)
 class ChainRun:
     id: int
     startedAt: int
@@ -338,6 +376,21 @@ def run_chains(conn, run_ids):
     for row in rows:
         chains.setdefault(row[0], []).append(ChainRun(*row[1:]))
     return chains
+
+
+@dataclass(frozen=True)
+class CriteriaEvent:
+    runId: int
+    payload: dict
+
+
+def criteria_events(conn, run_ids):
+    rows = conn.execute(
+        "SELECT runId, payload FROM runEvents"
+        f" WHERE kind = 'criteria' AND runId IN ({', '.join('?' * len(run_ids))})"
+        " ORDER BY runId DESC, seq DESC", run_ids).fetchall()
+    return [CriteriaEvent(runId=row[0], payload=json.loads(row[1]))
+            for row in rows]
 
 
 @dataclass(frozen=True)

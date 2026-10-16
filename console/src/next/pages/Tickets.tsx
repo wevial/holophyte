@@ -1,16 +1,11 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { BoardCard, cardElementId } from "../components/BoardCard";
 import { StateDot } from "../components/StateDot";
+import { TicketPeek } from "../components/TicketPeek";
 import { storeScope } from "../projects";
-import type { State } from "../state";
-import { COLUMN_IDS, useTicketBoard, type ColumnId, type TicketCard } from "../tickets";
-
-const HEADS: Record<ColumnId, { label: string; state: State }> = {
-  backlog: { label: "Backlog", state: "backlog" },
-  ready: { label: "Ready", state: "queued" },
-  in_flight: { label: "In flight", state: "running" },
-  needs_you: { label: "Needs you", state: "needs_you" },
-  done: { label: "Done today", state: "merged" },
-};
+import type { ScopeSearch } from "../scope";
+import { COLUMN_HEADS, COLUMN_IDS, useTicketBoard, type ColumnId, type TicketCard } from "../tickets";
 
 const GRID = "grid grid-cols-5 gap-[18px]";
 
@@ -18,19 +13,36 @@ function Slash() {
   return <span className="text-ink-3"> / </span>;
 }
 
-function Card({ card }: { card: TicketCard }) {
-  return (
-    <li className="flex flex-col gap-1.5 border border-rule-2 bg-paper px-3 py-2.5">
-      <span className="font-mono text-[12px] text-ink-2">{card.key}</span>
-      <span className="break-words font-sans text-[13px] leading-snug text-ink">{card.title}</span>
-    </li>
-  );
+function findCard(columns: Record<ColumnId, TicketCard[]>, id: string | null): { card: TicketCard; column: ColumnId } | null {
+  for (const column of COLUMN_IDS) {
+    const card = columns[column].find((each) => each.id === id);
+    if (card != null) return { card, column };
+  }
+  return null;
 }
 
 export function Tickets() {
   const view = useTicketBoard();
   const { columns } = view;
   const navigate = useNavigate();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const peek = findCard(columns, openId);
+  const opener = peek == null ? null : cardElementId(peek.card);
+  useEffect(() => {
+    if (opener == null) return;
+    const shut = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setOpenId(null);
+      document.getElementById(opener)?.focus();
+    };
+    document.addEventListener("keydown", shut);
+    return () => document.removeEventListener("keydown", shut);
+  }, [opener]);
+  const closePeek = () => {
+    setOpenId(null);
+    if (opener != null) document.getElementById(opener)?.focus();
+  };
   return (
     <section aria-labelledby="page-title" className="flex flex-col px-8 py-7 min-[720px]:h-full">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
@@ -55,7 +67,7 @@ export function Tickets() {
               type="button"
               onClick={() => {
                 storeScope(null);
-                void navigate({ to: ".", search: (previous) => ({ ...previous, project: undefined }) });
+                void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
               }}
               className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
             >
@@ -70,8 +82,8 @@ export function Tickets() {
             <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas`}>
               {COLUMN_IDS.map((id) => (
                 <div key={id} className="flex min-h-11 items-center gap-[9px] px-0.5 font-sans text-[13px] font-medium text-ink">
-                  <StateDot state={HEADS[id].state} hideWord tone={id === "needs_you" ? "need" : undefined} />
-                  <span>{HEADS[id].label}</span>
+                  <StateDot state={COLUMN_HEADS[id].state} hideWord tone={id === "needs_you" ? "need" : undefined} />
+                  <span>{COLUMN_HEADS[id].label}</span>
                   <b data-count className={`font-mono text-[12px] font-normal ${id === "needs_you" ? "text-need" : "text-ink-3"}`}>
                     {columns[id].length}
                   </b>
@@ -85,9 +97,11 @@ export function Tickets() {
             ) : (
               <div className={`${GRID} mt-2`}>
                 {COLUMN_IDS.map((id) => (
-                  <ul key={id} aria-label={HEADS[id].label} className="flex min-w-0 flex-col gap-2">
+                  <ul key={id} aria-label={COLUMN_HEADS[id].label} className="flex min-w-0 flex-col gap-2">
                     {columns[id].map((card) => (
-                      <Card key={card.id} card={card} />
+                      <li key={card.id}>
+                        <BoardCard card={card} column={id} now={view.now} open={card.id === openId} onOpen={(next) => setOpenId(next.id)} />
+                      </li>
                     ))}
                   </ul>
                 ))}
@@ -96,6 +110,12 @@ export function Tickets() {
           </div>
         </div>
       )}
+      {view.answered && (
+        <p className="mt-3 font-mono text-[12px] text-ink-3">
+          Cards move as the factory and you act. Click a card to preview it; Expand opens the full ticket.
+        </p>
+      )}
+      {peek != null && <TicketPeek card={peek.card} column={peek.column} now={view.now} onClose={closePeek} />}
     </section>
   );
 }

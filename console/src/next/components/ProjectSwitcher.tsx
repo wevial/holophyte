@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { matchRows, storeScope, type SwitcherRow } from "../projects";
+import type { ScopeSearch } from "../scope";
 import { AllProjectsIcon, DropIcon, FolderIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
@@ -83,7 +84,7 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
 
   const pick = (row: SwitcherRow) => {
     storeScope(row.name);
-    void navigate({ to: ".", search: (previous) => ({ ...previous, project: row.name ?? undefined }) });
+    void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: row.name ?? undefined }) });
     close();
   };
 

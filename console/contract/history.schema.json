@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "History",
+  "description": "GET /history",
+  "$ref": "#/$defs/History",
+  "$defs": {
+    "HistoryRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "park_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rounds": {
+          "type": "integer"
+        },
+        "max_rounds": {
+          "type": "integer"
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "ticket_url",
+        "title",
+        "attempt",
+        "phase",
+        "outcome",
+        "outcome_reason",
+        "failure_kind",
+        "park_kind",
+        "started_ms",
+        "ended_ms",
+        "elapsed_ms",
+        "heartbeat_age_ms",
+        "rounds",
+        "max_rounds",
+        "pr_url",
+        "host"
+      ],
+      "additionalProperties": true
+    },
+    "History": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoryRow"
+          }
+        },
+        "since": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "now": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rows",
+        "since",
+        "limit",
+        "truncated",
+        "now"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -215,6 +215,9 @@ EXPECTED_READ = [
     "ticket_revisions",
     # KO-747: a ticket's notes, oldest first, for `/tickets/KO-n`.
     "ticket_notes",
+    # HOLO-350: a ticket's runs with their round counts, newest first, for
+    # `/tickets/KO-n`.
+    "ticket_runs",
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -291,6 +294,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # The run reads `store.read` re-exports.
                                  (store.run_reads, ["approved_candidate",
                                                     "babysit_note",
+                                                    # HOLO-326: `/runs/N`'s
+                                                    # criteria over a chain.
+                                                    "criteria_events",
                                                     "ended_runs",
                                                     "failed_attempts_since",
                                                     "finished_runs",
@@ -302,6 +308,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # route's park facts.
                                                     "park_facts",
                                                     "recent_failed_runs",
+                                                    # HOLO-331: `/history`'s
+                                                    # open and recent runs.
+                                                    "recent_runs",
                                                     # HOLO-109: a run's chain
                                                     # of its ticket's runs.
                                                     "run_chains",
@@ -321,7 +330,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # captured pending and settled at the merge.
                                  # HOLO-252: `settle_superseded`, a row a later
                                  # fix turn's ADDRESS(follow-up N) line fixed.
+                                 # HOLO-344: `follow_ups_since`, the
+                                 # findings window's follow-up rows.
                                  (store.follow_ups, ["filed_drafts",
+                                                     "follow_ups_since",
                                                      "pending_follow_ups",
                                                      "record_follow_up",
                                                      "settle_duplicate",
@@ -339,8 +351,11 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # turn's `--now` notes its resume carries.
                                  # HOLO-229: `withdraw` and its readers,
                                  # `standing` and `withdrawn_events`.
+                                 # HOLO-324: `chain_notes`, a run chain's
+                                 # notes as `/runs/N` serves them.
                                  (store.steer_notes, ["amendments",
                                                       "babysat_interrupts",
+                                                      "chain_notes",
                                                       "close", "consume",
                                                       "interrupting",
                                                       "pending", "standing",
