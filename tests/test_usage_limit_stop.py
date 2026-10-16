@@ -39,22 +39,18 @@ class UsageLimitStopTests(LoopFixture):
         self.assertEqual(self.git("show", f"{wip}:unfinished.txt"),
                          "unfinished work\n")
         self.assertEqual(self.git("rev-list", "--count", f"main..{wip}").strip(), "1")
-        with self.subTest("route outage classification"):
-            self.assertEqual(self.read(
-                "SELECT outcome, failureKind, outcomeClass FROM runs"),
-                [("failed", "infra", "infra")])
-        with self.subTest("outage reason"):
-            ((reason,),) = self.read("SELECT outcomeReason FROM runs")
-            self.assertIn(WEEKLY_LIMIT, reason)
-        with self.subTest("work preserved"):
-            self.assertIn(BRANCH, self.branches())
-            self.assertEqual(self.git("rev-parse", BRANCH),
-                             self.git("rev-parse", wip))
-            self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
-        with self.subTest("no attempt spent"):
-            conn = store.open(str(self.db))
-            self.addCleanup(conn.close)
-            self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
+        self.assertEqual(self.read(
+            "SELECT outcome, failureKind, outcomeClass FROM runs"),
+            [("failed", "infra", "infra")])
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn(WEEKLY_LIMIT, reason)
+        self.assertIn(BRANCH, self.branches())
+        self.assertEqual(self.git("rev-parse", BRANCH),
+                         self.git("rev-parse", wip))
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
 
     def script(self, name, *turns):
         state = self.db.parent / f"{name}-state"
