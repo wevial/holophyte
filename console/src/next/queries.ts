@@ -4,12 +4,14 @@ import type { ReadinessMap } from "../lib/attention";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
 import {
   boardSchema,
+  historySchema,
   ledgerSchema,
   mergeReadinessSchema,
   peersSchema,
   runDetailSchema,
   shippedSchema,
   type Board,
+  type History,
   type Ledger,
   type LedgerEntry,
   type Peers,
@@ -107,15 +109,7 @@ export interface DayLedger {
   entries: LedgerEntry[];
 }
 
-/** A daemon without the route answers 404: no lines, not a failure. */
-async function ledgerOrNone(fetch: Fetch, url: string): Promise<Ledger | null> {
-  try {
-    return await fetchRoute(fetch, url, ledgerSchema);
-  } catch (failure) {
-    if (failure instanceof AnswerError && failure.status === 404) return null;
-    throw failure;
-  }
-}
+const ledgerOrNone = (fetch: Fetch, url: string) => orNone(fetch, url, ledgerSchema);
 
 /** Every `/ledger` entry of every answering host since local midnight
  *  before `now`, of any kind, so each answer also carries its outages. */
@@ -139,6 +133,37 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
     .flatMap((answer) => answer.entries)
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
+}
+
+/** `url`'s parsed answer, or null when the daemon lacks the route (404). */
+async function orNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
+  try {
+    return await fetchRoute(fetch, url, schema);
+  } catch (failure) {
+    if (failure instanceof AnswerError && failure.status === 404) return null;
+    throw failure;
+  }
+}
+
+/** Each answering host's `/history` since yesterday's local midnight before
+ *  `now`, by its record `key`; a host without the route has no entry. */
+export function useHistory(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
+  const asked = hosts.filter((host) => host.status != null);
+  const path = `/history?since=${localMidnight(localMidnight(now) - 1)}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, historySchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const answers = new Map<string, History>();
+  asked.forEach((host, index) => {
+    const data = results[index]?.data;
+    if (data) answers.set(host.key, data);
+  });
+  return answers;
 }
 
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first
