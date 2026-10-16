@@ -107,7 +107,7 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.assertIn("the description as it stands", prompt)
         self.assertIn("Original subquery description.", prompt)
         self.assertIn("what this fix answered", prompt)
-        self.assertIn("git diff main...HEAD", prompt)
+        self.assertIn("git diff origin/main...HEAD", prompt)
         self.refresh(("TITLE: Still ignored\nJoin with null handling.\n\n"
                       "## Changes since first review\n- Keep rows without matches.",
                       False),

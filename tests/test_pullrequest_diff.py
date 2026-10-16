@@ -11,6 +11,12 @@ from holophyte.pr.pullrequest import _written_pr_text
 
 class WrittenPullRequestDiffTests(unittest.TestCase):
     def test_writer_diff_excludes_main_changes_merged_into_branch(self):
+        self.check_writer_diff(stale=False)
+
+    def test_writer_fetches_main_before_building_diff(self):
+        self.check_writer_diff(stale=True)
+
+    def check_writer_diff(self, *, stale):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             origin, wt, other = (root / name for name in ("origin.git", "wt", "other"))
@@ -39,11 +45,18 @@ class WrittenPullRequestDiffTests(unittest.TestCase):
             commit(other, "main-b.txt")
             commit(other, "main-c.txt")
             git(other, "push", "origin", "main")
-            git(wt, "fetch", "origin")
-            git(wt, "merge", "--no-edit", "origin/main")
-            self.assertEqual(git(wt, "rev-list", "--count", "main..origin/main"), "2")
-            self.assertEqual(git(wt, "diff", "--name-only", "origin/main...HEAD"),
-                             "branch-only.txt")
+            if stale:
+                git(wt, "fetch", str(other), "main")
+                git(wt, "merge", "--no-edit", "FETCH_HEAD")
+                self.assertEqual(git(wt, "rev-parse", "origin/main"),
+                                 git(wt, "rev-parse", "main"))
+            else:
+                git(wt, "fetch", "origin")
+                git(wt, "merge", "--no-edit", "origin/main")
+                self.assertEqual(
+                    git(wt, "rev-list", "--count", "main..origin/main"), "2")
+                self.assertEqual(git(wt, "diff", "--name-only", "origin/main...HEAD"),
+                                 "branch-only.txt")
 
             project = SimpleNamespace(path=wt, config_path=root / "config.toml",
                                       config=lambda: {})
