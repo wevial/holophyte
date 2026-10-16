@@ -28,11 +28,11 @@ function LaneGrid({ lane, now, openId, onOpen, id, hidden = false, className }: 
   );
 }
 
-/** One lane of the board; a lane with no name is the flat board of None. */
+/** One lane of the board; a lane with no glyph is the flat board of None. */
 export function BoardLane({ open, onToggle, ...props }: LaneProps & { open: boolean; onToggle: () => void }) {
   const { lane } = props;
   const body = useId();
-  if (lane.name === "") return <LaneGrid {...props} className="" />;
+  if (lane.glyph == null) return <LaneGrid {...props} className="" />;
   const glyphTone = lane.glyph === "folder" ? (lane.held ? "text-wait" : "text-live") : "text-ink-2";
   return (
     <section aria-label={lane.name} className="border border-rule-2 bg-paper">

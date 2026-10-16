@@ -159,7 +159,8 @@ function projectLanes(cards: TicketCard[], boards: TicketBoard["boards"]): Lane[
     if (mine.length === 0) return [];
     const host = boards.find((each) => each.host.base === base)?.host;
     const held = host != null && !host.contract_error && host.status?.admission === "held";
-    return [{ ...laneOf(base, mine[0]!.project, "folder", mine, held ? "held" : null), held }];
+    const name = host == null ? mine[0]!.project : host.project == null ? host.label : projectName(host.project);
+    return [{ ...laneOf(base, name, "folder", mine, held ? "held" : null), held }];
   });
 }
 
