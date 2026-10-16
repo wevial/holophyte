@@ -64,6 +64,14 @@ class PullRequestRefreshTests(MergeModeFixture):
             "New description.\n\nLinear: KO-131\n\n"
             "<!-- bot -->\nAppended block.\n")
 
+    def test_refresh_without_title_replaces_prose_and_preserves_ticket_footer(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.pr_body.write_text("Old description.\n\nLinear: KO-131\n")
+        self.refresh(("Requests no longer hang.", False))
+        self.assertEqual(self.pr_body.read_text(),
+                         "Requests no longer hang.\n\nLinear: KO-131\n")
+
     def test_refresh_omits_history_by_default_and_removes_existing_rounds(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route()
