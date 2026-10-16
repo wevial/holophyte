@@ -40,9 +40,8 @@ export function useRunHistory(): { now: number; rows: RunRow[] } {
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
-  const { now } = peers;
   const hosts = scopedHosts(peers.hosts, project);
   const readiness = useReadiness(hosts, deps);
-  const answers = useHistory(hosts, now, deps);
-  return { now, rows: historyRows(hosts, answers, readiness) };
+  const answers = useHistory(hosts, peers.now, deps);
+  return { now: peers.now, rows: historyRows(hosts, answers, readiness) };
 }
