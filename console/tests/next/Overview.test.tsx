@@ -274,7 +274,7 @@ test("from 1600 px the Overview is the board's three-track grid, the header acro
   expect(classes(head)).toEqual(expect.arrayContaining([WIDE + "col-start-1", WIDE + "col-span-2", WIDE + "row-start-1"]));
   const log = dayLog().parentElement!;
   expect(classes(log)).toEqual(
-    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", WIDE + "sticky", WIDE + "top-0", WIDE + "self-start", WIDE + "h-screen"]),
+    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", WIDE + "sticky", WIDE + "top-0", WIDE + "self-start", WIDE + "h-[calc(100vh-56px)]"]),
   );
 });
 
