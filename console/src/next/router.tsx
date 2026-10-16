@@ -15,6 +15,7 @@ import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
 import { Findings } from "./pages/Findings";
+import { validateRunsSearch } from "./history";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
@@ -59,7 +60,7 @@ function TicketPlaceholder() {
 
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
-  pageRoute("/runs", Runs),
+  createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
   pageRoute("/tickets", Tickets),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPlaceholder }),
   pageRoute("/findings", Findings),
