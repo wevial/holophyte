@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { describe, needsYouEntries, type Fact } from "../lib/attention";
-import type { ConsoleAsk, RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
+import type { ConsoleAsk, RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
 import { hostItems, sinceSeen } from "../lib/hosts";
@@ -57,6 +57,19 @@ export function runPage(project: string, id: number) {
 }
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
+
+export function criteriaClause(criteria: RunCriterion[]): string {
+  if (!criteria.length) return "";
+  const met = criteria.filter((criterion) => criterion.status === "met").length;
+  const total = numberWord(criteria.length);
+  const noun = criteria.length === 1 ? "criterion is" : "criteria are";
+  if (met === criteria.length) return `All ${total} ${noun} met.`;
+  if (met === 0) return `None of ${total} ${criteria.length === 1 ? "criterion" : "criteria"} is met yet.`;
+  return `${capital(numberWord(met))} of ${total} ${noun} met.`;
+}
 
 function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n", 1)[0] ?? "").trim() : "";
@@ -173,6 +186,8 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const needsYou = ASKS_YOU.has(state) || needsYouEntries(items, readiness, now).length > 0;
   const prItem = items.find((each) => each.kind === "pr_open");
   const words = stageWords({ detail, live, phase, state, item, thresholds: status.thresholds, heartbeatMs: heartbeat ?? 0, now });
+  const criteria = ["running", "stale", "question", "on_ci", "parked", "ready_to_merge"].includes(state) ? criteriaClause(detail.criteria) : "";
+  const sentence = [words.sentence, criteria].filter(Boolean).join(" ");
   const loopsBack = detail.rounds.filter((round) => round.verdict === "changes_requested").length;
   return {
     kind: "run",
@@ -186,7 +201,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
     boxMs: live?.time_box_ms ?? detail.run.time_box_ms,
     labels: status.route_labels,
     prFacts: prItem == null ? null : (describe(prItem, status.thresholds, { now }).facts ?? []),
-    sentence: needsYou ? words.sentence : `${words.sentence} Nothing needs you.`,
+    sentence: needsYou ? sentence : `${sentence} Nothing needs you.`,
     stage: {
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
