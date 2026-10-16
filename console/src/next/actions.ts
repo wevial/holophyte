@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext } from "react";
 import { actionBase, postAction } from "../lib/actions";
+import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
 import { useToast } from "./components/Toast";
 import { PollDepsContext } from "./scope";
 
@@ -30,4 +31,36 @@ export function useAction() {
       void client.invalidateQueries({ queryKey: ["route", post.base] });
     },
   });
+}
+
+/** One revision-checked board write to ticket `key` at `base`: a move to
+ *  `column`, or a cancel with the reason `note`. */
+export type BoardWrite = { base: string; key: string; revision: number; said: string } & ({ column: "ready" | "backlog" } | { note: string });
+
+/** A move or cancel as a mutation resolving to the daemon's `WriteResult`.
+ *  An `ok` answer says its sentence and, like a 409, re-reads the fleet and
+ *  every route query of `base`; nothing is retried. */
+export function useBoardWrite() {
+  const deps = useContext(PollDepsContext);
+  const client = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (write: BoardWrite) =>
+      "column" in write
+        ? moveTicket(write.base, write.key, write.revision, write.column, deps.fetch)
+        : cancelTicket(write.base, write.key, write.revision, write.note, deps.fetch),
+    onSuccess: (result, write) => {
+      if (result.ok) toast(write.said);
+      if (!result.ok && !("conflict" in result)) return;
+      void client.invalidateQueries({ queryKey: ["fleet"] });
+      void client.invalidateQueries({ queryKey: ["route", write.base] });
+    },
+  });
+}
+
+/** Why `result` was refused, one line a problem, or null for a taken write. */
+export function writeRefusal(result: WriteResult | undefined, key: string): string[] | null {
+  if (result == null || result.ok) return null;
+  if ("conflict" in result) return [`${key} changed since this page read it. It is read again; try once more.`];
+  return "problems" in result ? result.problems : [result.error];
 }
