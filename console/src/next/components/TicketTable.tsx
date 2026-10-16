@@ -9,6 +9,8 @@ import { StateDot, TONE_TEXT } from "./StateDot";
 
 const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "done"];
 
+const byKey = (a: TicketCard, b: TicketCard) => a.key.localeCompare(b.key, undefined, { numeric: true });
+
 const GRID = "grid grid-cols-[132px_96px_minmax(0,1fr)_220px_40px] items-center gap-4 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
 
 const columnTone = (column: ColumnId): Tone => (column === "needs_you" ? "need" : STATES[COLUMN_HEADS[column].state].tone);
@@ -62,7 +64,7 @@ function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
     <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "border border-rule-2 bg-paper" : ""}>
       {ROW_ORDER.flatMap((column) =>
-        lane.columns[column].map((card) => (
+        lane.columns[column].toSorted(byKey).map((card) => (
           <li key={card.id} className="border-rule-2 not-first:border-t">
             <TicketRow card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
           </li>
@@ -72,7 +74,7 @@ function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   );
 }
 
-/** The lanes' tickets as rows, Needs you first, each column keeping its order. */
+/** The lanes' tickets as rows, Needs you first, each column's rows by ticket key. */
 export function TicketTable({
   lanes,
   now,

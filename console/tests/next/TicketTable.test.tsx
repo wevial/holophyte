@@ -92,7 +92,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog and Done today, and a remount keeps it", async () => {
+test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog and Done today, each by key, and a remount keeps it", async () => {
   await mount("#/tickets?project=demo", seeded);
   expect(view().getByRole("button", { name: "Board" }).getAttribute("aria-pressed")).toBe("true");
   await press("Table");
@@ -101,10 +101,10 @@ test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog a
   expect(rowsIn().map(cells)).toEqual([
     ["Needs you", "DEMO-4", "DEMO-4 title", "question open 8h 02m", ""],
     ["Needs you", "DEMO-11", "DEMO-11 title", "failed · verify failed", ""],
-    ["In flight", "DEMO-8", "DEMO-8 title", "on CI · PR #10", ""],
     ["In flight", "DEMO-3", "DEMO-3 title", "running", "25m time box"],
-    ["Ready", "DEMO-5", "DEMO-5 title", "to do", ""],
+    ["In flight", "DEMO-8", "DEMO-8 title", "on CI · PR #10", ""],
     ["Ready", "DEMO-2", "DEMO-2 title", "queued", ""],
+    ["Ready", "DEMO-5", "DEMO-5 title", "to do", ""],
     ["Backlog", "DEMO-1", "DEMO-1 title", "backlog", ""],
     ["Done today", "DEMO-10", "Approved ticket", "merged 11:30", ""],
   ]);
@@ -134,7 +134,7 @@ test("Table grouped by Project draws a lane per project with its heading, and fo
   const demo = screen.getByRole("region", { name: "demo" });
   const writer = screen.getByRole("region", { name: "writer" });
   expect(within(demo).getByRole("heading", { level: 2 }).querySelector("[data-lane-meta]")?.textContent).toBe("8 tickets");
-  expect(keysIn(demo)).toEqual(["DEMO-4", "DEMO-11", "DEMO-8", "DEMO-3", "DEMO-5", "DEMO-2", "DEMO-1", "DEMO-10"]);
+  expect(keysIn(demo)).toEqual(["DEMO-4", "DEMO-11", "DEMO-3", "DEMO-8", "DEMO-2", "DEMO-5", "DEMO-1", "DEMO-10"]);
   expect(keysIn(writer)).toEqual(["WRITER-9"]);
 
   fireEvent.click(within(demo).getByRole("button", { expanded: true }));
