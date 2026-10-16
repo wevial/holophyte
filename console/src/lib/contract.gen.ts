@@ -888,3 +888,51 @@ export const ticketDetailSchema = z.looseObject({
   steers: z.array(ticketSteerSchema),
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
+
+export const storyChildRowSchema = z.looseObject({
+  ticket: z.string(),
+  title: z.string(),
+  status: z.enum(["needs_spec", "ready", "in_flight", "blocked_on_deps", "blocked_on_operator", "merged", "abandoned"]),
+  column: z.enum(["backlog", "ready", "canceled"]).nullable(),
+  time_box_ms: z.int().nullable(),
+  run: z.int().nullable(),
+  merged_ms: z.int().nullable(),
+  role: z.enum(["completes", "advances", "scaffolding"]),
+  witness_keys: z.array(z.string()),
+  depends_on: z.array(z.string()),
+});
+export type StoryChildRow = z.infer<typeof storyChildRowSchema>;
+
+export const storyWitnessRowSchema = z.looseObject({
+  key: z.string(),
+  criterion: z.string(),
+  verdict: z.enum(["absent", "red", "green", "error"]).nullable(),
+  main_sha: z.string().nullable(),
+  at: z.int().nullable(),
+});
+export type StoryWitnessRow = z.infer<typeof storyWitnessRowSchema>;
+
+export const storyDecisionRowSchema = z.looseObject({
+  id: z.int(),
+  kind: z.enum(["unmet", "regressed", "plan_drift"]),
+  ticket: z.string().nullable(),
+  question: z.string(),
+  options: z.array(z.string()),
+  default_option: z.string(),
+  answer: z.string().nullable(),
+  answered_by: z.string().nullable(),
+  answered_ms: z.int().nullable(),
+  at: z.int(),
+});
+export type StoryDecisionRow = z.infer<typeof storyDecisionRowSchema>;
+
+export const storyDetailSchema = z.looseObject({
+  ticket: z.string(),
+  title: z.string(),
+  state: z.enum(["planned", "approved", "parked", "closed", "abandoned"]),
+  generation: z.int(),
+  children: z.array(storyChildRowSchema),
+  witnesses: z.array(storyWitnessRowSchema),
+  decisions: z.array(storyDecisionRowSchema),
+});
+export type StoryDetail = z.infer<typeof storyDetailSchema>;
