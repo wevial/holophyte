@@ -2,6 +2,7 @@
 import json
 import re
 
+import holophyte.serve.serve_history
 import holophyte.serve.serve_runs
 import holophyte.serve.server
 import holophyte.serve.views
@@ -111,9 +112,25 @@ def contract_answers(case):
         ),
         "shipped": holophyte.serve.serve_runs.shipped(target, "outcome=all"),
         "ledger": holophyte.serve.serve_runs.ledger(target, "since=0"),
+        "history": holophyte.serve.serve_history.history(
+            target, f"since={NOW - 100_000}", now=NOW),
         "board": holophyte.serve.views.board(target, now=NOW),
         "ticket": holophyte.serve.views.ticket_detail(target, "KO-8"),
     }.items():
         case.assertEqual(code, 200)
         answers[name] = normalize_contract(body)
+    with store.open(str(case.db)) as conn:
+        store.record_agent_session(conn, case.run, "session-1", "implement",
+                                   "primary")
+        for role, route, label, seconds in [
+                ("implement", "primary", "claude opus", 372.5),
+                ("review", "fallback", "codex gpt-5.6-sol", 95.25)]:
+            store.record_event(conn, case.run, "agent_turn", f"{role} turn ended",
+                               level="detail", payload=json.dumps(dict(
+                                   role=role, label=label, route=route,
+                                   exit_status=0, timed_out=False,
+                                   seconds=seconds)))
+    code, body = holophyte.serve.serve_runs.run_turns(target, str(case.run))
+    case.assertEqual(code, 200)
+    answers["run-turns"] = normalize_contract(body)
     return answers
