@@ -574,6 +574,9 @@ Each module, one line:
 - `holophyte/babysit/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.
+- `holophyte/babysit/main_side.py` — the babysit pass's main-side verify
+  after a merge of main turns the branch red: main runs without what only
+  the branch adds, and is not compared when the failing command was left out.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
   commands at one commit of main in a scratch worktree, within
   `[story] witness_sec`, and appends each verdict to the ledger;
