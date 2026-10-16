@@ -25,11 +25,15 @@ from holophyte.config.project import Project  # noqa: E402
 from holophyte.host.registry import Host, settings  # noqa: E402
 from holophyte.serve.serve_host import HostServer, host_tokens  # noqa: E402
 from holophyte.serve.server import BOARD_STATES  # noqa: E402
+from store.stories import file_story  # noqa: E402
 from tests.host_fixture import HostFixture  # noqa: E402
 
 NOW = 1_750_000_000_000
 MACHINE = "machine-token-value"
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
+WITNESS = {"criterion": "the story works", "file": "tests/test_story.py",
+           "command": "python3 -m unittest tests.test_story",
+           "source": "def test_it_works():\n    pass\n"}
 
 
 class BoardFieldsCase(HostFixture):
@@ -146,6 +150,7 @@ class BoardFieldsTests(BoardFieldsCase):
                           "revision": 1})
         self.assertEqual(self.fields(body, "KO-1")["revision"], 3)
         self.assertIs(body["editable"], False)
+        self.assertEqual(body["stories"], [])
 
     def test_a_project_daemon_with_actions_on_answers_not_editable(self):
         token = self.root / "serve.token"
@@ -162,6 +167,47 @@ class BoardFieldsTests(BoardFieldsCase):
 
         self.assertEqual(columns["backlog"], ["NAT-2"])
         self.assertIs(body["editable"], False)
+
+
+class BoardStoriesTests(BoardFieldsCase):
+    def seed_stories(self):
+        """Open story DEMO-20 over DEMO-21 (merged), DEMO-22 (ready) and
+        DEMO-23 (in flight, two witnesses); merged story DEMO-30 over
+        DEMO-31; DEMO-24 in no story."""
+        conn = store.open(str(Project.locate(self.paths["linear"]).store_path))
+        try:
+            project = store.tickets.ensure_project(conn, "team-linear",
+                                                   self.paths["linear"])
+            ids = {n: store.tickets.mirror_ticket(
+                conn, project, linear_issue_id=f"issue-demo-{n}",
+                linear_identifier=f"DEMO-{n}", title=f"demo {n}",
+                acceptance_criteria=["Given it, then it is worked"],
+                verification_commands=["echo ok"], now=NOW)
+                for n in (20, 21, 22, 23, 24, 30, 31)}
+            witnesses = [dict(WITNESS, key=key) for key in ("W1", "W2")]
+            file_story(conn, ids[20], witnesses,
+                       [(ids[21], "completes", ("W1",)),
+                        (ids[22], "scaffolding", ()),
+                        (ids[23], "advances", ("W1", "W2"))])
+            file_story(conn, ids[30], witnesses[:1],
+                       [(ids[31], "completes", ("W1",))])
+            for n in (21, 23, 30, 31):
+                store.tickets.transition(conn, ids[n], "in_flight")
+            for n in (21, 30, 31):
+                store.tickets.transition(conn, ids[n], "merged")
+        finally:
+            conn.close()
+
+    def test_the_board_lists_each_open_story_with_its_children(self):
+        self.seed_stories()
+        self.start_host()
+
+        body, _ = self.board("/projects/linear/board")
+
+        self.assertEqual(body["stories"], [
+            {"ticket": "DEMO-20", "title": "demo 20",
+             "children": ["DEMO-21", "DEMO-22", "DEMO-23"],
+             "merged": 1, "total": 3}])
 
 
 if __name__ == "__main__":

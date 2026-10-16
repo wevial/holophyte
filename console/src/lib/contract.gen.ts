@@ -789,8 +789,18 @@ export const boardColumnSchema = z.looseObject({
 });
 export type BoardColumn = z.infer<typeof boardColumnSchema>;
 
+export const boardStorySchema = z.looseObject({
+  ticket: z.string(),
+  title: z.string(),
+  children: z.array(z.string()),
+  merged: z.int(),
+  total: z.int(),
+});
+export type BoardStory = z.infer<typeof boardStorySchema>;
+
 export const boardSchema = z.looseObject({
   columns: z.array(boardColumnSchema),
+  stories: z.array(boardStorySchema),
   editable: z.boolean(),
   now: z.int(),
 });

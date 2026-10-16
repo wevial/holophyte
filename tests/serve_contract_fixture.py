@@ -24,6 +24,10 @@ from tests.phase_fixture import park_run
 
 NOW = 1_750_000_000_000
 MIGRATED_BY = re.compile(r" by \S+, pid \d+, [^)]*\)$")
+STORY_WITNESS = {"key": "W1", "criterion": "the story works",
+                 "file": "tests/test_story.py",
+                 "command": "python3 -m unittest tests.test_story",
+                 "source": "def test_it_works():\n    pass\n"}
 
 
 def normalize_contract(value, key=""):
@@ -48,7 +52,8 @@ def normalize_contract(value, key=""):
 def contract_answers(case):
     """A reviewed run with a pending follow-up, an unestimated run predating
     host recording with one posted note, an approved pull request waiting
-    for a claim, and one waiting on review."""
+    for a claim, one waiting on review, and an unspecced story over the
+    unestimated and approved tickets."""
     case.seed()
     with store.open(str(case.db)) as conn:
         store.record_review_round(
@@ -113,6 +118,11 @@ def contract_answers(case):
         park_run(conn, reviewed, "awaiting_merge_approval", "PR open\nAwaiting review",
                  candidate_sha="b" * 40, pr_url="https://github.com/example/repo/pull/10",
                  park_kind="pull_request", now=NOW - 30_000)
+        story = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-20", linear_identifier="KO-20",
+            title="Story over KO-8 and KO-9")
+        file_story(conn, story, [STORY_WITNESS],
+                   [(ticket, "advances", ("W1",)), (approved, "scaffolding", ())])
         conn.execute(
             "UPDATE runs SET workingMs = NULL, verifyMs = NULL WHERE id = ?",
             (unestimated_run,))

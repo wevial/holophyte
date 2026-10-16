@@ -218,7 +218,7 @@ class PinnedAnswerTests(unittest.TestCase):
         column["tickets"] = list[narrower]
         board = typing.get_type_hints(Board, include_extras=True)
         board["columns"] = list[typing.TypedDict("BoardColumn", column)]
-        with self.assertRaisesRegex(AssertionError, r"^board\.columns\.2"
+        with self.assertRaisesRegex(AssertionError, r"^board\.columns\.0"
                                     r"\.tickets\.0\.waits_on: undeclared$"):
             walk(pinned("board"), typing.TypedDict("Board", board), "board")
 
