@@ -27,6 +27,7 @@ from holophyte.pr import (
 )
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
+from holophyte.review.briefs import main_ref
 from store import operator_notes
 
 
@@ -99,12 +100,29 @@ def _pr_template(wt):
     return ""
 
 
+def _writer_diff_ref(wt):
+    try:
+        subprocess.run(
+            ["git", "fetch", github.REMOTE,
+             f"+refs/heads/{github.BASE}:refs/remotes/{github.REMOTE}/{github.BASE}"],
+            cwd=wt, capture_output=True, text=True, timeout=github.PR_TIMEOUT,
+            check=True)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        print(f"[holo2] git fetch {github.REMOTE} {github.BASE} failed before"
+              " writing PR text; using the available main ref")
+    try:
+        return main_ref(wt)
+    except OSError:
+        return github.BASE
+
+
 def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                      beat_s, wt, started, budget_min, issue_url, *, refresh=None):
     """A refresh returns None on refusal, so its caller keeps the body."""
     from holophyte.loop.implement import _timed
 
-    diff = sh(["git", "diff", "main...HEAD"], cwd=wt)
+    ref = _writer_diff_ref(wt)
+    diff = sh(["git", "diff", f"{ref}...HEAD"], cwd=wt)
     if len(diff) > PR_TEXT_DIFF_CAP:
         diff = (diff[:PR_TEXT_DIFF_CAP]
                 + "\n\n[diff truncated here: the change is larger than this"
@@ -141,7 +159,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     for name, text in babysitter.conventions(wt):
         parts.append(f"The repository's {name}:\n\n{text}")
     parts.append(f"The ticket:\n\n{body or task}")
-    parts.append(f"The diff against main (`git diff main...HEAD`):\n\n"
+    parts.append(f"The diff against {ref} (`git diff {ref}...HEAD`):\n\n"
                  f"```diff\n{diff}\n```")
     if refresh is not None:
         parts.extend(_refresh_parts(project, *refresh))
