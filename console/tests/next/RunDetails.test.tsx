@@ -133,3 +133,10 @@ test("Details describes a successful completed review as passed", async () => {
   const round = within(screen.getByRole("region", { name: "Review rounds" })).getByRole("listitem");
   expect(round.textContent).toBe("Round 1: passed · codex gpt-6-sol · 16:45 · 0 findings");
 });
+
+test("Details labels a truncated file list as shown rather than a total", async () => {
+  await mount({ ...files, truncated: true });
+  await openDetails();
+  const changed = within(screen.getByRole("region", { name: "Files changed" }));
+  expect(changed.getByRole("heading").textContent).toBe("Files changed · 4 shown");
+});

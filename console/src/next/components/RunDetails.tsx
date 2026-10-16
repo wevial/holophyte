@@ -59,7 +59,7 @@ export function RunDetails({ base, detail, live }: { base: string; detail: RunDe
     </summary>
     {open && <div className="flex flex-col gap-[18px] pb-2 pt-3">
       <section aria-label="Files changed">
-        <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Files changed{files.data && ` · ${files.data.files.length}`}</h3>
+        <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Files changed{files.data && ` · ${files.data.files.length}${files.data.truncated ? " shown" : ""}`}</h3>
         {files.isPending && <p role="status">Loading files…</p>}
         {files.isError ? <p role="alert">{fileError}</p> : files.data && <>
           {files.data.files.length === 0 && <p>No files changed yet.</p>}
