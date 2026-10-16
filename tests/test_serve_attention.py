@@ -557,13 +557,13 @@ class BlockedParkFactsTests(ServeTestCase):
             question, "fix_declined",
             pr_url="https://github.com/example/repo/pull/644",
             pr_seen=("2026-09-29T10:00:00Z", 3, None, None, "failure",
-                     "changes_requested", None))
+                     "changes_requested", None, "ready"))
         self.assertEqual(item["kind"], "blocked")
         self.assertEqual(item["question"], question)
         self.assertEqual(item["park_kind"], "fix_declined")
         self.assertEqual(item["pr"], {
             "number": 644, "checks": "failure", "review": "changes_requested",
-            "threads": 3, "open_threads": None, "title": None})
+            "threads": 3, "open_threads": None, "title": None, "state": "ready"})
 
     def test_plain_question_has_its_park_kind_and_no_pull_request(self):
         item = self.park_question("Which API should this use?", "question")
