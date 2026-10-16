@@ -350,14 +350,13 @@ def drop_candidate_modules(command, candidate, main, main_sha):
             dropped[line.strip()] = [n for c in clauses for n in dropped.get(c, ())]
         elif any(c in trimmed for c in clauses):
             trimmed[line.strip()] = [n for c in clauses for n in trimmed.get(c, ())]
-        if len(kept) == len(parts[::2]):
+        if len(kept) == len(clauses):
             lines.append("".join(op + clause for op, clause in kept))
         elif kept:
             lines.append(kept[0][1].strip() + "".join(
                 f" {op} {clause.strip()}" for op, clause in kept[1:]))
-    changed = modules or paths
-    return MainSideCommand("\n".join(lines) if changed else command, modules,
-                           paths, dropped, trimmed)
+    return MainSideCommand("\n".join(lines) if modules or paths else command,
+                           modules, paths, dropped, trimmed)
 
 
 def contract_report(contracts, cwd):
