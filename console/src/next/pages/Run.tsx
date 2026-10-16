@@ -1,9 +1,10 @@
-import { useContext, type MouseEvent, type ReactNode } from "react";
+import { useContext, useRef, type MouseEvent, type ReactNode } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { Markdown } from "../../components/Markdown";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { leadParagraph } from "../../lib/ticket";
+import { AgentCompose } from "../components/AgentCompose";
 import { AgentPanel } from "../components/AgentPanel";
 import { CriteriaList } from "../components/CriteriaList";
 import { SECTION_LABEL } from "../components/Criteria";
@@ -74,6 +75,7 @@ function Dot() {
 }
 
 export function RunPage() {
+  const composeRef = useRef<HTMLTextAreaElement>(null);
   const { project, run: param } = useParams({ from: "/runs/$project/$run" });
   const id = /^\d+$/.test(param) ? Number(param) : null;
   const page = useRunPage(project, id);
@@ -142,6 +144,11 @@ export function RunPage() {
           </p>
         </div>
         <div className="mt-[18px] flex flex-wrap items-center gap-x-3 gap-y-2.5">
+          {page.state !== "merged" && <a href="#agent" className="btn" data-variant="quiet" onClick={(event) => {
+            event.preventDefault();
+            composeRef.current?.focus();
+            composeRef.current?.scrollIntoView({ block: "nearest" });
+          }}>Steer or ask</a>}
           <span className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">Stage</span>
           <span role="group" aria-label="Stage">
             <StageChip label={page.stage.label} state={page.state} sub={page.stage.sub} />
@@ -165,7 +172,9 @@ export function RunPage() {
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
           <ProgressLog key={run.id} lines={page.progress} live={page.live} />
         </div>
-        <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks} />
+        <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks}>
+          {page.state !== "merged" && <AgentCompose key={`${page.base}/${run.id}`} base={page.base} run={run.id} ticket={run.ticket} prUrl={run.pr_url} actions={page.actions} parked={page.phase === "awaiting_merge_approval"} live={page.stoppable} ref={composeRef} />}
+        </AgentPanel>
       </div>
     </Page>
   );
