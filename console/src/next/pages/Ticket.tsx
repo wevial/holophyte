@@ -6,12 +6,11 @@ import { summaryOf } from "../../lib/ticket";
 import { classicHref } from "../../lib/view";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot } from "../components/StateDot";
-import { Chip, Fact } from "../components/TicketPeek";
+import { Chip, Fact, NUMBER } from "../components/TicketPeek";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
 
 const CRUMB_LINK = "border-b border-rule text-ink-3 no-underline hover:border-ink hover:text-ink";
-const NUMBER = "font-mono text-[13px] font-medium tabular-nums";
 
 function Page({ project, ticketKey, children }: { project: string; ticketKey: string; children?: ReactNode }) {
   return (

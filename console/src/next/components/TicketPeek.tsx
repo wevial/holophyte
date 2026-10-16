@@ -45,7 +45,7 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
   );
 }
 
-const NUMBER = "font-mono text-[13px] font-medium tabular-nums";
+export const NUMBER = "font-mono text-[13px] font-medium tabular-nums";
 
 /** Blank while `/tickets/KEY` loads; the run's standings fill in as they land. */
 function Contract({ card }: { card: TicketCard }) {
