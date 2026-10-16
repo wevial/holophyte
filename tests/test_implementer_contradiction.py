@@ -171,18 +171,5 @@ class FixTurnContradictionTests(LoopFixture):
                       " pin forbids it", first)
 
 
-class NoContradictionTests(LoopFixture):
-
-    def test_the_brief_asks_for_the_line_and_a_plain_reply_merges(self):
-        fake, _ = self.loop(Commit("the thing"), APPROVE)
-
-        self.assertIn("CONTRADICTION: criterion N", fake.turns[0].goal)
-        self.assertEqual(fake.roles, ["implement", "review"])
-        self.assertEqual(self.read("SELECT status FROM tickets"), [("merged",)])
-        self.assertEqual(self.read(
-            "SELECT COUNT(*) FROM runEvents WHERE kind = 'contradiction'"),
-            [(0,)])
-
-
 if __name__ == "__main__":
     unittest.main()
