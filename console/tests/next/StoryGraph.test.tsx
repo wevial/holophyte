@@ -88,7 +88,9 @@ test("a card shows a long title whole, with no line clamp", () => {
   const title = "Requeue a run whose lease went silent, page the operator once, and keep the run's worktree, branch and review rounds intact for the retry";
   expect(title.length).toBeGreaterThan(120);
   render(<StoryGraph nodes={[node("A", [], { title })]} base={SEEDED_BASE} />);
-  for (const card of document.querySelectorAll('[data-node="A"]')) {
+  const cards = Array.from(document.querySelectorAll('[data-node="A"]'));
+  expect(cards.map((card) => (card.closest("[data-graph]") != null ? "graph" : card.closest("[data-step]") != null ? "steps" : "other"))).toEqual(["graph", "steps"]);
+  for (const card of cards) {
     const shown = Array.from(card.querySelectorAll("span")).find((span) => span.textContent === title)!;
     expect(shown).toBeDefined();
     expect(Array.from(shown.classList).filter((name) => name.startsWith("line-clamp") || name === "truncate")).toEqual([]);
