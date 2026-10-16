@@ -55,12 +55,13 @@ const refusal = (url: string, status: number, record: Record<string, unknown>) =
 
 /** File a new ticket: `POST` `{"body", "priority"}` to `base`'s
  *  `/tickets`, the bearer for `base` added the way every poll carries it
- *  (`withToken`). `priority` is 0 to 4, null for none. Never throws: a
+ *  (`withToken`). `priority` is 0 to 4, null for none; `column` lands it
+ *  in Backlog instead of the daemon's default Ready. Never throws: a
  *  refused request reads as `problems` or `error`, so the form keeps its
  *  text and says why. */
-export async function fileTicket(base: string, body: string, priority: number | null, fetchImpl: Fetch): Promise<FileResult> {
+export async function fileTicket(base: string, body: string, priority: number | null, fetchImpl: Fetch, column?: "backlog"): Promise<FileResult> {
   const url = `${base}/tickets`;
-  const sent = await send(base, url, "POST", { body, priority }, fetchImpl);
+  const sent = await send(base, url, "POST", { body, priority, column }, fetchImpl);
   if ("error" in sent) return { ok: false, error: sent.error };
   const { status, record } = sent;
   if (status === 201 && typeof record.ticket === "string") return { ok: true, ticket: record.ticket };
