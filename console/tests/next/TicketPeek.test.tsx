@@ -221,7 +221,6 @@ function needsFetch(answer: Fetch): Fetch {
   };
 }
 
-const VERIFY_FAILED = "Verify command failed";
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const askBox = () => peek()!.querySelector<HTMLElement>("[data-peek-ask]");
 
@@ -239,7 +238,7 @@ test("a failed ticket's peek asks first with one Requeue button, no More and no 
   await peekAt("DEMO-11", fakeFetch({ ok: true, detail: "requeued" }).fetchImpl);
   const box = askBox()!;
   expect(within(box).getByText("Needs you")).toBeTruthy();
-  expect(within(box).getByText(VERIFY_FAILED)).toBeTruthy();
+  expect(within(box).getByText("Verify command failed")).toBeTruthy();
   expect(within(box).getAllByRole("button").map((button) => button.textContent)).toEqual(["Requeue"]);
   expect(within(box).queryByRole("link", { name: "Open run" })).toBeNull();
 });
