@@ -530,6 +530,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
             print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but"
                   " the ticket moved while it was asked; left alone")
             return
+        store.record_pr_seen(conn, run_id, _seen(status))
         branch = parked[0]
         store.record_intervention(
             conn, run_id, "approve",
@@ -566,6 +567,7 @@ def _note_closed_pr(target, conn, provider, ticket, pull, status):
         branch, sha = conn.execute(
             "SELECT branch, candidateSha FROM runs WHERE id = ?",
             (ticket.runId,)).fetchone()
+        store.record_pr_seen(conn, ticket.runId, _seen(status))
         _reject_pr(conn, ticket.runId, pull, status.closed_by, branch, sha)
     from holophyte.board.projection import release_lease_label
     release_lease_label(target, conn, ticket.id, provider, ticket.runId)
