@@ -14,7 +14,6 @@ import {
   type Ledger,
   type LedgerEntry,
   type Peers,
-  type TicketDetail,
 } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
@@ -119,7 +118,7 @@ export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
   const path = `/tickets/${encodeURIComponent(key)}`;
   return useQuery({
     queryKey: routeKey(base, path),
-    queryFn: (): Promise<TicketDetail | null> => routeOrNone(deps.fetch, `${base}${path}`, ticketDetailSchema),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, ticketDetailSchema),
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
@@ -132,7 +131,6 @@ export interface DayLedger {
   entries: LedgerEntry[];
 }
 
-
 /** Every `/ledger` entry of every answering host since local midnight
  *  before `now`, of any kind, so each answer also carries its outages. */
 export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): DayLedger {
@@ -141,7 +139,7 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
-      queryFn: (): Promise<Ledger | null> => routeOrNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
     })),

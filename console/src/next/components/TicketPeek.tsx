@@ -57,11 +57,10 @@ function Contract({ card }: { card: TicketCard }) {
   if (ticket == null) {
     return <p className="mt-5 font-mono text-[13px] text-ink-3">This host has not mirrored {card.key}.</p>;
   }
-  const summary = summaryOf(ticket.body);
   return (
     <>
       <div className={`${SECTION_LABEL} mt-5`}>Summary</div>
-      <p className="m-0 mt-2.5 line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summary}</p>
+      <p className="m-0 mt-2.5 line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
       <div className="mt-[18px]">
         <Criteria rows={criteriaRows(ticket.acceptance_criteria, run.data?.criteria ?? [], runId != null)} />
       </div>
