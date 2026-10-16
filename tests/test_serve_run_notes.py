@@ -111,6 +111,34 @@ class RunNotesTests(ServeTestCase):
         self.assertEqual(first["at"], self.now - 15 * MIN)
         self.assertEqual(first["author"], "maintainer")
 
+    def test_a_note_steered_between_runs_is_routed_to_no_run(self):
+        ticket = self.ticket("DEMO-10")
+        failed = self.claim(ticket, self.now - 20 * MIN)
+        finish_run(self.conn, failed, "failed", "verify failed",
+                   now=self.now - 15 * MIN)
+        waiting = store.steer_notes.steer(self.conn, ticket, "mind the lease",
+                                          "maintainer", now=self.now - 12 * MIN)
+        store.requeue(self.conn, ticket, "rerun it")
+        later = self.claim(ticket, self.now - 10 * MIN)
+        store.steer_notes.consume(self.conn, [waiting.id], later,
+                                  now=self.now - 9 * MIN)
+
+        (body,) = self.details(later)
+
+        (note,) = body["steer_notes"]
+        self.assertIsNone(note["run"])
+        self.assertEqual(note["consumed_by"], later)
+
+    def test_a_store_from_before_steer_notes_serves_none(self):
+        run = self.claim(self.ticket("DEMO-11"), self.now - 10 * MIN)
+        self.conn.executescript("DROP TABLE steerNotes;\n"
+                                "PRAGMA user_version = 43;\n")
+
+        (body,) = self.details(run)
+
+        self.assertEqual(body["steer_notes"], [])
+        self.assertEqual(body["run"]["id"], run)
+
 
 if __name__ == "__main__":
     import unittest

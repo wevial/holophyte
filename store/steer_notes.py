@@ -294,11 +294,19 @@ _READER = (" LEFT JOIN runEvents c ON c.id = (SELECT MIN(e.id) FROM runEvents e"
 
 
 def chain_notes(conn, ticket_id, since):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(steerNotes)")}
+    if not columns:
+        return []
+    interrupt = "s.interrupt = 1" if "interrupt" in columns else "0"
+    withdrawn = ("s.withdrawnBy IS NOT NULL" if "withdrawnBy" in columns
+                 else "0")
     return [ChainNote(*row[:8], bool(row[8]), bool(row[9])) for row in conn.execute(
-        "SELECT s.id, s.kind, s.note, s.author, s.at, s.runId,"
+        "SELECT s.id, s.kind, s.note, s.author, s.at,"
+        " CASE WHEN r.endedAt IS NULL OR r.endedAt >= s.at THEN r.id END,"
         " COALESCE(s.consumedBy, c.runId), COALESCE(s.consumedAt, c.at),"
-        " s.interrupt = 1, s.withdrawnBy IS NOT NULL FROM steerNotes s"
-        + _READER + " WHERE s.ticketId = ? AND s.at >= ? ORDER BY s.at, s.id",
+        f" {interrupt}, {withdrawn} FROM steerNotes s"
+        " LEFT JOIN runs r ON r.id = s.runId" + _READER
+        + " WHERE s.ticketId = ? AND s.at >= ? ORDER BY s.at, s.id",
         (ticket_id, since))]
 
 
