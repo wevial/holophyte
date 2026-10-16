@@ -191,8 +191,8 @@ def witness_brief(gaps, unnamed):
     lead = ("The factory's witness pre-check found these gaps before this "
             "review; judge each criterion yourself:\n"
             + "".join(f"{gap}\n" for gap in gaps) if gaps else
-            "The factory's witness pre-check found no gap in the named test "
-            "files before this review; judge each criterion yourself.\n")
+            "The factory's witness pre-check ran before this review; judge "
+            "each criterion yourself.\n")
     names = ", ".join(str(n) for n in unnamed)
     return lead + (f"Criteria that name no test file: {names}.\n"
                    if unnamed else "") + "\n"

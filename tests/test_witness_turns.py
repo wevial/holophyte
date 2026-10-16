@@ -18,6 +18,8 @@ from fake_agent import APPROVE, Commit, FakeAgent, Idle  # noqa: E402 - after sy
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
 import holophyte.loop.implement  # noqa: E402 - as above
+import store  # noqa: E402 - as above
+from holophyte.loop.stop import command  # noqa: E402 - as above
 
 VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
 CRITERION = "A test in `tests/test_gate.py` witnesses it."
@@ -57,6 +59,24 @@ class Broken(unittest.TestCase):
 def gated(n=0):
     return Commit(f"gated test {n}", path="tests/test_gate.py",
                   body=GATED.format(extra=f"# revision {n}\n" if n else ""))
+
+
+class PausingCommit(Commit):
+
+    def __init__(self, db, step):
+        super().__init__(step.message, step.path, step.body)
+        self.db = db
+
+    def play(self, cwd, turn):
+        reply = super().play(cwd, turn)
+        conn = store.open(self.db)
+        try:
+            ((run,),) = conn.execute(
+                "SELECT id FROM runs WHERE endedAt IS NULL").fetchall()
+            store.pause(conn, run, "reboot writer")
+        finally:
+            conn.close()
+        return reply
 
 
 class WitnessTurns(LoopFixture):
@@ -114,6 +134,17 @@ class WitnessTurns(LoopFixture):
         self.assertIn("witness pre-check found these gaps", goal)
         self.assertIn(GAP, goal)
         self.assert_merged_after_round_one()
+
+    def test_a_resumed_run_takes_only_the_turns_its_paused_run_left(self):
+        self.run_task(gated(), PausingCommit(self.db, gated(1)))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+
+        command(self.project, "KO-131", None, resume=True)
+        fake = self.run_task(gated(2), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(len(self.summaries("witness_turn")), 2)
+        self.assertIn(GAP, self.review_goal(fake))
 
     def test_a_witness_turn_without_a_commit_ends_the_turns(self):
         fake = self.run_task(gated(), Idle(), APPROVE)

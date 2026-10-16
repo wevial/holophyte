@@ -22,11 +22,24 @@ def _unnamed(entries):
             if entry["named"] == "no_file"]
 
 
+def _continued(conn, run_id):
+    runs = [run_id]
+    for earlier, outcome in conn.execute(
+            "SELECT old.id, old.outcome FROM runs old JOIN runs current"
+            " ON old.ticketId = current.ticketId WHERE current.id = ?"
+            " AND old.attempt < current.attempt ORDER BY old.attempt DESC",
+            (run_id,)).fetchall():
+        if outcome != "paused":
+            break
+        runs.append(earlier)
+    return runs
+
+
 def _turns_taken(conn, run_id):
     if conn is None or run_id is None:
         return 0
-    return sum(event.kind == "witness_turn"
-               for event in store.read.narrative_events(conn, run_id))
+    return sum(event.kind == "witness_turn" for run in _continued(conn, run_id)
+               for event in store.read.narrative_events(conn, run))
 
 
 def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps):
@@ -60,8 +73,8 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
             break
         gaps = _gaps(entries)
         _check_run_cap(project, conn, run_id, budget_min, sha)
-        _record_turn(conn, run_id, provider, task_id, turn, sha, gaps)
         boundary(conn, run_id, "verifying", rnd=1)
+        _record_turn(conn, run_id, provider, task_id, turn, sha, gaps)
         set_phase(conn, run_id, "verifying",
                   f"round 1: witness turn {turn} of {WITNESS_TURNS}")
         head = witness_turn(project, conn, run_id, beat_s, wt, budget_min,
