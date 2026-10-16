@@ -70,7 +70,9 @@ def implementer_brief(project, ticket, task_id):
         where += VIDEO_BRIEF
     return (where + " Produce one image "
             "per state, named NN-slug.png in state order (01, 02, ...), plus "
-            "a recording when the states describe a flow. The harness receives "
+            "a recording when the states describe a flow. Capture only UI "
+            "states as images: test or terminal output never becomes an image. "
+            "The harness receives "
             "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES. "
             f"Run `{cfg.ui_capture}` in the foreground until it exits, never "
             "in the background, and open each NN-slug.png before ending the "
