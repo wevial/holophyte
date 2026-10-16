@@ -6,7 +6,7 @@ import type { HostRecord } from "../lib/hosts";
 import type { ContractBodies } from "./fleet";
 
 /** The search every route of the new console inherits from its root. */
-interface ScopeSearch {
+export interface ScopeSearch {
   project?: string;
 }
 
