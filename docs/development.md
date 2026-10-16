@@ -272,6 +272,9 @@ Each module, one line:
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve/serve_findings.py` — the daemon's `GET /findings`: the
+  window's runs with their rounds, `round` and `adjudication` ledger rows
+  and advisories, and its follow-up rows with their settled state.
 - `holophyte/serve/serve_stories.py` — the daemon's `GET /stories/KEY`:
   one story's children with their in-story dependency edges, its
   witnesses' latest verdicts and its decisions, open or answered.

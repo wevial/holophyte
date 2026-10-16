@@ -233,6 +233,7 @@ PINNED = {
     "holophyte/serve/serve_ask.py": 0,
     "holophyte/serve/serve_board.py": 3,
     "holophyte/serve/serve_config.py": 5,
+    "holophyte/serve/serve_findings.py": 0,
     "holophyte/serve/serve_host.py": 7,
     "holophyte/serve/serve_levers.py": 1,
     "holophyte/serve/serve_merge.py": 0,
