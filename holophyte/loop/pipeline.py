@@ -129,7 +129,7 @@ def _run_stages(run, task):
             shadow=None if resume or not cut else shadow_starter(
                 project, conn, run_id, ticket=ticket, criteria=criteria,
                 task_id=task_id, verify=verify_cmd, contracts=contracts,
-                branch=branch))
+                branch=branch), provider=provider)
         sha = steer_turn(project, conn, run_id, beat_s, wt, budget_min, ticket,
                          sha, timed=_timed, check_cap=_check_run_cap) or sha
         if not unreproduced:

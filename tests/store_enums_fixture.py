@@ -108,3 +108,9 @@ BASELINE['INTERVENTION_ACTIONS'] += ('steer',)
 
 # KO-653: a pull request a person merges while the run watches it in the gate.
 BASELINE['RUN_PHASE_TRANSITIONS']['merge_gate'] |= {'done'}
+
+# An implement or fix turn's declared contradiction parks the run on the
+# operator, and a requeue releases that park as abandoned.
+BASELINE['RUN_PHASE_TRANSITIONS']['working'] |= {'blocked_on_operator'}
+BASELINE['RUN_PHASE_TRANSITIONS']['addressing'] |= {'blocked_on_operator'}
+BASELINE['RUN_PHASE_TRANSITIONS']['blocked_on_operator'] |= {'failed'}
