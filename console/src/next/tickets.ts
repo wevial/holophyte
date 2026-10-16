@@ -2,7 +2,6 @@ import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { needsYouEntries, type NeedsYouEntry } from "../lib/attention";
 import type { BoardColumn } from "../lib/contract.gen";
-import { projectName } from "../lib/derive";
 import { hostItems } from "../lib/hosts";
 import { useBoards, useMergedToday, useReadiness } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
@@ -17,7 +16,6 @@ export interface TicketCard {
   id: string;
   key: string;
   title: string;
-  project: string;
   state: BoardColumn["state"] | "merged";
   need: NeedsYouEntry | null;
 }
@@ -32,7 +30,7 @@ const BY_STATE: Record<TicketCard["state"], ColumnId> = {
   merged: "done",
 };
 
-export function boardColumn(card: Pick<TicketCard, "state" | "need">): ColumnId {
+function boardColumn(card: Pick<TicketCard, "state" | "need">): ColumnId {
   return card.need != null && card.state !== "merged" ? "needs_you" : BY_STATE[card.state];
 }
 
@@ -63,14 +61,12 @@ export function useTicketBoard(): TicketBoard {
       const ticket = entry.item.ticket;
       if (typeof ticket === "string" && !needs.has(ticket)) needs.set(ticket, entry);
     }
-    const name = host.project == null ? host.label : projectName(host.project);
     for (const column of board.columns) {
       for (const ticket of column.tickets) {
         const card: TicketCard = {
           id: cardId(host.base, ticket.ticket),
           key: ticket.ticket,
           title: ticket.title,
-          project: name,
           state: column.state,
           need: needs.get(ticket.ticket) ?? null,
         };
@@ -80,7 +76,7 @@ export function useTicketBoard(): TicketBoard {
   }
   for (const row of merged) {
     const card: TicketCard = {
-      id: `${row.daemon ?? ""} run ${row.id}`, key: row.ticket, title: row.title ?? "", project: row.project, state: "merged", need: null,
+      id: `${row.daemon ?? ""} run ${row.id}`, key: row.ticket, title: row.title ?? "", state: "merged", need: null,
     };
     columns[boardColumn(card)].push(card);
   }
