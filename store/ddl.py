@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS runs (
     -- `pr_open` item names the pull request and not only its number
     -- (KO-622). NULL until a read recorded one.
     prSeenTitle       TEXT,
+    prSeenState       TEXT,
     UNIQUE (ticketId, attempt)
 );
 
