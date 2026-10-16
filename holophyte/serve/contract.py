@@ -642,10 +642,8 @@ class History(TypedDict):
     now: int
 
 
-class LedgerEntry(TypedDict):
+class RunLedgerEntry(TypedDict):
     at: int
-    run: int | None
-    ticket: str | None
     kind: str
     source: str
     text: str
@@ -656,6 +654,11 @@ class LedgerEntry(TypedDict):
     schema_to: NotRequired[int]
     schema_from: NotRequired[int]
     project: NotRequired[str]
+
+
+class LedgerEntry(RunLedgerEntry):
+    run: int | None
+    ticket: str | None
 
 
 class ActiveOutage(TypedDict):
@@ -674,6 +677,43 @@ class Ledger(TypedDict):
     active_outages: list[ActiveOutage]
     since: int
     limit: int
+
+
+class FindingsRun(TypedDict):
+    run: int
+    ticket: str
+    title: str
+    phase: str
+    outcome: str | None
+    ended_ms: int | None
+    pr_url: str | None
+    rounds: list[Round]
+    ledger: list[RunLedgerEntry]
+    advisories: list[AdvisoryFinding]
+
+
+class FollowUpRow(TypedDict):
+    id: int
+    run: int
+    ticket: str
+    kind: Literal["feature", "guardrail"]
+    text: str
+    path: str | None
+    line: int | None
+    created_ms: int
+    settled_ms: int | None
+    state: Literal["pending", "filed", "duplicate", "ledger", "superseded",
+                   "unfiled"]
+    filed_as: str | None
+    duplicate_of: str | None
+    error: str | None
+
+
+class Findings(TypedDict):
+    since: int
+    limit: int
+    runs: list[FindingsRun]
+    follow_ups: list[FollowUpRow]
 
 
 class BoardTicket(TypedDict):
@@ -790,6 +830,7 @@ ROUTES = {
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
     "ledger": (Ledger, "GET /ledger"),
+    "findings": (Findings, "GET /findings"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
 }
