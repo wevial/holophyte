@@ -84,7 +84,7 @@ export function Story() {
   const missing = story === null || (host == null && peers.polls > 0);
   const nodes = story != null && host != null ? storyNodes(story, host, peers.now, readiness) : null;
   return (
-    <div className="mx-auto flex w-full max-w-[1320px] flex-col px-8 py-7">
+    <div className="flex w-full flex-col px-8 py-7">
       {story != null && host != null && nodes != null && (
         <>
           <section aria-labelledby="page-title">
@@ -96,7 +96,7 @@ export function Story() {
       )}
       {missing && <Missing project={project} storyKey={key} />}
       <p className="mt-3.5 border-t border-rule py-3.5 font-mono text-[12px] leading-[1.4] text-ink-3">
-        Tickets with no dependency start the graph on the left. Pick another story from Stories in the sidebar.
+        Tickets with no dependency start the graph at the top. Pick another story from Stories in the sidebar.
       </p>
     </div>
   );

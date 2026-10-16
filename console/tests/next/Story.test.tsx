@@ -170,3 +170,13 @@ test("a project no host serves reads as missing and asks no host for the story",
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("No story DEMO-12 in nowhere.");
   expect(asked.filter((url) => url.includes("/stories/"))).toEqual([]);
 });
+
+test("the story page spans the content width, keeps its notes at 1320 px and words the graph top to bottom", async () => {
+  await mount("#/stories/demo/DEMO-12", fleet(demo12).fetch);
+  const page = document.getElementById("page-title")!.closest("section")!.parentElement!;
+  expect(Array.from(page.classList).filter((name) => name.startsWith("max-w") || name === "mx-auto")).toEqual([]);
+  expect(screen.getByRole("region", { name: /^Decisions and witnesses/ }).classList.contains("max-w-[1320px]")).toBe(true);
+  expect(Array.from(document.querySelectorAll("[data-step]"), (step) => step.getAttribute("aria-label"))).toEqual(["Step 1", "Step 2", "Step 3"]);
+  expect(text("[data-graph-key]")).toContain("one row runs in parallel");
+  expect(page.lastElementChild!.textContent).toStartWith("Tickets with no dependency start the graph at the top.");
+});
