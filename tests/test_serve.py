@@ -751,7 +751,7 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(blocked, {"kind": "blocked", "ticket": "KO-8",
                                    "ticket_url": None,
                                    "question": "Which branch is canonical?",
-                                   "run": self.blocked_run, "park_kind": None,
+                                   "run": self.blocked_run, "park_kind": "question",
                                    "asked_ms": self.asked, "pr_url": None, "pr": None,
                                    "level": "attention"})
         self.assertEqual(stale_run["run"], self.run)
