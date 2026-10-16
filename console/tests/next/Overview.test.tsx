@@ -218,15 +218,77 @@ test("the Needs you count is --need above zero and every other count, or a zero 
   expect(classes(sectionCount("Running"))).not.toContain("text-need");
 });
 
-test("an empty section's sentence draws no border of its own, and the sections stand the board's 44 px apart", async () => {
+test("an empty section's sentence draws no border of its own", async () => {
   await mount("#/", fleet({ items: [] }, { items: [] }));
-  const regions = screen.getAllByRole("region");
   for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
     const sentence = section(name).querySelector("p")!;
     expect(sentence).toBeTruthy();
     expect(classes(sentence).filter((name) => name.startsWith("border"))).toEqual([]);
   }
-  const column = regions[0]!.parentElement!;
-  expect(regions.every((region) => region.parentElement === column)).toBe(true);
-  expect(classes(column)).toContain("gap-[44px]");
+});
+
+const WIDE = "min-[1600px]:";
+const overviewRoot = () => document.querySelector("[data-overview-head]")!.parentElement!.parentElement!;
+const columns = () => [...document.querySelectorAll("[data-overview-column]")];
+const dayLog = () => screen.getByRole("complementary", { name: "Today's log" });
+const LAYOUT = /^(grid|col-|row-|contents$|@container|w-\[)/;
+
+test("from 1600 px the Overview is the board's three-track grid, the header across tracks 1-2 and the sticky log in track 3", async () => {
+  await mount("#/", busy);
+  const root = overviewRoot();
+  for (const name of ["grid", "grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px]", "gap-x-[36px]", "gap-y-[32px]"]) {
+    expect(classes(root)).toContain(WIDE + name);
+  }
+  expect(classes(root)).toContain("min-[1200px]:items-start");
+  const head = document.querySelector("[data-overview-head]")!;
+  expect(head.contains(screen.getByRole("heading", { level: 1 }))).toBe(true);
+  expect(head.contains(document.querySelector("[data-count-line]"))).toBe(true);
+  expect(classes(head)).toEqual(expect.arrayContaining([WIDE + "col-start-1", WIDE + "col-span-2", WIDE + "row-start-1"]));
+  const log = dayLog();
+  expect(classes(log)).toEqual(
+    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", "min-[1200px]:sticky", "min-[1200px]:top-5"]),
+  );
+});
+
+test("from 1600 px the first column holds Needs you then Running and the second Pull requests then Merged today, 44 px apart", async () => {
+  await mount("#/", busy);
+  const [first, second] = columns();
+  expect(columns()).toHaveLength(2);
+  const names = (column: Element | undefined) => within(column as HTMLElement).getAllByRole("region").map((region) => region.getAttribute("aria-label"));
+  expect(names(first)).toEqual(["Needs you", "Running"]);
+  expect(names(second)).toEqual(["Pull requests", "Merged today"]);
+  for (const column of [first, second]) {
+    expect(classes(column)).toEqual(expect.arrayContaining(["flex-col", "gap-[44px]", WIDE + "row-start-2"]));
+  }
+  expect(classes(first)).toContain(WIDE + "col-start-1");
+  expect(classes(second)).toContain(WIDE + "col-start-2");
+  expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["Needs you", "Running", "Pull requests", "Merged today"]);
+  expect(classes(first!.parentElement)).toEqual(expect.arrayContaining(["flex-col", "gap-[44px]", WIDE + "contents"]));
+});
+
+test("every grid, track and span class is behind 1600 px, so below it the Overview keeps its 880 px column and 290 px rail", async () => {
+  await mount("#/", busy);
+  const root = overviewRoot();
+  const head = document.querySelector("[data-overview-head]")!;
+  for (const element of [root, root.firstElementChild!, head, ...columns(), columns()[0]!.parentElement!, dayLog()]) {
+    expect(classes(element).filter((name) => LAYOUT.test(name))).toEqual(head === element ? ["contents"] : []);
+  }
+  expect(classes(root)).toEqual(expect.arrayContaining(["flex", "flex-col", "min-[1200px]:flex-row"]));
+  expect(classes(root.firstElementChild)).toEqual(expect.arrayContaining(["flex", "max-w-[880px]", WIDE + "contents"]));
+  expect(classes(dayLog())).toEqual(expect.arrayContaining(["max-w-[880px]", "min-[1200px]:flex-[0_0_290px]", "min-[1200px]:sticky"]));
+});
+
+test("from 1600 px each column is the ov-col container; a Running row narrows under 640 px of it and a Pull request row under 720 px", async () => {
+  await mount("#/", busy);
+  for (const column of columns()) expect(classes(column)).toContain(WIDE + "@container/ov-col");
+  const runRow = section("Running").querySelector("li a")!;
+  expect(classes(runRow)).toEqual(
+    expect.arrayContaining(["max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]", "@max-[640px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]"]),
+  );
+  const prRow = section("Pull requests").querySelector("[data-pr-row] > div")!;
+  expect(classes(prRow)).toEqual(expect.arrayContaining(["max-[820px]:grid-cols-[minmax(0,1fr)]", "@max-[720px]/ov-col:grid-cols-[minmax(0,1fr)]"]));
+  const narrowed = (row: Element, rule: string) =>
+    [row, ...row.querySelectorAll("*")].flatMap((element) => classes(element)).filter((name) => name.startsWith(rule)).map((name) => name.slice(rule.length)).sort();
+  expect(narrowed(runRow, "@max-[640px]/ov-col:")).toEqual(narrowed(runRow, "max-[820px]:"));
+  expect(narrowed(prRow, "@max-[720px]/ov-col:")).toEqual(narrowed(prRow, "max-[820px]:"));
 });
