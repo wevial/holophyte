@@ -16,20 +16,16 @@ import { stateOf, type State } from "./state";
  *  of it is live. */
 export type Idle = "stale" | "failed" | "paused" | "not_running";
 
-export interface OpenFinding {
-  project: string;
-  ticket: string;
-  run: number;
-  entry: HistoryFinding;
-  /** Null while a live run of the ticket is on it. */
-  idle: Idle | null;
-}
-
 interface TaggedFinding {
   project: string;
   ticket: string;
   run: number;
   entry: HistoryFinding;
+}
+
+export interface OpenFinding extends TaggedFinding {
+  /** Null while a live run of the ticket is on it. */
+  idle: Idle | null;
 }
 
 type FollowUp =

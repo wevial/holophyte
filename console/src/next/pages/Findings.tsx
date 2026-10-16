@@ -27,7 +27,7 @@ function openSentence(open: OpenFinding[]): string {
   const head = `${capital(word(open.length))} findings are still open, and`;
   if (fixing === 0) return `${head} nobody is fixing them.`;
   if (idle.length === 0) return `${head} all are being fixed.`;
-  return `${head} ${word(fixing)} ${fixing === 1 ? "is" : "are"} already being fixed.`;
+  return `${head} ${word(fixing)} ${plural(fixing, "is", "are")} already being fixed.`;
 }
 
 function settledSentence(page: FindingsPage): string {
