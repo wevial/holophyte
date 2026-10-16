@@ -400,7 +400,7 @@ class PullRequestTitleTests(ServeTestCase):
                  park_kind="pull_request", now=self.now - MIN)
 
     def read_status(self, title, threads=None, facts_only=None,
-                    through_reconcile=False, **fields):
+                    through_reconcile=False, rate_limit=None, **fields):
         """One reconcile read of the pull request answering `title`,
         recorded as the reconcile records an unchanged pull request, or
         as its first read when GitHub also answers `threads`."""
@@ -413,7 +413,7 @@ class PullRequestTitleTests(ServeTestCase):
         if threads is not None:
             node["threadCount"] = threads
         with patch.object(pr_status, "graphql", return_value={
-                "repository": {"pullRequest": node}}):
+                "repository": {"pullRequest": node}, "rateLimit": rate_limit}):
             if through_reconcile:
                 project = store.tickets.ensure_project(
                     self.conn, "team-1", self.target)
@@ -483,6 +483,29 @@ class PullRequestTitleTests(ServeTestCase):
         self.assertEqual(self.conn.execute(
             "SELECT kind FROM runEvents WHERE runId = ?"
             " AND kind IN ('ci_wake', 'pr_wake')", (self.run,)).fetchall(), [])
+
+    def test_ready_read_below_budget_floor_updates_facts_without_waking(self):
+        from holophyte.host import reconcile
+
+        self.start(config='[merge]\npr_poll_sec = 10\n')
+        with patch.object(reconcile, "GITHUB_BUDGET", reconcile.GitHubBudget()), \
+                patch.object(reconcile, "time", return_value=self.now / 1000):
+            self.read_status(self.TITLE, through_reconcile=True, isDraft=True)
+            self.assertEqual(self.pr_open()["pr"]["state"], "draft")
+            store.record_event(self.conn, self.run, "pr_draft_held", "held for review")
+            sent = self.read_status(
+                self.TITLE, through_reconcile=True, isDraft=False,
+                updatedAt="2026-09-22T10:01:00Z",
+                rate_limit={"remaining": 499, "resetAt": "2099-01-01T00:00:00Z"})
+            self.assertEqual(sent, set())
+            self.assertEqual(self.conn.execute(
+                "SELECT prSeenState, prSeenAt, parkKind, lastHeartbeat"
+                " FROM runs WHERE id = ?", (self.run,)).fetchone(),
+                ("ready", "2026-09-22T10:00:00Z", "pull_request", self.now - MIN))
+            self.assertEqual(self.pr_open()["pr"]["state"], "ready")
+            self.assertEqual(self.conn.execute(
+                "SELECT kind FROM runEvents WHERE runId = ?"
+                " AND kind IN ('ci_wake', 'pr_wake')", (self.run,)).fetchall(), [])
 
     def test_unread_closed_merged_and_unknown_states_are_served(self):
         self.assertIsNone(self.pr_open()["pr"]["state"])

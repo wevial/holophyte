@@ -220,6 +220,9 @@ def _reconcile_pull_requests(target, conn, project, provider,
                 conn, ticket, pull, status, poll_ms, reason, kind, target)
             if issue is not None:
                 sent.add(issue)
+        else:
+            store.record_pr_seen(conn, ticket.runId, _seen(status),
+                                 parked_only=True, facts_only=True)
         if low:
             return sent
     if failed_asked is None:
