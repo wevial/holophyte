@@ -162,6 +162,7 @@ PINNED = {
     "holophyte/loop/claim.py": 12,
     "holophyte/loop/claim_store.py": 3,
     "holophyte/loop/complexity.py": 1,
+    "holophyte/loop/contradiction.py": 1,
     "holophyte/loop/dispatch.py": 6,
     "holophyte/loop/escalation.py": 0,
     "holophyte/loop/failure_triage.py": 0,

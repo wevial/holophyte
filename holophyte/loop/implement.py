@@ -36,7 +36,7 @@ from holophyte.environment_git import (
     unstage_environment,
 )
 from holophyte.leak_guard import register_matches
-from holophyte.loop import escalation, steering
+from holophyte.loop import contradiction, escalation, steering
 from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
@@ -665,7 +665,7 @@ def _orchestration(project, conn, run_id, ticket):
 
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening="",
-               shadow=None):
+               shadow=None, provider=None):
     commands = _commands_brief(project, verify_cmd)
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
     orchestration = _orchestration(project, conn, run_id, ticket)
@@ -679,7 +679,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "co-author lines for an AI." + orchestration
             + _capture_brief(project, ticket, task_id)
             + mockup.implementer_brief(wt) + blast_radius.BRIEF
-            + reproduce.BRIEF)
+            + reproduce.BRIEF + contradiction.BRIEF)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     if shadow and fresh and not conflicts and not opening and not steered:
         shadow(goal, start_sha, seconds)
@@ -694,6 +694,8 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     stall = _stall_note(out)
     blast_radius.record_declared(conn, run_id, out)
     escalation.record_choice(conn, run_id, out)
+    contradiction.park(conn, run_id, provider, task_id, wt, "implement", out,
+                       timed_out)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     added = head != start_sha and not _failed_wip_only(wt, out, timed_out,

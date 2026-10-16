@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { describe, needsYouEntries } from "../lib/attention";
+import { describe, needsYouEntries, type Fact } from "../lib/attention";
 import type { RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
@@ -19,12 +19,16 @@ export type RunPage =
   | { kind: "not_found" }
   | {
       kind: "run";
+      /** The base of the host that serves the run. */
+      base: string;
       detail: RunDetail;
       state: State;
       /** The run's agent clock and its box, both null when the daemon gave none. */
       agentMs: number | null;
       boxMs: number | null;
       labels: RouteLabels | null;
+      /** What its `pr_open` item says of its pull request; null with no such item. */
+      prFacts: Fact[] | null;
       sentence: string;
       stage: { label: string; sub: string | null };
     };
@@ -149,15 +153,18 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const items = hostItems(host, now).filter((item) => item.run === run);
   const item = items.find((each) => each.kind === ITEM_KIND[state]) ?? null;
   const needsYou = ASKS_YOU.has(state) || needsYouEntries(items, readiness, now).length > 0;
+  const prItem = items.find((each) => each.kind === "pr_open");
   const words = stageWords({ detail, live, phase, state, item, thresholds: status.thresholds, heartbeatMs: heartbeat ?? 0, now });
   const loopsBack = detail.rounds.filter((round) => round.verdict === "changes_requested").length;
   return {
     kind: "run",
+    base: host.base,
     detail,
     state,
     agentMs: live == null ? agentMs(detail.run) : agentMs(live, since),
     boxMs: live?.time_box_ms ?? detail.run.time_box_ms,
     labels: status.route_labels,
+    prFacts: prItem == null ? null : (describe(prItem, status.thresholds, { now }).facts ?? []),
     sentence: needsYou ? words.sentence : `${words.sentence} Nothing needs you.`,
     stage: {
       label: words.stage,
