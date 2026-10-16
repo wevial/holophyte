@@ -4,14 +4,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 function imageText() {
-  const walk = (node: Root | RootContent) => {
+  return function walk(node: Root | RootContent) {
     if (!("children" in node)) return;
     node.children = node.children.map((child) => child.type === "image" || child.type === "imageReference"
       ? { type: "text" as const, value: child.alt ?? "" }
       : child) as typeof node.children;
     node.children.forEach(walk);
   };
-  return (tree: Root) => walk(tree);
 }
 
 export function LimitedMarkdown({ children, lines }: { children: string; lines: 2 | 4 }) {
