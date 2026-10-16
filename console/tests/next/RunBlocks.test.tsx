@@ -147,3 +147,13 @@ test("a heading directly under the first paragraph ends it, so the next section'
   await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": sections } }));
   expect(block("Ticket")!.textContent).toBe("TicketA lease past its threshold is freed.");
 });
+
+test("an empty summary draws no ticket block rather than another section's prose", async () => {
+  const empty: TicketDetail = {
+    ...demo8,
+    claimed: revision("# Free stale leases\n\n## Summary\n\n## Acceptance criteria\n\nThe operator can retry.\n"),
+  };
+  await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": empty } }));
+  expect(block("Pull request")).not.toBeNull();
+  expect(block("Ticket")).toBeNull();
+});
