@@ -1,11 +1,15 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "@tanstack/react-router";
+import { ACTIONS_OFF } from "../../lib/actions";
 import { criteriaRows } from "../../lib/criteria";
 import { formatAge, formatClock } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
 import { classicHref } from "../../lib/view";
+import { Btn } from "../components/Btn";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot } from "../components/StateDot";
+import { SteerBox } from "../components/SteerBox";
+import { SteerNotes } from "../components/SteerNotes";
 import { StoryPanel } from "../components/StoryPanel";
 import { Chip, Fact, NUMBER } from "../components/TicketPeek";
 import { TicketRuns } from "../components/TicketRuns";
@@ -57,9 +61,12 @@ function filedAt(at: number, now: number): string {
   return new Date(at).toDateString() === new Date(now).toDateString() ? formatClock(at) : new Date(at).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 }
 
+const SETTLED = new Set(["merged", "abandoned"]);
+
 export function TicketPage() {
   const { project, key } = useParams({ from: "/tickets/$project/$key" });
   const page = useTicketPage(project, key);
+  const [steering, setSteering] = useState(false);
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "loading") return <Page project={project} ticketKey={key} />;
   if (page.kind === "not_mirrored") {
@@ -78,6 +85,7 @@ export function TicketPage() {
   const commands = ticket.verification_commands;
   const first = [...ticket.revisions].sort((a, b) => a.revision - b.revision)[0];
   const waitsOn = page.card?.waitsOn ?? [];
+  const actionsOn = page.host.status?.actions === true;
   return (
     <Page project={project} ticketKey={key}>
       <div className="border-b border-rule pb-3">
@@ -85,10 +93,19 @@ export function TicketPage() {
           <h1 className="m-0 flex-[1_1_420px] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">
             {ticket.title}
           </h1>
-          <div data-ticket-actions className="flex flex-wrap gap-2" />
+          <div data-ticket-actions className="flex flex-wrap gap-2">
+            {!SETTLED.has(ticket.status) && (
+              <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={() => setSteering((open) => !open)}>
+                Steer
+              </Btn>
+            )}
+          </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} base={page.host.base} />}
       </div>
+      {steering && actionsOn && !SETTLED.has(ticket.status) && (
+        <SteerBox ticketKey={key} base={page.host.base} liveRun={page.liveRun} onClose={() => setSteering(false)} />
+      )}
       <div className="mt-3.5 grid border border-rule bg-paper min-[860px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 border-b border-rule px-8 pb-8 pt-[22px] max-[720px]:px-5 min-[860px]:border-b-0 min-[860px]:border-r">
           <div className={SECTION_LABEL}>Summary</div>
@@ -113,6 +130,7 @@ export function TicketPage() {
             </pre>
           </details>
           <TicketRuns ticketKey={key} runs={ticket.runs} liveRuns={page.liveRuns} staleMs={page.staleMs} base={page.host.base} now={now} />
+          <SteerNotes steers={ticket.steers} now={now} />
         </div>
         <aside aria-label="Ticket facts and story" className="min-w-0 px-6 pb-7 pt-[22px] max-[720px]:px-5">
           <div className={SECTION_LABEL}>Ticket</div>
