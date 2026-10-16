@@ -74,6 +74,8 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
     return the head, its verify and the round 1 reviewer's brief."""
     entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
+    if entries is None and ok:
+        return sha, ok, out, ""
     checked = sha if entries is not None else None
     if entries is None:
         entries = [{"criterion": n, "gaps": [], "checks": [],
