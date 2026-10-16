@@ -306,7 +306,7 @@ def _template_patterns(text):
     patterns, start = [], text.find("`")
     while start != -1:
         literals, end = _template_literals(text, start + 1)
-        if len(literals) > 1:
+        if len(literals) > 1 and any(literals):
             patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
         start = text.find("`", end + 1)
     return patterns

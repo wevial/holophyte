@@ -86,6 +86,11 @@ class LoopTitleWitnessTests(unittest.TestCase):
         self.assertEqual(self.findings(TEMPLATES, "a plain backtick title"), [])
         self.assertUnwitnessed(TEMPLATES, "a plain backtick title, reworded")
 
+    def test_a_template_of_placeholders_alone_witnesses_no_title(self):
+        (self.root / "e2e/url.spec.ts").write_text(
+            "const url = `${base}${path}`;\ntest('opens', async () => {});\n")
+        self.assertUnwitnessed("e2e/url.spec.ts", "an unrelated title")
+
     def test_nested_templates_and_escapes_spell_the_runner_title(self):
         self.assertEqual(
             self.findings(TEMPLATES, "renders 320px, 640px in one row"), [])
