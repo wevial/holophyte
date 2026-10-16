@@ -10,26 +10,6 @@
         "at": {
           "type": "integer"
         },
-        "run": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "ticket": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "kind": {
           "type": "string"
         },
@@ -73,15 +53,35 @@
         },
         "project": {
           "type": "string"
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ticket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "at",
-        "run",
-        "ticket",
         "kind",
         "source",
-        "text"
+        "text",
+        "run",
+        "ticket"
       ],
       "additionalProperties": true
     },

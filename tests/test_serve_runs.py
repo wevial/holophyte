@@ -937,6 +937,12 @@ class ServeContractTests(ServeTestCase):
                           for edge in child["depends_on"]], ["KO-12"])
         self.assertIsNotNone(story["witnesses"][0]["verdict"])
         self.assertIsNotNone(story["decisions"][0]["answer"])
+        runs = answers["findings"]["runs"]
+        self.assertTrue(any(round_["findings"] for run in runs
+                            for round_ in run["rounds"]))
+        self.assertTrue(any(run["advisories"] for run in runs))
+        self.assertIn("pending", [row["state"] for row
+                                  in answers["findings"]["follow_ups"]])
 
 
 class TurnTests(TranscriptCase):
