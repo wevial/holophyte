@@ -9,7 +9,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(out, name) });
 }
 
-const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("link");
+const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("listitem");
 
 async function open(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });

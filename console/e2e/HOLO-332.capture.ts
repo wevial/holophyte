@@ -28,7 +28,7 @@ async function addProject(page: Page, name: string) {
   });
 }
 
-const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("link");
+const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("listitem");
 
 async function open(page: Page, hash = "#/runs") {
   await addProject(page, "ledger");

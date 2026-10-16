@@ -72,7 +72,8 @@ async function mount(hash: string, fetchImpl: Fetch) {
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
-const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("link");
+const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("listitem");
+const runLink = (row: HTMLElement) => within(row).getByRole("link", { name: /^Run \d+,/ });
 const cells = (row: HTMLElement) => Array.from(row.children, (cell) => cell.textContent);
 const stateCells = () => rows().map((row) => cells(row)[4]);
 
@@ -97,8 +98,8 @@ test("Runs lists every host's runs since yesterday newest start first, each name
   await mount("#/runs?state=all", fleet([demo12, demo9], [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["12", "40", "9"]);
   const [first, failed, merged] = rows();
-  expect(first!.getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
-  expect(first!.getAttribute("href")).toBe(`/?classic#run=12&daemon=${encodeURIComponent(DEMO)}`);
+  expect(runLink(first!).getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
+  expect(runLink(first!).getAttribute("href")).toBe(`/?classic#run=12&daemon=${encodeURIComponent(DEMO)}`);
   expect(within(failed!).getByRole("img").getAttribute("aria-label")).toBe("failed");
   expect(cells(merged!)).toContain("yest 21:05");
   expect(within(merged!).getByRole("img").getAttribute("aria-label")).toBe("merged");
@@ -112,13 +113,14 @@ test("a scoped Runs lists only that project's runs, with a dash for no rounds or
   expect(cells(second!)).toEqual(["9", "DEMO-9", "Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
 });
 
-test("the table heads the ticket key and the title as separate columns and fills each from its own field", async () => {
+test("the table heads the ticket key and the title as separate columns, the key linked to its ticket page", async () => {
   await mount("#/runs", fleet([run({ id: 21, ticket: "HOLO-12", title: "Fix the sweep", started_ms: today(17, 0) })], []));
   const head = document.querySelector("[data-run-table] [aria-hidden='true']")!;
   expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "State", "Rounds", "PR", "Started", "Took"]);
   const [row] = rows();
   expect(cells(row!).slice(1, 3)).toEqual(["HOLO-12", "Fix the sweep"]);
-  expect(row!.getAttribute("aria-label")).toStartWith("Run 21, HOLO-12 Fix the sweep, demo,");
+  expect(runLink(row!).getAttribute("aria-label")).toStartWith("Run 21, HOLO-12 Fix the sweep, demo,");
+  expect(within(row!).getByRole("link", { name: "HOLO-12" }).getAttribute("href")).toEndWith("#/tickets/demo/HOLO-12");
 });
 
 test("a host whose daemon has no /history adds no rows and no error beside one that answers", async () => {
@@ -171,7 +173,7 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
     "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
   ]);
   expect(rows().map((row) => row.hasAttribute("data-need"))).toEqual([true, true, true, true, false, false]);
-  expect(rows()[4]!.getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
+  expect(runLink(rows()[4]!).getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
 });
 
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
