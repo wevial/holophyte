@@ -64,7 +64,34 @@ class DeclareTwo(Commit):
                 "- **CONTRADICTION:** Criterion 3: the file-size pin forbids it")
 
 
+class DeclareCodex(Commit):
+
+    def play(self, cwd, turn):
+        message = (f"{super().play(cwd, turn)}\n"
+                   "CONTRADICTION: criterion 1 — `tickets.parkKind` does not "
+                   "exist; the reader reads `runs.parkKind`.")
+        return f"codex\n{message}\ntokens used\n53,160\n{message}"
+
+
 class ImplementTurnContradictionTests(LoopFixture):
+
+    def test_codex_repeated_declaration_parks_once_with_intact_code_spans(self):
+        self.loop(DeclareCodex("render the park kind"), REQUEST_CHANGES)
+
+        ((question,),) = self.read("SELECT blockedQuestion FROM tickets")
+        ((payload,),) = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'contradiction'")
+        with self.subTest("blocked question"):
+            self.assertEqual(
+                question.splitlines()[0],
+                "implementer: criterion 1 cannot be met as written: "
+                "`tickets.parkKind` does not exist; the reader reads `runs.parkKind`.")
+        with self.subTest("event criteria"):
+            self.assertEqual(json.loads(payload)["criteria"], [{
+                "criterion": 1,
+                "reason": "`tickets.parkKind` does not exist; "
+                          "the reader reads `runs.parkKind`.",
+            }])
 
     def test_a_declared_contradiction_parks_on_the_operator_without_review(self):
         fake, _ = self.loop(Declare("render the parked word"), REQUEST_CHANGES,
