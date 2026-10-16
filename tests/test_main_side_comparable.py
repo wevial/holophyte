@@ -12,6 +12,7 @@ Run: HOLOPHYTE_HOME=$(mktemp -d) python3 -m unittest discover -s tests \
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,8 @@ sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402
 from fake_agent import IMPLEMENT, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
+
+from holophyte.loop.gates import drop_candidate_modules  # noqa: E402
 
 BRANCH_ONLY = "notes/branch_only.txt"
 
@@ -94,7 +97,70 @@ class BranchOnlyPathTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.assertTrue(event.startswith(f"main-side verify at {moved[:12]}"),
                         event)
         self.assertIn(BRANCH_ONLY, event)
-        self.assertEqual(rows[-1]["exitCode"], 0)
+        self.assertIn("the fix rounds moved the candidate", self.question())
+
+    def test_a_red_main_naming_only_its_own_files_still_parks(self):
+        command = "grep -q absent MOVED.md"
+        moved = self.candidate(command)
+        fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}; verify command: {command}",
+                      self.question())
+        self.assertEqual(self.main_side_events(), [])
+
+
+def git(cwd, *args):
+    return subprocess.run(["git", *args], cwd=cwd, check=True, text=True,
+                          capture_output=True).stdout.strip()
+
+
+class BranchOnlyPathRuleTests(unittest.TestCase):
+    """The path rule over a real repository: main has `old.spec.ts`, the
+    candidate adds `new.spec.ts` and `src/new.js`, and both carry an
+    untracked `.venv`."""
+
+    def setUp(self):
+        self.repo = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        git(self.repo, "init", "-q", "-b", "main")
+        git(self.repo, "config", "user.email", "t@example.com")
+        git(self.repo, "config", "user.name", "t")
+        self.write("e2e/checks/old.spec.ts", "old\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "base")
+        self.main_sha = git(self.repo, "rev-parse", "HEAD")
+        git(self.repo, "checkout", "-q", "-b", "candidate")
+        self.write("e2e/checks/new.spec.ts", "new\n")
+        self.write("src/new.js", "new.ts\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "candidate")
+        self.write(".venv/bin/python", "")
+
+    def write(self, path, body):
+        (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.repo / path).write_text(body)
+
+    def test_branch_only_files_are_trimmed_from_tests_or_left_out(self):
+        command = "\n".join((
+            "npx playwright test --config e2e/checks.config.ts"
+            " e2e/checks/new.spec.ts e2e/checks/old.spec.ts --reporter=line",
+            'grep -q "new[.]ts" src/new.js',
+            ".venv/bin/python -m tests.capture_site",
+            "npx playwright test e2e/checks/new.spec.ts"))
+        side = drop_candidate_modules(command, self.repo, self.repo,
+                                      self.main_sha)
+        self.assertEqual(side.command.splitlines(), [
+            "npx playwright test --config e2e/checks.config.ts"
+            " e2e/checks/old.spec.ts --reporter=line",
+            ".venv/bin/python -m tests.capture_site"])
+        self.assertEqual(side.paths, ["e2e/checks/new.spec.ts", "src/new.js"])
+
+    def test_a_block_line_that_loses_a_clause_counts_as_left_out(self):
+        line = "grep -q x src/new.js && test -e e2e/checks/old.spec.ts"
+        side = drop_candidate_modules(f"{line}\ntrue", self.repo, self.repo,
+                                      self.main_sha)
+        self.assertEqual(side.command.splitlines(),
+                         ["test -e e2e/checks/old.spec.ts", "true"])
+        self.assertEqual(side.dropped[line], ["src/new.js"])
 
 
 if __name__ == "__main__":

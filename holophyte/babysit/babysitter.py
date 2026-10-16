@@ -16,7 +16,7 @@ from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park
 from holophyte.babysit.covering_fix import fix_or_park
 from holophyte.babysit.description_review import TAG_BRIEF, fix_summary, rereviewed
-from holophyte.babysit.main_checkout import detached_main
+from holophyte.babysit.main_side import verify_detached_main
 from holophyte.babysit.note_triage import triage_notes, untriaged
 from holophyte.babysit.thread_answers import answer_asks, post
 from holophyte.babysit.thread_findings import thread_finding
@@ -49,7 +49,6 @@ from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
     VerificationOutput,
-    drop_candidate_modules,
     record_unreviewed_verification,
     run_verify,
     sh,
@@ -177,24 +176,6 @@ def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
     return ok, out
 
 
-def _verify_detached_main(project, conn, run_id, beat_s, wt, ref, command, contracts):
-    sha = sh(["git", "rev-parse", ref], wt)
-    with detached_main(project, conn, run_id, beat_s, wt, sha) as (
-            detached, setup_failure):
-        if setup_failure is not None:
-            return sha, None, setup_failure
-        command, skipped = drop_candidate_modules(command, wt, detached)
-        if skipped and conn is not None and run_id is not None:
-            store.record_event(
-                conn, run_id, "verification",
-                f"main-side verify at {sha[:12]} skipped"
-                f" {', '.join(skipped)}: exists only on the candidate,"
-                " not on main, so main cannot import it")
-        ok, out = _refresh_verify(project, conn, run_id, beat_s, detached,
-                                  sha, command, contracts)
-    return sha, ok, out
-
-
 def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                          sha, beat_s, pull, budget_min, command, contracts, ticket,
                          ref):
@@ -203,17 +184,16 @@ def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                               contracts)
     if ok:
         return sha
-    main_sha, main_ok, main_out = _verify_detached_main(
-        project, conn, run_id, beat_s, wt, ref, command, contracts)
-    if main_ok is False:
+    main = verify_detached_main(project, conn, run_id, beat_s, wt, ref, command,
+                                contracts, getattr(out, "failure", None),
+                                _refresh_verify)
+    if main.ok is False:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                    f"main is red at {main_sha}; verify command: {command}\n"
-                    f"Merged tree:\n{out}\nMain:\n{main_out}\n"
+                    f"main is red at {main.sha}; verify command: {main.command}\n"
+                    f"Merged tree:\n{out}\nMain:\n{main.out}\n"
                     "Fix main and send this run back through babysit.", ())
-    main_state = ("passes. " if main_ok else "was not verified because its"
-                  f" worktree setup failed:\n{main_out}\n")
     goal = (f"The merge of main introduced a verification failure on {pull.url}; "
-            f"main at {main_sha} {main_state}Failing verify command: {command}\n"
+            f"main at {main.sha} {main.state}Failing verify command: {command}\n"
             f"{out}\n"
             f"The ticket is the contract:\n{ticket}\n"
             "Fix this failure on this branch and commit; keep the ticket's verify "
