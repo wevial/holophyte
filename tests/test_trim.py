@@ -102,6 +102,12 @@ class WorkWithIgnored(Commit):
         return reply
 
 
+class CommitInDir(Commit):
+    def play(self, cwd, turn):
+        (cwd / self.path).parent.mkdir(parents=True, exist_ok=True)
+        return super().play(cwd, turn)
+
+
 class UnrelatedCommit:
     """Points the branch at a commit that shares no history with it."""
 
@@ -385,6 +391,23 @@ class TrimLoopTests(TrimFixture):
         goal = fake.turns[1].goal
         self.assertIn("adds 157 test lines against 16 non-test lines", goal)
         self.assertIn("run pass 5 (tests) in earnest", goal)
+
+    def test_a_diff_with_tests_under_three_times_its_code_gets_the_plain_brief(self):
+        fake = self.trimmed(
+            Commits(Commit("fix", "fix.py", lines(40)),
+                    CommitInDir("fix tests", "tests/test_fix.py", lines(60))),
+            Idle("nothing worth trimming"), APPROVE)
+        goal = fake.turns[1].goal
+        self.assertTrue(goal.startswith("Trim the change"))
+        self.assertNotIn("in earnest", goal)
+        self.assertNotIn("non-test lines against", goal)
+
+    def test_a_test_heavy_diff_under_60_test_lines_gets_the_plain_brief(self):
+        fake = self.trimmed(
+            Commits(Commit("fix", "fix.py", lines(10)),
+                    CommitInDir("fix tests", "tests/test_fix.py", lines(50))),
+            Idle("nothing worth trimming"), APPROVE)
+        self.assertNotIn("in earnest", fake.turns[1].goal)
 
     def test_red_verify_at_the_implementers_head_is_not_trimmed(self):
         task = dict(a_task(), verify="test ! -e red.txt")

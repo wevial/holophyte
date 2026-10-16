@@ -1,13 +1,15 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
 import json
 import subprocess
+from fnmatch import fnmatchcase
 from functools import partial
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import store
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.fallback import failed_turn, outage_reason
 from holophyte.config.config_tables import trim_config, verify_config
+from holophyte.files import parse_numstat
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import InfraFailure, run_verify, sh, with_baseline
 from holophyte.loop.implement import (
@@ -21,12 +23,16 @@ from holophyte.loop.implement import (
 )
 from holophyte.loop.review_round import _changed_lines
 from holophyte.loop.runs import heartbeat_while
-from holophyte.loop.trim_brief import TRIM_BRIEF, pass_name
+from holophyte.loop.trim_brief import TESTS_BRIEF, TRIM_BRIEF, pass_name
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
 
 LINE_FLOOR = 50
+TEST_RATIO = 3
+TEST_LINE_FLOOR = 60
+TEST_DIRS = {"tests", "test", "__tests__", "spec"}
+TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -44,7 +50,8 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
         return sha
     untracked = _untracked(wt)
     goal = TRIM_BRIEF.format(base=base_sha,
-                             commands=_commands_brief(project, verify_cmd).strip())
+                             commands=_commands_brief(project, verify_cmd).strip(),
+                             tests=_tests_brief(wt, base_sha))
     out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min, goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
     commits = _commits(wt, sha)
@@ -72,6 +79,22 @@ def _skip_reason(project, conn, run_id, wt, budget_min, sha, lines, green):
     if run_cap_reason(project, conn, run_id, budget_min, sha):
         return f"the run cap would refuse a {budget_min} min turn"
     return None
+
+
+def _tests_brief(wt, base_sha):
+    counts = parse_numstat(sh(["git", "diff", "--numstat", "-z", base_sha, "HEAD"],
+                              cwd=wt))
+    tests = sum(added for path, (added, _) in counts.items() if _is_test(path))
+    code = sum(added for path, (added, _) in counts.items() if not _is_test(path))
+    if tests >= TEST_LINE_FLOOR and tests > TEST_RATIO * code:
+        return TESTS_BRIEF.format(tests=tests, code=code)
+    return ""
+
+
+def _is_test(path):
+    *dirs, name = PurePosixPath(path).parts
+    return (bool(TEST_DIRS.intersection(dirs))
+            or any(fnmatchcase(name, pattern) for pattern in TEST_NAMES))
 
 
 def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
