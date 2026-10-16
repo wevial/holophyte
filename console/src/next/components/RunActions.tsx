@@ -38,7 +38,6 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   if (labels.length === 0) return null;
   const { run } = page.detail;
   const pending = action.isPending ? action.variables?.label : undefined;
-  const last = action.variables?.label;
   const refused = action.data != null && !action.data.ok ? action.data.detail : null;
 
   const post = (label: string, route: string, body: Record<string, unknown>, said: string) =>
@@ -100,7 +99,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           onConfirm={() => void confirmAbort()}
           onCancel={keepRunning}
           refusal={
-            refused != null && last === ABORT && (
+            refused != null && action.variables?.label === ABORT && (
               <p role="alert" className={`mt-3 text-bad ${detailLine}`}>
                 {refused}
               </p>
