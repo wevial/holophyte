@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { cardElementId } from "../components/BoardCard";
 import { BoardLane, GRID, LaneGrid } from "../components/BoardLane";
 import { GroupBy, readGroup, writeGroup } from "../components/GroupBy";
@@ -9,7 +9,18 @@ import { TicketTable } from "../components/TicketTable";
 import { readView, ViewToggle, writeView, type TicketView } from "../components/ViewToggle";
 import { storeScope } from "../projects";
 import type { ScopeSearch } from "../scope";
-import { boardLanes, COLUMN_HEADS, COLUMN_IDS, useTicketBoard, type ColumnId, type GroupMode, type TicketCard } from "../tickets";
+import {
+  boardLanes,
+  COLUMN_HEADS,
+  COLUMN_IDS,
+  FILTER_LABELS,
+  ticketView,
+  useTicketBoard,
+  type ColumnId,
+  type GroupMode,
+  type TicketCard,
+  type TicketsSearch,
+} from "../tickets";
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
@@ -24,8 +35,12 @@ function findCard(columns: Record<ColumnId, TicketCard[]>, id: string | null): {
 }
 
 export function Tickets() {
-  const view = useTicketBoard();
-  const { columns } = view;
+  const board = useTicketBoard();
+  const { filter }: TicketsSearch = useSearch({ from: "/tickets" });
+  const shown = (cards: TicketCard[]) => (filter == null ? cards : cards.filter((card) => ticketView(card) === filter));
+  const columns = Object.fromEntries(COLUMN_IDS.map((id) => [id, shown(board.columns[id])])) as Record<ColumnId, TicketCard[]>;
+  const cards = shown(board.cards);
+  const view = { ...board, columns, cards, total: cards.length };
   const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [layout, setLayout] = useState<TicketView>(readView);
@@ -97,6 +112,20 @@ export function Tickets() {
               className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
             >
               Show all projects
+            </button>
+          </div>
+        )}
+        {filter != null && (
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
+            <span>
+              Showing <b className="font-medium text-act">{FILTER_LABELS[filter]}</b> tickets only
+            </span>
+            <button
+              type="button"
+              onClick={() => void navigate({ to: ".", search: (previous: ScopeSearch & TicketsSearch) => ({ ...previous, filter: undefined }) })}
+              className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
+            >
+              Show all tickets
             </button>
           </div>
         )}
