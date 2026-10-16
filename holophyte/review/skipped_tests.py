@@ -59,7 +59,7 @@ class Source:
 
     def __init__(self, wt, sha):
         self.wt, self.sha, self.trees = wt, sha, {}
-        self.modules = {path: _module(path) for path in sh(
+        self.modules = {path: module_name(path) for path in sh(
             ["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
             if path.endswith(".py")}
 
@@ -112,7 +112,7 @@ def _own_defs(tree, cls, name):
 def _elsewhere(ran, test, source):
     found = False
     for path, module in source.modules.items():
-        if not _in_module(module, ran):
+        if not in_module(module, ran):
             continue
         tree = source.tree(path)
         if tree is None:
@@ -186,11 +186,11 @@ def _reason(status):
         return status.removeprefix("skipped ")
 
 
-def _module(path):
+def module_name(path):
     return ".".join(PurePosixPath(path).with_suffix("").parts)
 
 
-def _in_module(module, result):
+def in_module(module, result):
     return f".{module}".endswith(f".{result.module}")
 
 
@@ -213,14 +213,14 @@ def _rooted(result, prefix):
     return result._replace(module=f"{prefix}.{result.module}") if prefix else result
 
 
-def _results(output):
+def parse_results(output):
     segments = ROOT_LINE.split(output)
     results = [_rooted(_unittest_result(*found), prefix)
                for prefix, segment in zip(["", *segments[1::2]],
                                           segments[::2])
                for found in UNITTEST_RESULT.findall(segment)]
     for path, cls, name, status, reason in PYTEST_RESULT.findall(output):
-        results.append(Result(_module(path),
+        results.append(Result(module_name(path),
                               cls.split("::")[-1] if cls else None, name,
                               status == "SKIPPED", reason or None))
     return results
@@ -245,7 +245,7 @@ def _fixture_skips(mine, cls, fixture):
             if result[1:3] == (cls, fixture) and result.skipped]
 
 
-def _fixture_reason(test, mine, output):
+def fixture_reason(test, mine, output):
     for cls, fixture in ((test.cls, CLASS_FIXTURE), (None, MODULE_FIXTURE)):
         reason = next((result.reason for result in
                        _fixture_skips(mine, cls, fixture) if result.reason),
@@ -260,11 +260,11 @@ def skipped_on_base(output, added, source):
     summarised = UNITTEST_SUMMARY.search(output) or PYTEST_SUMMARY.search(output)
     if not summarised or _ran_unseen(output):
         return None
-    results = _results(output)
+    results = parse_results(output)
     found = []
     for test in added:
-        module = _module(test.path)
-        mine = [result for result in results if _in_module(module, result)]
+        module = module_name(test.path)
+        mine = [result for result in results if in_module(module, result)]
         named = {result[:3]: result for result in results
                  if result.name == test.name}
         apart = {key for key, result in named.items()
@@ -275,7 +275,7 @@ def skipped_on_base(output, added, source):
             return None
         found.append((test.id(), next(
             (result.reason for result in own if result.reason), None)
-            or _fixture_reason(test, mine, output) or NOT_COLLECTED))
+            or fixture_reason(test, mine, output) or NOT_COLLECTED))
     return found
 
 
