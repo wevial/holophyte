@@ -127,7 +127,9 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     if merge_config(project).ui_paths:
         parts.append("The loop appends captured Evidence after this turn. Do not"
                      " describe screenshots you have not seen or add an"
-                     " Evidence section.")
+                     " Evidence section. Test or terminal output worth"
+                     " showing goes in the description as a short code"
+                     " block, never as an image.")
     template = _pr_template(wt)
     if template:
         parts.append("Pull request template, fill its sections:\n\n"

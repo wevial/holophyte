@@ -105,6 +105,19 @@ class MediaTests(unittest.TestCase):
                 self.assertEqual("never save a page opened for sign-in or a "
                                  "session warm-up" in brief, video)
 
+    def test_the_brief_asks_for_step_captions_and_holds_only_with_video_on(self):
+        ticket = "# Edit name\n\n## Evidence\n\nDialog open\nName saved\n"
+        for video in (True, False):
+            with self.subTest(video=video):
+                self.config["merge"]["ui_capture_video"] = video
+
+                brief = pr_media.implementer_brief(self.target, ticket, "KO-9")
+
+                self.assertIn("02: Name saved", brief)
+                for asked in ("test.step('NN state')", "showActions",
+                              "showChapter('NN state')", "waitForTimeout(1500)"):
+                    self.assertEqual(asked in brief, video, asked)
+
     def git(self, *args):
         return subprocess.check_output(
             ["git", *args], cwd=self.repo, stderr=subprocess.STDOUT, text=True
@@ -375,6 +388,9 @@ class MediaTests(unittest.TestCase):
                       "exits, never in the background, and open each "
                       "NN-slug.png before ending the turn.")
         self.assertIn(foreground, brief)
+        ui_only = ("Capture only UI states as images: test or terminal "
+                   "output never becomes an image.")
+        self.assertIn(ui_only, brief)
         self.assertNotIn("KO-7", brief)
         self.assertNotIn("commit", brief)
         self.config["merge"]["ui_capture_dir"] = "tests/screens"
@@ -387,6 +403,7 @@ class MediaTests(unittest.TestCase):
         self.assertIn("`.holophyte-capture/KO-7.capture.ts`", local)
         self.assertIn("never committed", local)
         self.assertIn(foreground, local)
+        self.assertIn(ui_only, local)
         self.assertIn("01: Dialog open\n02: Name saved", local)
         self.assertIn("NN-slug.png", local)
 

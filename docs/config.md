@@ -1193,12 +1193,25 @@ of a context the spec created with `recordVideo` (`page@` and hex digits) are
 skipped, and stderr counts them, so a spec saves the page that shows the
 states and never a sign-in or warm-up page. The temporary directory is then
 removed, and a run that published no video says so on stderr without failing.
+With `HOLOPHYTE_CAPTURE_VIDEO=1`, each capture project's `use`, or the
+config's own `use` when it has no `projects`, also gets
+`launchOptions.slowMo` set to `--slow-mo`, beside the project's other
+launch options, which slows every action of the browser, including in a
+context the spec creates, and
+`video: { mode: 'on', show: { actions: { cursor: 'pointer' }, test: { level: 'step' } } }`,
+which draws a cursor, each action's title and the current `test.step` title
+on the video of Playwright's own `page` and `context` fixtures (a Playwright
+before the `show` option ignores it). A context the spec creates passes
+`recordVideo.showActions` and calls `page.screencast.showChapter()` itself.
+`--slow-mo 0` leaves `slowMo` out, and without video the generated config is
+unchanged.
 The options are `--boot COMMAND` (default
 `npx playwright test`), `--env NAME=VALUE` (repeatable; `{key}` in a value
 becomes the ticket key lowercased without its hyphen, `ABC-12` giving
 `abc12`), `--dir DIR` (default `HOLOPHYTE_CAPTURE_DIR`, else
-`.holophyte-capture`), `--config FILE` (default `playwright.config.ts`) and
-`--default SPEC` (default none).
+`.holophyte-capture`), `--config FILE` (default `playwright.config.ts`),
+`--default SPEC` (default none) and `--slow-mo MS` (an integer of at least
+0, default `400`; any other value refuses before booting).
 For example: `ui_capture = "python3 HOLOPHYTE/holophyte/capture_playwright.py
 --boot 'bash BOOT_SCRIPT' --env HANDLE=-capture-{key} --env WORKERS=1"`.
 

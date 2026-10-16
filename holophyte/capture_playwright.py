@@ -47,10 +47,18 @@ export default config.projects
                                               : {{...project, ...capture{video}}})}}
   : {{...config, ...capture{config_video}}};
 """
+SHOW = "show: {actions: {cursor: 'pointer'}, test: {level: 'step'}}"
 
 
 class Refusal(Exception):
     pass
+
+
+def _milliseconds(text):
+    if not re.fullmatch(r"[0-9]+", text):
+        raise argparse.ArgumentTypeError(
+            f"expects an integer of at least 0; got {text!r}")
+    return int(text)
 
 
 def _arguments(argv):
@@ -73,6 +81,11 @@ def _arguments(argv):
                         help="spec run when the ticket has no spec of its own "
                              "and HOLOPHYTE_EVIDENCE_STATES is empty; one outside "
                              "the working directory runs from a copy in --dir")
+    parser.add_argument("--slow-mo", type=_milliseconds, default=400,
+                        metavar="MS",
+                        help="milliseconds the capture projects' browser waits "
+                             "before each action when HOLOPHYTE_CAPTURE_VIDEO=1 "
+                             "(default: %(default)s)")
     parser.add_argument("output", metavar="OUTPUT",
                         help="directory the screenshots are written to")
     return parser.parse_args(argv)
@@ -131,22 +144,30 @@ def _copied(spec, default, directory):
     return Path(name)
 
 
-def _video(recordings):
+def _use(owner, inherited, slow_mo):
+    launch = (f" launchOptions: {{...({owner}.use?.launchOptions{inherited}),"
+              f" slowMo: {slow_mo}}}," if slow_mo else "")
+    return (f", use: {{...{owner}.use,{launch}"
+            f" video: {{mode: 'on', {SHOW}}}}}")
+
+
+def _video(recordings, slow_mo):
     if not recordings:
         return {"output": "", "video": "", "config_video": ""}
     return {"output": f" outputDir: {json.dumps(recordings)},",
-            "video": ", use: {...project.use, video: 'on'}",
-            "config_video": ", use: {...config.use, video: 'on'}"}
+            "video": _use("project", " ?? config.use?.launchOptions", slow_mo),
+            "config_video": _use("config", "", slow_mo)}
 
 
-def _generated(config, directory, spec, recordings=None):
+def _generated(config, directory, spec, recordings=None, slow_mo=0):
     relative = Path(os.path.relpath(config, directory)).as_posix()
     if not relative.startswith("../"):
         relative = "./" + relative
     text = TEMPLATE.format(config=json.dumps(relative),
                            root=json.dumps(str(config.parent)),
                            dir=json.dumps(str(directory)),
-                           spec=json.dumps(spec.name), **_video(recordings))
+                           spec=json.dumps(spec.name),
+                           **_video(recordings, slow_mo))
     handle, name = tempfile.mkstemp(prefix="holophyte-capture-",
                                     suffix=".config" + config.suffix,
                                     dir=directory)
@@ -201,7 +222,8 @@ def run(argv):
             recordings = tempfile.TemporaryDirectory(prefix="holophyte-video-",
                                                      ignore_cleanup_errors=True)
         generated = _generated(config, spec.parent.absolute(), spec,
-                               recordings.name if recordings else None)
+                               recordings.name if recordings else None,
+                               args.slow_mo)
         _boot(args.boot, ["--config", generated,
                           REGEX_SPECIAL.sub(r"\\\g<0>", str(spec))], env)
         if recordings:

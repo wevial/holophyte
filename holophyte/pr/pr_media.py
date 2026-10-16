@@ -40,7 +40,14 @@ VIDEO_BRIEF = (
     "automatically. A context the spec creates records with `recordVideo`; "
     "after closing it, save only the page that shows the states, with "
     "`page.video().saveAs(testInfo.outputPath('video-feature.webm'))`, and "
-    "never save a page opened for sign-in or a session warm-up.")
+    "never save a page opened for sign-in or a session warm-up. Pace the "
+    "video so each state can be followed: wrap each state's steps in "
+    "`test.step('NN state')`; on a context the spec creates, pass "
+    "`recordVideo.showActions: { cursor: 'pointer' }` and call "
+    "`page.screencast.showChapter('NN state')` as each state begins; and "
+    "after each state's screenshot, when `HOLOPHYTE_CAPTURE_VIDEO` is `1`, "
+    "hold the page for 1.5 s with `page.waitForTimeout(1500)` so the video "
+    "rests on it.")
 CaptureFailure = collections.namedtuple("CaptureFailure", "kind sentence missing log")
 
 
@@ -63,7 +70,9 @@ def implementer_brief(project, ticket, task_id):
         where += VIDEO_BRIEF
     return (where + " Produce one image "
             "per state, named NN-slug.png in state order (01, 02, ...), plus "
-            "a recording when the states describe a flow. The harness receives "
+            "a recording when the states describe a flow. Capture only UI "
+            "states as images: test or terminal output never becomes an image. "
+            "The harness receives "
             "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES. "
             f"Run `{cfg.ui_capture}` in the foreground until it exits, never "
             "in the background, and open each NN-slug.png before ending the "
