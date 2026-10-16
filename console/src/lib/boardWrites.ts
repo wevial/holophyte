@@ -61,7 +61,7 @@ const refusal = (url: string, status: number, record: Record<string, unknown>) =
  *  text and says why. */
 export async function fileTicket(base: string, body: string, priority: number | null, fetchImpl: Fetch, column?: "backlog"): Promise<FileResult> {
   const url = `${base}/tickets`;
-  const sent = await send(base, url, "POST", column == null ? { body, priority } : { body, priority, column }, fetchImpl);
+  const sent = await send(base, url, "POST", { body, priority, column }, fetchImpl);
   if ("error" in sent) return { ok: false, error: sent.error };
   const { status, record } = sent;
   if (status === 201 && typeof record.ticket === "string") return { ok: true, ticket: record.ticket };
