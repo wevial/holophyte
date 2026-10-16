@@ -94,7 +94,7 @@ afterAll(() => {
 });
 
 test("Runs lists every host's runs since yesterday newest start first, each named and linked to its run", async () => {
-  await mount("#/runs", fleet([demo12, demo9], [writer40]));
+  await mount("#/runs?state=all", fleet([demo12, demo9], [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["12", "40", "9"]);
   const [first, failed, merged] = rows();
   expect(first!.getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
@@ -105,7 +105,7 @@ test("Runs lists every host's runs since yesterday newest start first, each name
 });
 
 test("a scoped Runs lists only that project's runs, with a dash for no rounds or pull request", async () => {
-  await mount("#/runs?project=demo", fleet([demo12, demo9], [writer40]));
+  await mount("#/runs?project=demo&state=all", fleet([demo12, demo9], [writer40]));
   const [first, second] = rows();
   expect(rows()).toHaveLength(2);
   expect(cells(first!)).toEqual(["12", "DEMO-12 Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
@@ -113,7 +113,7 @@ test("a scoped Runs lists only that project's runs, with a dash for no rounds or
 });
 
 test("a host whose daemon has no /history adds no rows and no error beside one that answers", async () => {
-  await mount("#/runs", fleet(null, [writer40]));
+  await mount("#/runs?state=all", fleet(null, [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["40"]);
   expect(screen.queryByRole("alert")).toBeNull();
   expect(document.querySelector("[data-notice]")).toBeNull();
@@ -135,7 +135,7 @@ test("a failed run's State cell names its failure stage and an abandoned run's i
     id: 10, ticket: "DEMO-10", title: "Drop", started_ms: today(15, 0), phase: "done", outcome: "abandoned",
     outcome_reason: "aborted: wrong ticket\nmore",
   });
-  await mount("#/runs", fleet([failed, abandoned], []));
+  await mount("#/runs?state=all", fleet([failed, abandoned], []));
   expect(stateCells()).toEqual(["failed at verify", "abandoned · aborted: wrong ticket"]);
 });
 
@@ -157,7 +157,7 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
     { kind: "paused", level: "attention", run: 5, ticket: "DEMO-5", ticket_url: null, title: "Hold", note: "Waiting on a key", asked_ms: NOW - MINUTE, pr_url: null },
     pullRequestItem(4, {}),
   ] as Item[];
-  await mount("#/runs", fleet([stale, question, paused, readyRun, { ...demo12, rounds: 1 }, merged], [], items, [4]));
+  await mount("#/runs?state=all", fleet([stale, question, paused, readyRun, { ...demo12, rounds: 1 }, merged], [], items, [4]));
   expect(stateCells()).toEqual([
     "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
   ]);
@@ -176,12 +176,32 @@ const sixRuns = () => fleet([demo12, demoParked, demoFailed], [writer41, writerM
 const countLine = () => document.querySelector("[data-count-line]")!.textContent;
 const filterButtons = () => within(screen.getByRole("group", { name: "State" })).getAllByRole("button");
 const pressed = () => filterButtons().filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
+const searchState = () => new URLSearchParams(window.location.hash.split("?")[1]).get("state");
+const shownIds = () => rows().map((row) => row.getAttribute("data-run"));
 
-test("the count line and every State button count the scoped runs, with All pressed by default", async () => {
+test("the count line and every State button count the scoped runs, with Active pressed and only active runs listed by default", async () => {
   await mount("#/runs", sixRuns());
   expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first / today and yesterday");
   expect(filterButtons().map((button) => button.textContent)).toEqual(["All 6", "Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
+  expect(pressed()).toEqual(["Active 3"]);
+  expect(shownIds()).toEqual(["12", "13", "41"]);
+});
+
+test("pressing All from the default Active puts state=all in the link and lists every run", async () => {
+  await mount("#/runs", sixRuns());
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "All 6" }));
+    await settle();
+  });
+  expect(searchState()).toBe("all");
   expect(pressed()).toEqual(["All 6"]);
+  expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
+});
+
+test("a link with state=merged selects Merged and lists only the merged run", async () => {
+  await mount("#/runs?state=merged", sixRuns());
+  expect(pressed()).toEqual(["Merged 1"]);
+  expect(shownIds()).toEqual(["42"]);
 });
 
 test("pressing Failed puts state=failed in the link and lists only the failed run", async () => {
@@ -195,10 +215,10 @@ test("pressing Failed puts state=failed in the link and lists only the failed ru
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["14"]);
 });
 
-test("a state the filter does not know reads as All and lists every run", async () => {
+test("a state the filter does not know reads as Active", async () => {
   await mount("#/runs?state=bogus", sixRuns());
-  expect(pressed()).toEqual(["All 6"]);
-  expect(rows()).toHaveLength(6);
+  expect(pressed()).toEqual(["Active 3"]);
+  expect(shownIds()).toEqual(["12", "13", "41"]);
 });
 
 test("a scoped filter with no runs says so, and Show all projects drops the project but keeps the state", async () => {

@@ -114,12 +114,16 @@ const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
 
 export type RunGroup = (typeof RUN_GROUPS)[number];
 
+export type RunFilter = RunGroup | "all";
+
+const RUN_FILTERS: readonly RunFilter[] = ["all", ...RUN_GROUPS];
+
 export interface RunsSearch {
-  state?: RunGroup;
+  state?: RunFilter;
 }
 
 export function validateRunsSearch({ state }: Record<string, unknown>): RunsSearch {
-  return { state: RUN_GROUPS.includes(state as RunGroup) ? (state as RunGroup) : undefined };
+  return { state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined };
 }
 
 export function stateGroup(state: State): RunGroup {
