@@ -296,15 +296,18 @@ def _word_spans(clause):
 
 
 def _relative_words(spans, candidate):
-    words = [word for word, _, _ in spans]
+    words, negated = [word for word, _, _ in spans], False
     while words and words[0] == "!":
-        words = words[1:]
-    if not words or words[0] in _PROBES:
+        words, negated = words[1:], not negated
+    probe = bool(words) and words[0] in _PROBES
+    if not words or (probe and negated):
         return []
     root = Path(candidate).resolve()
     found = []
-    for word in words:
+    for index, word in enumerate(words):
         if word.startswith("-") or _SHELL_EXPANSION.search(word) or os.path.isabs(word):
+            continue
+        if probe and index >= 2 and words[index - 2] == "!":
             continue
         inside = (root / word).resolve()
         if inside == root or not inside.is_relative_to(root):
