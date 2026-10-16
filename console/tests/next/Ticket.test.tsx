@@ -59,7 +59,7 @@ const DEMO_3_RUNS = [
   runRow({ run: 9, attempt: 2, phase: "reviewing", outcome: null, rounds: 1, pr_url: "https://github.com/acme/demo/pull/524", started_ms: new Date(2026, 9, 15, 16, 36).getTime() }),
 ];
 
-const child = (ticket: string, status: StoryDetail["children"][number]["status"]) => ({ ...servedStory.children[0]!, ticket, title: `${ticket} title`, status });
+const child = (ticket: string, status: StoryDetail["children"][number]["status"]) => ({ ...servedStory.children[0]!, ticket, title: `${ticket} title`, status, column: null });
 const stories: Record<string, StoryDetail> = {
   "DEMO-20": { ...servedStory, ticket: "DEMO-20", title: "Unattended runs recover themselves", children: [child("DEMO-21", "merged"), child("DEMO-22", "ready"), child("DEMO-23", "in_flight")] },
   "DEMO-30": { ...servedStory, ticket: "DEMO-30", title: "An empty story", children: [] },
