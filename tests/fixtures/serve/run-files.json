@@ -1,0 +1,34 @@
+{
+  "run": 1,
+  "base": "BASE_SHA",
+  "head": "HEAD_SHA",
+  "files": [
+    {
+      "path": "app.py",
+      "status": "M",
+      "added": 2,
+      "deleted": 1
+    },
+    {
+      "path": "fresh.py",
+      "status": "A",
+      "added": 5,
+      "deleted": 0
+    },
+    {
+      "path": "gone.txt",
+      "status": "D",
+      "added": 0,
+      "deleted": 2
+    },
+    {
+      "path": "new.py",
+      "status": "R",
+      "added": 0,
+      "deleted": 0
+    }
+  ],
+  "total_added": 7,
+  "total_deleted": 3,
+  "truncated": false
+}

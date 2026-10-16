@@ -578,6 +578,40 @@ export const runAsksSchema = z.looseObject({
 });
 export type RunAsks = z.infer<typeof runAsksSchema>;
 
+export const runFileSchema = z.looseObject({
+  path: z.string(),
+  status: z.enum(["A", "D", "M", "R"]),
+  added: z.int(),
+  deleted: z.int(),
+});
+export type RunFile = z.infer<typeof runFileSchema>;
+
+export const runFilesSchema = z.looseObject({
+  run: z.int(),
+  base: z.string(),
+  head: z.string(),
+  files: z.array(runFileSchema),
+  total_added: z.int(),
+  total_deleted: z.int(),
+  truncated: z.boolean(),
+});
+export type RunFiles = z.infer<typeof runFilesSchema>;
+
+export const runTurnSchema = z.looseObject({
+  id: z.int(),
+  role: z.enum(["implement", "review", "adjudicate", "write", "trim"]),
+  label: z.string().nullable(),
+  route: z.enum(["primary", "fallback"]),
+  seconds: z.number().nullable(),
+  session_id: z.string().nullable(),
+});
+export type RunTurn = z.infer<typeof runTurnSchema>;
+
+export const runTurnsSchema = z.looseObject({
+  turns: z.array(runTurnSchema),
+});
+export type RunTurns = z.infer<typeof runTurnsSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),
