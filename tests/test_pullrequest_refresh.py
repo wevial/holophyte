@@ -230,6 +230,25 @@ class PullRequestRefreshTests(MergeModeFixture):
         for part in (a, b[:12], "failed (exit 3)"):
             self.assertIn(part, notice)
 
+    HTML_READ = ("gh api -H Accept: application/vnd.github.html+json"
+                 " --hostname github.com --method GET repos/example/repo/pulls/7")
+
+    def test_a_written_body_with_an_image_is_read_back_as_github_renders_it(self):
+        self.captured_pr()
+        self.commit_file("README.md")
+        self.refresh(("TITLE: Ignored\nNew description.", False))
+        calls = self.recorded()
+        edit = calls.index(f"gh pr edit {self.URL} --body-file -")
+        self.assertIn(self.HTML_READ, calls[edit:])
+
+    def test_a_written_body_without_an_image_is_not_read_back(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.pr_body.write_text("Old.\n\nLinear: KO-131\n")
+        self.refresh(("TITLE: Ignored\nNo image here.", False))
+        self.assertIn(f"gh pr edit {self.URL} --body-file -", self.recorded())
+        self.assertNotIn(self.HTML_READ, self.recorded())
+
     QUOTED = ("Captured with `python3 capture.py '--caption=`.\n/srv/x/spec.ts'`.\n\n"
               "Media lives in an object bucket.\n\n")
 
