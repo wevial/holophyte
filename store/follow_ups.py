@@ -143,3 +143,47 @@ def settle_ledger(conn, follow_up_id, now=None):
 def settle_unfiled(conn, follow_up_id, error, now=None):
     return _settle(conn, follow_up_id, "follow_up_unfiled",
                    f"not filed: {error}", now, error=error)
+
+
+_SETTLED_STATES = {"follow_up_filed": "filed",
+                   "follow_up_duplicate": "duplicate",
+                   "follow_up_ledger": "ledger",
+                   "follow_up_superseded": "superseded",
+                   "follow_up_unfiled": "unfiled"}
+_EVENTLESS_SETTLE_STATES = {"guardrail": "ledger", "feature": "superseded"}
+
+
+@dataclass(frozen=True)
+class WindowFollowUp:
+    id: int
+    runId: int
+    ticket: str
+    kind: str
+    text: str
+    path: str | None
+    line: int | None
+    createdAt: int
+    settledAt: int | None
+    filedAs: str | None
+    duplicateOf: str | None
+    error: str | None
+    state: str
+
+
+def follow_ups_since(conn, since):
+    marks = ", ".join("?" for _ in _SETTLED_STATES)
+    rows = conn.execute(
+        "SELECT f.id, f.runId, t.linearIdentifier, f.kind, f.text, f.path,"
+        " f.line, f.createdAt, f.settledAt, f.filedAs, f.duplicateOf, f.error,"
+        " (SELECT e.kind FROM runEvents e WHERE e.runId = f.runId"
+        f"  AND e.kind IN ({marks}) AND CASE WHEN json_valid(e.payload)"
+        "  THEN json_extract(e.payload, '$.id') END = f.id"
+        "  ORDER BY e.seq DESC LIMIT 1)"
+        " FROM followUps f JOIN tickets t ON t.id = f.ticketId"
+        " WHERE f.createdAt >= ? OR f.settledAt IS NULL"
+        " ORDER BY f.createdAt DESC, f.id DESC",
+        (*_SETTLED_STATES, since)).fetchall()
+    return [WindowFollowUp(*row[:12], state=(
+        "pending" if row[8] is None
+        else _SETTLED_STATES.get(row[12], _EVENTLESS_SETTLE_STATES[row[3]])))
+        for row in rows]

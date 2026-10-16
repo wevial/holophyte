@@ -627,6 +627,61 @@ or kinds other than `intervention`; it is included for unfiltered requests.
 Launch-loop interventions at or after an ongoing outage's start are suppressed
 from history.
 
+## `GET /findings?since=MS`
+
+```json
+{"since": 1788450000000, "limit": 100,
+ "runs": [
+  {"run": 52, "ticket": "KO-219", "title": "Serve the findings window",
+   "phase": "done", "outcome": "merged", "ended_ms": 1788451661675,
+   "pr_url": "https://github.com/OWNER/REPO/pull/12",
+   "rounds": [
+    {"round": 1, "started_ms": 1788450641675, "ended_ms": 1788450941675,
+     "verdict": "changes_requested", "reviewer_model": "reviewer-model",
+     "findings": [{"severity": "p1", "message": "the limit is not echoed",
+                   "path": "holophyte/serve/serve_findings.py", "line": 40}],
+     "instructions": [], "operator_notes": []}],
+   "ledger": [
+    {"at": 1788450941675, "kind": "round",
+     "text": "Round 1: changes_requested · reviewer reviewer-model\nImplementer response:\nDECLINE: covered elsewhere",
+     "source": "loop"}],
+   "advisories": [{"tone": "advisory", "message": "https://github.com/OWNER/REPO/pull/12#discussion_r1: nit"}]}
+ ],
+ "follow_ups": [
+  {"id": 7, "run": 52, "ticket": "KO-219", "kind": "feature",
+   "text": "page the window", "path": "holophyte/serve/serve_findings.py",
+   "line": 30, "created_ms": 1788451661675, "settled_ms": 1788451661675,
+   "state": "filed", "filed_as": "KO-230", "duplicate_of": null,
+   "error": null}
+ ]}
+```
+
+Review findings across runs, from `since` on, in one read: what the
+console's Findings page polls. `since` is required and is epoch
+milliseconds. `runs` holds every run with a review round whose `ended_ms`
+is at or after `since`, ordered by its newest round's end, newest first,
+at most `limit` of them (default 100, capped at 500). Each carries the
+run's `run`, `ticket`, `title`, `phase`, `outcome`, `ended_ms` and
+`pr_url`; its `rounds`, every round of the run oldest first, exactly as
+`/runs/N` answers them; its `ledger`, the run's `round` and `adjudication`
+entries oldest first as `/runs/N/ledger` spells them, whose text keeps the
+"Implementer response:" lines with the DECLINE and FOLLOW_UP adjudications;
+and its `advisories`, the bot threads `/runs/N` answers as `findings`.
+
+`follow_ups` holds the FOLLOW_UP rows a merged run's fix commits left,
+every row created at or after `since` plus every row still unsettled,
+newest first. Each is its `id`, `run`, `ticket`, `kind` (`feature` or
+`guardrail`), `text`, `path`, `line`, `created_ms`, `settled_ms`, `state`,
+`filed_as`, `duplicate_of` and `error`. `state` is `pending` until the
+row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
+`unfiled`, read from the event that settled it; a row settled before
+those events named their row reads `ledger` for a `guardrail` and
+`superseded` for a `feature`. The route serves rows, not fates: which
+group a finding falls in is the console's to work out.
+
+A missing or non-integer `since`, or a bad `limit`, is 400 with an
+`error` naming the parameter; a project with no store is 503.
+
 ## `GET /report?since=SPAN`
 
 ```json
