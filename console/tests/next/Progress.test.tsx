@@ -127,10 +127,11 @@ test("a live run's label says live and only a line a later poll adds is marked n
   expect(fresh).toEqual(["Fix applied · verifying"]);
 });
 
-test("an ended run shows no live mark and its last line names its outcome", async () => {
+test("an ended run shows no live mark and its last line names its outcome, past a note steered after it ended", async () => {
   const failed: RunDetail = {
     ...liveDetail,
     run: { ...liveDetail.run, phase: "failed", outcome: "failed", failure_kind: "verify", outcome_reason: "2 tests red\nmore", ended_ms: at(16, 55) },
+    steer_notes: [...liveDetail.steer_notes, { ...note, id: 4, kind: "amendment", note: "for the retry: keep --act", at: at(17, 0) }],
   };
   await mount(progressFetch({ detail: failed, asks }));
   expect(section().querySelector("[data-live]")).toBeNull();
