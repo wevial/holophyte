@@ -375,6 +375,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-58: `story_frontier`, claimable children.
                                  # HOLO-64: `accept_witness`, `reapprove_edges`,
                                  # two answers of a decision.
+                                 # HOLO-352: `story_children`,
+                                 # `story_decisions`, `/stories/KEY`'s reads.
                                  (store.stories, ["abandon_story",
                                                   "accept_witness",
                                                   "advance_story",
@@ -385,7 +387,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "reapprove_edges",
                                                   "record_witness_result",
                                                   "replan_story",
-                                                  "story", "story_frontier",
+                                                  "story", "story_children",
+                                                  "story_decisions",
+                                                  "story_frontier",
                                                   "witness_ledger"])):
             actual = public_functions(module)
             unexpected = sorted(set(actual) - set(expected))
