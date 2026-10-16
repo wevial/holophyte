@@ -901,6 +901,10 @@ The Run page’s `next/components/CriteriaList.tsx` shows review marks and
 witness notes, with its verdict count supplied by `criteriaClause()` in
 `next/run.ts`.
 
+The Run page’s `console/src/next/components/AgentPanel.tsx` renders the
+agent seat, state and chronological note/question thread from the page’s
+shared run detail and asks queries.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than

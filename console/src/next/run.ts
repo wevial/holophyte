@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { describe, needsYouEntries, type Fact } from "../lib/attention";
-import type { RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
+import type { ConsoleAsk, RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
 import { hostItems, sinceSeen } from "../lib/hosts";
@@ -33,9 +33,19 @@ export type RunPage =
       sentence: string;
       stage: { label: string; sub: string | null };
       progress: ProgressLine[];
+      asks: ConsoleAsk[];
+      agentState: string;
       /** Whether the run is still under way, so its Progress may grow. */
       live: boolean;
     };
+
+export function agentState(run: { phase: string; outcome: string | null; round: number }): string {
+  if (run.outcome != null || ["done", "failed", "killed", "rejected", "paused"].includes(run.phase)) return "stopped with the run";
+  if (run.phase === "verifying") return "idle while verify runs";
+  if (run.phase === "reviewing") return `idle until review round ${run.round + 1} returns`;
+  if (run.phase === "awaiting_merge_approval") return "idle while the pull request waits";
+  return "working";
+}
 
 /** Run `id`'s page, on the project at path `project`, as a `Link` target
  *  that keeps the sidebar's scope. */
@@ -190,6 +200,8 @@ export function useRunPage(project: string, run: number | null): RunPage {
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
     },
+    asks: asks.data?.asks ?? [],
+    agentState: agentState({ ...detail.run, phase, round: live?.round ?? detail.rounds.length }),
     progress: progressLines(detail, asks.data?.asks ?? [], now),
     live: detail.run.outcome == null,
   };
