@@ -13,6 +13,7 @@ import {
   runTurnsSchema,
   shippedSchema,
   statusSchema,
+  storyDetailSchema,
   ticketDetailSchema,
 } from "../src/lib/contract.gen";
 import status from "../../tests/fixtures/serve/status.json";
@@ -30,6 +31,7 @@ import shipped from "../../tests/fixtures/serve/shipped.json";
 import ledger from "../../tests/fixtures/serve/ledger.json";
 import board from "../../tests/fixtures/serve/board.json";
 import ticket from "../../tests/fixtures/serve/ticket.json";
+import story from "../../tests/fixtures/serve/story.json";
 
 // The pinned asks hold `NOW` where the daemon sends a time.
 const time = (value: string | null) => (value === "NOW" ? 1750000000000 : value);
@@ -77,6 +79,12 @@ test("a ticket claimed by an older build carries its claim-time snapshot and par
   const claimed = { revision: null, title: ticket.title, acceptance_criteria: ticket.acceptance_criteria, verification_commands: ticket.verification_commands };
   const older = { ...ticket, claimed };
   expect<unknown>(ticketDetailSchema.parse(older)).toEqual(older);
+});
+
+test("the pinned story parses unchanged; a child whose status is shipping fails at its path", () => {
+  expect<unknown>(storyDetailSchema.parse(story)).toEqual(story);
+  const shipping = { ...story, children: [{ ...story.children[0], status: "shipping" }, ...story.children.slice(1)] };
+  expect(firstIssuePath(storyDetailSchema.safeParse(shipping))).toStartWith("children.0.status");
 });
 
 test("a run detail without rounds or with a numeric phase fails at its path; an extra run key passes", () => {

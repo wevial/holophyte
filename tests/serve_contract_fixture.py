@@ -4,12 +4,20 @@ import re
 
 import holophyte.serve.serve_history
 import holophyte.serve.serve_runs
+import holophyte.serve.serve_stories
 import holophyte.serve.server
 import holophyte.serve.views
 import store
 from holophyte.config.project import Project
 from store.operator_notes import consume
 from store.steer_notes import steer
+from store.stories import (
+    answer_decision,
+    approve_story,
+    file_story,
+    park_story,
+    record_witness_result,
+)
 from tests.phase_fixture import park_run
 
 NOW = 1_750_000_000_000
@@ -139,4 +147,39 @@ def contract_answers(case):
     code, body = holophyte.serve.serve_runs.run_turns(target, str(case.run))
     case.assertEqual(code, 200)
     answers["run-turns"] = normalize_contract(body)
+    seed_story(case.db, case.target)
+    code, body = holophyte.serve.serve_stories.story_detail(target, "KO-11")
+    case.assertEqual(code, 200)
+    answers["story"] = normalize_contract(body)
     return answers
+
+
+def seed_story(db, repo):
+    """KO-11's story over KO-12 and KO-13, which depends on KO-12: its
+    witness recorded green and one decision answered."""
+    with store.open(str(db)) as conn:
+        project = store.tickets.ensure_project(conn, "team-1", repo)
+        parent, first, second = (store.tickets.mirror_ticket(
+            conn, project, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=title,
+            acceptance_criteria=[criterion], verification_commands=["echo ok"],
+            depends_on=depends, now=NOW) for n, title, criterion, depends in (
+                (11, "Export recovers", "Exports survive a restart", None),
+                (12, "Checkpoint exports", "Exports checkpoint", None),
+                (13, "Resume exports", "Exports resume", ["issue-12"])))
+        file_story(conn, parent, [dict(
+            key="W1", criterion="Exports survive a restart",
+            file="tests/test_export.py", command="python3 -m unittest",
+            source="assert resumed")], [(first, "advances", ("W1",)),
+                                        (second, "completes", ("W1",))])
+        (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                                   (parent,)).fetchone()
+        approve_story(conn, parent, revision, "operator", "Plan approved",
+                      now=NOW)
+        record_witness_result(conn, parent, "W1", "c" * 40, "green",
+                              "baseline", now=NOW)
+        decision = park_story(conn, parent, "unmet", "Replan the export?",
+                              ["replan", "abandon"], "replan",
+                              ticket_id=second, now=NOW)
+        answer_decision(conn, decision, "replan", "operator",
+                        "Replan around the checkpoint", now=NOW)

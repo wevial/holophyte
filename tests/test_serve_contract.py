@@ -28,6 +28,8 @@ from holophyte.serve.contract import (
     RunTurn,
     RunTurns,
     Status,
+    StoryChildRow,
+    StoryDetail,
     main,
 )
 from holophyte.serve.contract_emit import ContractError, json_schema
@@ -36,7 +38,7 @@ FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
-           "shipped", "history", "ledger", "board", "ticket")
+           "shipped", "history", "ledger", "board", "ticket", "story")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -133,7 +135,7 @@ class GeneratedFilesTests(unittest.TestCase):
                              "host-attention", "host-status", "ledger",
                              "peers", "run-asks", "run-detail", "run-files",
                              "run-merge", "run-turns", "shipped", "status",
-                             "ticket")])
+                             "story", "ticket")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -228,6 +230,18 @@ class PinnedAnswerTests(unittest.TestCase):
                                     r"^run-turns\.turns\.0\.route: undeclared$"):
             walk(pinned("run-turns"), typing.TypedDict("RunTurns", turns),
                  "run-turns")
+
+    def test_a_story_child_type_without_depends_on_fails_the_story_walk(self):
+        hints = typing.get_type_hints(StoryChildRow, include_extras=True)
+        narrower = typing.TypedDict("StoryChildRow", {key: hint for key, hint
+                                                      in hints.items()
+                                                      if key != "depends_on"})
+        detail = typing.get_type_hints(StoryDetail, include_extras=True)
+        detail["children"] = list[narrower]
+        with self.assertRaisesRegex(
+                AssertionError, r"^story\.children\.0\.depends_on: undeclared$"):
+            walk(pinned("story"), typing.TypedDict("StoryDetail", detail),
+                 "story")
 
 
 if __name__ == "__main__":

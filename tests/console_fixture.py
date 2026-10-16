@@ -59,6 +59,11 @@ QUESTION = ("merge? The reviewer passed round 1 and the pre-merge verify is"
 FINDINGS = [{"path": "holophyte/serve/server.py", "line": 12, "severity": "p1",
              "criterion": "AC1", "message": "the route is unmatched"}]
 PULL = "https://github.com/example/demo/pull/"
+DEPENDS = "\n## Estimate & dependencies\n\nEstimate: 15 min · Depends on: {}\n"
+W1 = dict(key="W1", criterion="A run that fails its verify is retried once",
+          file="tests/test_recovery.py",
+          command="python3 -m unittest tests.test_recovery",
+          source="assert retried")
 
 
 def seed(home):
@@ -114,7 +119,8 @@ def _seed_store(path):
     the operator, DEMO-5 merged after two rounds, DEMO-6 failed, DEMO-7 in
     review after changes requested, DEMO-8 parked on pending checks, DEMO-9
     parked ready for its merge, DEMO-10 merged today, DEMO-11 failed and
-    still in flight; and a supervisor beating now."""
+    still in flight, DEMO-12 a story over six of them; and a supervisor
+    beating now."""
     import store
     import store.board
     import store.tickets
@@ -128,12 +134,8 @@ def _seed_store(path):
         project = store.tickets.ensure_project(conn, f"native:{KEY}", path)
 
         def filed(text, column="ready", at=now - 3 * 24 * HOUR):
-            identifier = store.board.file_ticket(conn, project, KEY, text,
-                                                 column=column, now=at)
-            (ticket,) = conn.execute(
-                "SELECT id FROM tickets WHERE linearIdentifier = ?",
-                (identifier,)).fetchone()
-            return ticket
+            return _ticket_id(conn, store.board.file_ticket(
+                conn, project, KEY, text, column=column, now=at))
 
         def claimed(text, at):
             ticket = filed(text)
@@ -186,7 +188,8 @@ def _seed_store(path):
                       now=now - 7 * HOUR)
         store.tickets.transition(conn, ticket, "abandoned")
 
-        _, run = claimed(body("Name each worker's route"), now - 30 * MIN)
+        _, run = claimed(body("Name each worker's route", depends="DEMO-5"),
+                         now - 30 * MIN)
         store.record_review_round(
             conn, run, 1, "changes_requested", "reviewer-model",
             findings=FINDINGS, started_at=now - 15 * MIN,
@@ -213,14 +216,65 @@ def _seed_store(path):
                    merge_sha="0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c")
         store.tickets.transition(conn, ticket, "merged")
 
-        _, run = claimed(body("Retry the board sync"), now - 2 * HOUR)
+        _, run = claimed(body("Retry the board sync", depends="DEMO-10"),
+                         now - 2 * HOUR)
         store.release(conn, run, "failed", "verify failed: 2 tests red",
                       now=now - 50 * MIN)
+
+        _seed_story(conn, project, filed(
+            body("Unattended runs recover themselves"), column="backlog"),
+            now)
 
         store.record_supervisor_heartbeat(conn, os.getpid(), now - HOUR,
                                           now=now)
     finally:
         conn.close()
+
+
+def _ticket_id(conn, identifier):
+    (ticket,) = conn.execute(
+        "SELECT id FROM tickets WHERE linearIdentifier = ?",
+        (identifier,)).fetchone()
+    return ticket
+
+
+def _seed_story(conn, project, parent, now):
+    """DEMO-1 made to depend on DEMO-7 and DEMO-11, then `parent`'s story
+    over DEMO-5, DEMO-10, DEMO-7, DEMO-11, DEMO-2 and DEMO-1: approved, its
+    witness W1 recorded green and one decision answered `replan`."""
+    import store.board
+    from store.stories import (
+        answer_decision,
+        approve_story,
+        file_story,
+        park_story,
+        record_witness_result,
+    )
+
+    (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                               (_ticket_id(conn, f"{KEY}-1"),)).fetchone()
+    store.board.edit_ticket(conn, project, f"{KEY}-1",
+                            DRAFT + DEPENDS.format("DEMO-7, DEMO-11"),
+                            revision, now=now - 20 * MIN)
+    roles = {"DEMO-5": "advances", "DEMO-10": "advances",
+             "DEMO-7": "advances", "DEMO-11": "advances",
+             "DEMO-2": "scaffolding", "DEMO-1": "completes"}
+    file_story(conn, parent, [W1], [
+        (_ticket_id(conn, name), role, () if role == "scaffolding" else ("W1",))
+        for name, role in roles.items()], now=now - 15 * MIN)
+    (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                               (parent,)).fetchone()
+    approve_story(conn, parent, revision, "maintainer", "Plan approved",
+                  now=now - 14 * MIN)
+    record_witness_result(conn, parent, "W1", "1" * 40, "green", "loop",
+                          now=now - 12 * MIN)
+    decision = park_story(conn, parent, "unmet", "DEMO-11 failed its verify;"
+                          " replan around it or abandon the story?",
+                          ["replan", "abandon"], "replan",
+                          ticket_id=_ticket_id(conn, "DEMO-11"),
+                          now=now - 10 * MIN)
+    answer_decision(conn, decision, "replan", "maintainer",
+                    "Replan around the board sync", now=now - 8 * MIN)
 
 
 def parse(argv):

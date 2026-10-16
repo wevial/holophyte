@@ -931,6 +931,12 @@ class ServeContractTests(ServeTestCase):
                             for column in answers["board"]["columns"]))
         self.assertEqual(answers["ticket"]["acceptance_criteria"],
                          ["Run without an estimate"])
+        story = answers["story"]
+        self.assertEqual(len(story["children"]), 2)
+        self.assertEqual([edge for child in story["children"]
+                          for edge in child["depends_on"]], ["KO-12"])
+        self.assertIsNotNone(story["witnesses"][0]["verdict"])
+        self.assertIsNotNone(story["decisions"][0]["answer"])
 
 
 class TurnTests(TranscriptCase):
