@@ -19,6 +19,7 @@ from holophyte.loop import (
     review_round,
 )
 from holophyte.pr import github, pullrequest
+from holophyte.review import witness_precheck
 from tests.sweep_fixture import MINUTE, T0, SweepTestCase, no_network
 
 
@@ -266,6 +267,7 @@ class WorkingTimeTests(SweepTestCase):
                     (merge_gate, '_is_ancestor', True),
                     (merge_gate, 'merge_drift', ((), None)),
                     (babysitter, '_decline_threads', ()),
+                    (witness_precheck, 'record', None),
                     (github, 'push_branch', None)):
                 stack.enter_context(patch.object(module, name, return_value=result))
             stack.enter_context(patch.object(pullrequest, 'monotonic', return_value=0))
