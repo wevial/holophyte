@@ -22,7 +22,7 @@ function Page({ project, ticketKey, children }: { project: string; ticketKey: st
           {" / "}
           <Link to="/tickets" search={{ project }} className={CRUMB_LINK}>{project} tickets</Link>
           {" / "}
-          <span data-crumb-key>{ticketKey}</span>
+          <span>{ticketKey}</span>
         </nav>
         {children}
       </section>
@@ -85,7 +85,7 @@ export function TicketPage() {
     <Page project={project} ticketKey={key}>
       <div className="border-b border-rule pb-3">
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-6 gap-y-2.5">
-          <h1 id="page-title" className="m-0 flex-[1_1_420px] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">
+          <h1 className="m-0 flex-[1_1_420px] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">
             {ticket.title}
           </h1>
           <div data-ticket-actions className="flex flex-wrap gap-2" />
