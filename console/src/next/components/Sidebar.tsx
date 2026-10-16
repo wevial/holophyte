@@ -56,6 +56,9 @@ function systemDark(): boolean {
   return window.matchMedia?.(DARK_QUERY).matches ?? false;
 }
 
+const FOOTER_BUTTON =
+  "flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink";
+
 const THEME_NAMES: Record<Shown, string> = { light: "Dawn", dark: "Night" };
 
 function ThemeToggle({ folded }: { folded: boolean }) {
@@ -83,7 +86,7 @@ function ThemeToggle({ folded }: { folded: boolean }) {
         applyTheme(other);
         setStored(other);
       }}
-      className="flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink"
+      className={FOOTER_BUTTON}
     >
       <MoonIcon />
       {!folded && <span>{name}</span>}
@@ -116,7 +119,7 @@ function PageLink({
       {...(active ? { "data-status": "active", "aria-current": "page" as const } : {})}
       aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
       title={folded ? label : undefined}
-      className={`relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:border-act data-[status=active]:bg-act-wash data-[status=active]:text-act ${
+      className={`relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper hover:text-ink data-[status=active]:border-act data-[status=active]:bg-act-wash data-[status=active]:text-act ${
         folded ? "justify-center px-0" : "px-4"
       }`}
     >
@@ -202,7 +205,7 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
                 search={keepScope}
                 activeOptions={{ exact: true, includeSearch: false }}
                 aria-label={`${story.ticket} ${story.title}, ${story.merged} of ${story.total} merged`}
-                className="flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:bg-act-wash data-[status=active]:text-act"
+                className="flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-paper hover:text-ink data-[status=active]:bg-act-wash data-[status=active]:text-act"
               >
                 <span className="flex justify-between gap-2 font-mono text-[11px] leading-[1.3] font-medium text-ink-3">
                   <span>{story.ticket}</span>
@@ -245,7 +248,7 @@ export function Sidebar() {
     <aside
       aria-label="Console"
       data-folded={folded}
-      className={`flex w-full shrink-0 flex-col border-b border-rule-2 bg-canvas min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-r min-[720px]:border-b-0 ${
+      className={`flex w-full shrink-0 flex-col border-r border-b border-rule bg-paper-2 min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
         folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
@@ -306,15 +309,16 @@ export function Sidebar() {
             </span>
           )}
         </p>
-        {folded ? (
-          <a href={classicHref()} onClick={() => writeView("classic")} aria-label="Classic console" title="Classic console" className="flex size-11 items-center justify-center text-ink-2 hover:text-ink">
-            <ClassicIcon />
-          </a>
-        ) : (
-          <a href={classicHref()} onClick={() => writeView("classic")} className="text-[12px] text-ink-2 underline-offset-2 hover:text-ink hover:underline">
-            Classic console
-          </a>
-        )}
+        <a
+          href={classicHref()}
+          onClick={() => writeView("classic")}
+          aria-label={folded ? "Classic console" : undefined}
+          title={folded ? "Classic console" : undefined}
+          className={FOOTER_BUTTON}
+        >
+          <ClassicIcon />
+          {!folded && <span>Classic console</span>}
+        </a>
         <ThemeToggle folded={folded} />
       </footer>
     </aside>
