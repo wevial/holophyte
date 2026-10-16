@@ -573,6 +573,35 @@ class Shipped(TypedDict):
     limit: int
 
 
+class HistoryRow(TypedDict):
+    id: int
+    ticket: str
+    ticket_url: str | None
+    title: str
+    attempt: int
+    phase: str
+    outcome: str | None
+    outcome_reason: str | None
+    failure_kind: str | None
+    park_kind: str | None
+    started_ms: int
+    ended_ms: int | None
+    elapsed_ms: int
+    heartbeat_age_ms: int | None
+    rounds: int
+    max_rounds: int
+    pr_url: str | None
+    host: str | None
+
+
+class History(TypedDict):
+    rows: list[HistoryRow]
+    since: int
+    limit: int
+    truncated: bool
+    now: int
+
+
 class LedgerEntry(TypedDict):
     at: int
     run: int | None
@@ -692,6 +721,7 @@ ROUTES = {
     "run-merge": (MergeReadiness, "GET /runs/N/merge"),
     "run-asks": (RunAsks, "GET /runs/N/asks"),
     "shipped": (Shipped, "GET /shipped"),
+    "history": (History, "GET /history"),
     "ledger": (Ledger, "GET /ledger"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),

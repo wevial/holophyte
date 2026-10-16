@@ -33,8 +33,8 @@ from holophyte.serve.contract_emit import ContractError, json_schema
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
-           "run-merge-bypassable", "run-asks", "shipped", "ledger", "board",
-           "ticket")
+           "run-merge-bypassable", "run-asks", "shipped", "history", "ledger",
+           "board", "ticket")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -127,8 +127,9 @@ class GeneratedFilesTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in before
                                 if path.parent == SCHEMA_DIR),
                          [f"{stem}.schema.json" for stem in (
-                             "attention", "board", "host-attention",
-                             "host-status", "ledger", "peers", "run-asks",
+                             "attention", "board", "history",
+                             "host-attention", "host-status", "ledger",
+                             "peers", "run-asks",
                              "run-detail", "run-merge", "shipped", "status",
                              "ticket")])
 
