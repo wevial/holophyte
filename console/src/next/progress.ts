@@ -17,6 +17,8 @@ export interface ProgressLine {
 /** Ties at one millisecond: an event, then the round that ended at it, the loop back it sent, a steer or ask, then the run's end. */
 const KIND_ORDER: Record<ProgressKind, number> = { event: 0, round: 1, loop: 2, steer: 3, ask: 3, merge: 4, failure: 4 };
 
+const PASSED = new Set(["pass", "approved"]);
+
 const LOOP_BACK = /^\s*reviewing\s*->\s*addressing\b/;
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -40,7 +42,7 @@ function roundLines(detail: RunDetail): ProgressLine[] {
     const outcome =
       round.verdict === "changes_requested"
         ? `changes requested, ${must} must-fix`
-        : round.verdict === "approved"
+        : PASSED.has(round.verdict)
           ? "passed"
           : round.verdict.replaceAll("_", " ");
     const sub = round.findings.map((finding) => {
@@ -54,7 +56,7 @@ function roundLines(detail: RunDetail): ProgressLine[] {
 
 function steerLines(detail: RunDetail): ProgressLine[] {
   return detail.steer_notes
-    .filter((note) => !note.withdrawn)
+    .filter((note) => !note.withdrawn || note.consumed_ms != null)
     .map((note) => ({
       at: note.at,
       kind: "steer",

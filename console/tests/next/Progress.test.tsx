@@ -138,6 +138,24 @@ test("an ended run shows no live mark and its last line names its outcome", asyn
   expect(line(items().at(-1)!)).toEqual({ time: "16:55", kind: "failure", text: "Failed at verify: 2 tests red", sub: [] });
 });
 
+test("a passing round reads passed, and a note withdrawn after the agent read it keeps its line", async () => {
+  const passed: RunDetail = {
+    ...liveDetail,
+    events: [liveDetail.events[0]!],
+    rounds: [{ ...round1, verdict: "pass", findings: [] }],
+    steer_notes: [
+      { ...liveDetail.steer_notes[0]!, withdrawn: true },
+      { ...liveDetail.steer_notes[1]!, withdrawn: true },
+    ],
+  };
+  await mount(progressFetch({ detail: passed, asks: { ...asks, asks: [] } }));
+  expect(items().map((li) => `${line(li).time} ${line(li).text}${line(li).sub.map((sub) => ` | ${sub}`).join("")}`)).toEqual([
+    "16:36 Run started · implementing",
+    "16:40 You steered: don't add a new flag; reuse --act | → the agent read it at 16:41",
+    "16:45 Review round 1: passed",
+  ]);
+});
+
 test("the Stage line links to the Progress section by its id", async () => {
   await mount(progressFetch({ detail: liveDetail, asks }));
   const link = screen.getByRole("link", { name: "history in Progress" });
