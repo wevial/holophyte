@@ -1,0 +1,64 @@
+{
+  "ticket": "KO-11",
+  "title": "Export recovers",
+  "state": "approved",
+  "generation": 0,
+  "children": [
+    {
+      "ticket": "KO-12",
+      "title": "Checkpoint exports",
+      "status": "ready",
+      "column": null,
+      "time_box_ms": null,
+      "run": null,
+      "merged_ms": null,
+      "role": "advances",
+      "witness_keys": [
+        "W1"
+      ],
+      "depends_on": []
+    },
+    {
+      "ticket": "KO-13",
+      "title": "Resume exports",
+      "status": "ready",
+      "column": null,
+      "time_box_ms": null,
+      "run": null,
+      "merged_ms": null,
+      "role": "completes",
+      "witness_keys": [
+        "W1"
+      ],
+      "depends_on": [
+        "KO-12"
+      ]
+    }
+  ],
+  "witnesses": [
+    {
+      "key": "W1",
+      "criterion": "Exports survive a restart",
+      "verdict": "green",
+      "main_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "at": 1750000000000
+    }
+  ],
+  "decisions": [
+    {
+      "id": 1,
+      "kind": "unmet",
+      "ticket": "KO-13",
+      "question": "Replan the export?",
+      "options": [
+        "replan",
+        "abandon"
+      ],
+      "default_option": "replan",
+      "answer": "replan",
+      "answered_by": "operator",
+      "answered_ms": 1750000000000,
+      "at": 1750000000000
+    }
+  ]
+}
