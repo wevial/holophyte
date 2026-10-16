@@ -94,6 +94,7 @@ afterEach(() => {
 
 test("Merged today lists each host's merges newest first, with the pull request or short sha and rounds", async () => {
   const { fetch } = fleet({ shipped: [demo10] }, { shipped: [writer4] });
+  localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", fetch);
   const [first, second] = mergeRows();
   expect(mergeRows()).toHaveLength(2);
