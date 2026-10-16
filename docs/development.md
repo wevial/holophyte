@@ -357,6 +357,11 @@ Each module, one line:
   selection (unittest or pytest), which added tests were skipped or never
   collected and why, and the fix-round brief asking for a runnable
   reproduction.
+- `holophyte/review/witness_precheck.py` — before the round 1 review, each
+  criterion's named test file checked from git and a verbose verify rerun:
+  it exists at the candidate, the branch adds or changes it, and the verify
+  ran it; recorded as the `witness_precheck` and
+  `witness_precheck_results` events.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as
@@ -569,6 +574,9 @@ Each module, one line:
 - `holophyte/babysit/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.
+- `holophyte/babysit/main_side.py` — the babysit pass's main-side verify
+  after a merge of main turns the branch red: main runs without what only
+  the branch adds, and is not compared when the failing command was left out.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
   commands at one commit of main in a scratch worktree, within
   `[story] witness_sec`, and appends each verdict to the ledger;

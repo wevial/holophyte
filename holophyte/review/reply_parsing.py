@@ -473,10 +473,8 @@ def _approval_witnesses(note, references, root, approved_range):
             for path, _, _ in references if _inside(root, path) in changed]
 
 
-def criteria_findings(reply, criteria, root=None, *, approved_range=None,
-                      scope=()):
+def _judged_criteria(reply, criteria, root, approved_range):
     block = criteria_block(reply)
-    findings = []
     for n, criterion in enumerate(criteria or (), 1):
         status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
         stale = []
@@ -489,10 +487,24 @@ def criteria_findings(reply, criteria, root=None, *, approved_range=None,
                 status, note = ("unwitnessed",
                                 MISSING_WITNESS_NOTE + "; ".join(missing + stale))
                 stale = [] if missing else stale
-        if status == "met" and note:
-            continue
-        if status == "met":
+        if status == "met" and not note:
             status, note = "unwitnessed", "met claimed but no test or check named"
+        yield n, criterion, status, note, bool(stale)
+
+
+def criteria_statuses(reply, criteria, root=None, *, approved_range=None):
+    return [{"n": n, "status": status.replace(" ", "_"), "note": note}
+            for n, _, status, note, _ in _judged_criteria(
+                reply, criteria, root, approved_range)]
+
+
+def criteria_findings(reply, criteria, root=None, *, approved_range=None,
+                      scope=()):
+    findings = []
+    for n, criterion, status, note, stale in _judged_criteria(
+            reply, criteria, root, approved_range):
+        if status == "met":
+            continue
         message = (f"CRITERION {n}: {status} \u2014 {note or '(no reason given)'}"
                    f"\n{criterion}")
         finding = {"path": CRITERIA_PATH, "line": n,
