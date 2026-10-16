@@ -10,14 +10,21 @@ const TONE_CLASS: Record<Tone, string> = {
   neutral: "border border-chip-border text-faint",
 };
 
-const SQUARE_CLASS: Record<Tone, string> = {
-  ok: "bg-ok-text",
-  warn: "bg-warn-text",
-  bad: "bg-bad-text",
-  neutral: "bg-faint",
+const GLYPH_CLASS: Record<Tone, string> = {
+  ok: "text-ok-text",
+  warn: "text-warn-text",
+  bad: "text-bad-text",
+  neutral: "text-faint",
 };
 
-/** `chips` as washed pills; `line` as one mono line, each fact a square in its tone and its word. */
+const GLYPH_PATH: Record<Tone, string> = {
+  ok: "M2 6 5 9 10 3",
+  warn: "M6 1.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 1 1 0-9",
+  bad: "M3 3 9 9M9 3 3 9",
+  neutral: "M3 6h6",
+};
+
+/** `chips` as washed pills; `line` as one mono line, each fact a glyph in its tone and its word. */
 export function PrFacts({ facts, form = "chips" }: { facts?: Fact[]; form?: "chips" | "line" }) {
   if (!facts?.length) return null;
   if (form === "line") {
@@ -27,7 +34,19 @@ export function PrFacts({ facts, form = "chips" }: { facts?: Fact[]; form?: "chi
           <Fragment key={fact.label}>
             {index > 0 && " "}
             <span data-fact data-tone={fact.tone} className="whitespace-nowrap">
-              <i aria-hidden="true" className={`mr-1.5 inline-block size-[7px] align-[1px] ${SQUARE_CLASS[fact.tone]}`} />
+              <svg
+                aria-hidden="true"
+                data-glyph={fact.tone}
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`mr-1.5 inline-block size-[9px] align-[1px] ${GLYPH_CLASS[fact.tone]}`}
+              >
+                <path d={GLYPH_PATH[fact.tone]} strokeDasharray={fact.tone === "warn" ? "0.1 3.04" : undefined} />
+              </svg>
               {fact.label}
               {index < facts.length - 1 && " ·"}
             </span>
