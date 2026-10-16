@@ -339,24 +339,25 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
 
 
 def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
-    updated_at, threads, open_threads, floor, checks, review, title = seen
+    updated_at, threads, open_threads, floor, checks, review, title, state = seen
     floor = None if floor is None else int(floor)
     guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
     with _transaction(conn):
         if facts_only:
             conn.execute("UPDATE runs SET prSeenOpenThreads = ?,"
                          " prSeenOpenThreadsFloor = ?, prSeenChecks = ?,"
-                         " prSeenReview = ?, prSeenTitle = ?"
+                         " prSeenReview = ?, prSeenTitle = ?, prSeenState = ?"
                          f" WHERE id = ?{guard}",
-                         (open_threads, floor, checks, review, title,
+                         (open_threads, floor, checks, review, title, state,
                           run_id))
             return
         conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
                      " prSeenOpenThreads = ?, prSeenOpenThreadsFloor = ?,"
-                     " prSeenChecks = ?, prSeenReview = ?, prSeenTitle = ?"
+                     " prSeenChecks = ?, prSeenReview = ?, prSeenTitle = ?,"
+                     " prSeenState = ?"
                      f" WHERE id = ?{guard}",
                      (updated_at, threads, open_threads, floor, checks,
-                      review, title, run_id))
+                      review, title, state, run_id))
 
 
 def _json_list(field, values):

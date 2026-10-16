@@ -495,6 +495,27 @@ class QueueMirrorTests(LoopFixture):
 
 
 class RejectedPullRequestTests(MergeModeFixture):
+    def assert_terminal_facts(self, state):
+        from test_pullrequest_parked import ParkedPullRequestTests as H
+        H.parked_on_pr(self)
+        pull = H.MERGED_PULL if state == "merged" else H.CLOSED_PULL
+        H.fake_client(self, dict(pull, title="Terminal pull request"))
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        with patch.object(sys, "stdout", io.StringIO()):
+            holophyte.host.reconcile._reconcile_pull_requests(
+                self.project, conn,
+                conn.execute("SELECT id FROM projects").fetchone()[0],
+                StubProvider())
+        self.assertEqual(self.read("SELECT prSeenState, prSeenTitle FROM runs"),
+                         [(state, "Terminal pull request")])
+
+    def test_closed_reconcile_read_persists_pull_request_facts(self):
+        self.assert_terminal_facts("closed")
+
+    def test_merged_reconcile_read_persists_pull_request_facts(self):
+        self.assert_terminal_facts("merged")
+
     def test_closed_parked_pr_is_rejected_without_a_strike(self):
         import test_pullrequest_parked
         helpers = test_pullrequest_parked.ParkedPullRequestTests
