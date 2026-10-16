@@ -59,14 +59,14 @@ test("readiness reads each pull_request park once across hosts, never a ci park,
   const { hook } = await readinessOf(fetch);
 
   expect(Object.fromEntries(asked)).toEqual({ [`${WRITER}/runs/9/merge`]: 1, [`${PEER}/runs/21/merge`]: 1 });
-  expect(Object.fromEntries(hook.result.current)).toEqual({ [runKey(addressOf(WRITER), 9)]: { ready: true } });
+  expect(Object.fromEntries(hook.result.current)).toEqual({ [runKey(addressOf(WRITER), 9)]: { ready: true, reason: null } });
 });
 
 test("a ready run leaves the map when its refetch fails", async () => {
   let answer = () => Response.json({ ...ready, run: 9 });
   const { fetch } = mergeFetch({ [`${WRITER}/runs/9/merge`]: () => answer() });
   const { queries, hook } = await readinessOf(fetch);
-  expect(hook.result.current.get(runKey(addressOf(WRITER), 9))).toEqual({ ready: true });
+  expect(hook.result.current.get(runKey(addressOf(WRITER), 9))).toEqual({ ready: true, reason: null });
 
   answer = () => new Response("boom", { status: 500 });
   await act(async () => {

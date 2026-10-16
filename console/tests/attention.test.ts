@@ -114,3 +114,14 @@ test("needs you keeps a pull_request park only while its run is ready to merge, 
   const notReady = new Map([[runKey(DAEMON, 8), { ready: true }], [runKey(DAEMON, 9), { ready: false }]]);
   expect(shape(notReady).map((entry) => entry.ticket)).toEqual([null, "DEMO-4", "DEMO-11", "DEMO-3"]);
 });
+
+
+test("needs you offers bypass only for a pull_request park with review_bypassable readiness", () => {
+  const readiness = new Map([8, 9].map((run) => [runKey(DAEMON, run), { ready: false, reason: "review_bypassable" }]));
+  const entries = needsYouEntries(needsYouItems, readiness, NOW).filter((entry) => entry.item.kind === "pr_open");
+  expect(entries.map((entry) => ({ run: entry.item.run, ready: entry.readyToMerge, bypass: entry.bypassReview }))).toEqual([
+    { run: 9, ready: true, bypass: true },
+  ]);
+  readiness.set(runKey(DAEMON, 9), { ready: false, reason: "review_not_approved" });
+  expect(needsYouEntries(needsYouItems, readiness, NOW).filter((entry) => entry.item.kind === "pr_open")).toEqual([]);
+});

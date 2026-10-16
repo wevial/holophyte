@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMergeReadiness } from "../hooks/useMergeReadiness";
-import { ROUTES, postAction } from "../lib/actions";
+import { BYPASSABLE, ROUTES, postAction } from "../lib/actions";
 import type { Fetch } from "../lib/poll";
 import { prLabel } from "../lib/shipped";
 import { ActionButton } from "./ActionButton";
@@ -20,10 +20,6 @@ const WAITING_LINES: Record<string, string> = {
 
 /** Reasons that mean the run is not a human-approval park at all. */
 const SILENT = new Set(["not_parked", "not_human_approval"]);
-
-/** The one not-ready reason that draws a button instead of a line: the
- *  review is the only gap and the daemon's GitHub user may bypass it. */
-const BYPASSABLE = "review_bypassable";
 
 const pageFetch: Fetch = (url, init) => globalThis.fetch(url, init);
 

@@ -1,3 +1,4 @@
+import { BYPASSABLE } from "./actions";
 import { formatAge, formatClock, formatSpan } from "./format";
 import { agentMs, runKey } from "./runs";
 import type { AttentionItem, Run, Status } from "./types";
@@ -503,26 +504,31 @@ export function splitPullRequests(items: AttentionItem[]): { needsYou: Attention
 
 /** Whether a pull request park waits only on the maintainer's merge, by
  *  `runKey` of the item's `daemon` and `run`. */
-export type ReadinessMap = ReadonlyMap<string, { ready: boolean }>;
+export type ReadinessMap = ReadonlyMap<string, { ready: boolean; reason?: string | null }>;
 
 /** One Needs you entry: a band entry, and whether it is a pull request
- *  ready to merge. */
+ *  ready to merge, with a review bypass when required. */
 export interface NeedsYouEntry extends BandEntry {
   readyToMerge: boolean;
+  bypassReview?: boolean;
 }
 
 function readyToMerge(item: AttentionItem, readiness: ReadinessMap): boolean {
   const daemon = str(item.daemon);
   const run = num(item.run);
   if (item.park_kind !== "pull_request" || daemon == null || run == null) return false;
-  return readiness.get(runKey(daemon, run))?.ready === true;
+  const result = readiness.get(runKey(daemon, run));
+  return result?.ready === true || result?.reason === BYPASSABLE;
 }
 
 /** What needs you in the new console: every item but a pull request park,
- *  save a `pull_request` park `readiness` holds ready, with each ticket's
+ *  save a `pull_request` park ready or review-bypassable, with each ticket's
  *  failed attempts as one entry, longest-waited first. */
 export function needsYouEntries(items: AttentionItem[], readiness: ReadinessMap, now: number): NeedsYouEntry[] {
   const kept = items.filter((item) => item.kind !== "pr_open" || readyToMerge(item, readiness));
-  const entries = collapseFailed(kept).map((entry) => ({ ...entry, readyToMerge: entry.item.kind === "pr_open" }));
+  const entries = collapseFailed(kept).map((entry) => {
+    const result = readiness.get(runKey(str(entry.item.daemon) ?? "", num(entry.item.run) ?? 0));
+    return { ...entry, readyToMerge: entry.item.kind === "pr_open", bypassReview: entry.item.kind === "pr_open" && result?.ready !== true && result?.reason === BYPASSABLE };
+  });
   return orderByAge(entries, (entry) => ageOf(entry.item, now));
 }

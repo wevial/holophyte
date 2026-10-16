@@ -50,7 +50,7 @@ function prOf(item: AttentionItem): string {
 const projectOf = (host: Host) => projectName(host.project ?? host.label);
 
 /** What the toast says when the daemon takes `label`'s post. */
-function saidFor(label: string, item: AttentionItem, host: Host): string {
+function saidFor(label: string, item: AttentionItem, host: Host, bypassReview = false): string {
   const ticket = str(item.ticket);
   const run = num(item.run);
   switch (label) {
@@ -67,7 +67,7 @@ function saidFor(label: string, item: AttentionItem, host: Host): string {
     case RUN_SWEEP:
       return `Started a host sweep on ${str(item.host) ?? host.label}.`;
     case MERGE:
-      return `Approved ${prOf(item)}. The loop merges it on its next claim.`;
+      return `Approved ${prOf(item)}${bypassReview ? ", bypassing the required review" : ""}. The loop merges it on its next claim.`;
     default:
       return `${label}: done.`;
   }
@@ -148,7 +148,7 @@ export function CardActions({
   const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && last !== MERGE ? action.data.detail : null;
 
   const post = async (label: string, route: string, body: Record<string, unknown>) => {
-    const said = saidFor(label, item, host);
+    const said = saidFor(label, item, host, entry.bypassReview);
     const result = await action.mutateAsync({ label, base: host.base, route, body, said });
     if (result.ok) onActed?.(said);
     return result;
@@ -181,7 +181,7 @@ export function CardActions({
   };
   const confirmMerge = async () => {
     if (run == null) return;
-    const result = await post(MERGE, ROUTES[MERGE]!, { run });
+    const result = await post(MERGE, ROUTES[MERGE]!, entry.bypassReview ? { run, bypass_review: true } : { run });
     if (result.ok) closeMerge();
   };
 
@@ -198,7 +198,7 @@ export function CardActions({
         title={titleOf(label)}
         onClick={press == null ? undefined : () => { onPress?.(); press(); }}
       >
-        {label}
+        {label === MERGE && entry.bypassReview ? "Merge (bypass review)" : label}
       </Btn>
     );
   };
@@ -255,7 +255,7 @@ export function CardActions({
       {merging && run != null && (
         <ConfirmDialog
           label={`Merge · ${projectOf(host)}`}
-          heading={`Merge ${prOf(item)}?`}
+          heading={entry.bypassReview ? `Bypass the required review and merge ${prOf(item)}?` : `Merge ${prOf(item)}?`}
           confirm={`Merge ${prOf(item)}`}
           busyLabel={BUSY[MERGE]!}
           busy={pending === MERGE}

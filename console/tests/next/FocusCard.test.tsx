@@ -29,7 +29,7 @@ const failed = (triage: unknown): Item => ({
 } as Item);
 const blocked = (ticket: string, run: number, askedAgo: number, extra: object = {}): Item => ({
   kind: "blocked", level: "attention", ticket, ticket_url: null, question: "Which way?", run,
-  asked_ms: NOW - askedAgo, pr_url: null, ...extra,
+  asked_ms: NOW - askedAgo, pr_url: null, park_kind: null, pr: null, ...extra,
 } as Item);
 const code = { choice: "code", confidence: 0.81, backend: "claude", model: "triage-model", requeued: false };
 
@@ -38,6 +38,7 @@ interface Daemon {
   runs?: Status["runs"];
   details?: Record<number, RunDetail>;
   actions?: boolean;
+  readiness?: typeof ready;
   /** Answers every `POST /actions/...`. */
   act?: Fetch;
   /** Every URL the daemon was asked for, in order. */
@@ -50,7 +51,7 @@ function daemon(state: Daemon): Fetch {
     state.asked?.push(url);
     if (url.includes("/actions/") && state.act) return state.act(url, init);
     const merge = url.match(/\/runs\/(\d+)\/merge$/);
-    if (merge) return Response.json({ ...ready, run: Number(merge[1]) });
+    if (merge) return Response.json({ ...(state.readiness ?? ready), run: Number(merge[1]) });
     const match = url.match(/\/runs\/(\d+)$/);
     if (match) {
       const body = state.details?.[Number(match[1])];
@@ -405,4 +406,26 @@ test("a host sweep card on a host with no named projects reads the root's action
   await press(inCard("Run sweep"));
   expect(action.seen.map(({ url }) => url)).toEqual([`${DEMO}/actions/run-sweep`]);
   expect(toast()).toBe("Started a host sweep on writer-host.");
+});
+
+
+test("a bypassable review offers a bypass confirm with readiness facts and posts explicit bypass approval", async () => {
+  const action = fakeFetch({ ok: true, detail: "approved" });
+  const readiness = { ...ready, ready: false, reason: "review_bypassable", facts: [
+    { name: "checks", ok: true, detail: "All required checks passed" },
+    { name: "review_approved", ok: false, detail: "Required review may be bypassed by this host" },
+  ] };
+  await mount(daemon({ items: [{ ...park, pr: { number: 42, checks: "success", review: "review_required", threads: 0, open_threads: 0, title: null } } as Item], readiness, actions: true, act: action.fetchImpl }));
+  expect(within(card()).getByRole("img", { name: "ready to merge" })).toBeTruthy();
+  const merge = inCard("Merge (bypass review)");
+  expect(merge.dataset.variant).toBe("primary");
+  await press(merge);
+  const dialog = screen.getByRole("dialog", { name: "Bypass the required review and merge PR #42?" });
+  expect(within(dialog).getByRole("list", { name: "Why it is safe" }).textContent).toBe("All required checks passedRequired review may be bypassed by this host");
+  expect(action.seen).toEqual([]);
+  await press(within(dialog).getByRole("button", { name: "Merge PR #42" }));
+  expect(action.seen.map(({ url, body }) => ({ url, body }))).toEqual([
+    { url: `${DEMO}/actions/merge`, body: { run: 9, bypass_review: true } },
+  ]);
+  expect(toast()).toBe("Approved PR #42, bypassing the required review. The loop merges it on its next claim.");
 });

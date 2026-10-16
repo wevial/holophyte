@@ -92,10 +92,10 @@ export function useReadiness(hosts: HostRecord<PollBodies>[], deps: { fetch: Fet
   const results = useQueries({
     queries: parks.map((park) => readinessQuery(park.base, park.run, deps.fetch)),
   });
-  const readiness = new Map<string, { ready: boolean }>();
+  const readiness = new Map<string, { ready: boolean; reason: string | null }>();
   parks.forEach((park, index) => {
     const result = results[index];
-    if (result?.status === "success") readiness.set(park.key, { ready: result.data.ready });
+    if (result?.status === "success") readiness.set(park.key, { ready: result.data.ready, reason: result.data.reason });
   });
   return readiness;
 }
