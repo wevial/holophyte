@@ -21,6 +21,7 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>): R
 
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { phase: "reviewing", pr_url: "https://github.com/acme/demo/pull/524" }),
+  13: detail(13, "DEMO-13", { phase: "implementing" }),
   39: detail(39, "DEMO-40", { phase: "failed", outcome: "failed", ended_ms: NOW - 20 * MINUTE }),
   40: detail(40, "DEMO-40", { phase: "failed", outcome: "failed", failure_kind: "verify", ended_ms: NOW - 10 * MINUTE }),
   9: detail(9, "DEMO-9", { phase: "done", outcome: "merged", merge_sha: "5acc1384b2e0", ended_ms: NOW - 20 * MINUTE }),
@@ -32,7 +33,7 @@ const liveRow = { ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_round
  *  and every `POST /actions/...` goes to `post`. */
 async function mount(id: number, { actions = true, post }: { actions?: boolean; post?: Fetch } = {}) {
   window.location.hash = `#/runs/demo/${id}`;
-  const polls = fleet({ items: [], runs: [liveRow] }, { items: [] });
+  const polls = fleet({ items: [], runs: [liveRow, run(13, "DEMO-13")] }, { items: [] });
   const fake = fakeDeps(async (url, init) => {
     if (init?.method === "POST" && post != null) return post(url, init);
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions });
@@ -114,6 +115,34 @@ test("Abort asks for a reason in a confirm that Esc closes unposted, then posts 
   expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 12, close: false, note: "wrong ticket" } }]);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(toast()).toBe("Aborted run 12.");
+});
+
+test("navigating to a cached run closes Abort and requires a fresh reason for that run", async () => {
+  const post = fakeFetch({ ok: true, detail: "aborted run 13" });
+  await mount(13, { post: post.fetchImpl });
+  const navigate = async (id: number) => {
+    await act(async () => {
+      window.location.hash = `#/runs/demo/${id}`;
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    for (let round = 0; round < 6; round += 1) await act(settle);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`DEMO-${id} title`);
+  };
+  await navigate(12);
+  await press("Abort");
+  await act(async () => void fireEvent.change(within(dialog()).getByRole("textbox"), { target: { value: "reason for twelve" } }));
+  expect(within(dialog()).getByRole("button", { name: "Abort run" }).hasAttribute("disabled")).toBe(false);
+  await navigate(13);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(post.seen).toEqual([]);
+  await press("Abort");
+  const nextDialog = screen.getByRole("dialog", { name: "Abort run 13?" });
+  const reason = within(nextDialog).getByRole("textbox", { name: "Reason · saved with the run" });
+  expect((reason as HTMLTextAreaElement).value).toBe("");
+  expect(within(nextDialog).getByRole("button", { name: "Abort run" }).hasAttribute("disabled")).toBe(true);
+  await act(async () => void fireEvent.change(reason, { target: { value: "reason for thirteen" } }));
+  await press("Abort run", nextDialog);
+  expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 13, close: false, note: "reason for thirteen" } }]);
 });
 
 test("a failed run that is its chain's newest offers Requeue alone and shows a refusal under it; a merged run offers nothing", async () => {
