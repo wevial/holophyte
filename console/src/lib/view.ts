@@ -1,4 +1,4 @@
-export type ConsoleView = "classic" | "next";
+type ConsoleView = "classic" | "next";
 
 export const VIEW_KEY = "holophyte.view";
 
