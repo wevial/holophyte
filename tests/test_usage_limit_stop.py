@@ -25,33 +25,6 @@ WEEKLY_LIMIT = "You've hit your weekly limit · resets 11am (UTC)"
 
 
 class UsageLimitStopTests(LoopFixture):
-    def test_weekly_limit_is_infra_and_preserves_wip_without_spending_an_attempt(self):
-        script, _ = self.script(
-            "claude-implementer.sh",
-            'echo "unfinished work" > unfinished.txt\n'
-            f'echo "{WEEKLY_LIMIT}"\nexit 1\n')
-        self.configure(f'[agents]\nimplementer = "{script}"\n')
-        self.run_scripts()
-
-        ((summary,),) = self.read(
-            "SELECT summary FROM runEvents WHERE kind = 'wip_committed'")
-        wip = summary.rsplit(" at ", 1)[1]
-        self.assertEqual(self.git("show", f"{wip}:unfinished.txt"),
-                         "unfinished work\n")
-        self.assertEqual(self.git("rev-list", "--count", f"main..{wip}").strip(), "1")
-        self.assertEqual(self.read(
-            "SELECT outcome, failureKind, outcomeClass FROM runs"),
-            [("failed", "infra", "infra")])
-        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
-        self.assertIn(WEEKLY_LIMIT, reason)
-        self.assertIn(BRANCH, self.branches())
-        self.assertEqual(self.git("rev-parse", BRANCH),
-                         self.git("rev-parse", wip))
-        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
-        conn = store.open(str(self.db))
-        self.addCleanup(conn.close)
-        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
-
     def script(self, name, *turns):
         state = self.db.parent / f"{name}-state"
         state.mkdir()
@@ -91,6 +64,26 @@ class UsageLimitStopTests(LoopFixture):
             'git commit -q -m "finish preserved work"\n')
         self.configure(f'[agents]\nimplementer = "{script}"\n')
         self.run_scripts()
+
+        ((summary,),) = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'wip_committed'")
+        wip = summary.rsplit(" at ", 1)[1]
+        self.assertEqual(self.git("show", f"{wip}:unfinished.txt"),
+                         "unfinished work\n")
+        self.assertEqual(self.git("rev-list", "--count", f"main..{wip}").strip(), "1")
+        self.assertEqual(self.read(
+            "SELECT outcome, failureKind, outcomeClass FROM runs"),
+            [("failed", "infra", "infra")])
+        ((reason,),) = self.read("SELECT outcomeReason FROM runs")
+        self.assertIn(WEEKLY_LIMIT, reason)
+        self.assertIn(BRANCH, self.branches())
+        self.assertEqual(self.git("rev-parse", BRANCH),
+                         self.git("rev-parse", wip))
+        self.assertTrue((self.worktrees / "ko-131-add-a-thing").is_dir())
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
+
         wip = self.git("rev-parse", BRANCH).strip()
         holophyte.cli.operator.requeue(
             self.project, "KO-131", "route restored", out=io.StringIO())
