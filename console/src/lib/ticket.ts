@@ -70,7 +70,9 @@ export function summaryOf(body: string): string {
 /** The first paragraph of the body's `## Summary`, else of the body past
  *  its headings; empty when it has none. */
 export function leadParagraph(body: string): string {
-  const text = summaryOf(body) || body;
-  const paragraphs = text.split(/\n\s*\n/).map((part) => part.trim());
-  return paragraphs.find((part) => part !== "" && !/^#{1,6}\s/.test(part)) ?? "";
+  const prose = (summaryOf(body) || body)
+    .split("\n")
+    .filter((line) => !/^#{1,6}\s/.test(line))
+    .join("\n");
+  return prose.split(/\n\s*\n/).map((part) => part.trim()).find((part) => part !== "") ?? "";
 }

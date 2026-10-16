@@ -128,3 +128,13 @@ test("the ticket block shows the first paragraph of the claimed revision's summa
   expect(block("Pull request")).not.toBeNull();
   expect(block("Ticket")).toBeNull();
 });
+
+test("a ticket claimed as an older snapshot shows its current body's first paragraph, prose directly under its title included", async () => {
+  const snapshot: TicketDetail = {
+    ...demo8,
+    claimed: { revision: null, title: "Free stale leases", acceptance_criteria: [], verification_commands: [] },
+    current: revision("# Free stale leases\nA lease past its threshold is freed.\n\nIts run is told before it goes.\n"),
+  };
+  await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": snapshot } }));
+  expect(block("Ticket")!.textContent).toBe("TicketA lease past its threshold is freed.");
+});
