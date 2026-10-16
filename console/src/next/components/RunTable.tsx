@@ -1,0 +1,73 @@
+import { formatClock, formatSettled } from "../../lib/format";
+import { localMidnight } from "../../lib/ledger";
+import { classicHref } from "../../lib/view";
+import type { RunRow } from "../history";
+import { STATES } from "../state";
+import { StateDot } from "./StateDot";
+
+const GRID = "grid grid-cols-[84px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_80px] items-start gap-3";
+const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
+const DASH = "–";
+
+function started(ms: number, now: number): string {
+  return ms < localMidnight(now) ? `yest ${formatClock(ms)}` : formatClock(ms);
+}
+
+function prNumber(url: string | null): string {
+  const segment = url?.replace(/\/+$/, "").split("/").pop() ?? "";
+  return /^\d+$/.test(segment) ? `#${segment}` : DASH;
+}
+
+function RunTableRow({ row, now }: { row: RunRow; now: number }) {
+  const start = started(row.started_ms, now);
+  const quiet = row.state === "merged" || row.state === "abandoned";
+  return (
+    <li>
+      <a
+        href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)}
+        aria-label={`Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${STATES[row.state].word}, started ${start}`}
+        data-run={row.id}
+        className={`${GRID} border-b border-rule-2 p-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
+      >
+        <span className={`${MONO} text-ink-2`}>{row.id}</span>
+        <span className="min-w-0">
+          <b className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3">{row.ticket}</b>{" "}
+          <span className={`font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
+        </span>
+        <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
+        <span>
+          <StateDot state={row.state} />
+        </span>
+        <span className={MONO}>{row.rounds > 0 ? row.rounds : DASH}</span>
+        <span className={MONO}>{prNumber(row.pr_url)}</span>
+        <span className={`${MONO} whitespace-nowrap`}>{start}</span>
+        <span className={`${MONO} whitespace-nowrap text-right`}>{formatSettled(row.elapsed_ms)}</span>
+      </a>
+    </li>
+  );
+}
+
+/** The runs as one table that scrolls sideways inside its own box. */
+export function RunTable({ rows, now }: { rows: RunRow[]; now: number }) {
+  return (
+    <div data-run-table className="overflow-x-auto border border-rule bg-paper">
+      <div className="min-w-[1000px]">
+        <div aria-hidden="true" className={`${GRID} border-b border-rule px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
+          <span>Run</span>
+          <span>Ticket</span>
+          <span>Project</span>
+          <span>State</span>
+          <span>Rounds</span>
+          <span>PR</span>
+          <span>Started</span>
+          <span className="text-right">Took</span>
+        </div>
+        <ol aria-label="Runs, newest first" className="m-0 list-none p-0">
+          {rows.map((row) => (
+            <RunTableRow key={`${row.base} ${row.id}`} row={row} now={now} />
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
