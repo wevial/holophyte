@@ -61,7 +61,7 @@ function Contract({ card }: { card: TicketCard }) {
   return (
     <>
       <div className={`${SECTION_LABEL} mt-5`}>Summary</div>
-      <p data-peek-summary className="m-0 mt-2.5 line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summary}</p>
+      <p className="m-0 mt-2.5 line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summary}</p>
       <div className="mt-[18px]">
         <Criteria rows={criteriaRows(ticket.acceptance_criteria, run.data?.criteria ?? [], runId != null)} />
       </div>
