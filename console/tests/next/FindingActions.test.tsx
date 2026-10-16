@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { Findings, FindingsRun, HostStatus, Round, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
+import { HOST_ONLY } from "../../src/next/findings";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, settle } from "../harness";
@@ -219,5 +220,5 @@ test("on a project daemon with actions on File ticket draws disabled while Steer
   expect(buttonOf(unfold("Open", "Flag is ignored"), /^Steer into next run$/)!.disabled).toBe(false);
   const file = buttonOf(unfold("Follow-ups", "Consider a retry cap"), /^File ticket$/)!;
   expect(file.disabled).toBe(true);
-  expect(file.title).not.toBe("");
+  expect(file.title).toBe(HOST_ONLY);
 });
