@@ -138,6 +138,10 @@ test("#/stories opens the first listed story, or says there are none in the scop
   expect(window.location.hash).toBe("#/stories/demo/DEMO-12");
   cleanup();
 
+  await mount("#/stories", () => new Promise<Response>(() => {}));
+  expect(screen.queryByRole("heading", { name: /^No stories/ })).toBeNull();
+  cleanup();
+
   await mount("#/stories?project=demo", fleet([], []));
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("No stories in demo");
   expect(screen.getByRole("link", { name: "Show all projects" }).getAttribute("href")).toEndWith("#/stories");

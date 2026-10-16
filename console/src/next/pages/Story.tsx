@@ -119,8 +119,10 @@ function NoStories({ project }: { project: string | undefined }) {
 export function StoriesIndex() {
   const { project } = useSearch({ from: "__root__" });
   const deps = useContext(PollDepsContext);
-  const { hosts } = useConsolePeers();
-  const { answered, stories } = useBoardStories(scopedHosts(hosts, project), deps);
+  const { hosts, polls } = useConsolePeers();
+  const boards = useBoardStories(scopedHosts(hosts, project), deps);
+  const answered = polls > 0 && boards.answered;
+  const { stories } = boards;
   const navigate = useNavigate();
   const first = stories[0];
   const firstProject = first?.project;
