@@ -37,7 +37,7 @@ def question(task_id, criteria):
     return first, f"{first}\n{ANSWERS.format(key=task_id)}"
 
 
-def park(conn, run_id, provider, task_id, wt, turn, reply, timed_out=False):
+def park(conn, run_id, provider, task_id, wt, turn, reply, timed_out):
     criteria = declared(reply)
     if timed_out or not criteria:
         return
