@@ -25,6 +25,8 @@ from holophyte.serve.contract import (
     BoardTicket,
     Round,
     RunDetail,
+    RunTurn,
+    RunTurns,
     Status,
     main,
 )
@@ -213,6 +215,18 @@ class PinnedAnswerTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"^board\.columns\.2"
                                     r"\.tickets\.0\.waits_on: undeclared$"):
             walk(pinned("board"), typing.TypedDict("Board", board), "board")
+
+    def test_a_turn_type_without_route_fails_the_run_turns_walk(self):
+        hints = typing.get_type_hints(RunTurn, include_extras=True)
+        narrower = typing.TypedDict("RunTurn", {key: hint for key, hint
+                                                in hints.items()
+                                                if key != "route"})
+        turns = typing.get_type_hints(RunTurns, include_extras=True)
+        turns["turns"] = list[narrower]
+        with self.assertRaisesRegex(AssertionError,
+                                    r"^run-turns\.turns\.0\.route: undeclared$"):
+            walk(pinned("run-turns"), typing.TypedDict("RunTurns", turns),
+                 "run-turns")
 
 
 if __name__ == "__main__":
