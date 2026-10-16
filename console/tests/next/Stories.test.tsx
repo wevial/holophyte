@@ -71,6 +71,16 @@ test("the Stories list under Tickets holds every project's stories by key, narro
   expect(listedNames()).toEqual(["WRITER-5 Drafts keep their place, 1 of 3 merged"]);
 });
 
+test("a Stories label in the small label style heads the story list, and a folded rail shows neither group label", async () => {
+  await mount("#/");
+  const label = screen.getByText("Stories");
+  for (const name of ["font-mono", "uppercase", "text-ink-3"]) expect(label.classList).toContain(name);
+  expect(label.nextElementSibling).toBe(storyList());
+  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+  expect(screen.queryByText("Stories")).toBeNull();
+  expect(screen.queryByText("Views")).toBeNull();
+});
+
 test("clicking a story opens its page with the scope kept, marking it and the Tickets entry current", async () => {
   await mount("#/tickets?project=demo");
   const item = screen.getByRole("link", { name: /^DEMO-12 / });
