@@ -65,7 +65,6 @@ async function openDetails() {
     await settle();
   });
   await act(settle);
-  return fold;
 }
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
