@@ -377,6 +377,15 @@ class TrimLoopTests(TrimFixture):
         fake = self.trimmed(Commit("work", "work.txt", lines(49)), APPROVE)
         self.assert_skipped(fake, "49 changed lines is under 50")
 
+    def test_a_diff_whose_tests_outweigh_its_code_asks_for_the_tests_pass(self):
+        fake = self.trimmed(
+            Commits(Commit("fix", "fix.ts", lines(16)),
+                    Commit("fix tests", "fix.test.ts", lines(157))),
+            Idle("nothing worth trimming"), APPROVE)
+        goal = fake.turns[1].goal
+        self.assertIn("adds 157 test lines against 16 non-test lines", goal)
+        self.assertIn("run pass 5 (tests) in earnest", goal)
+
     def test_red_verify_at_the_implementers_head_is_not_trimmed(self):
         task = dict(a_task(), verify="test ! -e red.txt")
         fake = self.trimmed(
