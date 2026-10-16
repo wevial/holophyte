@@ -152,3 +152,16 @@ test("#/stories opens the first listed story, or says there are none in the scop
   expect(screen.queryByRole("link", { name: "Show all projects" })).toBeNull();
   expect(storyList()).toBeNull();
 });
+
+test("a host daemon with no projects counts as answered, so #/stories still opens a peer's story or says there are none", async () => {
+  const hostStatus = await Bun.file(new URL("host-status.json", SERVE)).json();
+  const emptyRoot = { status: { ...hostStatus, projects: [] }, attention: { level: "none" as const, now: NOW, items: [] } };
+  const writer = { status: { ...working, project: "/srv/dev/writer", runs: [], queued: [], now: NOW }, attention: { level: "none" as const, now: NOW, project: "/srv/dev/writer", items: [] } };
+  const withWriter = peersFetch(DEMO, { [DEMO]: emptyRoot, [WRITER]: writer });
+  await mount("#/stories", async (url) => (url === `${WRITER}/board` ? Response.json({ ...pinned, stories: writerStories }) : withWriter(url)));
+  expect(window.location.hash).toBe("#/stories/writer/WRITER-5");
+  cleanup();
+
+  await mount("#/stories", peersFetch(DEMO, { [DEMO]: emptyRoot }));
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("No stories in all projects");
+});
