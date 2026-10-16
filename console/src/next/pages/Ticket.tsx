@@ -6,7 +6,9 @@ import { summaryOf } from "../../lib/ticket";
 import { classicHref } from "../../lib/view";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot } from "../components/StateDot";
+import { StoryPanel } from "../components/StoryPanel";
 import { Chip, Fact, NUMBER } from "../components/TicketPeek";
+import { TicketRuns } from "../components/TicketRuns";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
 
@@ -110,6 +112,7 @@ export function TicketPage() {
               {commands.join("\n")}
             </pre>
           </details>
+          <TicketRuns ticketKey={key} runs={ticket.runs} liveRuns={page.liveRuns} staleMs={page.staleMs} base={page.host.base} now={now} />
         </div>
         <aside aria-label="Ticket facts and story" className="min-w-0 px-6 pb-7 pt-[22px] max-[720px]:px-5">
           <div className={SECTION_LABEL}>Ticket</div>
@@ -127,6 +130,7 @@ export function TicketPage() {
             )}
             {waitsOn.length > 0 && <Fact label="Waits on">{waitsOn.join(", ")}</Fact>}
           </dl>
+          {page.story != null && <StoryPanel ticketKey={key} project={project} entry={page.story.entry} detail={page.story.detail} />}
         </aside>
       </div>
     </Page>

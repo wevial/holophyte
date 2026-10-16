@@ -53,6 +53,11 @@ function dayName(ms: number, tz?: string): string {
   return `${part("weekday")} ${part("month")} ${part("day")}`;
 }
 
+/** How many calendar days in `tz` `ms` falls before `now`'s day. */
+export function daysAgo(ms: number, now: number, tz?: string): number {
+  return Math.round((keyInstant(dayKey(now, tz)) - keyInstant(dayKey(ms, tz))) / DAY_MS);
+}
+
 /** The heading for a day `daysAgo` days before `now`'s: "Today · Fri Sep 5",
  *  "Yesterday · Thu Sep 4", then the bare "Wed Sep 3". */
 export function dayLabel(ms: number, daysAgo: number, tz?: string): string {
@@ -69,7 +74,6 @@ export function dayLabel(ms: number, daysAgo: number, tz?: string): string {
  * the browser's; `tz` pins the zone for tests and defaults to the browser's.
  */
 export function groupByDay(rows: ShippedRow[], now: number, tz?: string): DayGroup[] {
-  const today = keyInstant(dayKey(now, tz));
   const groups: DayGroup[] = [];
   for (const row of rows) {
     const key = dayKey(row.ended_ms, tz);
@@ -78,8 +82,8 @@ export function groupByDay(rows: ShippedRow[], now: number, tz?: string): DayGro
       existing.rows.push(row);
       continue;
     }
-    const daysAgo = Math.round((today - keyInstant(key)) / DAY_MS);
-    groups.push({ key, label: dayLabel(row.ended_ms, daysAgo, tz), daysAgo, rows: [row] });
+    const days = daysAgo(row.ended_ms, now, tz);
+    groups.push({ key, label: dayLabel(row.ended_ms, days, tz), daysAgo: days, rows: [row] });
   }
   return groups;
 }

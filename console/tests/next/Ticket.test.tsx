@@ -1,7 +1,11 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+
+const zone = process.env.TZ;
+process.env.TZ = "America/Los_Angeles";
+
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Board, BoardColumn, BoardTicket, RunCriterion, RunDetail, Status, TicketDetail } from "../../src/lib/contract.gen";
+import type { Board, BoardColumn, BoardTicket, RunCriterion, RunDetail, Status, StoryDetail, TicketDetail, TicketRun } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
@@ -12,12 +16,17 @@ const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
 const servedRun = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
+const servedStory = (await Bun.file(new URL("story.json", SERVE)).json()) as StoryDetail;
 
 const boardTicket = (key: string, facts: Partial<BoardTicket>): BoardTicket => ({ ...template, ticket: key, title: `${key} title`, ...facts });
 const column = (state: BoardColumn["state"], tickets: BoardTicket[]): BoardColumn => ({ state, tickets });
 
 const board: Board = {
   ...pinned,
+  stories: [
+    { ticket: "DEMO-20", title: "Unattended runs recover themselves", children: ["DEMO-21", "DEMO-22", "DEMO-23"], merged: 1, total: 3 },
+    { ticket: "DEMO-30", title: "An empty story", children: [], merged: 0, total: 0 },
+  ],
   columns: [
     column("blocked_on_deps", [boardTicket("DEMO-5", { run: null, waits_on: ["DEMO-2"] })]),
     column("in_flight", [boardTicket("DEMO-3", { time_box_ms: 25 * MINUTE, run: 9 })]),
@@ -31,6 +40,7 @@ const FILED_AT = new Date(2026, 9, 13, 14, 52).getTime();
 
 const detail = (key: string, facts: Partial<TicketDetail>): TicketDetail => ({
   ...servedTicket,
+  runs: [],
   ticket: key,
   title: `${key} title`,
   body: `# ${key} title\n\n## Summary\n\n${SUMMARY}\n\n## What / Why / How\n\n**What:** a cache.\n`,
@@ -41,8 +51,26 @@ const detail = (key: string, facts: Partial<TicketDetail>): TicketDetail => ({
   ...facts,
 });
 
+const LATER = new Date(2026, 9, 15, 17, 0).getTime();
+const servedRunRow = servedTicket.runs[0]!;
+const runRow = (facts: Partial<TicketRun>): TicketRun => ({ ...servedRunRow, ...facts });
+const DEMO_3_RUNS = [
+  runRow({ run: 5, attempt: 1, phase: "failed", outcome: "failed", rounds: 1, pr_url: null, started_ms: new Date(2026, 9, 14, 15, 10).getTime() }),
+  runRow({ run: 9, attempt: 2, phase: "reviewing", outcome: null, rounds: 1, pr_url: "https://github.com/acme/demo/pull/524", started_ms: new Date(2026, 9, 15, 16, 36).getTime() }),
+];
+
+const child = (ticket: string, status: StoryDetail["children"][number]["status"]) => ({ ...servedStory.children[0]!, ticket, title: `${ticket} title`, status, column: null });
+const stories: Record<string, StoryDetail> = {
+  "DEMO-20": { ...servedStory, ticket: "DEMO-20", title: "Unattended runs recover themselves", children: [child("DEMO-21", "merged"), child("DEMO-22", "ready"), child("DEMO-23", "in_flight")] },
+  "DEMO-30": { ...servedStory, ticket: "DEMO-30", title: "An empty story", children: [] },
+};
+
 const tickets: Record<string, TicketDetail> = {
-  "DEMO-3": detail("DEMO-3", { run: 9, time_box_ms: 25 * MINUTE, acceptance_criteria: CRITERIA, verification_commands: COMMANDS }),
+  "DEMO-3": detail("DEMO-3", { run: 9, time_box_ms: 25 * MINUTE, acceptance_criteria: CRITERIA, verification_commands: COMMANDS, runs: DEMO_3_RUNS }),
+  "DEMO-2": detail("DEMO-2", { run: null, status: "ready" }),
+  "DEMO-20": detail("DEMO-20", { run: null, status: "ready" }),
+  "DEMO-22": detail("DEMO-22", { run: null, status: "ready" }),
+  "DEMO-30": detail("DEMO-30", { run: null, status: "ready" }),
   "DEMO-5": detail("DEMO-5", { run: null, status: "blocked_on_deps", acceptance_criteria: CRITERIA.slice(0, 2) }),
   "DEMO-10": detail("DEMO-10", { run: null, status: "merged" }),
   "DEMO-6": detail("DEMO-6", { run: null, status: "abandoned", current: { ...servedTicket.current!, column: "canceled" } }),
@@ -65,16 +93,25 @@ function ticketFetch(runAnswer?: () => Response): Fetch {
     const key = url.startsWith(`${DEMO}/tickets/`) ? decodeURIComponent(url.slice(`${DEMO}/tickets/`.length)) : null;
     if (key != null) return key in tickets ? Response.json(tickets[key]) : new Response("not found", { status: 404 });
     if (url === `${DEMO}/runs/9` && runAnswer != null) return runAnswer();
+    const story = url.startsWith(`${DEMO}/stories/`) ? decodeURIComponent(url.slice(`${DEMO}/stories/`.length)) : null;
+    if (story != null) return story in stories ? Response.json(stories[story]) : new Response("not found", { status: 404 });
     if (url === `${DEMO}/runs/9`) return Response.json({ ...servedRun, run: { ...servedRun.run, id: 9, ticket: "DEMO-3" }, criteria });
     if (url.endsWith("/board")) return new Response("not found", { status: 404 });
     return polls(url);
   };
 }
 
-async function mount(hash: string, runAnswer?: () => Response) {
+let requested: string[] = [];
+
+async function mount(hash: string, runAnswer?: () => Response, now = NOW) {
   window.location.hash = hash;
-  const fake = fakeDeps(ticketFetch(runAnswer));
-  fake.clock.now = NOW;
+  const answer = ticketFetch(runAnswer);
+  requested = [];
+  const fake = fakeDeps((url, init) => {
+    requested.push(url);
+    return answer(url, init);
+  });
+  fake.clock.now = now;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
       <NextConsole base={DEMO} pollDeps={fake.deps} />
@@ -90,7 +127,11 @@ const chip = () => screen.getByRole("status", { name: "Board" }).textContent;
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
-afterAll(() => happyDOM.setURL("about:blank"));
+afterAll(() => {
+  happyDOM.setURL("about:blank");
+  if (zone == null) delete process.env.TZ;
+  else process.env.TZ = zone;
+});
 afterEach(() => {
   cleanup();
   window.location.hash = "";
@@ -174,4 +215,55 @@ test("Expand in the peek opens the ticket's page", async () => {
   expect(chip()).toBe("In flight · run 9 · reviewing · round 2 of 3");
   const pages = within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link");
   expect(pages.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("aria-label"))).toEqual(["Tickets"]);
+});
+
+const story = () => within(facts()).getByRole("region", { name: "Story" });
+
+test("the Runs table lists every attempt newest first with its outcome, rounds, pull request and start, each linking to the classic run view", async () => {
+  await mount("#/tickets/demo/DEMO-3", undefined, LATER);
+  const section = screen.getByRole("region", { name: "Runs 2" });
+  const rows = within(section).getAllByRole("row").slice(1);
+  expect(rows.map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent).join(" · "))).toEqual([
+    "run 9 · reviewing · 2 of 3 · PR #524 · today 16:36",
+    "run 5 · failed · 1 · – · yesterday 15:10",
+  ]);
+  expect(within(section).getByRole("link", { name: "run 9" }).getAttribute("href")).toBe(`/?classic#run=9&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(section).getByRole("link", { name: "run 5" }).getAttribute("href")).toBe(`/?classic#run=5&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(section).getByRole("link", { name: "PR #524" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/524");
+});
+
+test("a ticket no run has claimed counts no runs and says so", async () => {
+  await mount("#/tickets/demo/DEMO-2");
+  const section = screen.getByRole("region", { name: "Runs 0" });
+  expect(within(section).queryByRole("table")).toBeNull();
+  expect(within(section).getByText("No run has claimed DEMO-2 yet.")).toBeTruthy();
+});
+
+test("a story's child shows its parent, the story's progress and every sibling's state with itself unlinked", async () => {
+  await mount("#/tickets/demo/DEMO-22");
+  const panel = story();
+  expect(within(panel).getByText("Parent")).toBeTruthy();
+  const parent = within(panel).getByRole("link", { name: "DEMO-20 Unattended runs recover themselves" });
+  expect(parent.getAttribute("href")).toEndWith("#/tickets/demo/DEMO-20");
+  expect(within(panel).getByText("1 of 3 merged")).toBeTruthy();
+  const rows = within(panel).getAllByRole("listitem");
+  expect(rows.map((row) => within(row).getByRole("img").getAttribute("aria-label"))).toEqual(["merged", "queued", "running"]);
+  expect(rows.map((row) => row.textContent)).toEqual(["DEMO-21 DEMO-21 title merged", "DEMO-22 DEMO-22 title ready · this ticket", "DEMO-23 DEMO-23 title in flight"]);
+  expect(within(rows[0]!).getByRole("link", { name: "DEMO-21" }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-21");
+  expect(within(rows[1]!).queryByRole("link")).toBeNull();
+});
+
+test("a story's own page heads its children, an empty story says it has none, and a ticket in no story draws no panel nor asks for one", async () => {
+  await mount("#/tickets/demo/DEMO-20");
+  expect(within(story()).getByText("Child tickets")).toBeTruthy();
+  expect(within(story()).queryByText("Parent")).toBeNull();
+  expect(within(story()).getAllByRole("listitem")).toHaveLength(3);
+  cleanup();
+  await mount("#/tickets/demo/DEMO-30");
+  expect(within(story()).getByText("No child tickets.")).toBeTruthy();
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2");
+  expect(within(facts()).queryByRole("region", { name: "Story" })).toBeNull();
+  expect(requested.some((url) => url.includes("/stories/"))).toBe(false);
+  expect(requested).toContain(`${DEMO}/board`);
 });
