@@ -75,6 +75,16 @@ for path in ("/status", "/attention", "/projects", "/projects/demo/status",
 open(sys.argv[1], "w").write(json.dumps(seen))
 """
 
+STORY = """\
+import json, os, sys, urllib.request
+url = os.environ["CONSOLE_URL"] + "/projects/demo"
+seen = {}
+for path in ("/stories/DEMO-12", "/attention", "/status"):
+    with urllib.request.urlopen(url + path, timeout=10) as answer:
+        seen[path] = json.load(answer)
+open(sys.argv[1], "w").write(json.dumps(seen))
+"""
+
 FINDINGS_READ = """\
 import json, os, sys, urllib.request
 url = os.environ["CONSOLE_URL"] + "/projects/demo/findings?since=0"
@@ -119,7 +129,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         columns = {column["state"]: {ticket["ticket"]: ticket
                                      for ticket in column["tickets"]}
                    for column in board["columns"]}
-        self.assertEqual(list(columns["backlog"]), ["DEMO-1"])
+        self.assertEqual(list(columns["backlog"]), ["DEMO-1", "DEMO-12"])
         self.assertEqual(list(columns["ready"]), ["DEMO-2"])
         self.assertEqual(sorted(columns["in_flight"]),
                          ["DEMO-11", "DEMO-3", "DEMO-7"])
@@ -178,6 +188,26 @@ class ConsoleFixtureTests(unittest.TestCase):
         self.assertGreaterEqual(today["ended_ms"], midnight)
         self.assertLessEqual(today["ended_ms"], time.time() * 1000)
 
+    def test_the_story_spans_the_seeded_states_and_leaves_the_overview(self):
+        result, seen = self.script(STORY)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        children = {child["ticket"]: child
+                    for child in seen["/stories/DEMO-12"]["children"]}
+        self.assertEqual(sorted(children), ["DEMO-1", "DEMO-10", "DEMO-11",
+                                            "DEMO-2", "DEMO-5", "DEMO-7"])
+        self.assertEqual(children["DEMO-1"]["depends_on"],
+                         ["DEMO-7", "DEMO-11"])
+        live = {run["ticket"]: run["id"]
+                for run in seen["/status"]["runs"]}["DEMO-7"]
+        self.assertEqual(children["DEMO-7"]["run"], live)
+        self.assertEqual(
+            [(item["kind"], item["ticket"])
+             for item in seen["/attention"]["items"]],
+            [("blocked", "DEMO-4"), ("pr_open", "DEMO-8"),
+             ("pr_open", "DEMO-9"), ("failed", "DEMO-11")])
+        self.assertEqual(seen["/status"]["queued"], [])
+
     def test_the_findings_route_serves_a_pending_feature_and_a_kept_guardrail(self):
         result, seen = self.script(FINDINGS_READ)
 
@@ -205,7 +235,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         (bare, _), (status, answer) = seen
         self.assertEqual(bare, 401)
         self.assertEqual(status, 201)
-        self.assertEqual(answer["ticket"], "DEMO-12")
+        self.assertEqual(answer["ticket"], "DEMO-13")
 
     def test_the_command_s_code_is_kept_and_everything_torn_down(self):
         result, (url, home) = self.script(RECORD)

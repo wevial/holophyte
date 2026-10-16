@@ -825,6 +825,51 @@ class TicketDetail(TypedDict):
     steers: list[TicketSteer]
 
 
+class StoryChildRow(TypedDict):
+    ticket: str
+    title: str
+    status: Literal["needs_spec", "ready", "in_flight", "blocked_on_deps",
+                    "blocked_on_operator", "merged", "abandoned"]
+    column: Literal["backlog", "ready", "canceled"] | None
+    time_box_ms: int | None
+    run: int | None
+    merged_ms: int | None
+    role: Literal["completes", "advances", "scaffolding"]
+    witness_keys: list[str]
+    depends_on: list[str]
+
+
+class StoryWitnessRow(TypedDict):
+    key: str
+    criterion: str
+    verdict: Literal["absent", "red", "green", "error"] | None
+    main_sha: str | None
+    at: int | None
+
+
+class StoryDecisionRow(TypedDict):
+    id: int
+    kind: Literal["unmet", "regressed", "plan_drift"]
+    ticket: str | None
+    question: str
+    options: list[str]
+    default_option: str
+    answer: str | None
+    answered_by: str | None
+    answered_ms: int | None
+    at: int
+
+
+class StoryDetail(TypedDict):
+    ticket: str
+    title: str
+    state: Literal["planned", "approved", "parked", "closed", "abandoned"]
+    generation: int
+    children: list[StoryChildRow]
+    witnesses: list[StoryWitnessRow]
+    decisions: list[StoryDecisionRow]
+
+
 ROUTES = {
     "status": (Status, "GET /status"),
     "attention": (Attention, "GET /attention"),
@@ -842,6 +887,7 @@ ROUTES = {
     "findings": (Findings, "GET /findings"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
+    "story": (StoryDetail, "GET /stories/KEY"),
 }
 
 
