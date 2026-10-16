@@ -60,7 +60,6 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
     const result = await post(ABORT, ROUTES[ABORT]!, { run: run.id, close: false, note: reason.trim() }, `Aborted run ${run.id}.`);
     if (result.ok) setAborting(false);
   };
-  const variant = (label: string) => (label === PAUSE ? "quiet" : label === ABORT ? "danger" : "primary");
   const kept = run.pr_url == null ? "" : ` and ${prLabel(run.pr_url)}`;
 
   return (
@@ -70,7 +69,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           <Btn
             key={label}
             ref={label === ABORT ? opener : undefined}
-            variant={variant(label)}
+            variant={label === PAUSE ? "quiet" : label === ABORT ? "danger" : "primary"}
             busy={pending === label}
             busyLabel={BUSY[label]}
             disabled={!page.actions}
