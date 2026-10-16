@@ -34,10 +34,6 @@ const FAILURE_WORDS: Record<string, string> = {
   merge_lock: "failed at merge",
 };
 
-function failureWord(kind: string | null | undefined): string {
-  return (kind != null && Object.hasOwn(FAILURE_WORDS, kind) ? FAILURE_WORDS[kind] : undefined) ?? "failed";
-}
-
 function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n", 1)[0] ?? "").trim() : "";
 }
@@ -67,7 +63,7 @@ function stageWord(row: HostedRun, item: AttentionItem | null, now: number): str
     case "merged":
       return row.ended_ms != null && row.ended_ms >= localMidnight(now) ? `merged ${formatClock(row.ended_ms)}` : "merged";
     case "failed":
-      return failureWord(row.failure_kind);
+      return (row.failure_kind != null && Object.hasOwn(FAILURE_WORDS, row.failure_kind) ? FAILURE_WORDS[row.failure_kind] : undefined) ?? "failed";
     case "abandoned":
       return withDetail("abandoned", firstLine(row.outcome_reason));
     default:
