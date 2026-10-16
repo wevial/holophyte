@@ -50,5 +50,30 @@
       "posted_ms": 1750000000000,
       "post_error": null
     }
+  ],
+  "runs": [
+    {
+      "run": 2,
+      "attempt": 1,
+      "phase": "claimed",
+      "outcome": null,
+      "rounds": 0,
+      "pr_url": null,
+      "started_ms": 1750000000000,
+      "ended_ms": null
+    }
+  ],
+  "steers": [
+    {
+      "id": 1,
+      "kind": "amendment",
+      "note": "Keep the estimate",
+      "author": "operator",
+      "at": 1750000000000,
+      "run": null,
+      "read_by": null,
+      "read_ms": null,
+      "withdrawn": false
+    }
   ]
 }
