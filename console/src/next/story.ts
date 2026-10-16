@@ -31,12 +31,14 @@ const KIND: Record<State, NodeKind> = {
   backlog: "backlog",
 };
 
-/** One child of a story as the graph draws it. */
+/** One child of a story as the graph draws it; `depends_on` keeps only
+ *  edges to the story's other drawn children. */
 export interface StoryNode {
   ticket: string;
   state: State;
   word: string;
   kind: NodeKind;
+  depends_on: string[];
 }
 
 function mergedWord(mergedMs: number | null, now: number): string {
@@ -60,7 +62,7 @@ export function storyNodes(story: StoryDetail, host: HostRecord<ContractBodies>,
   const items = hostItems(host, now);
   const readyOf = (run: unknown) => (typeof run === "number" ? readiness.get(runKey(host.key, run)) : undefined);
 
-  const placed = (child: StoryChildRow): { state: State; word: string } => {
+  const placed = (child: StoryChildRow, depends: string[]): { state: State; word: string } => {
     if (child.status === "merged") return { state: "merged", word: mergedWord(child.merged_ms, now) };
     const run = runs.get(child.ticket);
     if (run != null) {
@@ -74,7 +76,7 @@ export function storyNodes(story: StoryDetail, host: HostRecord<ContractBodies>,
       return { state, word: STATES[state].word };
     }
     if (child.column === "backlog") return { state: "backlog", word: STATES.backlog.word };
-    const waiting = child.depends_on.filter((key) => drawn.has(key) && drawn.get(key)?.status !== "merged");
+    const waiting = depends.filter((key) => drawn.get(key)?.status !== "merged");
     if (waiting.length > 0) return { state: "todo", word: `waiting on ${waiting.join(", ")}` };
     if (child.status === "ready") return { state: "queued", word: STATES.queued.word };
     const state = stateOf({ board: child.status as OpenStatus });
@@ -82,8 +84,9 @@ export function storyNodes(story: StoryDetail, host: HostRecord<ContractBodies>,
   };
 
   return children.map((child) => {
-    const { state, word } = placed(child);
-    return { ticket: child.ticket, state, word, kind: KIND[state] };
+    const depends = child.depends_on.filter((key) => drawn.has(key));
+    const { state, word } = placed(child, depends);
+    return { ticket: child.ticket, state, word, kind: KIND[state], depends_on: depends };
   });
 }
 

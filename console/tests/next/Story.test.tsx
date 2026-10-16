@@ -115,6 +115,19 @@ test("a merge before today is worded by its day", () => {
   expect(placed(older)).toEqual({ "DEMO-5": ["merged", "merged yesterday"], "DEMO-10": ["merged", "merged Oct 8"] });
 });
 
+test("a node keeps its edges to drawn children only, dropping an abandoned child's", () => {
+  const story = {
+    ...demo12,
+    children: [
+      child("DEMO-5", { status: "merged", merged_ms: at(8, 47) }),
+      child("DEMO-1", { status: "abandoned", column: "canceled" }),
+      child("DEMO-2", { status: "ready", column: "ready", depends_on: ["DEMO-5", "DEMO-1", "DEMO-40"] }),
+    ],
+  };
+  const edges = Object.fromEntries(storyNodes(story, demoHost, NOW, new Map()).map((node) => [node.ticket, node.depends_on]));
+  expect(edges).toEqual({ "DEMO-5": [], "DEMO-2": ["DEMO-5"] });
+});
+
 test("a story whose children all merged but one abandoned is done, the abandoned child in no count", async () => {
   const done: StoryDetail = {
     ...demo12,
