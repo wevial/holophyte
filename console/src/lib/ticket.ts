@@ -55,3 +55,14 @@ export async function fetchTicket(base: string, id: string, fetchImpl: Fetch): P
     return { state: "error", error: failure instanceof Error ? failure.message : String(failure) };
   }
 }
+
+/** The text under the body's `## Summary` heading up to the next heading,
+ *  trimmed; empty with no such section. */
+export function summaryOf(body: string): string {
+  const lines = body.split("\n");
+  const start = lines.findIndex((line) => /^##\s+Summary\s*$/.test(line));
+  if (start < 0) return "";
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^#{1,6}\s/.test(line));
+  return (end < 0 ? rest : rest.slice(0, end)).join("\n").trim();
+}
