@@ -24,21 +24,24 @@ const steeredFate = (ticket: string): RowFate => ({
   tone: "live",
 });
 
-/** The row's button and what it posts: a taken post hands `onDone` the
- *  row's new fate, a refusal says its reason in the toast and leaves the
- *  button enabled. */
-function RowActionButton({ action, onDone }: { action: RowAction; onDone: (fate: RowFate) => void }) {
+/** What the row's action posts, held by the row so its pending post
+ *  outlives a fold: a taken post sets `done` to the row's new fate, a
+ *  refusal says its reason in the toast and leaves the button enabled. */
+function useRowAction(action: RowAction | null) {
   const steer = useAction();
   const deps = useContext(PollDepsContext);
   const toast = useToast();
   const [filing, setFiling] = useState(false);
+  const [done, setDone] = useState<RowFate | null>(null);
+  const busy = steer.isPending || filing;
 
   const press = async () => {
+    if (action == null || busy) return;
     if (action.kind === "steer") {
       const said = `Steered ${action.ticket} with the finding.`;
       const body = { ticket: action.ticket, note: action.note, hint: false };
       const result = await steer.mutateAsync({ label: "Steer", base: action.base, route: "/actions/steer", body, said });
-      if (result.ok) onDone(steeredFate(action.ticket));
+      if (result.ok) setDone(steeredFate(action.ticket));
       else toast(result.detail);
       return;
     }
@@ -47,16 +50,19 @@ function RowActionButton({ action, onDone }: { action: RowAction; onDone: (fate:
     setFiling(false);
     if (result.ok) {
       toast(`Filed ${result.ticket} in Backlog.`);
-      onDone(filedFate(result.ticket));
+      setDone(filedFate(result.ticket));
     } else {
       toast("problems" in result ? (result.problems[0] ?? "The daemon refused the ticket.") : result.error);
     }
   };
+  return { busy, done, press };
+}
 
+function RowActionButton({ action, busy, press }: { action: RowAction; busy: boolean; press: () => Promise<void> }) {
   const steering = action.kind === "steer";
   return (
     <Btn
-      busy={steering ? steer.isPending : filing}
+      busy={busy}
       busyLabel={steering ? "Steering…" : "Filing…"}
       disabled={action.off != null}
       title={action.off ?? undefined}
@@ -72,7 +78,7 @@ function RowActionButton({ action, onDone }: { action: RowAction; onDone: (fate:
  *  stands while the page is mounted. */
 export function FindingRow({ row, showProject, quiet = false }: { row: FindingRowView; showProject: boolean; quiet?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [done, setDone] = useState<RowFate | null>(null);
+  const { busy, done, press } = useRowAction(row.action);
   const body = useId();
   const pill = row.severity == null ? null : PILL[row.severity];
   const fate = done ?? row.fate;
@@ -123,7 +129,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
                   Open run
                 </a>
               )}
-              {row.action != null && done == null && <RowActionButton action={row.action} onDone={setDone} />}
+              {row.action != null && done == null && <RowActionButton action={row.action} busy={busy} press={press} />}
             </div>
           </div>
         )}

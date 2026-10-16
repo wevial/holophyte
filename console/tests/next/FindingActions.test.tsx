@@ -60,13 +60,15 @@ interface Post {
   body: Record<string, unknown>;
 }
 
-/** DEMO as a host daemon serving `demo` with `runs` on `/findings`, or with
+/** DEMO as a host daemon serving `demo` with `runs` on `/findings`, its
+ *  `/status` without `actions` when `actions` is null, or with
  *  `projectDaemon` the project's own daemon at DEMO; each POST recorded in
  *  `posts` and answered by `answer`. */
-function daemon(opts: { runs: FindingsRun[]; actions: boolean; live?: Status["runs"]; projectDaemon?: boolean; answer?: (post: Post) => Promise<Response> }) {
+function daemon(opts: { runs: FindingsRun[]; actions: boolean | null; live?: Status["runs"]; projectDaemon?: boolean; answer?: (post: Post) => Promise<Response> }) {
   const posts: Post[] = [];
   const base = opts.projectDaemon ? DEMO : PROJECT;
-  const status = { ...working, project: "/srv/dev/demo", actions: opts.actions, runs: opts.live ?? [], queued: [], now: NOW };
+  const { actions: _served, ...rest } = working;
+  const status = { ...rest, project: "/srv/dev/demo", ...(opts.actions == null ? {} : { actions: opts.actions }), runs: opts.live ?? [], queued: [], now: NOW };
   const listed = [{ ...hostStatus.projects[0]!, name: "demo", path: "/srv/dev/demo", host: "writer-host" }];
   const fetch: Fetch = async (url, init) => {
     if (init?.method === "POST") {
@@ -199,8 +201,34 @@ test("File ticket files the advisory thread to Backlog on a host daemon, and a 4
   expect(toast()).toBe("Filed HOLO-248 in Backlog.");
 });
 
-test("with actions off both buttons draw disabled under ACTIONS_OFF and post nothing, and a finding being fixed has no button", async () => {
-  const { fetch, posts } = daemon({ runs: [demo11, demo7, holo229], actions: false, live: reviewing7 });
+test("folding a row while its filing is out keeps it Filing…, so reopening it cannot post a second ticket", async () => {
+  let release: (response: Response) => void = () => {};
+  const held = new Promise<Response>((resolve) => (release = resolve));
+  const { fetch, posts } = daemon({ runs: [holo229], actions: true, answer: () => held });
+  await mount(fetch);
+  const row = unfold("Follow-ups", "Consider a retry cap");
+  await act(async () => {
+    fireEvent.click(buttonOf(row, /^File ticket$/)!);
+    await settle();
+  });
+  const toggle = row.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  await act(async () => {
+    fireEvent.click(buttonOf(row, /^Filing…$/)!);
+    await settle();
+  });
+  expect(posts).toHaveLength(1);
+  await act(async () => {
+    release(Response.json({ ticket: "HOLO-248", revision: 1 }, { status: 201 }));
+    await settle();
+  });
+  for (let step = 0; step < 3; step += 1) await act(settle);
+  expect(fateOf(row)).toBe("filed as HOLO-248 · Backlog");
+});
+
+test("a /status with no actions draws both buttons disabled under ACTIONS_OFF and posts nothing, and a finding being fixed has no button", async () => {
+  const { fetch, posts } = daemon({ runs: [demo11, demo7, holo229], actions: null, live: reviewing7 });
   await mount(fetch);
   const steer = buttonOf(unfold("Open", "Flag is ignored"), /^Steer into next run$/)!;
   const file = buttonOf(unfold("Follow-ups", "Consider a retry cap"), /^File ticket$/)!;
