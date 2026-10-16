@@ -6,7 +6,7 @@ import { SECTION_LABEL } from "./Criteria";
 
 const LINK = "text-ink underline decoration-rule underline-offset-2 hover:decoration-ink";
 
-export interface Merge {
+interface Merge {
   merge_sha: string | null;
   commit_url: string | null;
   ended_ms: number | null;
@@ -28,7 +28,6 @@ function Holds({ facts, ready, merge }: { facts: Fact[] | null; ready: boolean; 
       </>
     );
   }
-  if (!facts?.length && !ready) return null;
   return (
     <>
       {facts?.length ? (
