@@ -49,13 +49,6 @@ def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps):
            provider)
 
 
-def _record_idle(conn, run_id, turn, gaps):
-    text = (f"witness turn {turn} made no commit; review goes ahead with "
-            f"{len(gaps)} gaps")
-    print(f"[holo2] {text}")
-    store.record_event(conn, run_id, "witness_turn_idle", text)
-
-
 def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                   base_sha, sha, ticket, verify_cmd, criteria, budget_min, ok,
                   out, checks):
@@ -63,11 +56,10 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
     return the head, its verify and the round 1 reviewer's brief."""
     entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
-    while ok and _gaps(entries):
+    while ok and (gaps := _gaps(entries)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
             break
-        gaps = _gaps(entries)
         _check_run_cap(project, conn, run_id, budget_min, sha)
         boundary(conn, run_id, "verifying", rnd=1)
         _record_turn(conn, run_id, provider, task_id, turn, sha, gaps)
@@ -77,7 +69,10 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                             ticket, sha, gaps, timed=_timed,
                             check_cap=_check_run_cap)
         if head == sha:
-            _record_idle(conn, run_id, turn, gaps)
+            idle = (f"witness turn {turn} made no commit; review goes ahead "
+                    f"with {len(gaps)} gaps")
+            print(f"[holo2] {idle}")
+            store.record_event(conn, run_id, "witness_turn_idle", idle)
             break
         sha = head
         ok, out = checks()
