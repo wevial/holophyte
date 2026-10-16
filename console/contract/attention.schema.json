@@ -4,84 +4,6 @@
   "description": "GET /attention",
   "$ref": "#/$defs/Attention",
   "$defs": {
-    "BlockedItem": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "blocked"
-        },
-        "ticket": {
-          "type": "string"
-        },
-        "ticket_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "question": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "run": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "asked_ms": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "pr_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "level": {
-          "const": "attention"
-        },
-        "project": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "ticket",
-        "ticket_url",
-        "question",
-        "run",
-        "asked_ms",
-        "pr_url",
-        "level"
-      ],
-      "additionalProperties": true
-    },
     "PullRequestFacts": {
       "type": "object",
       "properties": {
@@ -172,6 +94,106 @@
         "open_threads",
         "title",
         "state"
+      ],
+      "additionalProperties": true
+    },
+    "BlockedItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "blocked"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "ticket_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asked_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "park_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PullRequestFacts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "const": "attention"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ticket",
+        "ticket_url",
+        "question",
+        "run",
+        "asked_ms",
+        "pr_url",
+        "park_kind",
+        "pr",
+        "level"
       ],
       "additionalProperties": true
     },

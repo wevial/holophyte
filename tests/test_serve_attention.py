@@ -534,6 +534,44 @@ class PullRequestTitleTests(ServeTestCase):
         self.assertEqual((pr["open_threads"], pr["threads"]), ("100+", 100))
 
 
+class BlockedParkFactsTests(ServeTestCase):
+    def park_question(self, question, park_kind, **facts):
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            ticket = store.read.ticket_by_identifier(conn, "KO-7")
+            store.tickets.transition(conn, ticket.id, "blocked_on_operator")
+            store.set_question(conn, ticket.id, question)
+            park_run(conn, self.run, "awaiting_merge_approval", question,
+                     candidate_sha="a" * 40, park_kind=park_kind,
+                     now=self.now, **facts)
+        self.start()
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        return next(item for item in body["items"] if item["ticket"] == "KO-7")
+
+    def test_fix_declined_question_keeps_its_text_and_pull_request_facts(self):
+        question = ("PR open: https://github.com/example/repo/pull/644\n"
+                    "checks failure on the head commit\n"
+                    "Fix round made no commit. How should this proceed?")
+        item = self.park_question(
+            question, "fix_declined",
+            pr_url="https://github.com/example/repo/pull/644",
+            pr_seen=("2026-09-29T10:00:00Z", 3, None, None, "failure",
+                     "changes_requested", None))
+        self.assertEqual(item["kind"], "blocked")
+        self.assertEqual(item["question"], question)
+        self.assertEqual(item["park_kind"], "fix_declined")
+        self.assertEqual(item["pr"], {
+            "number": 644, "checks": "failure", "review": "changes_requested",
+            "threads": 3, "open_threads": None, "title": None})
+
+    def test_plain_question_has_its_park_kind_and_no_pull_request(self):
+        item = self.park_question("Which API should this use?", "question")
+        self.assertEqual(item["kind"], "blocked")
+        self.assertEqual(item["park_kind"], "question")
+        self.assertIsNone(item["pr"])
+
+
 class CiParkAttentionTests(ServeTestCase):
     URL = "https://github.com/example/repo/pull/31"
 

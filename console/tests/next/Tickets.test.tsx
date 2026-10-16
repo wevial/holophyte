@@ -105,7 +105,10 @@ const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => vo
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
 afterAll(() => happyDOM.setURL("about:blank"));
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  sessionStorage.clear();
+  localStorage.clear();
+});
 afterEach(() => {
   cleanup();
   window.location.hash = "";
@@ -238,4 +241,45 @@ test("each card takes the look of its column: need, done, backlog or plain", asy
   expect(done!.className).toContain("bg-live-wash");
   expect(plain!.className).not.toContain("border-dashed");
   expect(plain!.className).not.toContain("bg-live-wash");
+});
+
+const viewsFleet = () =>
+  fleet({
+    board: boardOf({ backlog: ["DEMO-1"], needs_spec: ["DEMO-6", "DEMO-7"], ready: ["DEMO-2"], blocked_on_deps: ["DEMO-5"] }),
+    items: [{ ...blocked, ticket: "DEMO-2", run: 2 }],
+  }).fetch;
+const viewLinks = () => within(screen.getByRole("list", { name: "Views" })).getAllByRole("link");
+const shownKeys = () => screen.queryAllByRole("article").map((card) => card.firstElementChild?.firstElementChild?.textContent).sort();
+
+test("the sidebar's Views list Ready, Needs spec and Backlog with the project's ticket count in each, a Needs you ticket in none", async () => {
+  await mount("#/?project=demo", viewsFleet());
+  const label = screen.getByText("Views");
+  for (const name of ["font-mono", "uppercase", "text-ink-3"]) expect(label.classList).toContain(name);
+  const links = viewLinks();
+  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Ready", "Needs spec", "Backlog"]);
+  const counts = links.map((link) => link.querySelector("[data-count]")!);
+  expect(counts.map((count) => count.textContent)).toEqual(["1", "2", "1"]);
+  for (const count of counts) expect(count.classList).toContain("font-mono");
+});
+
+test("a view link shows only its tickets and marks itself current, and Show all tickets drops the filter but keeps the scope", async () => {
+  await mount("#/?project=demo", viewsFleet());
+  fireEvent.click(screen.getByRole("link", { name: "Needs spec" }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/tickets?project=demo&filter=needs_spec");
+  expect(shownKeys()).toEqual(["DEMO-6", "DEMO-7"]);
+  expect(countLine()).toBe("demo · 2 tickets / 0 in flight / 0 need you / 0 ready");
+  expect(screen.getAllByText(/^Showing/).map((line) => line.textContent)).toEqual(["Showing demo only", "Showing Needs spec tickets only"]);
+  expect(viewLinks().map((link) => link.getAttribute("aria-current"))).toEqual([null, "page", null]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Show all tickets" }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/tickets?project=demo");
+  expect(shownKeys()).toEqual(["DEMO-1", "DEMO-2", "DEMO-5", "DEMO-6", "DEMO-7"]);
+});
+
+test("an unknown filter lists every ticket as no filter does", async () => {
+  await mount("#/tickets?filter=nonsense", fleet(demo, writer).fetch);
+  expect(countLine()).toBe("all projects · 9 tickets / 2 in flight / 2 need you / 3 ready");
+  expect(screen.queryAllByText(/^Showing/)).toEqual([]);
 });

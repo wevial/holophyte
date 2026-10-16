@@ -18,7 +18,7 @@ const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Atte
 const park = served.items[0]!;
 export const blocked: Item = {
   kind: "blocked", level: "attention", ticket: "DEMO-4", ticket_url: null, question: "Which way?", run: 4,
-  asked_ms: NOW - (8 * HOUR + 2 * MINUTE), pr_url: null,
+  asked_ms: NOW - (8 * HOUR + 2 * MINUTE), pr_url: null, park_kind: "question", pr: null,
 };
 const failedAt = (run: number, attempt: number, endedMs: number): Item => ({
   kind: "failed", level: "attention", run, ticket: "DEMO-11", ticket_url: null, reason: "verify failed",

@@ -120,24 +120,30 @@ def parked_item(ticket):
                                          ticket.parkKind):
         _, separator, reason = question.partition("\n")
         reason = reason if separator else question
-        match = PR_URL_RE.match(ticket.prUrl)
         return {"kind": "pr_open", "ticket": ticket.linearIdentifier,
                 "ticket_url": ticket.ticketUrl, "title": ticket.title,
                 "run": ticket.runId, "pr_url": ticket.prUrl,
                 "park_kind": ticket.parkKind, "reason": reason,
                 "asked_ms": ticket.askedMs,
-                "pr": {"number": int(match.group(4)) if match else None,
-                       "checks": ticket.prSeenChecks,
-                       "review": ticket.prSeenReview,
-                       "threads": ticket.prSeenThreads,
-                       "open_threads": _open_threads(ticket),
-                       "title": ticket.prSeenTitle, "state": ticket.prSeenState},
+                "pr": _pull_request_facts(ticket),
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
             "ticket_url": ticket.ticketUrl,
             "question": ticket.blockedQuestion,
+            "park_kind": ticket.parkKind,
+            "pr": _pull_request_facts(ticket) if ticket.prUrl else None,
             "run": ticket.runId, "asked_ms": ticket.askedMs,
             "pr_url": ticket.prUrl, "level": "attention"}
+
+
+def _pull_request_facts(ticket):
+    match = PR_URL_RE.match(ticket.prUrl)
+    return {"number": int(match.group(4)) if match else None,
+            "checks": ticket.prSeenChecks,
+            "review": ticket.prSeenReview,
+            "threads": ticket.prSeenThreads,
+            "open_threads": _open_threads(ticket),
+            "title": ticket.prSeenTitle, "state": ticket.prSeenState}
 
 
 def _open_threads(ticket):

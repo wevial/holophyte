@@ -111,19 +111,6 @@ export const statusSchema = z.looseObject({
 });
 export type Status = z.infer<typeof statusSchema>;
 
-export const blockedItemSchema = z.looseObject({
-  kind: z.literal("blocked"),
-  ticket: z.string(),
-  ticket_url: z.string().nullable(),
-  question: z.string().nullable(),
-  run: z.int().nullable(),
-  asked_ms: z.int().nullable(),
-  pr_url: z.string().nullable(),
-  level: z.literal("attention"),
-  project: z.string().optional(),
-});
-export type BlockedItem = z.infer<typeof blockedItemSchema>;
-
 export const pullRequestFactsSchema = z.looseObject({
   number: z.int().nullable(),
   checks: z.string().nullable(),
@@ -134,6 +121,21 @@ export const pullRequestFactsSchema = z.looseObject({
   state: z.enum(["draft", "ready", "closed", "merged"]).nullable(),
 });
 export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
+
+export const blockedItemSchema = z.looseObject({
+  kind: z.literal("blocked"),
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  question: z.string().nullable(),
+  run: z.int().nullable(),
+  asked_ms: z.int().nullable(),
+  pr_url: z.string().nullable(),
+  park_kind: z.string().nullable(),
+  pr: pullRequestFactsSchema.nullable(),
+  level: z.literal("attention"),
+  project: z.string().optional(),
+});
+export type BlockedItem = z.infer<typeof blockedItemSchema>;
 
 export const prOpenItemSchema = z.looseObject({
   kind: z.literal("pr_open"),
