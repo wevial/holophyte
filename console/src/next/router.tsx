@@ -8,13 +8,13 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
-import { classicHref } from "../lib/view";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
+import { Findings } from "./pages/Findings";
 import { validateRunsSearch } from "./history";
-import { NotFound, Placeholder } from "./pages/Placeholder";
+import { NotFound } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
 import { Runs } from "./pages/Runs";
@@ -46,20 +46,12 @@ function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
   return createRoute({ getParentRoute: () => rootRoute, path, component: page });
 }
 
-function placeholderRoute<TPath extends string>(path: TPath, page: Parameters<typeof Placeholder>[0]) {
-  return pageRoute(path, () => <Placeholder {...page} />);
-}
-
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
   pageRoute("/tickets", Tickets),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
-  placeholderRoute("/findings", {
-    title: "Findings",
-    sentence: "Findings across runs come here. Until then, each run's findings are on its page in the classic console.",
-    classic: { href: classicHref(), label: "Open the classic console" },
-  }),
+  pageRoute("/findings", Findings),
 ]);
 
 function createConsoleRouter() {

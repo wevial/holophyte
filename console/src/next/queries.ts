@@ -4,6 +4,7 @@ import type { ReadinessMap } from "../lib/attention";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
 import {
   boardSchema,
+  findingsSchema,
   historySchema,
   ledgerSchema,
   mergeReadinessSchema,
@@ -12,6 +13,7 @@ import {
   shippedSchema,
   ticketDetailSchema,
   type Board,
+  type Findings,
   type History,
   type Ledger,
   type LedgerEntry,
@@ -145,6 +147,41 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
     .flatMap((answer) => answer.entries)
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
+}
+
+const WINDOW_DAYS = 7;
+
+/** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
+ *  days before it. */
+export function weekSince(now: number): number {
+  const day = new Date(localMidnight(now));
+  day.setDate(day.getDate() - (WINDOW_DAYS - 1));
+  return day.getTime();
+}
+
+/** Each scoped host's last good `/findings` answer for the week before
+ *  `now`, in fleet order; a host whose daemon lacks the route, or that
+ *  never answered, is left out. `answered` is whether any host settled. */
+export function useFindings<R extends HostRecord<PollBodies>>(
+  hosts: R[],
+  now: number,
+  deps: { fetch: Fetch } = defaultPollDeps,
+): { answered: boolean; answers: { host: R; findings: Findings }[] } {
+  const asked = hosts.filter((host) => host.status != null);
+  const path = `/findings?since=${weekSince(now)}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, findingsSchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const answers = asked.flatMap((host, index) => {
+    const findings = results[index]?.data;
+    return findings ? [{ host, findings }] : [];
+  });
+  return { answered: results.some((result) => result.data !== undefined), answers };
 }
 
 /** Each status-answering host's last good `path` answer, by its record
