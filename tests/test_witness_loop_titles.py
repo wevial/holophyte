@@ -8,8 +8,7 @@ import unittest
 from pathlib import Path
 
 from holophyte.review import reply_parsing
-
-MODULES = "HOLOPHYTE_TEST_PLAYWRIGHT_MODULES"
+from tests.test_capture_playwright import MODULES, _suites
 
 LOOP_SPEC = (
     "import { test } from '@playwright/test';\n"
@@ -137,12 +136,6 @@ class RealPlaywrightListTests(unittest.TestCase):
         self.assertEqual(len(references), 5, listed)
         self.assertEqual(
             reply_parsing.missing_witnesses(references, self.root), [])
-
-
-def _suites(suites):
-    for suite in suites:
-        yield suite
-        yield from _suites(suite.get("suites", []))
 
 
 if __name__ == "__main__":
