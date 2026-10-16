@@ -54,8 +54,7 @@ export interface RunsSearch {
   state?: RunGroup;
 }
 
-export function validateRunsSearch(search: Record<string, unknown>): RunsSearch {
-  const { state } = search;
+export function validateRunsSearch({ state }: Record<string, unknown>): RunsSearch {
   return { state: RUN_GROUPS.includes(state as RunGroup) ? (state as RunGroup) : undefined };
 }
 
