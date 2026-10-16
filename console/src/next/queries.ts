@@ -14,6 +14,7 @@ import {
   storyDetailSchema,
   ticketDetailSchema,
   type Board,
+  type BoardStory,
   type Findings,
   type History,
   type Ledger,
@@ -23,6 +24,7 @@ import {
 } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
+import { projectName } from "../lib/derive";
 import {
   AnswerError,
   defaultPollDeps,
@@ -272,9 +274,7 @@ export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fet
   return todayMerges(rows, now);
 }
 
-/** Each host that has answered `/status` with its last good `/board`, in
- *  fleet order; a host whose board never answered is left out. */
-export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; board: Board }[] {
+function useBoardResults<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }) {
   const asked = hosts.filter((host) => host.status != null);
   const results = useQueries({
     queries: asked.map((host) => ({
@@ -284,8 +284,34 @@ export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { 
       staleTime: POLL_INTERVAL_MS,
     })),
   });
+  return { asked, results };
+}
+
+/** Each host that has answered `/status` with its last good `/board`, in
+ *  fleet order; a host whose board never answered is left out. */
+export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; board: Board }[] {
+  const { asked, results } = useBoardResults(hosts, deps);
   return asked.flatMap((host, index) => {
     const board = results[index]?.data;
     return board ? [{ host, board }] : [];
   });
+}
+
+export interface ListedStory extends BoardStory {
+  project: string;
+}
+
+/** Every story on the `/board` of each of `hosts`, with its host's project
+ *  name, ordered by key. `answered` is whether every board asked has
+ *  answered or failed; a host with no `/status` has no board to wait on. */
+export function useBoardStories(hosts: HostRecord<PollBodies>[], deps: { fetch: Fetch }): { answered: boolean; stories: ListedStory[] } {
+  const { asked, results } = useBoardResults(hosts, deps);
+  const stories = asked.flatMap((host, index) => {
+    const board = results[index]?.data;
+    const project = host.project;
+    return board && project != null ? board.stories.map((story) => ({ ...story, project: projectName(project) })) : [];
+  });
+  stories.sort((a, b) => a.ticket.localeCompare(b.ticket, undefined, { numeric: true }));
+  const answered = asked.every((_, index) => results[index]?.status !== "pending");
+  return { answered, stories };
 }
