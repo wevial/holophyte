@@ -66,3 +66,11 @@ export function summaryOf(body: string): string {
   const end = rest.findIndex((line) => /^#{1,6}\s/.test(line));
   return (end < 0 ? rest : rest.slice(0, end)).join("\n").trim();
 }
+
+/** The first paragraph of the body's `## Summary`, else of the body past
+ *  its headings; empty when it has none. */
+export function leadParagraph(body: string): string {
+  const text = summaryOf(body) || body;
+  const paragraphs = text.split(/\n\s*\n/).map((part) => part.trim());
+  return paragraphs.find((part) => part !== "" && !/^#{1,6}\s/.test(part)) ?? "";
+}
