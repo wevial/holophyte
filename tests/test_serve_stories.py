@@ -31,8 +31,7 @@ class StoryDetailTests(ServeTestCase):
     def seed_story(self):
         """Story DEMO-20 over DEMO-21 (merged), DEMO-22 (live run, waits on
         DEMO-21) and DEMO-23 (backlog, waits on DEMO-22 and on DEMO-30,
-        outside the story), each child filed and claimed through the
-        store's own writers."""
+        outside the story), seeded through the store's own writers."""
         self.now = int(time() * 1000)
         conn = store.open(str(self.db))
         try:
@@ -153,7 +152,7 @@ class StoryDetailTests(ServeTestCase):
             (self.second, None, "W2 is still unmet; wait?", None, None, None,
              self.reopened_at))
 
-    def test_a_child_or_an_unmirrored_key_is_404_and_no_store_is_503(self):
+    def test_a_child_or_an_unmirrored_key_is_404_with_an_empty_body(self):
         self.seed_story()
         self.start()
 
