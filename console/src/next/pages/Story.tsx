@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { StateDot } from "../components/StateDot";
+import { StoryGraph } from "../components/StoryGraph";
 import { useReadiness, useStory } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { KIND_ORDER, storyNodes, storyState, type NodeKind, type StoryNode } from "../story";
@@ -79,12 +80,16 @@ export function Story() {
   const { host, story } = useStory(peers.hosts, project, key, deps);
   const readiness = useReadiness(host == null ? [] : [host], deps);
   const missing = story === null || (host == null && peers.polls > 0);
+  const nodes = story != null && host != null ? storyNodes(story, host, peers.now, readiness) : null;
   return (
     <div className="mx-auto flex w-full max-w-[1320px] flex-col px-8 py-7">
-      {story != null && host != null && (
-        <section aria-labelledby="page-title">
-          <Header project={project} storyKey={key} title={story.title} nodes={storyNodes(story, host, peers.now, readiness)} />
-        </section>
+      {story != null && host != null && nodes != null && (
+        <>
+          <section aria-labelledby="page-title">
+            <Header project={project} storyKey={key} title={story.title} nodes={nodes} />
+          </section>
+          <StoryGraph nodes={nodes} base={host.base} />
+        </>
       )}
       {missing && <Missing project={project} storyKey={key} />}
       <p className="mt-3.5 border-t border-rule py-3.5 font-mono text-[12px] leading-[1.4] text-ink-3">

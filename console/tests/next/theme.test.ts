@@ -69,3 +69,15 @@ test("computed canvas and action colours honor explicit themes and otherwise fol
     else root.setAttribute("data-theme", previousTheme);
   }
 });
+
+test("the graph's edge tokens take the board's values in Dawn and in both dark blocks", () => {
+  const value = (path: string[], name: string) =>
+    decls.find((d) => d.name === name && d.path.join(" ") === path.join(" "))?.value;
+  for (const [path, edge, dim] of [
+    [[dawnSelector], "#7d8299", "#c9c6d6"],
+    [[nightSelector], "#5a6488", "#2e3758"],
+    [[media, systemSelector], "#5a6488", "#2e3758"],
+  ] as const) {
+    expect([value([...path], "--edge"), value([...path], "--edge-dim")]).toEqual([edge, dim]);
+  }
+});
