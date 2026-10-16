@@ -26,21 +26,12 @@ WEEKLY_LIMIT = "You've hit your weekly limit · resets 11am (UTC)"
 
 class UsageLimitStopTests(LoopFixture):
     def test_weekly_limit_is_infra_and_preserves_wip_without_spending_an_attempt(self):
-        script = self.db.parent / "claude-implementer.sh"
-        script.write_text(
-            '#!/bin/sh\n'
-            'for last; do :; done\n'
-            'case "$last" in "Reply with the single word: ready") '
-            'echo ready; exit 0;; esac\n'
+        script, _ = self.script(
+            "claude-implementer.sh",
             'echo "unfinished work" > unfinished.txt\n'
-            f'echo "{WEEKLY_LIMIT}"\n'
-            'exit 1\n')
-        script.chmod(0o755)
+            f'echo "{WEEKLY_LIMIT}"\nexit 1\n')
         self.configure(f'[agents]\nimplementer = "{script}"\n')
-        provider = StubProvider(a_task())
-        with no_agent_processes(), \
-                patch.dict(sys.modules, {"linear_provider": provider}):
-            holophyte.cli.operator.main(self.project, provider)
+        self.run_scripts()
 
         ((summary,),) = self.read(
             "SELECT summary FROM runEvents WHERE kind = 'wip_committed'")
@@ -65,8 +56,6 @@ class UsageLimitStopTests(LoopFixture):
             self.addCleanup(conn.close)
             self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
 
-
-class UsageLimitRecoveryTests(LoopFixture):
     def script(self, name, *turns):
         state = self.db.parent / f"{name}-state"
         state.mkdir()
