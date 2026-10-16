@@ -41,7 +41,6 @@ export type RunPage =
       progress: ProgressLine[];
       asks: ConsoleAsk[];
       agentState: string;
-      actions: boolean;
       phase: string;
       stoppable: boolean;
       /** Whether the run is still under way, so its Progress may grow. */
@@ -213,7 +212,6 @@ export function useRunPage(project: string, run: number | null): RunPage {
     host,
     liveRun: live,
     liveTicket: status.runs.some((each) => each.ticket === detail.run.ticket),
-    actions: status.actions === true,
     stops: stopsWord(phase, live),
     state,
     agentMs: live == null ? agentMs(detail.run) : agentMs(live, since),
