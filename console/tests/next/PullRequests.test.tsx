@@ -29,7 +29,7 @@ const readyPark = park(9, "pull_request", 2 * HOUR, { number: 42, checks: "succe
 const threadPark = park(10, "pull_request", HOUR, { number: 99, checks: "success", review: "approved", threads: 1, open_threads: 1 });
 const blocked = {
   kind: "blocked", level: "attention", ticket: "DEMO-4", ticket_url: null, question: "Which way?", run: 4,
-  asked_ms: NOW - 5 * HOUR, pr_url: null, park_kind: "question", pr: null,
+  asked_ms: NOW - 5 * HOUR, pr_url: null,
 } as Item;
 
 interface Daemon {

@@ -29,7 +29,7 @@ const failed = (triage: unknown): Item => ({
 } as Item);
 const blocked = (ticket: string, run: number, askedAgo: number, extra: object = {}): Item => ({
   kind: "blocked", level: "attention", ticket, ticket_url: null, question: "Which way?", run,
-  asked_ms: NOW - askedAgo, pr_url: null, park_kind: "question", pr: null, ...extra,
+  asked_ms: NOW - askedAgo, pr_url: null, ...extra,
 } as Item);
 const code = { choice: "code", confidence: 0.81, backend: "claude", model: "triage-model", requeued: false };
 
