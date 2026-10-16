@@ -485,6 +485,7 @@ class BlockedParkFactsTests(ServeTestCase):
                      "changes_requested", None))
         self.assertEqual(item["kind"], "blocked")
         self.assertEqual(item["question"], question)
+        self.assertEqual(item["park_kind"], "fix_declined")
         self.assertEqual(item["pr"], {
             "number": 644, "checks": "failure", "review": "changes_requested",
             "threads": 3, "open_threads": None, "title": None})
