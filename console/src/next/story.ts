@@ -44,12 +44,16 @@ export interface StoryNode {
   depends_on: string[];
 }
 
-function mergedWord(mergedMs: number | null, now: number): string {
-  if (mergedMs == null) return "merged";
+/** "08:47" today, "yesterday", else "Oct 9". */
+export function dayWord(ms: number, now: number): string {
   const today = localMidnight(now);
-  if (mergedMs >= today) return `merged ${formatClock(mergedMs)}`;
-  if (mergedMs >= localMidnight(today - 1)) return "merged yesterday";
-  return `merged ${new Date(mergedMs).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  if (ms >= today) return formatClock(ms);
+  if (ms >= localMidnight(today - 1)) return "yesterday";
+  return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function mergedWord(mergedMs: number | null, now: number): string {
+  return mergedMs == null ? "merged" : `merged ${dayWord(mergedMs, now)}`;
 }
 
 type OpenStatus = Exclude<StoryChildRow["status"], "merged" | "abandoned">;
@@ -145,4 +149,11 @@ export function layoutGraph(nodes: StoryNode[]) {
   const rows = Math.max(0, ...filled.map((column) => column.length));
   const span = (count: number, size: number, gap: number) => (count === 0 ? 0 : count * size + (count - 1) * gap);
   return { columns: filled, at, edges, width: span(filled.length, CARD_W, COLUMN_GAP), height: span(rows, CARD_H, ROW_GAP) };
+}
+
+const FADE_SLACK = 2;
+
+/** Which edges of a sideways scroll region have more to show. */
+export function edgeFade(scrollLeft: number, clientWidth: number, scrollWidth: number): { left: boolean; right: boolean } {
+  return { left: scrollLeft > FADE_SLACK, right: scrollLeft + clientWidth < scrollWidth - FADE_SLACK };
 }

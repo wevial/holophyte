@@ -1,7 +1,8 @@
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatAge } from "../../lib/format";
 import { classicHref } from "../../lib/view";
 import { cardOf, STATES, type CardLook, type State } from "../state";
-import { CARD_H, CARD_W, layoutGraph, type StoryNode } from "../story";
+import { CARD_H, CARD_W, edgeFade, layoutGraph, type StoryNode } from "../story";
 import { Card, cardSurface, type CardMark } from "./Card";
 import { STATE_ICONS, TONE_TEXT } from "./StateDot";
 
@@ -48,10 +49,10 @@ function Legend() {
   );
 }
 
-function NodeCard({ node, base, x, y }: { node: StoryNode; base: string; x: number; y: number }) {
+function NodeCard({ node, base, className, style, after }: { node: StoryNode; base: string; className: string; style?: CSSProperties; after?: string }) {
   const look = cardOf(node.state);
-  const after = node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story";
-  const label = `${node.ticket} ${node.title}, ${node.word}. ${after}`;
+  const waits = node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story";
+  const label = `${node.ticket} ${node.title}, ${node.word}. ${waits}`;
   const body = (
     <Card look={look} mark={markOf(node)}>
       <span className="flex items-center gap-2 font-mono text-[11px] font-medium leading-none text-ink-3 tabular-nums">
@@ -67,13 +68,12 @@ function NodeCard({ node, base, x, y }: { node: StoryNode; base: string; x: numb
         <Icon state={node.state} />
         <span className={`truncate ${QUIET_WORD[look] ?? TONE_TEXT[STATES[node.state].tone]}`}>{node.word}</span>
       </span>
+      {after != null && <span data-after className="font-mono text-[11.5px] leading-[1.3] text-ink-3">{after}</span>}
     </Card>
   );
-  const place = `absolute block overflow-hidden [&>article]:h-full`;
-  const style = { left: x, top: y, width: CARD_W, height: CARD_H };
   if (node.run == null) {
     return (
-      <div role="group" aria-label={label} data-node={node.ticket} className={place} style={style}>
+      <div role="group" aria-label={label} data-node={node.ticket} className={className} style={style}>
         {body}
       </div>
     );
@@ -83,7 +83,7 @@ function NodeCard({ node, base, x, y }: { node: StoryNode; base: string; x: numb
       href={classicHref(`#run=${node.run}&daemon=${encodeURIComponent(base)}`)}
       aria-label={label}
       data-node={node.ticket}
-      className={`${place} no-underline transition-colors duration-(--motion-colour) hover:[&>article]:border-ink-3`}
+      className={`${className} no-underline transition-colors duration-(--motion-colour) hover:[&>article]:border-ink-3`}
       style={style}
     >
       {body}
@@ -91,15 +91,75 @@ function NodeCard({ node, base, x, y }: { node: StoryNode; base: string; x: numb
   );
 }
 
+function Steps({ columns, base }: { columns: StoryNode[][]; base: string }) {
+  return (
+    <div className="story-steps flex flex-col gap-4">
+      {columns.map((column, index) => (
+        <section key={column[0]!.ticket} aria-label={`Step ${index + 1}`} data-step={index + 1}>
+          <h3 className="flex items-baseline gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
+            {`Step ${index + 1}`}
+            {column.length > 1 && <span className="font-normal normal-case tracking-normal">{column.length} can run side by side</span>}
+          </h3>
+          <ul className="mt-2 flex flex-wrap gap-2.5">
+            {column.map((node) => (
+              <li key={node.ticket} className="min-w-0 flex-[1_1_200px]">
+                <NodeCard node={node} base={base} className="block [&>article]:h-full" after={node.depends_on.length > 0 ? `after ${node.depends_on.join(", ")}` : "starts the story"} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+const FOCUS_INSET = 24;
+
 /** The story's children as columns by what they wait on, an arrow from
  *  each dependency to the ticket that waits on it. */
 export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }) {
   const graph = layoutGraph(nodes);
   const edges = (dim: boolean) => graph.edges.filter((edge) => edge.dim === dim);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState({ left: false, right: false });
+  const readFade = () => {
+    const region = scroller.current;
+    if (region == null) return;
+    const next = edgeFade(region.scrollLeft, region.clientWidth, region.scrollWidth);
+    setFade((was) => (was.left === next.left && was.right === next.right ? was : next));
+  };
+  const focus = (nodes.find((node) => node.kind === "need") ?? nodes.find((node) => node.kind === "flight"))?.ticket;
+  const focusX = useRef(focus == null ? null : graph.at.get(focus)!.x);
+  useEffect(() => {
+    const region = scroller.current;
+    if (region == null) return;
+    const read = () => {
+      const x = focusX.current;
+      if (x != null && region.clientWidth > 0) {
+        focusX.current = null;
+        if (x + CARD_W > region.scrollLeft + region.clientWidth) region.scrollLeft = Math.max(0, x - FOCUS_INSET);
+      }
+      readFade();
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(region);
+    return () => observer.disconnect();
+  }, []);
+  const fades = `${fade.left ? " fade-l" : ""}${fade.right ? " fade-r" : ""}`;
   return (
-    <section aria-label="Dependency graph" className="mt-5 border border-rule bg-paper px-[18px] pb-5 pt-[18px]">
-      <Legend />
-      <div role="region" aria-label="Story graph, scrolls sideways when wide" tabIndex={0} className="overflow-x-auto overscroll-x-contain pb-1.5">
+    <section aria-label="Dependency graph" className="story-graph mt-5 border border-rule bg-paper px-[18px] pb-5 pt-[18px]">
+      <div className="story-wide">
+        <Legend />
+      </div>
+      <div
+        ref={scroller}
+        role="region"
+        aria-label="Story graph, scrolls sideways when wide"
+        tabIndex={0}
+        onScroll={readFade}
+        className={`story-wide story-scroll overflow-x-auto overscroll-x-contain pb-1.5${fades}`}
+      >
         <div className="relative" style={{ width: graph.width, height: graph.height }}>
           <svg
             aria-hidden="true"
@@ -121,11 +181,12 @@ export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }
           </svg>
           {graph.columns.flat().map((node) => {
             const { x, y } = graph.at.get(node.ticket)!;
-            return <NodeCard key={node.ticket} node={node} base={base} x={x} y={y} />;
+            return <NodeCard key={node.ticket} node={node} base={base} className="absolute block overflow-hidden [&>article]:h-full" style={{ left: x, top: y, width: CARD_W, height: CARD_H }} />;
           })}
         </div>
       </div>
-      <p data-graph-key className="mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-2 font-mono text-[12px] leading-[1.4] text-ink-3">
+      <Steps columns={graph.columns} base={base} />
+      <p data-graph-key className="story-wide mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-2 font-mono text-[12px] leading-[1.4] text-ink-3">
         <span className="inline-flex items-center gap-2">
           <svg width={34} height={10} viewBox="0 0 34 10" aria-hidden="true" fill="none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="stroke-edge">
             <path d="M1 5h31M26 1l6 4-6 4" />

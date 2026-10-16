@@ -10,7 +10,7 @@ async function shot(page: Page, name: string) {
 
 async function openGraph(page: Page) {
   await page.goto("/next.html#/stories/demo/DEMO-12");
-  await expect(page.locator("[data-card]")).toHaveCount(6);
+  await expect(page.getByRole("region", { name: "Story graph, scrolls sideways when wide" }).locator("[data-card]")).toHaveCount(6);
   await expect(page.locator('[data-edges="open"] path')).toHaveCount(4);
   return page.getByRole("region", { name: "Story graph, scrolls sideways when wide" });
 }

@@ -42,7 +42,8 @@ const demo12 = (overrides: Record<string, Partial<StoryNode>> = {}): StoryNode[]
 
 const edgesIn = (group: "dim" | "open") =>
   Array.from(document.querySelectorAll(`[data-edges="${group}"] path`), (path) => path.getAttribute("data-edge"));
-const cardOf = (ticket: string) => document.querySelector(`[data-node="${ticket}"]`)!;
+const GRAPH = '[role="region"]';
+const cardOf = (ticket: string) => document.querySelector(`${GRAPH} [data-node="${ticket}"]`)!;
 
 afterEach(() => {
   cleanup();
@@ -51,7 +52,7 @@ afterEach(() => {
 
 test("DEMO-12's graph draws six cards and four arrows, faint only where both ends merged", () => {
   const { unmount } = render(<StoryGraph nodes={demo12()} base={SEEDED_BASE} />);
-  expect(document.querySelectorAll("[data-card]").length).toBe(6);
+  expect(document.querySelectorAll(`${GRAPH} [data-card]`).length).toBe(6);
   expect(edgesIn("open").length).toBe(4);
   expect(edgesIn("dim")).toEqual([]);
   const one = cardOf("DEMO-1");
@@ -102,6 +103,6 @@ test("the story page holds the graph's legend, its focusable scroll region and i
   const legend = screen.getByRole("list", { name: "Card states" });
   expect(legend.querySelectorAll('[role="listitem"]').length).toBe(7);
   expect(screen.getByRole("region", { name: "Story graph, scrolls sideways when wide" }).getAttribute("tabindex")).toBe("0");
-  expect(Array.from(document.querySelectorAll("[data-node]"), (card) => card.getAttribute("data-node"))).toEqual(["KO-12", "KO-13"]);
+  expect(Array.from(document.querySelectorAll(`${GRAPH} [data-node]`), (card) => card.getAttribute("data-node"))).toEqual(["KO-12", "KO-13"]);
   expect(document.querySelector("[data-graph-key]")?.textContent).toContain("the ticket at the arrow waits on the one it comes from");
 });

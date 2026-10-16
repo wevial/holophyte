@@ -2,6 +2,7 @@ import { useContext } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { StateDot } from "../components/StateDot";
 import { StoryGraph } from "../components/StoryGraph";
+import { StoryNotes } from "../components/StoryNotes";
 import { useReadiness, useStory } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { KIND_ORDER, storyNodes, storyState, type NodeKind, type StoryNode } from "../story";
@@ -88,7 +89,8 @@ export function Story() {
           <section aria-labelledby="page-title">
             <Header project={project} storyKey={key} title={story.title} nodes={nodes} />
           </section>
-          <StoryGraph nodes={nodes} base={host.base} />
+          <StoryGraph key={key} nodes={nodes} base={host.base} />
+          <StoryNotes story={story} now={peers.now} />
         </>
       )}
       {missing && <Missing project={project} storyKey={key} />}
