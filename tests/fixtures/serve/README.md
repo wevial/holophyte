@@ -25,7 +25,8 @@ the store's migration row, whose build, pid and command become `BUILD`,
 round, round ledger row and advisory, and its one pending follow-up.
 `board.json` pins its `/board`, a store-mirror board with no backlog column.
 `ticket.json` pins its `/tickets/KO-8`: the unestimated ticket, claimed at
-its current revision, with one posted note.
+its current revision, with one posted note, its one run and one amendment
+steered before that run claimed it.
 `run-turns.json` pins its `/runs/N/turns` for the reviewed run once it
 has recorded an implement session and turn and a fallback review turn,
 recorded after the other answers are read; every turn `id` becomes 1.
