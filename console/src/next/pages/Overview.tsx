@@ -121,7 +121,7 @@ export function Overview() {
     card.current?.focus();
   };
   return (
-    <div className="flex flex-col gap-8 px-8 py-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:grid min-[1600px]:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px] min-[1600px]:gap-x-[36px] min-[1600px]:gap-y-[32px]">
+    <div className="flex flex-col gap-8 px-8 py-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:grid min-[1600px]:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px] min-[1600px]:grid-rows-[auto_1fr] min-[1600px]:gap-x-[36px] min-[1600px]:gap-y-[32px]">
       <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-8 min-[1600px]:contents">
         <div data-overview-head className="contents min-[1600px]:col-span-2 min-[1600px]:col-start-1 min-[1600px]:row-start-1 min-[1600px]:flex min-[1600px]:min-w-0 min-[1600px]:flex-col min-[1600px]:gap-8">
         {view.answered && (

@@ -236,7 +236,7 @@ const LAYOUT = /^(grid|col-|row-|contents$|@container|w-\[)/;
 test("from 1600 px the Overview is the board's three-track grid, the header across tracks 1-2 and the sticky log in track 3", async () => {
   await mount("#/", busy);
   const root = overviewRoot();
-  for (const name of ["grid", "grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px]", "gap-x-[36px]", "gap-y-[32px]"]) {
+  for (const name of ["grid", "grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px]", "grid-rows-[auto_1fr]", "gap-x-[36px]", "gap-y-[32px]"]) {
     expect(classes(root)).toContain(WIDE + name);
   }
   expect(classes(root)).toContain("min-[1200px]:items-start");
