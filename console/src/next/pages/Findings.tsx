@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CleanReviewLine, FindingRow } from "../components/FindingRow";
 import { StateDot } from "../components/StateDot";
-import { useFindingsPage, type FindingsPage, type Idle, type OpenFinding } from "../findings";
+import { useFindingsPage, type FindingRowView, type FindingsPage, type Idle, type OpenFinding } from "../findings";
 import { storeScope } from "../projects";
 import type { State } from "../state";
 
@@ -52,7 +52,8 @@ function verdictOf(page: FindingsPage): { sentence: string; state: State } {
   return { sentence: openSentence(page.open) + drafts, state };
 }
 
-function Group({ label, count, empty, children }: { label: string; count: number; empty: string; children: ReactNode }) {
+function Group({ label, empty, rows }: { label: string; empty: string; rows: ReactNode[] }) {
+  const count = rows.length;
   return (
     <section aria-label={label} className="flex flex-col gap-3 px-5 py-4">
       <h2 className="flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
@@ -60,7 +61,7 @@ function Group({ label, count, empty, children }: { label: string; count: number
         {count > 0 && <span data-count className="text-ink">{String(count).padStart(2, "0")}</span>}
         <span aria-hidden="true" className="h-px flex-1 bg-rule-2" />
       </h2>
-      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : <ul>{children}</ul>}
+      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : <ul>{rows}</ul>}
     </section>
   );
 }
@@ -74,29 +75,14 @@ export function Findings() {
   const { project } = page;
   const where = project == null ? "" : ` in ${project}`;
   const verdict = verdictOf(page);
-  const showProject = project == null;
+  const findingRows = (list: { row: FindingRowView }[], quiet = false) =>
+    list.map(({ row }) => <FindingRow key={row.key} row={row} showProject={project == null} quiet={quiet} />);
   const groups = [
-    {
-      label: "Open",
-      count: page.open.length,
-      empty: `Nothing open${where}.`,
-      rows: page.open.map(({ row }) => <FindingRow key={row.key} row={row} showProject={showProject} />),
-    },
-    {
-      label: "Follow-ups",
-      count: page.followUps.length,
-      empty: `No follow-ups${where}.`,
-      rows: page.followUps.map(({ row }) => <FindingRow key={row.key} row={row} showProject={showProject} />),
-    },
-    {
-      label: "Settled this week",
-      count: page.settled.length,
-      empty: `Nothing settled${where} this week.`,
-      rows: page.settled.map(({ row }) => <FindingRow key={row.key} row={row} showProject={showProject} quiet />),
-    },
+    { label: "Open", empty: `Nothing open${where}.`, rows: findingRows(page.open) },
+    { label: "Follow-ups", empty: `No follow-ups${where}.`, rows: findingRows(page.followUps) },
+    { label: "Settled this week", empty: `Nothing settled${where} this week.`, rows: findingRows(page.settled, true) },
     {
       label: "Clean reviews",
-      count: page.clean.length,
       empty: `No clean reviews${where} this week.`,
       rows: page.clean.map((clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
     },
@@ -140,10 +126,8 @@ export function Findings() {
       </header>
       {page.answered && (
         <div className="flex flex-col gap-2 border border-rule bg-paper py-2">
-          {groups.map(({ rows, ...group }) => (
-            <Group key={group.label} {...group}>
-              {rows}
-            </Group>
+          {groups.map((group) => (
+            <Group key={group.label} {...group} />
           ))}
         </div>
       )}

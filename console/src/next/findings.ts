@@ -194,25 +194,24 @@ function followUpFate(row: FollowUpRow, run: FindingsRun | undefined): RowFate {
   }
 }
 
-/** The bold lead, else the text's first sentence. */
-function titleOf(title: string | null, text: string): string {
-  if (title != null) return title;
-  const sentence = /^[\s\S]*?[.!?](?=\s|$)/.exec(text.trim());
-  return (sentence?.[0] ?? text).trim();
+/** The bold lead, else the text's first sentence, over the text. */
+function titled(message: string): { title: string; text: string } {
+  const { title, body } = findingParts(message);
+  if (title != null) return { title, text: body };
+  const sentence = /^[\s\S]*?[.!?](?=\s|$)/.exec(body.trim());
+  return { title: (sentence?.[0] ?? body).trim(), text: body };
 }
 
 const placeOf = (path: string, line: number | null | undefined) => (line == null ? path : `${path}:${line}`);
 
 function findingRow(project: string, base: string, run: FindingsRun, found: Entry, fate: RowFate): FindingRowView {
   const { finding } = found.entry;
-  const parts = findingParts(finding.message);
   const path = findingPath(finding);
   return {
     key: `${base} ${run.run} ${findingKey(finding)}`,
     severity: severityOf(finding),
     tag: finding.criterion ? { text: finding.criterion, filled: false } : null,
-    title: titleOf(parts.title, parts.body),
-    text: parts.body,
+    ...titled(finding.message),
     project,
     path,
     place: `${placeOf(path, finding.line)} · ${run.ticket} · round ${found.round}`,
@@ -230,13 +229,11 @@ function sourceOf(row: FollowUpRow, run: FindingsRun | undefined): Finding | und
 
 function followUpRow(project: string, base: string, row: FollowUpRow, run: FindingsRun | undefined): FindingRowView {
   const source = sourceOf(row, run);
-  const parts = findingParts(row.text);
   return {
     key: `${base} follow-up ${row.id}`,
     severity: source == null ? null : severityOf(source),
     tag: { text: row.kind, filled: true },
-    title: titleOf(parts.title, parts.body),
-    text: parts.body,
+    ...titled(row.text),
     project,
     path: row.path,
     place: row.path == null ? row.ticket : `${placeOf(row.path, row.line)} · ${row.ticket}`,
@@ -246,14 +243,12 @@ function followUpRow(project: string, base: string, row: FollowUpRow, run: Findi
 }
 
 function advisoryRow(project: string, base: string, run: FindingsRun, advisory: AdvisoryFinding, index: number): FindingRowView {
-  const parts = findingParts(advisory.message);
   const pr = run.pr_url ? `${prLabel(run.pr_url)} · ` : "";
   return {
     key: `${base} ${run.run} advisory ${index}`,
     severity: null,
     tag: { text: "bot thread", filled: true },
-    title: titleOf(parts.title, parts.body),
-    text: parts.body,
+    ...titled(advisory.message),
     project,
     path: null,
     place: `${pr}${run.ticket} · advisory`,
