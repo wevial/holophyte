@@ -78,7 +78,7 @@ class ImageFetchTests(unittest.TestCase):
             return "".join(
                 f'<p><a href="{html.escape(url)}"><img src="{self.base}/camo/'
                 f'{urllib.parse.quote(url, safe="")}" alt="{html.escape(alt)}"'
-                f' data-canonical-src="{html.escape(url)}"'
+                f' data-canonical-src="{html.escape(html.unescape(url))}"'
                 ' style="max-width: 100%;"></a></p>'
                 for alt, url in re.findall(r"!\[([^\]]*)\]\(([^)\s]+)\)", self.body))
 
@@ -139,12 +139,37 @@ class ImageFetchTests(unittest.TestCase):
 
     def test_a_refused_relink_records_only_the_skip(self):
         url = f"{self.base}/full.png"
-        self.fake_github(f"![screen]({url})\n")
+        for refused in (1, 2):
+            with self.subTest(refused=refused):
+                self.fake_github(f"![screen]({url})\n")
+                self.serve(lambda canonical: CUT)
+                edit = image_fetch.github.edit_pr_body.side_effect
+
+                def refuse(target, pull, body, edit=edit, refused=refused):
+                    if len(self.writes) + 1 == refused:
+                        raise InfraFailure("gh pr edit failed")
+                    edit(target, pull, body)
+
+                image_fetch.github.edit_pr_body.side_effect = refuse
+                self.assertEqual(image_fetch.check(PROJECT, PULL, self.body),
+                                 ["image fetch check skipped: gh pr edit failed"])
+                self.assertEqual(len(self.writes), refused - 1)
+
+    def test_each_image_moves_one_version_per_relink(self):
+        url = f"{self.base}/full.png"
+        self.fake_github(f"![a]({url}) ![b]({url}?v=2)\n")
         self.serve(lambda canonical: CUT)
-        image_fetch.github.edit_pr_body.side_effect = InfraFailure("gh pr edit failed")
-        self.assertEqual(image_fetch.check(PROJECT, PULL, self.body),
-                         ["image fetch check skipped: gh pr edit failed"])
-        self.assertEqual(self.body, f"![screen]({url})\n")
+        image_fetch.check(PROJECT, PULL, self.body)
+        self.assertEqual(self.writes, [f"![a]({url}?v=2) ![b]({url}?v=3)\n",
+                                       f"![a]({url}?v=3) ![b]({url}?v=4)\n"])
+
+    def test_an_entity_escaped_url_is_relinked_in_its_own_encoding(self):
+        url = f"{self.base}/full.png?a=1&amp;b=2"
+        self.fake_github(f"![screen]({url})\n")
+        self.serve(lambda canonical: FULL if "v=" in canonical else CUT)
+        lines = image_fetch.check(PROJECT, PULL, self.body)
+        self.assertEqual(self.writes, [f"![screen]({url}&amp;v=2)\n"])
+        self.assertEqual(len(lines), 1)
 
 
 if __name__ == "__main__":

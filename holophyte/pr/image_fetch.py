@@ -72,8 +72,25 @@ def check(target, pull, body):
     try:
         _relink_short(target, pull, lines)
     except (InfraFailure, OSError, http.client.HTTPException, ValueError) as e:
-        lines.append(f"image fetch check skipped: {e}")
+        return [f"image fetch check skipped: {e}"]
     return lines
+
+
+def _relinked_body(body, urls):
+    forms = {}
+    for url in urls:
+        new = relinked(url)
+        forms[url.replace("&", "&amp;")] = (url, new.replace("&", "&amp;"))
+        forms[url] = (url, new)
+    done = set()
+
+    def swap(match):
+        url, new = forms[match[0]]
+        done.add(url)
+        return new
+
+    pattern = "|".join(map(re.escape, sorted(forms, key=len, reverse=True)))
+    return re.sub(f"(?:{pattern})" + r"(?=[)\s\"'>]|\Z)", swap, body), done
 
 
 def _relink_short(target, pull, lines):
@@ -95,17 +112,12 @@ def _relink_short(target, pull, lines):
                          for url, (served, full) in short.items())
             return
         endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
-        written = github.rest(target, pull, "GET", endpoint)["body"] or ""
-        watched, relinks = set(), []
-        for url, (served, full) in short.items():
-            new, before = relinked(url), written
-            written = re.sub(re.escape(url) + r"(?=[)\s\"'>]|\Z)",
-                             lambda _: new, written)
-            if written != before:
-                watched.add(new)
-                relinks.append(f"GitHub's image proxy served {served} of {full}"
-                               f" bytes for {url}; re-linked as {new}")
-        if not watched:
+        written, done = _relinked_body(
+            github.rest(target, pull, "GET", endpoint)["body"] or "", short)
+        if not done:
             return
         github.edit_pr_body(target, pull, written)
-        lines.extend(relinks)
+        watched = {relinked(url) for url in done}
+        lines.extend(f"GitHub's image proxy served {short[url][0]} of"
+                     f" {short[url][1]} bytes for {url}; re-linked as"
+                     f" {relinked(url)}" for url in sorted(done))
