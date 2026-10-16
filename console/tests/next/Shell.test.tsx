@@ -54,6 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   window.location.hash = "";
   device.prefersColorScheme = "light";
 });
