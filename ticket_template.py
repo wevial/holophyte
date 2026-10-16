@@ -55,7 +55,7 @@ LIST_ITEM_RE = re.compile(rf"^(?:{BULLET}|\d+[.)])\s+(.*)$")
 # Linear rewrites "**What:**" as "**What: **" on every body patch.
 BOLD_KEY_RE = re.compile(
     r"^(?:\*\*)?(What|Why|How|UI change|Blast radius):(?:[ \t]*\*\*)?\s*(.*)$")
-UI_CHANGE_VALUES = ("major", "minor")
+UI_CHANGE_VALUES = ("major", "minor", "none")
 BLAST_RADIUS_VALUES = ("high", "medium")
 MOCKUP_URL_RE = re.compile(
     r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
@@ -64,6 +64,10 @@ URL_TOKEN_RE = re.compile(r"(?<![\w+.-])[A-Za-z][\w+.-]*:[^\s*`>)\]\"']\S*")
 MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
 MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
 APPROVED_RE = re.compile(r"^(?:[-*+]\s+)?Approved \d{4}-\d{2}-\d{2}:\s*\S")
+EVIDENCE_OUTPUT_RE = re.compile(
+    r"\b(?:(?:tests?|command)\s+(?:file['’]s\s+)?output|output\s+of|terminal|"
+    r"vitest|unittest|pytest|stdout|exit\s+code|(?:passing|failing)\s+tests?|"
+    r"tests?\s+(?:passing|failing))\b", re.I)
 EVIDENCE_STATES_FOR_MOCKUP = 3
 ESTIMATE_RE = re.compile(r"^Estimate:\s*(\d+)\s*min\s*·\s*Depends on:\s*(.+)$")
 ORCHESTRATION_RE = re.compile(r"^Orchestration:\s*(.*?)\s*$")
@@ -576,7 +580,8 @@ def _schema_version_advisories(t):
 def _ui_change_problems(t):
     if t.ui_change is None or t.ui_change.lower() in UI_CHANGE_VALUES:
         return []
-    return [f"'**UI change:**' must read major or minor, not {t.ui_change!r}"]
+    return [f"'**UI change:**' must read major, minor or none, "
+            f"not {t.ui_change!r}"]
 
 
 def _blast_radius_problems(t):
@@ -796,11 +801,16 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
     if "Reproduce" in t.order and not t.reproduce:
         p.append("'Reproduce' is empty; give the steps and where the "
                  "behaviour was seen, or omit the section")
-    if "Evidence" in t.order and not t.evidence_states:
+    if ("Evidence" in t.order and not t.evidence_states
+            and (t.ui_change or "").lower() != "none"):
         p.append("'Evidence' is empty; list states or omit the section")
     for index, state in enumerate(t.evidence_states, 1):
         if not state:
             p.append(f"Evidence state #{index} is empty")
+        elif EVIDENCE_OUTPUT_RE.search(state):
+            p.append(f"Evidence state #{index} {state!r}: Evidence lists UI states "
+                     "to screenshot or record; a test's result belongs in an "
+                     "acceptance criterion.")
 
     if not t.summary:
         p.append("'Summary' is empty")
