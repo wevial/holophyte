@@ -16,7 +16,6 @@ const PARKED = new Set(["parked", "on_ci", "ready_to_merge"]);
 
 type Page = Extract<RunPage, { kind: "run" }>;
 
-/** The labels `page`'s run can be acted on with, in the order drawn. */
 function labelsOf(page: Page): string[] {
   const { run, chain } = page.detail;
   if (page.state === "paused") return [RESUME];
