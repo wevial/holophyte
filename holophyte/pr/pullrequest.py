@@ -183,7 +183,9 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
 
 def _refresh_parts(project, current, answered, review):
     parts = ["the description as it stands:\n\n" + current,
-             "what this fix answered:\n\n" + answered]
+             "what this fix answered. This round's commits answer every finding"
+             " and note below: describe the behaviour they produced, and do not"
+             " list any of them as an open gap, risk or known issue.\n\n" + answered]
     if review:
         parts.append("the review says the description is wrong:\n\n" + review)
     parts.append("Rewrite the description to explain the current behaviour and"
