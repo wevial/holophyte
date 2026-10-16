@@ -156,9 +156,8 @@ function openFate(idle: Idle | null, live: StatusRun | undefined): RowFate {
   if (idle != null) {
     return { state: "needs_you", word: "open, nobody fixing it", line: `open · ${IDLE_WORDS[idle]}, so nobody is fixing it`, tone: "ask" };
   }
-  const stage = live == null ? null : phaseLabel(live.phase);
   const round = live == null ? null : reviewRound({ phase: live.phase, round: live.round + 1, max_rounds: live.max_rounds });
-  const doing = stage == null ? "" : ` · ${stage}${round == null ? "" : `, ${round}`}`;
+  const doing = live == null ? "" : ` · ${phaseLabel(live.phase)}${round == null ? "" : `, ${round}`}`;
   return { state: "running", word: "being fixed", line: `being fixed${doing}`, tone: "live" };
 }
 
@@ -169,8 +168,7 @@ function settledFate(found: Entry, merged: boolean): RowFate {
     return { state: "failed", word: "declined", line: reason === "" ? "declined" : `declined · ${reason}`, tone: "ink-2" };
   }
   if (entry.fate === "open" && merged) return { state: "needs_you", word: "merged open", line: "merged with this finding open", tone: "ink-2" };
-  const round = found.next ?? found.round + 1;
-  return { state: "ready_to_merge", word: "fixed", line: `fixed in round ${round}`, tone: "ink-2" };
+  return { state: "ready_to_merge", word: "fixed", line: `fixed in round ${found.next ?? found.round + 1}`, tone: "ink-2" };
 }
 
 function followUpFate(row: FollowUpRow, run: FindingsRun | undefined): RowFate {
