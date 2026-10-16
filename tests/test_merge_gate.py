@@ -331,6 +331,7 @@ class MergeApprovalTests(LoopFixture):
         self.assertEqual(blocked, [{"kind": "blocked", "ticket": "KO-131",
                                     "question": "merge?", "run": 1, "ticket_url": None,
                                     "asked_ms": beat, "pr_url": None,
+                                    "park_kind": "question", "pr": None,
                                     "level": "attention"}])
 
     def test_a_park_is_not_a_failure_the_loop_stops_on_or_counts(self):
