@@ -428,6 +428,7 @@ stateDiagram-v2
     squashing
     verifying
     working
+    addressing --> blocked_on_operator
     addressing --> failed
     addressing --> killed
     addressing --> paused
@@ -437,6 +438,7 @@ stateDiagram-v2
     awaiting_merge_approval --> killed
     awaiting_merge_approval --> paused
     awaiting_merge_approval --> rejected
+    blocked_on_operator --> failed
     blocked_on_operator --> working
     claimed --> awaiting_merge_approval
     claimed --> failed
@@ -483,6 +485,7 @@ stateDiagram-v2
     verifying --> killed
     verifying --> paused
     verifying --> reviewing
+    working --> blocked_on_operator
     working --> failed
     working --> killed
     working --> paused

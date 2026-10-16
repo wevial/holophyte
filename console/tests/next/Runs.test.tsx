@@ -5,10 +5,17 @@ process.env.TZ = "America/Los_Angeles";
 
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { createHashHistory, createRootRoute, createRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import type { Attention, HistoryRow, Status } from "../../src/lib/contract.gen";
+import type { HostRecord } from "../../src/lib/hosts";
 import type { Fetch } from "../../src/lib/poll";
+import type { PeersState } from "../../src/hooks/usePeers";
 import { consoleQueryClient } from "../../src/next/fleet";
+import { RunTable } from "../../src/next/components/RunTable";
+import type { ContractBodies } from "../../src/next/fleet";
+import type { RunRow } from "../../src/next/history";
 import { NextConsole } from "../../src/next/router";
+import { PeersContext } from "../../src/next/scope";
 import ready from "../../../tests/fixtures/serve/run-merge-ready.json";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
@@ -99,10 +106,45 @@ test("Runs lists every host's runs since yesterday newest start first, each name
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["12", "40", "9"]);
   const [first, failed, merged] = rows();
   expect(runLink(first!).getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
-  expect(runLink(first!).getAttribute("href")).toBe(`/?classic#run=12&daemon=${encodeURIComponent(DEMO)}`);
+  expect(runLink(first!).getAttribute("href")).toEndWith("#/runs/demo/12");
+
   expect(within(failed!).getByRole("img").getAttribute("aria-label")).toBe("failed");
   expect(cells(merged!)).toContain("yest 21:05");
   expect(within(merged!).getByRole("img").getAttribute("aria-label")).toBe("merged");
+});
+
+test("a Runs row opens its run's Run page on its own project", async () => {
+  const writer7 = run({ id: 7, ticket: "WRITER-7", title: "Name the writer", started_ms: today(17, 0) });
+  await mount("#/runs", fleet([demo12], [writer7]));
+  const row = rows().find((each) => each.getAttribute("data-run") === "7")!;
+  expect(runLink(row).getAttribute("href")).toEndWith("#/runs/writer/7");
+  await act(async () => void fireEvent.click(runLink(row)));
+  await act(settle);
+  expect(window.location.hash).toBe("#/runs/writer/7");
+});
+
+test("a Runs row whose host has not answered /status keeps the classic run link", async () => {
+  const silent: HostRecord<ContractBodies> = {
+    key: "writer-host:7711", address: "writer-host:7711", base: WRITER, label: "writer-host:7711", project: null,
+    status: null, attention: null, polled_ms: NOW, seen_ms: null, error: "connection refused", needs_token: false,
+  };
+  const row: RunRow = {
+    ...run({ id: 7, ticket: "WRITER-7", title: "Name the writer", started_ms: today(17, 0) }),
+    base: WRITER, project: "writer", state: "running", seen_ms: null, thresholds: working.thresholds, stage: "reviewing",
+  };
+  const peers: PeersState<ContractBodies> = { hosts: [silent], polledAgo: 0, polls: 1, now: NOW };
+  const root = createRootRoute({
+    component: () => (
+      <PeersContext.Provider value={peers}>
+        <RunTable rows={[row]} now={NOW} empty="" />
+      </PeersContext.Provider>
+    ),
+  });
+  const page = createRoute({ getParentRoute: () => root, path: "/runs/$project/$run" });
+  window.location.hash = "#/";
+  render(<RouterProvider router={createRouter({ routeTree: root.addChildren([page]), history: createHashHistory() })} />);
+  await act(settle);
+  expect(runLink(rows()[0]!).getAttribute("href")).toBe(`/?classic#run=7&daemon=${encodeURIComponent(WRITER)}`);
 });
 
 test("a scoped Runs lists only that project's runs, with a dash for no rounds or pull request", async () => {

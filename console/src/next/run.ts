@@ -1,6 +1,7 @@
 import { useContext } from "react";
-import { describe, needsYouEntries } from "../lib/attention";
-import type { RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
+import { describe, needsYouEntries, type Fact } from "../lib/attention";
+import type { ConsoleAsk, RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
+import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
 import { hostItems, sinceSeen } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
@@ -8,8 +9,9 @@ import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import { failureWord } from "./history";
-import { useReadiness, useRun } from "./queries";
-import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { progressLines, type ProgressLine } from "./progress";
+import { useReadiness, useRun, useRunAsks } from "./queries";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State } from "./state";
 
 export type RunPage =
@@ -18,17 +20,53 @@ export type RunPage =
   | { kind: "not_found" }
   | {
       kind: "run";
+      /** The base of the host that serves the run. */
+      base: string;
       detail: RunDetail;
       state: State;
       /** The run's agent clock and its box, both null when the daemon gave none. */
       agentMs: number | null;
       boxMs: number | null;
       labels: RouteLabels | null;
+      /** What its `pr_open` item says of its pull request; null with no such item. */
+      prFacts: Fact[] | null;
       sentence: string;
       stage: { label: string; sub: string | null };
+      progress: ProgressLine[];
+      asks: ConsoleAsk[];
+      agentState: string;
+      /** Whether the run is still under way, so its Progress may grow. */
+      live: boolean;
     };
 
+export function agentState(run: { phase: string; outcome: string | null; round: number }): string {
+  if (run.outcome != null || ["done", "failed", "killed", "rejected", "paused"].includes(run.phase)) return "stopped with the run";
+  if (run.phase === "verifying") return "idle while verify runs";
+  if (run.phase === "reviewing") return `idle until review round ${run.round + 1} returns`;
+  if (run.phase === "awaiting_merge_approval") return "idle while the pull request waits";
+  return "working";
+}
+
+/** Run `id`'s page, on the project at path `project`, as a `Link` target
+ *  that keeps the sidebar's scope. */
+export function runPage(project: string, id: number) {
+  return { to: "/runs/$project/$run", params: { project: projectName(project), run: String(id) }, search: keepScope } as const;
+}
+
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
+
+export function criteriaClause(criteria: RunCriterion[]): string {
+  if (!criteria.length) return "";
+  const met = criteria.filter((criterion) => criterion.status === "met").length;
+  const total = numberWord(criteria.length);
+  const noun = criteria.length === 1 ? "criterion is" : "criteria are";
+  if (met === criteria.length) return `All ${total} ${noun} met.`;
+  if (met === 0) return `None of ${total} ${criteria.length === 1 ? "criterion" : "criteria"} is met yet.`;
+  return `${capital(numberWord(met))} of ${total} ${noun} met.`;
+}
 
 function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n", 1)[0] ?? "").trim() : "";
@@ -123,11 +161,12 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const host = scopedHosts(peers.hosts, project)[0] ?? null;
   const readiness = useReadiness(host == null ? [] : [host], deps);
   const answer = useRun(host?.base ?? null, run, deps);
+  const asks = useRunAsks(host?.base ?? null, run, deps);
   if (host == null) return peers.polls > 0 ? { kind: "unknown_project" } : { kind: "loading" };
   if (run == null || (answer.error instanceof AnswerError && answer.error.status === 404)) return { kind: "not_found" };
   const status = host.contract_error ? undefined : host.status;
   const detail = answer.data;
-  if (detail == null || status == null) return { kind: "loading" };
+  if (detail == null || status == null || asks.isPending) return { kind: "loading" };
 
   const since = sinceSeen(host.seen_ms, now);
   const live = status.runs.find((each) => each.id === run) ?? null;
@@ -142,19 +181,28 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const items = hostItems(host, now).filter((item) => item.run === run);
   const item = items.find((each) => each.kind === ITEM_KIND[state]) ?? null;
   const needsYou = ASKS_YOU.has(state) || needsYouEntries(items, readiness, now).length > 0;
+  const prItem = items.find((each) => each.kind === "pr_open");
   const words = stageWords({ detail, live, phase, state, item, thresholds: status.thresholds, heartbeatMs: heartbeat ?? 0, now });
+  const criteria = ["running", "stale", "question", "on_ci", "parked", "ready_to_merge"].includes(state) ? criteriaClause(detail.criteria) : "";
+  const sentence = [words.sentence, criteria].filter(Boolean).join(" ");
   const loopsBack = detail.rounds.filter((round) => round.verdict === "changes_requested").length;
   return {
     kind: "run",
+    base: host.base,
     detail,
     state,
     agentMs: live == null ? agentMs(detail.run) : agentMs(live, since),
     boxMs: live?.time_box_ms ?? detail.run.time_box_ms,
     labels: status.route_labels,
-    sentence: needsYou ? words.sentence : `${words.sentence} Nothing needs you.`,
+    prFacts: prItem == null ? null : (describe(prItem, status.thresholds, { now }).facts ?? []),
+    sentence: needsYou ? sentence : `${sentence} Nothing needs you.`,
     stage: {
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
     },
+    asks: asks.data?.asks ?? [],
+    agentState: agentState({ ...detail.run, phase, round: live?.round ?? detail.rounds.length }),
+    progress: progressLines(detail, asks.data?.asks ?? [], now),
+    live: detail.run.outcome == null,
   };
 }

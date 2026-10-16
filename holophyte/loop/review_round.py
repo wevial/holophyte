@@ -13,7 +13,7 @@ from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
-from holophyte.loop import witness_turns
+from holophyte.loop import contradiction, witness_turns
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.gates import (
     InfraFailure,
@@ -337,11 +337,13 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
             without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap)
-        boundary(conn, run_id, "verifying", rnd=rnd + 1)
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                f"Reviewer findings:\n{verdict}\n\n"
                f"Implementer response:\n{fixes}", provider)
+        contradiction.park(conn, run_id, provider, task_id, wt, "fix", fixes,
+                           timed_out)
+        boundary(conn, run_id, "verifying", rnd=rnd + 1)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
         if timed_out or (head == sha and capture_spec_digest(
                 project, wt, task_id, states) == spec):
