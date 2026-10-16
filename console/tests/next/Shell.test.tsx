@@ -136,6 +136,27 @@ test("folded or not, Classic console reaches the classic view when storage refus
   }
 });
 
+test("the sidebar sits on its own ground with a rule beside the main area, which keeps the page's ground", async () => {
+  await mount("#/");
+  const sidebar = screen.getByRole("complementary", { name: "Console" }).classList;
+  expect(sidebar.contains("bg-paper-2")).toBe(true);
+  expect(sidebar.contains("border-r")).toBe(true);
+  expect(sidebar.contains("border-rule")).toBe(true);
+  expect(screen.getByRole("main").classList.contains("bg-paper-2")).toBe(false);
+});
+
+test("Classic console is a bordered button-sized link to the root, labelled unfolded and named folded", async () => {
+  await mount("#/");
+  for (const fold of [false, true]) {
+    if (fold) fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    const link = screen.getByRole("link", { name: "Classic console" });
+    expect(link.classList.contains("border")).toBe(true);
+    expect(link.classList.contains("min-h-11")).toBe(true);
+    expect(new URL(link.getAttribute("href")!, "http://console.test/next.html").pathname).toBe("/");
+    expect(link.textContent).toBe(fold ? "" : "Classic console");
+  }
+});
+
 test("the fold button folds the sidebar to icons, keeps link names and survives a remount and failing storage", async () => {
   await mount("#/");
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
