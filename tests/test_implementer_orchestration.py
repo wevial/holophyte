@@ -66,7 +66,15 @@ TODAYS_BRIEF = (
     "If the ticket reports a defect and a test built from the real data "
     "shape passes on the unchanged code, the defect did not reproduce: "
     "commit the test(s) only, change no other code, and end your reply with "
-    "exactly this line:\nOUTCOME: NOT_REPRODUCED")
+    "exactly this line:\nOUTCOME: NOT_REPRODUCED\n\n"
+    "When an acceptance criterion cannot be met as written (the data or "
+    "contract it names lacks a field, two criteria contradict each other, or "
+    "a repository pin or rule forbids it), do not substitute different "
+    "behaviour or wording, and do not write a test that asserts a substitute."
+    " Do the rest of the ticket, commit it, and end the reply with one line "
+    "per such criterion, numbered as the ticket lists its acceptance criteria"
+    " from 1, with a one-line reason naming what is missing or what "
+    "conflicts:\nCONTRADICTION: criterion N — reason")
 
 CODEX = '[agents.implementer]\nharness = "codex"\n'
 CLAUDE = '[agents.implementer]\nharness = "claude"\n'

@@ -318,6 +318,10 @@ Each module, one line:
 - `holophyte/loop/escalation.py` — a run failed on its merits on an
   implementer profile requeued once on the default implementer, its brief and
   the `ESCALATION:` choice the escalated turn declares.
+- `holophyte/loop/contradiction.py` — an acceptance criterion the implement
+  or fix turn declares unmeetable as written: the brief, the
+  `CONTRADICTION: criterion N` lines, the `contradiction` event and the park
+  on a question to the operator.
 - `holophyte/loop/trim.py` — the trim step between the implement turn and
   the first review: one turn, its commits judged by subject, file scope and
   verify.
