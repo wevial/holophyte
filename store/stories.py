@@ -144,8 +144,7 @@ def story_children(conn, story_id):
 
 
 def story_decisions(conn, story_id):
-    return [DecisionRecord(row[0], row[1], row[2], row[3],
-                           tuple(json.loads(row[4])), *row[5:])
+    return [DecisionRecord(*row[:4], tuple(json.loads(row[4])), *row[5:])
             for row in conn.execute(
                 "SELECT d.id, d.kind, t.linearIdentifier, d.question,"
                 " d.options, d.defaultOption, d.answer, d.answeredBy,"
