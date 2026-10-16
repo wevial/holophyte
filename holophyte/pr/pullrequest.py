@@ -251,7 +251,7 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
         if section is not None:
             body = github.replace_pr_evidence(body, section)
         github.edit_pr_body(project, pull, body)
-        notes = image_fetch.check(project, pull) if "![" in body else []
+        notes = image_fetch.check(project, pull, body)
     for note in notes:
         ledger(conn, run_id, task_id, "note", note, None)
     if text is not None and sha and conn is not None and run_id is not None:
@@ -347,8 +347,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
         if adopted:
             written = _adopt_evidence(project, url, text)
         pull = pr_status.parse_pr_url(url)
-        notes = (image_fetch.check(project, pull)
-                 if pull and written and "![" in written else [])
+        notes = image_fetch.check(project, pull, written) if pull else []
     if conn is not None and run_id is not None:
         for note in notes:
             store.record_event(conn, run_id, "pull_request", note)

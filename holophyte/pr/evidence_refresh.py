@@ -22,7 +22,7 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
         body = github.replace_pr_evidence(body, section)
         github.edit_pr_body(project, pull, body)
-        notes = image_fetch.check(project, pull) if "![" in body else []
+        notes = image_fetch.check(project, pull, body)
     for note in notes:
         ledger(conn, run_id, task_id, "note", note, None)
     if failure:

@@ -69,8 +69,10 @@ def _linked(body, url, new):
     return re.sub(re.escape(url) + r"(?=[)\s\"'>]|\Z)", lambda _: new, body)
 
 
-def check(target, pull):
+def check(target, pull, body):
     lines = []
+    if "![" not in (body or ""):
+        return lines
     try:
         _relink_short(target, pull, lines)
     except (InfraFailure, OSError, http.client.HTTPException, ValueError) as e:

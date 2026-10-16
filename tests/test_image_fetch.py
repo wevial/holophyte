@@ -106,7 +106,7 @@ class ImageFetchTests(unittest.TestCase):
         url = f"{self.base}/full.png"
         self.fake_github(f"## Evidence\n\n![screen]({url})\n\nLinear: KO-1\n")
         self.serve(lambda canonical: FULL if "v=" in canonical else CUT)
-        lines = image_fetch.check(PROJECT, PULL)
+        lines = image_fetch.check(PROJECT, PULL, self.body)
         self.assertEqual(self.writes,
                          [f"## Evidence\n\n![screen]({url}?v=2)\n\nLinear: KO-1\n"])
         self.assertEqual(len(lines), 1)
@@ -117,7 +117,7 @@ class ImageFetchTests(unittest.TestCase):
         url = f"{self.base}/full.png"
         self.fake_github(f"![screen]({url})\n")
         self.serve(lambda canonical: CUT)
-        lines = image_fetch.check(PROJECT, PULL)
+        lines = image_fetch.check(PROJECT, PULL, self.body)
         self.assertEqual(self.writes, [f"![screen]({url}?v=2)\n",
                                        f"![screen]({url}?v=3)\n"])
         self.assertEqual(sum("re-linked" in line for line in lines), 2)
@@ -133,7 +133,7 @@ class ImageFetchTests(unittest.TestCase):
     def test_an_unreadable_body_skips_the_check_and_writes_nothing(self):
         self.fake_github(f"![screen]({self.base}/full.png)\n")
         image_fetch.github.pull_body_html.side_effect = InfraFailure("gh api failed")
-        self.assertEqual(image_fetch.check(PROJECT, PULL),
+        self.assertEqual(image_fetch.check(PROJECT, PULL, self.body),
                          ["image fetch check skipped: gh api failed"])
         self.assertEqual(self.writes, [])
 
