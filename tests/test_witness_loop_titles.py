@@ -93,6 +93,23 @@ class LoopTitleWitnessTests(unittest.TestCase):
             "const marker = \"`\";\n" + LOOP_SPEC)
         self.assertEqual(self.findings("e2e/quoted.spec.ts", TITLE.format(360)), [])
 
+    def test_a_backtick_in_a_regex_literal_opens_no_template(self):
+        (self.root / "e2e/regex.spec.ts").write_text(
+            "const marker = /`/;\nconst half = 4 / 2;\n" + LOOP_SPEC)
+        self.assertEqual(self.findings("e2e/regex.spec.ts", TITLE.format(360)), [])
+
+    def test_a_comment_brace_inside_a_placeholder_does_not_close_it(self):
+        (self.root / "e2e/comment.spec.ts").write_text(
+            "test(`images at ${width /* } */} pixels wide`, f);\n")
+        self.assertEqual(
+            self.findings("e2e/comment.spec.ts", "images at 360 pixels wide"), [])
+
+    def test_a_title_template_nested_in_a_placeholder_is_scanned(self):
+        (self.root / "e2e/nested.spec.ts").write_text(
+            "const r = `registered ${test(`images nested at ${width}`, f)} tests`;\n")
+        self.assertEqual(
+            self.findings("e2e/nested.spec.ts", "images nested at 360"), [])
+
     def test_a_go_raw_string_spells_no_test_name(self):
         (self.root / "sample_test.go").write_text(
             "package sample\n\nconst fixture = `Test${name}`\n")

@@ -306,23 +306,43 @@ _JS_QUOTED = re.compile(r"""(['"])(?:(?!\1)[^\\\n]|\\.)*\1""")
 _JS_SKIPPED = re.compile(_JS_QUOTED.pattern + r"|//[^\n]*|/\*.*?\*/", re.S)
 
 
+_JS_REGEX = re.compile(r"/(?![/*])(?:[^/\\\n\[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+/")
+
+
+_REGEX_AFTER = frozenset("(,=:[!&|?{};")
+
+
 def _template_patterns(text):
-    patterns, i = [], 0
-    while i < len(text):
-        skipped = _JS_SKIPPED.match(text, i)
+    patterns = []
+    _code_end(text, 0, patterns, depth=None)
+    return patterns
+
+
+def _code_end(text, i, patterns, depth=1):
+    while i < len(text) and depth != 0:
+        skipped = _JS_SKIPPED.match(text, i) or (
+            text[i] == "/" and _previous_char(text, i) in _REGEX_AFTER
+            and _JS_REGEX.match(text, i))
         if skipped:
             i = skipped.end()
         elif text[i] == "`":
-            literals, i = _template_literals(text, i + 1)
+            literals, i = _template_literals(text, i + 1, patterns)
             i += 1
             if len(literals) > 1:
                 patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
         else:
+            if depth is not None:
+                depth += {"{": 1, "}": -1}.get(text[i], 0)
             i += 1
-    return patterns
+    return i
 
 
-def _template_literals(text, i):
+def _previous_char(text, i):
+    stripped = text[max(0, i - 200):i].rstrip()
+    return stripped[-1] if stripped else "("
+
+
+def _template_literals(text, i, patterns):
     literals, piece = [], []
     while i < len(text) and text[i] != "`":
         if text[i] == "\\":
@@ -331,26 +351,12 @@ def _template_literals(text, i):
         elif text.startswith("${", i):
             literals.append("".join(piece))
             piece = []
-            i = _placeholder_end(text, i + 2)
+            i = _code_end(text, i + 2, patterns)
         else:
             piece.append(text[i])
             i += 1
     literals.append("".join(piece))
     return literals, i
-
-
-def _placeholder_end(text, i):
-    depth = 1
-    while i < len(text) and depth:
-        quoted = _JS_QUOTED.match(text, i)
-        if quoted:
-            i = quoted.end()
-        elif text[i] == "`":
-            i = _template_literals(text, i + 1)[1] + 1
-        else:
-            depth += {"{": 1, "}": -1}.get(text[i], 0)
-            i += 1
-    return i
 
 
 _GO_STRING = r'"((?:[^"\\\n]|\\.)*)"'
