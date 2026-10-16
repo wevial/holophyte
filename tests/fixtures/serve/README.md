@@ -3,6 +3,8 @@ These files pin actual daemon responses from the seeded store in
 `normalize_contract` preserves nulls and all keys, replaces host/path labels
 with writer and /repo, IDs and PIDs with 1, and absolute timestamps with NOW;
 the builder freezes clocks, so durations remain meaningful and unchanged.
+The reviewed run's round recorded one criterion not met, so
+`run-detail.json` lists it in `criteria`.
 The status fixture includes an unestimated run with no recorded host or
 measured work clocks; `run-detail-unestimated.json` pins the same run
 with its estimate, host, and work clocks null.
