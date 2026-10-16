@@ -429,9 +429,8 @@ def _judged_criteria(reply, criteria, root, approved_range):
 
 
 def criteria_statuses(reply, criteria, root=None, *, approved_range=None):
-    return [{"n": n, "status": status.replace(" ", "_"), "note": note,
-             "text": criterion}
-            for n, criterion, status, note, _ in _judged_criteria(
+    return [{"n": n, "status": status.replace(" ", "_"), "note": note}
+            for n, _, status, note, _ in _judged_criteria(
                 reply, criteria, root, approved_range)]
 
 
