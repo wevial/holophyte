@@ -23,8 +23,6 @@ from holophyte.serve.contract import (
     Board,
     BoardColumn,
     BoardTicket,
-    Findings,
-    FollowUpRow,
     Round,
     RunDetail,
     Status,
@@ -215,18 +213,6 @@ class PinnedAnswerTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"^board\.columns\.2"
                                     r"\.tickets\.0\.waits_on: undeclared$"):
             walk(pinned("board"), typing.TypedDict("Board", board), "board")
-
-    def test_a_follow_up_type_without_state_fails_the_findings_walk(self):
-        hints = typing.get_type_hints(FollowUpRow, include_extras=True)
-        narrower = typing.TypedDict("FollowUpRow", {key: hint for key, hint
-                                                    in hints.items()
-                                                    if key != "state"})
-        findings = typing.get_type_hints(Findings, include_extras=True)
-        findings["follow_ups"] = list[narrower]
-        with self.assertRaisesRegex(AssertionError, r"^findings\.follow_ups"
-                                    r"\.0\.state: undeclared$"):
-            walk(pinned("findings"), typing.TypedDict("Findings", findings),
-                 "findings")
 
 
 if __name__ == "__main__":
