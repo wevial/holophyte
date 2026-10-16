@@ -82,6 +82,7 @@ def _reconcile_mirror(conn, project, provider, target=None):
                     f"Linear holds {ticket.linearIdentifier} {state};"
                     f" mirror walked {ticket.status} -> {to_status}",
                     source="supervisor", trigger=RECONCILE_TRIGGER[state])
+                _end_contradiction_park(conn, now, state)
             else:
                 line += "; no run to record the intervention against"
             story_claim.walk_closed(conn, ticket.id, ticket.linearIdentifier,
@@ -89,6 +90,14 @@ def _reconcile_mirror(conn, project, provider, target=None):
         print(line)
         if to_status == "abandoned" and target is not None:
             _retire_abandoned(target, conn, now)
+
+
+def _end_contradiction_park(conn, ticket, state):
+    if conn.execute("SELECT 1 FROM runs WHERE id = ? AND endedAt IS NULL"
+                    " AND parkKind = 'contradiction'",
+                    (ticket.lastRunId,)).fetchone():
+        store.release(conn, ticket.lastRunId, "abandoned",
+                      f"Linear holds {ticket.linearIdentifier} {state}")
 
 
 def _close_canceled(target, conn, provider, ticket_id):

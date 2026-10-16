@@ -32,6 +32,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.board  # noqa: E402 - after the sys.path insert above
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 REASON = "the pr_open facts carry only open_threads"
@@ -113,6 +114,36 @@ class RequeueAfterContradictionTests(LoopFixture):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
+
+
+class CancelAfterContradictionTests(LoopFixture):
+    """The question's third answer, cancel on the board, ends the parked run."""
+
+    def test_a_native_board_cancel_ends_the_parked_run_abandoned(self):
+        self.loop(Declare("render the parked word"), REQUEST_CHANGES)
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        ((project, revision),) = self.read(
+            "SELECT projectId, revision FROM tickets")
+
+        store.board.cancel_ticket(conn, project, "KO-131", revision,
+                                  "the criterion is dropped")
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("abandoned",)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("abandoned",)])
+
+    def test_a_linear_cancel_ends_the_parked_run_abandoned(self):
+        provider = StubProvider(a_task())
+        self.loop(Declare("render the parked word"), REQUEST_CHANGES,
+                  provider=provider)
+        provider.closed = {"KO-131": "canceled"}
+
+        self.loop(provider=provider)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("abandoned",)])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("abandoned",)])
 
 
 class FixTurnContradictionTests(LoopFixture):

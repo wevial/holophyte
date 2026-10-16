@@ -198,11 +198,11 @@ def build_parser():
              "a 'requeue' intervention on that run carrying --note and walks "
              "the ticket to ready and clears its question in one transaction; "
              "accepts in_flight or blocked_on_operator after a failed or "
-             "rejected run, or a not_reproduced park (ended abandoned, no "
-             "strike); refuses live runs, other states or outcomes and other "
-             "parks (use --approve or --babysit); refusals write nothing; "
-             "refuses a ticket relaunched twice against one failure since a "
-             "human last acted on it unless --force")
+             "rejected run, or a not_reproduced or contradiction park (ended"
+             " abandoned, no strike); refuses live runs, other states or "
+             "outcomes and other parks (use --approve or --babysit); refusals"
+             " write nothing; refuses a ticket relaunched twice against one"
+             " failure since a human last acted on it unless --force")
     modes.add_argument(
         "--approve", metavar="KEY-n",
         help="release the ticket parked awaiting merge approval: records an "
