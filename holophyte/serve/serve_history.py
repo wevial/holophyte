@@ -21,7 +21,6 @@ def history(project, query, now=None):
     now = int(time() * 1000) if now is None else now
     conn = store.read.open_readonly(project.store_path)
     try:
-        # One past the limit tells whether the list was cut.
         runs = store.read.recent_runs(conn, since, limit + 1)
     finally:
         conn.close()
