@@ -136,6 +136,8 @@ class BlockedItem(TypedDict):
     run: int | None
     asked_ms: int | None
     pr_url: str | None
+    park_kind: str | None
+    pr: PullRequestFacts | None
     level: Literal["attention"]
     project: NotRequired[str]
 
