@@ -120,6 +120,21 @@ class PullRequestRefreshTests(MergeModeFixture):
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
 
+    def test_refresh_labels_findings_and_notes_as_answered_not_open_gaps(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.pr_body.write_text("Old description.\n\nLinear: KO-131\n")
+        answered = ("1. **[P1] Readable notes remain hidden**\n"
+                    "The earlier finding remains unresolved.\n"
+                    "VERDICT: REQUEST_CHANGES")
+        prompt = self.refresh(("TITLE: Ignored\nNotes are readable.", False),
+                              answered)
+        self.assertIn(
+            "what this fix answered. This round's commits answer every finding"
+            " and note below: describe the behaviour they produced, and do not"
+            " list any of them as an open gap, risk or known issue.\n\n"
+            + answered + "\n\nRewrite the description", prompt)
+
     def captured_pr(self, exit_code=0, quoted=""):
         """Evidence at A; the capture logs its sha, then fails or writes one."""
         self.captures = (script := self.db.parent / "capture.py").with_name("log")
