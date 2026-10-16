@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ConsoleAsk, SteerNote } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 import { SECTION_LABEL } from "./Criteria";
@@ -12,11 +13,12 @@ interface Message {
   effect?: string;
 }
 
-export function AgentPanel({ label, state, notes, asks }: {
+export function AgentPanel({ label, state, notes, asks, children }: {
   label: string;
   state: string;
   notes: SteerNote[];
   asks: ConsoleAsk[];
+  children?: ReactNode;
 }) {
   const messages: Message[] = notes.map((note) => ({
     key: `note-${note.id}`,
@@ -57,6 +59,7 @@ export function AgentPanel({ label, state, notes, asks }: {
           ))}
         </ol>
       )}
+      {children}
     </aside>
   );
 }

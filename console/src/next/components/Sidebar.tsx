@@ -6,7 +6,8 @@ import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { switcherRows } from "../projects";
 import { useBoardStories, useReadiness, type ListedStory } from "../queries";
-import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
+import { FILTER_LABELS, TICKET_FILTERS, ticketView, useTicketBoard } from "../tickets";
 import {
   ChevronIcon,
   ClassicIcon,
@@ -144,6 +145,35 @@ function PageLink({
   );
 }
 
+const GROUP_LABEL = "pt-2.5 pr-4 pb-1 pl-9 font-mono text-[11px] leading-[1.3] font-medium uppercase tracking-[0.1em] text-ink-3";
+
+function ViewList() {
+  const { cards } = useTicketBoard();
+  return (
+    <>
+      <p className={GROUP_LABEL}>Views</p>
+      <ul aria-label="Views" className="ml-5 flex flex-col border-l border-rule-2">
+        {TICKET_FILTERS.map((filter) => (
+          <li key={filter}>
+            <Link
+              to="/tickets"
+              search={(previous: ScopeSearch) => ({ ...keepScope(previous), filter })}
+              activeOptions={{ exact: true, includeSearch: true }}
+              aria-label={FILTER_LABELS[filter]}
+              className="flex min-h-9 items-center justify-between gap-2 px-3 font-sans text-[13px] text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:bg-act-wash data-[status=active]:text-act"
+            >
+              <span>{FILTER_LABELS[filter]}</span>
+              <span data-count className="font-mono text-[11px] font-medium text-ink-3">
+                {cards.filter((card) => ticketView(card) === filter).length}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function StoryList({ stories }: { stories: ListedStory[] }) {
   const [hidden, setHidden] = useState(() => readFolded(STORIES_KEY));
   const toggle = () => {
@@ -151,19 +181,20 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
     writeFolded(!hidden, STORIES_KEY);
   };
   return (
-    <>
+    <div className="relative">
       <button
         type="button"
         aria-expanded={!hidden}
         aria-controls={hidden ? undefined : "sidebar-stories"}
         aria-label={hidden ? "Show the story list" : "Hide the story list"}
         onClick={toggle}
-        className="absolute top-1.5 right-2 flex size-8 items-center justify-center text-ink-3 hover:text-ink"
+        className="absolute top-0 right-2 flex size-8 items-center justify-center text-ink-3 hover:text-ink"
       >
         <span className={hidden ? "rotate-180" : "-rotate-90"}>
           <ChevronIcon folded={false} />
         </span>
       </button>
+      <p className={GROUP_LABEL}>Stories</p>
       {!hidden && (
         <ul id="sidebar-stories" aria-label="Stories" className="ml-5 flex flex-col border-l border-rule-2">
           {stories.map((story) => (
@@ -188,7 +219,7 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
           ))}
         </ul>
       )}
-    </>
+    </div>
   );
 }
 
@@ -252,8 +283,9 @@ export function Sidebar() {
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
         {PAGES.map((page) =>
           page.to === "/tickets" ? (
-            <div key={page.to} className="relative">
+            <div key={page.to}>
               <PageLink {...page} badge={badges[page.to] ?? 0} folded={folded} active={onStory} />
+              {!folded && <ViewList />}
               {!folded && stories.length > 0 && <StoryList stories={stories} />}
             </div>
           ) : (

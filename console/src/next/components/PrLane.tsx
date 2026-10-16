@@ -20,7 +20,7 @@ type Host = HostRecord<ContractBodies>;
 const ROW_GRID =
   "grid min-h-[66px] grid-cols-[70px_84px_minmax(0,1fr)_120px_128px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 transition-colors duration-(--motion-colour) hover:bg-paper-2 max-[820px]:grid-cols-[minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[minmax(0,1fr)]";
 const ROW_BUTTON =
-  "col-span-4 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]";
+  "col-span-3 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_minmax(0,1fr)]";
 const UNDER_TITLE = "max-[820px]:col-span-full @max-[720px]/ov-col:col-span-full";
 
 interface PrRow {
@@ -88,22 +88,32 @@ function PrLaneRow({
   return (
     <li data-pr-row className="border-rule-2 [&+&]:border-t">
       <div className={ROW_GRID}>
-        <button
-          type="button"
-          aria-expanded={run == null ? undefined : open}
-          aria-controls={run == null ? undefined : detailId}
-          disabled={run == null}
-          aria-label={`${label}, ${ticket} ${title}, ${facts.map((fact) => fact.label).join(" · ")}, ${word}`}
-          onClick={() => setOpen(!open)}
-          className={ROW_BUTTON}
-        >
-          <span className="whitespace-nowrap text-ink">{label}</span>
-          <span className="whitespace-nowrap text-ink-2">{ticket}</span>
-          <span className={`min-w-0 font-sans text-[14.5px] font-medium leading-[1.45] text-ink ${UNDER_TITLE}`}>{title}</span>
-          <span className={`min-w-0 ${UNDER_TITLE}`}>
-            <PrFacts facts={facts} form="line" />
-          </span>
-        </button>
+        <div className="col-span-4 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_minmax(0,1fr)]">
+          <a
+            href={item.pr_url ?? undefined}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="justify-self-start whitespace-nowrap border-b border-rule text-ink hover:border-ink hover:text-ink max-[820px]:self-start @max-[720px]/ov-col:self-start"
+          >
+            {label}
+          </a>
+          <button
+            type="button"
+            aria-expanded={run == null ? undefined : open}
+            aria-controls={run == null ? undefined : detailId}
+            disabled={run == null}
+            aria-label={`${label}, ${ticket} ${title}, ${facts.map((fact) => fact.label).join(" · ")}, ${word}`}
+            onClick={() => setOpen(!open)}
+            className={ROW_BUTTON}
+          >
+            <span className="whitespace-nowrap text-ink-2">{ticket}</span>
+            <span className="min-w-0 font-sans text-[14.5px] font-medium leading-[1.45] text-ink">{title}</span>
+            <span className={`min-w-0 ${UNDER_TITLE}`}>
+              <PrFacts facts={facts} form="line" />
+            </span>
+          </button>
+        </div>
         <span className="flex flex-col items-end gap-1 text-right max-[820px]:flex-row @max-[720px]/ov-col:flex-row max-[820px]:flex-wrap @max-[720px]/ov-col:flex-wrap max-[820px]:items-baseline @max-[720px]/ov-col:items-baseline max-[820px]:gap-x-3 @max-[720px]/ov-col:gap-x-3 max-[820px]:text-left @max-[720px]/ov-col:text-left">
           <span data-pr-state>
             <StateDot state={state} />
