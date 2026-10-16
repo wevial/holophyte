@@ -1,13 +1,15 @@
-import { useContext, useEffect, useId, useRef, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { criteriaRows } from "../../lib/criteria";
 import { formatAge } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
 import { useRun, useTicket } from "../queries";
-import { keepScope, PollDepsContext } from "../scope";
+import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
 import { STATES } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type TicketCard } from "../tickets";
+import { CardActions } from "./CardActions";
 import { Criteria, SECTION_LABEL } from "./Criteria";
+import { describeOn } from "./FocusCard";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
 
@@ -68,6 +70,42 @@ function Contract({ card }: { card: TicketCard }) {
   );
 }
 
+/** The card's Needs you ask and its primary action; once the action is
+ *  taken, the sentence the toast said until another ask stands. */
+function Ask({ card, now }: { card: TicketCard; now: number }) {
+  const { hosts } = useConsolePeers();
+  const [acted, setActed] = useState<{ id: string; ask: string | null; said: string } | null>(null);
+  const ask = card.need == null ? null : `${card.need.item.kind} ${String(card.need.item.run)}`;
+  if (acted?.id === card.id && (ask == null || ask === acted.ask)) {
+    return (
+      <p data-peek-acted className="m-0 mt-4 flex items-center gap-2 font-mono text-[12.5px] font-medium leading-[1.4] text-live">
+        <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3.5 8.4 6.6 11.5 12.5 5" />
+        </svg>
+        {acted.said}
+      </p>
+    );
+  }
+  if (card.need == null) return null;
+  const host = hosts.find((candidate) => candidate.base === card.base);
+  const description = describeOn(card.need.item, host, now);
+  return (
+    <div data-peek-ask className="mt-4 border border-rule-2 bg-need-wash px-3.5 pb-3.5 pt-3 shadow-[inset_2px_0_0_var(--need)]">
+      <div className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-need">Needs you</div>
+      <p className="m-0 mb-3 mt-1.5 break-words font-sans text-[14px] leading-[1.45] text-ink">{description.body}</p>
+      <CardActions
+        key={`${card.id} ${ask}`}
+        entry={card.need}
+        host={host}
+        actions={description.actions}
+        title={card.title}
+        only="primary"
+        onActed={(said) => setActed({ id: card.id, ask, said })}
+      />
+    </div>
+  );
+}
+
 /** A non-modal panel docked right over a live board: Tab is not trapped. */
 export function TicketPeek({
   card,
@@ -119,6 +157,7 @@ export function TicketPeek({
             <span>{head.label}</span>
           </Chip>
         </div>
+        <Ask card={card} now={now} />
         <dl className="mt-4 grid grid-cols-[96px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5">
           <Fact label="Project">{card.project}</Fact>
           <Fact label="Time box">{card.timeBoxMs == null ? "none" : <span className={NUMBER}>{formatAge(card.timeBoxMs)}</span>}</Fact>

@@ -48,7 +48,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
 }
 
 /** The runs as one table that scrolls sideways inside its own box. */
-export function RunTable({ rows, now }: { rows: RunRow[]; now: number }) {
+export function RunTable({ rows, now, empty }: { rows: RunRow[]; now: number; empty: string }) {
   return (
     <div data-run-table className="overflow-x-auto border border-rule bg-paper">
       <div className="min-w-[1000px]">
@@ -67,6 +67,7 @@ export function RunTable({ rows, now }: { rows: RunRow[]; now: number }) {
             <RunTableRow key={`${row.base} ${row.id}`} row={row} now={now} />
           ))}
         </ol>
+        {rows.length === 0 && <p className="m-0 px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
       </div>
     </div>
   );
