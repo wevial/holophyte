@@ -1,16 +1,13 @@
 import { PrFacts } from "../../components/PrFacts";
 import type { Fact } from "../../lib/attention";
+import type { RunDetail } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 import { commitLink, prLabel, shortSha } from "../../lib/shipped";
 import { SECTION_LABEL } from "./Criteria";
 
 const LINK = "text-ink underline decoration-rule underline-offset-2 hover:decoration-ink";
 
-interface Merge {
-  merge_sha: string | null;
-  commit_url: string | null;
-  ended_ms: number | null;
-}
+type Merge = Pick<RunDetail["run"], "merge_sha" | "commit_url" | "ended_ms">;
 
 /** What holds the pull request after its number: a park's facts, with
  *  "ready for your merge" once its readiness says so; a merge's sha and
