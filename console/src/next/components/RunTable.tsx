@@ -5,7 +5,7 @@ import type { RunRow } from "../history";
 import { STATES, type State } from "../state";
 import { StateDot, TONE_TEXT } from "./StateDot";
 
-const GRID = "grid grid-cols-[84px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_80px] items-start gap-3";
+const GRID = "grid grid-cols-[84px_100px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_80px] items-start gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 const NEEDS_YOU = new Set<State>(["stale", "question", "paused", "ready_to_merge"]);
@@ -33,10 +33,8 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
         className={`${GRID} border-b border-rule-2 p-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}
       >
         <span className={`${MONO} text-ink-2`}>{row.id}</span>
-        <span className="min-w-0">
-          <b className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3">{row.ticket}</b>{" "}
-          <span className={`font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
-        </span>
+        <span className="font-mono text-[12px] font-medium leading-[1.4] tabular-nums text-ink-3 [overflow-wrap:anywhere]">{row.ticket}</span>
+        <span className={`min-w-0 font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
         <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
         <span className="inline-flex items-start gap-1.5">
           <StateDot state={row.state} hideWord />
@@ -55,10 +53,11 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
 export function RunTable({ rows, now, empty }: { rows: RunRow[]; now: number; empty: string }) {
   return (
     <div data-run-table className="overflow-x-auto border border-rule bg-paper">
-      <div className="min-w-[1000px]">
+      <div className="min-w-[1100px]">
         <div aria-hidden="true" className={`${GRID} border-b border-rule px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
           <span>Run</span>
           <span>Ticket</span>
+          <span>Title</span>
           <span>Project</span>
           <span>State</span>
           <span>Rounds</span>

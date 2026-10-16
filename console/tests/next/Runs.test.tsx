@@ -74,7 +74,7 @@ async function mount(hash: string, fetchImpl: Fetch) {
 
 const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("link");
 const cells = (row: HTMLElement) => Array.from(row.children, (cell) => cell.textContent);
-const stateCells = () => rows().map((row) => cells(row)[3]);
+const stateCells = () => rows().map((row) => cells(row)[4]);
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -108,8 +108,17 @@ test("a scoped Runs lists only that project's runs, with a dash for no rounds or
   await mount("#/runs?project=demo&state=all", fleet([demo12, demo9], [writer40]));
   const [first, second] = rows();
   expect(rows()).toHaveLength(2);
-  expect(cells(first!)).toEqual(["12", "DEMO-12 Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
-  expect(cells(second!)).toEqual(["9", "DEMO-9 Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
+  expect(cells(first!)).toEqual(["12", "DEMO-12", "Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
+  expect(cells(second!)).toEqual(["9", "DEMO-9", "Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
+});
+
+test("the table heads the ticket key and the title as separate columns and fills each from its own field", async () => {
+  await mount("#/runs", fleet([run({ id: 21, ticket: "HOLO-12", title: "Fix the sweep", started_ms: today(17, 0) })], []));
+  const head = document.querySelector("[data-run-table] [aria-hidden='true']")!;
+  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "State", "Rounds", "PR", "Started", "Took"]);
+  const [row] = rows();
+  expect(cells(row!).slice(1, 3)).toEqual(["HOLO-12", "Fix the sweep"]);
+  expect(row!.getAttribute("aria-label")).toStartWith("Run 21, HOLO-12 Fix the sweep, demo,");
 });
 
 test("a host whose daemon has no /history adds no rows and no error beside one that answers", async () => {
