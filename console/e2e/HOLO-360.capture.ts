@@ -10,7 +10,7 @@ async function shot(page: Page, name: string) {
 
 async function openGraph(page: Page) {
   await page.goto("/next.html#/stories/demo/DEMO-12");
-  await expect(page.locator("[data-card]")).toHaveCount(6);
+  await expect(page.getByRole("region", { name: "Story graph, scrolls sideways when wide" }).locator("[data-card]")).toHaveCount(6);
   await expect(page.locator('[data-edges="open"] path')).toHaveCount(4);
   return page.getByRole("region", { name: "Story graph, scrolls sideways when wide" });
 }
@@ -27,8 +27,8 @@ test("01 DEMO-12's graph at 1440 by 900, dawn and night", async ({ page }) => {
   await shot(page, "02-graph-night.png");
 });
 
-test("02 the graph at 1000 px, scrolled sideways to its last column", async ({ page }) => {
-  await page.setViewportSize({ width: 1000, height: 900 });
+test("02 the graph at 1024 px, scrolled sideways to its last column", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
   await page.emulateMedia({ colorScheme: "light" });
   const region = await openGraph(page);
   expect(await region.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
@@ -36,6 +36,6 @@ test("02 the graph at 1000 px, scrolled sideways to its last column", async ({ p
     el.scrollIntoView({ block: "center" });
     el.scrollLeft = el.scrollWidth;
   });
-  await expect(page.locator('[data-node="DEMO-1"]')).toBeInViewport();
+  await expect(region.locator('[data-node="DEMO-1"]')).toBeInViewport();
   await shot(page, "03-graph-wide.png");
 });
