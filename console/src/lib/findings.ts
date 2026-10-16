@@ -129,7 +129,7 @@ export interface RoundHistory {
 // `path:line:severity`): a missing line keys at -1, and the fields join on
 // the canonical form's unit separator so a path holding ":" cannot forge
 // another finding's key.
-function findingKey(finding: Finding): string {
+export function findingKey(finding: Finding): string {
   const identity = finding.fingerprint ?? finding;
   return [identity.path, identity.line ?? -1, identity.severity].join("\x1f");
 }

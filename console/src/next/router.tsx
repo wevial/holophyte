@@ -14,6 +14,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
+import { Findings } from "./pages/Findings";
 import { validateRunsSearch } from "./history";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
@@ -47,10 +48,6 @@ function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
   return createRoute({ getParentRoute: () => rootRoute, path, component: page });
 }
 
-function placeholderRoute<TPath extends string>(path: TPath, page: Parameters<typeof Placeholder>[0]) {
-  return pageRoute(path, () => <Placeholder {...page} />);
-}
-
 function TicketPlaceholder() {
   const { key } = useParams({ from: "/tickets/$project/$key" });
   return (
@@ -68,11 +65,7 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/tickets", Tickets),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPlaceholder }),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
-  placeholderRoute("/findings", {
-    title: "Findings",
-    sentence: "Findings across runs come here. Until then, each run's findings are on its page in the classic console.",
-    classic: { href: classicHref(), label: "Open the classic console" },
-  }),
+  pageRoute("/findings", Findings),
 ]);
 
 function createConsoleRouter() {
