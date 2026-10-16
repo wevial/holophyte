@@ -409,15 +409,3 @@ body {
     display: flex;
   }
 }
-
-.story-scroll.fade-r {
-  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
-}
-
-.story-scroll.fade-l {
-  mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
-}
-
-.story-scroll.fade-l.fade-r {
-  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
-}

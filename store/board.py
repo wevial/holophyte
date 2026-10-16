@@ -141,7 +141,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
                   author="cli", now=None):
-    """Cancel as a board does; a run awaiting merge approval ends abandoned."""
+    """Cancel as a board does; a parked run with no merge ends abandoned."""
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -244,7 +244,8 @@ def _refuse_merged_park(conn, ticket_id, identifier):
     row = conn.execute(
         "SELECT r.id FROM tickets t JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.id = ? AND r.endedAt IS NULL"
-        " AND r.phase = 'blocked_on_operator'", (ticket_id,)).fetchone()
+        " AND r.phase = 'blocked_on_operator'"
+        " AND r.parkKind IS NOT 'contradiction'", (ticket_id,)).fetchone()
     if row is not None:
         raise FilingRefused([
             f"{identifier}'s run {row[0]} is parked blocked_on_operator after"
@@ -255,7 +256,8 @@ def _close_parked_run(conn, ticket_id, identifier, now):
     row = conn.execute(
         "SELECT r.id, r.prUrl FROM tickets t JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.id = ? AND r.endedAt IS NULL"
-        " AND r.phase = 'awaiting_merge_approval'", (ticket_id,)).fetchone()
+        " AND (r.phase = 'awaiting_merge_approval'"
+        " OR r.parkKind = 'contradiction')", (ticket_id,)).fetchone()
     if row is None:
         return False
     run_id, url = row
