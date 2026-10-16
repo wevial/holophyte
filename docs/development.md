@@ -897,6 +897,10 @@ rewrites `project` on the current route and is kept in session storage under
 `holophyte.next.project`, so opening `/next.html` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
 
+The Run page’s `next/components/CriteriaList.tsx` shows review marks and
+witness notes, with its verdict count supplied by `criteriaClause()` in
+`next/run.ts`.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than

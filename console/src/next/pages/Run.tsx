@@ -4,6 +4,7 @@ import { Markdown } from "../../components/Markdown";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { leadParagraph } from "../../lib/ticket";
+import { CriteriaList } from "../components/CriteriaList";
 import { SECTION_LABEL } from "../components/Criteria";
 import { RunPullRequest } from "../components/RunPullRequest";
 import { StageChip } from "../components/StageChip";
@@ -149,6 +150,7 @@ export function RunPage() {
           />
         )}
         <RunTicket base={page.base} ticket={run.ticket} />
+        <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
       </div>
     </Page>
   );
