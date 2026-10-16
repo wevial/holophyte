@@ -9,7 +9,7 @@ import type { Round } from "../lib/types";
 import type { ContractBodies } from "./fleet";
 import { useFindings, weekSince } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
-import { stateOf, type State } from "./state";
+import { stateOf } from "./state";
 
 /** Why nobody is fixing an open finding: its ticket's run is stale on
  *  `/status`, or the run that raised it ended failed or paused, or no run
@@ -83,7 +83,7 @@ function idleOf(run: FindingsRun, status: Status | undefined): Idle | null {
   const live = (status?.runs ?? []).filter((each) => each.ticket === run.ticket).map((each) => stateOf({ run: each, staleMs }));
   if (live.includes("running")) return null;
   if (live.includes("stale")) return "stale";
-  const ended: State = stateOf({ run, staleMs: Infinity });
+  const ended = stateOf({ run, staleMs: Infinity });
   if (ended === "failed" || ended === "paused") return ended;
   return "not_running";
 }

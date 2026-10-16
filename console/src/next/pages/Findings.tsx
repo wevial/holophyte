@@ -50,14 +50,12 @@ function verdictOf(page: FindingsPage): { sentence: string; state: State } {
   return { sentence: openSentence(page.open) + drafts, state };
 }
 
-const twoDigits = (count: number) => String(count).padStart(2, "0");
-
 function Group({ label, count, empty }: { label: string; count: number; empty: string }) {
   return (
     <section aria-label={label} className="flex flex-col gap-3 px-5 py-4">
       <h2 className="flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
         <span>{label}</span>
-        {count > 0 && <span data-count className="text-ink">{twoDigits(count)}</span>}
+        {count > 0 && <span data-count className="text-ink">{String(count).padStart(2, "0")}</span>}
         <span aria-hidden="true" className="h-px flex-1 bg-rule-2" />
       </h2>
       {count === 0 && <p className="font-mono text-[13px] text-ink-3">{empty}</p>}
