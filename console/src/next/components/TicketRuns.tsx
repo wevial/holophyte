@@ -13,7 +13,7 @@ const CELL = "whitespace-nowrap border-b border-rule-2 p-2.5 align-top text-ink-
 const LINK = "text-ink underline-offset-2 hover:underline";
 
 /** "today 16:36", "yesterday 15:10", else "Mon Oct 12 15:10", by `now`'s day. */
-function startedLabel(ms: number, now: number): string {
+export function startedLabel(ms: number, now: number): string {
   const days = daysAgo(ms, now);
   const day = days === 0 ? "today" : days === 1 ? "yesterday" : dayLabel(ms, days);
   return `${day} ${formatClock(ms)}`;
