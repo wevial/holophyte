@@ -18,7 +18,7 @@ import { NotFound } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
 import { Runs } from "./pages/Runs";
-import { Story } from "./pages/Story";
+import { StoriesIndex, Story } from "./pages/Story";
 import { TicketPage } from "./pages/Ticket";
 import { Tickets } from "./pages/Tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
@@ -52,6 +52,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
   pageRoute("/tickets", Tickets),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
+  pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   pageRoute("/findings", Findings),
 ]);
