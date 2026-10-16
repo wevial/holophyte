@@ -9,7 +9,7 @@ import { FirstLoad, Notices } from "../components/Notices";
 import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
 import { laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
-import { firstLoadLine, noticeLines, silentHosts, staleConsole } from "../notices";
+import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
 import { useDayLedger, usePeerList } from "../queries";
 import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
@@ -151,7 +151,7 @@ export function Overview() {
             </p>
           </header>
         )}
-        {asking != null && <FirstLoad line={asking} />}
+        {asking != null && tokenWanted(everyHost).length === 0 && <FirstLoad line={asking} />}
         <Notices
           stale={staleConsole(everyHost, origin)}
           silent={silentHosts(view.hosts, view.now)}

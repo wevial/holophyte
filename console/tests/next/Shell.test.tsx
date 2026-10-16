@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { THEME_KEY } from "../../src/lib/theme";
+import { openRememberedView, VIEW_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -88,8 +89,8 @@ test("the Overview badge counts the scope's Needs you entries, as the heading do
 
 test("each page links to the classic view behind it, and an unknown route links back to Overview", async () => {
   for (const [hash, name, href] of [
-    ["#/runs", "Open Finished in the classic console", "/#view=shipped"],
-    ["#/tickets", "Open the Board in the classic console", "/#view=board"],
+    ["#/runs", "Open Finished in the classic console", "/?classic#view=shipped"],
+    ["#/tickets", "Open the Board in the classic console", "/?classic#view=board"],
   ] as const) {
     await mount(hash);
     expect((await screen.findByRole("link", { name })).getAttribute("href")).toBe(href);
@@ -98,6 +99,50 @@ test("each page links to the classic view behind it, and an unknown route links 
   await mount("#/nowhere");
   expect(await screen.findByText("There is no page here.")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);
+});
+
+test("Classic console remembers the classic view and loads the console's root", async () => {
+  localStorage.setItem(VIEW_KEY, "next");
+  location.href = "http://console.test/next.html#/runs";
+  try {
+    await mount("#/runs");
+    fireEvent.click(screen.getByRole("link", { name: "Classic console" }));
+    expect(localStorage.getItem(VIEW_KEY)).toBe("classic");
+    expect(location.pathname).toBe("/");
+  } finally {
+    location.href = "about:blank";
+  }
+});
+
+test("folded or not, Classic console reaches the classic view when storage refuses the write", async () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const stored = localStorage;
+  const full = {
+    getItem: (key: string) => stored.getItem(key),
+    setItem: () => {
+      throw new DOMException("full", "QuotaExceededError");
+    },
+  };
+  try {
+    for (const fold of [false, true]) {
+      stored.clear();
+      stored.setItem(VIEW_KEY, "next");
+      location.href = "http://console.test/next.html#/runs";
+      await mount("#/runs");
+      if (fold) fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+      Object.defineProperty(globalThis, "localStorage", { configurable: true, get: () => full });
+      fireEvent.click(screen.getByRole("link", { name: "Classic console" }));
+      expect(localStorage.getItem(VIEW_KEY)).toBe("next");
+      expect(location.pathname).toBe("/");
+      expect(openRememberedView()).toBe(false);
+      Object.defineProperty(globalThis, "localStorage", real);
+      cleanup();
+    }
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", real);
+    stored.clear();
+    location.href = "about:blank";
+  }
 });
 
 test("the fold button folds the sidebar to icons, keeps link names and survives a remount and failing storage", async () => {

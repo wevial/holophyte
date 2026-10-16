@@ -70,7 +70,7 @@ test("a lane per project in record order, each live run a row with its stage, ti
   expect(lanes()).toEqual(["demo", "writer"]);
 
   const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Count the rounds, reviewing, 16 of 25 minutes" });
-  expect(row.getAttribute("href")).toBe(`/#run=7&daemon=${encodeURIComponent(DEMO)}`);
+  expect(row.getAttribute("href")).toBe(`/?classic#run=7&daemon=${encodeURIComponent(DEMO)}`);
   expect(within(row).getByText("reviewing · round 2 of 2")).toBeTruthy();
   expect(within(row).getByText("16m / 25m")).toBeTruthy();
   expect(row.querySelector("[data-bar]")!.getAttribute("data-bar")).toBe("live");
