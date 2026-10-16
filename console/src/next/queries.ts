@@ -4,12 +4,14 @@ import type { ReadinessMap } from "../lib/attention";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
 import {
   boardSchema,
+  findingsSchema,
   ledgerSchema,
   mergeReadinessSchema,
   peersSchema,
   runDetailSchema,
   shippedSchema,
   type Board,
+  type Findings,
   type Ledger,
   type LedgerEntry,
   type Peers,
@@ -107,10 +109,10 @@ export interface DayLedger {
   entries: LedgerEntry[];
 }
 
-/** A daemon without the route answers 404: no lines, not a failure. */
-async function ledgerOrNone(fetch: Fetch, url: string): Promise<Ledger | null> {
+/** A daemon without the route answers 404: no answer, not a failure. */
+async function orNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
   try {
-    return await fetchRoute(fetch, url, ledgerSchema);
+    return await fetchRoute(fetch, url, schema);
   } catch (failure) {
     if (failure instanceof AnswerError && failure.status === 404) return null;
     throw failure;
@@ -125,7 +127,7 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
-      queryFn: () => ledgerOrNone(deps.fetch, `${host.base}${path}`),
+      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
     })),
@@ -139,6 +141,41 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
     .flatMap((answer) => answer.entries)
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
+}
+
+const WINDOW_DAYS = 7;
+
+/** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
+ *  days before it. */
+export function weekSince(now: number): number {
+  const day = new Date(localMidnight(now));
+  day.setDate(day.getDate() - (WINDOW_DAYS - 1));
+  return day.getTime();
+}
+
+/** Each scoped host's last good `/findings` answer for the week before
+ *  `now`, in fleet order; a host whose daemon lacks the route, or that
+ *  never answered, is left out. `answered` is whether any host settled. */
+export function useFindings<R extends HostRecord<PollBodies>>(
+  hosts: R[],
+  now: number,
+  deps: { fetch: Fetch } = defaultPollDeps,
+): { answered: boolean; answers: { host: R; findings: Findings }[] } {
+  const asked = hosts.filter((host) => host.status != null);
+  const path = `/findings?since=${weekSince(now)}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, findingsSchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const answers = asked.flatMap((host, index) => {
+    const findings = results[index]?.data;
+    return findings ? [{ host, findings }] : [];
+  });
+  return { answered: results.some((result) => result.data !== undefined), answers };
 }
 
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first
