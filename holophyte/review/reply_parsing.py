@@ -309,7 +309,9 @@ _JS_SKIPPED = re.compile(_JS_QUOTED.pattern + r"|//[^\n]*|/\*.*?\*/", re.S)
 _JS_REGEX = re.compile(r"/(?![/*])(?:[^/\\\n\[]|\\.|\[(?:[^\]\\\n]|\\.)*\])+/")
 
 
-_REGEX_AFTER = frozenset("(,=:[!&|?{};")
+_REGEX_AFTER = frozenset([*"(,=:[!&|?{};", "return", "typeof", "case", "do", "else",
+                          "in", "of", "new", "delete", "void", "throw",
+                          "instanceof", "yield", "await"])
 
 
 def _template_patterns(text):
@@ -321,7 +323,7 @@ def _template_patterns(text):
 def _code_end(text, i, patterns, depth=1):
     while i < len(text) and depth != 0:
         skipped = _JS_SKIPPED.match(text, i) or (
-            text[i] == "/" and _previous_char(text, i) in _REGEX_AFTER
+            text[i] == "/" and _previous_token(text, i) in _REGEX_AFTER
             and _JS_REGEX.match(text, i))
         if skipped:
             i = skipped.end()
@@ -337,9 +339,10 @@ def _code_end(text, i, patterns, depth=1):
     return i
 
 
-def _previous_char(text, i):
+def _previous_token(text, i):
     stripped = text[max(0, i - 200):i].rstrip()
-    return stripped[-1] if stripped else "("
+    word = re.search(r"\w+$", stripped)
+    return word.group() if word else stripped[-1:] or "("
 
 
 def _template_literals(text, i, patterns):

@@ -95,7 +95,8 @@ class LoopTitleWitnessTests(unittest.TestCase):
 
     def test_a_backtick_in_a_regex_literal_opens_no_template(self):
         (self.root / "e2e/regex.spec.ts").write_text(
-            "const marker = /`/;\nconst half = 4 / 2;\n" + LOOP_SPEC)
+            "const marker = /`/;\nconst half = 4 / 2;\n"
+            "function tick() { return /`/; }\n" + LOOP_SPEC)
         self.assertEqual(self.findings("e2e/regex.spec.ts", TITLE.format(360)), [])
 
     def test_a_comment_brace_inside_a_placeholder_does_not_close_it(self):
