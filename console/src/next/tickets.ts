@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { needsYouEntries, type NeedsYouEntry } from "../lib/attention";
+import { needsYouEntries, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
 import type { Board, BoardColumn, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatAge, formatClock, formatDuration } from "../lib/format";
@@ -193,6 +193,43 @@ const MINUTE_MS = 60_000;
 
 const cardId = (base: string, key: string) => `${base} ${key}`;
 
+/** Every ticket `host`'s `/board` lists, as cards. */
+export function hostCards(host: HostRecord<ContractBodies>, board: Board, readiness: ReadinessMap, now: number): TicketCard[] {
+  const items = hostItems(host, now);
+  const needs = new Map<string, NeedsYouEntry>();
+  for (const entry of needsYouEntries(items, readiness, now)) {
+    const ticket = entry.item.ticket;
+    if (typeof ticket === "string" && !needs.has(ticket)) needs.set(ticket, entry);
+  }
+  const parks = new Map(items.filter((item) => item.kind === "pr_open").map((item) => [item.ticket, item]));
+  const status = host.contract_error ? undefined : host.status;
+  const runs = new Map((status?.runs ?? []).map((run) => [run.ticket, run]));
+  const queued = new Map((status?.queued ?? []).map((entry) => [entry.ticket, entry.reason]));
+  const name = host.project == null ? host.label : projectName(host.project);
+  const skewMs = status == null ? 0 : status.now - (host.seen_ms ?? now);
+  return board.columns.flatMap((column) =>
+    column.tickets.map((ticket) => ({
+      id: cardId(host.base, ticket.ticket),
+      base: host.base,
+      key: ticket.ticket,
+      title: ticket.title,
+      project: name,
+      state: column.state,
+      need: needs.get(ticket.ticket) ?? null,
+      park: parks.get(ticket.ticket) ?? null,
+      run: runs.get(ticket.ticket) ?? null,
+      runId: runs.get(ticket.ticket)?.id ?? ticket.run,
+      staleMs: status?.thresholds.heartbeat_stale_ms ?? Infinity,
+      queuedReason: queued.get(ticket.ticket) ?? null,
+      held: status?.admission === "held",
+      timeBoxMs: ticket.time_box_ms,
+      waitsOn: ticket.waits_on,
+      endedMs: null,
+      skewMs,
+    })),
+  );
+}
+
 /** The scoped fleet's tickets in the five columns of the Tickets page. */
 export function useTicketBoard(): TicketBoard {
   const deps = useContext(PollDepsContext);
@@ -206,42 +243,9 @@ export function useTicketBoard(): TicketBoard {
   const columns = emptyColumns();
   const cards: TicketCard[] = [];
   for (const { host, board } of boards) {
-    const items = hostItems(host, now);
-    const needs = new Map<string, NeedsYouEntry>();
-    for (const entry of needsYouEntries(items, readiness, now)) {
-      const ticket = entry.item.ticket;
-      if (typeof ticket === "string" && !needs.has(ticket)) needs.set(ticket, entry);
-    }
-    const parks = new Map(items.filter((item) => item.kind === "pr_open").map((item) => [item.ticket, item]));
-    const status = host.contract_error ? undefined : host.status;
-    const runs = new Map((status?.runs ?? []).map((run) => [run.ticket, run]));
-    const queued = new Map((status?.queued ?? []).map((entry) => [entry.ticket, entry.reason]));
-    const name = host.project == null ? host.label : projectName(host.project);
-    const skewMs = status == null ? 0 : status.now - (host.seen_ms ?? now);
-    for (const column of board.columns) {
-      for (const ticket of column.tickets) {
-        const card: TicketCard = {
-          id: cardId(host.base, ticket.ticket),
-          base: host.base,
-          key: ticket.ticket,
-          title: ticket.title,
-          project: name,
-          state: column.state,
-          need: needs.get(ticket.ticket) ?? null,
-          park: parks.get(ticket.ticket) ?? null,
-          run: runs.get(ticket.ticket) ?? null,
-          runId: runs.get(ticket.ticket)?.id ?? ticket.run,
-          staleMs: status?.thresholds.heartbeat_stale_ms ?? Infinity,
-          queuedReason: queued.get(ticket.ticket) ?? null,
-          held: status?.admission === "held",
-          timeBoxMs: ticket.time_box_ms,
-          waitsOn: ticket.waits_on,
-          endedMs: null,
-          skewMs,
-        };
-        columns[boardColumn(card)].push(card);
-        cards.push(card);
-      }
+    for (const card of hostCards(host, board, readiness, now)) {
+      columns[boardColumn(card)].push(card);
+      cards.push(card);
     }
   }
   for (const row of merged) {

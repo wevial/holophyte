@@ -2,10 +2,11 @@ import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
 import { classicHref, writeView } from "../../lib/view";
+import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { switcherRows } from "../projects";
 import { useReadiness } from "../queries";
-import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
 import {
   ChevronIcon,
   ClassicIcon,
@@ -22,10 +23,10 @@ import { ProjectSwitcher } from "./ProjectSwitcher";
 const RAIL_KEY = "holophyte.next.rail";
 
 const PAGES = [
-  { to: "/", label: "Overview", icon: <OverviewIcon /> },
-  { to: "/runs", label: "Runs", icon: <RunsIcon /> },
-  { to: "/tickets", label: "Tickets", icon: <TicketsIcon /> },
-  { to: "/findings", label: "Findings", icon: <FindingsIcon /> },
+  { to: "/", label: "Overview", icon: <OverviewIcon />, noun: "need you" },
+  { to: "/runs", label: "Runs", icon: <RunsIcon />, noun: "" },
+  { to: "/tickets", label: "Tickets", icon: <TicketsIcon />, noun: "" },
+  { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
 ] as const;
 
 function readFolded(): boolean {
@@ -92,12 +93,14 @@ function PageLink({
   to,
   label,
   icon,
+  noun,
   badge,
   folded,
 }: {
   to: (typeof PAGES)[number]["to"];
   label: string;
   icon: ReactNode;
+  noun: string;
   badge: number;
   folded: boolean;
 }) {
@@ -106,7 +109,7 @@ function PageLink({
       to={to}
       search={keepScope}
       activeOptions={{ exact: to === "/", includeSearch: false }}
-      aria-label={badge > 0 ? `${label}, ${badge} need you` : label}
+      aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
       title={folded ? label : undefined}
       className={`relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-paper-2 hover:text-ink data-[status=active]:border-act data-[status=active]:bg-act-wash data-[status=active]:text-act ${
         folded ? "justify-center px-0" : "px-4"
@@ -141,6 +144,8 @@ export function Sidebar() {
   const readiness = useReadiness(hosts, useContext(PollDepsContext));
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
+  const open = useOpenCount(scopedHosts(hosts, project), now);
+  const badges: Partial<Record<(typeof PAGES)[number]["to"], number>> = { "/": needs, "/findings": open };
   const failing = hosts.some((host) => host.error != null);
   const footer = footerLine(hosts, now);
   const polled = footer == null ? "polling…" : footer.tail == null ? footer.lead : `${footer.lead} · ${footer.tail.text}`;
@@ -188,7 +193,7 @@ export function Sidebar() {
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
         {PAGES.map((page) => (
-          <PageLink key={page.to} {...page} badge={page.to === "/" ? needs : 0} folded={folded} />
+          <PageLink key={page.to} {...page} badge={badges[page.to] ?? 0} folded={folded} />
         ))}
       </nav>
 

@@ -295,18 +295,25 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
   }
 }
 
-/** The scoped fleet's week of findings, sorted into the page's four groups. */
-export function useFindingsPage(): FindingsPage {
-  const deps = useContext(PollDepsContext);
-  const peers = useConsolePeers();
-  const { project } = useSearch({ from: "__root__" });
-  const hosts = scopedHosts(peers.hosts, project);
-  const { answered, answers } = useFindings(hosts, peers.now, deps);
-  const since = weekSince(peers.now);
+function useSortedPage(hosts: Host[], now: number, project: string | undefined): FindingsPage {
+  const { answered, answers } = useFindings(hosts, now, useContext(PollDepsContext));
+  const since = weekSince(now);
   const page: FindingsPage = { project, answered, reviews: 0, findings: 0, drafts: 0, open: [], followUps: [], settled: [], clean: [] };
   for (const { host, findings } of answers) addHost(page, host, findings, since);
   page.open.sort(worstFirst);
   page.settled.sort(worstFirst);
   page.followUps.sort(pendingFirst);
   return page;
+}
+
+/** The scoped fleet's week of findings, sorted into the page's four groups. */
+export function useFindingsPage(): FindingsPage {
+  const peers = useConsolePeers();
+  const { project } = useSearch({ from: "__root__" });
+  return useSortedPage(scopedHosts(peers.hosts, project), peers.now, project);
+}
+
+/** The size of the page's Open group for `hosts`' week before `now`. */
+export function useOpenCount(hosts: Host[], now: number): number {
+  return useSortedPage(hosts, now, undefined).open.length;
 }
