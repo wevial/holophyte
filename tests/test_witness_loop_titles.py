@@ -31,6 +31,7 @@ TEMPLATE_SPEC = (
     "  test(`keeps the \\`tag\\` and the \\${literal} marker at ${width}`, "
     "async () => {});\n"
     "}\n"
+    "test(`a plain backtick title`, async () => {});\n"
 )
 
 SPEC = "e2e/checks/images.spec.ts"
@@ -78,10 +79,27 @@ class LoopTitleWitnessTests(unittest.TestCase):
         self.assertUnwitnessed(SPEC, "images keep their boxes at 360 pixels wide")
         self.assertUnwitnessed(SPEC, TITLE.format(""))
 
-    def test_a_template_of_placeholders_alone_witnesses_no_title(self):
-        (self.root / "e2e/url.spec.ts").write_text(
-            "const url = `${base}${path}`;\ntest('opens', async () => {});\n")
-        self.assertUnwitnessed("e2e/url.spec.ts", "an unrelated title")
+    def test_a_backtick_title_without_a_placeholder_needs_its_exact_text(self):
+        self.assertEqual(self.findings(TEMPLATES, "a plain backtick title"), [])
+        self.assertUnwitnessed(TEMPLATES, "a plain backtick title, reworded")
+
+    def test_a_template_of_placeholders_alone_spells_any_one_line_title(self):
+        (self.root / "e2e/each.spec.ts").write_text(
+            "for (const s of ['alpha']) test(`${s.toUpperCase()}`, f);\n")
+        self.assertEqual(self.findings("e2e/each.spec.ts", "ALPHA"), [])
+
+    def test_a_quoted_backtick_opens_no_template(self):
+        (self.root / "e2e/quoted.spec.ts").write_text(
+            "const marker = \"`\";\n" + LOOP_SPEC)
+        self.assertEqual(self.findings("e2e/quoted.spec.ts", TITLE.format(360)), [])
+
+    def test_a_go_raw_string_spells_no_test_name(self):
+        (self.root / "sample_test.go").write_text(
+            "package sample\n\nconst fixture = `Test${name}`\n")
+        findings = reply_parsing.criteria_findings(
+            "CRITERION 1: met — sample_test.go::TestMissing", ["c1"], self.root)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("unwitnessed", findings[0]["message"])
 
     def test_nested_templates_and_escapes_spell_the_runner_title(self):
         self.assertEqual(
@@ -126,7 +144,7 @@ class RealPlaywrightListTests(unittest.TestCase):
             {(Path(SPEC).name, TITLE.format(width)) for width in (1280, 360)})
         references = [(str(Path("e2e") / file), None, title)
                       for file, title in listed]
-        self.assertEqual(len(references), 4, listed)
+        self.assertEqual(len(references), 5, listed)
         self.assertEqual(
             reply_parsing.missing_witnesses(references, self.root), [])
 

@@ -282,7 +282,8 @@ def _scan_witness(file, cls, name):
     if file.suffix != ".py":
         text = file.read_text(errors="replace")
         found = (any(spelling in text for spelling in _quoted_spellings(name))
-                 or any(form.fullmatch(name) for form in _template_patterns(text)))
+                 or file.suffix != ".go" and any(
+                     form.fullmatch(name) for form in _template_patterns(text)))
         return None if found else f'no test named "{name}"'
     lines = file.read_text(errors="replace").splitlines()
     if cls is None:
@@ -302,13 +303,22 @@ def _quoted_spellings(name):
 _JS_QUOTED = re.compile(r"""(['"])(?:(?!\1)[^\\\n]|\\.)*\1""")
 
 
+_JS_SKIPPED = re.compile(_JS_QUOTED.pattern + r"|//[^\n]*|/\*.*?\*/", re.S)
+
+
 def _template_patterns(text):
-    patterns, start = [], text.find("`")
-    while start != -1:
-        literals, end = _template_literals(text, start + 1)
-        if len(literals) > 1 and any(literals):
-            patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
-        start = text.find("`", end + 1)
+    patterns, i = [], 0
+    while i < len(text):
+        skipped = _JS_SKIPPED.match(text, i)
+        if skipped:
+            i = skipped.end()
+        elif text[i] == "`":
+            literals, i = _template_literals(text, i + 1)
+            i += 1
+            if len(literals) > 1:
+                patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
+        else:
+            i += 1
     return patterns
 
 
