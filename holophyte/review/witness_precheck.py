@@ -201,3 +201,4 @@ def record(project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
                        text.splitlines()[0], level="detail",
                        payload=json.dumps({"sha": sha, "base": base_sha,
                                            "criteria": entries}))
+    return entries

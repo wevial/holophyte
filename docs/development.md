@@ -370,6 +370,9 @@ Each module, one line:
   it exists at the candidate, the branch adds or changes it, and the verify
   ran it; recorded as the `witness_precheck` and
   `witness_precheck_results` events.
+- `holophyte/loop/witness_turns.py` — the witness pre-check's gaps sent back
+  to the implementer before the round 1 review, at most two `witness_turn`
+  turns a run, and the brief of gaps still open for the round 1 reviewer.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as
