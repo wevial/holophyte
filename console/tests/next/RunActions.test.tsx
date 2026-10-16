@@ -1,13 +1,15 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { RunDetail, Status } from "../../src/lib/contract.gen";
+import type { RunDetail, Status, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeFetch } from "../actionFakes";
 import { fakeDeps, settle } from "../harness";
 import { DEMO, fleet, MINUTE, NOW, run, SERVE } from "./needsFleet";
+
+const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
 
 const servedRun = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 
@@ -19,6 +21,7 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>): R
 
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { phase: "reviewing", pr_url: "https://github.com/acme/demo/pull/524" }),
+  39: detail(39, "DEMO-40", { phase: "failed", outcome: "failed", ended_ms: NOW - 20 * MINUTE }),
   40: detail(40, "DEMO-40", { phase: "failed", outcome: "failed", failure_kind: "verify", ended_ms: NOW - 10 * MINUTE }),
   9: detail(9, "DEMO-9", { phase: "done", outcome: "merged", merge_sha: "5acc1384b2e0", ended_ms: NOW - 20 * MINUTE }),
 };
@@ -33,6 +36,14 @@ async function mount(id: number, { actions = true, post }: { actions?: boolean; 
   const fake = fakeDeps(async (url, init) => {
     if (init?.method === "POST" && post != null) return post(url, init);
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions });
+    if (url === `${DEMO}/tickets/DEMO-40`) return Response.json({
+      ...servedTicket,
+      ticket: "DEMO-40",
+      runs: [40, 39].map((id, index) => ({
+        run: id, attempt: 2 - index, phase: "failed", outcome: "failed", rounds: 0,
+        pr_url: null, started_ms: NOW - 30 * MINUTE, ended_ms: runs[id]!.run.ended_ms,
+      })),
+    });
     const found = /^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1];
     if (url.startsWith(DEMO) && found != null) {
       const answer = runs[Number(found)];
@@ -126,4 +137,13 @@ test("on a host with actions off, Pause and Abort are drawn disabled and say how
     expect(button.hasAttribute("disabled")).toBe(true);
     expect(button.getAttribute("title")).toBe("Actions are off on this host. [serve] actions = true turns them on.");
   }
+});
+
+test("a superseded failed attempt hides Requeue even when its truncated chain ends there and no attempt is live", async () => {
+  await mount(39);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-40 title");
+  expect(actionsBox()).toBeNull();
+  cleanup();
+  await mount(40);
+  expect(labels()).toEqual(["Requeue"]);
 });

@@ -1,8 +1,10 @@
-import { useId, useRef, useState } from "react";
+import { useContext, useId, useRef, useState } from "react";
 import { ROUTES } from "../../lib/actions";
 import { ABORT, RESUME } from "../../lib/attention";
 import { prLabel } from "../../lib/shipped";
 import { useAction } from "../actions";
+import { useTicket } from "../queries";
+import { PollDepsContext } from "../scope";
 import type { RunPage } from "../run";
 import { Btn } from "./Btn";
 import { ACTIONS_OFF_LINE, BUSY, detailLine } from "./CardActions";
@@ -16,11 +18,10 @@ const PARKED = new Set(["parked", "on_ci", "ready_to_merge"]);
 
 type Page = Extract<RunPage, { kind: "run" }>;
 
-function labelsOf(page: Page): string[] {
-  const { run, chain } = page.detail;
+function labelsOf(page: Page, newest: boolean): string[] {
+  const { run } = page.detail;
   if (page.state === "paused") return [RESUME];
   if (page.liveRun != null) return page.liveRun.stop_requested == null && !PARKED.has(page.state) ? [PAUSE, ABORT] : [];
-  const newest = chain?.runs.at(-1)?.id === run.id;
   return ENDED.has(run.outcome ?? "") && newest && !page.liveTicket ? [REQUEUE] : [];
 }
 
@@ -29,11 +30,13 @@ function labelsOf(page: Page): string[] {
  *  reason in a confirm. A refusal reads under the buttons. */
 export function RunActions({ page, project }: { page: Page; project: string }) {
   const action = useAction();
+  const deps = useContext(PollDepsContext);
+  const ticket = useTicket(page.base, page.detail.run.ticket, deps);
   const [aborting, setAborting] = useState(false);
   const [reason, setReason] = useState("");
   const reasonId = useId();
   const opener = useRef<HTMLButtonElement>(null);
-  const labels = labelsOf(page);
+  const labels = labelsOf(page, ticket.isSuccess && ticket.data?.runs[0]?.run === page.detail.run.id);
   if (labels.length === 0) return null;
   const { run } = page.detail;
   const pending = action.isPending ? action.variables?.label : undefined;
