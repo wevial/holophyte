@@ -33,6 +33,7 @@ import holophyte.board.projection  # noqa: E402 - after the sys.path insert abov
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
+from holophyte.loop.contradiction import declared  # noqa: E402
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 REASON = "the pr_open facts carry only open_threads"
@@ -71,6 +72,17 @@ class DeclareCodex(Commit):
                    "CONTRADICTION: criterion 1 — `tickets.parkKind` does not "
                    "exist; the reader reads `runs.parkKind`.")
         return f"codex\n{message}\ntokens used\n53,160\n{message}"
+
+
+class DeclaredTests(unittest.TestCase):
+
+    def test_whole_line_code_span_keeps_distinct_reasons_in_order(self):
+        self.assertEqual(declared(
+            "`CONTRADICTION: criterion 2 — the facts lack a field`\n"
+            "CONTRADICTION: criterion 2 — the reader requires `parkKind`"), [
+                (2, "the facts lack a field"),
+                (2, "the reader requires `parkKind`"),
+            ])
 
 
 class ImplementTurnContradictionTests(LoopFixture):
