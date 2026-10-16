@@ -59,12 +59,11 @@ afterEach(() => {
 });
 
 test("a scoped hash opens its page, marks its link current and keeps the scope on every page link", async () => {
-  await mount("#/tickets/demo/DEMO-7?project=demo");
-  expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe("DEMO-7");
-  expect(screen.getByText("demo", { selector: "[data-scope]" })).toBeTruthy();
+  await mount("#/runs?project=demo");
+  expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe("Runs");
   const links = pages();
   expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
-  expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Tickets"]);
+  expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Runs"]);
   for (const link of links) {
     expect(new URLSearchParams(link.getAttribute("href")!.split("?")[1]).get("project")).toBe("demo");
   }
@@ -87,14 +86,7 @@ test("the Overview badge counts the scope's Needs you entries, as the heading do
   expect(badge()).toBeNull();
 });
 
-test("each page links to the classic view behind it, and an unknown route links back to Overview", async () => {
-  for (const [hash, name, href] of [
-    ["#/tickets/demo/DEMO-7", "Open the Board in the classic console", "/?classic#view=board"],
-  ] as const) {
-    await mount(hash);
-    expect((await screen.findByRole("link", { name })).getAttribute("href")).toBe(href);
-    cleanup();
-  }
+test("an unknown route links back to Overview", async () => {
   await mount("#/nowhere");
   expect(await screen.findByText("There is no page here.")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);

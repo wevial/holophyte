@@ -116,16 +116,20 @@ async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): 
   }
 }
 
-/** `/tickets/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
- *  mounted; null when the daemon has not mirrored it. */
-export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+/** `/tickets/KEY` at `base` as a query, read again every `POLL_INTERVAL_MS`
+ *  while mounted; null when the daemon has not mirrored it. */
+export function ticketQuery(base: string, key: string, fetch: Fetch) {
   const path = `/tickets/${encodeURIComponent(key)}`;
-  return useQuery({
+  return {
     queryKey: routeKey(base, path),
-    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, ticketDetailSchema),
+    queryFn: () => routeOrNone(fetch, `${base}${path}`, ticketDetailSchema),
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
-  });
+  };
+}
+
+export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+  return useQuery(ticketQuery(base, key, deps.fetch));
 }
 
 export interface DayLedger {
