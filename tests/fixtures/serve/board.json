@@ -2,7 +2,22 @@
   "columns": [
     {
       "state": "needs_spec",
-      "tickets": []
+      "tickets": [
+        {
+          "ticket": "KO-20",
+          "ticket_url": null,
+          "title": "Story over KO-8 and KO-9",
+          "time_box_ms": null,
+          "run": null,
+          "question": null,
+          "waits_on": [],
+          "mirrored_ms": 1750000000000,
+          "column": null,
+          "priority": null,
+          "labels": [],
+          "revision": 1
+        }
+      ]
     },
     {
       "state": "blocked_on_deps",
@@ -78,6 +93,18 @@
           "revision": 1
         }
       ]
+    }
+  ],
+  "stories": [
+    {
+      "ticket": "KO-20",
+      "title": "Story over KO-8 and KO-9",
+      "children": [
+        "KO-8",
+        "KO-9"
+      ],
+      "merged": 0,
+      "total": 2
     }
   ],
   "editable": false,
