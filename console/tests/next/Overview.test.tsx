@@ -272,9 +272,9 @@ test("from 1600 px the Overview is the board's three-track grid, the header acro
   expect(head.contains(screen.getByRole("heading", { level: 1 }))).toBe(true);
   expect(head.contains(document.querySelector("[data-count-line]"))).toBe(true);
   expect(classes(head)).toEqual(expect.arrayContaining([WIDE + "col-start-1", WIDE + "col-span-2", WIDE + "row-start-1"]));
-  const log = dayLog();
+  const log = dayLog().parentElement!;
   expect(classes(log)).toEqual(
-    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", "min-[1200px]:sticky", "min-[1200px]:top-5"]),
+    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", WIDE + "sticky", WIDE + "top-0", WIDE + "self-start", WIDE + "h-screen"]),
   );
 });
 
@@ -298,12 +298,15 @@ test("every grid, track and span class is behind 1600 px, so below it the Overvi
   await mount("#/", busy);
   const root = overviewRoot();
   const head = document.querySelector("[data-overview-head]")!;
-  for (const element of [root, root.firstElementChild!, head, ...columns(), columns()[0]!.parentElement!, dayLog()]) {
+  for (const element of [root, root.firstElementChild!, head, ...columns(), columns()[0]!.parentElement!, dayLog().parentElement!]) {
     expect(classes(element).filter((name) => LAYOUT.test(name))).toEqual(head === element ? ["contents"] : []);
   }
   expect(classes(root)).toEqual(expect.arrayContaining(["flex", "flex-col", "min-[1200px]:flex-row"]));
   expect(classes(root.firstElementChild)).toEqual(expect.arrayContaining(["flex", "max-w-[880px]", WIDE + "contents"]));
-  expect(classes(dayLog())).toEqual(expect.arrayContaining(["max-w-[880px]", "min-[1200px]:flex-[0_0_290px]", "min-[1200px]:sticky"]));
+  expect(classes(dayLog().parentElement)).toEqual(expect.arrayContaining(["max-w-[880px]", "min-[1200px]:flex-[0_0_290px]"]));
+  for (const element of [dayLog(), dayLog().parentElement!]) {
+    expect(classes(element).filter((name) => name.endsWith("sticky"))).toEqual(element === dayLog() ? [] : [WIDE + "sticky"]);
+  }
 });
 
 test("from 1600 px each column is the ov-col container; a Running row narrows under 640 px of it and a Pull request row under 720 px", async () => {
@@ -319,4 +322,12 @@ test("from 1600 px each column is the ov-col container; a Running row narrows un
     [row, ...row.querySelectorAll("*")].flatMap((element) => classes(element)).filter((name) => name.startsWith(rule)).map((name) => name.slice(rule.length)).sort();
   expect(narrowed(runRow, "@max-[640px]/ov-col:")).toEqual(narrowed(runRow, "max-[820px]:"));
   expect(narrowed(prRow, "@max-[720px]/ov-col:")).toEqual(narrowed(prRow, "max-[820px]:"));
+});
+
+test("the wide log fills its pinned grid wrapper with a thin hover scrollbar and no competing height cap", async () => {
+  await mount("#/", busy);
+  const log = dayLog();
+  expect(log.parentElement!.parentElement).toBe(overviewRoot());
+  expect(classes(log)).toEqual(expect.arrayContaining(["h-full", "overflow-y-auto", "[scrollbar-width:thin]", "day-log-scroll"]));
+  expect(classes(log)).not.toContain("max-h-[calc(100vh-40px)]");
 });

@@ -90,7 +90,7 @@ export function DayLog({ entries, className = "" }: { entries: LedgerEntry[]; cl
   const earlier = entries.length - shown.length;
   const keys = keysOf(shown);
   return (
-    <aside aria-labelledby="day-log" className={`min-w-0 max-h-[calc(100vh-40px)] overflow-y-auto ${className}`}>
+    <aside aria-labelledby="day-log" className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
       <h2 id="day-log" className="mt-2.5 mb-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
         Today's log
       </h2>
