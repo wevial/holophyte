@@ -176,3 +176,13 @@ export function FactIcon({ ok }: { ok: boolean }) {
     </Stroke>
   );
 }
+
+/** The return arrow of a loop back to implement. */
+export function LoopIcon() {
+  return (
+    <Stroke className="text-live">
+      <path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4" />
+      <path d="M3.2 2.6v2.6h2.6" />
+    </Stroke>
+  );
+}

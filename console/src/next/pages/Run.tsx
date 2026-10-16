@@ -1,10 +1,11 @@
-import { useContext, type ReactNode } from "react";
+import { useContext, type MouseEvent, type ReactNode } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { Markdown } from "../../components/Markdown";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { leadParagraph } from "../../lib/ticket";
 import { SECTION_LABEL } from "../components/Criteria";
+import { ProgressLog } from "../components/ProgressLog";
 import { RunPullRequest } from "../components/RunPullRequest";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
@@ -39,6 +40,12 @@ function Notice({ label, text }: { label: string; text: string }) {
       </Link>
     </Page>
   );
+}
+
+/** The console routes on the hash, so the in-page link scrolls instead of navigating. */
+function toProgress(event: MouseEvent<HTMLAnchorElement>) {
+  event.preventDefault();
+  document.getElementById("progress")?.scrollIntoView({ block: "start" });
 }
 
 /** The summary the run was given: the claimed revision's body when the
@@ -137,9 +144,12 @@ export function RunPage() {
           <span role="group" aria-label="Stage">
             <StageChip label={page.stage.label} state={page.state} sub={page.stage.sub} />
           </span>
+          <a href="#progress" onClick={toProgress} className="font-mono text-[12px] leading-[1.3] text-ink-2 underline underline-offset-2 hover:text-ink">
+            history in Progress
+          </a>
         </div>
       </header>
-      <div data-run-body className="mt-3.5 flex min-h-40 flex-col gap-5 border border-rule bg-paper px-5 py-4">
+      <div data-run-body className="mt-3.5 flex min-h-40 flex-col gap-5 border border-rule bg-paper px-8 pb-8 pt-[22px] max-[720px]:px-4">
         {run.pr_url != null && (
           <RunPullRequest
             url={run.pr_url}
@@ -149,6 +159,7 @@ export function RunPage() {
           />
         )}
         <RunTicket base={page.base} ticket={run.ticket} />
+        <ProgressLog key={run.id} lines={page.progress} live={page.live} />
       </div>
     </Page>
   );
