@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useContext, useRef, useState, type KeyboardEvent } from "react";
 import { NO_PR_URL } from "../../components/RowActions";
 import { ReasonAction } from "../../components/ReasonAction";
@@ -12,6 +13,7 @@ import { classicHref } from "../../lib/view";
 import { useAction } from "../actions";
 import type { ContractBodies } from "../fleet";
 import { readinessQuery } from "../queries";
+import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -135,6 +137,7 @@ export function CardActions({
   const { item } = entry;
   if (item.kind === UNREACHABLE || host == null) return null;
   const run = num(item.run);
+  const runTarget = run == null || host.status == null ? null : runPage(host.status.project, run);
   const ticket = str(item.ticket);
   const ticketUrl = str(item.ticket_url);
   const prUrl = str(item.pr_url);
@@ -216,11 +219,15 @@ export function CardActions({
             )}
           </div>
         )}
-        {only == null && run != null && (
+        {only == null && run != null && (runTarget ? (
+          <Link {...runTarget} className={linkBtn} data-variant="quiet">
+            Open run
+          </Link>
+        ) : (
           <a className={linkBtn} data-variant="quiet" href={classicHref(`#run=${run}&daemon=${encodeURIComponent(host.base)}`)}>
             Open run
           </a>
-        )}
+        ))}
         {only == null && ticketUrl != null && (
           <a className={linkBtn} data-variant="quiet" href={ticketUrl} target="_blank" rel="noreferrer">
             Open ticket
