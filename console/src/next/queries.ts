@@ -9,6 +9,7 @@ import {
   ledgerSchema,
   mergeReadinessSchema,
   peersSchema,
+  runAsksSchema,
   runDetailSchema,
   shippedSchema,
   storyDetailSchema,
@@ -119,6 +120,19 @@ async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): 
     if (failure instanceof AnswerError && failure.status === 404) return null;
     throw failure;
   }
+}
+
+/** `/runs/N/asks` at `base`, read again every `POLL_INTERVAL_MS` while
+ *  mounted; null from a daemon without the route, idle with no run. */
+export function useRunAsks(base: string | null, run: number | null, deps: { fetch: Fetch }) {
+  const path = `/runs/${String(run)}/asks`;
+  return useQuery({
+    queryKey: routeKey(base ?? "", path),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, runAsksSchema),
+    enabled: base != null && run != null,
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
 }
 
 /** `/tickets/KEY` at `base` as a query, read again every `POLL_INTERVAL_MS`

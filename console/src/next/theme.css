@@ -421,3 +421,14 @@ body {
 .story-scroll.fade-l.fade-r {
   mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
+
+.log-new {
+  animation: log-new 1.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes log-new {
+  from {
+    background: var(--live-wash);
+    transform: translateY(3px);
+  }
+}

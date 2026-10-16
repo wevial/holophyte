@@ -9,7 +9,8 @@ import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import { failureWord } from "./history";
-import { useReadiness, useRun } from "./queries";
+import { progressLines, type ProgressLine } from "./progress";
+import { useReadiness, useRun, useRunAsks } from "./queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State } from "./state";
 
@@ -31,6 +32,9 @@ export type RunPage =
       prFacts: Fact[] | null;
       sentence: string;
       stage: { label: string; sub: string | null };
+      progress: ProgressLine[];
+      /** Whether the run is still under way, so its Progress may grow. */
+      live: boolean;
     };
 
 /** Run `id`'s page, on the project at path `project`, as a `Link` target
@@ -134,11 +138,12 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const host = scopedHosts(peers.hosts, project)[0] ?? null;
   const readiness = useReadiness(host == null ? [] : [host], deps);
   const answer = useRun(host?.base ?? null, run, deps);
+  const asks = useRunAsks(host?.base ?? null, run, deps);
   if (host == null) return peers.polls > 0 ? { kind: "unknown_project" } : { kind: "loading" };
   if (run == null || (answer.error instanceof AnswerError && answer.error.status === 404)) return { kind: "not_found" };
   const status = host.contract_error ? undefined : host.status;
   const detail = answer.data;
-  if (detail == null || status == null) return { kind: "loading" };
+  if (detail == null || status == null || asks.isPending) return { kind: "loading" };
 
   const since = sinceSeen(host.seen_ms, now);
   const live = status.runs.find((each) => each.id === run) ?? null;
@@ -170,5 +175,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
     },
+    progress: progressLines(detail, asks.data?.asks ?? [], now),
+    live: detail.run.outcome == null,
   };
 }

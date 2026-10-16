@@ -170,3 +170,29 @@ test("a project no host serves reads as missing and asks no host for the story",
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("No story DEMO-12 in nowhere.");
   expect(asked.filter((url) => url.includes("/stories/"))).toEqual([]);
 });
+
+test("the story page spans the content width, keeps its notes at 1320 px and words the graph top to bottom", async () => {
+  await mount("#/stories/demo/DEMO-12", fleet(demo12).fetch);
+  const page = document.getElementById("page-title")!.closest("section")!.parentElement!;
+  expect(Array.from(page.classList).filter((name) => name.startsWith("max-w") || name === "mx-auto")).toEqual([]);
+  expect(screen.getByRole("region", { name: /^Decisions and witnesses/ }).classList.contains("max-w-[1320px]")).toBe(true);
+  expect(text("[data-graph-key]")).toContain("one row runs in parallel");
+  expect(page.lastElementChild!.textContent).toStartWith("Tickets with no dependency start the graph at the top.");
+});
+
+test("DEMO-12's step list holds its steps in order, says what runs side by side and what each card waits on", async () => {
+  await mount("#/stories/demo/DEMO-12", fleet(demo12).fetch);
+  const steps = Array.from(document.querySelectorAll<HTMLElement>("[data-step]"));
+  expect(steps.map((step) => step.getAttribute("aria-label"))).toEqual(["Step 1", "Step 2", "Step 3"]);
+  const first = steps[0]!;
+  expect(Array.from(first.querySelectorAll("[data-node]"), (card) => card.getAttribute("data-node"))).toEqual(["DEMO-5", "DEMO-10", "DEMO-2"]);
+  expect(first.querySelector("h3")?.textContent).toBe("Step 13 can run side by side");
+  expect(steps[2]!.querySelector("h3")?.textContent).toBe("Step 3");
+  const after = (ticket: string) => document.querySelector(`[data-step] [data-node="${ticket}"] [data-after]`)?.textContent;
+  expect(after("DEMO-1")).toBe("after DEMO-7, DEMO-11");
+  expect(after("DEMO-2")).toBe("starts the story");
+  const graph = document.querySelector("[data-graph]")!;
+  expect(graph.classList.contains("story-wide")).toBe(true);
+  expect(graph.closest(".story-graph")).not.toBeNull();
+  expect(first.closest(".story-steps")?.closest(".story-graph")).not.toBeNull();
+});
