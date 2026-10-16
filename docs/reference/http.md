@@ -23,7 +23,8 @@ those writing routes. A project with no store answers 503.
 `console/contract/` holds the machine-readable shapes of `GET /status`,
 `GET /attention` and `GET /peers`, of the host root's `GET /status`
 and `GET /attention`, of the run routes `GET /runs/N`,
-`GET /runs/N/merge` and `GET /runs/N/asks`, and of the list routes
+`GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
+`GET /runs/N/turns`, and of the list routes
 `GET /shipped`, `GET /ledger`, `GET /board` and `GET /tickets/KEY`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
@@ -426,6 +427,34 @@ recorded has neither a worktree nor a ref (a preserved branch deleted by
 hand; the error names the branch).
 504 when git does not answer within its cap. The endpoint serves no file
 contents or diff hunks and writes nothing to the repository.
+
+## `GET /runs/N/turns`
+
+```json
+{"turns": [
+  {"id": 4410, "role": "implement", "route": "primary",
+   "label": "claude opus", "seconds": 372.5,
+   "session_id": "0198c2a4-5e1f-7b3a-9d6e-2f4c8a1b3d5e"},
+  {"id": 4433, "role": "review", "route": "fallback",
+   "label": "codex gpt-5.6-sol", "seconds": 95.25, "session_id": null}
+ ]}
+```
+
+The agent turns of run N, oldest first: one entry per implementer,
+reviewer, adjudicator, writer or trimmer turn the loop recorded when the
+turn ended, so a turn still running is not listed yet. `id` is the turn's
+event id, which `/runs/N/turns/T/transcript` takes as `T`. `role` is
+`implement`, `review`, `adjudicate`, `write` or `trim`. `label` names
+what ran, as `route_labels` labels a seat on `/status`: the command's
+first word plus its `-m`/`--model` value, null for a turn recorded
+without one. `route` is `primary`, or `fallback` when the seat ran its
+configured `*_fallback`. `seconds` is how long the turn ran, null when
+its record carries no duration. `session_id` is the agent session the
+turn ran in, null when none was recorded beside it. A run with no turns
+answers an empty list.
+
+`N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
+is 404 carrying `run`. The route writes nothing.
 
 ## `GET /runs/N/merge`
 
