@@ -275,7 +275,8 @@ class FakeBootTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         record = self.record()
         setup, chromium = record["config"]["projects"]
-        self.assertEqual(chromium["use"], {"colorScheme": "dark", "video": "on"})
+        self.assertEqual(chromium["use"]["colorScheme"], "dark")
+        self.assertEqual(chromium["use"]["video"]["mode"], "on")
         self.assertTrue(os.path.isabs(chromium["outputDir"]), chromium)
         self.assertEqual(record["outputs"], [True])
         self.assertFalse(os.path.exists(chromium["outputDir"]))
@@ -302,9 +303,49 @@ class FakeBootTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         record = self.record()
-        self.assertEqual(record["config"]["use"],
-                         {"viewport": {"width": 800, "height": 600}, "video": "on"})
+        use = record["config"]["use"]
+        self.assertEqual(use["viewport"], {"width": 800, "height": 600})
+        self.assertEqual(use["launchOptions"], {"slowMo": 400})
+        self.assertEqual(use["video"]["mode"], "on")
+        self.assertEqual(use["video"]["show"]["test"], {"level": "step"})
         self.assertEqual(record["outputs"], [True])
+
+    @unittest.skipUnless(shutil.which("node"), "node imports the generated config")
+    def test_slow_mo_paces_only_the_capture_project_and_only_with_video(self):
+        (self.repo / "playwright.config.mjs").write_text(
+            "export default {projects: [\n"
+            "  {name: 'setup', testMatch: /auth\\.setup\\.ts$/},\n"
+            "  {name: 'app', dependencies: ['setup'],"
+            " use: {launchOptions: {args: ['--mute-audio']}}},\n]};\n")
+        config = ("--config", "playwright.config.mjs")
+        slowed = (*config, "--slow-mo", "300")
+
+        result = self.capture(boot=("node", "boot.mjs"), options=slowed,
+                              video=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        setup, app = self.record()["config"]["projects"]
+        self.assertEqual(app["use"]["launchOptions"],
+                         {"args": ["--mute-audio"], "slowMo": 300})
+        self.assertEqual(app["use"]["video"]["show"]["actions"]["cursor"],
+                         "pointer")
+        self.assertNotIn("use", setup)
+
+        texts = []
+        for options in (config, slowed):
+            result = self.capture(boot=("node", "boot.mjs"), options=options)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            texts.append(self.record()["text"])
+        self.assertEqual(texts[0], texts[1])
+
+    def test_a_negative_or_fractional_slow_mo_refuses_before_booting(self):
+        for value in ("-1", "1.5", "slow"):
+            with self.subTest(value=value):
+                result = self.capture(options=("--slow-mo", value), video=True)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("argument --slow-mo:", result.stderr)
+                self.assertFalse((self.repo / "record.json").exists())
 
     def test_recordings_are_copied_in_written_order_and_their_directory_removed(self):
         result = self.capture(boot=(sys.executable, "video_fake.py"), video=True,
@@ -396,6 +437,25 @@ test('capture', async ({ browser }, testInfo) => {
 });
 """
 
+# Clicks four buttons with no waits in a context it records itself.
+CLICKS_SPEC = """\
+import { test } from '@playwright/test';
+
+test('capture', async ({ browser }, testInfo) => {
+  const context = await browser.newContext({ recordVideo: {
+    dir: testInfo.outputPath('video'), showActions: { cursor: 'pointer' } } });
+  const page = await context.newPage();
+  await page.setContent([1, 2, 3, 4].map(
+    (n) => `<button style="font-size: 32px">button ${n}</button>`).join(''));
+  for (const n of [1, 2, 3, 4]) {
+    await page.getByRole('button', { name: `button ${n}` }).click();
+  }
+  await page.screenshot({ path: `${process.env.CAPTURE_OUT}/01-clicked.png` });
+  await context.close();
+  await page.video().saveAs(testInfo.outputPath('video-feature.webm'));
+});
+"""
+
 
 class RealPlaywrightTests(unittest.TestCase):
     def setUp(self):
@@ -474,13 +534,13 @@ class RealPlaywrightTests(unittest.TestCase):
         self.assertEqual([p.name for p in Path(factory.name).iterdir()],
                          ["CAPTURE-0.capture.ts"])
 
-    def captured_with_video(self, spec):
+    def captured_with_video(self, spec, options=(), output="out"):
         (self.repo / ".holophyte-capture" / "KO-8.capture.ts").write_text(spec)
         env = {k: v for k, v in os.environ.items() if not k.startswith("HOLOPHYTE_")}
         return subprocess.run(
             [sys.executable, str(RUNNER),
              "--boot", "npx playwright test --reporter=line --timeout=60000",
-             "out"],
+             *options, output],
             cwd=self.repo, capture_output=True, text=True, timeout=180,
             env={**env, "HOLOPHYTE_TICKET": "KO-8",
                  "HOLOPHYTE_CAPTURE_VIDEO": "1"})
@@ -500,11 +560,27 @@ class RealPlaywrightTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         videos = sorted(p.name for p in (self.repo / "out").glob("*.webm"))
         self.assertEqual(videos, ["video-01.webm"])
-        duration = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "csv=p=0", str(self.repo / "out" / "video-01.webm")],
-            capture_output=True, text=True, check=True).stdout
-        self.assertGreaterEqual(float(duration), 1.5)
+        self.assertGreaterEqual(_duration(self.repo / "out" / "video-01.webm"), 1.5)
+
+    def test_slow_mo_lengthens_the_video_of_a_context_the_spec_created(self):
+        if not shutil.which("ffprobe"):
+            self.skipTest("ffprobe is not installed")
+        durations = {}
+        for slow_mo in ("0", "500"):
+            output = f"out-{slow_mo}"
+            result = self.captured_with_video(
+                CLICKS_SPEC, options=("--slow-mo", slow_mo), output=output)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            durations[slow_mo] = _duration(self.repo / output / "video-01.webm")
+        self.assertGreaterEqual(durations["500"] - durations["0"], 1.5, durations)
+
+
+def _duration(video):
+    return float(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(video)],
+        capture_output=True, text=True, check=True).stdout)
 
 
 def _suites(suites):
