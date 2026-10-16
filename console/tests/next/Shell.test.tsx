@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { THEME_KEY } from "../../src/lib/theme";
-import { VIEW_KEY } from "../../src/lib/view";
+import { openRememberedView, VIEW_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -110,6 +110,37 @@ test("Classic console remembers the classic view and loads the console's root", 
     expect(localStorage.getItem(VIEW_KEY)).toBe("classic");
     expect(location.pathname).toBe("/");
   } finally {
+    location.href = "about:blank";
+  }
+});
+
+test("folded or not, Classic console reaches the classic view when storage refuses the write", async () => {
+  const real = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const stored = localStorage;
+  const full = {
+    getItem: (key: string) => stored.getItem(key),
+    setItem: () => {
+      throw new DOMException("full", "QuotaExceededError");
+    },
+  };
+  try {
+    for (const fold of [false, true]) {
+      stored.clear();
+      stored.setItem(VIEW_KEY, "next");
+      location.href = "http://console.test/next.html#/runs";
+      await mount("#/runs");
+      if (fold) fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+      Object.defineProperty(globalThis, "localStorage", { configurable: true, get: () => full });
+      fireEvent.click(screen.getByRole("link", { name: "Classic console" }));
+      expect(localStorage.getItem(VIEW_KEY)).toBe("next");
+      expect(location.pathname).toBe("/");
+      expect(openRememberedView()).toBe(false);
+      Object.defineProperty(globalThis, "localStorage", real);
+      cleanup();
+    }
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", real);
+    stored.clear();
     location.href = "about:blank";
   }
 });
