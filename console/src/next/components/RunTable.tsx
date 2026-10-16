@@ -1,7 +1,11 @@
+import { Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { formatClock, formatSettled } from "../../lib/format";
 import { localMidnight } from "../../lib/ledger";
 import { classicHref } from "../../lib/view";
 import type { RunRow } from "../history";
+import { runPage } from "../run";
+import { useConsolePeers } from "../scope";
 import { STATES, type State } from "../state";
 import { StateDot, TONE_TEXT } from "./StateDot";
 
@@ -23,30 +27,43 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
   const start = started(row.started_ms, now);
   const quiet = row.state === "merged" || row.state === "abandoned";
   const need = NEEDS_YOU.has(row.state);
+  const host = useConsolePeers().hosts.find((each) => each.base === row.base);
+  const target = host == null ? null : runPage(host, row.id);
+  const props = {
+    "aria-label": `Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`,
+    "data-run": row.id,
+    "data-need": need ? "" : undefined,
+    className: `${GRID} border-b border-rule-2 p-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`,
+  };
+  const cells: ReactNode = (
+    <>
+      <span className={`${MONO} text-ink-2`}>{row.id}</span>
+      <span className="min-w-0">
+        <b className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3">{row.ticket}</b>{" "}
+        <span className={`font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
+      </span>
+      <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
+      <span className="inline-flex items-start gap-1.5">
+        <StateDot state={row.state} hideWord />
+        <span className={`font-sans text-[13px] font-medium leading-[1.3] ${row.state === "merged" ? "text-ink" : TONE_TEXT[STATES[row.state].tone]}`}>{row.stage}</span>
+      </span>
+      <span className={MONO}>{row.rounds > 0 ? row.rounds : DASH}</span>
+      <span className={MONO}>{prNumber(row.pr_url)}</span>
+      <span className={`${MONO} whitespace-nowrap`}>{start}</span>
+      <span className={`${MONO} whitespace-nowrap text-right`}>{formatSettled(row.elapsed_ms)}</span>
+    </>
+  );
   return (
     <li>
-      <a
-        href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)}
-        aria-label={`Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`}
-        data-run={row.id}
-        data-need={need ? "" : undefined}
-        className={`${GRID} border-b border-rule-2 p-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}
-      >
-        <span className={`${MONO} text-ink-2`}>{row.id}</span>
-        <span className="min-w-0">
-          <b className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3">{row.ticket}</b>{" "}
-          <span className={`font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
-        </span>
-        <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
-        <span className="inline-flex items-start gap-1.5">
-          <StateDot state={row.state} hideWord />
-          <span className={`font-sans text-[13px] font-medium leading-[1.3] ${row.state === "merged" ? "text-ink" : TONE_TEXT[STATES[row.state].tone]}`}>{row.stage}</span>
-        </span>
-        <span className={MONO}>{row.rounds > 0 ? row.rounds : DASH}</span>
-        <span className={MONO}>{prNumber(row.pr_url)}</span>
-        <span className={`${MONO} whitespace-nowrap`}>{start}</span>
-        <span className={`${MONO} whitespace-nowrap text-right`}>{formatSettled(row.elapsed_ms)}</span>
-      </a>
+      {target ? (
+        <Link {...target} {...props}>
+          {cells}
+        </Link>
+      ) : (
+        <a href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)} {...props}>
+          {cells}
+        </a>
+      )}
     </li>
   );
 }

@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useId, useState, type ReactNode } from "react";
 import { TicketLink } from "../../components/TicketLink";
 import { isStale } from "../../lib/derive";
 import { formatDuration, formatSettled } from "../../lib/format";
@@ -9,6 +10,7 @@ import type { StatusRun } from "../../lib/contract.gen";
 import type { Queued } from "../../lib/types";
 import { classicHref } from "../../lib/view";
 import type { ContractBodies } from "../fleet";
+import { runPage } from "../run";
 import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
@@ -44,7 +46,7 @@ function quietSentence(keys: string[]): string {
   return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Needs you.`;
 }
 
-function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinceMs: number }) {
+function RunLaneRow({ run, base, status, sinceMs }: { run: StatusRun; base: string; status: LaneGroup["status"]; sinceMs: number }) {
   const stage = phaseLabel(run.phase);
   const used = agentMs(run, sinceMs);
   const box = run.time_box_ms;
@@ -54,35 +56,45 @@ function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinc
   const spoken = minutes == null ? "" : box == null ? `, ${minutes} minutes` : `, ${minutes} of ${Math.floor(box / MINUTE)} minutes`;
   const title = run.title ?? "";
   const stop = run.stop_requested ? `${run.stop_action?.startsWith("abort") ? "Abort" : "Pause"} requested: ${run.stop_requested}` : null;
+  const target = runPage({ status }, run.id);
+  const label = `${run.ticket} ${title}, ${stage}${spoken}`;
+  const className = `${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`;
+  const cells: ReactNode = (
+    <>
+      <span className="min-w-0">
+        <StageChip run={{ phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds }} />
+      </span>
+      <span className="whitespace-nowrap text-ink-2">{run.ticket}</span>
+      <span className={TITLE_CELL}>
+        <span className="mb-0.5 block text-[14.5px] font-medium text-ink">{title}</span>
+        {stop && <span className="block truncate text-ink-3">{stop}</span>}
+      </span>
+      <span className={TIME_CELL}>
+        {used != null && (
+          <span className={tone === "need" ? "text-need" : "text-ink-3"}>
+            {formatSettled(used)}
+            {box != null && ` / ${formatSettled(box)}`}
+          </span>
+        )}
+        {percent != null && (
+          <span data-bar={tone} aria-hidden="true" className="relative block h-[3px] bg-rule-2">
+            <i className={`absolute inset-y-0 left-0 ${tone === "need" ? "bg-need" : "bg-live"}`} style={{ width: `${percent}%` }} />
+          </span>
+        )}
+      </span>
+    </>
+  );
   return (
     <li className="border-rule-2 [&+&]:border-t">
-      <a
-        href={classicHref(`#run=${run.id}&daemon=${encodeURIComponent(base)}`)}
-        aria-label={`${run.ticket} ${title}, ${stage}${spoken}`}
-        className={`${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`}
-      >
-        <span className="min-w-0">
-          <StageChip run={{ phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds }} />
-        </span>
-        <span className="whitespace-nowrap text-ink-2">{run.ticket}</span>
-        <span className={TITLE_CELL}>
-          <span className="mb-0.5 block text-[14.5px] font-medium text-ink">{title}</span>
-          {stop && <span className="block truncate text-ink-3">{stop}</span>}
-        </span>
-        <span className={TIME_CELL}>
-          {used != null && (
-            <span className={tone === "need" ? "text-need" : "text-ink-3"}>
-              {formatSettled(used)}
-              {box != null && ` / ${formatSettled(box)}`}
-            </span>
-          )}
-          {percent != null && (
-            <span data-bar={tone} aria-hidden="true" className="relative block h-[3px] bg-rule-2">
-              <i className={`absolute inset-y-0 left-0 ${tone === "need" ? "bg-need" : "bg-live"}`} style={{ width: `${percent}%` }} />
-            </span>
-          )}
-        </span>
-      </a>
+      {target ? (
+        <Link {...target} aria-label={label} className={className}>
+          {cells}
+        </Link>
+      ) : (
+        <a href={classicHref(`#run=${run.id}&daemon=${encodeURIComponent(base)}`)} aria-label={label} className={className}>
+          {cells}
+        </a>
+      )}
     </li>
   );
 }
@@ -153,7 +165,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
       {live.length > 0 && (
         <ul className="border border-rule bg-paper">
           {live.map((run) => (
-            <RunLaneRow key={run.id} run={run} base={group.base} sinceMs={sinceMs} />
+            <RunLaneRow key={run.id} run={run} base={group.base} status={group.status} sinceMs={sinceMs} />
           ))}
         </ul>
       )}

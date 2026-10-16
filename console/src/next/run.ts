@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { describe, needsYouEntries } from "../lib/attention";
 import type { RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
+import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
 import { hostItems, sinceSeen } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
@@ -9,7 +10,7 @@ import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import { failureWord } from "./history";
 import { useReadiness, useRun } from "./queries";
-import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State } from "./state";
 
 export type RunPage =
@@ -27,6 +28,14 @@ export type RunPage =
       sentence: string;
       stage: { label: string; sub: string | null };
     };
+
+/** Run `id`'s page as a `Link` target that keeps the sidebar's scope; null
+ *  while its host has not answered `/status` and so has no project name. */
+export function runPage(host: { status?: { project: string } | null }, id: number) {
+  const project = host.status?.project;
+  if (project == null) return null;
+  return { to: "/runs/$project/$run", params: { project: projectName(project), run: String(id) }, search: keepScope } as const;
+}
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
