@@ -67,6 +67,12 @@ export const STATE_ICONS: Record<State, ReactNode> = {
       <path d="M5.2 8.3 7.2 10.3 10.9 6.3" strokeWidth={1.8} style={{ stroke: "var(--canvas)" }} />
     </>
   ),
+  abandoned: (
+    <>
+      {ring}
+      <path d="M4.4 11.6l7.2-7.2" />
+    </>
+  ),
   queued: (
     <>
       {ring}
