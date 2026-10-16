@@ -110,7 +110,7 @@ export function RunPage() {
         <div className="mt-[18px] flex flex-wrap items-center gap-x-3 gap-y-2.5">
           <span className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">Stage</span>
           <span role="group" aria-label="Stage">
-            <StageChip label={page.stage.label} state={page.stage.state} sub={page.stage.sub} />
+            <StageChip label={page.stage.label} state={page.state} sub={page.stage.sub} />
           </span>
         </div>
       </header>

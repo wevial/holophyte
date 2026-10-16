@@ -2,22 +2,15 @@ import { useContext } from "react";
 import { describe, needsYouEntries } from "../lib/attention";
 import type { RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { formatClock, formatSettled } from "../lib/format";
-import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
+import { hostItems, sinceSeen } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
 import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
-import type { ContractBodies } from "./fleet";
 import { failureWord } from "./history";
 import { useReadiness, useRun } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State } from "./state";
-
-export interface RunStage {
-  state: State;
-  label: string;
-  sub: string | null;
-}
 
 export type RunPage =
   | { kind: "loading" }
@@ -32,7 +25,7 @@ export type RunPage =
       boxMs: number | null;
       labels: RouteLabels | null;
       sentence: string;
-      stage: RunStage;
+      stage: { label: string; sub: string | null };
     };
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -125,7 +118,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
   const { now } = peers;
-  const host: HostRecord<ContractBodies> | null = scopedHosts(peers.hosts, project)[0] ?? null;
+  const host = scopedHosts(peers.hosts, project)[0] ?? null;
   const readiness = useReadiness(host == null ? [] : [host], deps);
   const answer = useRun(host?.base ?? null, run, deps);
   if (host == null) return peers.polls > 0 ? { kind: "unknown_project" } : { kind: "loading" };
@@ -160,7 +153,6 @@ export function useRunPage(project: string, run: number | null): RunPage {
     labels: status.route_labels,
     sentence: needsYou ? words.sentence : `${words.sentence} Nothing needs you.`,
     stage: {
-      state,
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
     },
