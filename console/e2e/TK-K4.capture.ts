@@ -33,7 +33,7 @@ async function openBox(page: Page) {
   await page.goto("/next.html#/tickets/demo/DEMO-7");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Steer", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Steer · amend this ticket" })).toBeVisible();
+  await expect(box(page)).toBeVisible();
 }
 
 const box = (page: Page) => page.getByRole("region", { name: "Steer · amend this ticket" });
