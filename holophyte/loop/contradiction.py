@@ -10,7 +10,7 @@ from holophyte.redact import safe_print as print
 
 DECLARED_RE = re.compile(
     r"^[ \t>*`_-]*CONTRADICTION:[*`_ \t]*criterion[*`_ \t]*(\d+)[*`_ \t]*"
-    r"[—–:-]+[*`_ \t]*(.*?)[*`_ \t]*$", re.IGNORECASE | re.MULTILINE)
+    r"[—–:-]+[*_ \t]*(.*?)[*_ \t]*$", re.IGNORECASE | re.MULTILINE)
 BRIEF = ("\n\nWhen an acceptance criterion cannot be met as written (the data "
          "or contract it names lacks a field, two criteria contradict each "
          "other, or a repository pin or rule forbids it), do not substitute "
@@ -26,8 +26,16 @@ ANSWERS = ("Amend the ticket (holo file --update {key} FILE), then holo requeue"
 
 
 def declared(reply):
-    return [(int(number), reason.strip())
-            for number, reason in DECLARED_RE.findall(str(reply or ""))]
+    pairs = {}
+    for number, reason in DECLARED_RE.findall(str(reply or "")):
+        reason = reason.strip()
+        if reason.count("`") % 2:
+            if reason.startswith("`"):
+                reason = reason[1:]
+            elif reason.endswith("`"):
+                reason = reason[:-1]
+        pairs[(int(number), reason)] = None
+    return list(pairs)
 
 
 def park(conn, run_id, provider, task_id, wt, turn, reply, timed_out):
