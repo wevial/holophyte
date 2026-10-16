@@ -858,6 +858,10 @@ unless the address carries `?classic`. The classic console opens on the view a
 `#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
 console page can link to the classic view behind it.
 
+`console/src/next/focus.ts` derives blocked-card headlines and extracts asks.
+`console/src/next/components/LimitedMarkdown.tsx` renders asks and latest events
+with a restricted Markdown vocabulary and expandable line clamps.
+
 Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 
