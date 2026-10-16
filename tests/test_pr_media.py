@@ -375,6 +375,9 @@ class MediaTests(unittest.TestCase):
                       "exits, never in the background, and open each "
                       "NN-slug.png before ending the turn.")
         self.assertIn(foreground, brief)
+        ui_only = ("Capture only UI states as images: test or terminal "
+                   "output never becomes an image.")
+        self.assertIn(ui_only, brief)
         self.assertNotIn("KO-7", brief)
         self.assertNotIn("commit", brief)
         self.config["merge"]["ui_capture_dir"] = "tests/screens"
@@ -387,6 +390,7 @@ class MediaTests(unittest.TestCase):
         self.assertIn("`.holophyte-capture/KO-7.capture.ts`", local)
         self.assertIn("never committed", local)
         self.assertIn(foreground, local)
+        self.assertIn(ui_only, local)
         self.assertIn("01: Dialog open\n02: Name saved", local)
         self.assertIn("NN-slug.png", local)
 
