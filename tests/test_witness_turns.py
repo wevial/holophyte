@@ -89,8 +89,9 @@ class WitnessTurns(LoopFixture):
         self.git("commit", "-q", "-m", "a running test")
         self.base = self.git("rev-parse", "main").strip()
 
-    def run_task(self, *script, criteria=(CRITERION,), fake=None):
-        task = dict(a_task(), verify=VERIFY, budget_min=15,
+    def run_task(self, *script, criteria=(CRITERION,), fake=None,
+                 verify=VERIFY):
+        task = dict(a_task(), verify=verify, budget_min=15,
                     criteria=list(criteria))
         return self.loop(*script, fake=fake, provider=StubProvider(task))[0]
 
@@ -162,6 +163,16 @@ class WitnessTurns(LoopFixture):
         self.assertIn("Criteria that name no test file: 1.",
                       self.review_goal(fake))
         self.assertEqual(self.summaries("witness_turn"), [])
+
+    def test_a_file_whose_runner_is_unchecked_starts_no_turn(self):
+        fake = self.run_task(
+            Commit("work"), APPROVE, verify="echo ok",
+            criteria=["A test in `tests/test_runs.py` witnesses it."])
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(self.summaries("witness_turn"), [])
+        self.assertIn("criterion 1 names `tests/test_runs.py`; this branch"
+                      " neither adds nor changes it", self.review_goal(fake))
 
     def test_a_witness_turn_that_turns_verify_red_ends_the_turns(self):
         fake = self.run_task(

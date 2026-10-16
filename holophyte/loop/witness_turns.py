@@ -17,6 +17,24 @@ def _gaps(entries):
     return [gap for entry in entries or () for gap in entry["gaps"]]
 
 
+def _unchecked(entry):
+    for check in entry["checks"]:
+        ran = check.get("ran")
+        runs = ran if isinstance(ran, dict) else {check["file"]: ran}
+        paths = [path for path, result in runs.items() if result == "unchecked"]
+        if runs and len(paths) == len(runs):
+            paths.append(check["file"])
+        yield from paths
+
+
+def _turn_gaps(entries):
+    return [gap for entry in entries or ()
+            for gap in entry["gaps"]
+            if not any(gap.startswith(f"criterion {entry['criterion']} names "
+                                      f"`{path}`;")
+                       for path in _unchecked(entry))]
+
+
 def _unnamed(entries):
     return [entry["criterion"] for entry in entries or ()
             if entry["named"] == "no_file"]
@@ -56,7 +74,7 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
     return the head, its verify and the round 1 reviewer's brief."""
     entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
-    while ok and (gaps := _gaps(entries)):
+    while ok and (gaps := _turn_gaps(entries)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
             break

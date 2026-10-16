@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -18,6 +19,7 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402 - after sys.path
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
+import holophyte.loop.witness_turns  # noqa: E402 - as above
 from holophyte.review import witness_precheck  # noqa: E402 - as above
 
 VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
@@ -253,11 +255,14 @@ class InTheLoop(LoopFixture):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "a running test")
         self.base = self.git("rev-parse", "main").strip()
+        turns = patch.object(holophyte.loop.witness_turns, "WITNESS_TURNS", 0)
+        turns.start()
+        self.addCleanup(turns.stop)
 
-    def run_task(self, verify, *after, turns=()):
+    def run_task(self, verify, *after):
         task = dict(a_task(), verify=verify, criteria=[self.CRITERION])
         return self.loop(Commit("gated test", path="tests/test_gated.py",
-                                body=GATED), *turns, APPROVE, *after,
+                                body=GATED), APPROVE, *after,
                          provider=StubProvider(task))[0]
 
     def events(self):
@@ -265,7 +270,7 @@ class InTheLoop(LoopFixture):
                          " FROM runEvents ORDER BY seq")
 
     def test_round_one_records_the_skipped_gap_before_the_review(self):
-        fake = self.run_task(VERIFY, turns=[Idle()])
+        fake = self.run_task(VERIFY)
 
         events = self.events()
         prechecks = [event for event in events
@@ -284,7 +289,7 @@ class InTheLoop(LoopFixture):
         self.assertEqual([entry["criterion"] for entry in
                           json.loads(payload)["criteria"]], [1])
         self.assertEqual(json.loads(modes[0][4])["round"], 1)
-        self.assertEqual(fake.roles[:3], ["implement", "implement", "review"])
+        self.assertEqual(fake.roles[:2], ["implement", "review"])
 
     def test_a_failing_verify_records_that_the_check_did_not_run(self):
         self.run_task("false", Idle())

@@ -151,8 +151,8 @@ The turns stop at two a run, counted from the run's `witness_turn` events, so
 a resumed run does not get two more. A turn that makes no commit ends them
 (`witness_turn_idle`), as does a verify that goes red after a turn; a turn that
 times out fails the run. A criterion that names no test file never starts a
-turn, and a file whose runner the factory cannot parse is checked only for
-existing and being changed, not for whether verify ran it.
+turn, and neither does a file whose runner the factory cannot parse; its gaps
+go to the reviewer only.
 
 When gaps or criteria naming no test file remain, the round 1 review prompt
 lists them after the criteria, for the reviewer to judge; the list is not a
