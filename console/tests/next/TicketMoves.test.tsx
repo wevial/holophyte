@@ -148,15 +148,18 @@ test("Cancel ticket asks for a reason before posting it as the note, then closes
   expect(toast()).toBe("Cancelled DEMO-3.");
 });
 
-test("Esc or Keep it closes the cancel dialog and posts nothing", async () => {
+test("Esc or Keep it closes the cancel dialog, returns focus to Cancel ticket and posts nothing", async () => {
   const write = fakeFetch({ ticket: "DEMO-3", revision: 6 });
   await mount("DEMO-3", { write: write.fetchImpl });
+  const opener = within(actions()).getByRole("button", { name: "Cancel ticket" });
   await press("Cancel ticket");
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(opener);
   await press("Cancel ticket");
   await press("Keep it", dialog());
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(opener);
   expect(write.seen).toEqual([]);
 });
 

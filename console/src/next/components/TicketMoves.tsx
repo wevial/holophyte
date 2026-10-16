@@ -1,4 +1,4 @@
-import { useContext, useId, useState } from "react";
+import { useContext, useId, useRef, useState } from "react";
 import type { TicketDetail } from "../../lib/contract.gen";
 import type { HostRecord } from "../../lib/hosts";
 import { useBoardWrite, writeRefusal, type BoardWrite } from "../actions";
@@ -34,6 +34,7 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { pro
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const reasonId = useId();
+  const opener = useRef<HTMLButtonElement>(null);
   const card = board?.columns.flatMap((column) => column.tickets).find((each) => each.ticket === ticketKey);
   const revision = ticket.current?.revision ?? card?.revision ?? null;
   if (board?.editable !== true || revision == null || SETTLED.has(ticket.status)) return null;
@@ -50,6 +51,10 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { pro
   const confirmCancel = async () => {
     const result = await post("cancel", { ...at, note: reason.trim(), said: `Cancelled ${ticketKey}.` });
     if (result.ok) setCancelling(false);
+  };
+  const keepIt = () => {
+    setCancelling(false);
+    opener.current?.focus();
   };
   const openCancel = () => {
     write.reset();
@@ -69,7 +74,7 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { pro
           Requeue
         </Btn>
       )}
-      <Btn variant="danger" disabled={write.isPending} onClick={openCancel}>
+      <Btn ref={opener} variant="danger" disabled={write.isPending} onClick={openCancel}>
         Cancel ticket
       </Btn>
       {!cancelling && last !== "cancel" && <Refusal lines={refused} className="basis-full [contain:inline-size]" />}
@@ -84,7 +89,7 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { pro
           confirmVariant="danger-fill"
           confirmDisabled={reason.trim() === ""}
           onConfirm={() => void confirmCancel()}
-          onCancel={() => setCancelling(false)}
+          onCancel={keepIt}
           refusal={<Refusal lines={refused} className="mt-3" />}
         >
           <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">
