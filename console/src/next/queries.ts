@@ -11,6 +11,7 @@ import {
   peersSchema,
   runDetailSchema,
   shippedSchema,
+  storyDetailSchema,
   ticketDetailSchema,
   type Board,
   type Findings,
@@ -100,6 +101,19 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
     queryKey: routeKey(base ?? "", path),
     queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runDetailSchema),
     enabled: base != null && id != null,
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+/** `/stories/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
+ *  mounted; idle with no key. */
+export function useStory(base: string | null, key: string | null, deps: { fetch: Fetch }) {
+  const path = `/stories/${encodeURIComponent(key ?? "")}`;
+  return useQuery({
+    queryKey: routeKey(base ?? "", path),
+    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, storyDetailSchema),
+    enabled: base != null && key != null,
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
