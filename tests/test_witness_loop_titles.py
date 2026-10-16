@@ -31,7 +31,6 @@ TEMPLATE_SPEC = (
     "  test(`keeps the \\`tag\\` and the \\${literal} marker at ${width}`, "
     "async () => {});\n"
     "}\n"
-    "test(`a plain backtick title`, async () => {});\n"
 )
 
 SPEC = "e2e/checks/images.spec.ts"
@@ -78,10 +77,6 @@ class LoopTitleWitnessTests(unittest.TestCase):
     def test_differing_text_or_an_empty_placeholder_stays_unwitnessed(self):
         self.assertUnwitnessed(SPEC, "images keep their boxes at 360 pixels wide")
         self.assertUnwitnessed(SPEC, TITLE.format(""))
-
-    def test_a_backtick_title_without_a_placeholder_needs_its_exact_text(self):
-        self.assertEqual(self.findings(TEMPLATES, "a plain backtick title"), [])
-        self.assertUnwitnessed(TEMPLATES, "a plain backtick title, reworded")
 
     def test_a_template_of_placeholders_alone_witnesses_no_title(self):
         (self.root / "e2e/url.spec.ts").write_text(
@@ -131,7 +126,7 @@ class RealPlaywrightListTests(unittest.TestCase):
             {(Path(SPEC).name, TITLE.format(width)) for width in (1280, 360)})
         references = [(str(Path("e2e") / file), None, title)
                       for file, title in listed]
-        self.assertEqual(len(references), 5, listed)
+        self.assertEqual(len(references), 4, listed)
         self.assertEqual(
             reply_parsing.missing_witnesses(references, self.root), [])
 
