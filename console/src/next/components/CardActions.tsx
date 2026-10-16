@@ -8,6 +8,7 @@ import { projectName } from "../../lib/derive";
 import { UNREACHABLE, type HostRecord } from "../../lib/hosts";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
+import { classicHref } from "../../lib/view";
 import { useAction } from "../actions";
 import type { ContractBodies } from "../fleet";
 import { readinessQuery } from "../queries";
@@ -197,7 +198,7 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
           </div>
         )}
         {run != null && (
-          <a className={linkBtn} data-variant="quiet" href={`/#run=${run}&daemon=${encodeURIComponent(host.base)}`}>
+          <a className={linkBtn} data-variant="quiet" href={classicHref(`#run=${run}&daemon=${encodeURIComponent(host.base)}`)}>
             Open run
           </a>
         )}

@@ -1,10 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
-import { act, cleanup, render, renderHook } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { PeersState } from "../../src/hooks/usePeers";
 import type { Attention, Status } from "../../src/lib/contract.gen";
-import { pollDaemon, type Fetch } from "../../src/lib/poll";
+import { pollDaemon, tokenedFetch, type Fetch } from "../../src/lib/poll";
+import { tokenKey } from "../../src/lib/token";
 import { consoleQueryClient, useFleet, type ContractBodies } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -169,4 +170,37 @@ test("the new console's root names the daemon's host once its first poll answers
     [`${ORIGIN}/peers`]: 1,
     [`${ORIGIN}/runs/4/merge`]: 1,
   });
+});
+
+test("a daemon that answers 401 with no token stored gets a token field; Use stores it and the next poll carries it", async () => {
+  localStorage.clear();
+  const daemon = peersFetch(ORIGIN, { [ORIGIN]: { status: { ...status, host: "writer-host" }, attention } });
+  const bearers: (string | null)[] = [];
+  const locked: Fetch = (url, init) => {
+    if (url.endsWith("/peers")) return daemon(url, init);
+    const bearer = new Headers(init?.headers).get("authorization");
+    bearers.push(bearer);
+    return bearer === "Bearer s3cret" ? daemon(url, init) : Promise.resolve(new Response("token required", { status: 401 }));
+  };
+  window.location.hash = "#/";
+  render(
+    <QueryClientProvider client={client()}>
+      <NextConsole base={ORIGIN} pollDeps={fakeDeps(tokenedFetch(locked)).deps} />
+    </QueryClientProvider>,
+  );
+  await act(settle);
+  await act(settle);
+
+  expect(bearers.every((bearer) => bearer == null)).toBe(true);
+  expect(screen.queryByText(/for its projects/)).toBeNull();
+  fireEvent.change(screen.getByLabelText("writer-host:7710 asks for its token."), { target: { value: " s3cret " } });
+  fireEvent.click(screen.getByRole("button", { name: "Use" }));
+  expect(localStorage.getItem(tokenKey("writer-host:7710"))).toBe("s3cret");
+  await act(settle);
+  await act(settle);
+
+  expect(bearers.at(-1)).toBe("Bearer s3cret");
+  expect(document.querySelector("[data-token-form]")).toBeNull();
+  expect(document.querySelector("[data-footer-line]")?.textContent).toBe("writer-host · 1 project answering · polled 0s ago");
+  localStorage.clear();
 });

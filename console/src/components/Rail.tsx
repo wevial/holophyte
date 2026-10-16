@@ -5,6 +5,7 @@ import type { ProjectChoice } from "../lib/attention";
 import { groupByHost, hostItems, hostTone, type HostRecord, type HostTone } from "../lib/hosts";
 import type { PeersState } from "../hooks/usePeers";
 import type { Theme } from "../lib/theme";
+import { switchView } from "../lib/view";
 import { HostCard } from "./HostCard";
 import { ProjectRow } from "./ProjectRow";
 import { RailGroup } from "./RailGroup";
@@ -140,9 +141,13 @@ export function Rail({
             poll failed: {error}
           </p>
         ))}
-        <a href="/next.html" className="px-2 font-mono text-[11px] text-rail-faint hover:text-rail-fg">
-          Try the new console
-        </a>
+        <button
+          type="button"
+          onClick={() => switchView("next", location.hash)}
+          className="self-start px-2 font-mono text-[11px] text-rail-faint hover:text-rail-fg"
+        >
+          New view
+        </button>
         <ThemeToggle theme={theme} onChange={onTheme} />
       </div>
     </nav>

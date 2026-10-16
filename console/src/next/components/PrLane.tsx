@@ -8,6 +8,7 @@ import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
+import { classicHref } from "../../lib/view";
 import type { ContractBodies } from "../fleet";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { STATES, stateOf, type State } from "../state";
@@ -129,7 +130,7 @@ function PrLaneRow({
             now={host.status ? host.status.now + sinceSeen(host.seen_ms, now) : now}
             polls={polls}
             deps={deps}
-            runPage="/"
+            runPage={classicHref()}
           />
           {host.status?.actions === true && <AskAction base={host.base} runId={run} prUrl={item.pr_url} polls={polls} deps={deps} />}
         </div>
