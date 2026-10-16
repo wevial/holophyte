@@ -111,14 +111,16 @@ def _serve_table(home):
 
 def _seed_store(path):
     """DEMO-1 in backlog, DEMO-2 ready, DEMO-3 worked now, DEMO-4 asking
-    the operator, DEMO-5 merged after two rounds, DEMO-6 failed, DEMO-7 in
-    review after changes requested, DEMO-8 parked on pending checks, DEMO-9
+    the operator, DEMO-5 merged after two rounds with a guardrail kept in the
+    ledger, DEMO-6 failed, DEMO-7 in review after changes requested with a
+    feature follow-up pending, DEMO-8 parked on pending checks, DEMO-9
     parked ready for its merge, DEMO-10 merged today, DEMO-11 failed and
     still in flight; and a supervisor beating now."""
     import store
     import store.board
     import store.tickets
     from holophyte.config.project import Project
+    from store.follow_ups import record_follow_up, settle_ledger
     from tests.phase_fixture import advance_phase, finish_run
     from tests.test_store_board import body
 
@@ -179,6 +181,12 @@ def _seed_store(path):
                                   ended_at=now - 24 * HOUR + 3 * MIN)
         finish_run(conn, run, "merged", now=now - 23 * HOUR,
                    merge_sha="abc1234def5678901234567890abcdef12345678")
+        guardrail = record_follow_up(
+            conn, run, "abc1234def5678901234567890abcdef12345678", "guardrail",
+            True, "Fail the export test when a column is renamed",
+            "export-columns", path="holophyte/serve/server.py", line=12,
+            now=now - 23 * HOUR)
+        settle_ledger(conn, guardrail, now=now - 23 * HOUR)
         store.tickets.transition(conn, ticket, "merged")
 
         ticket, run = claimed(body("Cache the board read"), now - 8 * HOUR)
@@ -191,6 +199,11 @@ def _seed_store(path):
             conn, run, 1, "changes_requested", "reviewer-model",
             findings=FINDINGS, started_at=now - 15 * MIN,
             ended_at=now - 10 * MIN)
+        record_follow_up(
+            conn, run, "d" * 40, "feature", True,
+            "Show the shadow implementer's diff size next to the primary's",
+            "shadow-diff-size", path="holophyte/cli/shadow_report.py",
+            line=88, now=now - 10 * MIN)
         advance_phase(conn, run, "reviewing", now=now - 5 * MIN)
         store.heartbeat(conn, run, now=now)
 

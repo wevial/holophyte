@@ -2,12 +2,14 @@
 import json
 import re
 
+import holophyte.serve.serve_findings
 import holophyte.serve.serve_history
 import holophyte.serve.serve_runs
 import holophyte.serve.server
 import holophyte.serve.views
 import store
 from holophyte.config.project import Project
+from store.follow_ups import record_follow_up
 from store.operator_notes import consume
 from store.steer_notes import steer
 from store.stories import file_story
@@ -41,10 +43,10 @@ def normalize_contract(value, key=""):
 
 
 def contract_answers(case):
-    """A reviewed run, an unestimated run predating host recording with one
-    posted note, an approved pull request waiting for a claim, one
-    waiting on review, and an unspecced story over the unestimated and
-    approved tickets."""
+    """A reviewed run with a pending follow-up, an unestimated run predating
+    host recording with one posted note, an approved pull request waiting
+    for a claim, one waiting on review, and an unspecced story over the
+    unestimated and approved tickets."""
     case.seed()
     with store.open(str(case.db)) as conn:
         store.record_review_round(
@@ -68,6 +70,9 @@ def contract_answers(case):
             "SELECT id FROM runEvents WHERE kind = 'operator_note'").fetchone()[0]
         consume(conn, case.run, [event_id], 1)
         store.record_event(conn, case.run, "bot_finding", "Review is advisory", now=NOW)
+        record_follow_up(conn, case.run, "c" * 40, "feature", True,
+                         "Validate input at the API edge", "validate-edge",
+                         path="app.py", line=7, now=NOW - 5_000)
         store.record_event(conn, case.run, "criteria",
                            "review round 1: 0 of 1 criteria met",
                            level="detail", payload=json.dumps(dict(round=1, criteria=[
@@ -131,6 +136,7 @@ def contract_answers(case):
         "ledger": holophyte.serve.serve_runs.ledger(target, "since=0"),
         "history": holophyte.serve.serve_history.history(
             target, f"since={NOW - 100_000}", now=NOW),
+        "findings": holophyte.serve.serve_findings.findings(target, "since=0"),
         "board": holophyte.serve.views.board(target, now=NOW),
         "ticket": holophyte.serve.views.ticket_detail(target, "KO-8"),
     }.items():
