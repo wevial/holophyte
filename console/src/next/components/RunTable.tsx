@@ -38,12 +38,12 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       >
         {row.id}
       </a>
-      <span>
+      <span className="font-mono text-[12px] font-medium leading-[1.4] tabular-nums text-ink-3 [overflow-wrap:anywhere]">
         <Link
           to="/tickets/$project/$key"
           params={{ project: row.project, key: row.ticket }}
           search={keepScope}
-          className="relative font-mono text-[12px] font-medium leading-[1.4] tabular-nums text-ink-3 no-underline [overflow-wrap:anywhere] hover:text-ink hover:underline"
+          className="relative no-underline hover:text-ink hover:underline"
         >
           {row.ticket}
         </Link>
