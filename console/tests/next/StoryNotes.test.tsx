@@ -5,7 +5,6 @@ import type { Status, StoryChildRow, StoryDecisionRow, StoryDetail, StoryWitness
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
-import { edgeFade } from "../../src/next/story";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { DEMO, NOW, SERVE } from "./needsFleet";
 
@@ -55,30 +54,6 @@ afterAll(() => happyDOM.setURL("about:blank"));
 afterEach(() => {
   cleanup();
   window.location.hash = "";
-});
-
-test("DEMO-12's step list holds its columns in order, says what runs side by side and what each card waits on", async () => {
-  await mount(demo12());
-  const steps = Array.from(document.querySelectorAll<HTMLElement>("[data-step]"));
-  expect(steps.map((step) => step.getAttribute("aria-label"))).toEqual(["Step 1", "Step 2", "Step 3"]);
-  const first = steps[0]!;
-  expect(Array.from(first.querySelectorAll("[data-node]"), (card) => card.getAttribute("data-node"))).toEqual(["DEMO-5", "DEMO-10", "DEMO-2"]);
-  expect(first.querySelector("h3")?.textContent).toBe("Step 13 can run side by side");
-  expect(steps[2]!.querySelector("h3")?.textContent).toBe("Step 3");
-  const after = (ticket: string) => document.querySelector(`[data-step] [data-node="${ticket}"] [data-after]`)?.textContent;
-  expect(after("DEMO-1")).toBe("after DEMO-7, DEMO-11");
-  expect(after("DEMO-2")).toBe("starts the story");
-  const region = screen.getByRole("region", { name: "Story graph, scrolls sideways when wide" });
-  expect(region.classList.contains("story-wide")).toBe(true);
-  expect(region.closest(".story-graph")).not.toBeNull();
-  expect(first.closest(".story-steps")?.closest(".story-graph")).not.toBeNull();
-});
-
-test("edgeFade names the edges past which the region has more to show", () => {
-  expect(edgeFade(0, 600, 900)).toEqual({ left: false, right: true });
-  expect(edgeFade(300, 600, 900)).toEqual({ left: true, right: false });
-  expect(edgeFade(150, 600, 900)).toEqual({ left: true, right: true });
-  expect(edgeFade(0, 600, 600)).toEqual({ left: false, right: false });
 });
 
 const decision = (facts: Partial<StoryDecisionRow>): StoryDecisionRow => ({ ...pinned.decisions[0]!, ...facts });

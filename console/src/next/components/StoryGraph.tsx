@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatAge } from "../../lib/format";
 import { classicHref } from "../../lib/view";
 import { cardOf, STATES, type CardLook, type State } from "../state";
-import { CARD_H, CARD_W, edgeFade, layoutGraph, type StoryNode } from "../story";
+import { arrowPath, layoutGraph, type Box, type StoryNode } from "../story";
 import { Card, cardSurface, type CardMark } from "./Card";
 import { STATE_ICONS, TONE_TEXT } from "./StateDot";
 
@@ -49,7 +49,7 @@ function Legend() {
   );
 }
 
-function NodeCard({ node, base, className, style, after }: { node: StoryNode; base: string; className: string; style?: CSSProperties; after?: string }) {
+function NodeCard({ node, base, className, after }: { node: StoryNode; base: string; className: string; after?: string }) {
   const look = cardOf(node.state);
   const waits = after ?? (node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story");
   const label = `${node.ticket} ${node.title}, ${node.word}. ${waits}`;
@@ -63,7 +63,7 @@ function NodeCard({ node, base, className, style, after }: { node: StoryNode; ba
           </span>
         )}
       </span>
-      <span className={`line-clamp-2 font-sans text-[14px] font-semibold leading-[1.3] [overflow-wrap:anywhere] ${TITLE[look]}`}>{node.title}</span>
+      <span className={`font-sans text-[14px] font-semibold leading-[1.3] [overflow-wrap:anywhere] ${TITLE[look]}`}>{node.title}</span>
       <span data-state-line className="flex min-w-0 items-center gap-[7px] font-mono text-[11.5px] font-medium leading-[1.3]">
         <Icon state={node.state} />
         <span className={`truncate ${QUIET_WORD[look] ?? TONE_TEXT[STATES[node.state].tone]}`}>{node.word}</span>
@@ -73,7 +73,7 @@ function NodeCard({ node, base, className, style, after }: { node: StoryNode; ba
   );
   if (node.run == null) {
     return (
-      <div role="group" aria-label={label} data-node={node.ticket} className={className} style={style}>
+      <div role="group" aria-label={label} data-node={node.ticket} className={className}>
         {body}
       </div>
     );
@@ -84,17 +84,16 @@ function NodeCard({ node, base, className, style, after }: { node: StoryNode; ba
       aria-label={label}
       data-node={node.ticket}
       className={`${className} no-underline transition-colors duration-(--motion-colour) hover:[&>article]:border-ink-3`}
-      style={style}
     >
       {body}
     </a>
   );
 }
 
-function Steps({ columns, base }: { columns: StoryNode[][]; base: string }) {
+function Steps({ steps, base }: { steps: StoryNode[][]; base: string }) {
   return (
     <div className="story-steps flex flex-col gap-4">
-      {columns.map((column, index) => (
+      {steps.map((column, index) => (
         <section key={column[0]!.ticket} aria-label={`Step ${index + 1}`} data-step={index + 1}>
           <h3 className="flex items-baseline gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
             {`Step ${index + 1}`}
@@ -113,81 +112,84 @@ function Steps({ columns, base }: { columns: StoryNode[][]; base: string }) {
   );
 }
 
-const FOCUS_INSET = 24;
+const NO_BOX: Box = { left: 0, top: 0, width: 0, height: 0 };
 
-/** The story's children as columns by what they wait on, an arrow from
+function boxesIn(graph: HTMLElement): Record<string, Box> {
+  const boxes: Record<string, Box> = {};
+  for (const card of graph.querySelectorAll<HTMLElement>("[data-node]")) {
+    boxes[card.dataset.node!] = { left: card.offsetLeft, top: card.offsetTop, width: card.offsetWidth, height: card.offsetHeight };
+  }
+  return boxes;
+}
+
+function stepNote(step: StoryNode[], index: number): string | null {
+  if (step.length > 1) return `${step.length} side by side`;
+  return index === 0 ? "starts the story" : null;
+}
+
+/** The story's children in rows by what they wait on, an arrow down from
  *  each dependency to the ticket that waits on it. */
 export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }) {
   const graph = layoutGraph(nodes);
   const edges = (dim: boolean) => graph.edges.filter((edge) => edge.dim === dim);
-  const scroller = useRef<HTMLDivElement>(null);
-  const [fade, setFade] = useState({ left: false, right: false });
-  const readFade = () => {
-    const region = scroller.current;
+  const wide = useRef<HTMLDivElement>(null);
+  const [boxes, setBoxes] = useState<Record<string, Box>>({});
+  const readBoxes = () => {
+    const region = wide.current;
     if (region == null) return;
-    const next = edgeFade(region.scrollLeft, region.clientWidth, region.scrollWidth);
-    setFade((was) => (was.left === next.left && was.right === next.right ? was : next));
+    const next = boxesIn(region);
+    setBoxes((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
   };
-  const focus = (nodes.find((node) => node.kind === "need") ?? nodes.find((node) => node.kind === "flight"))?.ticket;
-  const focusX = useRef(focus == null ? null : graph.at.get(focus)!.x);
+  useLayoutEffect(readBoxes);
   useEffect(() => {
-    const region = scroller.current;
-    if (region == null) return;
-    const read = () => {
-      const x = focusX.current;
-      if (x != null && region.clientWidth > 0) {
-        focusX.current = null;
-        if (x + CARD_W > region.scrollLeft + region.clientWidth) region.scrollLeft = Math.max(0, x - FOCUS_INSET);
-      }
-      readFade();
-    };
-    read();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(read);
-    observer.observe(region);
-    observer.observe(region.firstElementChild!);
+    const observer = new ResizeObserver(readBoxes);
+    observer.observe(wide.current!);
     return () => observer.disconnect();
   }, []);
-  const fades = `${fade.left ? " fade-l" : ""}${fade.right ? " fade-r" : ""}`;
+  const path = (edge: { from: string; to: string }) => arrowPath(boxes[edge.from] ?? NO_BOX, boxes[edge.to] ?? NO_BOX);
   return (
     <section aria-label="Dependency graph" className="story-graph mt-5 border border-rule bg-paper px-[18px] pb-5 pt-[18px]">
       <div className="story-wide">
         <Legend />
       </div>
-      <div
-        ref={scroller}
-        role="region"
-        aria-label="Story graph, scrolls sideways when wide"
-        tabIndex={0}
-        onScroll={readFade}
-        className={`story-wide story-scroll overflow-x-auto overscroll-x-contain pb-1.5${fades}`}
-      >
-        <div className="relative" style={{ width: graph.width, height: graph.height }}>
-          <svg
-            aria-hidden="true"
-            width={graph.width}
-            height={graph.height}
-            viewBox={`0 0 ${graph.width} ${graph.height}`}
-            fill="none"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="pointer-events-none absolute left-0 top-0 overflow-visible"
-          >
-            <g data-edges="dim" className="stroke-edge-dim">
-              {edges(true).map((edge) => <path key={`${edge.from} ${edge.to}`} data-edge={`${edge.from} ${edge.to}`} d={edge.path} />)}
-            </g>
-            <g data-edges="open" className="stroke-edge">
-              {edges(false).map((edge) => <path key={`${edge.from} ${edge.to}`} data-edge={`${edge.from} ${edge.to}`} d={edge.path} />)}
-            </g>
-          </svg>
-          {graph.columns.flat().map((node) => {
-            const { x, y } = graph.at.get(node.ticket)!;
-            return <NodeCard key={node.ticket} node={node} base={base} className="absolute block overflow-hidden [&>article]:h-full" style={{ left: x, top: y, width: CARD_W, height: CARD_H }} />;
-          })}
-        </div>
+      <div ref={wide} data-graph className="story-wide relative isolate flex flex-col">
+        <svg
+          aria-hidden="true"
+          fill="none"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="pointer-events-none absolute left-0 top-0 z-[1] h-full w-full overflow-visible"
+        >
+          <g data-edges="dim" className="stroke-edge-dim">
+            {edges(true).map((edge) => <path key={`${edge.from} ${edge.to}`} data-edge={`${edge.from} ${edge.to}`} d={path(edge)} />)}
+          </g>
+          <g data-edges="open" className="stroke-edge">
+            {edges(false).map((edge) => <path key={`${edge.from} ${edge.to}`} data-edge={`${edge.from} ${edge.to}`} d={path(edge)} />)}
+          </g>
+        </svg>
+        {graph.steps.map((step, index) => {
+          const note = stepNote(step, index);
+          return (
+            <Fragment key={step[0]!.ticket}>
+              {index > 0 && <div aria-hidden="true" data-band className="relative h-[52px] before:absolute before:inset-x-0 before:top-1/2 before:border-t before:border-dashed before:border-rule-2" />}
+              <div role="group" aria-label={`Step ${index + 1}`} data-row={index + 1} className="flex">
+                <div className="flex w-[128px] shrink-0 flex-col gap-1.5 pr-2 pt-2.5">
+                  <span className="font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">{`Step ${index + 1}`}</span>
+                  {note != null && <span data-step-note className="font-mono text-[11.5px] leading-[1.35] text-ink-3">{note}</span>}
+                </div>
+                <div data-step-cards className="flex min-w-0 flex-1 flex-wrap gap-x-14 gap-y-4">
+                  {step.map((node) => (
+                    <NodeCard key={node.ticket} node={node} base={base} className="relative z-[2] block min-h-[112px] w-[340px] [&>article]:h-full" />
+                  ))}
+                </div>
+              </div>
+            </Fragment>
+          );
+        })}
       </div>
-      <Steps columns={graph.columns} base={base} />
+      <Steps steps={graph.steps} base={base} />
       <p data-graph-key className="story-wide mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-2 font-mono text-[12px] leading-[1.4] text-ink-3">
         <span className="inline-flex items-center gap-2">
           <svg width={34} height={10} viewBox="0 0 34 10" aria-hidden="true" fill="none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="stroke-edge">
@@ -195,7 +197,7 @@ export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }
           </svg>
           the ticket at the arrow waits on the one it comes from
         </span>
-        <span>one column runs in parallel</span>
+        <span>one row runs in parallel</span>
         <span>faint arrows: both ends merged</span>
       </p>
     </section>

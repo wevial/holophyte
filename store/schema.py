@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 49
+SCHEMA_VERSION = 50
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -26,7 +26,7 @@ SCHEMA_VERSION = 49
 # a dropped or renamed column or table, a new or tightened constraint on an
 # existing column, an enum value removed or renamed, or one added to
 # `runs.phase`, `projects.admission`, `tickets.status` or `runs.parkKind`.
-READABLE_FROM = 49
+READABLE_FROM = 50
 
 BUSY_TIMEOUT_S = 30
 
@@ -334,7 +334,7 @@ def init(conn):
                          " WHERE t.lastRunId = runs.id"
                          " AND t.status = 'blocked_on_operator')"
                          " WHERE parkKind IS NULL")
-        if version < 49:
+        if version < 50:
             _rebuild_enum_tables(conn)
         if version < 37:
             conn.execute(

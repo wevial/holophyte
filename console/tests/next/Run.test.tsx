@@ -111,7 +111,7 @@ test("a reviewing run's header names its ticket, host, box and routes, says wher
   expect(document.querySelector("[data-run-facts]")!.textContent).toBe(
     "DEMO-12 · run 12 · demo on writer-1 · started 11:30 PDT · 16m of a 25m box · implementer claude opus · reviewer codex gpt-6-sol",
   );
-  expect(verdict()).toBe("Reviewing round 2 of 3. Nothing needs you.");
+  expect(verdict()).toBe("Reviewing round 2 of 3. None of one criterion is met yet. Nothing needs you.");
   expect(stage()).toBe("Review · round 2 of 3 · 1 loop back");
 });
 
@@ -127,13 +127,13 @@ test("a failed run waiting in Needs you gives its failure and reason, and a merg
 
 test("a run in its merge phase reads as merging on the Merge stage", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merging" }));
-  expect(verdict()).toBe("Merging. Nothing needs you.");
+  expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
   expect(stage()).toBe("Merge · 1 loop back");
 });
 
-test("a run past its heartbeat threshold says how long it has been silent, and that alone, before its daemon raises it", async () => {
+test("a run past its heartbeat threshold says how long it has been silent and counts its criteria before its daemon raises it", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, heartbeat_age_ms: 15 * MINUTE }));
-  expect(verdict()).toBe("No heartbeat for 15m. It is up in Needs you.");
+  expect(verdict()).toBe("No heartbeat for 15m. It is up in Needs you. None of one criterion is met yet.");
   expect(stage()).toBe("Stale · no beat 15m");
 });
 
