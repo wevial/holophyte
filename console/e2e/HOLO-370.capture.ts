@@ -3,6 +3,28 @@ import { expect, test } from "@playwright/test";
 
 const out = process.env.CAPTURE_OUT ?? "";
 
+test("blocked explanation uses Plex Sans while its expand and collapse button keeps Archivo", async ({ page }) => {
+  await page.route("**/attention", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.items = body.items.filter((item: { kind: string }) => item.kind === "blocked").slice(0, 1);
+    body.items[0].question = "Read the verification results before choosing the next step.";
+    await route.fulfill({ response, json: body });
+  });
+  await page.goto("/next.html#/");
+  const focus = page.getByRole("article", { name: "Focus", exact: true });
+  const explanation = focus.getByText("Read the verification results before choosing the next step.", { exact: true });
+  await expect(explanation).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await expect(explanation).toHaveCSS("font-family", /^"IBM Plex Sans"/);
+  const toggle = focus.getByRole("button", { name: /^Show (all|less)$/ }).first();
+  await expect(toggle).toHaveCSS("font-family", /^Archivo/);
+  await toggle.click();
+  await expect(toggle).toHaveText("Show less");
+  await expect(toggle).toHaveCSS("font-family", /^Archivo/);
+  await expect(explanation).toHaveCSS("font-family", /^"IBM Plex Sans"/);
+});
+
 for (const [index, theme] of ["dark", "light"].entries()) {
   const name = theme === "dark" ? "night" : "dawn";
   test(`${name} reading text, titles and log`, async ({ page }) => {

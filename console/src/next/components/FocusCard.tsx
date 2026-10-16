@@ -182,7 +182,7 @@ function Card({
                 <h4 className="text-[16px] font-semibold text-ink">{blockedHeadline(item)}</h4>
                 {str(item.pr_url) && <a href={str(item.pr_url)!} target="_blank" rel="noreferrer" className="rounded border border-rule px-2 py-0.5 font-mono text-xs text-ink-2 hover:text-ink">{focusPrLabel(item)}</a>}
               </div>
-              <div className="mt-2.5 max-w-[75ch] font-read text-[16px] leading-[1.5] text-ink-2">
+              <div className="mt-2.5 max-w-[75ch] font-read text-[16px] leading-[1.5] text-ink-2 [&_button]:font-sans">
                 <LimitedMarkdown lines={4}>{blockedAsk(item)}</LimitedMarkdown>
               </div>
             </>
