@@ -124,7 +124,8 @@ export interface TicketBoard {
   total: number;
   /** Every card, in board order then today's merges. */
   cards: TicketCard[];
-  boards: { host: HostRecord<ContractBodies>; board: Board }[];
+  /** Every scoped host in fleet order, with its last good `/board` if any. */
+  boards: { host: HostRecord<ContractBodies>; board: Board | null }[];
 }
 
 export type GroupMode = "project" | "story" | "none";
@@ -166,7 +167,7 @@ function projectLanes(cards: TicketCard[], boards: TicketBoard["boards"]): Lane[
 
 function storyLanes(cards: TicketCard[], boards: TicketBoard["boards"]): Lane[] {
   const stories = boards
-    .flatMap(({ host, board }) => board.stories.map((story) => ({ base: host.base, story })))
+    .flatMap(({ host, board }) => (board?.stories ?? []).map((story) => ({ base: host.base, story })))
     .sort((a, b) => byIdentifier(a.story.ticket, b.story.ticket));
   const placed = new Set<string>();
   const lanes = stories.flatMap(({ base, story }) => {
@@ -258,6 +259,6 @@ export function useTicketBoard(): TicketBoard {
     columns,
     total: COLUMN_IDS.reduce((sum, id) => sum + columns[id].length, 0),
     cards,
-    boards,
+    boards: hosts.map((host) => ({ host, board: boards.find((each) => each.host.base === host.base)?.board ?? null })),
   };
 }

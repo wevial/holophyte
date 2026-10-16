@@ -28,7 +28,7 @@ function boardOf(keys: Partial<Record<State, string[]>>, stories: BoardStory[] =
 }
 
 interface Daemon {
-  board: Board;
+  board?: Board;
   items?: typeof blocked[];
   shipped?: ShippedRow[];
   admission?: string;
@@ -42,7 +42,7 @@ function fleet(demo: Daemon, writer: Daemon): Fetch {
   const polls = peersFetch(DEMO, { [DEMO]: daemon("/srv/dev/demo", demo), [WRITER]: daemon("/srv/dev/writer", writer) });
   return async (url) => {
     for (const [base, body] of [[DEMO, demo], [WRITER, writer]] as const) {
-      if (url === `${base}/board`) return Response.json(body.board);
+      if (url === `${base}/board`) return body.board ? Response.json(body.board) : new Response("not found", { status: 404 });
       if (url === `${base}/shipped?limit=50`) return Response.json({ rows: body.shipped ?? [], next_before: null, limit: 50 });
     }
     return polls(url);
@@ -110,6 +110,16 @@ test("Group by Project draws a lane per project in fleet order with its count, h
   await mount("#/tickets", projects);
   expect(pressed("Project")).toBe("true");
   expect(lanes()).toHaveLength(2);
+});
+
+test("a held project whose /board fails keeps its fleet place and held note for its merges of today", async () => {
+  await mount(
+    "#/tickets",
+    fleet({ admission: "held", shipped: [merged(21, "DEMO-21", NOW - 30 * MINUTE)] }, { board: boardOf({ ready: ["WRITER-1"] }) }),
+  );
+  await press("Project");
+  expect(lanes().map((lane) => [lane.getAttribute("aria-label"), metaOf(lane)])).toEqual([["demo", "1 ticket · held"], ["writer", "1 ticket"]]);
+  expect(keysIn(laneNamed("demo"), "Done today")).toEqual(["DEMO-21"]);
 });
 
 test("Group by Story holds each story's children, merged ones in Done today, then a No story lane", async () => {
