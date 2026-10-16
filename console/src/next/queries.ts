@@ -112,28 +112,33 @@ export interface DayLedger {
 /** Every `/ledger` entry of every answering host since local midnight
  *  before `now`, of any kind, so each answer also carries its outages. */
 export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): DayLedger {
-  const asked = hosts.filter((host) => host.status != null);
-  const path = `/ledger?since=${localMidnight(now)}&limit=${LEDGER_LIMIT}`;
-  const results = useQueries({
-    queries: asked.map((host) => ({
-      queryKey: routeKey(host.base, path),
-      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
-      refetchInterval: POLL_INTERVAL_MS,
-      staleTime: POLL_INTERVAL_MS,
-    })),
-  });
-  const answers = new Map<string, Ledger>();
-  asked.forEach((host, index) => {
-    const data = results[index]?.data;
-    if (data) answers.set(host.key, data);
-  });
+  const answers = useAnswers(hosts, `/ledger?since=${localMidnight(now)}&limit=${LEDGER_LIMIT}`, ledgerSchema, deps);
   const entries = Array.from(answers.values())
     .flatMap((answer) => answer.entries)
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
 }
 
-/** `url`'s parsed answer, or null when the daemon lacks the route (404). */
+/** Each status-answering host's last good `path` answer, by its record
+ *  `key`; a host whose daemon lacks the route (404) has no entry. */
+function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.ZodType<T>, deps: { fetch: Fetch }): Map<string, T> {
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, schema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const answers = new Map<string, T>();
+  asked.forEach((host, index) => {
+    const data = results[index]?.data;
+    if (data) answers.set(host.key, data);
+  });
+  return answers;
+}
+
 async function orNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
   try {
     return await fetchRoute(fetch, url, schema);
@@ -146,22 +151,7 @@ async function orNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promi
 /** Each answering host's `/history` since yesterday's local midnight before
  *  `now`, by its record `key`; a host without the route has no entry. */
 export function useHistory(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
-  const asked = hosts.filter((host) => host.status != null);
-  const path = `/history?since=${localMidnight(localMidnight(now) - 1)}`;
-  const results = useQueries({
-    queries: asked.map((host) => ({
-      queryKey: routeKey(host.base, path),
-      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, historySchema),
-      refetchInterval: POLL_INTERVAL_MS,
-      staleTime: POLL_INTERVAL_MS,
-    })),
-  });
-  const answers = new Map<string, History>();
-  asked.forEach((host, index) => {
-    const data = results[index]?.data;
-    if (data) answers.set(host.key, data);
-  });
-  return answers;
+  return useAnswers(hosts, `/history?since=${localMidnight(localMidnight(now) - 1)}`, historySchema, deps);
 }
 
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first
