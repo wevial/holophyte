@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { STATES, type State, type Tone } from "../state";
 
-const TONE_TEXT: Record<Tone, string> = {
+export const TONE_TEXT: Record<Tone, string> = {
   bad: "text-bad",
   ask: "text-ask",
   need: "text-need",

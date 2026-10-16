@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
+import { BoardCard } from "../components/BoardCard";
 import { StateDot } from "../components/StateDot";
 import { storeScope } from "../projects";
 import type { State } from "../state";
-import { COLUMN_IDS, useTicketBoard, type ColumnId, type TicketCard } from "../tickets";
+import { COLUMN_IDS, useTicketBoard, type ColumnId } from "../tickets";
 
 const HEADS: Record<ColumnId, { label: string; state: State }> = {
   backlog: { label: "Backlog", state: "backlog" },
@@ -16,15 +17,6 @@ const GRID = "grid grid-cols-5 gap-[18px]";
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
-}
-
-function Card({ card }: { card: TicketCard }) {
-  return (
-    <li className="flex flex-col gap-1.5 border border-rule-2 bg-paper px-3 py-2.5">
-      <span className="font-mono text-[12px] text-ink-2">{card.key}</span>
-      <span className="break-words font-sans text-[13px] leading-snug text-ink">{card.title}</span>
-    </li>
-  );
 }
 
 export function Tickets() {
@@ -87,7 +79,9 @@ export function Tickets() {
                 {COLUMN_IDS.map((id) => (
                   <ul key={id} aria-label={HEADS[id].label} className="flex min-w-0 flex-col gap-2">
                     {columns[id].map((card) => (
-                      <Card key={card.id} card={card} />
+                      <li key={card.id}>
+                        <BoardCard card={card} column={id} now={view.now} />
+                      </li>
                     ))}
                   </ul>
                 ))}
