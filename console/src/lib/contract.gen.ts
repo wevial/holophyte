@@ -602,8 +602,6 @@ export type Shipped = z.infer<typeof shippedSchema>;
 
 export const ledgerEntrySchema = z.looseObject({
   at: z.int(),
-  run: z.int().nullable(),
-  ticket: z.string().nullable(),
   kind: z.string(),
   source: z.string(),
   text: z.string(),
@@ -614,6 +612,8 @@ export const ledgerEntrySchema = z.looseObject({
   schema_to: z.int().optional(),
   schema_from: z.int().optional(),
   project: z.string().optional(),
+  run: z.int().nullable(),
+  ticket: z.string().nullable(),
 });
 export type LedgerEntry = z.infer<typeof ledgerEntrySchema>;
 
@@ -636,6 +636,60 @@ export const ledgerSchema = z.looseObject({
   limit: z.int(),
 });
 export type Ledger = z.infer<typeof ledgerSchema>;
+
+export const runLedgerEntrySchema = z.looseObject({
+  at: z.int(),
+  kind: z.string(),
+  source: z.string(),
+  text: z.string(),
+  cleared: z.string().nullable().optional(),
+  waited_ms: z.int().nullable().optional(),
+  action: z.string().optional(),
+  tone: z.string().optional(),
+  schema_to: z.int().optional(),
+  schema_from: z.int().optional(),
+  project: z.string().optional(),
+});
+export type RunLedgerEntry = z.infer<typeof runLedgerEntrySchema>;
+
+export const findingsRunSchema = z.looseObject({
+  run: z.int(),
+  ticket: z.string(),
+  title: z.string(),
+  phase: z.string(),
+  outcome: z.string().nullable(),
+  ended_ms: z.int().nullable(),
+  pr_url: z.string().nullable(),
+  rounds: z.array(roundSchema),
+  ledger: z.array(runLedgerEntrySchema),
+  advisories: z.array(advisoryFindingSchema),
+});
+export type FindingsRun = z.infer<typeof findingsRunSchema>;
+
+export const followUpRowSchema = z.looseObject({
+  id: z.int(),
+  run: z.int(),
+  ticket: z.string(),
+  kind: z.enum(["feature", "guardrail"]),
+  text: z.string(),
+  path: z.string().nullable(),
+  line: z.int().nullable(),
+  created_ms: z.int(),
+  settled_ms: z.int().nullable(),
+  state: z.enum(["pending", "filed", "duplicate", "ledger", "superseded", "unfiled"]),
+  filed_as: z.string().nullable(),
+  duplicate_of: z.string().nullable(),
+  error: z.string().nullable(),
+});
+export type FollowUpRow = z.infer<typeof followUpRowSchema>;
+
+export const findingsSchema = z.looseObject({
+  since: z.int(),
+  limit: z.int(),
+  runs: z.array(findingsRunSchema),
+  follow_ups: z.array(followUpRowSchema),
+});
+export type Findings = z.infer<typeof findingsSchema>;
 
 export const boardTicketSchema = z.looseObject({
   ticket: z.string(),

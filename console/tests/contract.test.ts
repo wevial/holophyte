@@ -3,6 +3,7 @@ import {
   type Attention,
   attentionSchema,
   boardSchema,
+  findingsSchema,
   hostAttentionSchema,
   ledgerSchema,
   hostStatusSchema,
@@ -24,6 +25,7 @@ import runMergeBypassable from "../../tests/fixtures/serve/run-merge-bypassable.
 import pinnedAsks from "../../tests/fixtures/serve/run-asks.json";
 import shipped from "../../tests/fixtures/serve/shipped.json";
 import ledger from "../../tests/fixtures/serve/ledger.json";
+import findings from "../../tests/fixtures/serve/findings.json";
 import board from "../../tests/fixtures/serve/board.json";
 import ticket from "../../tests/fixtures/serve/ticket.json";
 
@@ -59,6 +61,12 @@ test("each pinned list-route answer parses unchanged with its generated schema",
 test("a board column state outside the board's states fails at its path", () => {
   const shipping = { ...board, columns: [{ ...board.columns[0], state: "shipping" }, ...board.columns.slice(1)] };
   expect(firstIssuePath(boardSchema.safeParse(shipping))).toStartWith("columns.0.state");
+});
+
+test("the pinned findings answer parses unchanged; a dropped follow-up state fails at its path", () => {
+  expect<unknown>(findingsSchema.parse(findings)).toEqual(findings);
+  const dropped = { ...findings, follow_ups: [{ ...findings.follow_ups[0], state: "dropped" }, ...findings.follow_ups.slice(1)] };
+  expect(firstIssuePath(findingsSchema.safeParse(dropped))).toStartWith("follow_ups.0.state");
 });
 
 test("a ticket claimed by an older build carries its claim-time snapshot and parses", () => {
