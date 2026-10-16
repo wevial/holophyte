@@ -237,9 +237,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
 
 
 def _record_criteria(conn, run_id, rnd, reply, criteria, root, approved_range):
-    statuses = criteria_statuses(reply, criteria, root,
-                                 approved_range=approved_range)
-    entries = [dict(status, text=text) for status, text in zip(statuses, criteria)]
+    entries = criteria_statuses(reply, criteria, root,
+                                approved_range=approved_range)
     met = sum(entry["status"] == "met" for entry in entries)
     store.record_event(
         conn, run_id, "criteria",

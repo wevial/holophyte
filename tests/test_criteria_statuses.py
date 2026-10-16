@@ -55,9 +55,12 @@ class CriteriaStatusesTests(WorktreeCase):
     def test_each_criterion_reads_met_not_met_or_unwitnessed(self):
         self.add_witness()
         self.assertEqual(criteria_statuses(REPLY, CRITERIA, self.root), [
-            {"n": 1, "status": "met", "note": "tests/test_a.py::test_one"},
-            {"n": 2, "status": "not_met", "note": "the row names loop"},
-            {"n": 3, "status": "unwitnessed", "note": UNWITNESSED_NOTE}])
+            {"n": 1, "status": "met", "note": "tests/test_a.py::test_one",
+             "text": CRITERIA[0]},
+            {"n": 2, "status": "not_met", "note": "the row names loop",
+             "text": CRITERIA[1]},
+            {"n": 3, "status": "unwitnessed", "note": UNWITNESSED_NOTE,
+             "text": CRITERIA[2]}])
 
     def test_met_line_naming_a_missing_test_reads_unwitnessed(self):
         first = criteria_statuses(REPLY, CRITERIA, self.root)[0]
