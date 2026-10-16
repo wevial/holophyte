@@ -4,7 +4,7 @@ import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
 import { keepScope } from "../scope";
 import { cardElementId, modified } from "./BoardCard";
-import { BoardLane, type LaneBody } from "./BoardLane";
+import { BoardLane, type LaneBodyProps } from "./BoardLane";
 import { StateDot, TONE_TEXT } from "./StateDot";
 
 const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "done"];
@@ -58,7 +58,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
   );
 }
 
-function LaneRows({ lane, now, openId, onOpen, body }: { lane: Lane; now: number; openId: string | null; onOpen: (card: TicketCard) => void; body: LaneBody }) {
+function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
     <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "border border-rule-2 bg-paper" : ""}>
       {ROW_ORDER.flatMap((column) =>

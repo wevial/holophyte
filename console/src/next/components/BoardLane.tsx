@@ -12,21 +12,17 @@ export interface LaneBody {
   flat: boolean;
 }
 
-const FLAT_CELL = "min-h-[520px] border border-rule-2 bg-paper p-2.5";
-
-export function LaneGrid({
-  lane,
-  now,
-  openId,
-  onOpen,
-  body,
-}: {
+export interface LaneBodyProps {
   lane: Lane;
   now: number;
   openId: string | null;
   onOpen: (card: TicketCard) => void;
   body: LaneBody;
-}) {
+}
+
+const FLAT_CELL = "min-h-[520px] border border-rule-2 bg-paper p-2.5";
+
+export function LaneGrid({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
     <div id={body.id} hidden={body.hidden} data-lane-grid className={`${GRID} ${body.flat ? "px-px" : "px-4 pt-4 pb-[18px]"}`}>
       {COLUMN_IDS.map((column) => (
