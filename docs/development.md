@@ -357,6 +357,11 @@ Each module, one line:
   selection (unittest or pytest), which added tests were skipped or never
   collected and why, and the fix-round brief asking for a runnable
   reproduction.
+- `holophyte/review/witness_precheck.py` — before the round 1 review, each
+  criterion's named test file checked from git and a verbose verify rerun:
+  it exists at the candidate, the branch adds or changes it, and the verify
+  ran it; recorded as the `witness_precheck` and
+  `witness_precheck_results` events.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as
