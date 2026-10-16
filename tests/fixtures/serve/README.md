@@ -17,7 +17,8 @@ the store's migration row, whose build, pid and command become `BUILD`,
 1 and `COMMAND`.
 `board.json` pins its `/board`, a store-mirror board with no backlog column.
 `ticket.json` pins its `/tickets/KO-8`: the unestimated ticket, claimed at
-its current revision, with one posted note.
+its current revision, with one posted note, its one run and one amendment
+steered before that run claimed it.
 
 `host-status.json` and `host-attention.json` pin a host daemon's root
 `/status` and `/attention` over two registered projects whose run ids

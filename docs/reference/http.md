@@ -51,9 +51,10 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
                    "by_action": {"requeue": 2, "babysit": 1},
                    "by_actor": {"maintainer": 1, "operator": 2, "supervisor": 1,
                                 "unknown": 0}},
-           "7d": {"interventions": 4, "merged": 3, "per_merge": 1.3333333333333333,
-                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1},
-                  "by_actor": {"maintainer": 1, "operator": 3, "supervisor": 1,
+           "7d": {"interventions": 5, "merged": 3, "per_merge": 1.6666666666666667,
+                  "by_action": {"requeue": 2, "approve": 1, "babysit": 1,
+                                "steer": 1},
+                  "by_actor": {"maintainer": 1, "operator": 4, "supervisor": 1,
                                "unknown": 0}}},
   "daemon": {"started_ms": 1788446934491, "pid": 2801590},
   "supervisor": {"state": "live", "pid": 2801613, "heartbeat_age_ms": 8258, "host": "writer-1"},
@@ -859,7 +860,19 @@ console shows when the operator opens a ticket without leaving for Linear.
  "body": "# The store mirrors a ticket's body…\n\n## Summary\n…",
  "acceptance_criteria": ["Given …, when …, then …"],
  "verification_commands": ["ruff check ."],
- "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000}
+ "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000,
+ "runs": [{"run": 52, "attempt": 2, "phase": "reviewing", "outcome": null,
+           "rounds": 2, "pr_url": "https://github.com/…/pull/9",
+           "started_ms": 1788449000000, "ended_ms": null},
+          {"run": 47, "attempt": 1, "phase": "failed", "outcome": "failed",
+           "rounds": 1, "pr_url": null, "started_ms": 1788362000000,
+           "ended_ms": 1788365000000}],
+ "steers": [{"id": 4, "kind": "hint", "note": "…", "author": "maintainer",
+             "at": 1788449100000, "run": 52, "read_by": 52,
+             "read_ms": 1788449200000, "withdrawn": false},
+            {"id": 3, "kind": "amendment", "note": "…",
+             "author": "maintainer", "at": 1788400000000, "run": null,
+             "read_by": null, "read_ms": null, "withdrawn": false}]}
 ```
 
 `ticket` is the identifier as the store mirrors it; `status` is the
@@ -870,7 +883,14 @@ run worked from, which Linear's current text may no longer be (empty for
 a ticket mirrored before the store kept bodies); `acceptance_criteria`
 and `verification_commands` are the lists the mirror parsed from it;
 `run` is the ticket's active run, null when none is working it;
-`mirrored_ms` is when the store last mirrored the ticket. An identifier
+`mirrored_ms` is when the store last mirrored the ticket. `runs` is every
+run of the ticket, newest attempt first, each with its phase, outcome
+(null while it runs), count of review rounds, pull request and clocks.
+`steers` is every steer note on the ticket, newest first: `kind` is
+`amendment` or `hint`, `run` the run it was sent to (null when none was in
+flight), `read_by` and `read_ms` the run that read it and when (null while
+unread), and `withdrawn` whether a later `holo steer --withdraw` withdrew
+it, which only an amendment can be. An identifier
 the store has never mirrored is 404 with an empty object, like an absent
 run. The endpoint reads the store's mirror and nothing more; it never
 calls the provider.

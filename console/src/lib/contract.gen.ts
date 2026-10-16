@@ -704,6 +704,31 @@ export const ticketNoteSchema = z.looseObject({
 });
 export type TicketNote = z.infer<typeof ticketNoteSchema>;
 
+export const ticketRunSchema = z.looseObject({
+  run: z.int(),
+  attempt: z.int(),
+  phase: z.string(),
+  outcome: z.string().nullable(),
+  rounds: z.int(),
+  pr_url: z.string().nullable(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+});
+export type TicketRun = z.infer<typeof ticketRunSchema>;
+
+export const ticketSteerSchema = z.looseObject({
+  id: z.int(),
+  kind: z.enum(["amendment", "hint"]),
+  note: z.string(),
+  author: z.string(),
+  at: z.int(),
+  run: z.int().nullable(),
+  read_by: z.int().nullable(),
+  read_ms: z.int().nullable(),
+  withdrawn: z.boolean(),
+});
+export type TicketSteer = z.infer<typeof ticketSteerSchema>;
+
 export const ticketDetailSchema = z.looseObject({
   ticket: z.string(),
   ticket_url: z.string().nullable(),
@@ -719,5 +744,7 @@ export const ticketDetailSchema = z.looseObject({
   claimed: z.union([ticketRevisionSchema, claimedSnapshotSchema]).nullable(),
   revisions: z.array(revisionStampSchema),
   notes: z.array(ticketNoteSchema),
+  runs: z.array(ticketRunSchema),
+  steers: z.array(ticketSteerSchema),
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
