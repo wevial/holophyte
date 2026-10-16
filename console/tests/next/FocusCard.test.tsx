@@ -132,7 +132,7 @@ test("the card lists the run's three newest events but bookkeeping, newest first
   ];
   await mount(daemon({ items: [failed(code)], details: { 12: { ...detail, events } } }));
   const lines = within(card()).getByRole("list", { name: "Latest progress" }).querySelectorAll("li");
-  expect([...lines].map((line) => line.textContent)).toEqual([
+  expect([...lines].map((line) => `${line.querySelector("time")?.textContent}${line.querySelector("p")?.textContent}`)).toEqual([
     "16:02verify failed: 2 tests red",
     "15:55working -> verifying",
     "15:40round 1 changes requested",
@@ -428,4 +428,84 @@ test("a bypassable review offers a bypass confirm with readiness facts and posts
     { url: `${DEMO}/actions/merge`, body: { run: 9, bypass_review: true } },
   ]);
   expect(toast()).toBe("Approved PR #42, bypassing the required review. The loop merges it on its next claim.");
+});
+
+const prUrl = "https://github.com/example/repo/pull/644";
+const parkedQuestion = `PR open: ${prUrl}\nchecks failure on the head commit; Fix round made no commit; operator instruction needed:\nI couldn't reproduce the \`unit\` failure.\n\n- **The CI log:** unavailable\n- **The full suite:** passed`;
+
+const fixDeclined = (extra: object = {}) => blocked("DEMO-4", 4, HOUR, {
+  park_kind: "fix_declined", pr: { number: 644, checks: "failure", review: null, threads: null, open_threads: null, title: null }, pr_url: prUrl, question: parkedQuestion, ...extra,
+});
+
+test("a declined check fix leads with structured facts and renders the ask without machine prefixes", async () => {
+  await mount(daemon({ items: [fixDeclined()] }));
+  expect(within(card()).getByRole("heading", { name: "Checks failed on PR #644 and the fix round found nothing to change" })).toBeTruthy();
+  expect(within(card()).getByRole("link", { name: "PR #644" }).getAttribute("href")).toBe(prUrl);
+  expect(card().querySelector("code")?.textContent).toBe("unit");
+  expect(card().querySelector("strong")?.textContent).toBe("The CI log:");
+  expect(card().querySelectorAll("li")).toHaveLength(2);
+  expect(cardText()).not.toContain("PR open:");
+  expect(cardText()).not.toContain("Fix round made no commit");
+});
+
+test("a question without a pull request has a generic headline and no PR link", async () => {
+  await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, { park_kind: "question", pr: null, pr_url: null })] }));
+  expect(within(card()).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
+  expect(within(card()).queryByRole("link", { name: /PR/ })).toBeNull();
+});
+
+test("the ask displays raw HTML literally and expands from four lines", async () => {
+  await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, { question: "<script>alert(1)</script>" })] }));
+  expect(card().querySelector("script")).toBeNull();
+  expect(within(card()).getByText("<script>alert(1)</script>")).toBeTruthy();
+  const folded = card().querySelector(".line-clamp-4")!;
+  expect(folded).toBeTruthy();
+  const toggle = within(card()).getByRole("button", { name: "Show all" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(folded.classList.contains("line-clamp-4")).toBe(false);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(toggle.textContent).toBe("Show less");
+  fireEvent.click(toggle);
+  expect(folded.classList.contains("line-clamp-4")).toBe(true);
+});
+
+test("latest event Markdown expands independently from two lines", async () => {
+  await mount(daemon({ items: [fixDeclined()], details: { 4: { ...detail, events: [{ at: NOW, kind: "phase_change", summary: "**Parked** on `unit`" }] } } }));
+  const entry = within(card()).getByRole("list", { name: "Latest progress" }).firstElementChild!;
+  expect(entry.querySelector("strong")?.textContent).toBe("Parked");
+  expect(entry.querySelector("code")?.textContent).toBe("unit");
+  const folded = entry.querySelector(".line-clamp-2")!;
+  expect(folded).toBeTruthy();
+  const toggle = within(entry as HTMLElement).getByRole("button", { name: "Show all" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(folded.classList.contains("line-clamp-2")).toBe(false);
+  expect(card().querySelector(".line-clamp-4")).toBeTruthy();
+});
+
+test.each([
+  [{ pr: null }, "The fix round on PR #644 found nothing to change"],
+  [{ pr: null, pr_url: null }, "The fix round found nothing to change"],
+  [{ park_kind: null }, "The run has a question for you"],
+])("the blocked headline falls back using available structured facts (%j)", async (extra, headline) => {
+  await mount(daemon({ items: [fixDeclined(extra)] }));
+  expect(within(card()).getByRole("heading", { name: headline })).toBeTruthy();
+});
+
+test("ask links use safe URLs and unsupported headings and images retain their text", async () => {
+  await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, {
+    question: "# Read this\n\n![Important instruction](https://example.com/image.png)\n\n![Reference instruction][image]\n\n[image]: https://example.com/image.png\n\n[Log](https://example.com/log) and [unsafe](javascript:alert%281%29)",
+  })] }));
+  expect(within(card()).getByText("Read this")).toBeTruthy();
+  expect(within(card()).queryByRole("heading", { name: "Read this" })).toBeNull();
+  expect(within(card()).getByText("Important instruction")).toBeTruthy();
+  expect(within(card()).getByText("Reference instruction")).toBeTruthy();
+  expect(card().querySelector("img")).toBeNull();
+  const log = within(card()).getByRole("link", { name: "Log" });
+  expect(log.getAttribute("href")).toBe("https://example.com/log");
+  expect(log.getAttribute("target")).toBe("_blank");
+  expect(log.getAttribute("rel")).toBe("noreferrer");
+  expect(within(card()).getByText("unsafe").getAttribute("href")).toBe("");
 });
