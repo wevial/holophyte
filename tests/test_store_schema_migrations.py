@@ -546,7 +546,8 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after['tickets'] = [row[:-11] for row in after['tickets']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
-                 'prSeenTitle', 'verifyMs', 'verifyStartedAt', 'storyGeneration',
+                 'prSeenTitle', 'prSeenState', 'verifyMs', 'verifyStartedAt',
+                 'storyGeneration',
                  'prSeenOpenThreads', 'prSeenOpenThreadsFloor'}
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in added) for row in after['runs']]
@@ -912,3 +913,39 @@ class SteerNotesMigrationTests(unittest.TestCase):
                              before)
             store.record_project_intervention(conn, "steer", "amendment for KO-1",
                                               project_id=project)
+
+
+class PullRequestStateMigrationTests(unittest.TestCase):
+    def test_version_50_preserves_runs_and_adds_nullable_pull_request_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = sqlite3.connect(path)
+            previous = "\n".join(
+                line for line in store.schema.SCHEMA.splitlines()
+                if not line.strip().startswith("prSeenState "))
+            conn.executescript(previous)
+            conn.execute(store.schema._INTERVENTIONS_DDL)
+            for number in (1, 2):
+                project = store.ensure_project(
+                    conn, f"team-{number}", f"/repo-{number}")
+                ticket = store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{number}",
+                    linear_identifier=f"KO-{number}", title=f"candidate {number}")
+                store.claim(conn, project, ticket, now=number)
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(runs)")]
+            before = conn.execute("SELECT * FROM runs ORDER BY id").fetchall()
+            conn.execute("PRAGMA user_version = 50")
+            conn.commit()
+            conn.close()
+
+            conn = store.open(path)
+            self.addCleanup(conn.close)
+            self.assertEqual(conn.execute(
+                "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
+                [(None,), (None,)])
+            self.assertEqual(store.schema.SCHEMA_VERSION, 51)
+            self.assertEqual(store.schema.READABLE_FROM, 50)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (51,))
+            self.assertEqual(conn.execute(
+                f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
+                before)

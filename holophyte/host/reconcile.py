@@ -220,6 +220,9 @@ def _reconcile_pull_requests(target, conn, project, provider,
                 conn, ticket, pull, status, poll_ms, reason, kind, target)
             if issue is not None:
                 sent.add(issue)
+        else:
+            store.record_pr_seen(conn, ticket.runId, _seen(status),
+                                 parked_only=True, facts_only=True)
         if low:
             return sent
     if failed_asked is None:
@@ -390,11 +393,23 @@ def _budget_low():
     return True
 
 
+def _pr_state(status):
+    if status.merged:
+        return "merged"
+    if status.closed:
+        return "closed"
+    if status.draft is True:
+        return "draft"
+    if status.draft is False:
+        return "ready"
+    return None
+
+
 def _seen(status):
     at = max([status.updated_at or "", *(item[1] for item in status.activity)])
     return (at or None, status.threads, status.open_threads,
             status.open_threads_floor, status.checks, status.review,
-            status.title)
+            status.title, _pr_state(status))
 
 
 def _wake_reason(target, conn, ticket, pull, status):
@@ -453,9 +468,8 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
     why = f"{pull.url} has new review activity" if arrived else reason
     waited_ms = int(time() * 1000) - (parked_ms or 0)
     if waited_ms < poll_ms and not (reason and ticket.parkKind == "route"):
-        if reason is None:
-            store.record_pr_seen(conn, run_id, mark, parked_only=True,
-                                 facts_only=True)
+        store.record_pr_seen(conn, run_id, mark, parked_only=True,
+                             facts_only=True)
         print(f"[holo2] {identifier}: {why}; the next babysit round waits"
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
         return None
@@ -518,6 +532,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
             print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but"
                   " the ticket moved while it was asked; left alone")
             return
+        store.record_pr_seen(conn, run_id, _seen(status))
         branch = parked[0]
         store.record_intervention(
             conn, run_id, "approve",
@@ -554,6 +569,7 @@ def _note_closed_pr(target, conn, provider, ticket, pull, status):
         branch, sha = conn.execute(
             "SELECT branch, candidateSha FROM runs WHERE id = ?",
             (ticket.runId,)).fetchone()
+        store.record_pr_seen(conn, ticket.runId, _seen(status))
         _reject_pr(conn, ticket.runId, pull, status.closed_by, branch, sha)
     from holophyte.board.projection import release_lease_label
     release_lease_label(target, conn, ticket.id, provider, ticket.runId)

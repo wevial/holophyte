@@ -152,7 +152,7 @@ def _seed_store(path):
             store.park(conn, run, "awaiting_merge_approval",
                        pr_url=f"{PULL}{number}", park_kind=kind,
                        pr_seen=(now - 5 * MIN, 0, 0, None, checks,
-                                "approved", text),
+                                "approved", text, "ready"),
                        now=at + 31 * MIN)
             store.tickets.transition(conn, ticket, "blocked_on_operator")
             store.set_question(conn, ticket, f"PR open\n{question}")
