@@ -4,8 +4,8 @@ import { Btn } from "./Btn";
 
 const FOCUSABLE = "button:not(:disabled), a[href], textarea, input, select, [tabindex]:not([tabindex='-1'])";
 
-/** Esc cancels; Tab and Shift+Tab cycle through `box`'s controls, from
- *  wherever focus is on the page. */
+/** Esc cancels before any page listener sees it; Tab and Shift+Tab cycle
+ *  through `box`'s controls, from wherever focus is on the page. */
 function trap(event: KeyboardEvent, box: HTMLElement | null, onCancel: () => void) {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -51,8 +51,8 @@ export function ConfirmDialog({
   useEffect(() => {
     cancel.current?.focus();
     const keep = (event: KeyboardEvent) => trap(event, box.current, cancelled.current);
-    document.addEventListener("keydown", keep);
-    return () => document.removeEventListener("keydown", keep);
+    document.addEventListener("keydown", keep, true);
+    return () => document.removeEventListener("keydown", keep, true);
   }, []);
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">

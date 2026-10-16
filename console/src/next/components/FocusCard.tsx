@@ -43,7 +43,7 @@ function namedTitle(item: AttentionItem, host: Host | undefined): string | null 
 
 /** `describe()` against the item's own daemon's thresholds and clock, aged
  *  by the local time since that daemon last answered. */
-function describeOn(item: AttentionItem, host: Host | undefined, now: number) {
+export function describeOn(item: AttentionItem, host: Host | undefined, now: number) {
   const status = host?.status;
   if (item.kind === UNREACHABLE || !status) return describe(item, { heartbeat_stale_ms: 0, strikes: 0 }, { now });
   const since = sinceSeen(host?.seen_ms, now);
