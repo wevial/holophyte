@@ -89,7 +89,7 @@ export function Story() {
           <section aria-labelledby="page-title">
             <Header project={project} storyKey={key} title={story.title} nodes={nodes} />
           </section>
-          <StoryGraph key={key} nodes={nodes} base={host.base} />
+          <StoryGraph key={`${project} ${key}`} nodes={nodes} base={host.base} />
           <StoryNotes story={story} now={peers.now} />
         </>
       )}

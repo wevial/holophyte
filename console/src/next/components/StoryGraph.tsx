@@ -51,7 +51,7 @@ function Legend() {
 
 function NodeCard({ node, base, className, style, after }: { node: StoryNode; base: string; className: string; style?: CSSProperties; after?: string }) {
   const look = cardOf(node.state);
-  const waits = node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story";
+  const waits = after ?? (node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story");
   const label = `${node.ticket} ${node.title}, ${node.word}. ${waits}`;
   const body = (
     <Card look={look} mark={markOf(node)}>
@@ -142,8 +142,10 @@ export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }
       readFade();
     };
     read();
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(read);
     observer.observe(region);
+    observer.observe(region.firstElementChild!);
     return () => observer.disconnect();
   }, []);
   const fades = `${fade.left ? " fade-l" : ""}${fade.right ? " fade-r" : ""}`;
