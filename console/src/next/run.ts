@@ -122,8 +122,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const readiness = useReadiness(host == null ? [] : [host], deps);
   const answer = useRun(host?.base ?? null, run, deps);
   if (host == null) return peers.polls > 0 ? { kind: "unknown_project" } : { kind: "loading" };
-  if (run == null) return { kind: "not_found" };
-  if (answer.error instanceof AnswerError && answer.error.status === 404) return { kind: "not_found" };
+  if (run == null || (answer.error instanceof AnswerError && answer.error.status === 404)) return { kind: "not_found" };
   const status = host.contract_error ? undefined : host.status;
   const detail = answer.data;
   if (detail == null || status == null) return { kind: "loading" };
@@ -139,8 +138,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
     readiness: readiness.get(runKey(host.key, run)),
   });
   const items = hostItems(host, now).filter((item) => item.run === run);
-  const kind = ITEM_KIND[state];
-  const item = kind == null ? null : (items.find((each) => each.kind === kind) ?? null);
+  const item = items.find((each) => each.kind === ITEM_KIND[state]) ?? null;
   const needsYou = ASKS_YOU.has(state) || needsYouEntries(items, readiness, now).length > 0;
   const words = stageWords({ detail, live, phase, state, item, thresholds: status.thresholds, heartbeatMs: heartbeat ?? 0, now });
   const loopsBack = detail.rounds.filter((round) => round.verdict === "changes_requested").length;
