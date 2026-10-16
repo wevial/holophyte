@@ -142,13 +142,15 @@ test("the day's log folds both hosts' entries newest first, toned by kind, asked
   }
 });
 
-test("the log caps at 40 lines with a count of the rest, skips a host without the route, and says when it is empty", async () => {
-  const many = Array.from({ length: 45 }, (_, index) => entry(at(1, 0) + index * 60_000, "round", "loop", "DEMO-7", `step ${index}`));
+test("the log caps at 25 lines with a count of the rest in a bounded rail, skips a host without the route, and says when it is empty", async () => {
+  const many = Array.from({ length: 30 }, (_, index) => entry(at(1, 0) + index * 60_000, "round", "loop", "DEMO-7", `step ${index}`));
   await mount("#/", fleet({ ledger: ledgerOf(...many) }, {}).fetch);
   const lines = logLines();
-  expect(lines).toHaveLength(41);
-  expect(lines[0]).toBe("01:44DEMO-7 · step 44");
+  expect(lines).toHaveLength(26);
+  expect(lines[0]).toBe("01:29DEMO-7 · step 29");
   expect(lines.at(-1)).toBe("and 5 earlier today");
+  expect(log().className).toContain("max-h-[calc(100vh-40px)]");
+  expect(log().className).toContain("overflow-y-auto");
   cleanup();
 
   await mount(
@@ -161,6 +163,28 @@ test("the log caps at 40 lines with a count of the rest, skips a host without th
   await mount("#/", fleet({}, {}).fetch);
   expect(logLines()).toEqual([]);
   expect(log().textContent).toContain("Nothing logged since midnight.");
+});
+
+test("a long entry shows its first line clamped, opens in place to its full text, and a short entry is no button", async () => {
+  const failed = "capture failed for DEMO-7\n\n```\n$ bun run capture /srv/dev/demo/console\n┌─ 01-board.png\n└─ timeout\n```";
+  const { fetch } = fleet(
+    { ledger: ledgerOf(entry(at(11, 0), "failure", "loop", "DEMO-7", failed), entry(at(10, 0), "round", "loop", "DEMO-8", "review round 2")) },
+    {},
+  );
+  await mount("#/", fetch);
+  const opener = within(log()).getByRole("button", { name: "DEMO-7 · capture failed for DEMO-7" });
+  expect(opener.className).toContain("line-clamp-2");
+  expect(log().textContent).not.toContain("timeout");
+  expect(within(log()).getAllByRole("button")).toEqual([opener]);
+
+  await act(async () => opener.click());
+  expect(opener.getAttribute("aria-expanded")).toBe("true");
+  expect(log().textContent).toContain("$ bun run capture /srv/dev/demo/console");
+  expect(log().textContent).toContain("└─ timeout");
+
+  await act(async () => opener.click());
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(log().textContent).not.toContain("timeout");
 });
 
 test("a host whose ledger read fails after a good answer keeps its lines", async () => {
