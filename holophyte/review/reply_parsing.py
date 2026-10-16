@@ -281,8 +281,9 @@ def _scan_witness(file, cls, name):
         return _scan_go_subtest(file.read_text(errors="replace"), name)
     if file.suffix != ".py":
         text = file.read_text(errors="replace")
-        return (None if any(spelling in text for spelling in _quoted_spellings(name))
-                else f'no test named "{name}"')
+        found = (any(spelling in text for spelling in _quoted_spellings(name))
+                 or any(form.fullmatch(name) for form in _template_patterns(text)))
+        return None if found else f'no test named "{name}"'
     lines = file.read_text(errors="replace").splitlines()
     if cls is None:
         return (None if any(re.match(rf"\s*def {name}\(", line) for line in lines)
@@ -296,6 +297,50 @@ def _scan_witness(file, cls, name):
 def _quoted_spellings(name):
     doubled = name.replace("\\", "\\\\")
     return [name, *(doubled.replace(quote, "\\" + quote) for quote in "\"'`")]
+
+
+_JS_QUOTED = re.compile(r"""(['"])(?:(?!\1)[^\\\n]|\\.)*\1""")
+
+
+def _template_patterns(text):
+    patterns, start = [], text.find("`")
+    while start != -1:
+        literals, end = _template_literals(text, start + 1)
+        if len(literals) > 1:
+            patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
+        start = text.find("`", end + 1)
+    return patterns
+
+
+def _template_literals(text, i):
+    literals, piece = [], []
+    while i < len(text) and text[i] != "`":
+        if text[i] == "\\":
+            piece.append(text[i + 1:i + 2])
+            i += 2
+        elif text.startswith("${", i):
+            literals.append("".join(piece))
+            piece = []
+            i = _placeholder_end(text, i + 2)
+        else:
+            piece.append(text[i])
+            i += 1
+    literals.append("".join(piece))
+    return literals, i
+
+
+def _placeholder_end(text, i):
+    depth = 1
+    while i < len(text) and depth:
+        quoted = _JS_QUOTED.match(text, i)
+        if quoted:
+            i = quoted.end()
+        elif text[i] == "`":
+            i = _template_literals(text, i + 1)[1] + 1
+        else:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+    return i
 
 
 _GO_STRING = r'"((?:[^"\\\n]|\\.)*)"'

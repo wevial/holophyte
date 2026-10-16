@@ -1,10 +1,15 @@
 """A met criterion may cite a script test whose title a loop builds."""
 
+import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from holophyte.review import reply_parsing
+
+MODULES = "HOLOPHYTE_TEST_PLAYWRIGHT_MODULES"
 
 LOOP_SPEC = (
     "import { test } from '@playwright/test';\n"
@@ -17,8 +22,33 @@ LOOP_SPEC = (
     "}\n"
 )
 
+TEMPLATE_SPEC = (
+    "import { test } from '@playwright/test';\n"
+    "\n"
+    "const sizes = [320, 640];\n"
+    "test(`renders ${sizes.map((s) => `${s}px`).join(\", \")} in one row`, "
+    "async () => {});\n"
+    "for (const width of [360]) {\n"
+    "  test(`keeps the \\`tag\\` and the \\${literal} marker at ${width}`, "
+    "async () => {});\n"
+    "}\n"
+    "test(`a plain backtick title`, async () => {});\n"
+)
+
 SPEC = "e2e/checks/images.spec.ts"
+TEMPLATES = "e2e/checks/templates.spec.ts"
 TITLE = "images keep their reserved boxes and the column at {} pixels wide"
+
+PLAYWRIGHT_CONFIG = """\
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({ testDir: './e2e', testMatch: '**/*.spec.ts' });
+"""
+
+
+def _met(*citations):
+    return "CRITERION 1: met — " + " and ".join(
+        f'{path}::"{title}"' for path, title in citations)
 
 
 class LoopTitleWitnessTests(unittest.TestCase):
@@ -29,6 +59,17 @@ class LoopTitleWitnessTests(unittest.TestCase):
         spec = self.root / SPEC
         spec.parent.mkdir(parents=True)
         spec.write_text(LOOP_SPEC)
+        (self.root / TEMPLATES).write_text(TEMPLATE_SPEC)
+
+    def findings(self, path, title):
+        return reply_parsing.criteria_findings(
+            _met((path, title)), ["c1"], self.root)
+
+    def assertUnwitnessed(self, path, title):
+        findings = self.findings(path, title)
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("unwitnessed", findings[0]["message"])
+        self.assertIn(f'no test named "{title}"', findings[0]["message"])
 
     def test_each_title_the_loop_builds_witnesses_the_criterion(self):
         reply = ("CRITERION 1: met — "
@@ -36,6 +77,67 @@ class LoopTitleWitnessTests(unittest.TestCase):
                                 for width in (1280, 360)))
         self.assertEqual(
             reply_parsing.criteria_findings(reply, ["c1"], self.root), [])
+
+    def test_differing_text_or_an_empty_placeholder_stays_unwitnessed(self):
+        self.assertUnwitnessed(SPEC, "images keep their boxes at 360 pixels wide")
+        self.assertUnwitnessed(SPEC, TITLE.format(""))
+
+    def test_a_backtick_title_without_a_placeholder_needs_its_exact_text(self):
+        self.assertEqual(self.findings(TEMPLATES, "a plain backtick title"), [])
+        self.assertUnwitnessed(TEMPLATES, "a plain backtick title, reworded")
+
+    def test_nested_templates_and_escapes_spell_the_runner_title(self):
+        self.assertEqual(
+            self.findings(TEMPLATES, "renders 320px, 640px in one row"), [])
+        self.assertEqual(self.findings(
+            TEMPLATES, "keeps the `tag` and the ${literal} marker at 360"), [])
+        self.assertUnwitnessed(
+            TEMPLATES, "keeps the `tag` and the 42 marker at 360")
+
+
+class RealPlaywrightListTests(unittest.TestCase):
+    def setUp(self):
+        modules = os.environ.get(MODULES, "")
+        if not (Path(modules) / "@playwright" / "test").is_dir():
+            self.skipTest(f"{MODULES} does not name a node_modules directory "
+                          "holding @playwright/test")
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        (self.root / "node_modules").symlink_to(Path(modules).resolve())
+        (self.root / "package.json").write_text('{"type": "module"}\n')
+        (self.root / "playwright.config.ts").write_text(PLAYWRIGHT_CONFIG)
+        (self.root / SPEC).parent.mkdir(parents=True)
+        (self.root / SPEC).write_text(LOOP_SPEC)
+        (self.root / TEMPLATES).write_text(TEMPLATE_SPEC)
+
+    def listed_titles(self):
+        result = subprocess.run(
+            ["npx", "playwright", "test", "--list", "--reporter=json"],
+            cwd=self.root, capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        listing = json.loads(result.stdout)
+        return [(spec["file"], spec["title"])
+                for suite in _suites(listing["suites"])
+                for spec in suite.get("specs", [])]
+
+    def test_every_title_the_runner_lists_is_witnessed(self):
+        listed = self.listed_titles()
+        self.assertEqual(
+            {(Path(file).name, title) for file, title in listed
+             if Path(file).name == Path(SPEC).name},
+            {(Path(SPEC).name, TITLE.format(width)) for width in (1280, 360)})
+        references = [(str(Path("e2e") / file), None, title)
+                      for file, title in listed]
+        self.assertEqual(len(references), 5, listed)
+        self.assertEqual(
+            reply_parsing.missing_witnesses(references, self.root), [])
+
+
+def _suites(suites):
+    for suite in suites:
+        yield suite
+        yield from _suites(suite.get("suites", []))
 
 
 if __name__ == "__main__":
