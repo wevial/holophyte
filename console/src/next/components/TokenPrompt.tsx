@@ -1,13 +1,8 @@
 import { useContext, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { addressOf } from "../../lib/hosts";
-import { storeToken, tokenFor } from "../../lib/token";
+import { storeToken } from "../../lib/token";
+import { tokenWanted } from "../notices";
 import { OriginContext, useConsolePeers } from "../scope";
-
-/** The request addresses whose daemon answered 401 and holds no token. */
-function wantingAddresses(bases: string[]): string[] {
-  return [...new Set(bases.map(addressOf))].filter((address) => tokenFor(address) == null);
-}
 
 function TokenForm({ address, onStored }: { address: string; onStored: () => void }) {
   const [token, setToken] = useState("");
@@ -57,7 +52,7 @@ export function TokenPrompt() {
   const origin = useContext(OriginContext);
   const client = useQueryClient();
   const [, rerender] = useState(0);
-  const addresses = wantingAddresses(hosts.filter((host) => host.needs_token).map((host) => host.base));
+  const addresses = tokenWanted(hosts);
   if (addresses.length === 0) return null;
   return (
     <div aria-label="Tokens" className="flex flex-col gap-2.5 px-8 pt-7">

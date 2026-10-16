@@ -192,6 +192,7 @@ test("a daemon that answers 401 with no token stored gets a token field; Use sto
   await act(settle);
 
   expect(bearers.every((bearer) => bearer == null)).toBe(true);
+  expect(screen.queryByText(/for its projects/)).toBeNull();
   fireEvent.change(screen.getByLabelText("writer-host:7710 asks for its token."), { target: { value: " s3cret " } });
   fireEvent.click(screen.getByRole("button", { name: "Use" }));
   expect(localStorage.getItem(tokenKey("writer-host:7710"))).toBe("s3cret");
