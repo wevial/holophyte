@@ -29,6 +29,7 @@ class WrittenPullRequestDiffTests(unittest.TestCase):
 
             git(root, "clone", str(origin), str(other))
             commit(other, "main-b.txt")
+            commit(other, "main-c.txt")
             git(other, "push", "origin", "main")
             git(wt, "fetch", str(other), "main")
             git(wt, "merge", "--no-edit", "FETCH_HEAD")
