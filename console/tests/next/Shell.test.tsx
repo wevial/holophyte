@@ -45,7 +45,7 @@ async function mount(hash: string, fetchImpl: Fetch = daemons([], [])) {
   return fake;
 }
 
-const pages = () => within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link");
+const pages = () => within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link").filter((link) => !link.closest("ul"));
 const badge = () => screen.getByRole("navigation", { name: "Pages" }).querySelector("[data-badge]");
 
 beforeEach(() => {
