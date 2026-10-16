@@ -105,8 +105,35 @@ test("a folded section stays folded across a remount, and folds with storage thr
   }
 });
 
+test("with nothing stored, Merged today starts folded and the other sections open", async () => {
+  await mount("#/", busy);
+  for (const name of ["Needs you", "Running", "Pull requests"]) {
+    expect(within(section(name)).getByRole("button", { name }).getAttribute("aria-expanded")).toBe("true");
+  }
+  const done = within(section("Merged today")).getByRole("button", { name: "Merged today" });
+  expect(done.getAttribute("aria-expanded")).toBe("false");
+  expect(document.getElementById(done.getAttribute("aria-controls")!)!.hidden).toBe(true);
+  expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
+});
+
+test("opening Merged today is remembered across a remount, and so is folding it again", async () => {
+  const done = () => within(section("Merged today")).getByRole("button", { name: "Merged today" });
+  await mount("#/", busy);
+  fireEvent.click(done());
+  cleanup();
+
+  await mount("#/", busy);
+  expect(done().getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(done());
+  cleanup();
+
+  await mount("#/", busy);
+  expect(done().getAttribute("aria-expanded")).toBe("false");
+});
+
 test("empty sections say what the factory is doing, naming the queue and the picked project", async () => {
   const quiet = fleet({ items: [], queued: queuedOf("DEMO-2", "DEMO-12") }, { items: [] });
+  localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", quiet);
   expect(within(section("Running")).getByText("Nothing running. DEMO-2 and DEMO-12 are queued.")).toBeTruthy();
   expect(within(section("Needs you")).getByText("The factory has it from here.")).toBeTruthy();
@@ -219,6 +246,7 @@ test("the Needs you count is --need above zero and every other count, or a zero 
 });
 
 test("an empty section's sentence draws no border of its own", async () => {
+  localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", fleet({ items: [] }, { items: [] }));
   for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
     const sentence = section(name).querySelector("p")!;

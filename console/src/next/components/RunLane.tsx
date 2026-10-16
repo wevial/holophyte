@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { TicketLink } from "../../components/TicketLink";
 import { isStale } from "../../lib/derive";
@@ -7,8 +8,8 @@ import { agentMs, boxPercent, groupByProject, phaseLabel, type ProjectGroup } fr
 import { prLabel } from "../../lib/shipped";
 import type { StatusRun } from "../../lib/contract.gen";
 import type { Queued } from "../../lib/types";
-import { classicHref } from "../../lib/view";
 import type { ContractBodies } from "../fleet";
+import { runPage } from "../run";
 import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
@@ -44,7 +45,7 @@ function quietSentence(keys: string[]): string {
   return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Needs you.`;
 }
 
-function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinceMs: number }) {
+function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string; sinceMs: number }) {
   const stage = phaseLabel(run.phase);
   const used = agentMs(run, sinceMs);
   const box = run.time_box_ms;
@@ -56,8 +57,8 @@ function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinc
   const stop = run.stop_requested ? `${run.stop_action?.startsWith("abort") ? "Abort" : "Pause"} requested: ${run.stop_requested}` : null;
   return (
     <li className="border-rule-2 [&+&]:border-t">
-      <a
-        href={classicHref(`#run=${run.id}&daemon=${encodeURIComponent(base)}`)}
+      <Link
+        {...runPage(project, run.id)}
         aria-label={`${run.ticket} ${title}, ${stage}${spoken}`}
         className={`${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`}
       >
@@ -82,7 +83,7 @@ function RunLaneRow({ run, base, sinceMs }: { run: StatusRun; base: string; sinc
             </span>
           )}
         </span>
-      </a>
+      </Link>
     </li>
   );
 }
@@ -153,7 +154,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
       {live.length > 0 && (
         <ul className="border border-rule bg-paper">
           {live.map((run) => (
-            <RunLaneRow key={run.id} run={run} base={group.base} sinceMs={sinceMs} />
+            <RunLaneRow key={run.id} run={run} project={group.path} sinceMs={sinceMs} />
           ))}
         </ul>
       )}
