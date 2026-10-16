@@ -337,8 +337,11 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # turn's `--now` notes its resume carries.
                                  # HOLO-229: `withdraw` and its readers,
                                  # `standing` and `withdrawn_events`.
+                                 # HOLO-324: `chain_notes`, a run chain's
+                                 # notes as `/runs/N` serves them.
                                  (store.steer_notes, ["amendments",
                                                       "babysat_interrupts",
+                                                      "chain_notes",
                                                       "close", "consume",
                                                       "interrupting",
                                                       "pending", "standing",
