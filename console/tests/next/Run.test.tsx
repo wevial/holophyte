@@ -125,6 +125,12 @@ test("a failed run waiting in Needs you gives its failure and reason, and a merg
   expect(stage()).toBe("Merged · 5acc138");
 });
 
+test("a run in its merge phase reads as merging on the Merge stage", async () => {
+  await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merging" }));
+  expect(verdict()).toBe("Merging. Nothing needs you.");
+  expect(stage()).toBe("Merge · 1 loop back");
+});
+
 test("a run past its heartbeat threshold says how long it has been silent, and that alone, before its daemon raises it", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, heartbeat_age_ms: 15 * MINUTE }));
   expect(verdict()).toBe("No heartbeat for 15m. It is up in Needs you.");

@@ -45,6 +45,8 @@ const STEPS: Record<string, { stage: string; doing: string }> = {
   verifying: { stage: "Verify", doing: "Verifying" },
   reviewing: { stage: "Review", doing: "Reviewing" },
   merge_gate: { stage: "Merge", doing: "Merging" },
+  merging: { stage: "Merge", doing: "Merging" },
+  squashing: { stage: "Merge", doing: "Merging" },
 };
 
 interface Facts {
