@@ -110,24 +110,9 @@ export const CARD_H = 108;
 const COLUMN_GAP = 72;
 const ROW_GAP = 16;
 
-export interface GraphEdge {
-  from: string;
-  to: string;
-  path: string;
-  dim: boolean;
-}
-
-export interface GraphLayout {
-  columns: StoryNode[][];
-  at: Map<string, { x: number; y: number }>;
-  edges: GraphEdge[];
-  width: number;
-  height: number;
-}
-
 /** Columns by longest path from a node with no dependency; a node met
  *  again while its own depth is open counts as depth 0, so a cycle ends. */
-export function layoutGraph(nodes: StoryNode[]): GraphLayout {
+export function layoutGraph(nodes: StoryNode[]) {
   const byKey = new Map(nodes.map((node) => [node.ticket, node]));
   const depths = new Map<string, number>();
   const open = new Set<string>();
@@ -136,7 +121,7 @@ export function layoutGraph(nodes: StoryNode[]): GraphLayout {
     if (known != null) return known;
     if (open.has(key)) return 0;
     open.add(key);
-    const deps = byKey.get(key)!.depends_on.filter((dep) => byKey.has(dep));
+    const deps = byKey.get(key)!.depends_on;
     const depth = deps.length === 0 ? 0 : 1 + Math.max(...deps.map(depthOf));
     open.delete(key);
     depths.set(key, depth);
@@ -148,7 +133,7 @@ export function layoutGraph(nodes: StoryNode[]): GraphLayout {
   const at = new Map<string, { x: number; y: number }>();
   filled.forEach((column, c) => column.forEach((node, r) => at.set(node.ticket, { x: c * (CARD_W + COLUMN_GAP), y: r * (CARD_H + ROW_GAP) })));
   const edges = nodes.flatMap((node) =>
-    node.depends_on.filter((dep) => byKey.has(dep)).map((dep) => {
+    node.depends_on.map((dep) => {
       const a = at.get(dep)!;
       const b = at.get(node.ticket)!;
       const [x1, y1, x2, y2] = [a.x + CARD_W, a.y + CARD_H / 2, b.x - 2, b.y + CARD_H / 2];
