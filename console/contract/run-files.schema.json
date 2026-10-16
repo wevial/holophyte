@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunFiles",
+  "description": "GET /runs/N/files",
+  "$ref": "#/$defs/RunFiles",
+  "$defs": {
+    "RunFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "A",
+            "D",
+            "M",
+            "R"
+          ]
+        },
+        "added": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "status",
+        "added",
+        "deleted"
+      ],
+      "additionalProperties": true
+    },
+    "RunFiles": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "base": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunFile"
+          }
+        },
+        "total_added": {
+          "type": "integer"
+        },
+        "total_deleted": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run",
+        "base",
+        "head",
+        "files",
+        "total_added",
+        "total_deleted",
+        "truncated"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

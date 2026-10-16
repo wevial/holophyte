@@ -542,6 +542,36 @@ class RunAsks(TypedDict):
     asks: list[ConsoleAsk]
 
 
+class RunFile(TypedDict):
+    path: str
+    status: Literal["A", "D", "M", "R"]
+    added: int
+    deleted: int
+
+
+class RunFiles(TypedDict):
+    run: int
+    base: str
+    head: str
+    files: list[RunFile]
+    total_added: int
+    total_deleted: int
+    truncated: bool
+
+
+class RunTurn(TypedDict):
+    id: int
+    role: Literal["implement", "review", "adjudicate", "write", "trim"]
+    label: str | None
+    route: Literal["primary", "fallback"]
+    seconds: float | None
+    session_id: str | None
+
+
+class RunTurns(TypedDict):
+    turns: list[RunTurn]
+
+
 class ShippedRow(TypedDict):
     id: int
     ticket: str
@@ -571,6 +601,35 @@ class Shipped(TypedDict):
     rows: list[ShippedRow]
     next_before: int | None
     limit: int
+
+
+class HistoryRow(TypedDict):
+    id: int
+    ticket: str
+    ticket_url: str | None
+    title: str
+    attempt: int
+    phase: str
+    outcome: str | None
+    outcome_reason: str | None
+    failure_kind: str | None
+    park_kind: str | None
+    started_ms: int
+    ended_ms: int | None
+    elapsed_ms: int
+    heartbeat_age_ms: int | None
+    rounds: int
+    max_rounds: int
+    pr_url: str | None
+    host: str | None
+
+
+class History(TypedDict):
+    rows: list[HistoryRow]
+    since: int
+    limit: int
+    truncated: bool
+    now: int
 
 
 class LedgerEntry(TypedDict):
@@ -691,7 +750,10 @@ ROUTES = {
     "run-detail": (RunDetail, "GET /runs/N"),
     "run-merge": (MergeReadiness, "GET /runs/N/merge"),
     "run-asks": (RunAsks, "GET /runs/N/asks"),
+    "run-files": (RunFiles, "GET /runs/N/files"),
+    "run-turns": (RunTurns, "GET /runs/N/turns"),
     "shipped": (Shipped, "GET /shipped"),
+    "history": (History, "GET /history"),
     "ledger": (Ledger, "GET /ledger"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),

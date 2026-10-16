@@ -1,0 +1,20 @@
+{
+  "turns": [
+    {
+      "id": 1,
+      "role": "implement",
+      "route": "primary",
+      "label": "claude opus",
+      "seconds": 372.5,
+      "session_id": "session-1"
+    },
+    {
+      "id": 1,
+      "role": "review",
+      "route": "fallback",
+      "label": "codex gpt-5.6-sol",
+      "seconds": 95.25,
+      "session_id": null
+    }
+  ]
+}
