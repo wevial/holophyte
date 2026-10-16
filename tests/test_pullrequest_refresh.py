@@ -149,6 +149,17 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.git("commit", "-qm", path)
         return self.git("rev-parse", "HEAD").strip()
 
+    def test_text_turn_puts_terminal_output_in_code_blocks_only_with_ui_paths(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        answer = ("TITLE: Ignored\nNew description.", False)
+        self.assertNotIn("never as an image", self.refresh(answer))
+        self.configure('[merge]\nmode = "pr"\nui_paths = ["console/**"]\n'
+                       'ui_capture = "true"\n')
+        self.assertIn("Test or terminal output worth showing goes in the "
+                      "description as a short code block, never as an image.",
+                      self.refresh(answer))
+
     def test_a_fix_round_touching_ui_paths_replaces_the_evidence(self):
         a = self.captured_pr()
         b = self.commit_file("console/app.txt")
