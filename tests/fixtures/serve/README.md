@@ -12,6 +12,10 @@ for a claim, so its toil counts that approval.
 its pull request, not yet approved, as a `pr_open` item.
 `shipped.json` pins the same store's `/shipped?outcome=all`: the approved
 ticket's ended run.
+`history.json` pins its `/history` with `since` 100 s before the frozen
+clock: the three open runs, newest start first, the working run among
+them though it started before `since`; the approved ticket's run ended
+before it and is absent.
 `ledger.json` pins its `/ledger?since=0`: a round, an operator approval and
 the store's migration row, whose build, pid and command become `BUILD`,
 1 and `COMMAND`.

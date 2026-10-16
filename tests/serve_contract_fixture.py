@@ -3,6 +3,7 @@ import json
 import re
 
 import holophyte.serve.serve_findings
+import holophyte.serve.serve_history
 import holophyte.serve.serve_runs
 import holophyte.serve.server
 import holophyte.serve.views
@@ -114,6 +115,8 @@ def contract_answers(case):
         ),
         "shipped": holophyte.serve.serve_runs.shipped(target, "outcome=all"),
         "ledger": holophyte.serve.serve_runs.ledger(target, "since=0"),
+        "history": holophyte.serve.serve_history.history(
+            target, f"since={NOW - 100_000}", now=NOW),
         "findings": holophyte.serve.serve_findings.findings(target, "since=0"),
         "board": holophyte.serve.views.board(target, now=NOW),
         "ticket": holophyte.serve.views.ticket_detail(target, "KO-8"),
