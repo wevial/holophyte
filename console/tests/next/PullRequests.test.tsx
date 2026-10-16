@@ -146,6 +146,33 @@ test("an opened row shows its run's detail, and Ask only where the daemon takes 
   expect(within(opened).queryByRole("button", { name: "Ask" })).toBeNull();
 });
 
+test("the PR number links to GitHub without toggling or fetching the row detail", async () => {
+  const seen = await mount({ items: [readyPark], readyRuns: [] });
+  const link = within(rows()[0]!).getByRole("link", { name: "PR #42" });
+  const button = rowButton(42);
+  expect(link.getAttribute("href")).toBe("https://github.com/example/demo/pull/42");
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toBe("noreferrer");
+  expect(link.closest("button")).toBeNull();
+  await act(async () => {
+    fireEvent.click(link);
+    await settle();
+  });
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(seen.filter(({ url }) => /\/runs\/\d+$/.test(url))).toEqual([]);
+  await act(async () => {
+    fireEvent.click(button);
+    await settle();
+  });
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+  expect(seen.some(({ url }) => url === `${DEMO}/runs/9`)).toBe(true);
+  await act(async () => {
+    fireEvent.click(link);
+    await settle();
+  });
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+});
+
 test("with storage refusing, the tag reopens a folded Needs you and focuses its card", async () => {
   await mount({ items: [blocked, onCi, readyPark, threadPark] });
   const storage = Object.getPrototypeOf(localStorage) as Storage;
