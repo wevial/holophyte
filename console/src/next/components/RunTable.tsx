@@ -28,6 +28,11 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
   const need = NEEDS_YOU.has(row.state);
   const host = useConsolePeers().hosts.find((each) => each.base === row.base);
   const target = host?.status == null ? null : runPage(host.status.project, row.id);
+  const linkProps = {
+    "aria-label": `Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`,
+    className: `${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`,
+    children: row.id,
+  };
   return (
     <li
       data-run={row.id}
@@ -35,21 +40,9 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       className={`${GRID} relative border-b border-rule-2 p-3 text-[14px] transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
       {target ? (
-        <Link
-          {...target}
-          aria-label={`Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`}
-          className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`}
-        >
-          {row.id}
-        </Link>
+        <Link {...target} {...linkProps} />
       ) : (
-        <a
-          href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)}
-          aria-label={`Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`}
-          className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`}
-        >
-          {row.id}
-        </a>
+        <a href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)} {...linkProps} />
       )}
       <span className="font-mono text-[12px] font-medium leading-[1.4] tabular-nums text-ink-3 [overflow-wrap:anywhere]">
         <Link
