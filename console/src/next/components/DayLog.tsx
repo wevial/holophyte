@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { LedgerEntry } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 
@@ -30,9 +30,8 @@ function DayLogEntry({ entry }: { entry: LedgerEntry }) {
   const summary = summaryOf(entry.text);
   const line = entry.ticket == null ? summary : `${entry.ticket} · ${summary}`;
   const [clipped, setClipped] = useState(false);
-  const lineRef = useRef<HTMLElement>(null);
+  const [element, setElement] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    const element = lineRef.current;
     if (!element) return;
     const measure = () => setClipped(element.scrollHeight > element.clientHeight);
     measure();
@@ -40,7 +39,7 @@ function DayLogEntry({ entry }: { entry: LedgerEntry }) {
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [line]);
+  }, [element, line]);
   const more = clipped || summary !== entry.text.trim();
   return (
     <li className="relative grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-[7px] pl-4">
@@ -51,9 +50,7 @@ function DayLogEntry({ entry }: { entry: LedgerEntry }) {
       <div className="min-w-0">
         {more ? (
           <button
-            ref={(element) => {
-              lineRef.current = element;
-            }}
+            ref={setElement}
             type="button"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
@@ -62,7 +59,7 @@ function DayLogEntry({ entry }: { entry: LedgerEntry }) {
             {line}
           </button>
         ) : (
-          <span ref={lineRef} className="line-clamp-2 break-words">
+          <span ref={setElement} className="line-clamp-2 break-words">
             {line}
           </span>
         )}

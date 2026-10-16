@@ -190,10 +190,11 @@ test("a long entry shows its first line clamped, opens in place to its full text
 });
 
 /** happy-dom lays nothing out, so every element gets a stand-in layout: a
- *  40-character column at 18px a line, cut to two lines under `line-clamp-2`. */
+ *  40-character column at 18px a line, cut to two lines under `line-clamp-2`,
+ *  and no size once detached. */
 async function wrapAt40(run: () => Promise<void>) {
   const line = 18;
-  const lines = (element: HTMLElement) => Math.max(1, Math.ceil((element.textContent ?? "").length / 40));
+  const lines = (element: HTMLElement) => (element.isConnected ? Math.max(1, Math.ceil((element.textContent ?? "").length / 40)) : 0);
   const saved = ["scrollHeight", "clientHeight"].map((name) => [name, Object.getOwnPropertyDescriptor(HTMLElement.prototype, name)] as const);
   Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
     configurable: true,
@@ -217,20 +218,53 @@ async function wrapAt40(run: () => Promise<void>) {
   }
 }
 
-test("a single line wrapping past the two-line clamp opens to its full text; one that fits is no button", async () => {
-  const long = Array.from({ length: 30 }, (_, index) => `word${index}`).join(" ");
-  await wrapAt40(async () => {
-    const { fetch } = fleet(
-      { ledger: ledgerOf(entry(at(11, 0), "intervention", "operator", "DEMO-9", long), entry(at(10, 0), "round", "loop", "DEMO-8", "review round 2")) },
-      {},
-    );
-    await mount("#/", fetch);
-    const opener = within(log()).getByRole("button", { name: `DEMO-9 · ${long}` });
-    expect(within(log()).getAllByRole("button")).toEqual([opener]);
+/** A ResizeObserver whose callbacks run when `resizeAll` is called, as a browser runs them after layout. */
+function manualResizeObserver() {
+  const live = new Set<() => void>();
+  const saved = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    #fire: () => void;
+    constructor(callback: ResizeObserverCallback) {
+      this.#fire = () => callback([], this as unknown as ResizeObserver);
+    }
+    observe() {
+      live.add(this.#fire);
+    }
+    unobserve() {
+      live.delete(this.#fire);
+    }
+    disconnect() {
+      live.delete(this.#fire);
+    }
+  } as unknown as typeof ResizeObserver;
+  return {
+    resizeAll: () => act(() => live.forEach((fire) => fire())),
+    restore: () => {
+      globalThis.ResizeObserver = saved;
+    },
+  };
+}
 
-    await act(async () => opener.click());
-    expect(log().querySelector("pre")?.textContent).toBe(long);
-  });
+test("a single line wrapping past the two-line clamp opens to its full text, still after a resize; one that fits is no button", async () => {
+  const long = Array.from({ length: 30 }, (_, index) => `word${index}`).join(" ");
+  const observers = manualResizeObserver();
+  try {
+    await wrapAt40(async () => {
+      const { fetch } = fleet(
+        { ledger: ledgerOf(entry(at(11, 0), "intervention", "operator", "DEMO-9", long), entry(at(10, 0), "round", "loop", "DEMO-8", "review round 2")) },
+        {},
+      );
+      await mount("#/", fetch);
+      observers.resizeAll();
+      const opener = within(log()).getByRole("button", { name: `DEMO-9 · ${long}` });
+      expect(within(log()).getAllByRole("button")).toEqual([opener]);
+
+      await act(async () => opener.click());
+      expect(log().querySelector("pre")?.textContent).toBe(long);
+    });
+  } finally {
+    observers.restore();
+  }
 });
 
 test("an opened entry stays open when a newer entry arrives above it", async () => {
