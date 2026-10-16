@@ -137,6 +137,26 @@ whitespace` commit, gets no section, and the prompt is unchanged.
 Configured `[agents] reviewer` and `adjudicator` commands heartbeat the run
 while they execute, like the implementer, every half heartbeat stale interval.
 
+## Witness pre-check
+
+Before the round 1 review, after its verify passes, the factory checks each
+acceptance criterion's named test file: it exists, the branch adds or changes
+it, the verify commands run a test from it, and its tests, and the tests the
+branch adds there, did not run only skipped. Each gap it finds goes back to
+the implementer as a witness turn, on the run's implement time box rather than
+as a review round; the run stays in `verifying`. A turn that commits is
+verified again and checked again on the new head.
+
+The turns stop at two a run, counted from the run's `witness_turn` events, so
+a resumed run does not get two more. A turn that makes no commit ends them
+(`witness_turn_idle`), as does a verify that goes red after a turn; a turn that
+times out fails the run. A criterion that names no test file, or a file whose
+runner the factory cannot parse, never starts a turn.
+
+When gaps or criteria naming no test file remain, the round 1 review prompt
+lists them after the criteria, for the reviewer to judge; the list is not a
+finding.
+
 ## Adversarial pass
 
 With `[review] adversary = true` (see [Config](config.md)) a second seat,

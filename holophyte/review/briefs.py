@@ -185,6 +185,19 @@ def criteria_brief(criteria, refused="REQUEST_CHANGES"):
             "the verdict line.\n\n")
 
 
+def witness_brief(gaps, unnamed):
+    if not gaps and not unnamed:
+        return ""
+    lead = ("The factory's witness pre-check found these gaps before this "
+            "review; judge each criterion yourself:\n"
+            + "".join(f"{gap}\n" for gap in gaps) if gaps else
+            "The factory's witness pre-check found no gap in the named test "
+            "files before this review; judge each criterion yourself.\n")
+    names = ", ".join(str(n) for n in unnamed)
+    return lead + (f"Criteria that name no test file: {names}.\n"
+                   if unnamed else "") + "\n"
+
+
 def left_open_brief(criteria, left_open):
     listed = "\n".join(f"{n}. {criteria[n - 1]}" for n in left_open)
     if not listed:

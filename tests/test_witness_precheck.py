@@ -254,10 +254,10 @@ class InTheLoop(LoopFixture):
         self.git("commit", "-q", "-m", "a running test")
         self.base = self.git("rev-parse", "main").strip()
 
-    def run_task(self, verify, *after):
+    def run_task(self, verify, *after, turns=()):
         task = dict(a_task(), verify=verify, criteria=[self.CRITERION])
         return self.loop(Commit("gated test", path="tests/test_gated.py",
-                                body=GATED), APPROVE, *after,
+                                body=GATED), *turns, APPROVE, *after,
                          provider=StubProvider(task))[0]
 
     def events(self):
@@ -265,7 +265,7 @@ class InTheLoop(LoopFixture):
                          " FROM runEvents ORDER BY seq")
 
     def test_round_one_records_the_skipped_gap_before_the_review(self):
-        fake = self.run_task(VERIFY)
+        fake = self.run_task(VERIFY, turns=[Idle()])
 
         events = self.events()
         prechecks = [event for event in events
@@ -284,7 +284,7 @@ class InTheLoop(LoopFixture):
         self.assertEqual([entry["criterion"] for entry in
                           json.loads(payload)["criteria"]], [1])
         self.assertEqual(json.loads(modes[0][4])["round"], 1)
-        self.assertEqual(fake.roles[:2], ["implement", "review"])
+        self.assertEqual(fake.roles[:3], ["implement", "implement", "review"])
 
     def test_a_failing_verify_records_that_the_check_did_not_run(self):
         self.run_task("false", Idle())
