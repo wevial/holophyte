@@ -126,6 +126,18 @@ test("#/stories opens the first listed story, or says there are none in the scop
   expect(window.location.hash).toBe("#/stories/demo/DEMO-12");
   cleanup();
 
+  let answerDemo = () => {};
+  const late = new Promise<void>((resolve) => (answerDemo = resolve));
+  const prompt = fleet();
+  await mount("#/stories", async (url) => {
+    if (url === `${DEMO}/board`) await late;
+    return prompt(url);
+  });
+  answerDemo();
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/stories/demo/DEMO-12");
+  cleanup();
+
   await mount("#/stories?project=demo", fleet([], []));
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("No stories in demo");
   expect(screen.getByRole("link", { name: "Show all projects" }).getAttribute("href")).toEndWith("#/stories");

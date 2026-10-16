@@ -128,9 +128,9 @@ export function StoriesIndex() {
   const firstProject = first?.project;
   const firstKey = first?.ticket;
   useEffect(() => {
-    if (firstProject == null || firstKey == null) return;
+    if (!answered || firstProject == null || firstKey == null) return;
     void navigate({ to: "/stories/$project/$key", params: { project: firstProject, key: firstKey }, search: keepScope, replace: true });
-  }, [firstProject, firstKey, navigate]);
+  }, [answered, firstProject, firstKey, navigate]);
   return (
     <div className="mx-auto flex w-full max-w-[1320px] flex-col px-8 py-7">
       {answered && first == null && <NoStories project={project} />}

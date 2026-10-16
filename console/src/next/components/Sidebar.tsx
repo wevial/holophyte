@@ -152,7 +152,7 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
       <button
         type="button"
         aria-expanded={!hidden}
-        aria-controls="sidebar-stories"
+        aria-controls={hidden ? undefined : "sidebar-stories"}
         aria-label={hidden ? "Show the story list" : "Hide the story list"}
         onClick={toggle}
         className="absolute top-1.5 right-2 flex size-8 items-center justify-center text-ink-3 hover:text-ink"
@@ -196,7 +196,7 @@ export function Sidebar() {
   const deps = useContext(PollDepsContext);
   const readiness = useReadiness(hosts, deps);
   const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
-  const onStory = useRouterState({ select: (state) => state.location.pathname.startsWith("/stories") });
+  const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const open = useOpenCount(scopedHosts(hosts, project), now);
