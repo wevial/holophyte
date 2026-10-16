@@ -20,16 +20,15 @@ function toneOf(entry: LedgerEntry): LineTone {
   return "ink-3";
 }
 
-/** The entry's text up to its first code fence or blank line, on one line. */
+/** The entry's first line, cut at a code fence. */
 function summaryOf(text: string): string {
-  const head = text.split("```")[0]!.split(/\n\s*\n/)[0]!;
-  return head.replace(/\s+/g, " ").trim();
+  return text.trim().split("```")[0]!.split("\n")[0]!.trim();
 }
 
 function DayLogEntry({ entry }: { entry: LedgerEntry }) {
   const [open, setOpen] = useState(false);
   const summary = summaryOf(entry.text);
-  const more = summary !== entry.text.replace(/\s+/g, " ").trim();
+  const more = summary !== entry.text.trim();
   const line = entry.ticket == null ? summary : `${entry.ticket} · ${summary}`;
   return (
     <li className="relative grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-[7px] pl-4">

@@ -166,16 +166,18 @@ test("the log caps at 25 lines with a count of the rest in a bounded rail, skips
 });
 
 test("a long entry shows its first line clamped, opens in place to its full text, and a short entry is no button", async () => {
+  const steer = "steer: keep the rail compact\nand leave the ledger alone";
   const failed = "capture failed for DEMO-7\n\n```\n$ bun run capture /srv/dev/demo/console\n┌─ 01-board.png\n└─ timeout\n```";
   const { fetch } = fleet(
-    { ledger: ledgerOf(entry(at(11, 0), "failure", "loop", "DEMO-7", failed), entry(at(10, 0), "round", "loop", "DEMO-8", "review round 2")) },
+    { ledger: ledgerOf(entry(at(11, 0), "failure", "loop", "DEMO-7", failed), entry(at(10, 30), "intervention", "operator", "DEMO-9", steer), entry(at(10, 0), "round", "loop", "DEMO-8", "review round 2")) },
     {},
   );
   await mount("#/", fetch);
   const opener = within(log()).getByRole("button", { name: "DEMO-7 · capture failed for DEMO-7" });
   expect(opener.className).toContain("line-clamp-2");
   expect(log().textContent).not.toContain("timeout");
-  expect(within(log()).getAllByRole("button")).toEqual([opener]);
+  const note = within(log()).getByRole("button", { name: "DEMO-9 · steer: keep the rail compact" });
+  expect(within(log()).getAllByRole("button")).toEqual([opener, note]);
 
   await act(async () => opener.click());
   expect(opener.getAttribute("aria-expanded")).toBe("true");
