@@ -10,6 +10,8 @@ import {
   mergeReadinessSchema,
   runAsksSchema,
   runDetailSchema,
+  runFilesSchema,
+  runTurnsSchema,
   shippedSchema,
   statusSchema,
   ticketDetailSchema,
@@ -22,6 +24,8 @@ import runDetail from "../../tests/fixtures/serve/run-detail.json";
 import runDetailUnestimated from "../../tests/fixtures/serve/run-detail-unestimated.json";
 import runMergeReady from "../../tests/fixtures/serve/run-merge-ready.json";
 import runMergeBypassable from "../../tests/fixtures/serve/run-merge-bypassable.json";
+import runFiles from "../../tests/fixtures/serve/run-files.json";
+import runTurns from "../../tests/fixtures/serve/run-turns.json";
 import pinnedAsks from "../../tests/fixtures/serve/run-asks.json";
 import shipped from "../../tests/fixtures/serve/shipped.json";
 import ledger from "../../tests/fixtures/serve/ledger.json";
@@ -49,6 +53,13 @@ test("each pinned run-route answer parses unchanged with its generated schema", 
   expect<unknown>(mergeReadinessSchema.parse(runMergeReady)).toEqual(runMergeReady);
   expect<unknown>(mergeReadinessSchema.parse(runMergeBypassable)).toEqual(runMergeBypassable);
   expect<unknown>(runAsksSchema.parse(runAsks)).toEqual(runAsks);
+  expect<unknown>(runFilesSchema.parse(runFiles)).toEqual(runFiles);
+  expect<unknown>(runTurnsSchema.parse(runTurns)).toEqual(runTurns);
+});
+
+test("a files answer whose total_added is a string fails at its path", () => {
+  const stringly = { ...runFiles, total_added: String(runFiles.total_added) };
+  expect(firstIssuePath(runFilesSchema.safeParse(stringly))).toBe("total_added");
 });
 
 test("each pinned list-route answer parses unchanged with its generated schema", () => {
