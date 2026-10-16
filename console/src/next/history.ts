@@ -34,7 +34,7 @@ const FAILURE_WORDS: Record<string, string> = {
   merge_lock: "failed at merge",
 };
 
-export function failureWord(kind: string | null | undefined): string {
+function failureWord(kind: string | null | undefined): string {
   return (kind != null && Object.hasOwn(FAILURE_WORDS, kind) ? FAILURE_WORDS[kind] : undefined) ?? "failed";
 }
 
@@ -48,7 +48,7 @@ function withDetail(word: string, detail: string | null | undefined, bare = word
 
 /** The state's word with the run's facts after it; `item` is the run's
  *  attention item of the kind its state reads, when its daemon sent one. */
-export function stageWord(row: HostedRun, item: AttentionItem | null, now: number): string {
+function stageWord(row: HostedRun, item: AttentionItem | null, now: number): string {
   switch (row.state) {
     case "running": {
       const label = phaseLabel(row.phase);
