@@ -116,7 +116,7 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
 export function useRunFiles(base: string, id: number, open: boolean, live: boolean, deps: { fetch: Fetch }) {
   const path = `/runs/${id}/files`;
   return useQuery({
-    queryKey: routeKey(base, path),
+    queryKey: [...routeKey(base, path), live],
     queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runFilesSchema),
     enabled: open,
     refetchInterval: live ? POLL_INTERVAL_MS : false,
@@ -127,7 +127,7 @@ export function useRunFiles(base: string, id: number, open: boolean, live: boole
 export function useRunTurns(base: string, id: number, open: boolean, live: boolean, deps: { fetch: Fetch }) {
   const path = `/runs/${id}/turns`;
   return useQuery({
-    queryKey: routeKey(base, path),
+    queryKey: [...routeKey(base, path), live],
     queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, runTurnsSchema),
     enabled: open,
     refetchInterval: live ? POLL_INTERVAL_MS : false,

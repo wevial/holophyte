@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { RunDetail, RunFiles, RunTurns } from "../../src/lib/contract.gen";
 import { consoleQueryClient } from "../../src/next/fleet";
+import { RunDetails } from "../../src/next/components/RunDetails";
+import { PollDepsContext } from "../../src/next/scope";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, settle } from "../harness";
 import { DEMO, fleet, NOW, SERVE, WRITER } from "./needsFleet";
@@ -138,4 +140,53 @@ test("Details labels a truncated file list as shown rather than a total", async 
   await openDetails();
   const changed = within(screen.getByRole("region", { name: "Files changed" }));
   expect(changed.getByRole("heading").textContent).toBe("Files changed · 4 shown");
+});
+
+
+test.each([false, true])("Details refreshes final files and durations after completion with the fold closed: %s", async (closeBeforeCompletion) => {
+  let completed = false;
+  const urls: string[] = [];
+  const fake = fakeDeps(async (url) => {
+    urls.push(url);
+    if (url === `${WRITER}/runs/12/files`) {
+      return Response.json(completed ? files : { ...files, files: [], total_added: 0, total_deleted: 0 });
+    }
+    if (url === `${WRITER}/runs/12/turns`) {
+      return Response.json({ turns: [{ ...turns.turns[0]!, seconds: completed ? 372 : null }] });
+    }
+    return new Response("not found", { status: 404 });
+  });
+  const client = consoleQueryClient();
+  const view = (live: boolean) => <QueryClientProvider client={client}>
+    <PollDepsContext.Provider value={fake.deps}>
+      <RunDetails base={WRITER} detail={detail} live={live} />
+    </PollDepsContext.Provider>
+  </QueryClientProvider>;
+  const mounted = render(view(true));
+  await openDetails();
+  expect(screen.getByText("No files changed yet.")).toBeTruthy();
+  expect(screen.getByText("running", { exact: true })).toBeTruthy();
+  if (closeBeforeCompletion) {
+    const fold = screen.getByText("Details", { exact: true }).closest("details")!;
+    await act(async () => {
+      fold.open = false;
+      fireEvent(fold, new Event("toggle"));
+      await settle();
+    });
+  }
+  const requestsBeforeCompletion = urls.length;
+  completed = true;
+  mounted.rerender(view(false));
+  await act(settle);
+  if (closeBeforeCompletion) {
+    expect(urls).toHaveLength(requestsBeforeCompletion);
+    await openDetails();
+  }
+  await act(settle);
+  expect(screen.getByText("holophyte/serve/server.py")).toBeTruthy();
+  expect(screen.getByText("6m 12s", { exact: true })).toBeTruthy();
+  expect(screen.queryByText("running", { exact: true })).toBeNull();
+  expect(urls.filter((url) => url.endsWith("/files"))).toHaveLength(2);
+  expect(urls.filter((url) => url.endsWith("/turns"))).toHaveLength(2);
+  client.clear();
 });
