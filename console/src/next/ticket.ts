@@ -1,8 +1,8 @@
 import { useContext } from "react";
 import { useQueries } from "@tanstack/react-query";
-import type { RouteLabels, RunCriterion, TicketDetail } from "../lib/contract.gen";
+import type { BoardStory, RouteLabels, RunCriterion, StatusRun, StoryDetail, TicketDetail } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
-import { useBoards, useReadiness, useRun, ticketQuery } from "./queries";
+import { useBoards, useReadiness, useRun, useStory, ticketQuery } from "./queries";
 import type { ContractBodies } from "./fleet";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import type { State } from "./state";
@@ -30,6 +30,9 @@ export type TicketPage =
       liveRun: number | null;
       labels: RouteLabels | null;
       judged: RunCriterion[] | "loading" | "unavailable";
+      liveRuns: StatusRun[];
+      staleMs: number;
+      story: { entry: BoardStory; detail: StoryDetail | null } | null;
       now: number;
     };
 
@@ -67,12 +70,14 @@ export function useTicketPage(project: string, key: string): TicketPage {
   const readiness = useReadiness(host == null ? [] : [host], deps);
   const boards = useBoards(host == null ? [] : [host], deps);
   const run = useRun(host?.base ?? null, ticket?.run ?? null, deps);
+  const board = boards[0]?.board;
+  const story = board?.stories.find((each) => each.ticket === key || each.children.includes(key)) ?? null;
+  const storyDetail = useStory(host?.base ?? null, story?.ticket ?? null, deps);
   if (host == null || ticket == null) {
     if (peers.polls > 0 && hosts.length === 0) return { kind: "unknown_project" };
     if (hosts.length > 0 && answers.every((answer) => answer.isSuccess && answer.data == null)) return { kind: "not_mirrored" };
     return { kind: "loading" };
   }
-  const board = boards[0]?.board;
   const card = board == null ? null : (hostCards(host, board, readiness, now).find((each) => each.key === key) ?? null);
   const status = host.contract_error ? undefined : host.status;
   return {
@@ -84,6 +89,9 @@ export function useTicketPage(project: string, key: string): TicketPage {
     liveRun: card?.run?.id ?? null,
     labels: status?.route_labels ?? null,
     judged: run.data?.criteria ?? (ticket.run == null ? [] : run.isError ? "unavailable" : "loading"),
+    liveRuns: status?.runs ?? [],
+    staleMs: status?.thresholds.heartbeat_stale_ms ?? Infinity,
+    story: story == null ? null : { entry: story, detail: storyDetail.data ?? null },
     now,
   };
 }
