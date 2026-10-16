@@ -123,10 +123,18 @@ export function MoonIcon() {
   );
 }
 
-export function FolderIcon() {
+export function FolderIcon({ className }: { className?: string }) {
   return (
-    <Stroke>
+    <Stroke className={className}>
       <path d="M2 4.5h4.2l1.5 1.5H14v7.5H2Z" />
+    </Stroke>
+  );
+}
+
+export function StoryIcon({ className }: { className?: string }) {
+  return (
+    <Stroke className={className}>
+      <path d="M3 3.5h10M3 8h10M3 12.5h6" />
     </Stroke>
   );
 }
