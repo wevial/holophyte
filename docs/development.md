@@ -905,6 +905,10 @@ The Run page’s `console/src/next/components/AgentPanel.tsx` renders the
 agent seat, state and chronological note/question thread from the page’s
 shared run detail and asks queries.
 
+The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
+review rounds and timed agent turns below Progress. Its files and turns
+queries in `next/queries.ts` fetch only while the fold is open.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than

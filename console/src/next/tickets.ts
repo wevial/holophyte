@@ -64,6 +64,28 @@ export function boardColumn(card: Pick<TicketCard, "state" | "need">): ColumnId 
   return card.need != null && card.state !== "merged" ? "needs_you" : BY_STATE[card.state];
 }
 
+export const TICKET_FILTERS = ["ready", "needs_spec", "backlog"] as const;
+
+export type TicketFilter = (typeof TICKET_FILTERS)[number];
+
+export const FILTER_LABELS: Record<TicketFilter, string> = { ready: "Ready", needs_spec: "Needs spec", backlog: "Backlog" };
+
+export interface TicketsSearch {
+  filter?: TicketFilter;
+}
+
+export function validateTicketsSearch({ filter }: Record<string, unknown>): TicketsSearch {
+  return { filter: TICKET_FILTERS.includes(filter as TicketFilter) ? (filter as TicketFilter) : undefined };
+}
+
+/** The saved view a card is listed under, if any. */
+export function ticketView(card: Pick<TicketCard, "state" | "need">): TicketFilter | null {
+  const column = boardColumn(card);
+  if (column === "ready") return "ready";
+  if (column !== "backlog") return null;
+  return card.state === "needs_spec" ? "needs_spec" : "backlog";
+}
+
 /** The Needs you entry's item, else a park, else the live run, else the board. */
 export function cardState(card: TicketCard): State {
   if (card.state === "merged") return "merged";
