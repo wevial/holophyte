@@ -225,15 +225,14 @@ const VERIFY_FAILED = "Verify command failed";
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const askBox = () => peek()!.querySelector<HTMLElement>("[data-peek-ask]");
 
-async function peekAt(key: string, answer: Fetch) {
-  await mount("#/tickets", needsFetch(answer));
-  await act(async () => void fireEvent.click(cardLink(key)));
-  for (let round = 0; round < 3; round += 1) await act(settle);
-}
-
 async function press(button: HTMLElement) {
   await act(async () => void fireEvent.click(button));
   for (let round = 0; round < 3; round += 1) await act(settle);
+}
+
+async function peekAt(key: string, answer: Fetch) {
+  await mount("#/tickets", needsFetch(answer));
+  await press(cardLink(key));
 }
 
 test("a failed ticket's peek asks first with one Requeue button, no More and no Open run", async () => {
