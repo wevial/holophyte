@@ -109,12 +109,7 @@ export function storyState(nodes: StoryNode[]): { state: State; word: string } {
   return { state: "backlog", word: "Backlog" };
 }
 
-export const CARD_W = 212;
-export const CARD_H = 108;
-const COLUMN_GAP = 72;
-const ROW_GAP = 16;
-
-/** Columns by longest path from a node with no dependency; a node met
+/** Steps by longest path from a node with no dependency; a node met
  *  again while its own depth is open counts as depth 0, so a cycle ends. */
 export function layoutGraph(nodes: StoryNode[]) {
   const byKey = new Map(nodes.map((node) => [node.ticket, node]));
@@ -131,29 +126,24 @@ export function layoutGraph(nodes: StoryNode[]) {
     depths.set(key, depth);
     return depth;
   };
-  const columns: StoryNode[][] = [];
-  for (const node of nodes) (columns[depthOf(node.ticket)] ??= []).push(node);
-  const filled = columns.filter((column) => column != null);
-  const at = new Map<string, { x: number; y: number }>();
-  filled.forEach((column, c) => column.forEach((node, r) => at.set(node.ticket, { x: c * (CARD_W + COLUMN_GAP), y: r * (CARD_H + ROW_GAP) })));
+  const steps: StoryNode[][] = [];
+  for (const node of nodes) (steps[depthOf(node.ticket)] ??= []).push(node);
   const edges = nodes.flatMap((node) =>
-    node.depends_on.map((dep) => {
-      const a = at.get(dep)!;
-      const b = at.get(node.ticket)!;
-      const [x1, y1, x2, y2] = [a.x + CARD_W, a.y + CARD_H / 2, b.x - 2, b.y + CARD_H / 2];
-      const mx = (x1 + x2) / 2;
-      const path = `M${x1} ${y1}C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}M${x2 - 6} ${y2 - 4}L${x2} ${y2}L${x2 - 6} ${y2 + 4}`;
-      return { from: dep, to: node.ticket, path, dim: byKey.get(dep)!.state === "merged" && node.state === "merged" };
-    }),
+    node.depends_on.map((dep) => ({ from: dep, to: node.ticket, dim: byKey.get(dep)!.state === "merged" && node.state === "merged" })),
   );
-  const rows = Math.max(0, ...filled.map((column) => column.length));
-  const span = (count: number, size: number, gap: number) => (count === 0 ? 0 : count * size + (count - 1) * gap);
-  return { columns: filled, at, edges, width: span(filled.length, CARD_W, COLUMN_GAP), height: span(rows, CARD_H, ROW_GAP) };
+  return { steps: steps.filter((step) => step != null), edges };
 }
 
-const FADE_SLACK = 2;
+export interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
-/** Which edges of a sideways scroll region have more to show. */
-export function edgeFade(scrollLeft: number, clientWidth: number, scrollWidth: number): { left: boolean; right: boolean } {
-  return { left: scrollLeft > FADE_SLACK, right: scrollLeft + clientWidth < scrollWidth - FADE_SLACK };
+/** A curve from `from`'s bottom centre down to `to`'s top centre, headed. */
+export function arrowPath(from: Box, to: Box): string {
+  const [x1, y1, x2, y2] = [from.left + from.width / 2, from.top + from.height, to.left + to.width / 2, to.top];
+  const bend = (y2 - y1) / 2;
+  return `M${x1} ${y1}C${x1} ${y1 + bend} ${x2} ${y2 - bend} ${x2} ${y2}M${x2 - 4} ${y2 - 6}L${x2} ${y2}L${x2 + 4} ${y2 - 6}`;
 }
