@@ -72,7 +72,7 @@ export function summaryOf(body: string): string {
 export function leadParagraph(body: string): string {
   const prose = (summaryOf(body) || body)
     .split("\n")
-    .filter((line) => !/^#{1,6}\s/.test(line))
+    .map((line) => (/^#{1,6}\s/.test(line) ? "" : line))
     .join("\n");
   return prose.split(/\n\s*\n/).map((part) => part.trim()).find((part) => part !== "") ?? "";
 }

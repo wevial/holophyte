@@ -138,3 +138,12 @@ test("a ticket claimed as an older snapshot shows its current body's first parag
   await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": snapshot } }));
   expect(block("Ticket")!.textContent).toBe("TicketA lease past its threshold is freed.");
 });
+
+test("a heading directly under the first paragraph ends it, so the next section's prose stays out of the ticket block", async () => {
+  const sections: TicketDetail = {
+    ...demo8,
+    claimed: revision("# Free stale leases\nA lease past its threshold is freed.\n## Acceptance\nIts run is told before it goes.\n"),
+  };
+  await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": sections } }));
+  expect(block("Ticket")!.textContent).toBe("TicketA lease past its threshold is freed.");
+});
