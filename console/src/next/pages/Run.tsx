@@ -63,7 +63,7 @@ function RunTicket({ base, ticket }: { base: string; ticket: string }) {
   return (
     <section aria-label="Ticket" data-run-ticket>
       <div className={SECTION_LABEL}>Ticket</div>
-      <div className="mt-2.5 max-w-[68ch] font-plex text-[15px] leading-[1.55] text-ink-2 [&_p]:m-0">
+      <div className="mt-2.5 max-w-[68ch] font-read text-[15px] leading-[1.55] text-ink-2 [&_p]:m-0">
         <Markdown>{lead}</Markdown>
       </div>
     </section>

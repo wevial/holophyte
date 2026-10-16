@@ -105,7 +105,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
             </span>
           )}
         </span>
-        <span data-title className="min-w-0 flex-[1_1_260px] font-plex text-[15px] font-medium [overflow-wrap:anywhere] text-ink">{row.title}</span>
+        <span data-title className="min-w-0 flex-[1_1_260px] font-read text-[15px] font-medium [overflow-wrap:anywhere] text-ink">{row.title}</span>
         {showProject && (
           <span data-project className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink-2">
             <FolderIcon />
@@ -118,7 +118,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
       <div id={body} hidden={!open} className="pb-4 pl-[142px] pr-1 pt-0.5 max-[720px]:pl-1">
         {open && (
           <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-2.5">
-            <div className="min-w-0 font-plex text-[14px] leading-[1.5] [overflow-wrap:anywhere]">
+            <div className="min-w-0 font-read text-[14px] leading-[1.5] [overflow-wrap:anywhere]">
               {row.text !== "" && <p data-text className="whitespace-pre-line text-ink-2">{row.text}</p>}
               <p data-place className="mt-1 font-mono text-[12px] text-ink-3">{row.place}</p>
               <p data-fate className={`mt-1 font-mono text-[12px] font-medium leading-[1.4] ${TONE_TEXT[fate.tone]}`}>
@@ -145,7 +145,7 @@ export function CleanReviewLine({ ticket, round, reviewer }: { ticket: string; r
   return (
     <li data-clean className="flex items-baseline gap-2 py-1.5">
       <span className="self-center"><FactIcon ok /></span>
-      <p className="min-w-0 font-plex text-[14px] text-ink-2 [overflow-wrap:anywhere]">
+      <p className="min-w-0 font-read text-[14px] text-ink-2 [overflow-wrap:anywhere]">
         <span data-sentence>{`${ticket} passed round ${round} with no findings.`}</span>
         {reviewer != null && <span data-reviewer className="ml-2 font-mono text-[12px] text-ink-3">reviewed by {reviewer}</span>}
       </p>

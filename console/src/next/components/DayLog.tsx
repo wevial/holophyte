@@ -97,7 +97,7 @@ export function DayLog({ entries, className = "" }: { entries: LedgerEntry[]; cl
       {shown.length === 0 ? (
         <p className="font-mono text-[12.5px] text-ink-3">Nothing logged since midnight.</p>
       ) : (
-        <ol className="ml-1 border-l border-rule pt-1 font-mono text-[12.5px] leading-[1.45] text-ink-2">
+        <ol className="ml-1 border-l border-rule pt-1 font-mono text-[13px] leading-[1.5] text-ink-2">
           {shown.map((entry, index) => (
             <DayLogEntry key={keys[index]} entry={entry} />
           ))}

@@ -110,7 +110,7 @@
 @theme inline {
   --font-sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-plex: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-read: "IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
 
   --color-canvas: var(--canvas);
   --color-paper: var(--paper);

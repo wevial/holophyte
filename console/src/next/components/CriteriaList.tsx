@@ -28,7 +28,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
                 <li key={criterion.n} className="flex flex-wrap items-center gap-3 border-b border-rule-2 py-3">
                   <CriterionMark status={criterion.status} />
                   <span className="w-[34px] shrink-0 font-mono text-[11px] font-semibold text-ink-3">AC{criterion.n}</span>
-                  <span className="min-w-0 flex-1 font-plex text-[14px] text-ink-2">{criterion.text}</span>
+                  <span className="min-w-0 flex-1 font-read text-[14px] text-ink-2">{criterion.text}</span>
                   {waiting && <span className="font-mono text-[11px] text-ink-3">waits on round {pending}</span>}
                 </li>
               );

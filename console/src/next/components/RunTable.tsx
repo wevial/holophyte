@@ -39,7 +39,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       <span className={`${MONO} text-ink-2`}>{row.id}</span>
       <span className="min-w-0">
         <b className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3">{row.ticket}</b>{" "}
-        <span className={`font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
+        <span className={`font-read text-[15px] font-medium leading-[1.35] ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
       </span>
       <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
       <span className="inline-flex items-start gap-1.5">

@@ -11,10 +11,10 @@ type Look = "need" | "done" | "backlog" | "plain";
 const LOOK_OF: Record<ColumnId, Look> = { needs_you: "need", done: "done", backlog: "backlog", ready: "plain", in_flight: "plain" };
 
 const LOOKS: Record<Look, { card: string; title: string }> = {
-  need: { card: "border-[color-mix(in_srgb,var(--need)_45%,var(--rule))] bg-card", title: "text-ink" },
-  done: { card: "border-rule bg-live-wash", title: "text-ink-2" },
-  backlog: { card: "border-dashed border-rule bg-transparent", title: "text-ink-3" },
-  plain: { card: "border-rule bg-card", title: "text-ink" },
+  need: { card: "border-[color-mix(in_srgb,var(--need)_45%,var(--rule))] bg-card", title: "font-semibold text-ink" },
+  done: { card: "border-rule bg-live-wash", title: "font-medium text-ink-2" },
+  backlog: { card: "border-dashed border-rule bg-transparent", title: "font-medium text-ink-3" },
+  plain: { card: "border-rule bg-card", title: "font-semibold text-ink" },
 };
 
 export const cardElementId = (card: Pick<TicketCard, "project" | "key">) => `card-${card.project}-${card.key}`;
@@ -70,7 +70,7 @@ export function BoardCard({
             </span>
           )}
         </div>
-        <h3 className={`mt-[9px] break-words font-plex text-[14px] font-medium leading-[1.45] ${LOOKS[look].title}`}>{card.title}</h3>
+        <h3 className={`mt-[9px] break-words font-read text-[15px] leading-[1.35] ${LOOKS[look].title}`}>{card.title}</h3>
         <p data-state-line className="mt-3 flex min-w-0 items-center gap-[7px] font-mono text-[12px] leading-[1.3]">
           <StateDot state={state} hideWord tone={tone} />
           <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[wordTone]}`}>{cardWord(card, now)}</span>

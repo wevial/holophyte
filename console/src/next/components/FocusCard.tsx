@@ -174,7 +174,7 @@ function Card({
         <p className="mt-1.5 font-mono text-[12px] text-ink-3">{seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`}</p>
       ) : (
         <>
-          {description.body !== "" && <p className="mt-2.5 max-w-[68ch] break-words text-[16px] leading-normal text-ink-2">{whyOf(description.body, item)}</p>}
+          {description.body !== "" && <p className="mt-2.5 max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink-2">{whyOf(description.body, item)}</p>}
           {description.meta != null && <p className="mt-1.5 font-mono text-[12px] text-ink-3">{description.meta}</p>}
           <div className="mt-5 flex flex-col gap-3.5 border-t border-dashed border-rule pt-[18px] font-mono text-[12.5px] leading-normal text-ink-2">
             <PullRequestLine item={item} />
@@ -203,7 +203,7 @@ function Row({ entry, hosts, now, onPick }: { entry: NeedsYouEntry; hosts: Host[
       >
         <StateDot state={state} hideWord />
         <span className="truncate text-ink-2">{name}</span>
-        <span className="truncate font-sans text-[14px] font-medium text-ink max-[720px]:hidden">{title}</span>
+        <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title}</span>
         <span>
           {STATES[state].word}
           {age != null && ` · ${formatAge(age)}`}
