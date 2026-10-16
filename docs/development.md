@@ -897,6 +897,10 @@ rewrites `project` on the current route and is kept in session storage under
 `holophyte.next.project`, so opening `/next.html` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
 
+The Run page’s `console/src/next/components/AgentPanel.tsx` renders the
+agent seat, state and chronological note/question thread from the page’s
+shared run detail and asks queries.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than

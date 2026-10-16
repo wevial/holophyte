@@ -4,6 +4,7 @@ import { Markdown } from "../../components/Markdown";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { leadParagraph } from "../../lib/ticket";
+import { AgentPanel } from "../components/AgentPanel";
 import { SECTION_LABEL } from "../components/Criteria";
 import { ProgressLog } from "../components/ProgressLog";
 import { RunPullRequest } from "../components/RunPullRequest";
@@ -149,17 +150,20 @@ export function RunPage() {
           </a>
         </div>
       </header>
-      <div data-run-body className="mt-3.5 flex min-h-40 flex-col gap-5 border border-rule bg-paper px-8 pb-8 pt-[22px] max-[720px]:px-4">
-        {run.pr_url != null && (
-          <RunPullRequest
-            url={run.pr_url}
-            facts={page.prFacts}
-            ready={page.state === "ready_to_merge"}
-            merge={page.state === "merged" ? run : null}
-          />
-        )}
-        <RunTicket base={page.base} ticket={run.ticket} />
-        <ProgressLog key={run.id} lines={page.progress} live={page.live} />
+      <div data-run-body className="@container mt-3.5 flex min-h-40 flex-wrap border border-rule bg-paper">
+        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[880px]:border-r @[880px]:border-rule max-[720px]:px-4">
+          {run.pr_url != null && (
+            <RunPullRequest
+              url={run.pr_url}
+              facts={page.prFacts}
+              ready={page.state === "ready_to_merge"}
+              merge={page.state === "merged" ? run : null}
+            />
+          )}
+          <RunTicket base={page.base} ticket={run.ticket} />
+          <ProgressLog key={run.id} lines={page.progress} live={page.live} />
+        </div>
+        <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks} />
       </div>
     </Page>
   );
