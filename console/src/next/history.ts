@@ -46,7 +46,7 @@ export function useRunHistory(): { now: number; rows: RunRow[] } {
   return { now: peers.now, rows: historyRows(hosts, answers, readiness) };
 }
 
-export const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
+const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
 
 export type RunGroup = (typeof RUN_GROUPS)[number];
 
