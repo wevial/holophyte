@@ -347,6 +347,14 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
         if timed_out or (head == sha and capture_spec_digest(
                 project, wt, task_id, states) == spec):
+            usage = getattr(fixes, "usage", None) or {}
+            exit_code = getattr(fixes, "exit_code", None)
+            if (not timed_out and exit_code not in (None, 0)
+                    and usage.get("input_tokens") == 0
+                    and usage.get("output_tokens") == 0):
+                raise InfraFailure(
+                    f"fix turn exited {exit_code} without using a token; "
+                    f"branch {branch} preserved at {sha}", "infra")
             print(f"[holo2] fix round timed out or made no progress; "
                   f"leaving branch {branch} at {sha} for a human.")
             findings = store.read.rounds_of(conn, run_id)[-1].findings if conn else None
