@@ -265,8 +265,7 @@ def run_detail(project, run_id, now=None):
         return failed
     conn = store.read.open_readonly(project.store_path)
     try:
-        rounds = store.read.rounds_of(conn, run.id)
-        notes = {r.round: round_notes(conn, run.id, r.round) for r in rounds}
+        rounds = run_rounds(conn, project, run.id)
         events = store.read.narrative_events(
             conn, run.id,
             detail_kinds=("implementer_output", "operator_note_consumed",
@@ -276,7 +275,6 @@ def run_detail(project, run_id, now=None):
         criteria = chain_criteria(conn, [link["id"] for link in chain["runs"]])
     finally:
         conn.close()
-    merge = merge_config(project)
     live = run.endedAt is None
     scale = budget_scale(project)
     return 200, {
@@ -300,15 +298,8 @@ def run_detail(project, run_id, now=None):
                 "verify_started_ms": run.verifyStartedAt,
                 "approved_at": run.approvedAt, "approved_by": run.approvedBy,
                 "max_rounds": run.reviewRoundCap or MAX_ROUNDS},
-        "rounds": [{"round": r.round, "started_ms": r.startedAt,
-                    "ended_ms": r.endedAt, "verdict": r.verdict,
-                    "reviewer_model": r.reviewerModel,
-                    **split_instructions(json.loads(r.findings),
-                                         merge.bot_authors + merge.bot_logins),
-                    "operator_notes": notes[r.round]}
-                   for r in rounds],
-        "findings": [{"tone": "advisory", "message": e.summary}
-                     for e in events if e.kind == "bot_finding"],
+        "rounds": rounds,
+        "findings": advisories(events),
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
                    for e in events],
         "chain": chain,
@@ -330,6 +321,22 @@ def chain_criteria(conn, run_ids):
              "note": c["note"], "run": newest.runId,
              "round": newest.payload["round"]}
             for c in sorted(newest.payload["criteria"], key=lambda c: c["n"])]
+
+
+def run_rounds(conn, project, run_id):
+    merge = merge_config(project)
+    bot_logins = merge.bot_authors + merge.bot_logins
+    return [{"round": r.round, "started_ms": r.startedAt,
+             "ended_ms": r.endedAt, "verdict": r.verdict,
+             "reviewer_model": r.reviewerModel,
+             **split_instructions(json.loads(r.findings), bot_logins),
+             "operator_notes": round_notes(conn, run_id, r.round)}
+            for r in store.read.rounds_of(conn, run_id)]
+
+
+def advisories(events):
+    return [{"tone": "advisory", "message": e.summary}
+            for e in events if e.kind == "bot_finding"]
 
 
 def run_clocks(run, now):
