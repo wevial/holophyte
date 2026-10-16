@@ -1,3 +1,4 @@
+import json
 import threading
 from contextlib import contextmanager
 from functools import partial
@@ -12,6 +13,7 @@ from holophyte.agents.roles import agent_route
 from holophyte.redact import safe_print as print
 from holophyte.review.reply_parsing import (
     criteria_findings,
+    criteria_statuses,
     parse_findings,
     raw_finding,
     round_verdict,
@@ -214,6 +216,9 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         if unwitnessed:
             verdict = "changes_requested"
             findings = findings + unwitnessed
+        if criteria:
+            _record_criteria(conn, run_id, rnd, reply, criteria, root,
+                             approved_range)
     if prior_reply:
         prior_reply = sanitize_findings(prior_reply, len(prior_reply))
         findings = [dict(raw_finding(prior_reply), message=prior_reply,
@@ -229,6 +234,18 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                               findings=findings, verification_results=results,
                               started_at=started_at,
                               ended_at=int(time() * 1000))
+
+
+def _record_criteria(conn, run_id, rnd, reply, criteria, root, approved_range):
+    statuses = criteria_statuses(reply, criteria, root,
+                                 approved_range=approved_range)
+    entries = [dict(status, text=text) for status, text in zip(statuses, criteria)]
+    met = sum(entry["status"] == "met" for entry in entries)
+    store.record_event(
+        conn, run_id, "criteria",
+        f"review round {rnd}: {met} of {len(entries)} criteria met",
+        level="detail",
+        payload=json.dumps({"round": rnd, "criteria": entries}))
 
 
 def warn_on_run(conn, run_id, summary):
