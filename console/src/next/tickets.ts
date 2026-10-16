@@ -63,12 +63,6 @@ export function cardState(card: TicketCard): State {
 const firstLine = (text: unknown) => (typeof text === "string" && text.trim() !== "" ? text.split("\n")[0]! : null);
 const num = (value: unknown) => (typeof value === "number" ? value : null);
 
-function runWord(run: StatusRun | null): string {
-  if (run == null) return STATES.running.word;
-  const round = run.phase === "reviewing" ? ` · round ${run.round} of ${run.max_rounds}` : "";
-  return `${phaseLabel(run.phase)}${round}`;
-}
-
 /** The card's state line, after its glyph. */
 export function cardWord(card: TicketCard, now: number): string {
   const state = cardState(card);
@@ -76,7 +70,8 @@ export function cardWord(card: TicketCard, now: number): string {
   const pr = typeof item?.pr_url === "string" ? ` · ${prLabel(item.pr_url)}` : "";
   switch (state) {
     case "running":
-      return runWord(card.run);
+      if (card.run == null) return STATES.running.word;
+      return card.run.phase === "reviewing" ? `${phaseLabel(card.run.phase)} · round ${card.run.round} of ${card.run.max_rounds}` : phaseLabel(card.run.phase);
     case "on_ci":
     case "parked":
       return `${STATES[state].word}${pr}`;
