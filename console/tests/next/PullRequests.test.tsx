@@ -22,7 +22,7 @@ type Item = Attention["items"][number];
 const park = (run: number, parkKind: string, ageMs: number, pr: object): Item => ({
   kind: "pr_open", level: "attention", run, ticket: `DEMO-${run}`, ticket_url: null, title: `Ticket ${run}`,
   park_kind: parkKind, reason: "PR open", asked_ms: NOW - ageMs,
-  pr_url: `https://github.com/example/demo/pull/${run + 33}`, pr: { title: null, ...pr },
+  pr_url: `https://github.com/example/demo/pull/${run + 33}`, pr: { title: null, state: null, number: run + 33, ...pr },
 } as Item);
 const onCi = park(8, "ci", 3 * HOUR, { number: 41, checks: "pending", review: null, threads: 0, open_threads: 0 });
 const readyPark = park(9, "pull_request", 2 * HOUR, { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0 });
@@ -175,12 +175,11 @@ test("the PR number links to GitHub without toggling or fetching the row detail"
 
 test("with storage refusing, the tag reopens a folded Needs you and focuses its card", async () => {
   await mount({ items: [blocked, onCi, readyPark, threadPark] });
-  const storage = Object.getPrototypeOf(localStorage) as Storage;
-  const { getItem, setItem, removeItem } = storage;
+  const real = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
   const refuse = () => {
     throw new DOMException("storage disabled", "SecurityError");
   };
-  storage.getItem = storage.setItem = storage.removeItem = refuse;
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get: refuse });
   try {
     const needs = screen.getByRole("region", { name: "Needs you" });
     await act(async () => {
@@ -196,6 +195,39 @@ test("with storage refusing, the tag reopens a folded Needs you and focuses its 
     expect(card.getAttribute("data-focus")).toBe("DEMO-9");
     expect(document.activeElement).toBe(card);
   } finally {
-    Object.assign(storage, { getItem, setItem, removeItem });
+    Object.defineProperty(globalThis, "localStorage", real);
   }
+});
+
+test.each([
+  ["draft", "Draft", "draft · held for your review"],
+  ["ready", "Ready", "parked · review pending"],
+  ["closed", "Closed", "parked · review pending"],
+  ["merged", "Merged", "parked · review pending"],
+  [null, null, "parked · review pending"],
+] as const)("a %s pull request shows its chip before the title and its parked state", async (state, chip, phrase) => {
+  await mount({ items: [park(12, "pull_request", HOUR, {
+    state, title: "Improve the overview", checks: "success", review: "review_required", threads: 0, open_threads: 0,
+  })], readyRuns: [] });
+  const row = rows()[0]!;
+  const button = rowButton(45);
+  expect(row.querySelector("[data-pr-state]")!.textContent).toBe(phrase);
+  expect(button.getAttribute("aria-label")!.endsWith(phrase)).toBe(true);
+  const title = within(button).getByText("Improve the overview");
+  if (chip) {
+    const tag = within(button).getByText(chip, { exact: true });
+    expect(tag.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tag.querySelector("svg")).toBeNull();
+  } else {
+    expect(within(button).queryByText(/^(Draft|Ready|Closed|Merged)$/)).toBeNull();
+  }
+});
+
+test("a draft on CI shows its chip while keeping the CI state and detail", async () => {
+  await mount({ items: [park(12, "ci", HOUR, {
+    state: "draft", checks: "pending", review: "review_required", threads: 0, open_threads: 0,
+  })], readyRuns: [] });
+  expect(within(rowButton(45)).getByText("Draft", { exact: true })).toBeTruthy();
+  expect(states()).toEqual(["on CI · checks running"]);
+  expect(rowButton(45).getAttribute("aria-label")!.endsWith("on CI · checks running")).toBe(true);
 });
