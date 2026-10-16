@@ -154,6 +154,14 @@ class BranchOnlyPathRuleTests(unittest.TestCase):
             ".venv/bin/python -m tests.capture_site"])
         self.assertEqual(side.paths, ["e2e/checks/new.spec.ts", "src/new.js"])
 
+    def test_a_quoted_branch_only_test_file_is_trimmed_not_left_out(self):
+        side = drop_candidate_modules(
+            'npx playwright test "e2e/checks/new.spec.ts" e2e/checks/old.spec.ts',
+            self.repo, self.repo, self.main_sha)
+        self.assertEqual(side.command,
+                         "npx playwright test e2e/checks/old.spec.ts")
+        self.assertEqual(side.dropped, {})
+
     def test_a_block_line_that_loses_a_clause_counts_as_left_out(self):
         line = "grep -q x src/new.js && test -e e2e/checks/old.spec.ts"
         side = drop_candidate_modules(f"{line}\ntrue", self.repo, self.repo,

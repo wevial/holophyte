@@ -281,11 +281,22 @@ def _tracked(candidate, revisions, words):
             for i, word in enumerate(words)}
 
 
-def _relative_words(clause, candidate):
+def _word_spans(clause):
+    lexer = shlex.shlex(clause, posix=True)
+    lexer.whitespace_split, lexer.commenters = True, ""
+    spans, start = [], 0
     try:
-        words = shlex.split(clause)
+        while (word := lexer.get_token()) is not None:
+            end = lexer.instream.tell()
+            spans.append((word, start, end))
+            start = end
     except ValueError:
         return []
+    return spans
+
+
+def _relative_words(spans, candidate):
+    words = [word for word, _, _ in spans]
     while words and words[0] == "!":
         words = words[1:]
     if not words or words[0] in _PROBES:
@@ -304,7 +315,8 @@ def _relative_words(clause, candidate):
 
 
 def _drop_clause_paths(clause, candidate, main_sha):
-    words = _relative_words(clause, candidate)
+    spans = _word_spans(clause)
+    words = _relative_words(spans, candidate)
     tracked = _tracked(candidate, ("HEAD", main_sha), words) if words else {}
     gone = [w for w in words if tracked.get(w) == [True, False]]
     if not gone:
@@ -314,10 +326,9 @@ def _drop_clause_paths(clause, candidate, main_sha):
     if not tests_on_main or not all(
             _TEST_FILE.fullmatch(os.path.basename(w)) for w in gone):
         return None, gone
-    for word in gone:
-        clause, count = re.subn(rf"\s+{re.escape(word)}(?!\S)", "", clause)
-        if not count:
-            return None, gone
+    for word, start, end in reversed(spans):
+        if word in gone:
+            clause = clause[:start] + clause[end:]
     return clause, gone
 
 
