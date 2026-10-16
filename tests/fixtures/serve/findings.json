@@ -1,0 +1,96 @@
+{
+  "since": 0,
+  "limit": 100,
+  "runs": [
+    {
+      "run": 1,
+      "ticket": "KO-7",
+      "title": "ticket 7",
+      "phase": "working",
+      "outcome": null,
+      "ended_ms": null,
+      "pr_url": null,
+      "rounds": [
+        {
+          "round": 1,
+          "started_ms": 1750000000000,
+          "ended_ms": 1750000000000,
+          "verdict": "changes_requested",
+          "reviewer_model": "reviewer",
+          "findings": [
+            {
+              "path": "app.py",
+              "line": 7,
+              "severity": "p1",
+              "criterion": null,
+              "message": "Validate input",
+              "kind": "thread",
+              "author": "review-bot",
+              "author_kind": "bot",
+              "summary": "Validate input",
+              "verdict": "ADDRESS",
+              "raw": "Please validate input",
+              "url": "https://example.test/thread"
+            }
+          ],
+          "instructions": [
+            {
+              "kind": "instruction",
+              "path": "app.py",
+              "line": null,
+              "author": "operator",
+              "severity": "nit",
+              "message": "Keep validation",
+              "request": "Keep validation",
+              "url": "https://example.test/instruction",
+              "outcome": "changed",
+              "reply": "Validation retained"
+            }
+          ],
+          "operator_notes": [
+            {
+              "note": "Keep validation",
+              "author": "operator",
+              "kind": "operator_note",
+              "event_id": 1,
+              "consumed": true,
+              "run_id": 1,
+              "round": 1
+            }
+          ]
+        }
+      ],
+      "ledger": [
+        {
+          "at": 1750000000000,
+          "kind": "round",
+          "source": "loop",
+          "text": "Round 1: ADDRESS operator_note event 2"
+        }
+      ],
+      "advisories": [
+        {
+          "tone": "advisory",
+          "message": "Review is advisory"
+        }
+      ]
+    }
+  ],
+  "follow_ups": [
+    {
+      "id": 1,
+      "run": 1,
+      "ticket": "KO-7",
+      "kind": "feature",
+      "text": "Validate input at the API edge",
+      "path": "app.py",
+      "line": 7,
+      "created_ms": 1749999995000,
+      "settled_ms": null,
+      "state": "pending",
+      "filed_as": null,
+      "duplicate_of": null,
+      "error": null
+    }
+  ]
+}

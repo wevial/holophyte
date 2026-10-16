@@ -3,6 +3,7 @@ import {
   type Attention,
   attentionSchema,
   boardSchema,
+  findingsSchema,
   hostAttentionSchema,
   ledgerSchema,
   hostStatusSchema,
@@ -28,6 +29,7 @@ import runTurns from "../../tests/fixtures/serve/run-turns.json";
 import pinnedAsks from "../../tests/fixtures/serve/run-asks.json";
 import shipped from "../../tests/fixtures/serve/shipped.json";
 import ledger from "../../tests/fixtures/serve/ledger.json";
+import findings from "../../tests/fixtures/serve/findings.json";
 import board from "../../tests/fixtures/serve/board.json";
 import ticket from "../../tests/fixtures/serve/ticket.json";
 
@@ -63,6 +65,7 @@ test("a files answer whose total_added is a string fails at its path", () => {
 test("each pinned list-route answer parses unchanged with its generated schema", () => {
   expect<unknown>(shippedSchema.parse(shipped)).toEqual(shipped);
   expect<unknown>(ledgerSchema.parse(ledger)).toEqual(ledger);
+  expect<unknown>(findingsSchema.parse(findings)).toEqual(findings);
   expect<unknown>(boardSchema.parse(board)).toEqual(board);
   expect<unknown>(ticketDetailSchema.parse(ticket)).toEqual(ticket);
 });
@@ -70,6 +73,11 @@ test("each pinned list-route answer parses unchanged with its generated schema",
 test("a board column state outside the board's states fails at its path", () => {
   const shipping = { ...board, columns: [{ ...board.columns[0], state: "shipping" }, ...board.columns.slice(1)] };
   expect(firstIssuePath(boardSchema.safeParse(shipping))).toStartWith("columns.0.state");
+});
+
+test("a follow-up state outside the follow-up states fails at its path", () => {
+  const dropped = { ...findings, follow_ups: [{ ...findings.follow_ups[0], state: "dropped" }, ...findings.follow_ups.slice(1)] };
+  expect(firstIssuePath(findingsSchema.safeParse(dropped))).toStartWith("follow_ups.0.state");
 });
 
 test("a ticket claimed by an older build carries its claim-time snapshot and parses", () => {
