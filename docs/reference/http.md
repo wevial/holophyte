@@ -364,6 +364,14 @@ the parameter.
   {"id": 4, "kind": "hint", "note": "Reuse the sweep's lease query",
    "author": "maintainer", "at": 1788450561675, "run": 52, "consumed_by": 52,
    "consumed_ms": 1788450571675, "interrupt": false, "withdrawn": false}
+ ],
+ "criteria": [
+  {"n": 1, "text": "Given an expired lease, then the run is requeued",
+   "status": "met", "note": "tests/test_lease.py::test_expired_lease_requeues",
+   "run": 52, "round": 2},
+  {"n": 2, "text": "Given a requeue, then the ledger names it",
+   "status": "met", "note": "tests/test_lease.py::test_requeue_is_ledgered",
+   "run": 52, "round": 2}
  ]}
 ```
 
@@ -442,6 +450,15 @@ was routed to, null when it waited for the next run; `consumed_by` and
 `consumed_ms`, the run whose agent read it and when, both null until
 read; `interrupt`, true when it was sent with `--now`; and `withdrawn`,
 true when a later withdrawal took the amendment back.
+
+`criteria` is the newest review's judgement of the ticket's acceptance
+criteria over the chain: run N's latest round when it has judged them,
+else the latest round of the newest earlier run of the chain that did, so
+a requeued run starts from what its predecessor's last review said. Each
+criterion, in order, has its number `n`, its `text`, its `status` (`met`,
+`not_met` or `unwitnessed`) and the reviewer's `note`, which for a met
+criterion names its witness; `run` and `round` name the review that
+judged it. `[]` until a round of the chain has judged them.
 
 ## `GET /runs/N/files`
 

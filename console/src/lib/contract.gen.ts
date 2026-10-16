@@ -519,6 +519,16 @@ export const steerNoteSchema = z.looseObject({
 });
 export type SteerNote = z.infer<typeof steerNoteSchema>;
 
+export const runCriterionSchema = z.looseObject({
+  n: z.int(),
+  text: z.string(),
+  status: z.enum(["met", "not_met", "unwitnessed"]),
+  note: z.string(),
+  run: z.int(),
+  round: z.int(),
+});
+export type RunCriterion = z.infer<typeof runCriterionSchema>;
+
 export const runDetailSchema = z.looseObject({
   run: runDetailRunSchema,
   rounds: z.array(roundSchema),
@@ -526,6 +536,7 @@ export const runDetailSchema = z.looseObject({
   events: z.array(runEventSchema),
   chain: runChainSchema.optional(),
   steer_notes: z.array(steerNoteSchema),
+  criteria: z.array(runCriterionSchema),
 });
 export type RunDetail = z.infer<typeof runDetailSchema>;
 

@@ -62,6 +62,12 @@ def contract_answers(case):
             "SELECT id FROM runEvents WHERE kind = 'operator_note'").fetchone()[0]
         consume(conn, case.run, [event_id], 1)
         store.record_event(conn, case.run, "bot_finding", "Review is advisory", now=NOW)
+        store.record_event(conn, case.run, "criteria",
+                           "review round 1: 0 of 1 criteria met",
+                           level="detail", payload=json.dumps(dict(round=1, criteria=[
+                               dict(n=1, status="not_met", note="input unvalidated",
+                                    text="Given input, then it is validated")])),
+                           now=NOW)
         project = store.tickets.ensure_project(conn, "team-1", case.target)
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-8", linear_identifier="KO-8",

@@ -879,6 +879,42 @@
       ],
       "additionalProperties": true
     },
+    "RunCriterion": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "met",
+            "not_met",
+            "unwitnessed"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "run": {
+          "type": "integer"
+        },
+        "round": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n",
+        "text",
+        "status",
+        "note",
+        "run",
+        "round"
+      ],
+      "additionalProperties": true
+    },
     "RunDetail": {
       "type": "object",
       "properties": {
@@ -911,6 +947,12 @@
           "items": {
             "$ref": "#/$defs/SteerNote"
           }
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunCriterion"
+          }
         }
       },
       "required": [
@@ -918,7 +960,8 @@
         "rounds",
         "findings",
         "events",
-        "steer_notes"
+        "steer_notes",
+        "criteria"
       ],
       "additionalProperties": true
     }
