@@ -162,6 +162,7 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
     "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
   ]);
   expect(rows().map((row) => row.hasAttribute("data-need"))).toEqual([true, true, true, true, false, false]);
+  expect(rows()[4]!.getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
 });
 
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
