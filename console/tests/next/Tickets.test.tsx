@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Board, BoardColumn, ShippedRow, Status } from "../../src/lib/contract.gen";
+import type { Board, BoardColumn, BoardTicket, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
-import { blocked, ciPark, DEMO, failed, merged, MINUTE, NOW, SERVE, WRITER } from "./needsFleet";
+import { blocked, ciPark, DEMO, failed, merged, MINUTE, NOW, queuedOf, run, SERVE, WRITER } from "./needsFleet";
 
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
@@ -17,14 +17,14 @@ type State = BoardColumn["state"];
 type Item = typeof blocked;
 
 /** The pinned board with its tickets swapped for `keys` by state, backlog
- *  first as a native board sends it. */
-function boardOf(keys: Partial<Record<State, string[]>>): Board {
+ *  first as a native board sends it, each with its `facts`. */
+function boardOf(keys: Partial<Record<State, string[]>>, facts: Record<string, Partial<BoardTicket>> = {}): Board {
   const states: State[] = ["backlog", ...pinned.columns.map((column) => column.state)];
   return {
     ...pinned,
     columns: states.map((state) => ({
       state,
-      tickets: (keys[state] ?? []).map((ticket) => ({ ...template, ticket, title: `${ticket} title` })),
+      tickets: (keys[state] ?? []).map((ticket) => ({ ...template, ticket, title: `${ticket} title`, ...facts[ticket] })),
     })),
   };
 }
@@ -36,6 +36,9 @@ interface Daemon {
   items?: Item[];
   shipped?: ShippedRow[];
   mergeReady?: boolean;
+  runs?: Status["runs"];
+  queued?: Status["queued"];
+  admission?: string;
 }
 
 /** `demo` on DEMO and `writer` on WRITER; a daemon with no `board` answers
@@ -43,7 +46,7 @@ interface Daemon {
 function fleet(demo: Daemon, writer: Daemon = {}) {
   const asked: string[] = [];
   const daemon = (project: string, body: Daemon) => ({
-    status: { ...working, project, runs: [], queued: [] },
+    status: { ...working, project, runs: body.runs ?? [], queued: body.queued ?? [], admission: body.admission ?? "enabled", now: NOW },
     attention: { level: body.items?.length ? "attention" : "none", now: NOW, project, items: body.items ?? [] },
   });
   const polls = peersFetch(DEMO, { [DEMO]: daemon("/srv/dev/demo", demo), [WRITER]: daemon("/srv/dev/writer", writer) });
@@ -73,10 +76,10 @@ const demo: Daemon = {
 };
 const writer: Daemon = { board: boardOf({ ready: ["WRITER-9"] }) };
 
-async function mount(hash: string, fetchImpl: Fetch) {
+async function mount(hash: string, fetchImpl: Fetch, browserNow = NOW) {
   window.location.hash = hash;
   const fake = fakeDeps(fetchImpl);
-  fake.clock.now = NOW;
+  fake.clock.now = browserNow;
   const queries = consoleQueryClient();
   render(
     <QueryClientProvider client={queries}>
@@ -87,8 +90,12 @@ async function mount(hash: string, fetchImpl: Fetch) {
 }
 
 const LABELS = ["Backlog", "Ready", "In flight", "Needs you", "Done today"];
-const keysIn = (label: string) =>
-  within(screen.getByRole("list", { name: label })).queryAllByRole("listitem").map((card) => card.firstElementChild?.textContent);
+const cardsIn = (label: string) => within(screen.getByRole("list", { name: label })).queryAllByRole("article");
+const keysIn = (label: string) => cardsIn(label).map((card) => card.firstElementChild?.firstElementChild?.textContent);
+const cardOf = (key: string) => screen.getAllByRole("article").find((card) => card.firstElementChild?.firstElementChild?.textContent === key)!;
+const lineOf = (key: string) => cardOf(key).querySelector("[data-state-line]")!;
+const glyphOf = (key: string) => lineOf(key).querySelector("[role=img]")!;
+const toneOf = (element: Element) => Array.from(element.classList).find((name) => name.startsWith("text-"));
 const columns = () => Object.fromEntries(LABELS.map((label) => [label, keysIn(label)]));
 const heads = () => document.querySelector("[data-column-heads]");
 const headCounts = () => Array.from(heads()!.querySelectorAll("[data-count]"), (count) => count.textContent);
@@ -114,7 +121,7 @@ test("each board ticket lands in the column its state and Needs you entry name, 
     "Done today": ["DEMO-10"],
   });
   expect(headCounts()).toEqual(["1", "2", "2", "2", "1"]);
-  expect(within(screen.getByRole("list", { name: "Backlog" })).getByRole("listitem").textContent).toBe("DEMO-1DEMO-1 title");
+  expect(within(cardOf("DEMO-1")).getByRole("heading").textContent).toBe("DEMO-1 title");
   expect(heads()!.className).toContain("sticky");
   expect(document.querySelector("[data-board-scroll]")!.className).toContain("overflow-auto");
 });
@@ -174,4 +181,61 @@ test("the Overview and the Tickets page share one /shipped request per host", as
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(keysIn("Done today")).toEqual(["DEMO-10"]);
   for (const base of [DEMO, WRITER]) expect(asked.filter((url) => url === `${base}/shipped?limit=50`)).toHaveLength(1);
+});
+
+test("an in-flight card shows its key, time box, title and the run's phase and review round in the running tone", async () => {
+  const board = boardOf({ ready: ["DEMO-2"], in_flight: ["DEMO-3"] }, { "DEMO-3": { time_box_ms: 25 * MINUTE, run: 3 } });
+  const reviewing = { ...run(3, "DEMO-3"), phase: "reviewing", round: 1, max_rounds: 3 };
+  await mount("#/tickets?project=demo", fleet({ board, runs: [reviewing] }).fetch);
+  const card = cardOf("DEMO-3");
+  expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
+  expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
+  expect(within(card).getByRole("heading").classList).toContain("font-plex");
+  expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
+  expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
+  expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
+  expect(cardOf("DEMO-2").querySelector("[data-time-box]")).toBeNull();
+});
+
+test("each card's line says what its ticket waits on, why it failed, how long it has asked by the daemon's clock or since its run last beat", async () => {
+  const board = boardOf(
+    { needs_spec: ["DEMO-1"], ready: ["DEMO-2"], blocked_on_deps: ["DEMO-5"], in_flight: ["DEMO-6", "DEMO-11"], blocked_on_operator: ["DEMO-8", "DEMO-4"] },
+    { "DEMO-5": { waits_on: ["DEMO-2"] } },
+  );
+  const items = [
+    blocked,
+    ...failed.map((item) => ({ ...item, reason: "verify failed\n2 tests red" })),
+    { ...ciPark, pr_url: "https://github.com/example/repo/pull/523" } as Item,
+  ];
+  const quiet = { ...run(6, "DEMO-6"), heartbeat_age_ms: 15 * MINUTE };
+  const queued = [{ ...queuedOf("DEMO-2")[0]!, reason: "next free worker" }];
+  await mount("#/tickets?project=demo", fleet({ board, items, runs: [quiet], queued }).fetch, NOW + 60 * MINUTE);
+  const lines = ["DEMO-8", "DEMO-5", "DEMO-2", "DEMO-1", "DEMO-11", "DEMO-4", "DEMO-6"].map((key) => lineOf(key).textContent);
+  expect(lines).toEqual([
+    "on CI · PR #523", "blocked by DEMO-2", "next free worker", "needs a spec",
+    "failed · verify failed", "question open 8h 02m", "stale · no beat 15m",
+  ]);
+  const glyphs = ["DEMO-8", "DEMO-11", "DEMO-4", "DEMO-6"].map((key) => [glyphOf(key).getAttribute("data-state"), toneOf(glyphOf(key))]);
+  expect(glyphs).toEqual([["on_ci", "text-wait"], ["failed", "text-bad"], ["question", "text-ask"], ["stale", "text-need"]]);
+  expect(glyphOf("DEMO-8").querySelector(".state-march")).not.toBeNull();
+});
+
+test("a held host's ready card says it is held, and a merge of today says when it merged and keeps its time box", async () => {
+  const board = boardOf({ ready: ["DEMO-2"] });
+  await mount("#/tickets?project=demo", fleet({ board, admission: "held", shipped: [{ ...merged(10, "DEMO-10", NOW - 45 * MINUTE), estimate_min: 25 }] }).fetch);
+  expect(lineOf("DEMO-2").textContent).toBe("held with demo");
+  expect(glyphOf("DEMO-2").getAttribute("data-state")).toBe("held");
+  expect(lineOf("DEMO-10").textContent).toBe("merged 11:15");
+  expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
+});
+
+test("each card takes the look of its column: need, done, backlog or plain", async () => {
+  await mount("#/tickets?project=demo", fleet(demo).fetch);
+  const looks = ["Needs you", "Done today", "Backlog", "Ready"].map((label) => cardsIn(label)[0]!);
+  expect(looks.map((card) => card.getAttribute("data-look"))).toEqual(["need", "done", "backlog", "plain"]);
+  const [, done, backlog, plain] = looks;
+  expect(backlog!.className).toContain("border-dashed");
+  expect(done!.className).toContain("bg-live-wash");
+  expect(plain!.className).not.toContain("border-dashed");
+  expect(plain!.className).not.toContain("bg-live-wash");
 });
