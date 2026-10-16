@@ -15,7 +15,7 @@ baseline, run from the worktree root:
 {commands}
 
 If the diff holds under about 50 non-test lines and nothing obvious, reply
-"nothing worth trimming" and commit nothing.
+"nothing worth trimming" and commit nothing.{tests}
 
 Run the passes below in order. After each pass, run the check command; if
 it fails, discard that pass's edits and go on to the next pass. Commit each
@@ -97,6 +97,16 @@ mutation> -- guarded by <the kept test>`.
 End your reply with the net line delta, then one line per raised item
 saying why it was not applied.
 """
+
+TESTS_BRIEF = """
+
+This diff adds {tests} test lines against {code} non-test lines, more than
+three times as many: the size floor above does not apply. Run every pass,
+and run pass 5 (tests) in earnest: keep the test that reproduces the
+defect; drop tests that only re-check default behaviour a kept test already
+covers; fold fixtures and factories down to the fields the code under test
+reads; reuse the repository's existing test helpers rather than new ones.
+Every deleted test still needs its Proof line."""
 
 
 PASSES = ("delete", "merge", "flatten", "comments", "tests")
