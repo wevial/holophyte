@@ -458,6 +458,10 @@ Each module, one line:
   babysit fix, writing the capture at the fix head into the pull request's
   Evidence section, or marking its earlier images stale when that capture
   failed, and the ledger note recording which.
+- `holophyte/pr/image_fetch.py` — after a pull request body write that
+  embeds an image, comparing each image GitHub's image proxy serves with
+  the image at its own URL, and linking a short one again with a `?v=N`
+  query, at most twice.
 - `holophyte/pr/mockup.py` — a ticket's `## Mock-up` media links: the
   filing checks against `[merge.media_bucket] public_base`, the download of
   each `.png` snapshot and `.zip` bundle into the task worktree's ignored
