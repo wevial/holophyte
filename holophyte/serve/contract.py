@@ -105,7 +105,7 @@ class Status(TypedDict):
     daemon: Daemon
     supervisor: Supervisor
     thresholds: Thresholds
-    actions: bool
+    actions: NotRequired[bool]
     config_edit: bool
     runs: list[StatusRun]
     queued: list[QueuedTicket]
