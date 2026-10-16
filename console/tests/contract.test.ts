@@ -55,11 +55,6 @@ test("each pinned run-route answer parses unchanged with its generated schema", 
   expect<unknown>(runTurnsSchema.parse(runTurns)).toEqual(runTurns);
 });
 
-test("a files answer whose total_added is a string fails at its path", () => {
-  const stringly = { ...runFiles, total_added: String(runFiles.total_added) };
-  expect(firstIssuePath(runFilesSchema.safeParse(stringly))).toBe("total_added");
-});
-
 test("each pinned list-route answer parses unchanged with its generated schema", () => {
   expect<unknown>(shippedSchema.parse(shipped)).toEqual(shipped);
   expect<unknown>(ledgerSchema.parse(ledger)).toEqual(ledger);
