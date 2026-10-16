@@ -10,6 +10,7 @@ import {
   peersSchema,
   runDetailSchema,
   shippedSchema,
+  ticketDetailSchema,
   type Board,
   type Findings,
   type Ledger,
@@ -102,21 +103,34 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
   });
 }
 
-export interface DayLedger {
-  /** Each scoped host's last good `/ledger` answer, by its record `key`. */
-  answers: Map<string, Ledger>;
-  /** Every host's entries since local midnight, newest first. */
-  entries: LedgerEntry[];
-}
-
-/** A daemon without the route answers 404: no answer, not a failure. */
-async function orNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
+/** A route's 404 is null, not a failure: a daemon without the route, or
+ *  without the thing it names. */
+async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
   try {
     return await fetchRoute(fetch, url, schema);
   } catch (failure) {
     if (failure instanceof AnswerError && failure.status === 404) return null;
     throw failure;
   }
+}
+
+/** `/tickets/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
+ *  mounted; null when the daemon has not mirrored it. */
+export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+  const path = `/tickets/${encodeURIComponent(key)}`;
+  return useQuery({
+    queryKey: routeKey(base, path),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, ticketDetailSchema),
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+export interface DayLedger {
+  /** Each scoped host's last good `/ledger` answer, by its record `key`. */
+  answers: Map<string, Ledger>;
+  /** Every host's entries since local midnight, newest first. */
+  entries: LedgerEntry[];
 }
 
 /** Every `/ledger` entry of every answering host since local midnight
@@ -127,7 +141,7 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
-      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, ledgerSchema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
     })),
@@ -166,7 +180,7 @@ export function useFindings<R extends HostRecord<PollBodies>>(
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
-      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, findingsSchema),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, findingsSchema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
     })),
