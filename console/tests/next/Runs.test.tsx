@@ -5,10 +5,11 @@ process.env.TZ = "America/Los_Angeles";
 
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { HistoryRow, Status } from "../../src/lib/contract.gen";
+import type { Attention, HistoryRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import ready from "../../../tests/fixtures/serve/run-merge-ready.json";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
 const DEMO = "http://writer-host:7710";
@@ -37,14 +38,19 @@ const writer40 = run({
   phase: "failed", outcome: "failed", rounds: 1, elapsed_ms: 9 * MINUTE,
 });
 
-/** Each daemon answers `/history` only at yesterday's local midnight; null answers 404. */
-function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null): Fetch {
-  const bodies = (project: string) => ({
+type Item = Attention["items"][number];
+
+/** Each daemon answers `/history` only at yesterday's local midnight; null answers 404.
+ *  The demo daemon sends `items` on `/attention`, and only `readyRuns` are ready to merge. */
+function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: Item[] = [], readyRuns: number[] = []): Fetch {
+  const bodies = (project: string, list: Item[]) => ({
     status: { ...working, project, runs: [], queued: [] },
-    attention: { level: "none", now: NOW, project, items: [] },
+    attention: { level: list.length ? "attention" : "none", now: NOW, project, items: list },
   });
-  const polls = peersFetch(DEMO, { [DEMO]: bodies("/srv/dev/demo"), [WRITER]: bodies("/srv/dev/writer") });
+  const polls = peersFetch(DEMO, { [DEMO]: bodies("/srv/dev/demo", items), [WRITER]: bodies("/srv/dev/writer", []) });
   return async (url) => {
+    const merge = url.match(/\/runs\/(\d+)\/merge$/);
+    if (merge) return Response.json({ ...ready, run: Number(merge[1]), ready: readyRuns.includes(Number(merge[1])) });
     for (const [base, rows] of [[DEMO, demo], [WRITER, writer]] as const) {
       if (url === `${base}/history?since=${YESTERDAY}` && rows) {
         return Response.json({ rows, since: YESTERDAY, limit: 500, truncated: false, now: NOW });
@@ -68,6 +74,7 @@ async function mount(hash: string, fetchImpl: Fetch) {
 
 const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("link");
 const cells = (row: HTMLElement) => Array.from(row.children, (cell) => cell.textContent);
+const stateCells = () => rows().map((row) => cells(row)[3]);
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -90,7 +97,7 @@ test("Runs lists every host's runs since yesterday newest start first, each name
   await mount("#/runs", fleet([demo12, demo9], [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["12", "40", "9"]);
   const [first, failed, merged] = rows();
-  expect(first!.getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, running, started 16:36");
+  expect(first!.getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
   expect(first!.getAttribute("href")).toBe(`/?classic#run=12&daemon=${encodeURIComponent(DEMO)}`);
   expect(within(failed!).getByRole("img").getAttribute("aria-label")).toBe("failed");
   expect(cells(merged!)).toContain("yest 21:05");
@@ -101,7 +108,7 @@ test("a scoped Runs lists only that project's runs, with a dash for no rounds or
   await mount("#/runs?project=demo", fleet([demo12, demo9], [writer40]));
   const [first, second] = rows();
   expect(rows()).toHaveLength(2);
-  expect(cells(first!)).toEqual(["12", "DEMO-12 Count the rounds", "demo", "running", "–", "–", "16:36", "16m"]);
+  expect(cells(first!)).toEqual(["12", "DEMO-12 Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
   expect(cells(second!)).toEqual(["9", "DEMO-9 Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
 });
 
@@ -110,6 +117,52 @@ test("a host whose daemon has no /history adds no rows and no error beside one t
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["40"]);
   expect(screen.queryByRole("alert")).toBeNull();
   expect(document.querySelector("[data-notice]")).toBeNull();
+});
+
+const pullRequestItem = (id: number, pr: object): Item => ({
+  kind: "pr_open", level: "attention", run: id, ticket: `DEMO-${id}`, ticket_url: null, title: `Ticket ${id}`,
+  park_kind: "pull_request", reason: "PR open", asked_ms: NOW - MINUTE, pr_url: `https://github.com/example/demo/pull/${id}`,
+  pr: { number: id, checks: "success", review: "approved", threads: 0, open_threads: 0, title: null, ...pr },
+} as Item);
+const parkedRun = (id: number, hour: number) => run({
+  id, ticket: `DEMO-${id}`, title: `Park ${id}`, started_ms: today(hour, 0), phase: "awaiting_merge_approval", park_kind: "pull_request",
+  pr_url: `https://github.com/example/demo/pull/${id}`,
+});
+
+test("a failed run's State cell names its failure stage and an abandoned run's its reason's first line", async () => {
+  const failed = run({ id: 11, ticket: "DEMO-11", title: "Fail", started_ms: today(16, 0), phase: "failed", outcome: "failed", failure_kind: "verify" });
+  const abandoned = run({
+    id: 10, ticket: "DEMO-10", title: "Drop", started_ms: today(15, 0), phase: "done", outcome: "abandoned",
+    outcome_reason: "aborted: wrong ticket\nmore",
+  });
+  await mount("#/runs", fleet([failed, abandoned], []));
+  expect(stateCells()).toEqual(["failed at verify", "abandoned · aborted: wrong ticket"]);
+});
+
+test("a parked run names its pull request's first open fact and a stale run how long since its beat", async () => {
+  const parked = parkedRun(8, 17);
+  const stale = run({ id: 7, ticket: "DEMO-7", title: "Hang", started_ms: today(16, 50), phase: "implementing", heartbeat_age_ms: 15 * MINUTE });
+  await mount("#/runs", fleet([parked, stale], [], [pullRequestItem(8, { threads: 1, open_threads: 1 })]));
+  expect(stateCells()).toEqual(["parked · 1 thread open", "stale · no beat 15m"]);
+});
+
+test("exactly the runs that wait on the maintainer carry data-need, each row named by its stage word", async () => {
+  const stale = run({ id: 7, ticket: "DEMO-7", title: "Hang", started_ms: today(17, 50), heartbeat_age_ms: 15 * MINUTE });
+  const question = run({ id: 6, ticket: "DEMO-6", title: "Ask", started_ms: today(17, 40), phase: "blocked_on_operator" });
+  const paused = run({ id: 5, ticket: "DEMO-5", title: "Hold", started_ms: today(17, 30), phase: "paused", outcome: "paused" });
+  const readyRun = parkedRun(4, 17);
+  const merged = run({ id: 3, ticket: "DEMO-3", title: "Ship", started_ms: today(10, 0), phase: "done", outcome: "merged", ended_ms: today(11, 15) });
+  const items = [
+    { kind: "blocked", level: "attention", run: 6, ticket: "DEMO-6", ticket_url: null, question: "Which way?\nLeft or right", asked_ms: NOW - MINUTE, pr_url: null },
+    { kind: "paused", level: "attention", run: 5, ticket: "DEMO-5", ticket_url: null, title: "Hold", note: "Waiting on a key", asked_ms: NOW - MINUTE, pr_url: null },
+    pullRequestItem(4, {}),
+  ] as Item[];
+  await mount("#/runs", fleet([stale, question, paused, readyRun, { ...demo12, rounds: 1 }, merged], [], items, [4]));
+  expect(stateCells()).toEqual([
+    "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
+  ]);
+  expect(rows().map((row) => row.hasAttribute("data-need"))).toEqual([true, true, true, true, false, false]);
+  expect(rows()[4]!.getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
 });
 
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
