@@ -10,12 +10,14 @@ import {
   peersSchema,
   runDetailSchema,
   shippedSchema,
+  storyDetailSchema,
   ticketDetailSchema,
   type Board,
   type History,
   type Ledger,
   type LedgerEntry,
   type Peers,
+  type StoryDetail,
 } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
@@ -30,6 +32,7 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
+import { scopedHosts } from "./scope";
 import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
 
@@ -124,6 +127,29 @@ export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
+}
+
+export interface StoryAnswer<R> {
+  /** The host whose project bears the asked name, if one does. */
+  host: R | null;
+  /** The story; null once its daemon answered 404, undefined before any answer. */
+  story: StoryDetail | null | undefined;
+}
+
+/** `/stories/KEY` of the one host whose project is `project`, read again
+ *  every `POLL_INTERVAL_MS` while mounted; idle when no host serves it. */
+export function useStory<R extends HostRecord<PollBodies>>(hosts: R[], project: string, key: string, deps: { fetch: Fetch }): StoryAnswer<R> {
+  const host = scopedHosts(hosts, project)[0] ?? null;
+  const base = host?.base ?? "";
+  const path = `/stories/${encodeURIComponent(key)}`;
+  const { data } = useQuery({
+    queryKey: routeKey(base, path),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, storyDetailSchema),
+    enabled: host != null,
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
+  return { host, story: host == null ? undefined : data };
 }
 
 export interface DayLedger {

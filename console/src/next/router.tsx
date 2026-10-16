@@ -18,6 +18,7 @@ import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
 import { Runs } from "./pages/Runs";
+import { Story } from "./pages/Story";
 import { Tickets } from "./pages/Tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
@@ -65,6 +66,7 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/runs", Runs),
   pageRoute("/tickets", Tickets),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPlaceholder }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   placeholderRoute("/findings", {
     title: "Findings",
     sentence: "Findings across runs come here. Until then, each run's findings are on its page in the classic console.",
