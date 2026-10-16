@@ -1,4 +1,6 @@
 import { Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
+import { CleanReviewLine, FindingRow } from "../components/FindingRow";
 import { StateDot } from "../components/StateDot";
 import { useFindingsPage, type FindingsPage, type Idle, type OpenFinding } from "../findings";
 import { storeScope } from "../projects";
@@ -50,7 +52,7 @@ function verdictOf(page: FindingsPage): { sentence: string; state: State } {
   return { sentence: openSentence(page.open) + drafts, state };
 }
 
-function Group({ label, count, empty }: { label: string; count: number; empty: string }) {
+function Group({ label, count, empty, children }: { label: string; count: number; empty: string; children: ReactNode }) {
   return (
     <section aria-label={label} className="flex flex-col gap-3 px-5 py-4">
       <h2 className="flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
@@ -58,7 +60,7 @@ function Group({ label, count, empty }: { label: string; count: number; empty: s
         {count > 0 && <span data-count className="text-ink">{String(count).padStart(2, "0")}</span>}
         <span aria-hidden="true" className="h-px flex-1 bg-rule-2" />
       </h2>
-      {count === 0 && <p className="font-mono text-[13px] text-ink-3">{empty}</p>}
+      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : <ul>{children}</ul>}
     </section>
   );
 }
@@ -72,11 +74,32 @@ export function Findings() {
   const { project } = page;
   const where = project == null ? "" : ` in ${project}`;
   const verdict = verdictOf(page);
+  const showProject = project == null;
   const groups = [
-    { label: "Open", count: page.open.length, empty: `Nothing open${where}.` },
-    { label: "Follow-ups", count: page.followUps.length, empty: `No follow-ups${where}.` },
-    { label: "Settled this week", count: page.settled.length, empty: `Nothing settled${where} this week.` },
-    { label: "Clean reviews", count: page.clean.length, empty: `No clean reviews${where} this week.` },
+    {
+      label: "Open",
+      count: page.open.length,
+      empty: `Nothing open${where}.`,
+      rows: page.open.map(({ row }) => <FindingRow key={row.key} row={row} showProject={showProject} />),
+    },
+    {
+      label: "Follow-ups",
+      count: page.followUps.length,
+      empty: `No follow-ups${where}.`,
+      rows: page.followUps.map(({ row }) => <FindingRow key={row.key} row={row} showProject={showProject} />),
+    },
+    {
+      label: "Settled this week",
+      count: page.settled.length,
+      empty: `Nothing settled${where} this week.`,
+      rows: page.settled.map(({ row }) => <FindingRow key={row.key} row={row} showProject={showProject} quiet />),
+    },
+    {
+      label: "Clean reviews",
+      count: page.clean.length,
+      empty: `No clean reviews${where} this week.`,
+      rows: page.clean.map((clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
+    },
   ];
   return (
     <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-6 px-8 py-7">
@@ -117,8 +140,10 @@ export function Findings() {
       </header>
       {page.answered && (
         <div className="flex flex-col gap-2 border border-rule bg-paper py-2">
-          {groups.map((group) => (
-            <Group key={group.label} {...group} />
+          {groups.map(({ rows, ...group }) => (
+            <Group key={group.label} {...group}>
+              {rows}
+            </Group>
           ))}
         </div>
       )}
