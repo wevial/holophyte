@@ -81,9 +81,9 @@ class BranchOnlyPathTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.assertTrue(skipped, self.main_side_events())
         self.assertIn(BRANCH_ONLY, skipped[0])
 
-    def test_a_positive_probe_of_a_branch_only_file_is_left_out_on_main(self):
+    def assert_positive_probe_left_out(self, probe):
         kept = "test -e FIXED.md -o ! -e THING.md"
-        moved = self.candidate(f"test -f {BRANCH_ONLY}\n{kept}")
+        moved = self.candidate(f"{probe}\n{kept}")
         fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
         self.assertNotIn("main is red", self.question())
         self.assertEqual(fake.roles, ["implement", "implement"])
@@ -92,6 +92,12 @@ class BranchOnlyPathTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.assertEqual(main_side, [kept])
         self.assertTrue([e for e in self.main_side_events()
                          if "skipped" in e and BRANCH_ONLY in e])
+
+    def test_a_positive_probe_of_a_branch_only_file_is_left_out_on_main(self):
+        self.assert_positive_probe_left_out(f"test -f {BRANCH_ONLY}")
+
+    def test_a_doubly_negated_probe_of_a_branch_only_file_is_left_out(self):
+        self.assert_positive_probe_left_out(f"! test ! -e {BRANCH_ONLY}")
 
     def test_a_failing_command_left_out_on_main_is_not_compared(self):
         moved = self.candidate(f"grep -q fixed {BRANCH_ONLY}")

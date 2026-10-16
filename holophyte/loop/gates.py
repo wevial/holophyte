@@ -295,19 +295,33 @@ def _word_spans(clause):
     return spans
 
 
+def _holds_when_absent(words, index, negated):
+    if not words[index - 1].startswith("-"):
+        return False
+    before = index - 2
+    while before > 0 and words[before] == "!":
+        before -= 1
+    flips = index - 2 - before
+    if negated:
+        if "-a" in words or "-o" in words:
+            return False
+        flips += 1
+    return flips % 2 == 1
+
+
 def _relative_words(spans, candidate):
     words, negated = [word for word, _, _ in spans], False
     while words and words[0] == "!":
         words, negated = words[1:], not negated
-    probe = bool(words) and words[0] in _PROBES
-    if not words or (probe and negated):
+    if not words:
         return []
+    probe = words[0] in _PROBES
     root = Path(candidate).resolve()
     found = []
     for index, word in enumerate(words):
         if word.startswith("-") or _SHELL_EXPANSION.search(word) or os.path.isabs(word):
             continue
-        if probe and index >= 2 and words[index - 2] == "!":
+        if probe and _holds_when_absent(words, index, negated):
             continue
         inside = (root / word).resolve()
         if inside == root or not inside.is_relative_to(root):
