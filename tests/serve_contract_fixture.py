@@ -66,6 +66,12 @@ def contract_answers(case):
         record_follow_up(conn, case.run, "c" * 40, "feature", True,
                          "Validate input at the API edge", "validate-edge",
                          path="app.py", line=7, now=NOW - 5_000)
+        store.record_event(conn, case.run, "criteria",
+                           "review round 1: 0 of 1 criteria met",
+                           level="detail", payload=json.dumps(dict(round=1, criteria=[
+                               dict(n=1, status="not_met", note="input unvalidated",
+                                    text="Given input, then it is validated")])),
+                           now=NOW)
         project = store.tickets.ensure_project(conn, "team-1", case.target)
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-8", linear_identifier="KO-8",
