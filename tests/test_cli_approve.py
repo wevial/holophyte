@@ -32,7 +32,7 @@ import store.tickets
 from holophyte.loop.runs import open_store
 from tests.host_fixture import git
 from tests.phase_fixture import finish_run, park_run
-from tests.test_serve_merge import FakeGithub
+from tests.test_serve_merge import FakeGithub, review_rule
 
 BRANCH = "task/ko-1-a-ticket"
 PULL = "https://github.com/example/repo/pull/7"
@@ -199,6 +199,20 @@ class ApproveCliTests(unittest.TestCase):
         self.assertIn(("graphql",), [call[:1] for call in self.github.calls])
         self.assertEqual(self.interventions(), [(self.run, "approve")])
         self.assertEqual(self.intervention_note(), "ok")
+        self.assertEqual(self.run_row()[2], "merge_gate")
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+
+    def test_an_exempt_required_review_is_approved_without_force(self):
+        self.park_at_pull_request(approve="human")
+        self.github.review = "REVIEW_REQUIRED"
+        self.github.rules = [review_rule(24, 1)]
+        self.github.rulesets = {
+            24: {"name": "human-review", "current_user_can_bypass": "exempt"}}
+
+        out, _ = self.cli("--approve", "KO-1")
+
+        self.assertIn(f"KO-1 approved: run {self.run}", out)
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
         self.assertEqual(self.run_row()[2], "merge_gate")
         self.assertEqual(self.ticket_row(), ("ready", None, self.run))
 
