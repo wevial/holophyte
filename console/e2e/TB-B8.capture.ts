@@ -4,7 +4,6 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 const out = process.env.CAPTURE_OUT ?? "";
 
 const row = (page: Page, key: string) => page.locator(`[data-lane-rows] a[id^="card-"][id$="-${key}"]`);
-const peek = (page: Page) => page.getByRole("dialog");
 
 async function table(browser: Browser, baseURL: string | undefined, width: number, height = 900) {
   const context = await browser.newContext({ baseURL, viewport: { width, height }, colorScheme: "light" });
@@ -41,7 +40,7 @@ test("the Tickets table grouped by Project", async ({ browser, baseURL }) => {
 test("a Tickets table row open in the peek", async ({ browser, baseURL }) => {
   const { context, page } = await table(browser, baseURL, 1440);
   await row(page, "DEMO-3").click();
-  await expect(peek(page)).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeVisible();
   await expect(row(page, "DEMO-3")).toHaveAttribute("data-open", "true");
   await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(out, "04-table-peek.png") });
