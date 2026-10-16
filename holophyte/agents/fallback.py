@@ -21,6 +21,7 @@ from holophyte.redact import safe_print as print
 # Exact substrings the supported routes print, so an event quotes the cause.
 OUTAGE_SIGNATURES = {
     "claude": ("You've hit your limit", "You've hit your session limit",
+               "You've hit your weekly limit",
                "Credit balance is too low"),
     "codex": ("You've hit your usage limit", "Selected model is at capacity"),
     "devin": ("Quota exhausted", "Usage limit reached",
