@@ -272,6 +272,11 @@ Each module, one line:
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve/serve_history.py` — the daemon's `GET /history`: every
+  open run and every run started since a time, one row per run.
+- `holophyte/serve/serve_findings.py` — the daemon's `GET /findings`: the
+  window's runs with their rounds, `round` and `adjudication` ledger rows
+  and advisories, and its follow-up rows with their settled state.
 - `holophyte/serve/serve_watch.py` — the daemon's code-moved check and its
   in-flight request count (KO-648): what re-executes it between requests
   once the factory checkout's `HEAD` moves, or, on a socket the service
@@ -577,6 +582,9 @@ Each module, one line:
 - `holophyte/babysit/main_checkout.py` — the detached main checkout the babysit
   pass verifies main in, given the task worktree's `[worktree] carry`
   directories, or its `[worktree] setup`, first.
+- `holophyte/babysit/main_side.py` — the babysit pass's main-side verify
+  after a merge of main turns the branch red: main runs without what only
+  the branch adds, and is not compared when the failing command was left out.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
   commands at one commit of main in a scratch worktree, within
   `[story] witness_sec`, and appends each verdict to the ledger;

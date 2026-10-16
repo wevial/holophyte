@@ -519,6 +519,16 @@ export const steerNoteSchema = z.looseObject({
 });
 export type SteerNote = z.infer<typeof steerNoteSchema>;
 
+export const runCriterionSchema = z.looseObject({
+  n: z.int(),
+  text: z.string(),
+  status: z.enum(["met", "not_met", "unwitnessed"]),
+  note: z.string(),
+  run: z.int(),
+  round: z.int(),
+});
+export type RunCriterion = z.infer<typeof runCriterionSchema>;
+
 export const runDetailSchema = z.looseObject({
   run: runDetailRunSchema,
   rounds: z.array(roundSchema),
@@ -526,6 +536,7 @@ export const runDetailSchema = z.looseObject({
   events: z.array(runEventSchema),
   chain: runChainSchema.optional(),
   steer_notes: z.array(steerNoteSchema),
+  criteria: z.array(runCriterionSchema),
 });
 export type RunDetail = z.infer<typeof runDetailSchema>;
 
@@ -567,6 +578,40 @@ export const runAsksSchema = z.looseObject({
 });
 export type RunAsks = z.infer<typeof runAsksSchema>;
 
+export const runFileSchema = z.looseObject({
+  path: z.string(),
+  status: z.enum(["A", "D", "M", "R"]),
+  added: z.int(),
+  deleted: z.int(),
+});
+export type RunFile = z.infer<typeof runFileSchema>;
+
+export const runFilesSchema = z.looseObject({
+  run: z.int(),
+  base: z.string(),
+  head: z.string(),
+  files: z.array(runFileSchema),
+  total_added: z.int(),
+  total_deleted: z.int(),
+  truncated: z.boolean(),
+});
+export type RunFiles = z.infer<typeof runFilesSchema>;
+
+export const runTurnSchema = z.looseObject({
+  id: z.int(),
+  role: z.enum(["implement", "review", "adjudicate", "write", "trim"]),
+  label: z.string().nullable(),
+  route: z.enum(["primary", "fallback"]),
+  seconds: z.number().nullable(),
+  session_id: z.string().nullable(),
+});
+export type RunTurn = z.infer<typeof runTurnSchema>;
+
+export const runTurnsSchema = z.looseObject({
+  turns: z.array(runTurnSchema),
+});
+export type RunTurns = z.infer<typeof runTurnsSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),
@@ -599,6 +644,37 @@ export const shippedSchema = z.looseObject({
   limit: z.int(),
 });
 export type Shipped = z.infer<typeof shippedSchema>;
+
+export const historyRowSchema = z.looseObject({
+  id: z.int(),
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  title: z.string(),
+  attempt: z.int(),
+  phase: z.string(),
+  outcome: z.string().nullable(),
+  outcome_reason: z.string().nullable(),
+  failure_kind: z.string().nullable(),
+  park_kind: z.string().nullable(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+  elapsed_ms: z.int(),
+  heartbeat_age_ms: z.int().nullable(),
+  rounds: z.int(),
+  max_rounds: z.int(),
+  pr_url: z.string().nullable(),
+  host: z.string().nullable(),
+});
+export type HistoryRow = z.infer<typeof historyRowSchema>;
+
+export const historySchema = z.looseObject({
+  rows: z.array(historyRowSchema),
+  since: z.int(),
+  limit: z.int(),
+  truncated: z.boolean(),
+  now: z.int(),
+});
+export type History = z.infer<typeof historySchema>;
 
 export const ledgerEntrySchema = z.looseObject({
   at: z.int(),

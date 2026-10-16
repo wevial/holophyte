@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunTurns",
+  "description": "GET /runs/N/turns",
+  "$ref": "#/$defs/RunTurns",
+  "$defs": {
+    "RunTurn": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "implement",
+            "review",
+            "adjudicate",
+            "write",
+            "trim"
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "route": {
+          "enum": [
+            "primary",
+            "fallback"
+          ]
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "label",
+        "route",
+        "seconds",
+        "session_id"
+      ],
+      "additionalProperties": true
+    },
+    "RunTurns": {
+      "type": "object",
+      "properties": {
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunTurn"
+          }
+        }
+      },
+      "required": [
+        "turns"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

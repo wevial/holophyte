@@ -2,11 +2,13 @@ import contextlib
 import fcntl
 import os
 import re
+import shlex
 import signal
 import subprocess
 import threading
 from pathlib import Path
 from time import monotonic, sleep, time
+from typing import NamedTuple
 
 import ticket_template
 from holophyte.config.reader import VERIFY_TIMEOUT
@@ -253,22 +255,136 @@ def _drop_clause_modules(clause, candidate, main):
     return clause[:found.start(1)] + args + clause[found.end(1):], names
 
 
-def drop_candidate_modules(command, candidate, main):
-    lines, skipped = [], []
+_TEST_FILE = re.compile(r"(test_.*\.py|.*_test\.py|.*_test\.go"
+                        r"|.*\.(test|spec)\.(js|jsx|ts|tsx|mjs))")
+_SHELL_EXPANSION = re.compile(r"[*?\[\]{}$~]")
+_PROBES = {"test", "["}
+
+
+class MainSideCommand(NamedTuple):
+    command: str
+    modules: list
+    paths: list
+    dropped: dict
+    trimmed: dict
+
+
+def _tracked(candidate, revisions, words):
+    queries = [f"{rev}:{word}" for word in words for rev in revisions]
+    out = subprocess.run(["git", "cat-file", "--batch-check"], cwd=candidate,
+                         input="".join(f"{q}\n" for q in queries),
+                         capture_output=True, text=True).stdout.splitlines()
+    present = [not line.endswith(" missing") for line in out]
+    if len(present) != len(queries):
+        return {}
+    return {word: present[i * len(revisions):(i + 1) * len(revisions)]
+            for i, word in enumerate(words)}
+
+
+def _word_spans(clause):
+    lexer = shlex.shlex(clause, posix=True)
+    lexer.whitespace_split, lexer.commenters = True, ""
+    spans, start = [], 0
+    try:
+        while (word := lexer.get_token()) is not None:
+            end = lexer.instream.tell()
+            spans.append((word, start, end))
+            start = end
+    except ValueError:
+        return []
+    return spans
+
+
+def _holds_when_absent(words, index, negated):
+    if not words[index - 1].startswith("-"):
+        return False
+    before = index - 2
+    while before > 0 and words[before] == "!":
+        before -= 1
+    flips = index - 2 - before
+    if negated:
+        if "-a" in words or "-o" in words:
+            return False
+        flips += 1
+    return flips % 2 == 1
+
+
+def _relative_words(spans, candidate):
+    words, negated = [word for word, _, _ in spans], False
+    while words and words[0] == "!":
+        words, negated = words[1:], not negated
+    if not words:
+        return []
+    probe = words[0] in _PROBES
+    root = Path(candidate).resolve()
+    found = []
+    for index, word in enumerate(words):
+        if word.startswith("-") or _SHELL_EXPANSION.search(word) or os.path.isabs(word):
+            continue
+        if probe and _holds_when_absent(words, index, negated):
+            continue
+        inside = (root / word).resolve()
+        if inside == root or not inside.is_relative_to(root):
+            continue
+        if word not in found:
+            found.append(word)
+    return found
+
+
+def _drop_clause_paths(clause, candidate, main_sha):
+    spans = _word_spans(clause)
+    words = _relative_words(spans, candidate)
+    tracked = _tracked(candidate, ("HEAD", main_sha), words) if words else {}
+    gone = [w for w in words if tracked.get(w) == [True, False]]
+    if not gone:
+        return clause, []
+    tests_on_main = [w for w in words if tracked.get(w) == [True, True]
+                     and _TEST_FILE.fullmatch(os.path.basename(w))]
+    if not tests_on_main or not all(
+            _TEST_FILE.fullmatch(os.path.basename(w)) for w in gone):
+        return None, gone
+    for word, start, end in reversed(spans):
+        if word in gone:
+            clause = clause[:start] + clause[end:]
+    return clause, gone
+
+
+def _drop_clause(clause, candidate, main, main_sha):
+    kept, names = _drop_clause_modules(clause, candidate, main)
+    if kept is None:
+        return kept, names, []
+    kept, paths = _drop_clause_paths(kept, candidate, main_sha)
+    return kept, names, paths
+
+
+def drop_candidate_modules(command, candidate, main, main_sha):
+    lines, modules, paths, dropped, trimmed = [], [], [], {}, {}
     for line in (command or "").splitlines():
         parts = _CLAUSE_OPERATOR.split(line)
         kept = []
         for index in range(0, len(parts), 2):
-            clause, names = _drop_clause_modules(parts[index], candidate, main)
-            skipped += names
-            if clause is not None:
+            clause, names, gone = _drop_clause(parts[index], candidate, main,
+                                               main_sha)
+            modules += names
+            paths += [path for path in gone if path not in paths]
+            if clause is None:
+                dropped[parts[index].strip()] = names + gone
+            else:
+                if gone:
+                    trimmed[parts[index].strip()] = gone
                 kept.append((parts[index - 1] if index else "", clause))
-        if len(kept) == len(parts[::2]):
+        clauses = [clause.strip() for clause in parts[::2]]
+        if len(kept) < len(clauses):
+            dropped[line.strip()] = [n for c in clauses for n in dropped.get(c, ())]
+        elif any(c in trimmed for c in clauses):
+            trimmed[line.strip()] = [n for c in clauses for n in trimmed.get(c, ())]
+        if len(kept) == len(clauses):
             lines.append("".join(op + clause for op, clause in kept))
         elif kept:
             lines.append(kept[0][1].strip() + "".join(
                 f" {op} {clause.strip()}" for op, clause in kept[1:]))
-    return ("\n".join(lines) if skipped else command), skipped
+    return MainSideCommand("\n".join(lines) if modules or paths else command,
+                           modules, paths, dropped, trimmed)
 
 
 def contract_report(contracts, cwd):
