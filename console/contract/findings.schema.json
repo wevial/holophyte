@@ -1,0 +1,629 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Findings",
+  "description": "GET /findings",
+  "$ref": "#/$defs/Findings",
+  "$defs": {
+    "FindingFingerprint": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "severity"
+      ],
+      "additionalProperties": true
+    },
+    "InstructionTriage": {
+      "type": "object",
+      "properties": {
+        "decision": {
+          "enum": [
+            "fix",
+            "question",
+            "unclear"
+          ]
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "route": {
+          "enum": [
+            "fix",
+            "answer"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "confidence",
+        "route",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "RoundFinding": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string"
+        },
+        "criterion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "evidence_only": {
+          "type": "boolean"
+        },
+        "evidence": {
+          "enum": [
+            "reproduced",
+            "traced",
+            "concern"
+          ]
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "stale_approval": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/FindingFingerprint"
+        },
+        "kind": {
+          "enum": [
+            "thread",
+            "finding"
+          ]
+        },
+        "author": {
+          "type": "string"
+        },
+        "author_kind": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "triage": {
+          "$ref": "#/$defs/InstructionTriage"
+        },
+        "outcome": {
+          "enum": [
+            "changed",
+            "kept",
+            "asked"
+          ]
+        },
+        "reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "severity",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "RoundInstruction": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "instruction"
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "author": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "triage": {
+          "$ref": "#/$defs/InstructionTriage"
+        },
+        "outcome": {
+          "enum": [
+            "changed",
+            "kept",
+            "asked"
+          ]
+        },
+        "reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "line",
+        "author",
+        "request",
+        "url"
+      ],
+      "additionalProperties": true
+    },
+    "OperatorNote": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "operator_note"
+        },
+        "event_id": {
+          "type": "integer"
+        },
+        "note": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "boolean"
+        },
+        "consumed": {
+          "type": "boolean"
+        },
+        "run_id": {
+          "type": "integer"
+        },
+        "round": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "event_id",
+        "note",
+        "author",
+        "consumed",
+        "run_id",
+        "round"
+      ],
+      "additionalProperties": true
+    },
+    "Round": {
+      "type": "object",
+      "properties": {
+        "round": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "reviewer_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoundFinding"
+          }
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoundInstruction"
+          }
+        },
+        "operator_notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperatorNote"
+          }
+        }
+      },
+      "required": [
+        "round",
+        "started_ms",
+        "ended_ms",
+        "verdict",
+        "reviewer_model",
+        "findings",
+        "instructions",
+        "operator_notes"
+      ],
+      "additionalProperties": true
+    },
+    "RunLedgerEntry": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "cleared": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waited_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "tone": {
+          "type": "string"
+        },
+        "schema_to": {
+          "type": "integer"
+        },
+        "schema_from": {
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "source",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "AdvisoryFinding": {
+      "type": "object",
+      "properties": {
+        "tone": {
+          "const": "advisory"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tone",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "FindingsRun": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Round"
+          }
+        },
+        "ledger": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunLedgerEntry"
+          }
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdvisoryFinding"
+          }
+        }
+      },
+      "required": [
+        "run",
+        "ticket",
+        "title",
+        "phase",
+        "outcome",
+        "ended_ms",
+        "pr_url",
+        "rounds",
+        "ledger",
+        "advisories"
+      ],
+      "additionalProperties": true
+    },
+    "FollowUpRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "run": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "feature",
+            "guardrail"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_ms": {
+          "type": "integer"
+        },
+        "settled_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "filed",
+            "duplicate",
+            "ledger",
+            "superseded",
+            "unfiled"
+          ]
+        },
+        "filed_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duplicate_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "run",
+        "ticket",
+        "kind",
+        "text",
+        "path",
+        "line",
+        "created_ms",
+        "settled_ms",
+        "state",
+        "filed_as",
+        "duplicate_of",
+        "error"
+      ],
+      "additionalProperties": true
+    },
+    "Findings": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "integer"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FindingsRun"
+          }
+        },
+        "follow_ups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FollowUpRow"
+          }
+        }
+      },
+      "required": [
+        "since",
+        "limit",
+        "runs",
+        "follow_ups"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

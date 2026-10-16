@@ -931,6 +931,12 @@ class ServeContractTests(ServeTestCase):
                             for column in answers["board"]["columns"]))
         self.assertEqual(answers["ticket"]["acceptance_criteria"],
                          ["Run without an estimate"])
+        runs = answers["findings"]["runs"]
+        self.assertTrue(any(round_["findings"] for run in runs
+                            for round_ in run["rounds"]))
+        self.assertTrue(any(run["advisories"] for run in runs))
+        self.assertIn("pending", [row["state"] for row
+                                  in answers["findings"]["follow_ups"]])
 
 
 class TurnTests(TranscriptCase):

@@ -75,6 +75,13 @@ for path in ("/status", "/attention", "/projects", "/projects/demo/status",
 open(sys.argv[1], "w").write(json.dumps(seen))
 """
 
+FINDINGS_READ = """\
+import json, os, sys, urllib.request
+url = os.environ["CONSOLE_URL"] + "/projects/demo/findings?since=0"
+with urllib.request.urlopen(url, timeout=10) as answer:
+    open(sys.argv[1], "w").write(answer.read().decode())
+"""
+
 RECORD = """\
 import json, os, sys
 open(sys.argv[1], "w").write(json.dumps(
@@ -170,6 +177,17 @@ class ConsoleFixtureTests(unittest.TestCase):
                          "https://github.com/example/demo/pull/43")
         self.assertGreaterEqual(today["ended_ms"], midnight)
         self.assertLessEqual(today["ended_ms"], time.time() * 1000)
+
+    def test_the_findings_route_serves_a_pending_feature_and_a_kept_guardrail(self):
+        result, seen = self.script(FINDINGS_READ)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = sorted((row["ticket"], row["kind"], row["state"], row["path"],
+                       row["line"]) for row in seen["follow_ups"])
+        self.assertEqual(rows, [
+            ("DEMO-5", "guardrail", "ledger", "holophyte/serve/server.py", 12),
+            ("DEMO-7", "feature", "pending",
+             "holophyte/cli/shadow_report.py", 88)])
 
     def test_no_route_the_console_polls_names_the_machine(self):
         result, seen = self.script(POLLED)
