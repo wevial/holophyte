@@ -18,7 +18,7 @@ export interface RunRow extends HistoryRow {
 
 /** Every answer's rows, tagged with their host and project, newest start
  *  first and then by id. */
-function historyRows(hosts: HostRecord<ContractBodies>[], answers: Map<string, History>, readiness: ReadinessMap): RunRow[] {
+export function historyRows(hosts: HostRecord<ContractBodies>[], answers: Map<string, History>, readiness: ReadinessMap): RunRow[] {
   return hosts
     .flatMap((host) => {
       const answer = answers.get(host.key);
