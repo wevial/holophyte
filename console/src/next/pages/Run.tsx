@@ -1,11 +1,20 @@
-import type { ReactNode } from "react";
+import { useContext, type MouseEvent, type ReactNode } from "react";
 import { Link, useParams } from "@tanstack/react-router";
+import { Markdown } from "../../components/Markdown";
 import { TicketLink } from "../../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { RunActions } from "../components/RunActions";
+import { leadParagraph } from "../../lib/ticket";
+import { AgentPanel } from "../components/AgentPanel";
+import { CriteriaList } from "../components/CriteriaList";
+import { SECTION_LABEL } from "../components/Criteria";
+import { ProgressLog } from "../components/ProgressLog";
+import { RunPullRequest } from "../components/RunPullRequest";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
+import { useTicket } from "../queries";
 import { useRunPage } from "../run";
+import { PollDepsContext } from "../scope";
 
 const CRUMB_LINK = "border-b border-rule text-ink-3 no-underline hover:border-ink hover:text-ink";
 const STRONG = "font-medium text-ink-2";
@@ -33,6 +42,31 @@ function Notice({ label, text }: { label: string; text: string }) {
         Back to Runs
       </Link>
     </Page>
+  );
+}
+
+/** The console routes on the hash, so the in-page link scrolls instead of navigating. */
+function toProgress(event: MouseEvent<HTMLAnchorElement>) {
+  event.preventDefault();
+  document.getElementById("progress")?.scrollIntoView({ block: "start" });
+}
+
+/** The summary the run was given: the claimed revision's body when the
+ *  ticket answers one, else its current one; nothing on a 404. */
+function RunTicket({ base, ticket }: { base: string; ticket: string }) {
+  const deps = useContext(PollDepsContext);
+  const { data } = useTicket(base, ticket, deps);
+  if (data == null) return null;
+  const claimed = data.claimed?.revision != null ? data.claimed.body : null;
+  const lead = leadParagraph(claimed ?? data.current?.body ?? data.body);
+  if (!lead) return null;
+  return (
+    <section aria-label="Ticket" data-run-ticket>
+      <div className={SECTION_LABEL}>Ticket</div>
+      <div className="mt-2.5 max-w-[68ch] font-plex text-[15px] leading-[1.55] text-ink-2 [&_p]:m-0">
+        <Markdown>{lead}</Markdown>
+      </div>
+    </section>
   );
 }
 
@@ -116,9 +150,27 @@ export function RunPage() {
           <span role="group" aria-label="Stage">
             <StageChip label={page.stage.label} state={page.state} sub={page.stage.sub} />
           </span>
+          <a href="#progress" onClick={toProgress} className="font-mono text-[12px] leading-[1.3] text-ink-2 underline underline-offset-2 hover:text-ink">
+            history in Progress
+          </a>
         </div>
       </header>
-      <div data-run-body className="mt-3.5 min-h-40 border border-rule bg-paper" />
+      <div data-run-body className="@container mt-3.5 flex min-h-40 flex-wrap border border-rule bg-paper">
+        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[880px]:border-r @[880px]:border-rule max-[720px]:px-4">
+          {run.pr_url != null && (
+            <RunPullRequest
+              url={run.pr_url}
+              facts={page.prFacts}
+              ready={page.state === "ready_to_merge"}
+              merge={page.state === "merged" ? run : null}
+            />
+          )}
+          <RunTicket base={page.base} ticket={run.ticket} />
+          <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
+          <ProgressLog key={run.id} lines={page.progress} live={page.live} />
+        </div>
+        <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks} />
+      </div>
     </Page>
   );
 }

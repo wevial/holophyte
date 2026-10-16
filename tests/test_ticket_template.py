@@ -1018,6 +1018,53 @@ class EvidenceTests(unittest.TestCase):
         problems = tt.validate(tt.parse(self.body(states * 2 + ["Seventh"])))
         self.assertTrue(any("Evidence" in p and "6" in p for p in problems))
 
+    def test_test_and_command_output_evidence_names_the_rejected_line(self):
+        for state in (
+            "The route and hook test output for both flag states.",
+            "The new test file's output on main and after the fix.",
+            "The output of the build command.", "The TERMINAL after the build.",
+            "vitest results", "unittest results", "pytest results", "stdout",
+            "The exit code.", "Passing tests", "A failing test", "Tests passing",
+            "Test failing", "Command output from the build.",
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(tt.validate(tt.parse(self.body([state]))), [
+                    f"Evidence state #1 {state!r}: Evidence lists UI states to "
+                    "screenshot or record; a test's result belongs in an "
+                    "acceptance criterion.",
+                ])
+
+    def test_ui_evidence_and_no_ui_change_are_valid(self):
+        for state in (
+            "The Overview in Night and Dawn with one section folded.",
+            "A screenshot of the test page.", 'The page titled "Tests".',
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(tt.validate(tt.parse(self.body([state]))), [])
+        for states in ((), ("",), ("None",), ("None: no UI change.",)):
+            with self.subTest(states=states):
+                self.assertEqual(tt.validate(tt.parse(
+                    with_ui_change("none", states=states))), [])
+
+    def test_cli_rejects_test_output_evidence_with_repo(self):
+        state = "The route and hook test output for both flag states."
+        with tempfile.TemporaryDirectory() as tmp:
+            ticket = Path(tmp) / "ticket.md"
+            body = self.body([state]).replace(
+                "- Endpoint lives beside the other order routes.",
+                "- Use the existing route.").replace(
+                ".venv/bin/python -m unittest test_orders_export",
+                "python3 -m unittest discover -s tests -p 'test_ticket_template.py'")
+            ticket.write_text(body)
+            result = subprocess.run(
+                ["python3", "ticket_template.py", "--repo", ".", str(ticket)],
+                cwd=ROOT, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(state, result.stdout)
+        self.assertIn("Evidence lists UI states to screenshot or record; "
+                      "a test's result belongs in an acceptance criterion.",
+                      result.stdout)
+
     def test_marker_only_states_report_each_index(self):
         ticket = tt.parse(self.body([
             "Orders page empty", "-", "*  ", "+", "4.", "5) <!-- state -->",
@@ -1120,11 +1167,11 @@ class MockupTests(unittest.TestCase):
                       "<https://claude.ai/artifact/ID>",
                       tt.blocking(tt.validate(ticket)))
 
-    def test_a_declaration_other_than_major_or_minor_is_blocking(self):
+    def test_an_unknown_ui_change_declaration_is_blocking(self):
         self.assertEqual(
             [p for p in tt.blocking(tt.validate(tt.parse(with_ui_change("huge"))))
              if "'**UI change:**'" in p],
-            ["'**UI change:**' must read major or minor, not 'huge'"])
+            ["'**UI change:**' must read major, minor or none, not 'huge'"])
         for line, value in (("UI change: Major", "Major"),
                             ("**UI change: **MINOR", "MINOR")):
             with self.subTest(line=line):

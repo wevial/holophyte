@@ -15,23 +15,27 @@ import { useDayLedger, usePeerList } from "../queries";
 import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
+const FOLDED_BY_DEFAULT = new Set(["done"]);
 
 function readOpen(id: string): boolean {
+  const fallback = !FOLDED_BY_DEFAULT.has(id);
   try {
-    return localStorage.getItem(FOLD_KEY + id) !== "folded";
+    const stored = localStorage.getItem(FOLD_KEY + id);
+    return stored === "open" ? true : stored === "folded" ? false : fallback;
   } catch {
-    return true;
+    return fallback;
   }
 }
 
 function writeOpen(id: string, open: boolean): void {
   try {
-    if (open) localStorage.removeItem(FOLD_KEY + id);
-    else localStorage.setItem(FOLD_KEY + id, "folded");
+    localStorage.setItem(FOLD_KEY + id, open ? "open" : "folded");
   } catch {
     // Storage may be disabled; the fold still holds for this page.
   }
 }
+
+const COLUMN = "flex min-w-0 flex-col gap-[44px] min-[1600px]:row-start-2 min-[1600px]:@container/ov-col";
 
 const counted = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -119,8 +123,9 @@ export function Overview() {
     card.current?.focus();
   };
   return (
-    <div className="overview gap-8 px-8 py-7">
-      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-8">
+    <div className="flex flex-col gap-8 px-8 py-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:grid min-[1600px]:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px] min-[1600px]:grid-rows-[auto_1fr] min-[1600px]:gap-x-[36px] min-[1600px]:gap-y-[32px]">
+      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-8 min-[1600px]:contents">
+        <div data-overview-head className="contents min-[1600px]:col-span-2 min-[1600px]:col-start-1 min-[1600px]:row-start-1 min-[1600px]:flex min-[1600px]:min-w-0 min-[1600px]:flex-col min-[1600px]:gap-8">
         {view.answered && (
           <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
             <h1 className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">
@@ -157,7 +162,9 @@ export function Overview() {
           silent={silentHosts(view.hosts, view.now)}
           lines={noticeLines(view.hosts, log.answers, view.now)}
         />
-        <div className="flex flex-col gap-[44px]">
+        </div>
+        <div className="flex flex-col gap-[44px] min-[1600px]:contents">
+          <div data-overview-column className={`${COLUMN} min-[1600px]:col-start-1`}>
           <FoldingSection
             loading={firstLoad}
             key={needMount}
@@ -183,6 +190,8 @@ export function Overview() {
           >
             <RunningLanes groups={lanes} now={view.now} />
           </FoldingSection>
+          </div>
+          <div data-overview-column className={`${COLUMN} min-[1600px]:col-start-2`}>
           <FoldingSection
             loading={firstLoad}
             id="pr"
@@ -204,9 +213,13 @@ export function Overview() {
           >
             <MergedToday rows={view.mergedToday} />
           </FoldingSection>
+          </div>
         </div>
       </div>
-      <DayLog entries={log.entries} />
+      <DayLog
+        entries={log.entries}
+        className="max-w-[880px] min-[1200px]:sticky min-[1200px]:top-5 min-[1200px]:flex-[0_0_290px] min-[1600px]:col-start-3 min-[1600px]:row-span-2 min-[1600px]:row-start-1 min-[1600px]:w-[330px]"
+      />
     </div>
   );
 }
