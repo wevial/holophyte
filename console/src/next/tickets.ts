@@ -185,7 +185,7 @@ function storyLanes(cards: TicketCard[], boards: TicketBoard["boards"]): Lane[] 
 export function boardLanes(cards: TicketCard[], mode: GroupMode, boards: TicketBoard["boards"]): Lane[] {
   if (mode === "project") return projectLanes(cards, boards);
   if (mode === "story") return storyLanes(cards, boards);
-  return cards.length === 0 ? [] : [laneOf("all", "", null, cards, null)];
+  return [laneOf("all", "", null, cards, null)];
 }
 
 const MINUTE_MS = 60_000;
