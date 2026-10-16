@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { THEME_KEY } from "../../src/lib/theme";
+import { VIEW_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -100,6 +101,19 @@ test("each page links to the classic view behind it, and an unknown route links 
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);
 });
 
+test("Classic view remembers the classic view and loads the console's root", async () => {
+  localStorage.setItem(VIEW_KEY, "next");
+  location.href = "http://console.test/next.html#/runs";
+  try {
+    await mount("#/runs");
+    fireEvent.click(screen.getByRole("button", { name: "Classic view" }));
+    expect(localStorage.getItem(VIEW_KEY)).toBe("classic");
+    expect(location.pathname).toBe("/");
+  } finally {
+    location.href = "about:blank";
+  }
+});
+
 test("the fold button folds the sidebar to icons, keeps link names and survives a remount and failing storage", async () => {
   await mount("#/");
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
@@ -107,10 +121,9 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   expect(expand.getAttribute("aria-expanded")).toBe("false");
   expect(pages().map((link) => link.textContent)).toEqual(["", "", "", ""]);
   expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
-  for (const name of ["holophyte", "Classic console"]) {
-    const link = screen.getByRole("link", { name });
-    expect(link.textContent).toBe("");
-    expect(link.getAttribute("title")).toBe(name);
+  for (const control of [screen.getByRole("link", { name: "holophyte" }), screen.getByRole("button", { name: "Classic view" })]) {
+    expect(control.textContent).toBe("");
+    expect(control.getAttribute("title")).toBe(control.getAttribute("aria-label"));
   }
   cleanup();
 
