@@ -129,7 +129,7 @@ test("an opened row shows its run's detail, and Ask only where the daemon takes 
   expect(rowButton(43).getAttribute("aria-expanded")).toBe("true");
   expect(within(row).getByRole("region", { name: "Pull request facts" })).toBeTruthy();
   expect(within(row).getByRole("button", { name: "Ask" })).toBeTruthy();
-  expect(within(row).getByRole("link", { name: "Open run 10" }).getAttribute("href")).toBe(`/#run=10&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(row).getByRole("link", { name: "Open run 10" }).getAttribute("href")).toBe(`/?classic#run=10&daemon=${encodeURIComponent(DEMO)}`);
   const details = seen.map((request) => request.url).filter((url) => /\/runs\/\d+$/.test(url));
   expect([...new Set(details)]).toEqual([`${DEMO}/runs/10`]);
   cleanup();
