@@ -399,7 +399,8 @@ class PullRequestTitleTests(ServeTestCase):
                  candidate_sha="a" * 40, pr_url=self.URL,
                  park_kind="pull_request", now=self.now - MIN)
 
-    def read_status(self, title, threads=None, facts_only=None, **fields):
+    def read_status(self, title, threads=None, facts_only=None,
+                    through_reconcile=False, **fields):
         """One reconcile read of the pull request answering `title`,
         recorded as the reconcile records an unchanged pull request, or
         as its first read when GitHub also answers `threads`."""
@@ -413,6 +414,11 @@ class PullRequestTitleTests(ServeTestCase):
             node["threadCount"] = threads
         with patch.object(pr_status, "graphql", return_value={
                 "repository": {"pullRequest": node}}):
+            if through_reconcile:
+                project = store.tickets.ensure_project(
+                    self.conn, "team-1", self.target)
+                return reconcile._reconcile_pull_requests(
+                    self.project, self.conn, project, None, failed_asked={})
             status = pr_status.pull_status(
                 None, pr_status.parse_pr_url(self.URL))
         store.record_pr_seen(self.conn, self.run, reconcile._seen(status),
@@ -452,6 +458,31 @@ class PullRequestTitleTests(ServeTestCase):
                 self.read_status(self.TITLE, facts_only=facts_only,
                                  isDraft=draft)
                 self.assertEqual(self.pr_open()["pr"]["state"], expected)
+
+    def test_ready_read_during_cooldown_updates_facts_without_waking(self):
+        self.start(config='[merge]\npr_poll_sec = 3600\n')
+        store.record_event(self.conn, self.run, "pr_draft_held", "held for review")
+        for draft, expected, updated in (
+                (True, "draft", "2026-09-22T10:00:00Z"),
+                (False, "ready", "2026-09-22T10:01:00Z")):
+            with self.subTest(state=expected):
+                with patch("holophyte.host.reconcile.time",
+                           return_value=self.now / 1000):
+                    sent = self.read_status(
+                        self.TITLE, through_reconcile=True,
+                        isDraft=draft, updatedAt=updated)
+                self.assertEqual(sent, set())
+                self.assertEqual(self.conn.execute(
+                    "SELECT prSeenState, prSeenAt, parkKind, lastHeartbeat"
+                    " FROM runs WHERE id = ?", (self.run,)).fetchone(),
+                    (expected, "2026-09-22T10:00:00Z", "pull_request",
+                     self.now - MIN))
+                _, _, body = self.request("GET", "/attention")
+                item = next(i for i in body["items"] if i["kind"] == "pr_open")
+                self.assertEqual(item["pr"]["state"], expected)
+        self.assertEqual(self.conn.execute(
+            "SELECT kind FROM runEvents WHERE runId = ?"
+            " AND kind IN ('ci_wake', 'pr_wake')", (self.run,)).fetchall(), [])
 
     def test_unread_closed_merged_and_unknown_states_are_served(self):
         self.assertIsNone(self.pr_open()["pr"]["state"])

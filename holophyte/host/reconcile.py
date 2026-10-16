@@ -465,9 +465,8 @@ def _rebabysit(conn, ticket, pull, status, poll_ms, reason=None,
     why = f"{pull.url} has new review activity" if arrived else reason
     waited_ms = int(time() * 1000) - (parked_ms or 0)
     if waited_ms < poll_ms and not (reason and ticket.parkKind == "route"):
-        if reason is None:
-            store.record_pr_seen(conn, run_id, mark, parked_only=True,
-                                 facts_only=True)
+        store.record_pr_seen(conn, run_id, mark, parked_only=True,
+                             facts_only=True)
         print(f"[holo2] {identifier}: {why}; the next babysit round waits"
               f" {-(-(poll_ms - waited_ms) // 1000)}s ([merge] pr_poll_sec)")
         return None
