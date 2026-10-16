@@ -6,6 +6,7 @@ import { formatClock, formatSettled } from "../../lib/format";
 import { leadParagraph } from "../../lib/ticket";
 import { SECTION_LABEL } from "../components/Criteria";
 import { ProgressLog } from "../components/ProgressLog";
+import { RunDetails } from "../components/RunDetails";
 import { RunPullRequest } from "../components/RunPullRequest";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
@@ -160,6 +161,7 @@ export function RunPage() {
         )}
         <RunTicket base={page.base} ticket={run.ticket} />
         <ProgressLog key={run.id} lines={page.progress} live={page.live} />
+        <RunDetails key={`${page.base}/${run.id}`} base={page.base} detail={page.detail} live={page.live} />
       </div>
     </Page>
   );
