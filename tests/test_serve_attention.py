@@ -399,7 +399,7 @@ class PullRequestTitleTests(ServeTestCase):
                  candidate_sha="a" * 40, pr_url=self.URL,
                  park_kind="pull_request", now=self.now - MIN)
 
-    def read_status(self, title, threads=None, facts_only=None):
+    def read_status(self, title, threads=None, facts_only=None, **fields):
         """One reconcile read of the pull request answering `title`,
         recorded as the reconcile records an unchanged pull request, or
         as its first read when GitHub also answers `threads`."""
@@ -408,6 +408,7 @@ class PullRequestTitleTests(ServeTestCase):
         node = {"state": "OPEN", "merged": False, "mergeCommit": None,
                 "mergedBy": None, "updatedAt": "2026-09-22T10:00:00Z",
                 "title": title}
+        node.update(fields)
         if threads is not None:
             node["threadCount"] = threads
         with patch.object(pr_status, "graphql", return_value={
@@ -444,6 +445,29 @@ class PullRequestTitleTests(ServeTestCase):
         self.assertEqual((item["pr"]["title"], item["title"]),
                          (None, "ticket 7"))
 
+    def test_first_draft_read_and_unchanged_ready_read_store_and_serve_state(self):
+        for draft, expected, facts_only in ((True, "draft", False),
+                                             (False, "ready", True)):
+            with self.subTest(state=expected):
+                self.read_status(self.TITLE, facts_only=facts_only,
+                                 isDraft=draft)
+                self.assertEqual(self.pr_open()["pr"]["state"], expected)
+                self.assertEqual(self.conn.execute(
+                    "SELECT prSeenState FROM runs WHERE id = ?",
+                    (self.run,)).fetchone(), (expected,))
+
+    def test_unread_closed_merged_and_unknown_states_are_served(self):
+        self.assertIsNone(self.pr_open()["pr"]["state"])
+        for fields, expected in (
+                ({"state": "CLOSED", "merged": False, "isDraft": True},
+                 "closed"),
+                ({"state": "CLOSED", "merged": True, "isDraft": True},
+                 "merged"),
+                ({"state": "OPEN", "merged": False}, None)):
+            with self.subTest(state=expected):
+                self.read_status(self.TITLE, **fields)
+                self.assertEqual(self.pr_open()["pr"]["state"], expected)
+
     def test_resolved_threads_are_counted_but_not_open(self):
         self.read_status(self.TITLE, {"totalCount": 4, "nodes": [
             {"isResolved": True} for _ in range(4)]})
@@ -471,7 +495,8 @@ class CiParkAttentionTests(ServeTestCase):
         store.set_question(conn, ticket.id, f"PR open: {self.URL}\npending checks")
         park_run(conn, self.run, "awaiting_merge_approval", "pending checks",
                  candidate_sha="a" * 40, pr_url=self.URL, park_kind="ci",
-                 pr_seen=("2026-09-29T10:00:00Z", 0, None, None, "pending", None, None),
+                 pr_seen=("2026-09-29T10:00:00Z", 0, None, None, "pending",
+                          None, None, None),
                  now=self.now)
         (blocked,) = store.read.blocked_tickets(conn)
         item = holophyte.serve.server.parked_item(blocked)

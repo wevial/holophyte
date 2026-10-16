@@ -131,7 +131,7 @@ def parked_item(ticket):
                        "review": ticket.prSeenReview,
                        "threads": ticket.prSeenThreads,
                        "open_threads": _open_threads(ticket),
-                       "title": ticket.prSeenTitle},
+                       "title": ticket.prSeenTitle, "state": ticket.prSeenState},
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
             "ticket_url": ticket.ticketUrl,

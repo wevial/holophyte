@@ -390,11 +390,23 @@ def _budget_low():
     return True
 
 
+def _pr_state(status):
+    if status.merged:
+        return "merged"
+    if status.closed:
+        return "closed"
+    if status.draft is True:
+        return "draft"
+    if status.draft is False:
+        return "ready"
+    return None
+
+
 def _seen(status):
     at = max([status.updated_at or "", *(item[1] for item in status.activity)])
     return (at or None, status.threads, status.open_threads,
             status.open_threads_floor, status.checks, status.review,
-            status.title)
+            status.title, _pr_state(status))
 
 
 def _wake_reason(target, conn, ticket, pull, status):

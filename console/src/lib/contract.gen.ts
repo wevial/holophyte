@@ -131,6 +131,7 @@ export const pullRequestFactsSchema = z.looseObject({
   threads: z.int().nullable(),
   open_threads: z.union([z.int(), z.string()]).nullable(),
   title: z.string().nullable(),
+  state: z.enum(["draft", "ready", "closed", "merged"]).nullable(),
 });
 export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
 
