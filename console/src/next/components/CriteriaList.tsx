@@ -38,7 +38,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
             <summary className="cursor-pointer py-3 font-mono text-[11px] font-medium text-ink-2">
               Evidence{evidence && <> <span className="ml-2.5 text-ink-3">{evidence}</span></>}
             </summary>
-            <ul className="m-0 list-none p-0 font-mono text-[12px] leading-[1.8] text-ink-2 [overflow-wrap:anywhere]">
+            <ul className="m-0 list-none whitespace-pre-wrap p-0 font-mono text-[12px] leading-[1.8] text-ink-2 [overflow-wrap:anywhere]">
               {notes.map((criterion) => (
                 <li key={criterion.n}>AC{criterion.n} · {criterion.status !== "met" && `round ${criterion.round}: `}{criterion.note}</li>
               ))}
