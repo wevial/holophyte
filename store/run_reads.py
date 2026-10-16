@@ -379,6 +379,21 @@ def run_chains(conn, run_ids):
 
 
 @dataclass(frozen=True)
+class CriteriaEvent:
+    runId: int
+    payload: dict
+
+
+def criteria_events(conn, run_ids):
+    rows = conn.execute(
+        "SELECT runId, payload FROM runEvents"
+        f" WHERE kind = 'criteria' AND runId IN ({', '.join('?' * len(run_ids))})"
+        " ORDER BY runId DESC, seq DESC", run_ids).fetchall()
+    return [CriteriaEvent(runId=row[0], payload=json.loads(row[1]))
+            for row in rows]
+
+
+@dataclass(frozen=True)
 class FailedAttempt:
     attempt: int
     outcomeReason: str | None
