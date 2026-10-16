@@ -43,7 +43,7 @@ function witnessNote(witness: StoryWitnessRow, now: number): Note {
 export function StoryNotes({ story, now }: { story: StoryDetail; now: number }) {
   const notes = [...story.decisions.map((each) => decisionNote(each, now)), ...story.witnesses.map((each) => witnessNote(each, now))].sort((a, b) => b.ms - a.ms);
   return (
-    <section aria-labelledby="story-notes" className="mt-5 border border-rule bg-paper px-5 pb-2 pt-4 max-[720px]:px-4">
+    <section aria-labelledby="story-notes" className="mt-5 w-full max-w-[1320px] border border-rule bg-paper px-5 pb-2 pt-4 max-[720px]:px-4">
       <h2 id="story-notes" className="font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
         Decisions and witnesses <span data-note-count className="tracking-[0.04em] text-ink">{notes.length}</span>
       </h2>

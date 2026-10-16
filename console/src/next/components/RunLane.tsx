@@ -17,9 +17,9 @@ const MINUTE = 60_000;
 const HOT_PERCENT = 90;
 
 const ROW_GRID =
-  "grid grid-cols-[110px_84px_minmax(0,1fr)_150px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
-const TITLE_CELL = "min-w-0 font-sans text-[13px] leading-[1.45] max-[820px]:col-span-full max-[820px]:row-start-2";
-const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 max-[820px]:row-start-1";
+  "grid grid-cols-[110px_84px_minmax(0,1fr)_150px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)] @max-[640px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]";
+const TITLE_CELL = "min-w-0 font-sans text-[13px] leading-[1.45] max-[820px]:col-span-full @max-[640px]/ov-col:col-span-full max-[820px]:row-start-2 @max-[640px]/ov-col:row-start-2";
+const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 @max-[640px]/ov-col:col-start-3 max-[820px]:row-start-1 @max-[640px]/ov-col:row-start-1";
 
 export interface LaneGroup extends ProjectGroup {
   runs: StatusRun[];
