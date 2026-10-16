@@ -5,6 +5,7 @@ import type { Board, BoardColumn, BoardStory, ShippedRow, Status } from "../../s
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import { boardLanes } from "../../src/next/tickets";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { blocked, DEMO, merged, MINUTE, NOW, SERVE, WRITER } from "./needsFleet";
 
@@ -170,4 +171,8 @@ test("a picked project offers no Project grouping, None draws no lane heading or
     reads.mockRestore();
     writes.mockRestore();
   }
+});
+
+test("a board with no card has no lane in any grouping", () => {
+  expect([boardLanes([], "project", []), boardLanes([], "story", []), boardLanes([], "none", [])]).toEqual([[], [], []]);
 });

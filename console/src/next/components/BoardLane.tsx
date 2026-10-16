@@ -12,11 +12,13 @@ interface LaneProps {
   onOpen: (card: TicketCard) => void;
 }
 
-function LaneGrid({ lane, now, openId, onOpen, id, hidden = false, className }: LaneProps & { id?: string; hidden?: boolean; className: string }) {
+const FLAT_CELL = "min-h-[520px] border border-rule-2 bg-paper p-2.5";
+
+function LaneGrid({ lane, now, openId, onOpen, id, hidden = false, className, cell = "" }: LaneProps & { id?: string; hidden?: boolean; className: string; cell?: string }) {
   return (
     <div id={id} hidden={hidden} data-lane-grid className={`${GRID} ${className}`}>
       {COLUMN_IDS.map((column) => (
-        <ul key={column} aria-label={COLUMN_HEADS[column].label} className="flex min-w-0 flex-col gap-2">
+        <ul key={column} aria-label={COLUMN_HEADS[column].label} className={`flex min-w-0 flex-col gap-2 ${cell}`}>
           {lane.columns[column].map((card) => (
             <li key={card.id}>
               <BoardCard card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
@@ -32,7 +34,7 @@ function LaneGrid({ lane, now, openId, onOpen, id, hidden = false, className }: 
 export function BoardLane({ open, onToggle, ...props }: LaneProps & { open: boolean; onToggle: () => void }) {
   const { lane } = props;
   const body = useId();
-  if (lane.glyph == null) return <LaneGrid {...props} className="" />;
+  if (lane.glyph == null) return <LaneGrid {...props} className="px-px" cell={FLAT_CELL} />;
   const glyphTone = lane.glyph === "folder" ? (lane.held ? "text-wait" : "text-live") : "text-ink-2";
   return (
     <section aria-label={lane.name} className="border border-rule-2 bg-paper">

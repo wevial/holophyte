@@ -108,7 +108,7 @@ export function Tickets() {
       {view.answered && (
         <div data-board-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
           <div className="min-w-[1160px]">
-            <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas ${mode === "none" ? "" : "px-[17px]"}`}>
+            <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas ${mode === "none" ? "px-3" : "px-[17px]"}`}>
               {COLUMN_IDS.map((id) => (
                 <div key={id} className="flex min-h-11 items-center gap-[9px] px-0.5 font-sans text-[13px] font-medium text-ink">
                   <StateDot state={COLUMN_HEADS[id].state} hideWord tone={id === "needs_you" ? "need" : undefined} />
