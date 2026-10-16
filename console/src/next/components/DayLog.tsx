@@ -22,7 +22,7 @@ function toneOf(entry: LedgerEntry): LineTone {
 
 /** The entry's first line, cut at a code fence. */
 function summaryOf(text: string): string {
-  return text.trim().split("```")[0]!.split("\n")[0]!.trim();
+  return text.trim().split("```")[0]!.split("\n")[0]!.trim() || "Code block";
 }
 
 function DayLogEntry({ entry }: { entry: LedgerEntry }) {

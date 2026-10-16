@@ -189,6 +189,15 @@ test("a long entry shows its first line clamped, opens in place to its full text
   expect(log().textContent).not.toContain("timeout");
 });
 
+test("an entry whose text opens with a code fence is named by a visible stand-in and still opens", async () => {
+  const output = "```\n$ bun run capture\n└─ timeout\n```";
+  await mount("#/", fleet({ ledger: ledgerOf(entry(at(11, 0), "failure", "loop", null, output)) }, {}).fetch);
+  const opener = within(log()).getByRole("button", { name: "Code block" });
+
+  await act(async () => opener.click());
+  expect(log().querySelector("pre")?.textContent).toBe(output);
+});
+
 /** happy-dom lays nothing out, so every element gets a stand-in layout: a
  *  40-character column at 18px a line, cut to two lines under `line-clamp-2`,
  *  and no size once detached. */
