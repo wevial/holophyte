@@ -10,6 +10,7 @@ import {
   peersSchema,
   runDetailSchema,
   shippedSchema,
+  ticketDetailSchema,
   type Board,
   type History,
   type Ledger,
@@ -102,6 +103,29 @@ export function useRun(base: string | null, id: number | null, deps: { fetch: Fe
   });
 }
 
+/** A route's 404 is null, not a failure: a daemon without the route, or
+ *  without the thing it names. */
+async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
+  try {
+    return await fetchRoute(fetch, url, schema);
+  } catch (failure) {
+    if (failure instanceof AnswerError && failure.status === 404) return null;
+    throw failure;
+  }
+}
+
+/** `/tickets/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
+ *  mounted; null when the daemon has not mirrored it. */
+export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+  const path = `/tickets/${encodeURIComponent(key)}`;
+  return useQuery({
+    queryKey: routeKey(base, path),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, ticketDetailSchema),
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
+}
+
 export interface DayLedger {
   /** Each scoped host's last good `/ledger` answer, by its record `key`. */
   answers: Map<string, Ledger>;
@@ -126,7 +150,7 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
-      queryFn: () => orNone(deps.fetch, `${host.base}${path}`, schema),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, schema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
     })),
@@ -137,15 +161,6 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
     if (data) answers.set(host.key, data);
   });
   return answers;
-}
-
-async function orNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
-  try {
-    return await fetchRoute(fetch, url, schema);
-  } catch (failure) {
-    if (failure instanceof AnswerError && failure.status === 404) return null;
-    throw failure;
-  }
 }
 
 /** Each answering host's `/history` since yesterday's local midnight before

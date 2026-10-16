@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Board, BoardColumn, BoardTicket } from "../../src/lib/contract.gen";
+import type { Board, BoardColumn, BoardTicket, RunCriterion, RunDetail, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
@@ -22,19 +22,45 @@ const board: Board = {
   ],
 };
 
-/** DEMO serves the board above with DEMO-3's run 3 working; WRITER has no board. */
-function boardFetch(): Fetch {
+const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
+const servedRun = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
+const judged = servedRun.criteria[0]!;
+const SUMMARY = "The board query reads every ticket on each poll. Cache it for one poll interval.";
+const CRITERIA = ["Two polls inside the interval read the store once.", "A ticket write clears the cache."];
+const demo3: TicketDetail = {
+  ...servedTicket,
+  ticket: "DEMO-3",
+  run: 3,
+  body: `# DEMO-3 title
+
+## Summary
+
+${SUMMARY}
+
+## What / Why / How
+
+**What:** a cache.
+`,
+  acceptance_criteria: CRITERIA,
+};
+const standing = (n: number, status: RunCriterion["status"]): RunCriterion => ({ ...judged, n, text: CRITERIA[n - 1]!, status, run: 3 });
+
+/** DEMO serves the board above with DEMO-3's run 3 working; WRITER has no board.
+ *  `/tickets/DEMO-3` answers `ticket` (404 when null) and `/runs/3` carries `criteria`. */
+function boardFetch(ticket: TicketDetail | null = demo3, criteria: RunCriterion[] = []): Fetch {
   const polls = fleet({ items: [], runs: [{ ...run(3, "DEMO-3"), phase: "working", round: 0 }] }, { items: [] });
   return async (url) => {
     if (url === `${DEMO}/board`) return Response.json(board);
+    if (url === `${DEMO}/tickets/DEMO-3`) return ticket == null ? new Response("not found", { status: 404 }) : Response.json(ticket);
+    if (url === `${DEMO}/runs/3`) return Response.json({ ...servedRun, run: { ...servedRun.run, id: 3, ticket: "DEMO-3" }, criteria });
     if (url.endsWith("/board")) return new Response("not found", { status: 404 });
     return polls(url);
   };
 }
 
-async function mount(hash: string) {
+async function mount(hash: string, fetch: Fetch = boardFetch()) {
   window.location.hash = hash;
-  const fake = fakeDeps(boardFetch());
+  const fake = fakeDeps(fetch);
   fake.clock.now = NOW;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
@@ -83,6 +109,43 @@ test("a card's click opens its peek with key, Expand, column chip and facts, and
   expect(fact("Time box").textContent).toBe("none");
   expect(cardLink("DEMO-2").hasAttribute("data-open")).toBe(true);
   expect(cardLink("DEMO-3").hasAttribute("data-open")).toBe(false);
+});
+
+const marks = () => within(peek()!).getAllByRole("img").filter((mark) => mark.hasAttribute("data-standing"));
+const metCount = () => peek()!.querySelector("[data-met-count]")!.textContent;
+
+test("the peek shows the ticket's summary clamped to four lines and each criterion marked by its run's latest standing", async () => {
+  await mount("#/tickets", boardFetch(demo3, [standing(1, "met"), standing(2, "unwitnessed")]));
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  for (let round = 0; round < 3; round += 1) await act(settle);
+
+  const summary = within(peek()!).getByText(SUMMARY);
+  expect(summary.classList.contains("line-clamp-4")).toBe(true);
+  expect(within(peek()!).getByText("Summary")).toBeTruthy();
+  expect(within(peek()!).getByText("Acceptance criteria", { exact: false })).toBeTruthy();
+  expect(metCount()).toBe("1 of 2 met");
+  expect(marks().map((mark) => mark.getAttribute("aria-label"))).toEqual(["met", "not yet witnessed"]);
+  expect(within(peek()!).getAllByRole("listitem").map((row) => row.textContent)).toEqual(CRITERIA);
+});
+
+test("a run with no recorded standings marks every criterion not yet witnessed", async () => {
+  await mount("#/tickets", boardFetch(demo3, []));
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  for (let round = 0; round < 3; round += 1) await act(settle);
+
+  expect(metCount()).toBe("0 of 2 met");
+  expect(marks().map((mark) => mark.getAttribute("aria-label"))).toEqual(["not yet witnessed", "not yet witnessed"]);
+});
+
+test("a ticket the daemon has not mirrored says so and shows no criteria", async () => {
+  await mount("#/tickets", boardFetch(null));
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  for (let round = 0; round < 3; round += 1) await act(settle);
+
+  const notice = within(peek()!).getByText("This host has not mirrored DEMO-3.");
+  expect(notice.classList.contains("font-mono")).toBe(true);
+  expect(within(peek()!).queryByText("Acceptance criteria", { exact: false })).toBeNull();
+  expect(marks()).toHaveLength(0);
 });
 
 test("Esc or Close preview shuts the peek and puts focus back on the card that opened it", async () => {

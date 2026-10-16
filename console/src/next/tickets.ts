@@ -28,6 +28,8 @@ export const COLUMN_HEADS: Record<ColumnId, { label: string; state: State }> = {
  *  a merge of today, which `/board` never lists. */
 export interface TicketCard {
   id: string;
+  /** The daemon the ticket was read from. */
+  base: string;
   key: string;
   title: string;
   project: string;
@@ -153,6 +155,7 @@ export function useTicketBoard(): TicketBoard {
       for (const ticket of column.tickets) {
         const card: TicketCard = {
           id: cardId(host.base, ticket.ticket),
+          base: host.base,
           key: ticket.ticket,
           title: ticket.title,
           project: name,
@@ -175,7 +178,7 @@ export function useTicketBoard(): TicketBoard {
   }
   for (const row of merged) {
     const card: TicketCard = {
-      id: `${row.daemon ?? ""} run ${row.id}`, key: row.ticket, title: row.title ?? "", project: row.project, state: "merged", need: null,
+      id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", project: row.project, state: "merged", need: null,
       park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);

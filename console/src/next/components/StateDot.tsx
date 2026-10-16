@@ -23,7 +23,7 @@ const pause = (
   </>
 );
 
-const ICONS: Record<State, ReactNode> = {
+export const STATE_ICONS: Record<State, ReactNode> = {
   failed: (
     <>
       {ring}
@@ -113,7 +113,7 @@ export function StateDot({ state, hideWord = false, tone = STATES[state].tone }:
         aria-hidden="true"
         className="size-3.5 shrink-0"
       >
-        {ICONS[state]}
+        {STATE_ICONS[state]}
       </svg>
       {!hideWord && <span className={`font-sans text-[13px] font-medium ${WORD_TEXT[state] ?? ""}`}>{word}</span>}
     </span>
