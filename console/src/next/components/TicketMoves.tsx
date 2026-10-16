@@ -9,14 +9,13 @@ import { Btn } from "./Btn";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const SETTLED = new Set(["merged", "abandoned"]);
-const REFUSAL = "m-0 max-w-[68ch] break-words font-mono text-[12.5px] leading-normal text-bad";
 
 function Refusal({ lines, className }: { lines: string[] | null; className: string }) {
   if (lines == null) return null;
   return (
     <div role="alert" data-move-refusal className={className}>
       {lines.map((line) => (
-        <p key={line} className={REFUSAL}>
+        <p key={line} className="m-0 max-w-[68ch] break-words font-mono text-[12.5px] leading-normal text-bad">
           {line}
         </p>
       ))}
