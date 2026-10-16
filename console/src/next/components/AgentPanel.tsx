@@ -12,7 +12,12 @@ interface Message {
   effect?: string;
 }
 
-function thread(notes: SteerNote[], asks: ConsoleAsk[]): Message[] {
+export function AgentPanel({ label, state, notes, asks }: {
+  label: string;
+  state: string;
+  notes: SteerNote[];
+  asks: ConsoleAsk[];
+}) {
   const messages: Message[] = notes.map((note) => ({
     key: `note-${note.id}`,
     at: note.at,
@@ -27,16 +32,7 @@ function thread(notes: SteerNote[], asks: ConsoleAsk[]): Message[] {
       messages.push({ key: `answer-${ask.id}`, at: ask.answered_ms, head: "Agent", text: ask.answer, agent: true, url: ask.url });
     }
   }
-  return messages.sort((a, b) => a.at - b.at);
-}
-
-export function AgentPanel({ label, state, notes, asks }: {
-  label: string;
-  state: string;
-  notes: SteerNote[];
-  asks: ConsoleAsk[];
-}) {
-  const messages = thread(notes, asks);
+  messages.sort((a, b) => a.at - b.at);
   return (
     <aside id="agent" aria-labelledby="agent-heading" className="min-w-0 flex-[1_1_320px] border-t border-rule px-[22px] pb-6 pt-[22px] @[880px]:border-t-0 max-[720px]:px-4">
       <div id="agent-heading" className={SECTION_LABEL}>Agent</div>
