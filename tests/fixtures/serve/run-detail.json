@@ -132,5 +132,15 @@
       }
     ]
   },
-  "steer_notes": []
+  "steer_notes": [],
+  "criteria": [
+    {
+      "n": 1,
+      "text": "Given input, then it is validated",
+      "status": "not_met",
+      "note": "input unvalidated",
+      "run": 1,
+      "round": 1
+    }
+  ]
 }

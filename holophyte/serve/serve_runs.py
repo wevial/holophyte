@@ -273,6 +273,7 @@ def run_detail(project, run_id, now=None):
                           "crash"))
         chain = chain_detail(conn, run.id, now)
         steered = chain_notes(conn, run.ticketId, chain["started_ms"])
+        criteria = chain_criteria(conn, [link["id"] for link in chain["runs"]])
     finally:
         conn.close()
     merge = merge_config(project)
@@ -317,7 +318,18 @@ def run_detail(project, run_id, now=None):
                          "consumed_ms": n.consumed_at,
                          "interrupt": n.interrupt, "withdrawn": n.withdrawn}
                         for n in steered],
+        "criteria": criteria,
     }
+
+
+def chain_criteria(conn, run_ids):
+    newest = next(iter(store.read.criteria_events(conn, run_ids)), None)
+    if newest is None:
+        return []
+    return [{"n": c["n"], "text": c["text"], "status": c["status"],
+             "note": c["note"], "run": newest.runId,
+             "round": newest.payload["round"]}
+            for c in sorted(newest.payload["criteria"], key=lambda c: c["n"])]
 
 
 def run_clocks(run, now):
