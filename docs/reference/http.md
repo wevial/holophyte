@@ -966,6 +966,9 @@ view, Linear's columns without a call to Linear.
     {"ticket": "KO-m", "title": "…", "time_box_ms": 1500000, "run": 52,
      "question": null, "waits_on": [], "mirrored_ms": 1788449000000,
      "column": null, "priority": null, "labels": [], "revision": 1}]}
+], "stories": [
+  {"ticket": "KO-k", "title": "…", "children": ["KO-m", "KO-n", "KO-p"],
+   "merged": 1, "total": 3}
 ]}
 ```
 
@@ -983,6 +986,11 @@ ticket. `column` (`backlog`, `ready`, `canceled`, null when the board
 named none), `priority` (null when none), `labels` and `revision` are the
 ticket's board-owned fields as the store holds them; `revision` is the one
 a revision-checked edit sends as `If-Match`, 0 when none is recorded.
+`stories` is one entry per story whose parent ticket is neither merged
+nor abandoned, in the parent's identifier order and empty when there are
+none: the parent's `ticket` and `title`, its child tickets' identifiers
+in identifier order as `children`, merged ones included, `merged` how many
+of them merged and `total` how many there are.
 
 A native project (`[board] kind = "native"`) answers a `backlog` column
 first, before the five above: its tickets idle in `needs_spec`,
