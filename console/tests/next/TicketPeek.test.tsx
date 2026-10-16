@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Board, BoardColumn, BoardTicket, RunCriterion, RunDetail, TicketDetail } from "../../src/lib/contract.gen";
+import type { Attention, Board, BoardColumn, BoardTicket, RunCriterion, RunDetail, Status, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
-import { fakeDeps, settle } from "../harness";
-import { DEMO, fleet, MINUTE, NOW, run, SERVE } from "./needsFleet";
+import { fakeFetch } from "../actionFakes";
+import { fakeDeps, peersFetch, settle } from "../harness";
+import { DEMO, failed, fleet, MINUTE, NOW, run, SERVE } from "./needsFleet";
 
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
@@ -179,4 +180,98 @@ test("a Ctrl click on a card opens no peek and leaves the click's default to the
   });
   expect(notPrevented).toBe(true);
   expect(peek()).toBeNull();
+});
+
+const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const servedPark = ((await Bun.file(new URL("attention.json", SERVE)).json()) as Attention).items[0]!;
+const mergeReady = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
+const readyPark = { ...servedPark, ticket: "DEMO-9", run: 9, pr: { ...(servedPark.pr as object), number: 42 } } as Attention["items"][number];
+
+const needsBoard: Board = {
+  ...pinned,
+  columns: [
+    column("in_flight", [ticket("DEMO-3", { run: 3 }), ticket("DEMO-9", { run: 9 })]),
+    column("blocked_on_operator", [ticket("DEMO-11", { run: 12 })]),
+  ],
+};
+
+/** DEMO with actions on, DEMO-11's two failed attempts and DEMO-9's ready park
+ *  as its Needs you entries, and DEMO-3 in flight; `answer` answers each action post. */
+function needsFetch(answer: Fetch): Fetch {
+  const polls = peersFetch(DEMO, {
+    [DEMO]: {
+      status: { ...working, actions: true, now: NOW, project: "/srv/dev/demo", runs: [{ ...run(3, "DEMO-3"), phase: "working", round: 0 }], queued: [] },
+      attention: { level: "attention", now: NOW, project: "/srv/dev/demo", items: [...failed, readyPark] },
+    },
+  });
+  return async (url, init) => {
+    if (url.startsWith(`${DEMO}/actions/`)) return answer(url, init);
+    if (url === `${DEMO}/board`) return Response.json(needsBoard);
+    if (url === `${DEMO}/runs/9/merge`) return Response.json({ ...mergeReady, run: 9, ticket: "DEMO-9", ready: true });
+    return polls(url);
+  };
+}
+
+const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
+const askBox = () => peek()!.querySelector<HTMLElement>("[data-peek-ask]");
+
+async function press(button: HTMLElement) {
+  await act(async () => void fireEvent.click(button));
+  for (let round = 0; round < 3; round += 1) await act(settle);
+}
+
+async function peekAt(key: string, answer: Fetch) {
+  await mount("#/tickets", needsFetch(answer));
+  await press(cardLink(key));
+}
+
+test("a failed ticket's peek asks first with one Requeue button, no More and no Open run", async () => {
+  await peekAt("DEMO-11", fakeFetch({ ok: true, detail: "requeued" }).fetchImpl);
+  const box = askBox()!;
+  expect(within(box).getByText("Needs you")).toBeTruthy();
+  expect(within(box).getByText("Verify command failed")).toBeTruthy();
+  expect(within(box).getAllByRole("button").map((button) => button.textContent)).toEqual(["Requeue"]);
+  expect(within(box).queryByRole("link", { name: "Open run" })).toBeNull();
+});
+
+test("a taken Requeue posts the ticket once and swaps the box for the toast's sentence", async () => {
+  const action = fakeFetch({ ok: true, detail: "requeued" });
+  await peekAt("DEMO-11", action.fetchImpl);
+  await press(within(askBox()!).getByRole("button", { name: "Requeue" }));
+
+  expect(action.seen.map((seen) => [seen.url, seen.method, seen.body])).toEqual([[`${DEMO}/actions/requeue`, "POST", { ticket: "DEMO-11" }]]);
+  expect(askBox()).toBeNull();
+  expect(peek()!.querySelector("[data-peek-acted]")!.textContent).toBe("Requeued DEMO-11.");
+  expect(toast()).toBe("Requeued DEMO-11.");
+});
+
+test("a refused Requeue keeps the box, shows the daemon's detail and enables Requeue again", async () => {
+  await peekAt("DEMO-11", fakeFetch({ ok: false, detail: "ticket DEMO-11 has a live run" }).fetchImpl);
+  await press(within(askBox()!).getByRole("button", { name: "Requeue" }));
+
+  const box = askBox()!;
+  expect(within(box).getByText("ticket DEMO-11 has a live run")).toBeTruthy();
+  expect((within(box).getByRole("button", { name: "Requeue" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(peek()!.querySelector("[data-peek-acted]")).toBeNull();
+  expect(toast()).toBe("");
+});
+
+test("a ready park's Merge opens the focus card's merge dialog, and an in-flight ticket's peek has no box", async () => {
+  await peekAt("DEMO-9", fakeFetch({ ok: true, detail: "approved" }).fetchImpl);
+  await press(within(askBox()!).getByRole("button", { name: "Merge" }));
+  expect(screen.getByRole("dialog", { name: "Merge PR #42?" })).toBeTruthy();
+
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Cancel" })));
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  expect(screen.getByRole("dialog", { name: "DEMO-3 title" }).querySelector("[data-peek-ask]")).toBeNull();
+});
+
+test("Esc on the peek's merge dialog shuts the dialog alone and puts focus back on Merge", async () => {
+  await peekAt("DEMO-9", fakeFetch({ ok: true, detail: "approved" }).fetchImpl);
+  await press(within(askBox()!).getByRole("button", { name: "Merge" }));
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+
+  expect(screen.queryByRole("dialog", { name: "Merge PR #42?" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "DEMO-9 title" })).toBeTruthy();
+  expect(document.activeElement).toBe(within(askBox()!).getByRole("button", { name: "Merge" }));
 });
