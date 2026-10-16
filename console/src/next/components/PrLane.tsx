@@ -18,10 +18,10 @@ import { StateDot } from "./StateDot";
 type Host = HostRecord<ContractBodies>;
 
 const ROW_GRID =
-  "grid min-h-[66px] grid-cols-[70px_84px_minmax(0,1fr)_120px_128px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 transition-colors duration-(--motion-colour) hover:bg-paper-2 max-[820px]:grid-cols-[minmax(0,1fr)]";
+  "grid min-h-[66px] grid-cols-[70px_84px_minmax(0,1fr)_120px_128px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 transition-colors duration-(--motion-colour) hover:bg-paper-2 max-[820px]:grid-cols-[minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[minmax(0,1fr)]";
 const ROW_BUTTON =
-  "col-span-4 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
-const UNDER_TITLE = "max-[820px]:col-span-full";
+  "col-span-4 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]";
+const UNDER_TITLE = "max-[820px]:col-span-full @max-[720px]/ov-col:col-span-full";
 
 interface PrRow {
   item: AttentionItem;
@@ -104,7 +104,7 @@ function PrLaneRow({
             <PrFacts facts={facts} form="line" />
           </span>
         </button>
-        <span className="flex flex-col items-end gap-1 text-right max-[820px]:flex-row max-[820px]:flex-wrap max-[820px]:items-baseline max-[820px]:gap-x-3 max-[820px]:text-left">
+        <span className="flex flex-col items-end gap-1 text-right max-[820px]:flex-row @max-[720px]/ov-col:flex-row max-[820px]:flex-wrap @max-[720px]/ov-col:flex-wrap max-[820px]:items-baseline @max-[720px]/ov-col:items-baseline max-[820px]:gap-x-3 @max-[720px]/ov-col:gap-x-3 max-[820px]:text-left @max-[720px]/ov-col:text-left">
           <span data-pr-state>
             <StateDot state={state} />
             {detail != null && <span className="whitespace-nowrap"> · {detail}</span>}

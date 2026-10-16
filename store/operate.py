@@ -114,8 +114,8 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
         run = (conn.execute("SELECT outcome, phase, prUrl, parkKind FROM runs"
                             " WHERE id = ?", (last_run_id,)).fetchone()
                if last_run_id is not None else None)
-        unreproduced = _requeue_admits(identifier, status, last_run_id, run,
-                                       _aborted(conn, last_run_id))
+        released = _requeue_admits(identifier, status, last_run_id, run,
+                                   _aborted(conn, last_run_id))
         relaunched = _relaunches(conn, ticket_id)
         if len(relaunched) >= RELAUNCH_LIMIT:
             if not force:
@@ -135,9 +135,10 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
             note = f"forced past {len(relaunched)} relaunches: {note}"
         record_intervention(conn, last_run_id, "requeue", note, source=source,
                             now=now)
-        if unreproduced:
+        if released:
             release(conn, last_run_id, "abandoned",
-                    "not reproduced; requeued for another attempt", now=now)
+                    f"{RELEASED[released]}; requeued for another attempt",
+                    now=now)
         conn.execute("UPDATE tickets SET blockedQuestion = NULL"
                      " WHERE id = ?", (ticket_id,))
         conn.execute("UPDATE runs SET approvedAt = NULL, approvedBy = NULL"
@@ -168,11 +169,18 @@ def _aborted(conn, run_id):
          _enums.InterventionAction.ABORT_CLOSE.value)).fetchone() is not None
 
 
+RELEASED = {_enums.ParkKind.NOT_REPRODUCED.value: "not reproduced",
+            _enums.ParkKind.CONTRADICTION.value: "contradiction"}
+
+
 def _requeue_admits(identifier, status, last_run_id, run, aborted):
     parked = status == "blocked_on_operator"
+    if (parked and run is not None and run[1] == "blocked_on_operator"
+            and run[3] == _enums.ParkKind.CONTRADICTION.value):
+        return run[3]
     if parked and run is not None and run[1] == "awaiting_merge_approval":
         if run[3] == _enums.ParkKind.NOT_REPRODUCED.value:
-            return True
+            return run[3]
         command = "--babysit" if run[2] else "--approve or --babysit"
         raise RequeueRefused(
             f"{identifier} is parked awaiting merge approval; use {command}")
@@ -192,7 +200,7 @@ def _requeue_admits(identifier, status, last_run_id, run, aborted):
         raise RequeueRefused(
             f"{identifier}: run {last_run_id} ended {run[0]},"
             " not failed, rejected or aborted; nothing to requeue")
-    return False
+    return None
 
 
 class ApproveRefused(Exception):
