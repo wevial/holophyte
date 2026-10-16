@@ -399,7 +399,8 @@ class PullRequestTitleTests(ServeTestCase):
                  candidate_sha="a" * 40, pr_url=self.URL,
                  park_kind="pull_request", now=self.now - MIN)
 
-    def read_status(self, title, threads=None, facts_only=None):
+    def read_status(self, title, threads=None, facts_only=None,
+                    through_reconcile=False, rate_limit=None, **fields):
         """One reconcile read of the pull request answering `title`,
         recorded as the reconcile records an unchanged pull request, or
         as its first read when GitHub also answers `threads`."""
@@ -408,10 +409,16 @@ class PullRequestTitleTests(ServeTestCase):
         node = {"state": "OPEN", "merged": False, "mergeCommit": None,
                 "mergedBy": None, "updatedAt": "2026-09-22T10:00:00Z",
                 "title": title}
+        node.update(fields)
         if threads is not None:
             node["threadCount"] = threads
         with patch.object(pr_status, "graphql", return_value={
-                "repository": {"pullRequest": node}}):
+                "repository": {"pullRequest": node}, "rateLimit": rate_limit}):
+            if through_reconcile:
+                project = store.tickets.ensure_project(
+                    self.conn, "team-1", self.target)
+                return reconcile._reconcile_pull_requests(
+                    self.project, self.conn, project, None, failed_asked={})
             status = pr_status.pull_status(
                 None, pr_status.parse_pr_url(self.URL))
         store.record_pr_seen(self.conn, self.run, reconcile._seen(status),
@@ -443,6 +450,89 @@ class PullRequestTitleTests(ServeTestCase):
         item = self.pr_open()
         self.assertEqual((item["pr"]["title"], item["title"]),
                          (None, "ticket 7"))
+
+    def test_attention_reads_version_50_without_migrating_pull_request_state(self):
+        self.read_status(self.TITLE, isDraft=True)
+        self.conn.execute("ALTER TABLE runs DROP COLUMN prSeenState")
+        self.conn.execute("PRAGMA user_version = 50")
+        self.conn.commit()
+        before = list(self.conn.iterdump())
+        self.start()
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        item = next(item for item in body["items"] if item["kind"] == "pr_open")
+        self.assertEqual(item["run"], self.run)
+        self.assertEqual(item["pr"]["title"], self.TITLE)
+        self.assertIsNone(item["pr"]["state"])
+        self.assertEqual(list(self.conn.iterdump()), before)
+
+    def test_first_draft_read_and_unchanged_ready_read_store_and_serve_state(self):
+        for draft, expected, facts_only in ((True, "draft", False),
+                                             (False, "ready", True)):
+            with self.subTest(state=expected):
+                self.read_status(self.TITLE, facts_only=facts_only,
+                                 isDraft=draft)
+                self.assertEqual(self.pr_open()["pr"]["state"], expected)
+
+    def test_ready_read_during_cooldown_updates_facts_without_waking(self):
+        self.start(config='[merge]\npr_poll_sec = 3600\n')
+        store.record_event(self.conn, self.run, "pr_draft_held", "held for review")
+        for draft, expected, updated in (
+                (True, "draft", "2026-09-22T10:00:00Z"),
+                (False, "ready", "2026-09-22T10:01:00Z")):
+            with self.subTest(state=expected):
+                with patch("holophyte.host.reconcile.time",
+                           return_value=self.now / 1000):
+                    sent = self.read_status(
+                        self.TITLE, through_reconcile=True,
+                        isDraft=draft, updatedAt=updated)
+                self.assertEqual(sent, set())
+                self.assertEqual(self.conn.execute(
+                    "SELECT prSeenState, prSeenAt, parkKind, lastHeartbeat"
+                    " FROM runs WHERE id = ?", (self.run,)).fetchone(),
+                    (expected, "2026-09-22T10:00:00Z", "pull_request",
+                     self.now - MIN))
+                _, _, body = self.request("GET", "/attention")
+                item = next(i for i in body["items"] if i["kind"] == "pr_open")
+                self.assertEqual(item["pr"]["state"], expected)
+        self.assertEqual(self.conn.execute(
+            "SELECT kind FROM runEvents WHERE runId = ?"
+            " AND kind IN ('ci_wake', 'pr_wake')", (self.run,)).fetchall(), [])
+
+    def test_ready_read_below_budget_floor_updates_facts_without_waking(self):
+        from holophyte.host import reconcile
+
+        self.start(config='[merge]\npr_poll_sec = 10\n')
+        with patch.object(reconcile, "GITHUB_BUDGET", reconcile.GitHubBudget()), \
+                patch.object(reconcile, "time", return_value=self.now / 1000):
+            self.read_status(self.TITLE, through_reconcile=True, isDraft=True)
+            self.assertEqual(self.pr_open()["pr"]["state"], "draft")
+            store.record_event(self.conn, self.run, "pr_draft_held", "held for review")
+            sent = self.read_status(
+                self.TITLE, through_reconcile=True, isDraft=False,
+                updatedAt="2026-09-22T10:01:00Z",
+                rate_limit={"remaining": 499, "resetAt": "2099-01-01T00:00:00Z"})
+            self.assertEqual(sent, set())
+            self.assertEqual(self.conn.execute(
+                "SELECT prSeenState, prSeenAt, parkKind, lastHeartbeat"
+                " FROM runs WHERE id = ?", (self.run,)).fetchone(),
+                ("ready", "2026-09-22T10:00:00Z", "pull_request", self.now - MIN))
+            self.assertEqual(self.pr_open()["pr"]["state"], "ready")
+            self.assertEqual(self.conn.execute(
+                "SELECT kind FROM runEvents WHERE runId = ?"
+                " AND kind IN ('ci_wake', 'pr_wake')", (self.run,)).fetchall(), [])
+
+    def test_unread_closed_merged_and_unknown_states_are_served(self):
+        self.assertIsNone(self.pr_open()["pr"]["state"])
+        for fields, expected in (
+                ({"state": "CLOSED", "merged": False, "isDraft": True},
+                 "closed"),
+                ({"state": "CLOSED", "merged": True, "isDraft": True},
+                 "merged"),
+                ({"state": "OPEN", "merged": False}, None)):
+            with self.subTest(state=expected):
+                self.read_status(self.TITLE, **fields)
+                self.assertEqual(self.pr_open()["pr"]["state"], expected)
 
     def test_resolved_threads_are_counted_but_not_open(self):
         self.read_status(self.TITLE, {"totalCount": 4, "nodes": [
@@ -482,13 +572,13 @@ class BlockedParkFactsTests(ServeTestCase):
             question, "fix_declined",
             pr_url="https://github.com/example/repo/pull/644",
             pr_seen=("2026-09-29T10:00:00Z", 3, None, None, "failure",
-                     "changes_requested", None))
+                     "changes_requested", None, "ready"))
         self.assertEqual(item["kind"], "blocked")
         self.assertEqual(item["question"], question)
         self.assertEqual(item["park_kind"], "fix_declined")
         self.assertEqual(item["pr"], {
             "number": 644, "checks": "failure", "review": "changes_requested",
-            "threads": 3, "open_threads": None, "title": None})
+            "threads": 3, "open_threads": None, "title": None, "state": "ready"})
 
     def test_plain_question_has_its_park_kind_and_no_pull_request(self):
         item = self.park_question("Which API should this use?", "question")
@@ -509,7 +599,8 @@ class CiParkAttentionTests(ServeTestCase):
         store.set_question(conn, ticket.id, f"PR open: {self.URL}\npending checks")
         park_run(conn, self.run, "awaiting_merge_approval", "pending checks",
                  candidate_sha="a" * 40, pr_url=self.URL, park_kind="ci",
-                 pr_seen=("2026-09-29T10:00:00Z", 0, None, None, "pending", None, None),
+                 pr_seen=("2026-09-29T10:00:00Z", 0, None, None, "pending",
+                          None, None, None),
                  now=self.now)
         (blocked,) = store.read.blocked_tickets(conn)
         item = holophyte.serve.server.parked_item(blocked)

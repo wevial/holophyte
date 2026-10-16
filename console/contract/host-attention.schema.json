@@ -213,6 +213,21 @@
               "type": "null"
             }
           ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "enum": [
+                "draft",
+                "ready",
+                "closed",
+                "merged"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -221,7 +236,8 @@
         "review",
         "threads",
         "open_threads",
-        "title"
+        "title",
+        "state"
       ],
       "additionalProperties": true
     },

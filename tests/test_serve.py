@@ -825,7 +825,7 @@ class AttentionTests(ServeTestCase):
                       "\n1. src/x.py:3 by @coworker",
             "asked_ms": self.now - 2 * MIN,
             "pr": {"number": 2170, "checks": None, "review": None,
-                   "threads": None, "open_threads": None, "title": None},
+                   "threads": None, "open_threads": None, "title": None, "state": None},
             "level": "attention"})
         self.assertEqual(body["level"], "attention")
 
@@ -872,7 +872,7 @@ class AttentionTests(ServeTestCase):
         self.seed_attention()
         url = "https://github.com/example/repo/pull/2170"
         self.park_on_pr(url, pr_seen=("2026-09-10T10:00:00Z", 3, None, None, "failure",
-                                      "changes_requested", None))
+                                      "changes_requested", None, "ready"))
         self.start()
 
         _, _, body = self.request("GET", "/attention")
@@ -882,7 +882,7 @@ class AttentionTests(ServeTestCase):
         self.assertEqual(item["pr"], {"number": 2170, "checks": "failure",
                                       "review": "changes_requested",
                                       "threads": 3, "open_threads": None,
-                                      "title": None})
+                                      "title": None, "state": "ready"})
 
     def test_the_body_names_the_project_as_status_does(self):
         self.seed_attention()
