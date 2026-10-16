@@ -34,7 +34,7 @@ from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary, consolidate
+from holophyte.review import adversary, consolidate, witness_precheck
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     criteria_brief,
@@ -225,6 +225,23 @@ def _steer_approved(project, conn, run_id, provider, task_id, wt, beat_s, sha,
                       timed=_timed, check_cap=_check_run_cap) or sha
 
 
+def _verify(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
+            contracts, criteria, rnd):
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, out = run_verify(verify_cmd, wt, contracts,
+                             verify_config(project).timeout_sec,
+                             conn=conn, run_id=run_id, project=project)
+        ok, out = with_baseline(project, wt, verify_cmd, ok, out, conn, run_id)
+    if ok:
+        print(f"[holo2] verify ok before round {rnd}")
+    else:
+        print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
+    if rnd == 1:
+        witness_precheck.record(project, conn, run_id, beat_s, wt, base_sha,
+                                sha, criteria, verify_cmd, ok)
+    return ok, out
+
+
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
@@ -250,16 +267,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         if pending.get("phase") in ("reviewing", "addressing"):
             ok, out = pending.get("ok", False), pending.get("out", "")
         else:
-            with heartbeat_while(conn, run_id, beat_s):
-                ok, out = run_verify(verify_cmd, wt, contracts,
-                                     verify_config(project).timeout_sec,
-                                     conn=conn, run_id=run_id, project=project)
-                ok, out = with_baseline(project, wt, verify_cmd, ok, out,
-                                       conn, run_id)
-            if ok:
-                print(f"[holo2] verify ok before round {rnd}")
-            else:
-                print(f"[holo2] verify FAILED before round {rnd}:\n{out}")
+            ok, out = _verify(project, conn, run_id, beat_s, wt, base_sha, sha,
+                              verify_cmd, contracts, criteria, rnd)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
                  **({"stale": pending["stale"]} if "stale" in pending else {}))
