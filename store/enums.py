@@ -64,6 +64,7 @@ class ParkKind(str, Enum):
     NOT_REPRODUCED = 'not_reproduced'
     CI = 'ci'
     ROUTE = 'route'
+    CONTRADICTION = 'contradiction'
 
 
 class RunOutcome(str, Enum):
@@ -316,7 +317,7 @@ RUN_PHASE_TRANSITIONS = {
         RunPhase.FAILED.value, RunPhase.KILLED.value}),
     RunPhase.WORKING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
-        RunPhase.KILLED.value}),
+        RunPhase.BLOCKED_ON_OPERATOR.value, RunPhase.KILLED.value}),
     RunPhase.VERIFYING.value: frozenset({
         RunPhase.REVIEWING.value, RunPhase.FAILED.value,
         RunPhase.AWAITING_MERGE_APPROVAL.value,
@@ -327,7 +328,7 @@ RUN_PHASE_TRANSITIONS = {
         RunPhase.FAILED.value, RunPhase.KILLED.value}),
     RunPhase.ADDRESSING.value: frozenset({
         RunPhase.VERIFYING.value, RunPhase.FAILED.value,
-        RunPhase.KILLED.value}),
+        RunPhase.BLOCKED_ON_OPERATOR.value, RunPhase.KILLED.value}),
     # `-> done` here and below: a person merged the pull request on GitHub.
     RunPhase.MERGE_GATE.value: frozenset({
         RunPhase.MERGING.value, RunPhase.DONE.value,
@@ -346,7 +347,8 @@ RUN_PHASE_TRANSITIONS = {
     RunPhase.SQUASHING.value: frozenset(),
     RunPhase.DONE.value: frozenset(),
     RunPhase.FAILED.value: RESUMABLE_WORK_PHASES,
-    RunPhase.BLOCKED_ON_OPERATOR.value: frozenset({RunPhase.WORKING.value}),
+    RunPhase.BLOCKED_ON_OPERATOR.value: frozenset({
+        RunPhase.WORKING.value, RunPhase.FAILED.value}),
     RunPhase.KILLED.value: frozenset(),
     RunPhase.REJECTED.value: frozenset(),
 }

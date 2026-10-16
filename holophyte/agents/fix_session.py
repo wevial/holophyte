@@ -9,7 +9,7 @@ from holophyte.agents.session_arms import select_arm
 from holophyte.config.checks import check_command_path
 from holophyte.config.config_tables import loop_config
 from holophyte.config.reader import config_table
-from holophyte.loop import steering
+from holophyte.loop import contradiction, steering
 from holophyte.loop.follow_ups import capture as capture_follow_ups
 from holophyte.loop.follow_ups import pending_prompt
 from holophyte.loop.gates import RunFailure, sh
@@ -76,7 +76,7 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
         'feature is a capability or behavior change for a later ticket; '
         'guardrail is a check, test, prompt rule or review rule that would '
         'catch this class of problem next time. The " @ PATH:LINE" tail is '
-        'optional, and so is ":LINE" within it.')
+        'optional, and so is ":LINE" within it.' + contradiction.BRIEF)
     fresh = ('A reviewer left findings on your work. The ticket you '
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)
