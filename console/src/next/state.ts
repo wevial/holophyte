@@ -4,7 +4,7 @@ import type { BoardState } from "../lib/types";
 
 export type State =
   | "failed" | "question" | "paused" | "needs_you" | "stale" | "running" | "ready_to_merge"
-  | "merged" | "queued" | "on_ci" | "parked" | "held" | "todo" | "backlog";
+  | "merged" | "abandoned" | "queued" | "on_ci" | "parked" | "held" | "todo" | "backlog";
 
 /** The theme's raw colour tokens, by name. */
 export type Tone = "bad" | "ask" | "need" | "live" | "wait" | "ink-2" | "ink-3";
@@ -18,6 +18,7 @@ export const STATES: Record<State, { word: string; tone: Tone }> = {
   running: { word: "running", tone: "live" },
   ready_to_merge: { word: "ready to merge", tone: "live" },
   merged: { word: "merged", tone: "live" },
+  abandoned: { word: "abandoned", tone: "ink-3" },
   queued: { word: "queued", tone: "wait" },
   on_ci: { word: "on CI", tone: "wait" },
   parked: { word: "parked", tone: "wait" },
@@ -79,7 +80,7 @@ function ofRun(run: Extract<Subject, { run: unknown }>["run"], staleMs: number, 
   if (run.phase === "awaiting_merge_approval") return parked(run, readiness);
   if (run.phase === "blocked_on_operator") return "question";
   if (ENDED_PHASES.has(run.phase)) {
-    if (run.outcome === "merged") return "merged";
+    if (run.outcome === "merged" || run.outcome === "abandoned") return run.outcome;
     return run.outcome === "paused" ? "paused" : "failed";
   }
   return isStale(run.heartbeat_age_ms, staleMs) ? "stale" : "running";

@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StoryDetail",
+  "description": "GET /stories/KEY",
+  "$ref": "#/$defs/StoryDetail",
+  "$defs": {
+    "StoryChildRow": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "needs_spec",
+            "ready",
+            "in_flight",
+            "blocked_on_deps",
+            "blocked_on_operator",
+            "merged",
+            "abandoned"
+          ]
+        },
+        "column": {
+          "anyOf": [
+            {
+              "enum": [
+                "backlog",
+                "ready",
+                "canceled"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_box_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "merged_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "completes",
+            "advances",
+            "scaffolding"
+          ]
+        },
+        "witness_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "ticket",
+        "title",
+        "status",
+        "column",
+        "time_box_ms",
+        "run",
+        "merged_ms",
+        "role",
+        "witness_keys",
+        "depends_on"
+      ],
+      "additionalProperties": true
+    },
+    "StoryWitnessRow": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "criterion": {
+          "type": "string"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "absent",
+                "red",
+                "green",
+                "error"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "main_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "criterion",
+        "verdict",
+        "main_sha",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "StoryDecisionRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "unmet",
+            "regressed",
+            "plan_drift"
+          ]
+        },
+        "ticket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default_option": {
+          "type": "string"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "ticket",
+        "question",
+        "options",
+        "default_option",
+        "answer",
+        "answered_by",
+        "answered_ms",
+        "at"
+      ],
+      "additionalProperties": true
+    },
+    "StoryDetail": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "planned",
+            "approved",
+            "parked",
+            "closed",
+            "abandoned"
+          ]
+        },
+        "generation": {
+          "type": "integer"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StoryChildRow"
+          }
+        },
+        "witnesses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StoryWitnessRow"
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StoryDecisionRow"
+          }
+        }
+      },
+      "required": [
+        "ticket",
+        "title",
+        "state",
+        "generation",
+        "children",
+        "witnesses",
+        "decisions"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
