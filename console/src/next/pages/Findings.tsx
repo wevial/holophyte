@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import type { ReactNode } from "react";
+import { CleanReviewLine, FindingRow } from "../components/FindingRow";
 import { StateDot } from "../components/StateDot";
-import { useFindingsPage, type FindingsPage, type Idle, type OpenFinding } from "../findings";
+import { useFindingsPage, type FindingRowView, type FindingsPage, type Idle, type OpenFinding } from "../findings";
 import { storeScope } from "../projects";
 import type { State } from "../state";
 
@@ -50,7 +52,8 @@ function verdictOf(page: FindingsPage): { sentence: string; state: State } {
   return { sentence: openSentence(page.open) + drafts, state };
 }
 
-function Group({ label, count, empty }: { label: string; count: number; empty: string }) {
+function Group({ label, empty, rows }: { label: string; empty: string; rows: ReactNode[] }) {
+  const count = rows.length;
   return (
     <section aria-label={label} className="flex flex-col gap-3 px-5 py-4">
       <h2 className="flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
@@ -58,7 +61,7 @@ function Group({ label, count, empty }: { label: string; count: number; empty: s
         {count > 0 && <span data-count className="text-ink">{String(count).padStart(2, "0")}</span>}
         <span aria-hidden="true" className="h-px flex-1 bg-rule-2" />
       </h2>
-      {count === 0 && <p className="font-mono text-[13px] text-ink-3">{empty}</p>}
+      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : <ul>{rows}</ul>}
     </section>
   );
 }
@@ -72,11 +75,17 @@ export function Findings() {
   const { project } = page;
   const where = project == null ? "" : ` in ${project}`;
   const verdict = verdictOf(page);
+  const findingRows = (list: { row: FindingRowView }[], quiet = false) =>
+    list.map(({ row }) => <FindingRow key={row.key} row={row} showProject={project == null} quiet={quiet} />);
   const groups = [
-    { label: "Open", count: page.open.length, empty: `Nothing open${where}.` },
-    { label: "Follow-ups", count: page.followUps.length, empty: `No follow-ups${where}.` },
-    { label: "Settled this week", count: page.settled.length, empty: `Nothing settled${where} this week.` },
-    { label: "Clean reviews", count: page.clean.length, empty: `No clean reviews${where} this week.` },
+    { label: "Open", empty: `Nothing open${where}.`, rows: findingRows(page.open) },
+    { label: "Follow-ups", empty: `No follow-ups${where}.`, rows: findingRows(page.followUps) },
+    { label: "Settled this week", empty: `Nothing settled${where} this week.`, rows: findingRows(page.settled, true) },
+    {
+      label: "Clean reviews",
+      empty: `No clean reviews${where} this week.`,
+      rows: page.clean.map((clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
+    },
   ];
   return (
     <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-6 px-8 py-7">

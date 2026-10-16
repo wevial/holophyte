@@ -8,13 +8,17 @@ export interface StageRun {
   pr_url?: string | null;
 }
 
+/** "round 2 of 3" while a run is reviewing, else null. */
+export function reviewRound(run: StageRun): string | null {
+  if (run.phase !== "reviewing" || run.round == null) return null;
+  return `round ${run.round}${run.max_rounds != null ? ` of ${run.max_rounds}` : ""}`;
+}
+
 /** "reviewing · round 2 of 3": a live run's stage, with its round while reviewing. */
 export function stageWord(run: StageRun, note?: string | null): string {
   const word = phaseLabel(run.phase, run.pr_url, note);
-  const round = run.phase === "reviewing" && run.round != null
-    ? ` · round ${run.round}${run.max_rounds != null ? ` of ${run.max_rounds}` : ""}`
-    : "";
-  return `${word}${round}`;
+  const round = reviewRound(run);
+  return round == null ? word : `${word} · ${round}`;
 }
 
 export function StageChip({ run, note }: { run: StageRun; note?: string | null }) {

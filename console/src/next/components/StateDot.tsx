@@ -97,10 +97,21 @@ export const STATE_ICONS: Record<State, ReactNode> = {
 };
 
 /** The word stays the accessible name when hidden, so colour never carries the state alone. */
-export function StateDot({ state, hideWord = false, tone = STATES[state].tone }: { state: State; hideWord?: boolean; tone?: Tone }) {
+export function StateDot({
+  state,
+  hideWord = false,
+  tone = STATES[state].tone,
+  label,
+}: {
+  state: State;
+  hideWord?: boolean;
+  tone?: Tone;
+  /** An accessible name other than the state's word, for an icon drawn with its word hidden. */
+  label?: string;
+}) {
   const { word } = STATES[state];
   return (
-    <span role="img" aria-label={word} data-state={state} className={`inline-flex items-center gap-1.5 ${TONE_TEXT[tone]}`}>
+    <span role="img" aria-label={label ?? word} data-state={state} className={`inline-flex items-center gap-1.5 ${TONE_TEXT[tone]}`}>
       <svg
         viewBox="0 0 16 16"
         width={14}
