@@ -4,8 +4,8 @@ import { Btn } from "./Btn";
 
 const FOCUSABLE = "button:not(:disabled), a[href], textarea, input, select, [tabindex]:not([tabindex='-1'])";
 
-/** Esc cancels; Tab and Shift+Tab cycle through `box`'s controls, from
- *  wherever focus is on the page. */
+/** Esc cancels before any page listener sees it; Tab and Shift+Tab cycle
+ *  through `box`'s controls, from wherever focus is on the page. */
 function trap(event: KeyboardEvent, box: HTMLElement | null, onCancel: () => void) {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -21,9 +21,11 @@ function trap(event: KeyboardEvent, box: HTMLElement | null, onCancel: () => voi
   stops[next]!.focus();
 }
 
-/** A modal confirm labelled by its `heading`: focus starts on Cancel and
- *  Tab stays inside, Esc or Cancel calls `onCancel`, and the primary
- *  `confirm` button calls `onConfirm`, showing `busyLabel` while `busy`. */
+/** A modal confirm labelled by its `heading`: focus starts on the cancel
+ *  button (`cancelLabel`) and Tab stays inside, Esc or that button calls
+ *  `onCancel`, and the `confirm` button (`primary` unless `confirmVariant`)
+ *  calls `onConfirm` unless `confirmDisabled`, showing `busyLabel` while
+ *  `busy`; `refusal` reads under the buttons. */
 export function ConfirmDialog({
   label,
   heading,
@@ -32,6 +34,10 @@ export function ConfirmDialog({
   busy,
   onConfirm,
   onCancel,
+  cancelLabel = "Cancel",
+  confirmVariant = "primary",
+  confirmDisabled = false,
+  refusal = null,
   children,
 }: {
   label: string;
@@ -41,6 +47,10 @@ export function ConfirmDialog({
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  cancelLabel?: string;
+  confirmVariant?: "primary" | "danger-fill";
+  confirmDisabled?: boolean;
+  refusal?: ReactNode;
   children: ReactNode;
 }) {
   const headingId = useId();
@@ -51,8 +61,8 @@ export function ConfirmDialog({
   useEffect(() => {
     cancel.current?.focus();
     const keep = (event: KeyboardEvent) => trap(event, box.current, cancelled.current);
-    document.addEventListener("keydown", keep);
-    return () => document.removeEventListener("keydown", keep);
+    document.addEventListener("keydown", keep, true);
+    return () => document.removeEventListener("keydown", keep, true);
   }, []);
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
@@ -72,12 +82,13 @@ export function ConfirmDialog({
         {children}
         <div className="mt-[22px] flex flex-wrap justify-end gap-2.5">
           <Btn ref={cancel} onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </Btn>
-          <Btn variant="primary" busy={busy} busyLabel={busyLabel} onClick={onConfirm}>
+          <Btn variant={confirmVariant} disabled={confirmDisabled} busy={busy} busyLabel={busyLabel} onClick={onConfirm}>
             {confirm}
           </Btn>
         </div>
+        {refusal}
       </section>
     </div>,
     document.body,

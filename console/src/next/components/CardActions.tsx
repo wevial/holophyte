@@ -108,9 +108,24 @@ function MergeFacts({ base, run, title, ticket, refused }: { base: string; run: 
 const linkBtn = "btn no-underline";
 
 /** The focus card's actions: its first label as the one primary button,
- *  the rest under More, then "Open run" and "Open ticket". Each post runs
- *  through `useAction()`; a refusal shows the daemon's detail under them. */
-export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEntry; host: Host | undefined; actions: string[]; title: string | null }) {
+ *  the rest under More, then "Open run" and "Open ticket"; `only="primary"`
+ *  draws the primary alone. Each post runs through `useAction()`; a refusal
+ *  shows the daemon's detail under them, a taken one calls `onActed`. */
+export function CardActions({
+  entry,
+  host,
+  actions,
+  title,
+  only,
+  onActed,
+}: {
+  entry: NeedsYouEntry;
+  host: Host | undefined;
+  actions: string[];
+  title: string | null;
+  only?: "primary";
+  onActed?: (said: string) => void;
+}) {
   const action = useAction();
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
@@ -129,8 +144,12 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
   const last = action.variables?.label;
   const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && last !== MERGE ? action.data.detail : null;
 
-  const post = (label: string, route: string, body: Record<string, unknown>) =>
-    action.mutateAsync({ label, base: host.base, route, body, said: saidFor(label, item, host) });
+  const post = async (label: string, route: string, body: Record<string, unknown>) => {
+    const said = saidFor(label, item, host);
+    const result = await action.mutateAsync({ label, base: host.base, route, body, said });
+    if (result.ok) onActed?.(said);
+    return result;
+  };
 
   /** What pressing `label` does, or undefined when it cannot be pressed. */
   const pressOf = (label: string): (() => void) | undefined => {
@@ -182,10 +201,10 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
   };
 
   return (
-    <div data-card-actions className="mt-[22px] flex flex-col gap-3">
+    <div data-card-actions className={`${only == null ? "mt-[22px] " : ""}flex flex-col gap-3`}>
       <div className="flex flex-wrap items-center gap-2">
         {on && primary != null && button(primary, primary === ABORT ? "danger" : "primary")}
-        {on && more.length > 0 && (
+        {on && only == null && more.length > 0 && (
           <div className="relative" onKeyDown={escMore}>
             <Btn ref={moreRef} expanded={moreOpen} onClick={() => setMoreOpen((open) => !open)}>
               More
@@ -197,12 +216,12 @@ export function CardActions({ entry, host, actions, title }: { entry: NeedsYouEn
             )}
           </div>
         )}
-        {run != null && (
+        {only == null && run != null && (
           <a className={linkBtn} data-variant="quiet" href={classicHref(`#run=${run}&daemon=${encodeURIComponent(host.base)}`)}>
             Open run
           </a>
         )}
-        {ticketUrl != null && (
+        {only == null && ticketUrl != null && (
           <a className={linkBtn} data-variant="quiet" href={ticketUrl} target="_blank" rel="noreferrer">
             Open ticket
           </a>

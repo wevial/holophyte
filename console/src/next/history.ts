@@ -109,3 +109,19 @@ export function useRunHistory(): { now: number; rows: RunRow[] } {
   const answers = useHistory(hosts, peers.now, deps);
   return { now: peers.now, rows: historyRows(hosts, answers, readiness, peers.now) };
 }
+
+const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
+
+export type RunGroup = (typeof RUN_GROUPS)[number];
+
+export interface RunsSearch {
+  state?: RunGroup;
+}
+
+export function validateRunsSearch({ state }: Record<string, unknown>): RunsSearch {
+  return { state: RUN_GROUPS.includes(state as RunGroup) ? (state as RunGroup) : undefined };
+}
+
+export function stateGroup(state: State): RunGroup {
+  return state === "merged" || state === "failed" || state === "abandoned" ? state : "active";
+}

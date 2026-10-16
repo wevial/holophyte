@@ -7,6 +7,7 @@ import type { Attention, Status } from "../../src/lib/contract.gen";
 import { pollDaemon, tokenedFetch, type Fetch } from "../../src/lib/poll";
 import { tokenKey } from "../../src/lib/token";
 import { consoleQueryClient, useFleet, type ContractBodies } from "../../src/next/fleet";
+import { weekSince } from "../../src/next/queries";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
@@ -153,7 +154,7 @@ test("a daemon that fails the next poll keeps its last good status beside the ne
 
 test("the new console's root names the daemon's host once its first poll answers, asking each route once", async () => {
   const { fetch, asked } = counting(peersFetch(ORIGIN, { [ORIGIN]: { status: { ...status, host: "writer-host" }, attention } }));
-  window.location.hash = "#/findings";
+  window.location.hash = "#/tickets/demo/DEMO-7";
   const fake = fakeDeps(fetch);
   render(
     <QueryClientProvider client={client()}>
@@ -167,8 +168,10 @@ test("the new console's root names the daemon's host once its first poll answers
   expect(Object.fromEntries(asked)).toEqual({
     [`${ORIGIN}/status`]: 1,
     [`${ORIGIN}/attention`]: 1,
+    [`${ORIGIN}/board`]: 1,
     [`${ORIGIN}/peers`]: 1,
     [`${ORIGIN}/runs/4/merge`]: 1,
+    [`${ORIGIN}/findings?since=${weekSince(0)}`]: 1,
   });
 });
 

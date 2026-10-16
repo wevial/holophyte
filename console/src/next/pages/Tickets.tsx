@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { BoardCard, cardElementId } from "../components/BoardCard";
+import { cardElementId } from "../components/BoardCard";
+import { BoardLane, GRID, LaneGrid } from "../components/BoardLane";
+import { GroupBy, readGroup, writeGroup } from "../components/GroupBy";
 import { StateDot } from "../components/StateDot";
 import { TicketPeek } from "../components/TicketPeek";
+import { TicketTable } from "../components/TicketTable";
+import { readView, ViewToggle, writeView, type TicketView } from "../components/ViewToggle";
 import { storeScope } from "../projects";
 import type { ScopeSearch } from "../scope";
-import { COLUMN_HEADS, COLUMN_IDS, useTicketBoard, type ColumnId, type TicketCard } from "../tickets";
-
-const GRID = "grid grid-cols-5 gap-[18px]";
+import { boardLanes, COLUMN_HEADS, COLUMN_IDS, useTicketBoard, type ColumnId, type GroupMode, type TicketCard } from "../tickets";
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
@@ -26,6 +28,26 @@ export function Tickets() {
   const { columns } = view;
   const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [layout, setLayout] = useState<TicketView>(readView);
+  const [group, setGroup] = useState<GroupMode>(readGroup);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const modes: GroupMode[] = view.project == null ? ["project", "story", "none"] : ["story", "none"];
+  const mode = modes.includes(group) ? group : "none";
+  const lanes = boardLanes(view.cards, mode, view.boards);
+  const anyOpen = lanes.some((lane) => !folded.has(lane.id));
+  const pickGroup = (next: GroupMode) => {
+    writeGroup(next);
+    setGroup(next);
+  };
+  const pickView = (next: TicketView) => {
+    writeView(next);
+    setLayout(next);
+  };
+  const foldLane = (id: string) => {
+    const next = new Set(folded);
+    if (!next.delete(id)) next.add(id);
+    setFolded(next);
+  };
   const peek = findCard(columns, openId);
   const opener = peek == null ? null : cardElementId(peek.card);
   useEffect(() => {
@@ -43,6 +65,9 @@ export function Tickets() {
     setOpenId(null);
     if (opener != null) document.getElementById(opener)?.focus();
   };
+  const empty = (
+    <p className="mt-4 font-mono text-[13px] text-ink-3">{view.project == null ? "No open tickets." : `No open tickets in ${view.project}.`}</p>
+  );
   return (
     <section aria-labelledby="page-title" className="flex flex-col px-8 py-7 min-[720px]:h-full">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
@@ -77,9 +102,33 @@ export function Tickets() {
         )}
       </header>
       {view.answered && (
-        <div data-board-scroll className="mt-6 min-h-0 flex-1 overflow-auto pb-2">
+        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <ViewToggle view={layout} onPick={pickView} />
+          <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
+          {mode !== "none" && (
+            <button
+              type="button"
+              onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}
+              className="inline-flex min-h-8 cursor-pointer items-center font-mono text-[12.5px] font-medium text-act underline underline-offset-2"
+            >
+              {anyOpen ? "Collapse all lanes" : "Expand all lanes"}
+            </button>
+          )}
+        </div>
+      )}
+      {view.answered && layout === "table" && (
+        <div data-table-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
+          {view.total === 0 ? (
+            empty
+          ) : (
+            <TicketTable lanes={lanes} now={view.now} openId={openId} onOpen={(next) => setOpenId(next.id)} folded={folded} onFold={foldLane} />
+          )}
+        </div>
+      )}
+      {view.answered && layout === "board" && (
+        <div data-board-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
           <div className="min-w-[1160px]">
-            <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas`}>
+            <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas ${mode === "none" ? "px-3" : "px-[17px]"}`}>
               {COLUMN_IDS.map((id) => (
                 <div key={id} className="flex min-h-11 items-center gap-[9px] px-0.5 font-sans text-[13px] font-medium text-ink">
                   <StateDot state={COLUMN_HEADS[id].state} hideWord tone={id === "needs_you" ? "need" : undefined} />
@@ -91,19 +140,13 @@ export function Tickets() {
               ))}
             </div>
             {view.total === 0 ? (
-              <p className="mt-4 font-mono text-[13px] text-ink-3">
-                {view.project == null ? "No open tickets." : `No open tickets in ${view.project}.`}
-              </p>
+              empty
             ) : (
-              <div className={`${GRID} mt-2`}>
-                {COLUMN_IDS.map((id) => (
-                  <ul key={id} aria-label={COLUMN_HEADS[id].label} className="flex min-w-0 flex-col gap-2">
-                    {columns[id].map((card) => (
-                      <li key={card.id}>
-                        <BoardCard card={card} column={id} now={view.now} open={card.id === openId} onOpen={(next) => setOpenId(next.id)} />
-                      </li>
-                    ))}
-                  </ul>
+              <div className="mt-2 flex flex-col gap-4">
+                {lanes.map((lane) => (
+                  <BoardLane key={lane.id} lane={lane} open={!folded.has(lane.id)} onToggle={() => foldLane(lane.id)}>
+                    {(body) => <LaneGrid lane={lane} now={view.now} openId={openId} onOpen={(next) => setOpenId(next.id)} body={body} />}
+                  </BoardLane>
                 ))}
               </div>
             )}

@@ -4,21 +4,27 @@ import type { ReadinessMap } from "../lib/attention";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
 import {
   boardSchema,
+  findingsSchema,
   historySchema,
   ledgerSchema,
   mergeReadinessSchema,
   peersSchema,
   runDetailSchema,
   shippedSchema,
+  storyDetailSchema,
   ticketDetailSchema,
   type Board,
+  type BoardStory,
+  type Findings,
   type History,
   type Ledger,
   type LedgerEntry,
   type Peers,
+  type StoryDetail,
 } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
 import { LEDGER_LIMIT, localMidnight } from "../lib/ledger";
+import { projectName } from "../lib/derive";
 import {
   AnswerError,
   defaultPollDeps,
@@ -30,6 +36,7 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
+import { scopedHosts } from "./scope";
 import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
 
@@ -114,16 +121,48 @@ async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): 
   }
 }
 
-/** `/tickets/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
- *  mounted; null when the daemon has not mirrored it. */
-export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+/** `/tickets/KEY` at `base` as a query, read again every `POLL_INTERVAL_MS`
+ *  while mounted; null when the daemon has not mirrored it. */
+export function ticketQuery(base: string, key: string, fetch: Fetch) {
   const path = `/tickets/${encodeURIComponent(key)}`;
-  return useQuery({
+  return {
     queryKey: routeKey(base, path),
-    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, ticketDetailSchema),
+    queryFn: () => routeOrNone(fetch, `${base}${path}`, ticketDetailSchema),
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  };
+}
+
+export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+  return useQuery(ticketQuery(base, key, deps.fetch));
+}
+
+export interface StoryAnswer<R> {
+  /** The host whose project bears the asked name, if one does. */
+  host: R | null;
+  /** The story; null once its daemon answered 404, undefined before any answer. */
+  story: StoryDetail | null | undefined;
+}
+
+/** `/stories/KEY` at `base`, read again every `POLL_INTERVAL_MS` while
+ *  mounted; null once it answered 404, idle with no key. */
+export function useStoryAt(base: string | null, key: string | null, deps: { fetch: Fetch }) {
+  const path = `/stories/${encodeURIComponent(key ?? "")}`;
+  return useQuery({
+    queryKey: routeKey(base ?? "", path),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, storyDetailSchema),
+    enabled: base != null && key != null,
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
   });
+}
+
+/** `/stories/KEY` of the one host whose project is `project`; idle when no
+ *  host serves it. */
+export function useStory<R extends HostRecord<PollBodies>>(hosts: R[], project: string, key: string, deps: { fetch: Fetch }): StoryAnswer<R> {
+  const host = scopedHosts(hosts, project)[0] ?? null;
+  const { data } = useStoryAt(host?.base ?? null, key, deps);
+  return { host, story: host == null ? undefined : data };
 }
 
 export interface DayLedger {
@@ -141,6 +180,41 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
     .flatMap((answer) => answer.entries)
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
+}
+
+const WINDOW_DAYS = 7;
+
+/** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
+ *  days before it. */
+export function weekSince(now: number): number {
+  const day = new Date(localMidnight(now));
+  day.setDate(day.getDate() - (WINDOW_DAYS - 1));
+  return day.getTime();
+}
+
+/** Each scoped host's last good `/findings` answer for the week before
+ *  `now`, in fleet order; a host whose daemon lacks the route, or that
+ *  never answered, is left out. `answered` is whether any host settled. */
+export function useFindings<R extends HostRecord<PollBodies>>(
+  hosts: R[],
+  now: number,
+  deps: { fetch: Fetch } = defaultPollDeps,
+): { answered: boolean; answers: { host: R; findings: Findings }[] } {
+  const asked = hosts.filter((host) => host.status != null);
+  const path = `/findings?since=${weekSince(now)}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, findingsSchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const answers = asked.flatMap((host, index) => {
+    const findings = results[index]?.data;
+    return findings ? [{ host, findings }] : [];
+  });
+  return { answered: results.some((result) => result.data !== undefined), answers };
 }
 
 /** Each status-answering host's last good `path` answer, by its record
@@ -200,9 +274,7 @@ export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fet
   return todayMerges(rows, now);
 }
 
-/** Each host that has answered `/status` with its last good `/board`, in
- *  fleet order; a host whose board never answered is left out. */
-export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; board: Board }[] {
+function useBoardResults<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }) {
   const asked = hosts.filter((host) => host.status != null);
   const results = useQueries({
     queries: asked.map((host) => ({
@@ -212,8 +284,34 @@ export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { 
       staleTime: POLL_INTERVAL_MS,
     })),
   });
+  return { asked, results };
+}
+
+/** Each host that has answered `/status` with its last good `/board`, in
+ *  fleet order; a host whose board never answered is left out. */
+export function useBoards<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; board: Board }[] {
+  const { asked, results } = useBoardResults(hosts, deps);
   return asked.flatMap((host, index) => {
     const board = results[index]?.data;
     return board ? [{ host, board }] : [];
   });
+}
+
+export interface ListedStory extends BoardStory {
+  project: string;
+}
+
+/** Every story on the `/board` of each of `hosts`, with its host's project
+ *  name, ordered by key. `answered` is whether every board asked has
+ *  answered or failed; a host with no `/status` has no board to wait on. */
+export function useBoardStories(hosts: HostRecord<PollBodies>[], deps: { fetch: Fetch }): { answered: boolean; stories: ListedStory[] } {
+  const { asked, results } = useBoardResults(hosts, deps);
+  const stories = asked.flatMap((host, index) => {
+    const board = results[index]?.data;
+    const project = host.project;
+    return board && project != null ? board.stories.map((story) => ({ ...story, project: projectName(project) })) : [];
+  });
+  stories.sort((a, b) => a.ticket.localeCompare(b.ticket, undefined, { numeric: true }));
+  const answered = asked.every((_, index) => results[index]?.status !== "pending");
+  return { answered, stories };
 }
