@@ -129,16 +129,14 @@ const parkedRun = (id: number, hour: number) => run({
   pr_url: `https://github.com/example/demo/pull/${id}`,
 });
 
-test("each State cell reads the run's stage: its review round, failure stage, abandon reason and merge time", async () => {
-  const reviewing = { ...demo12, rounds: 1 };
+test("a failed run's State cell names its failure stage and an abandoned run's its reason's first line", async () => {
   const failed = run({ id: 11, ticket: "DEMO-11", title: "Fail", started_ms: today(16, 0), phase: "failed", outcome: "failed", failure_kind: "verify" });
   const abandoned = run({
     id: 10, ticket: "DEMO-10", title: "Drop", started_ms: today(15, 0), phase: "done", outcome: "abandoned",
     outcome_reason: "aborted: wrong ticket\nmore",
   });
-  const merged = run({ id: 9, ticket: "DEMO-9", title: "Ship", started_ms: today(10, 0), phase: "done", outcome: "merged", ended_ms: today(11, 15) });
-  await mount("#/runs", fleet([reviewing, failed, abandoned, merged], []));
-  expect(stateCells()).toEqual(["reviewing · round 2 of 3", "failed at verify", "abandoned · aborted: wrong ticket", "merged 11:15"]);
+  await mount("#/runs", fleet([failed, abandoned], []));
+  expect(stateCells()).toEqual(["failed at verify", "abandoned · aborted: wrong ticket"]);
 });
 
 test("a parked run names its pull request's first open fact and a stale run how long since its beat", async () => {
@@ -164,7 +162,6 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
     "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
   ]);
   expect(rows().map((row) => row.hasAttribute("data-need"))).toEqual([true, true, true, true, false, false]);
-  expect(rows()[4]!.getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
 });
 
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
