@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Status } from "../../src/lib/contract.gen";
+import type { RunDetail, Status } from "../../src/lib/contract.gen";
+import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -10,6 +11,7 @@ const DEMO = "http://writer-host:7710";
 const WRITER = "http://writer-host:7711";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const served = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const served12 = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 
 const MINUTE = 60_000;
 const NOW = new Date(2026, 9, 15, 12, 0).getTime();
@@ -35,15 +37,19 @@ function statusOf(project: string, runs: Run[], fields: Partial<Status> = {}): S
   return { ...served, project, now: NOW, runs, queued: [], ...fields };
 }
 
-async function mount(hash: string, demo: Status, writer: Status) {
+/** Both daemons answer their polls; DEMO answers `/runs/N` from `details`. */
+async function mount(hash: string, demo: Status, writer: Status, details: Record<number, RunDetail> = {}) {
   const attention = (project: string) => ({ level: "none", now: NOW, project, items: [] });
   window.location.hash = hash;
-  const fake = fakeDeps(
-    peersFetch(DEMO, {
-      [DEMO]: { status: demo, attention: attention(demo.project) },
-      [WRITER]: { status: writer, attention: attention(writer.project) },
-    }),
-  );
+  const polls = peersFetch(DEMO, {
+    [DEMO]: { status: demo, attention: attention(demo.project) },
+    [WRITER]: { status: writer, attention: attention(writer.project) },
+  });
+  const fetchImpl: Fetch = async (url) => {
+    const detail = details[Number(/^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1])];
+    return url.startsWith(`${DEMO}/runs/`) && detail ? Response.json(detail) : polls(url);
+  };
+  const fake = fakeDeps(fetchImpl);
   fake.clock.now = NOW;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
@@ -59,6 +65,10 @@ const lane = (name: string) => within(running()).getByRole("group", { name });
 const head = (name: string) => lane(name).querySelector("[data-lane-head]")!.textContent;
 const queueButton = (name: string) => within(lane(name)).getByRole("button", { name: /queued$/ });
 
+const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+
+beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
+afterAll(() => happyDOM.setURL("about:blank"));
 beforeEach(() => localStorage.clear());
 afterEach(() => {
   cleanup();
@@ -70,13 +80,25 @@ test("a lane per project in record order, each live run a row with its stage, ti
   expect(lanes()).toEqual(["demo", "writer"]);
 
   const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Count the rounds, reviewing, 16 of 25 minutes" });
-  expect(row.getAttribute("href")).toBe(`/?classic#run=7&daemon=${encodeURIComponent(DEMO)}`);
+  expect(row.getAttribute("href")).toEndWith("#/runs/demo/7");
   expect(within(row).getByText("reviewing · round 2 of 2")).toBeTruthy();
   expect(within(row).getByText("16m / 25m")).toBeTruthy();
   expect(row.querySelector("[data-bar]")!.getAttribute("data-bar")).toBe("live");
 
   const writer = within(lane("writer")).getByRole("link", { name: "WRITER-3 Name the writer, implementing, 23 of 25 minutes" });
   expect(writer.querySelector("[data-bar]")!.getAttribute("data-bar")).toBe("need");
+});
+
+test("pressing a scoped Running row opens that run's Run page and keeps the scope", async () => {
+  const live = runOf(12, "DEMO-12", "Count the rounds", { phase: "reviewing", round: 1 });
+  const detail = { ...served12, run: { ...served12.run, id: 12, ticket: "DEMO-12", title: "Count the rounds" } };
+  await mount("#/?project=demo", statusOf("/srv/dev/demo", [live]), statusOf("/srv/dev/writer", []), { 12: detail });
+  await act(async () => {
+    fireEvent.click(within(lane("demo")).getByRole("link", { name: /^DEMO-12 / }));
+  });
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/runs/demo/12?project=demo");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Count the rounds");
 });
 
 test("a run past the heartbeat threshold is named as gone quiet, not drawn, and a scoped page draws only its lane", async () => {

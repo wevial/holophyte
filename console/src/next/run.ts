@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { describe, needsYouEntries, type Fact } from "../lib/attention";
 import type { RouteLabels, RunDetail, Status, StatusRun } from "../lib/contract.gen";
+import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
 import { hostItems, sinceSeen } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
@@ -10,7 +11,7 @@ import type { AttentionItem } from "../lib/types";
 import { failureWord } from "./history";
 import { progressLines, type ProgressLine } from "./progress";
 import { useReadiness, useRun, useRunAsks } from "./queries";
-import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State } from "./state";
 
 export type RunPage =
@@ -35,6 +36,12 @@ export type RunPage =
       /** Whether the run is still under way, so its Progress may grow. */
       live: boolean;
     };
+
+/** Run `id`'s page, on the project at path `project`, as a `Link` target
+ *  that keeps the sidebar's scope. */
+export function runPage(project: string, id: number) {
+  return { to: "/runs/$project/$run", params: { project: projectName(project), run: String(id) }, search: keepScope } as const;
+}
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
