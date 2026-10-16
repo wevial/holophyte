@@ -2,8 +2,9 @@ name: unit
 
 # Runs every Python test module as a pull request check, one process per
 # module and four at a time (GitHub-hosted runners for public repositories
-# have four vCPUs), through tests/run_modules.py. Ruff, typecheck and the
-# console's bun tests stay in local verify. The merge_group trigger lets a
+# have four vCPUs), through tests/run_modules.py, followed by the console's
+# typecheck, lint and bun tests. Ruff and console build stay in local verify.
+# The merge_group trigger lets a
 # merge queue require this check; it takes no filters, since a queue entry
 # waits on every required check it names.
 
@@ -31,3 +32,14 @@ jobs:
           git config --global user.name "unit check"
           git config --global user.email "unit-check@example.com"
       - run: python3 tests/run_modules.py --jobs 4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: console/.bun-version
+      - name: Install console dependencies
+        run: bun --cwd=console install --frozen-lockfile
+      - name: Console typecheck
+        run: bun --cwd=console run typecheck
+      - name: Console lint
+        run: bun --cwd=console run lint
+      - name: Console tests
+        run: bun --cwd=console run test
