@@ -55,7 +55,6 @@ class HistoryTests(ServeTestCase):
         rows = {row["id"]: row for row in body["rows"]}
         self.assertEqual([row["id"] for row in body["rows"]],
                          [self.runs[6], self.runs[4], self.runs[5]])
-        self.assertNotIn(self.runs[3], rows)
         failed, parked, live = (rows[self.runs[n]] for n in (4, 5, 6))
         self.assertEqual((failed["outcome"], failed["failure_kind"]),
                          ("failed", "verify"))
