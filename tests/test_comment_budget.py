@@ -237,6 +237,7 @@ PINNED = {
     "holophyte/serve/serve_levers.py": 1,
     "holophyte/serve/serve_merge.py": 0,
     "holophyte/serve/serve_runs.py": 9,
+    "holophyte/serve/serve_stories.py": 0,
     "holophyte/serve/serve_watch.py": 5,
     "holophyte/serve/server.py": 14,
     "holophyte/serve/views.py": 6,
