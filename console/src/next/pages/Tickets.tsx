@@ -1,0 +1,101 @@
+import { useNavigate } from "@tanstack/react-router";
+import { StateDot } from "../components/StateDot";
+import { storeScope } from "../projects";
+import type { State } from "../state";
+import { COLUMN_IDS, useTicketBoard, type ColumnId, type TicketCard } from "../tickets";
+
+const HEADS: Record<ColumnId, { label: string; state: State }> = {
+  backlog: { label: "Backlog", state: "backlog" },
+  ready: { label: "Ready", state: "queued" },
+  in_flight: { label: "In flight", state: "running" },
+  needs_you: { label: "Needs you", state: "needs_you" },
+  done: { label: "Done today", state: "merged" },
+};
+
+const GRID = "grid grid-cols-5 gap-[18px]";
+
+function Slash() {
+  return <span className="text-ink-3"> / </span>;
+}
+
+function Card({ card }: { card: TicketCard }) {
+  return (
+    <li className="flex flex-col gap-1.5 border border-rule-2 bg-paper px-3 py-2.5">
+      <span className="font-mono text-[12px] text-ink-2">{card.key}</span>
+      <span className="break-words font-sans text-[13px] leading-snug text-ink">{card.title}</span>
+    </li>
+  );
+}
+
+export function Tickets() {
+  const view = useTicketBoard();
+  const { columns } = view;
+  const navigate = useNavigate();
+  return (
+    <section aria-labelledby="page-title" className="flex flex-col px-8 py-7 min-[720px]:h-full">
+      <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
+        <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Tickets</h1>
+        {view.answered && (
+          <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
+            {view.project ?? "all projects"} · {view.total} {view.total === 1 ? "ticket" : "tickets"}
+            <Slash />
+            <b className="font-semibold text-ink">{columns.in_flight.length}</b> in flight
+            <Slash />
+            <b className="font-semibold text-need">{columns.needs_you.length}</b> need you
+            <Slash />
+            <b className="font-semibold text-ink">{columns.ready.length}</b> ready
+          </p>
+        )}
+        {view.project != null && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
+            <span>
+              Showing <b className="font-medium [overflow-wrap:anywhere] text-act">{view.project}</b> only
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                storeScope(null);
+                void navigate({ to: ".", search: (previous) => ({ ...previous, project: undefined }) });
+              }}
+              className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
+            >
+              Show all projects
+            </button>
+          </div>
+        )}
+      </header>
+      {view.answered && (
+        <div data-board-scroll className="mt-6 min-h-0 flex-1 overflow-auto pb-2">
+          <div className="min-w-[1160px]">
+            <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas`}>
+              {COLUMN_IDS.map((id) => (
+                <div key={id} className="flex min-h-11 items-center gap-[9px] px-0.5 font-sans text-[13px] font-medium text-ink">
+                  <StateDot state={HEADS[id].state} hideWord tone={id === "needs_you" ? "need" : undefined} />
+                  <span>{HEADS[id].label}</span>
+                  <b data-count className={`font-mono text-[12px] font-normal ${id === "needs_you" ? "text-need" : "text-ink-3"}`}>
+                    {columns[id].length}
+                  </b>
+                </div>
+              ))}
+            </div>
+            {view.total === 0 ? (
+              <p className="mt-4 font-mono text-[13px] text-ink-3">
+                {view.project == null ? "No open tickets." : `No open tickets in ${view.project}.`}
+              </p>
+            ) : (
+              <div className={`${GRID} mt-2`}>
+                {COLUMN_IDS.map((id) => (
+                  <ul key={id} aria-label={HEADS[id].label} className="flex min-w-0 flex-col gap-2">
+                    {columns[id].map((card) => (
+                      <Card key={card.id} card={card} />
+                    ))}
+                  </ul>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

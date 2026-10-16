@@ -9,6 +9,9 @@
     "started_ms": 1750000000000,
     "ended_ms": null,
     "outcome": null,
+    "outcome_reason": null,
+    "failure_kind": null,
+    "park_kind": null,
     "elapsed_ms": 0,
     "working_ms": null,
     "agent_ms": null,
@@ -52,5 +55,6 @@
         "rounds": []
       }
     ]
-  }
+  },
+  "steer_notes": []
 }

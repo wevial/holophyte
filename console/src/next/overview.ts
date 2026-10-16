@@ -1,15 +1,11 @@
-import { useQueries } from "@tanstack/react-query";
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { SHIPPED_PAGE } from "../hooks/useShipped";
 import { needsYouEntries, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
-import { shippedSchema, type QueuedTicket, type Status } from "../lib/contract.gen";
+import type { QueuedTicket, Status } from "../lib/contract.gen";
 import { hostItems, runCounts, type HostRecord } from "../lib/hosts";
-import { POLL_INTERVAL_MS, type Fetch } from "../lib/poll";
-import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { AttentionItem, ShippedRow } from "../lib/types";
 import type { ContractBodies } from "./fleet";
-import { fetchRoute, routeKey, useReadiness } from "./queries";
+import { useMergedToday, useReadiness } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 
 export interface Overview {
@@ -26,23 +22,6 @@ export interface Overview {
   running: number;
   queued: QueuedTicket[];
   mergedToday: ShippedRow[];
-}
-
-function useMergedToday(hosts: HostRecord<ContractBodies>[], now: number, fetch: Fetch): ShippedRow[] {
-  const path = shippedUrl("", SHIPPED_PAGE, undefined, "merged");
-  const results = useQueries({
-    queries: hosts.map((host) => ({
-      queryKey: routeKey(host.base, path),
-      queryFn: () => fetchRoute(fetch, `${host.base}${path}`, shippedSchema),
-      refetchInterval: POLL_INTERVAL_MS,
-      staleTime: POLL_INTERVAL_MS,
-    })),
-  });
-  const rows = hosts.flatMap((host, index) => {
-    const result = results[index];
-    return result?.status === "success" ? tagRows(host, result.data.rows) : [];
-  });
-  return todayMerges(rows, now);
 }
 
 /** The scoped fleet every Overview section reads. */
