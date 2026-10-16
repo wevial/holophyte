@@ -74,7 +74,11 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
     return the head, its verify and the round 1 reviewer's brief."""
     entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
-    checked = sha
+    checked = sha if entries is not None else None
+    if entries is None:
+        entries = [{"criterion": n, "gaps": [], "checks": [],
+                    "named": "ok" if files else "no_file"} for n, files in
+                   enumerate(witness_precheck.named_files(criteria or ()), 1)]
     while ok and (gaps := _turn_gaps(entries)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
@@ -99,5 +103,6 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                                         base_sha, sha, criteria, verify_cmd, ok)
         if fresh is not None:
             entries, checked = fresh, sha
-    return sha, ok, out, witness_brief(_gaps(entries), _unnamed(entries),
-                                       stale=None if checked == sha else checked)
+    when = (None if checked is None else "before this review" if checked == sha
+            else f"at {checked[:12]}, before verify went red")
+    return sha, ok, out, witness_brief(_gaps(entries), _unnamed(entries), when)

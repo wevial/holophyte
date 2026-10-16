@@ -157,7 +157,8 @@ go to the reviewer only.
 When gaps or criteria naming no test file remain, the round 1 review prompt
 lists them after the criteria, for the reviewer to judge; the list is not a
 finding. When a turn turned verify red, the list is the last check's, named
-by the commit it ran at.
+by the commit it ran at; when verify was red before any check, it holds only
+the criteria naming no test file.
 
 ## Adversarial pass
 

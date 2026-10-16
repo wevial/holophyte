@@ -203,6 +203,21 @@ class WitnessTurns(LoopFixture):
                       f" red; judge each criterion yourself:\n{GAP}\n", goal)
         self.assertIn("Criteria that name no test file: 2.", goal)
 
+    def test_a_red_verify_before_any_check_still_names_unnamed_criteria(self):
+        fake = self.run_task(
+            Commit("break verify", path="tests/test_broken.py", body=BROKEN),
+            APPROVE, Commit("mend verify", path="tests/test_broken.py",
+                            body=RUNS), APPROVE,
+            criteria=a_task()["criteria"])
+
+        self.assertEqual(fake.roles[:2], ["implement", "review"])
+        self.assertEqual(self.summaries("witness_turn"), [])
+        goal = self.review_goal(fake)
+        self.assertIn("FAILED with output below", goal)
+        self.assertIn("witness pre-check did not run, as verify failed; judge"
+                      " each criterion yourself.\nCriteria that name no test"
+                      " file: 1.\n", goal)
+
     def test_a_spent_time_box_fails_the_run_before_a_witness_turn(self):
         fake = FakeAgent(gated())
         real = holophyte.loop.implement.agent_work
