@@ -34,6 +34,8 @@ export interface TicketCard {
   timeBoxMs: number | null;
   waitsOn: string[];
   endedMs: number | null;
+  /** The daemon's clock less the browser's, as of its last answer. */
+  skewMs: number;
 }
 
 const BY_STATE: Record<TicketCard["state"], ColumnId> = {
@@ -81,7 +83,7 @@ export function cardWord(card: TicketCard, now: number): string {
     }
     case "question": {
       const asked = num(item?.asked_ms);
-      return asked == null ? "question open" : `question open ${formatDuration(now - asked)}`;
+      return asked == null ? "question open" : `question open ${formatDuration(now + card.skewMs - asked)}`;
     }
     case "stale": {
       const beat = num(item?.heartbeat_age_ms) ?? card.run?.heartbeat_age_ms;
@@ -110,6 +112,8 @@ export interface TicketBoard {
   total: number;
 }
 
+const MINUTE_MS = 60_000;
+
 const cardId = (base: string, key: string) => `${base} ${key}`;
 
 /** The scoped fleet's tickets in the five columns of the Tickets page. */
@@ -135,6 +139,7 @@ export function useTicketBoard(): TicketBoard {
     const runs = new Map((status?.runs ?? []).map((run) => [run.ticket, run]));
     const queued = new Map((status?.queued ?? []).map((entry) => [entry.ticket, entry.reason]));
     const name = host.project == null ? host.label : projectName(host.project);
+    const skewMs = status == null ? 0 : status.now - (host.seen_ms ?? now);
     for (const column of board.columns) {
       for (const ticket of column.tickets) {
         const card: TicketCard = {
@@ -152,6 +157,7 @@ export function useTicketBoard(): TicketBoard {
           timeBoxMs: ticket.time_box_ms,
           waitsOn: ticket.waits_on,
           endedMs: null,
+          skewMs,
         };
         columns[boardColumn(card)].push(card);
       }
@@ -160,7 +166,7 @@ export function useTicketBoard(): TicketBoard {
   for (const row of merged) {
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, key: row.ticket, title: row.title ?? "", project: row.project, state: "merged", need: null,
-      park: null, run: null, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: null, waitsOn: [], endedMs: row.ended_ms,
+      park: null, run: null, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);
   }

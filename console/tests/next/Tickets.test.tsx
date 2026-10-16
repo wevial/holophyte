@@ -46,7 +46,7 @@ interface Daemon {
 function fleet(demo: Daemon, writer: Daemon = {}) {
   const asked: string[] = [];
   const daemon = (project: string, body: Daemon) => ({
-    status: { ...working, project, runs: body.runs ?? [], queued: body.queued ?? [], admission: body.admission ?? "enabled" },
+    status: { ...working, project, runs: body.runs ?? [], queued: body.queued ?? [], admission: body.admission ?? "enabled", now: NOW },
     attention: { level: body.items?.length ? "attention" : "none", now: NOW, project, items: body.items ?? [] },
   });
   const polls = peersFetch(DEMO, { [DEMO]: daemon("/srv/dev/demo", demo), [WRITER]: daemon("/srv/dev/writer", writer) });
@@ -76,10 +76,10 @@ const demo: Daemon = {
 };
 const writer: Daemon = { board: boardOf({ ready: ["WRITER-9"] }) };
 
-async function mount(hash: string, fetchImpl: Fetch) {
+async function mount(hash: string, fetchImpl: Fetch, browserNow = NOW) {
   window.location.hash = hash;
   const fake = fakeDeps(fetchImpl);
-  fake.clock.now = NOW;
+  fake.clock.now = browserNow;
   const queries = consoleQueryClient();
   render(
     <QueryClientProvider client={queries}>
@@ -197,7 +197,7 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   expect(cardOf("DEMO-2").querySelector("[data-time-box]")).toBeNull();
 });
 
-test("each card's line says what its ticket waits on, why it failed, how long it has asked or since its run last beat", async () => {
+test("each card's line says what its ticket waits on, why it failed, how long it has asked by the daemon's clock or since its run last beat", async () => {
   const board = boardOf(
     { needs_spec: ["DEMO-1"], ready: ["DEMO-2"], blocked_on_deps: ["DEMO-5"], in_flight: ["DEMO-6", "DEMO-11"], blocked_on_operator: ["DEMO-8", "DEMO-4"] },
     { "DEMO-5": { waits_on: ["DEMO-2"] } },
@@ -209,7 +209,7 @@ test("each card's line says what its ticket waits on, why it failed, how long it
   ];
   const quiet = { ...run(6, "DEMO-6"), heartbeat_age_ms: 15 * MINUTE };
   const queued = [{ ...queuedOf("DEMO-2")[0]!, reason: "next free worker" }];
-  await mount("#/tickets?project=demo", fleet({ board, items, runs: [quiet], queued }).fetch);
+  await mount("#/tickets?project=demo", fleet({ board, items, runs: [quiet], queued }).fetch, NOW + 60 * MINUTE);
   const lines = ["DEMO-8", "DEMO-5", "DEMO-2", "DEMO-1", "DEMO-11", "DEMO-4", "DEMO-6"].map((key) => lineOf(key).textContent);
   expect(lines).toEqual([
     "on CI · PR #523", "blocked by DEMO-2", "next free worker", "needs a spec",
@@ -220,12 +220,13 @@ test("each card's line says what its ticket waits on, why it failed, how long it
   expect(glyphOf("DEMO-8").querySelector(".state-march")).not.toBeNull();
 });
 
-test("a held host's ready card says it is held, and a merge of today says when it merged", async () => {
+test("a held host's ready card says it is held, and a merge of today says when it merged and keeps its time box", async () => {
   const board = boardOf({ ready: ["DEMO-2"] });
-  await mount("#/tickets?project=demo", fleet({ board, admission: "held", shipped: [merged(10, "DEMO-10", NOW - 45 * MINUTE)] }).fetch);
+  await mount("#/tickets?project=demo", fleet({ board, admission: "held", shipped: [{ ...merged(10, "DEMO-10", NOW - 45 * MINUTE), estimate_min: 25 }] }).fetch);
   expect(lineOf("DEMO-2").textContent).toBe("held with demo");
   expect(glyphOf("DEMO-2").getAttribute("data-state")).toBe("held");
   expect(lineOf("DEMO-10").textContent).toBe("merged 11:15");
+  expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
 
 test("each card takes the look of its column: need, done, backlog or plain", async () => {
