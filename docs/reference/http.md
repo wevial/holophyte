@@ -25,7 +25,8 @@ those writing routes. A project with no store answers 503.
 and `GET /attention`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
 `GET /runs/N/turns`, and of the list routes
-`GET /shipped`, `GET /ledger`, `GET /board` and `GET /tickets/KEY`: one
+`GET /shipped`, `GET /history`, `GET /ledger`, `GET /board` and
+`GET /tickets/KEY`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -249,6 +250,53 @@ a git failure is null, never an error.
 null for a run that opened none, including every run merged locally.
 Nothing is read from GitHub: the URL is the one the factory itself
 opened, so its last path segment is the PR number.
+
+## `GET /history?since=MS&limit=N`
+
+```json
+{"rows": [
+  {"id": 231, "ticket": "KO-260", "ticket_url": "https://linear.app/example/issue/KO-260",
+   "title": "Run page: chain strip", "attempt": 2, "phase": "reviewing",
+   "outcome": null, "outcome_reason": null, "failure_kind": null,
+   "park_kind": null, "started_ms": 1788478203000, "ended_ms": null,
+   "elapsed_ms": 540000, "heartbeat_age_ms": 12000, "rounds": 1,
+   "max_rounds": 2, "pr_url": null, "host": "writer-1"},
+  {"id": 225, "ticket": "KO-255", "ticket_url": null,
+   "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
+   "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
+   "failure_kind": "verify", "park_kind": null,
+   "started_ms": 1788470000000, "ended_ms": 1788471200000,
+   "elapsed_ms": 1200000, "heartbeat_age_ms": null, "rounds": 0,
+   "max_rounds": 2, "pr_url": null, "host": "writer-1"}
+], "since": 1788393600000, "limit": 200, "truncated": false,
+ "now": 1788478743000}
+```
+
+Runs one row per run, for the console's Runs page: every run that has not
+ended, whenever it started, plus every run that started at or after
+`since`, ordered by `started_ms` descending then `id` descending. A run
+that a later run of its ticket continues keeps its own row; nothing is
+folded into a chain as `/shipped` folds it. A run that ended before
+`since` is absent, a paused one included.
+
+`since` is required and is epoch milliseconds. Each row is the run's
+`id`, `ticket`, `ticket_url`, `title`, `attempt` and `phase`; `outcome`
+(null while open); `outcome_reason` (the stored reason cut at 400
+characters, null when absent); `failure_kind` (the failed run's kind,
+null unless it failed); `park_kind` (what a parked run waits on, as the
+store recorded it); `started_ms` and `ended_ms` (null while open);
+`elapsed_ms`, from the start to `ended_ms`, or to `now` while open;
+`heartbeat_age_ms`, `now` minus the run's last heartbeat while open, else
+null; `rounds`, the run's own review rounds (those not in error);
+`max_rounds`, its cap, or the loop's base as `/runs/N` answers it; and
+`pr_url` and `host`, as `/shipped` spells them.
+
+The body echoes `since` and the `limit` applied, and carries `now`, the
+daemon's clock the open rows were measured against. `limit` defaults to
+200 and is capped at 500; `truncated` is true when more runs matched than
+`limit`, and there is no paging past it. A missing or non-integer `since`,
+or a non-positive or non-integer `limit`, is 400 with an `error` naming
+the parameter.
 
 ## `GET /runs/N`
 
@@ -1450,7 +1498,7 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and, on a host daemon, `/tickets`, `/tickets/ID/move` and `/tickets/ID/cancel`, and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |

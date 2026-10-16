@@ -634,6 +634,37 @@ export const shippedSchema = z.looseObject({
 });
 export type Shipped = z.infer<typeof shippedSchema>;
 
+export const historyRowSchema = z.looseObject({
+  id: z.int(),
+  ticket: z.string(),
+  ticket_url: z.string().nullable(),
+  title: z.string(),
+  attempt: z.int(),
+  phase: z.string(),
+  outcome: z.string().nullable(),
+  outcome_reason: z.string().nullable(),
+  failure_kind: z.string().nullable(),
+  park_kind: z.string().nullable(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+  elapsed_ms: z.int(),
+  heartbeat_age_ms: z.int().nullable(),
+  rounds: z.int(),
+  max_rounds: z.int(),
+  pr_url: z.string().nullable(),
+  host: z.string().nullable(),
+});
+export type HistoryRow = z.infer<typeof historyRowSchema>;
+
+export const historySchema = z.looseObject({
+  rows: z.array(historyRowSchema),
+  since: z.int(),
+  limit: z.int(),
+  truncated: z.boolean(),
+  now: z.int(),
+});
+export type History = z.infer<typeof historySchema>;
+
 export const ledgerEntrySchema = z.looseObject({
   at: z.int(),
   run: z.int().nullable(),
