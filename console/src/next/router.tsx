@@ -6,20 +6,19 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
-  useParams,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
-import { classicHref } from "../lib/view";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
 import { Findings } from "./pages/Findings";
 import { validateRunsSearch } from "./history";
-import { NotFound, Placeholder } from "./pages/Placeholder";
+import { NotFound } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
 import { Runs } from "./pages/Runs";
+import { TicketPage } from "./pages/Ticket";
 import { Tickets } from "./pages/Tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
@@ -47,22 +46,11 @@ function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
   return createRoute({ getParentRoute: () => rootRoute, path, component: page });
 }
 
-function TicketPlaceholder() {
-  const { key } = useParams({ from: "/tickets/$project/$key" });
-  return (
-    <Placeholder
-      title={key}
-      sentence="The ticket page comes here."
-      classic={{ href: classicHref("#view=board"), label: "Open the Board in the classic console" }}
-    />
-  );
-}
-
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
   pageRoute("/tickets", Tickets),
-  createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPlaceholder }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
   pageRoute("/findings", Findings),
 ]);
 

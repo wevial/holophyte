@@ -182,15 +182,6 @@ test("a Ctrl click on a card opens no peek and leaves the click's default to the
   expect(peek()).toBeNull();
 });
 
-test("the ticket route shows its key and a link to the classic Board, with Tickets current in the sidebar", async () => {
-  await mount("#/tickets/demo/DEMO-3");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-3");
-  expect(screen.getByText("The ticket page comes here.")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Open the Board in the classic console" }).getAttribute("href")).toEndWith("?classic#view=board");
-  const pages = within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link");
-  expect(pages.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.getAttribute("aria-label"))).toEqual(["Tickets"]);
-});
-
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const servedPark = ((await Bun.file(new URL("attention.json", SERVE)).json()) as Attention).items[0]!;
 const mergeReady = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
