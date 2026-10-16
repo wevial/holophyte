@@ -10,6 +10,7 @@ import {
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
+import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
@@ -22,6 +23,7 @@ function Shell() {
       <div className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
         <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
+          <TokenPrompt />
           <Outlet />
         </main>
       </div>

@@ -101,12 +101,12 @@ test("each page links to the classic view behind it, and an unknown route links 
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);
 });
 
-test("Classic view remembers the classic view and loads the console's root", async () => {
+test("Classic console remembers the classic view and loads the console's root", async () => {
   localStorage.setItem(VIEW_KEY, "next");
   location.href = "http://console.test/next.html#/runs";
   try {
     await mount("#/runs");
-    fireEvent.click(screen.getByRole("button", { name: "Classic view" }));
+    fireEvent.click(screen.getByRole("link", { name: "Classic console" }));
     expect(localStorage.getItem(VIEW_KEY)).toBe("classic");
     expect(location.pathname).toBe("/");
   } finally {
@@ -121,9 +121,10 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   expect(expand.getAttribute("aria-expanded")).toBe("false");
   expect(pages().map((link) => link.textContent)).toEqual(["", "", "", ""]);
   expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
-  for (const control of [screen.getByRole("link", { name: "holophyte" }), screen.getByRole("button", { name: "Classic view" })]) {
-    expect(control.textContent).toBe("");
-    expect(control.getAttribute("title")).toBe(control.getAttribute("aria-label"));
+  for (const name of ["holophyte", "Classic console"]) {
+    const link = screen.getByRole("link", { name });
+    expect(link.textContent).toBe("");
+    expect(link.getAttribute("title")).toBe(name);
   }
   cleanup();
 

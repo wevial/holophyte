@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
-import { switchView } from "../../lib/view";
+import { writeView } from "../../lib/view";
 import { footerLine } from "../notices";
 import { switcherRows } from "../projects";
 import { useReadiness } from "../queries";
@@ -207,16 +207,15 @@ export function Sidebar() {
             </span>
           )}
         </p>
-        <button
-          type="button"
-          aria-label="Classic view"
-          title={folded ? "Classic view" : undefined}
-          onClick={() => switchView("classic")}
-          className="flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink"
-        >
-          <ClassicIcon />
-          {!folded && <span>Classic view</span>}
-        </button>
+        {folded ? (
+          <a href="/" onClick={() => writeView("classic")} aria-label="Classic console" title="Classic console" className="flex size-11 items-center justify-center text-ink-2 hover:text-ink">
+            <ClassicIcon />
+          </a>
+        ) : (
+          <a href="/" onClick={() => writeView("classic")} className="text-[12px] text-ink-2 underline-offset-2 hover:text-ink hover:underline">
+            Classic console
+          </a>
+        )}
         <ThemeToggle folded={folded} />
       </footer>
     </aside>
