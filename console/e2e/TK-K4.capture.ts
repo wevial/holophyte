@@ -34,7 +34,6 @@ async function openBox(page: Page) {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await page.getByRole("button", { name: "Steer", exact: true }).click();
   await expect(page.getByRole("region", { name: "Steer · amend this ticket" })).toBeVisible();
-  await page.evaluate(() => document.fonts.ready);
 }
 
 const box = (page: Page) => page.getByRole("region", { name: "Steer · amend this ticket" });
