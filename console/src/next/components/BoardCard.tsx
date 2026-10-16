@@ -19,7 +19,7 @@ const LOOKS: Record<Look, { card: string; title: string }> = {
 
 export const cardElementId = (card: Pick<TicketCard, "project" | "key">) => `card-${card.project}-${card.key}`;
 
-const modified = (event: MouseEvent) => event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+export const modified = (event: MouseEvent) => event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 
 export function BoardCard({
   card,

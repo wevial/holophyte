@@ -16,7 +16,7 @@ import { StateDot } from "./StateDot";
 const HEAD_BUTTON =
   "inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 border border-rule px-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.1em] text-ink-2 hover:border-ink-3 hover:text-ink";
 
-function Chip({ children }: { children: ReactNode }) {
+export function Chip({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex min-h-[30px] w-fit items-center gap-2 whitespace-nowrap border border-rule bg-paper-2 px-2.5 font-mono text-[12px] font-medium leading-none text-ink">
       {children}
@@ -38,7 +38,7 @@ function RunChip({ card, now }: { card: TicketCard; now: number }) {
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
       <dt className="font-sans text-[12px] leading-[1.4] tracking-[.01em] text-ink-3">{label}</dt>
@@ -47,7 +47,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const NUMBER = "font-mono text-[13px] font-medium tabular-nums";
+export const NUMBER = "font-mono text-[13px] font-medium tabular-nums";
 
 /** Blank while `/tickets/KEY` loads; the run's standings fill in as they land. */
 function Contract({ card }: { card: TicketCard }) {
