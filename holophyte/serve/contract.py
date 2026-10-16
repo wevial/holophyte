@@ -499,6 +499,15 @@ class SteerNote(TypedDict):
     withdrawn: bool
 
 
+class RunCriterion(TypedDict):
+    n: int
+    text: str
+    status: Literal["met", "not_met", "unwitnessed"]
+    note: str
+    run: int
+    round: int
+
+
 class RunDetail(TypedDict):
     run: RunDetailRun
     rounds: list[Round]
@@ -506,6 +515,7 @@ class RunDetail(TypedDict):
     events: list[RunEvent]
     chain: NotRequired[RunChain]
     steer_notes: list[SteerNote]
+    criteria: list[RunCriterion]
 
 
 class MergeFact(TypedDict):
