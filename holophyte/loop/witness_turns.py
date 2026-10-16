@@ -74,6 +74,7 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
     return the head, its verify and the round 1 reviewer's brief."""
     entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
+    checked = sha
     while ok and (gaps := _turn_gaps(entries)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
@@ -94,7 +95,9 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
             break
         sha = head
         ok, out = checks()
-        entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
-                                          base_sha, sha, criteria, verify_cmd,
-                                          ok)
-    return sha, ok, out, witness_brief(_gaps(entries), _unnamed(entries))
+        fresh = witness_precheck.record(project, conn, run_id, beat_s, wt,
+                                        base_sha, sha, criteria, verify_cmd, ok)
+        if fresh is not None:
+            entries, checked = fresh, sha
+    return sha, ok, out, witness_brief(_gaps(entries), _unnamed(entries),
+                                       stale=None if checked == sha else checked)

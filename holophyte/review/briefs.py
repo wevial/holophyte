@@ -185,14 +185,16 @@ def criteria_brief(criteria, refused="REQUEST_CHANGES"):
             "the verdict line.\n\n")
 
 
-def witness_brief(gaps, unnamed):
+def witness_brief(gaps, unnamed, stale=None):
     if not gaps and not unnamed:
         return ""
-    lead = ("The factory's witness pre-check found these gaps before this "
-            "review; judge each criterion yourself:\n"
+    when = (f"at {stale[:12]}, before verify went red" if stale
+            else "before this review")
+    lead = (f"The factory's witness pre-check found these gaps {when}; judge "
+            "each criterion yourself:\n"
             + "".join(f"{gap}\n" for gap in gaps) if gaps else
-            "The factory's witness pre-check ran before this review; judge "
-            "each criterion yourself.\n")
+            f"The factory's witness pre-check ran {when}; judge each "
+            "criterion yourself.\n")
     names = ", ".join(str(n) for n in unnamed)
     return lead + (f"Criteria that name no test file: {names}.\n"
                    if unnamed else "") + "\n"

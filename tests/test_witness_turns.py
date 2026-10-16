@@ -14,7 +14,13 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, Commit, FakeAgent, Idle  # noqa: E402 - after sys.path
+from fake_agent import (  # noqa: E402 - after sys.path
+    APPROVE,
+    Commit,
+    FakeAgent,
+    Idle,
+    Reply,
+)
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
 import holophyte.loop.implement  # noqa: E402 - as above
@@ -54,6 +60,10 @@ class Broken(unittest.TestCase):
     def test_it_breaks(self):
         self.fail("broken by the witness turn")
 """
+
+BOTH_MET = Reply("CRITERION 1: met \u2014 tests/test_gate.py::test_it_gates\n"
+                 "CRITERION 2: met \u2014 tests/test_runs.py::test_it_runs\n"
+                 "VERDICT: APPROVE")
 
 
 def gated(n=0):
@@ -179,14 +189,19 @@ class WitnessTurns(LoopFixture):
             gated(), Commit("break verify", path="tests/test_broken.py",
                             body=BROKEN), APPROVE,
             Commit("mend verify", path="tests/test_broken.py", body=RUNS),
-            APPROVE)
+            BOTH_MET, criteria=(CRITERION, a_task()["criteria"][0]))
 
         self.assertEqual(fake.roles[:3], ["implement", "implement", "review"])
         self.assertEqual(len(self.summaries("witness_turn")), 1)
         goal = self.review_goal(fake)
         self.assertIn("FAILED with output below", goal)
         self.assertIn("broken by the witness turn", goal)
-        self.assertNotIn("witness pre-check found these gaps", goal)
+        (gapped,) = [sha for (sha,) in self.read(
+            "SELECT payload->>'sha' FROM runEvents"
+            " WHERE kind = 'witness_precheck_results'")]
+        self.assertIn(f"found these gaps at {gapped[:12]}, before verify went"
+                      f" red; judge each criterion yourself:\n{GAP}\n", goal)
+        self.assertIn("Criteria that name no test file: 2.", goal)
 
     def test_a_spent_time_box_fails_the_run_before_a_witness_turn(self):
         fake = FakeAgent(gated())
