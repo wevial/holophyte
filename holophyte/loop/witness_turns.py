@@ -36,17 +36,14 @@ def _continued(conn, run_id):
 
 
 def _turns_taken(conn, run_id):
-    if conn is None or run_id is None:
-        return 0
     return sum(event.kind == "witness_turn" for run in _continued(conn, run_id)
                for event in store.read.narrative_events(conn, run))
 
 
 def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps):
-    if conn is not None and run_id is not None:
-        store.record_event(conn, run_id, "witness_turn",
-                           f"witness turn {turn} of {WITNESS_TURNS} at "
-                           f"{sha[:12]}: {len(gaps)} gaps\n" + "\n".join(gaps))
+    store.record_event(conn, run_id, "witness_turn",
+                       f"witness turn {turn} of {WITNESS_TURNS} at "
+                       f"{sha[:12]}: {len(gaps)} gaps\n" + "\n".join(gaps))
     ledger(conn, run_id, task_id, "note",
            f"Witness pre-check: turn {turn} of {WITNESS_TURNS} before round 1",
            provider)
@@ -56,8 +53,7 @@ def _record_idle(conn, run_id, turn, gaps):
     text = (f"witness turn {turn} made no commit; review goes ahead with "
             f"{len(gaps)} gaps")
     print(f"[holo2] {text}")
-    if conn is not None and run_id is not None:
-        store.record_event(conn, run_id, "witness_turn_idle", text)
+    store.record_event(conn, run_id, "witness_turn_idle", text)
 
 
 def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
