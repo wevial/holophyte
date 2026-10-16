@@ -867,7 +867,7 @@ What needs the operator, computed where the store is:
 {"level": "attention", "now": 1788450534491,
  "project": "/path/to/repo", "items": [
   {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
-   "pr_url": null, "level": "attention"},
+   "pr_url": null, "park_kind": "question", "pr": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
    "pr_url": "https://github.com/example/repo/pull/2170", "park_kind": "pull_request", "reason": "…", "asked_ms": 1788449000000,
    "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…"},
@@ -887,7 +887,11 @@ What needs the operator, computed where the store is:
 A `blocked` item's `run` is the run parked for the ticket and `asked_ms`
 when the question was asked: the newest `redirect` intervention on that
 run, else the run's last heartbeat (both null only for a ticket parked
-with no run behind it). A `pr_open` item is a `blocked_on_operator`
+with no run behind it). Its `park_kind` is the recorded `ticket.parkKind`
+from the reader (stored in `runs.parkKind`), null when unrecorded. Its `pr`
+has the same `number`, `checks`, `review`, `threads`, `open_threads` and
+`title` facts described for `pr_open` below, and is null when `pr_url`
+is absent. The `question` text is unchanged. A `pr_open` item is a `blocked_on_operator`
 ticket whose parked run has a `pr_url` and whose recorded park kind
 (`runs.parkKind`, one of `store/enums.py` `ParkKind`) is `pull_request`,
 as a park under `[merge] mode = "pr"` records it, `ci`, as a babysit
