@@ -274,3 +274,13 @@ test("a ready park's Merge opens the focus card's merge dialog, and an in-flight
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
   expect(screen.getByRole("dialog", { name: "DEMO-3 title" }).querySelector("[data-peek-ask]")).toBeNull();
 });
+
+test("Esc on the peek's merge dialog shuts the dialog alone and puts focus back on Merge", async () => {
+  await peekAt("DEMO-9", fakeFetch({ ok: true, detail: "approved" }).fetchImpl);
+  await press(within(askBox()!).getByRole("button", { name: "Merge" }));
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+
+  expect(screen.queryByRole("dialog", { name: "Merge PR #42?" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "DEMO-9 title" })).toBeTruthy();
+  expect(document.activeElement).toBe(within(askBox()!).getByRole("button", { name: "Merge" }));
+});
