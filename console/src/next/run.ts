@@ -35,6 +35,9 @@ export type RunPage =
       progress: ProgressLine[];
       asks: ConsoleAsk[];
       agentState: string;
+      actions: boolean;
+      phase: string;
+      stoppable: boolean;
       /** Whether the run is still under way, so its Progress may grow. */
       live: boolean;
     };
@@ -174,6 +177,9 @@ export function useRunPage(project: string, run: number | null): RunPage {
   return {
     kind: "run",
     base: host.base,
+    actions: status.actions === true,
+    phase,
+    stoppable: live != null && detail.run.outcome == null && !["awaiting_merge_approval", "paused", "done", "failed", "killed", "rejected"].includes(phase),
     detail,
     state,
     agentMs: live == null ? agentMs(detail.run) : agentMs(live, since),
