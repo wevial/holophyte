@@ -118,6 +118,7 @@ class PullRequestFacts(TypedDict):
     threads: int | None
     open_threads: int | str | None
     title: str | None
+    state: Literal["draft", "ready", "closed", "merged"] | None
 
 
 class Triage(TypedDict):

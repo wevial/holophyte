@@ -128,6 +128,8 @@ class CiParkWakeTests(MergeModeFixture):
         self.serve(self.pr_state(checks="FAILURE"), self.pr_state())
         self.sweep()
         self.assertEqual(self.supervisor_wakes(), 0)
+        self.assertEqual(self.read("SELECT prSeenChecks, parkKind FROM runs"),
+                         [("failure", "ci")])
         self.age()
 
         self.sweep()
