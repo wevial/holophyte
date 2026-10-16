@@ -110,6 +110,12 @@ test("each child's state comes from its merge, its live run, its attention item,
   expect(placed(promoted)["DEMO-1"]).toEqual(["todo", "waiting on DEMO-7, DEMO-11"]);
 });
 
+test("a live run whose host has not answered since its heartbeat went past the threshold reads stale", () => {
+  const quietHost = { ...demoHost, seen_ms: NOW - 280_000 };
+  const node = storyNodes(demo12, quietHost, NOW, new Map()).find((each) => each.ticket === "DEMO-7")!;
+  expect([node.state, node.kind]).toEqual(["stale", "need"]);
+});
+
 test("a merge before today is worded by its day", () => {
   const older = { ...demo12, children: [child("DEMO-5", { status: "merged", merged_ms: at(8, 47) - 86_400_000 }), child("DEMO-10", { status: "merged", merged_ms: new Date(2026, 9, 8, 15, 0).getTime() })] };
   expect(placed(older)).toEqual({ "DEMO-5": ["merged", "merged yesterday"], "DEMO-10": ["merged", "merged Oct 8"] });

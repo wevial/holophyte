@@ -1,7 +1,7 @@
 import type { ReadinessMap } from "../lib/attention";
 import type { StoryChildRow, StoryDetail } from "../lib/contract.gen";
 import { formatClock } from "../lib/format";
-import { hostItems, type HostRecord } from "../lib/hosts";
+import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
 import { localMidnight } from "../lib/ledger";
 import { runKey } from "../lib/runs";
 import { stageWord } from "./components/StageChip";
@@ -59,6 +59,7 @@ export function storyNodes(story: StoryDetail, host: HostRecord<ContractBodies>,
   const status = host.contract_error ? undefined : host.status;
   const runs = new Map((status?.runs ?? []).map((run) => [run.ticket, run]));
   const staleMs = status?.thresholds.heartbeat_stale_ms ?? Infinity;
+  const unseenMs = sinceSeen(host.seen_ms, now);
   const items = hostItems(host, now);
   const readyOf = (run: unknown) => (typeof run === "number" ? readiness.get(runKey(host.key, run)) : undefined);
 
@@ -66,7 +67,7 @@ export function storyNodes(story: StoryDetail, host: HostRecord<ContractBodies>,
     if (child.status === "merged") return { state: "merged", word: mergedWord(child.merged_ms, now) };
     const run = runs.get(child.ticket);
     if (run != null) {
-      const state = stateOf({ run, staleMs, readiness: readyOf(run.id) });
+      const state = stateOf({ run: { ...run, heartbeat_age_ms: run.heartbeat_age_ms + unseenMs }, staleMs, readiness: readyOf(run.id) });
       const word = state === "running" ? stageWord({ phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds }) : STATES[state].word;
       return { state, word };
     }
