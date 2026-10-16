@@ -71,9 +71,7 @@ class LoopTitleWitnessTests(unittest.TestCase):
         self.assertIn(f'no test named "{title}"', findings[0]["message"])
 
     def test_each_title_the_loop_builds_witnesses_the_criterion(self):
-        reply = ("CRITERION 1: met — "
-                 + " and ".join(f'{SPEC}::"{TITLE.format(width)}"'
-                                for width in (1280, 360)))
+        reply = _met(*((SPEC, TITLE.format(width)) for width in (1280, 360)))
         self.assertEqual(
             reply_parsing.criteria_findings(reply, ["c1"], self.root), [])
 
