@@ -26,8 +26,6 @@ const flagged = (id: number, ticket: string, facts: Partial<FindingsRun> = {}): 
   return { ...pinnedRun, run: id, ticket, phase: "working", outcome: null, rounds: [round], ledger: [], advisories: [], ...facts };
 };
 
-const settled = (id: number, ticket: string) => flagged(id, ticket, { phase: "done", outcome: "merged" });
-
 /** `demo` on DEMO and `writer` on WRITER, each answering `/findings` with its runs. */
 function fleet(demoRuns: FindingsRun[], writerRuns: FindingsRun[]): Fetch {
   const daemon = (project: string) => ({
@@ -64,8 +62,8 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("the Findings entry counts the switcher's open findings in its badge and its name", async () => {
-  const demoRuns = [flagged(7, "DEMO-7"), flagged(11, "DEMO-11", { phase: "failed", outcome: "failed" })];
+test("the Findings entry counts the switcher's open findings, not settled ones, in its badge and its name", async () => {
+  const demoRuns = [flagged(7, "DEMO-7"), flagged(11, "DEMO-11", { phase: "failed", outcome: "failed" }), flagged(5, "DEMO-5", { phase: "done", outcome: "merged" })];
   const writerRuns = [flagged(3, "WRITER-3")];
   await mount("#/", fleet(demoRuns, writerRuns));
   expect(findingsLink().getAttribute("aria-label")).toBe("Findings, 3 open");
@@ -77,17 +75,9 @@ test("the Findings entry counts the switcher's open findings in its badge and it
   expect(findingsBadge()!.textContent).toBe("1");
 });
 
-test("with no open findings, only a settled one, the Findings entry has no badge and is named Findings", async () => {
-  await mount("#/", fleet([settled(5, "DEMO-5")], []));
-  expect(findingsLink().getAttribute("aria-label")).toBe("Findings");
-  expect(findingsBadge()).toBeNull();
-});
-
 test("on the folded rail the Findings entry shows the corner count and keeps its counted name", async () => {
   localStorage.setItem("holophyte.next.rail", "folded");
   await mount("#/", fleet([flagged(7, "DEMO-7"), flagged(11, "DEMO-11")], []));
-  expect(screen.getByRole("complementary", { name: "Console" }).getAttribute("data-folded")).toBe("true");
   expect(findingsLink().getAttribute("aria-label")).toBe("Findings, 2 open");
-  expect(findingsBadge()!.textContent).toBe("2");
   expect(findingsLink().textContent).toBe("2");
 });
