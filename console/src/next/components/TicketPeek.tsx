@@ -1,9 +1,13 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { criteriaRows } from "../../lib/criteria";
 import { formatAge } from "../../lib/format";
-import { keepScope } from "../scope";
+import { summaryOf } from "../../lib/ticket";
+import { useRun, useTicket } from "../queries";
+import { keepScope, PollDepsContext } from "../scope";
 import { STATES } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type TicketCard } from "../tickets";
+import { Criteria, SECTION_LABEL } from "./Criteria";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
 
@@ -42,6 +46,28 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const NUMBER = "font-mono text-[13px] font-medium tabular-nums";
+
+/** Blank while `/tickets/KEY` loads; the run's standings fill in as they land. */
+function Contract({ card }: { card: TicketCard }) {
+  const deps = useContext(PollDepsContext);
+  const { data: ticket, isSuccess } = useTicket(card.base, card.key, deps);
+  const runId = ticket?.run ?? null;
+  const run = useRun(runId == null ? null : card.base, runId, deps);
+  if (!isSuccess) return null;
+  if (ticket == null) {
+    return <p className="mt-5 font-mono text-[13px] text-ink-3">This host has not mirrored {card.key}.</p>;
+  }
+  const summary = summaryOf(ticket.body);
+  return (
+    <>
+      <div className={`${SECTION_LABEL} mt-5`}>Summary</div>
+      <p data-peek-summary className="m-0 mt-2.5 line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summary}</p>
+      <div className="mt-[18px]">
+        <Criteria rows={criteriaRows(ticket.acceptance_criteria, run.data?.criteria ?? [], runId != null)} />
+      </div>
+    </>
+  );
+}
 
 /** A non-modal panel docked right over a live board: Tab is not trapped. */
 export function TicketPeek({
@@ -110,6 +136,7 @@ export function TicketPeek({
             )}
           </Fact>
         </dl>
+        <Contract key={card.id} card={card} />
       </div>
     </section>
   );
