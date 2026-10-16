@@ -35,15 +35,15 @@ function Mark({ standing }: { standing: Standing }) {
 }
 
 /** A ticket's acceptance criteria with their met count; `keys` adds the
- *  AC1, AC2… column. */
-export function Criteria({ rows, keys = false }: { rows: CriterionRow[]; keys?: boolean }) {
+ *  AC1, AC2… column and `run` names the run the count is from. */
+export function Criteria({ rows, keys = false, run = null }: { rows: CriterionRow[]; keys?: boolean; run?: number | null }) {
   const met = rows.filter((row) => row.standing === "met").length;
   return (
     <section aria-label="Acceptance criteria">
       <div className={SECTION_LABEL}>
         Acceptance criteria
         <span data-met-count className="tracking-[.04em] text-ink">
-          {met} of {rows.length} met
+          {met} of {rows.length} met{run == null ? "" : ` in run ${run}`}
         </span>
       </div>
       <ul className="m-0 mt-2 list-none p-0">
