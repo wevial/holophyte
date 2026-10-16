@@ -6,7 +6,7 @@ const PAGES: Record<ConsoleView, string> = { classic: "/", next: "/next.html" };
 
 /** The remembered front end, `classic` when nothing valid is stored or
  *  storage is unavailable. */
-export function readView(): ConsoleView {
+function readView(): ConsoleView {
   try {
     return localStorage.getItem(VIEW_KEY) === "next" ? "next" : "classic";
   } catch {
@@ -23,7 +23,7 @@ export function writeView(view: ConsoleView): void {
 }
 
 /** Remember `view` and load its page, carrying `hash` along. */
-export function switchView(view: ConsoleView, hash = ""): void {
+export function switchView(view: ConsoleView, hash: string): void {
   writeView(view);
   location.assign(PAGES[view] + hash);
 }
