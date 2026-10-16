@@ -6,6 +6,8 @@ import { sinceSeen, UNREACHABLE, type HostRecord } from "../../lib/hosts";
 import { agentMs, latestEvents, workingMs } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
+import { blockedAsk, blockedHeadline, focusPrLabel } from "../focus";
+import { LimitedMarkdown } from "./LimitedMarkdown";
 import type { ContractBodies } from "../fleet";
 import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
@@ -97,7 +99,7 @@ function LatestEvents({ run }: { run: ReturnType<typeof useRun> }) {
       {events.map((event, index) => (
         <li key={`${event.at}-${index}`} className="grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-0.5">
           <time className="text-ink-3">{formatClock(event.at)}</time>
-          <span className="break-words">{event.summary}</span>
+          <LimitedMarkdown lines={2}>{event.summary}</LimitedMarkdown>
         </li>
       ))}
     </ol>
@@ -174,10 +176,20 @@ function Card({
         <p className="mt-1.5 font-mono text-[12px] text-ink-3">{seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`}</p>
       ) : (
         <>
-          {description.body !== "" && <p className="mt-2.5 max-w-[68ch] break-words text-[16px] leading-normal text-ink-2">{whyOf(description.body, item)}</p>}
+          {item.kind === "blocked" ? (
+            <>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <h4 className="text-[16px] font-semibold text-ink">{blockedHeadline(item)}</h4>
+                {str(item.pr_url) && <a href={str(item.pr_url)!} target="_blank" rel="noreferrer" className="rounded border border-rule px-2 py-0.5 font-mono text-xs text-ink-2 hover:text-ink">{focusPrLabel(item)}</a>}
+              </div>
+              <div className="mt-2.5 max-w-[68ch] text-[16px] leading-normal text-ink-2">
+                <LimitedMarkdown lines={4}>{blockedAsk(item)}</LimitedMarkdown>
+              </div>
+            </>
+          ) : description.body !== "" && <p className="mt-2.5 max-w-[68ch] break-words text-[16px] leading-normal text-ink-2">{whyOf(description.body, item)}</p>}
           {description.meta != null && <p className="mt-1.5 font-mono text-[12px] text-ink-3">{description.meta}</p>}
           <div className="mt-5 flex flex-col gap-3.5 border-t border-dashed border-rule pt-[18px] font-mono text-[12.5px] leading-normal text-ink-2">
-            <PullRequestLine item={item} />
+            {item.kind !== "blocked" && <PullRequestLine item={item} />}
             {runId != null && <LatestEvents run={run} />}
           </div>
           <CardActions entry={entry} host={host} actions={description.actions} title={title} />

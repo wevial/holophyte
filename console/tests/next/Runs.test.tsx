@@ -206,7 +206,7 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
   const readyRun = parkedRun(4, 17);
   const merged = run({ id: 3, ticket: "DEMO-3", title: "Ship", started_ms: today(10, 0), phase: "done", outcome: "merged", ended_ms: today(11, 15) });
   const items = [
-    { kind: "blocked", level: "attention", run: 6, ticket: "DEMO-6", ticket_url: null, question: "Which way?\nLeft or right", asked_ms: NOW - MINUTE, pr_url: null },
+    { kind: "blocked", level: "attention", run: 6, ticket: "DEMO-6", ticket_url: null, question: "Which way?\nLeft or right", asked_ms: NOW - MINUTE, pr_url: null, park_kind: null, pr: null },
     { kind: "paused", level: "attention", run: 5, ticket: "DEMO-5", ticket_url: null, title: "Hold", note: "Waiting on a key", asked_ms: NOW - MINUTE, pr_url: null },
     pullRequestItem(4, {}),
   ] as Item[];
