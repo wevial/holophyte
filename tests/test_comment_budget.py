@@ -192,6 +192,7 @@ PINNED = {
     "holophyte/pr/__init__.py": 0,
     "holophyte/pr/evidence_refresh.py": 0,
     "holophyte/pr/github.py": 18,
+    "holophyte/pr/image_fetch.py": 2,
     "holophyte/pr/merge_queue.py": 4,
     "holophyte/pr/merge_ready.py": 0,
     "holophyte/pr/missing_checks.py": 2,

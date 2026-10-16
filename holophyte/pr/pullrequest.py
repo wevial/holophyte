@@ -16,7 +16,15 @@ from holophyte.loop import run as run_state
 from holophyte.loop.gates import InfraFailure, MergeParked, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, set_phase
 from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
-from holophyte.pr import github, merge_queue, pr_activity, pr_media, pr_ready, pr_status
+from holophyte.pr import (
+    github,
+    image_fetch,
+    merge_queue,
+    pr_activity,
+    pr_media,
+    pr_ready,
+    pr_status,
+)
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from store import operator_notes
@@ -245,6 +253,9 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
         if section is not None:
             body = github.replace_pr_evidence(body, section)
         github.edit_pr_body(project, pull, body)
+        notes = image_fetch.check(project, pull, body)
+    for note in notes:
+        ledger(conn, run_id, task_id, "note", note, None)
     if text is not None and sha and conn is not None and run_id is not None:
         store.record_event(conn, run_id, "pr_text_sha", sha)
     return text is not None
@@ -334,22 +345,28 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
                 if adopted else f"pull request open: {url}")
             # The PR is the run's `prUrl` from now, even for a run that never parks.
             store.set_pull_request(conn, run_id, url)
-    if adopted:
-        with heartbeat_while(conn, run_id, beat_s):
-            _adopt_evidence(project, url, text)
+    with heartbeat_while(conn, run_id, beat_s):
+        written = _adopt_evidence(project, url, text) if adopted else text
+        pull = pr_status.parse_pr_url(url)
+        notes = image_fetch.check(project, pull, written) if pull else []
+    if conn is not None and run_id is not None:
+        for note in notes:
+            store.record_event(conn, run_id, "pull_request", note)
     return url
 
 
 def _adopt_evidence(project, url, text):
     section = github.split_pr_body(text)[2]
     if not section:
-        return
+        return None
     pull = pr_status.parse_pr_url(url)
     body = github.rest(project, pull, "GET",
                        f"repos/{pull.repo}/pulls/{pull.number}")["body"] or ""
-    if github.split_pr_body(body)[2].rstrip() != section.rstrip():
-        github.edit_pr_body(project, pull,
-                            github.replace_pr_evidence(body, section))
+    if github.split_pr_body(body)[2].rstrip() == section.rstrip():
+        return None
+    body = github.replace_pr_evidence(body, section)
+    github.edit_pr_body(project, pull, body)
+    return body
 
 
 def _park_human(project, conn, run_id, provider, task_id, branch, sha, pull,
