@@ -46,10 +46,6 @@ function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
   return createRoute({ getParentRoute: () => rootRoute, path, component: page });
 }
 
-function placeholderRoute<TPath extends string>(path: TPath, page: Parameters<typeof Placeholder>[0]) {
-  return pageRoute(path, () => <Placeholder {...page} />);
-}
-
 function TicketPlaceholder() {
   const { key } = useParams({ from: "/tickets/$project/$key" });
   return (
