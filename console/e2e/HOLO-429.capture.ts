@@ -37,7 +37,7 @@ function rowsFor(since: number): HistoryRow[] {
 
 async function shot(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: path.join(out, name) });
+  await page.screenshot({ path: path.join(out, name), animations: "disabled" });
 }
 
 test("History loading, fault, retry and cut day", async ({ browser, baseURL }) => {
