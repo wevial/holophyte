@@ -868,7 +868,13 @@ Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 `console/src/next/router.tsx` routes it with TanStack Router over hash
 history, since the static route has no single-page fallback: `#/` is
 Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
-each in the shell its root renders, and any other path is a not-found page.
+each in the shell its root renders. Settings lives at `#/settings` (General)
+and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
+`toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
+`console/src/next/settings.ts` defines the grouped tabs and host attention
+count; `console/src/next/pages/Settings.tsx` frames the project picker and
+placeholder panels. The sidebar footer links to Settings. Any other path
+is a not-found page.
 The root route's search holds one optional `project`, the project's name
 as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
 scoped view; every route inherits it, the sidebar's links carry it, and

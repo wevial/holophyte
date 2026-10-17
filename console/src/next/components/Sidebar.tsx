@@ -4,6 +4,7 @@ import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
 import { classicHref, writeView } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
+import { hostsNeedingAttention } from "../settings";
 import { switcherRows } from "../projects";
 import { useBoardStories, useReadiness, type ListedStory } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
@@ -17,6 +18,7 @@ import {
   OverviewIcon,
   RunsIcon,
   SignalIcon,
+  SettingsIcon,
   TicketsIcon,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -94,6 +96,15 @@ function ThemeToggle({ folded }: { folded: boolean }) {
   );
 }
 
+function LinkBadge({ badge, folded }: { badge: number; folded: boolean }) {
+  if (badge <= 0) return null;
+  return (
+    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal text-need ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
+      {badge}
+    </span>
+  );
+}
+
 function PageLink({
   to,
   label,
@@ -125,22 +136,10 @@ function PageLink({
     >
       <span className="relative">
         {icon}
-        {folded && badge > 0 && (
-          <span
-            data-badge
-            aria-hidden="true"
-            className="absolute -top-2 -right-2.5 font-mono text-[9px] leading-none font-semibold text-need"
-          >
-            {badge}
-          </span>
-        )}
+        {folded && <LinkBadge badge={badge} folded />}
       </span>
       {!folded && <span className="flex-1">{label}</span>}
-      {!folded && badge > 0 && (
-        <span data-badge aria-hidden="true" className="font-mono text-[12px] font-semibold tracking-normal text-need">
-          {badge}
-        </span>
-      )}
+      {!folded && <LinkBadge badge={badge} folded={false} />}
     </Link>
   );
 }
@@ -231,6 +230,8 @@ export function Sidebar() {
   const readiness = useReadiness(hosts, deps);
   const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
   const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
+  const onSettings = useRouterState({ select: (state) => /^\/settings(\/|$)/.test(state.location.pathname) });
+  const hostNeeds = hostsNeedingAttention(hosts);
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const open = useOpenCount(scopedHosts(hosts, project), now);
@@ -309,6 +310,22 @@ export function Sidebar() {
             </span>
           )}
         </p>
+        <Link
+          to="/settings/$tab"
+          params={{ tab: "general" }}
+          search={keepScope}
+          aria-current={onSettings ? "page" : undefined}
+          aria-label={hostNeeds > 0 ? `Settings, ${hostNeeds} ${hostNeeds === 1 ? "host needs" : "hosts need"} attention` : "Settings"}
+          title={folded ? "Settings" : undefined}
+          className={FOOTER_BUTTON}
+        >
+          <span className="relative">
+            <SettingsIcon />
+            {folded && <LinkBadge badge={hostNeeds} folded />}
+          </span>
+          {!folded && <span>Settings</span>}
+          {!folded && <LinkBadge badge={hostNeeds} folded={false} />}
+        </Link>
         <a
           href={classicHref()}
           onClick={() => writeView("classic")}

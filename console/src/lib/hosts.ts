@@ -283,7 +283,7 @@ export function hostTone(host: HostRecord): HostTone {
 /** Whether `status`'s supervisor is stale. Under a host daemon (`onHost`)
  *  the beat is the host sweep's, which the daemon judges against two sweep
  *  intervals, not the runs' `heartbeat_stale_ms`: its `state` is the word. */
-export function supervisorStale(onHost: boolean, status: Status): boolean {
+export function supervisorStale(onHost: boolean, status: Pick<Status, "supervisor" | "thresholds">): boolean {
   if (onHost) return status.supervisor.state === "stale";
   return isSupervisorStale(status.supervisor, status.thresholds.heartbeat_stale_ms);
 }

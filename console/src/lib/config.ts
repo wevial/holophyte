@@ -1,5 +1,7 @@
 import type { Fetch } from "./poll";
 
+export const CONFIG_EDIT_OFF = "Read-only: this daemon has not opted into config edits ([serve] config_edit = true)";
+
 /** A value the daemon's `PUT /config` patch carries for one dotted key:
  *  a string, an integer, a boolean or a list of strings
  *  (`holophyte/serve/serve_config.py` `check_patch_value()`). */
