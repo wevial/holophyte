@@ -24,7 +24,8 @@ type Host = HostRecord<ContractBodies>;
 const MERGE = "Merge";
 const REASONED = new Set([RESUME, ABORT, ABORT_CLOSE]);
 
-const BUSY: Record<string, string> = {
+export const BUSY: Record<string, string> = {
+  Pause: "Pausing…",
   Requeue: "Requeuing…",
   [RESUME]: "Resuming…",
   [ABORT]: "Aborting…",
@@ -34,7 +35,7 @@ const BUSY: Record<string, string> = {
   [MERGE]: "Merging…",
 };
 
-const ACTIONS_OFF_LINE = "Actions are off on this host. [serve] actions = true turns them on.";
+export const ACTIONS_OFF_LINE = "Actions are off on this host. [serve] actions = true turns them on.";
 
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
@@ -73,7 +74,7 @@ function saidFor(label: string, item: AttentionItem, host: Host): string {
   }
 }
 
-const detailLine = "max-w-[68ch] break-words font-mono text-[12.5px] leading-normal";
+export const detailLine = "max-w-[68ch] break-words font-mono text-[12.5px] leading-normal";
 
 function MergeFacts({ base, run, title, ticket, refused }: { base: string; run: number; title: string | null; ticket: string | null; refused: string | null }) {
   const deps = useContext(PollDepsContext);
