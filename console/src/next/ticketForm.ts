@@ -26,7 +26,7 @@ export interface TicketForm {
   sections: TicketSection[];
   hints: Partial<Record<Field, string | string[]>>;
 }
-interface Line { start: number; end: number; contentEnd: number; text: string; eol: string; suffix: string; fenced: boolean; commented: boolean }
+interface Line { start: number; end: number; contentEnd: number; text: string; eol: string; suffix: string; fenced: boolean }
 
 const commentPattern = /<!--[\s\S]*?-->/g;
 function withoutComments(text: string): string {
@@ -65,7 +65,7 @@ function lines(text: string): Line[] {
       if (!fence) fence = marker[1];
       else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
     }
-    result.push({ start, end, contentEnd, text: value, suffix: text.slice(contentEnd, eolStart), eol: raw.slice(content.length), fenced, commented: !value.trim() });
+    result.push({ start, end, contentEnd, text: value, suffix: text.slice(contentEnd, eolStart), eol: raw.slice(content.length), fenced });
   }
   return result;
 }
@@ -107,13 +107,13 @@ type Span = { start: number; end: number; value: string; after?: number };
 
 function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const rows = lines(text);
-  const index = rows.findIndex(line => !line.fenced && !line.commented && line.text.startsWith(`**${labels[field]}:**`));
+  const index = rows.findIndex(line => !line.fenced && line.text.startsWith(`**${labels[field]}:**`));
   if (index < 0) return;
   const first = rows[index];
   const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(first.text)![0];
   let last = first;
   for (const line of rows.slice(index + 1)) {
-    if (!line.text.trim() || line.commented || /^(\*\*[^*\r\n]+:\*\*| {0,3}(?:>|#{1,6}(?:[ \t]|$)|[-+*][ \t]+|1[.)][ \t]+|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|`{3,}|~{3,}))/.test(line.text)) break;
+    if (!line.text.trim() || /^(\*\*[^*\r\n]+:\*\*| {0,3}(?:>|#{1,6}(?:[ \t]|$)|[-+*][ \t]+|1[.)][ \t]+|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|`{3,}|~{3,}))/.test(line.text)) break;
     last = line;
   }
   const source = visibleSource(text.slice(first.start, first.contentEnd));
@@ -122,11 +122,11 @@ function paragraph(text: string, field: keyof typeof labels): Span | undefined {
 }
 
 function matching(text: string, pattern: RegExp): Line[] {
-  return lines(text).filter(line => !line.fenced && !line.commented && pattern.test(line.text));
+  return lines(text).filter(line => !line.fenced && line.text.trim() && pattern.test(line.text));
 }
 function verifySpan(text: string): Span | undefined {
   const rows = lines(text);
-  const index = rows.findIndex(line => !line.fenced && !line.commented && /^ {0,3}`{3,}[^`]*$/.test(line.text));
+  const index = rows.findIndex(line => !line.fenced && /^ {0,3}`{3,}[^`]*$/.test(line.text));
   if (index < 0) return;
   const opening = rows[index];
   const width = opening.text.trimStart().match(/^`+/)![0].length;
