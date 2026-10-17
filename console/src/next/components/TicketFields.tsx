@@ -10,7 +10,7 @@ import type { Tone } from "../state";
 
 export const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
 /** The 2 px bar and wash of a field whose text differs from the revision the page loaded. */
-const CHANGED = "border-l-2 border-l-act bg-act-wash";
+export const CHANGED = "border-l-2 border-l-act bg-act-wash";
 type Message = { text: string; error: boolean; field: string };
 const CHECK_DELAY_MS = 600;
 export const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;

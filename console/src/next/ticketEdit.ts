@@ -1,4 +1,4 @@
-import { clampEstimate, composeBody, fieldOf, parseBody, withField, type TicketForm } from "./ticketForm";
+import { clampEstimate, composeBody, fieldOf, parseBody, withCriterion, withField, type TicketForm } from "./ticketForm";
 
 /** The sections the edit form draws as fields; every other section of the
  *  body is edited as plain text under "Other sections". */
@@ -82,7 +82,11 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
     if (same(loaded[field], edited[field])) continue;
     if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, lines(edited[field]));
     else if (field === "mockupImages") form = withField(form, field, lines(edited[field]).filter(url => url.trim()).map(url => `![board](${url.trim()})`));
-    else if (field === "estimate") form = withField(form, field, edited.estimate.trim() === "" ? null : clampEstimate(Number(edited.estimate) || 25));
+    else if (field === "criteria" && edited.criteria.length === loaded.criteria.length) {
+      edited.criteria.forEach((criterion, index) => {
+        if (criterion !== loaded.criteria[index]) form = withCriterion(form, index, criterion);
+      });
+    } else if (field === "estimate") form = withField(form, field, edited.estimate.trim() === "" ? null : clampEstimate(Number(edited.estimate) || 25));
     else if (field !== "priority") form = withField(form, field, edited[field]);
   }
   return composeBody(form);

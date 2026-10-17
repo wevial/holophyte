@@ -236,6 +236,17 @@ function editText(text: string, field: Exclude<Field, "title">, value: Fields[Fi
   return replaceLine(text, estimatePattern, `Estimate: ${estimate} min · Depends on: ${dependencies}`, eol);
 }
 
+/** `form` with only acceptance criterion `index`'s text set to `value`,
+ *  every other line of its section kept where it stands. */
+export function withCriterion(form: TicketForm, index: number, value: string): TicketForm {
+  const at = form.sections.findIndex(section => section.name === sections.criteria);
+  const row = at < 0 ? undefined : matching(form.sections[at].text, itemPatterns.criteria)[index];
+  if (!row) return form;
+  const updated = form.sections.slice();
+  updated[at] = { ...updated[at], text: splice(updated[at].text, row.start, row.contentEnd, `- [ ] ${value}`) };
+  return { ...form, sections: updated };
+}
+
 export function withField<K extends Field>(form: TicketForm, field: K, value: Fields[K]): TicketForm {
   const present = field === "title" || form.sections.some(section => section.name === sections[field as Exclude<Field, "title">]);
   if (present && JSON.stringify(fieldOf(form, field)) === JSON.stringify(value)) return form;

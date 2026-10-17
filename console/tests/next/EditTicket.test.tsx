@@ -41,6 +41,7 @@ The run page lists each steer note the operator left.
 ## Acceptance criteria
 
 - [ ] Each note shows on the run page.
+  Its author and time show beside it.
 - [ ] ${AC2}
 - [ ] A withdrawn note shows struck through.
 

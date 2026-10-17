@@ -5,7 +5,7 @@ import { editTicket } from "../../lib/boardWrites";
 import { formatAge } from "../../lib/format";
 import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
-import { CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
+import { CHANGED, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
@@ -163,7 +163,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
             <DependsField dependsOn={fields.dependsOn} onChange={next => set("dependsOn", next)} dependency={dependency} onDependency={setDependency} cards={cards} marks={checked} changed={changed("dependsOn")} />
           </div>
           <div className="space-y-5">
-            <label data-changed={changed("uiChange") || undefined} className="flex items-center gap-3 text-[14px] font-semibold">
+            <label data-changed={changed("uiChange") || undefined} className={`flex items-center gap-3 text-[14px] font-semibold ${changed("uiChange") ? `${CHANGED} py-2 pl-2` : ""}`}>
               <input id="new-UI change" type="checkbox" role="switch" checked={fields.uiChange !== null} onChange={() => set("uiChange", fields.uiChange ? null : read.fields.uiChange ?? "major")} {...marks("UI change", "h-5 w-9 accent-act")} />This ticket changes the UI
             </label>
             <Messages id={messagesId("UI change")} messages={messagesOf("UI change")} />
