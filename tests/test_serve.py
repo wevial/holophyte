@@ -606,7 +606,7 @@ class TicketTests(ServeTestCase):
         finally:
             conn.close()
 
-    def test_a_mirrored_ticket_answers_its_nine_fields_and_body(self):
+    def test_a_mirrored_ticket_answers_its_fields_body_and_criterion_ids(self):
         self.seed_ticket()
         self.start()
 
@@ -621,9 +621,9 @@ class TicketTests(ServeTestCase):
         self.assertEqual({k: body[k] for k in body if k != "runs"}, {
             "ticket": "KO-7", "ticket_url": None,
             "title": "ticket 7", "status": "in_flight",
-            "body": self.BODY,
+            "body": self.BODY, "verification_commands": ["echo ok"],
             "acceptance_criteria": ["Given KO-7, then it is worked"],
-            "verification_commands": ["echo ok"],
+            "criteria": [{"id": "C1", "text": "Given KO-7, then it is worked"}],
             "time_box_ms": 25 * MIN, "run": self.run,
             "mirrored_ms": self.now - 5 * MIN,
             "current": revision, "claimed": revision,

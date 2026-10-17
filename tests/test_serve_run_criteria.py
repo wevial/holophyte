@@ -73,9 +73,9 @@ class RunCriteriaTests(ServeTestCase):
         (body,) = self.details(run)
 
         self.assertEqual(body["criteria"], [
-            {"n": 1, "text": FIRST, "status": "met",
+            {"n": 1, "id": "C1", "text": FIRST, "status": "met",
              "note": "tests/test_a.py::test_one", "run": run, "round": 2},
-            {"n": 2, "text": SECOND, "status": "met",
+            {"n": 2, "id": "C2", "text": SECOND, "status": "met",
              "note": "tests/test_b.py::test_two", "run": run, "round": 2}])
         self.assertNotIn("criteria", [e["kind"] for e in body["events"]])
 
@@ -93,10 +93,35 @@ class RunCriteriaTests(ServeTestCase):
         requeued, bare = self.details(live, unjudged)
 
         self.assertEqual(requeued["criteria"], [
-            {"n": 1, "text": FIRST, "status": "unwitnessed",
+            {"n": 1, "id": "C1", "text": FIRST, "status": "unwitnessed",
              "note": "no CRITERION line in the reply", "run": failed,
              "round": 1}])
         self.assertEqual(bare["criteria"], [])
+
+    def test_chain_entries_preserve_ids_and_derive_ids_for_older_events(self):
+        ticket = self.ticket("DEMO-23")
+        earlier = self.claim(ticket, self.now - 30 * MIN)
+        self.judged(earlier, 1, self.now - 25 * MIN,
+                    (4, SECOND, "not_met", "Missing witness"))
+        finish_run(self.conn, earlier, "failed", "verify failed",
+                   now=self.now - 20 * MIN)
+        store.requeue(self.conn, ticket, "rerun it")
+        newest = self.claim(ticket, self.now - 10 * MIN)
+        store.record_event(
+            self.conn, newest, "criteria", "review round 2", level="detail",
+            now=self.now - 5 * MIN, payload=json.dumps({
+                "round": 2, "criteria": [
+                    {"n": 4, "id": "C4", "text": SECOND, "status": "met",
+                     "note": "Witnessed"}]}))
+
+        old, new = self.details(earlier, newest)
+
+        self.assertEqual(old["criteria"], [
+            {"n": 4, "id": "C4", "text": SECOND, "status": "not_met",
+             "note": "Missing witness", "run": earlier, "round": 1}])
+        self.assertEqual(new["criteria"], [
+            {"n": 4, "id": "C4", "text": SECOND, "status": "met",
+             "note": "Witnessed", "run": newest, "round": 2}])
 
 
 if __name__ == "__main__":

@@ -542,6 +542,7 @@ export const steerNoteSchema = z.looseObject({
 export type SteerNote = z.infer<typeof steerNoteSchema>;
 
 export const runCriterionSchema = z.looseObject({
+  id: z.string(),
   n: z.int(),
   text: z.string(),
   status: z.enum(["met", "not_met", "unwitnessed"]),
@@ -873,6 +874,12 @@ export const boardSchema = z.looseObject({
 });
 export type Board = z.infer<typeof boardSchema>;
 
+export const ticketCriterionSchema = z.looseObject({
+  id: z.string(),
+  text: z.string(),
+});
+export type TicketCriterion = z.infer<typeof ticketCriterionSchema>;
+
 export const ticketRevisionSchema = z.looseObject({
   revision: z.int(),
   at: z.int(),
@@ -943,6 +950,7 @@ export const ticketDetailSchema = z.looseObject({
   status: z.string(),
   body: z.string(),
   acceptance_criteria: z.array(z.string()),
+  criteria: z.array(ticketCriterionSchema),
   verification_commands: z.array(z.string()),
   time_box_ms: z.int().nullable(),
   run: z.int().nullable(),
