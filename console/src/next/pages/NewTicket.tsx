@@ -64,6 +64,7 @@ export function NewTicket() {
     let form = template;
     for (const field of FIELDS) {
       if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, values[field] ? values[field].split("\n") : []);
+      else if (field === "notes") form = withField(form, field, values[field].split("\n").filter(line => line.trim()).map(line => `- ${line}`).join("\n"));
       else form = withField(form, field, values[field]);
     }
     const result = await fileTicket(target.base, composeBody(form), null, deps.fetch, "backlog");

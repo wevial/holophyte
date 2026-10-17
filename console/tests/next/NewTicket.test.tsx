@@ -54,7 +54,7 @@ const values = {
   "In scope": "The run card\nIts styles",
   "Out of scope": "Editing notes",
   "Verify commands": "ruff check .",
-  "Implementation notes": "Use the existing notes query.",
+  "Implementation notes": "Use the existing notes query.\nKeep the existing ordering.",
 };
 
 async function fill() {
@@ -110,6 +110,7 @@ test("File ticket sends one Backlog POST with the composed markdown then toasts 
   expect(payload.body).toStartWith("# Steer notes show on the run detail card\n");
   expect(payload.body).toContain("## Summary\n\nThe run page lists each steer note.");
   expect(payload.body).toContain("## In scope\n\n- The run card\n- Its styles");
+  expect(payload.body).toContain("## Implementation notes\n\n- Use the existing notes query.\n- Keep the existing ordering.");
   expect(payload.body).toMatch(/```[^\n]*\nruff check \.\n```/);
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Filed DEMO-12 in demo Backlog.");
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-12");
