@@ -27,8 +27,7 @@ export function RouteTable({ host }: { host: HostCard }) {
         <tbody className="block min-[700px]:table-row-group">
           {host.routes.map((route) => {
             const failed = route.probe?.ok === false;
-            const tone = host.down || (!route.probe && !route.down) ? "text-ink-3" : failed || route.down ? "text-bad" : "text-live";
-            const glyph = host.down || (!route.probe && !route.down) ? "◷" : failed || route.down ? "×" : "✓";
+            const [tone, glyph] = host.down || (!route.probe && !route.down) ? ["text-ink-3", "◷"] : failed || route.down ? ["text-bad", "×"] : ["text-live", "✓"];
             const cell = "block min-w-0 px-3 py-2 [overflow-wrap:anywhere] min-[700px]:table-cell";
             return (
               <tr key={`${route.seat}:${route.label}`} className={`mb-3 block border-l-2 min-[700px]:table-row ${failed ? "border-bad bg-bad-wash" : "border-transparent"}`}>
