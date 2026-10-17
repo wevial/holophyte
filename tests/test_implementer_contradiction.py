@@ -33,7 +33,7 @@ import holophyte.board.projection  # noqa: E402 - after the sys.path insert abov
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
-from holophyte.loop.contradiction import declared  # noqa: E402
+from holophyte.loop.contradiction import brief, declared  # noqa: E402
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 REASON = "the pr_open facts carry only open_threads"
@@ -84,6 +84,26 @@ class DeclaredTests(unittest.TestCase):
                 (2, "the reader requires `parkKind`"),
             ])
 
+    def codex_echo(self, message):
+        prompt = "Implement this task in this repo:" + brief(
+            [f"criterion {n}" for n in range(1, 9)])
+        return f"user\n{prompt}\ncodex\n{message}\ntokens used\n9,120\n{message}"
+
+    def test_the_echoed_prompt_brief_declares_nothing(self):
+        self.assertEqual(declared(self.codex_echo("Done; all criteria hold.")), [])
+
+    def test_a_real_declaration_after_the_echoed_brief_still_parses(self):
+        self.assertEqual(declared(self.codex_echo(
+            "CONTRADICTION: criterion C3 — the route has no state field")),
+            [(3, "the route has no state field")])
+
+    def test_an_unfilled_reason_declares_nothing(self):
+        for line in ("CONTRADICTION: criterion C8 — reason",
+                     "CONTRADICTION: criterion C8 — <one-line reason>",
+                     "CONTRADICTION: criterion C8 —"):
+            with self.subTest(line=line):
+                self.assertEqual(declared(line), [])
+
 
 class ImplementTurnContradictionTests(LoopFixture):
 
@@ -96,11 +116,11 @@ class ImplementTurnContradictionTests(LoopFixture):
         with self.subTest("blocked question"):
             self.assertEqual(
                 question.splitlines()[0],
-                "implementer: criterion 1 cannot be met as written: "
+                "implementer: criterion C1 cannot be met as written: "
                 "`tickets.parkKind` does not exist; the reader reads `runs.parkKind`.")
         with self.subTest("event criteria"):
             self.assertEqual(json.loads(payload)["criteria"], [{
-                "criterion": 1,
+                "criterion": 1, "id": "C1",
                 "reason": "`tickets.parkKind` does not exist; "
                           "the reader reads `runs.parkKind`.",
             }])
@@ -120,12 +140,12 @@ class ImplementTurnContradictionTests(LoopFixture):
         self.assertEqual(status, "blocked_on_operator")
         self.assertEqual(
             question.splitlines()[0],
-            f"implementer: criterion 2 cannot be met as written: {REASON}")
+            f"implementer: criterion C2 cannot be met as written: {REASON}")
         ((payload,),) = self.read(
             "SELECT payload FROM runEvents WHERE kind = 'contradiction'")
         self.assertEqual(json.loads(payload), {
             "turn": "implement", "head": head,
-            "criteria": [{"criterion": 2, "reason": REASON}]})
+            "criteria": [{"criterion": 2, "id": "C2", "reason": REASON}]})
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
@@ -146,7 +166,7 @@ class RequeueAfterContradictionTests(LoopFixture):
 
         fake, _ = self.loop(Commit("render the amended word"), APPROVE)
 
-        self.assertIn("CONTRADICTION: criterion N", fake.turns[0].goal)
+        self.assertIn("CONTRADICTION: criterion C<id>", fake.turns[0].goal)
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
                                    " WHERE runId = 2 AND kind = 'contradiction'"),
@@ -216,13 +236,13 @@ class FixTurnContradictionTests(LoopFixture):
         payload = json.loads(payload)
         self.assertEqual(payload["turn"], "fix")
         self.assertEqual(payload["criteria"], [
-            {"criterion": 1, "reason": "the facts lack a field"},
-            {"criterion": 3, "reason": "the file-size pin forbids it"}])
+            {"criterion": 1, "id": "C1", "reason": "the facts lack a field"},
+            {"criterion": 3, "id": "C3", "reason": "the file-size pin forbids it"}])
         ((question,),) = self.read("SELECT blockedQuestion FROM tickets")
         first = question.splitlines()[0]
-        self.assertIn("criterion 1 cannot be met as written: the facts lack"
+        self.assertIn("criterion C1 cannot be met as written: the facts lack"
                       " a field", first)
-        self.assertIn("criterion 3 cannot be met as written: the file-size"
+        self.assertIn("criterion C3 cannot be met as written: the file-size"
                       " pin forbids it", first)
 
     def test_a_pause_requested_in_the_fix_turn_still_parks_the_contradiction(self):

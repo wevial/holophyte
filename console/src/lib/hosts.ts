@@ -1,7 +1,7 @@
 import type { ProjectChoice } from "./attention";
 import { isSupervisorStale, isStale } from "./derive";
 import type { ClassicBodies, PollBodies, PollFailure, ProjectAnswer } from "./poll";
-import type { AttentionItem, Status } from "./types";
+import type { AttentionItem, HostStatus, Status } from "./types";
 
 /** One project the console polls, at the base its routes hang off: a
  *  project daemon (the origin that served the page, then each address
@@ -35,6 +35,7 @@ export interface HostRecord<B extends PollBodies = ClassicBodies> {
   /** Under a host daemon: the last poll's failure was the daemon's root,
    *  not this project alone. */
   root_failed?: boolean;
+  root_seen_ms?: number;
   /** The last good `/status`, kept beside a later error. */
   status: B["status"] | null;
   /** The last good `/attention`, kept beside a later error. */
@@ -191,7 +192,7 @@ export function mergeHosts<B extends PollBodies = ClassicBodies>(previous: HostR
       return had.map((before) => ({ ...failed({ key: before.key, address, base: before.base }, result, before, now), root_failed: before.host_status != null }));
     }
     if (!("host" in result)) return [answered({ key: address, address, base }, result, now)];
-    const root = { host_status: result.host, host_attention: result.host_attention, root_failed: false };
+    const root = { host_status: result.host, host_attention: result.host_attention, root_failed: false, root_seen_ms: now };
     if (result.projects.length === 0) {
       return [{
         key: address, address, base, label: address, name: null, project: null, status: null, attention: null,
@@ -252,8 +253,8 @@ export function groupByHost<R extends HostRecord<PollBodies>>(hosts: R[]): HostG
 /** A host group's records split by the daemon that serves them: a
  *  project daemon's record alone, a host daemon's projects together, in
  *  the order each daemon is first seen. */
-export function byDaemon(hosts: HostRecord[]): HostRecord[][] {
-  const daemons = new Map<string, HostRecord[]>();
+export function byDaemon<R extends HostRecord<PollBodies>>(hosts: R[]): R[][] {
+  const daemons = new Map<string, R[]>();
   for (const host of hosts) daemons.set(host.address, [...(daemons.get(host.address) ?? []), host]);
   return [...daemons.values()];
 }
@@ -283,7 +284,7 @@ export function hostTone(host: HostRecord): HostTone {
 /** Whether `status`'s supervisor is stale. Under a host daemon (`onHost`)
  *  the beat is the host sweep's, which the daemon judges against two sweep
  *  intervals, not the runs' `heartbeat_stale_ms`: its `state` is the word. */
-export function supervisorStale(onHost: boolean, status: Status): boolean {
+export function supervisorStale(onHost: boolean, status: Pick<Status, "supervisor" | "thresholds">): boolean {
   if (onHost) return status.supervisor.state === "stale";
   return isSupervisorStale(status.supervisor, status.thresholds.heartbeat_stale_ms);
 }
@@ -402,4 +403,13 @@ export function oldestPoll(hosts: HostRecord<PollBodies>[]): number | null {
  *  0 for a record that never said when it was seen. */
 export function sinceSeen(seenMs: number | null | undefined, now: number): number {
   return seenMs ? Math.max(0, now - seenMs) : 0;
+}
+
+export function buildLine(build: HostStatus["build"]): { text: string; differ: boolean } {
+  const parts = (["daemon", "sweep", "head"] as const).map((key) => [key, build[key]] as const);
+  const known = new Set(parts.flatMap(([, revision]) => (revision == null ? [] : [revision])));
+  return {
+    text: parts.map(([key, revision]) => `${key} ${revision == null ? "—" : revision.slice(0, 7)}`).join(" · "),
+    differ: known.size > 1,
+  };
 }

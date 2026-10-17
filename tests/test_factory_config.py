@@ -698,7 +698,8 @@ class AgentCommandTests(ConfigTestCase):
     def test_the_round_records_the_route_that_actually_ran_it(self):
         self.locate('[agents]\nreviewer = "my-reviewer --diff"\n')
 
-        with patch.object(store, "record_review_round") as record:
+        with patch.object(store, "record_review_round") as record, \
+             patch.object(store.read, "run_snapshot", return_value=None):
             holophyte.loop.runs.record_round(
                 self.project,
                 object(),

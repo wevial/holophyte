@@ -1,7 +1,8 @@
 These files pin actual daemon responses from the seeded store in
 `tests/serve_contract_fixture.py` and are also parsed by the console tests.
 `normalize_contract` preserves nulls and all keys, replaces host/path labels
-with writer and /repo, IDs and PIDs with 1, and absolute timestamps with NOW;
+with writer and /repo, numeric IDs and PIDs with 1, and absolute timestamps with NOW;
+criterion IDs stay strings such as `C1`, matching the daemon and console schema;
 the builder freezes clocks, so durations remain meaningful and unchanged.
 The reviewed run's round recorded one criterion not met, so
 `run-detail.json` lists it in `criteria`.
@@ -31,6 +32,9 @@ steered before that run claimed it.
 `run-turns.json` pins its `/runs/N/turns` for the reviewed run once it
 has recorded an implement session and turn and a fallback review turn,
 recorded after the other answers are read; every turn `id` becomes 1.
+`run-transcript.json` pins the implement turn’s `/runs/N/turns/T/transcript`,
+read from a configured root containing the Claude session fixture; entry
+timestamps become NOW and each uncut entry carries `cut: false`.
 `story.json` pins its `/stories/KO-11`, seeded after the other answers are
 read: an approved story over KO-12 and KO-13, which depends on KO-12, its
 one witness recorded green and one decision answered `replan`.
@@ -57,3 +61,5 @@ shas `BASE_SHA` and `HEAD_SHA`.
 `mcp-tools-list.json` pins `holo mcp --http`'s reply to `tools/list` with
 `[serve] actions` true, reads and writes, as served on loopback; nothing in
 it depends on the host.
+
+`ticket-check.json` pins `POST /tickets/check` in `tests/test_serve_ticket_check.py`: three template problems and one missing-path advisory, without filing a ticket.

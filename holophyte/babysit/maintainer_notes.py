@@ -3,8 +3,9 @@ from dataclasses import replace
 
 from holophyte.pr.github import Thread
 from holophyte.review.findings import decode_findings
-from store import console_asks, operator_notes, steer_notes
+from store import console_asks, criteria, operator_notes, steer_notes
 from store.read import run_snapshot
+from ticket_criteria import amendment_edits
 
 PREFIX = "Maintainer's instruction (amends the ticket where they conflict):"
 HINT_PREFIX = "Maintainer's hint for this turn (advice, not part of the contract):"
@@ -50,9 +51,36 @@ def carry_amendments(conn, run_id, ticket):
         return ticket
     amendments = [n for n in steer_notes.amendments(
         conn, run_snapshot(conn, run_id).ticketId)
-        if not n.live or n.consumed_by is not None]
+        if not n.live or n.consumed_by is not None or amendment_edits(n.note)[0]]
     steer_notes.consume(conn, [n.id for n in amendments], run_id)
-    return ticket + "".join(f"\n\n{steer_text(n)}" for n in amendments)
+    return render_amendments(conn, run_id, ticket, amendments)
+
+
+def render_amendments(conn, run_id, ticket, amendments):
+    parsed = [(n, *amendment_edits(n.note)) for n in amendments]
+    if any(edits for _, edits, _ in parsed):
+        ticket = re.sub(r"\n\nAmended acceptance criteria:\n.*?(?=\n\n|\Z)",
+                        "", ticket, flags=re.DOTALL)
+        ticket += _criteria_block(conn, run_id)
+    return ticket + "".join(f"\n\n{steer_text(n._replace(note=other))}"
+                            for n, _, other in parsed if other.strip()
+                            and f"steer note {n.id} by {n.author}:" not in ticket)
+
+
+def _criteria_block(conn, run_id):
+    parsed = [(n, *amendment_edits(n.note)) for n in steer_notes.amendments(
+        conn, run_snapshot(conn, run_id).ticketId)]
+    reasons = {(note.id, number): text for note, edits, _ in parsed
+               for verb, number, text in edits if verb == "DROP"}
+    lines = []
+    for row in criteria.current(conn, run_snapshot(conn, run_id).ticketId):
+        number = row["criterion"]
+        if row["status"] != "retired":
+            lines.append(f"- **C{number}** {row['text']}")
+        elif (row["steerNoteId"], number) in reasons:
+            reason = reasons[row["steerNoteId"], number]
+            lines.append(f"- C{number} dropped" + (f": {reason}" if reason else ""))
+    return "\n\nAmended acceptance criteria:\n" + "\n".join(lines)
 
 
 def take_hints(conn, run_id):
@@ -135,8 +163,12 @@ def instruction(thread):
             f"Cite operator_note event {event_id(thread)} in the fix commit message.")
 
 
-def start_fix(conn, run_id, addressed):
+def start_fix(conn, run_id, addressed, prompt, url):
     ids = [event_id(t) for _, t, _ in addressed if is_note(t)]
+    ids.extend(n["event_id"] for n in standing_notes(
+        conn, run_id, pending=True, pr_url=url)
+        if not n.get("hint") and n["event_id"] not in ids
+        and f"operator_note event {n['event_id']} by {n['author']}:" in prompt)
     if ids:
         rnd = conn.execute("SELECT MAX(round) FROM reviewRounds WHERE runId = ?",
                            (run_id,)).fetchone()[0]

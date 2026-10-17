@@ -84,6 +84,16 @@ def parse_since(query):
     return int(text)
 
 
+def parse_until(query):
+    text = parse_filter(query, "until")
+    if text is None:
+        return None
+    if not INTEGER.fullmatch(text):
+        raise ValueError(f"until must be an integer of epoch milliseconds,"
+                         f" got {text!r}")
+    return int(text)
+
+
 def parse_filter(query, name, allowed=None):
     values = parse_qs(query, keep_blank_values=True).get(name)
     if values is None:
@@ -234,7 +244,7 @@ def chain_turns(conn, chain):
 
 def turn_events(conn, run_id):
     return conn.execute(
-        "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
+        "SELECT seq, kind, payload, at FROM runEvents WHERE runId=? "
         "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run_id,))
 
 
@@ -317,7 +327,8 @@ def chain_criteria(conn, run_ids):
     newest = next(iter(store.read.criteria_events(conn, run_ids)), None)
     if newest is None:
         return []
-    return [{"n": c["n"], "text": c["text"], "status": c["status"],
+    return [{"n": c["n"], "id": c.get("id", f"C{c['n']}"),
+             "text": c["text"], "status": c["status"],
              "note": c["note"], "run": newest.runId,
              "round": newest.payload["round"]}
             for c in sorted(newest.payload["criteria"], key=lambda c: c["n"])]
@@ -548,6 +559,7 @@ def seat_route(fallback, table, seat):
             **({"fallback": fallback[seat]} if seat in fallback else {})}
 
 
+TRANSCRIPT_ENTRY_CHARS = 20_000
 RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
 RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
 
@@ -583,13 +595,27 @@ def run_transcript(project, segment):
         return missing
     secrets = known_secrets(project.config())
     for root in roots:
-        for kind in ('codex', 'devin'):
+        for kind in ('codex', 'devin', 'claude'):
             try:
                 path = locate(kind, turn['session_id'], root)
                 if path is not None:
-                    return 200, {"entries": [
-                        {"speaker": speaker, "text": outbound(text, secrets)}
-                        for speaker, text in render(path)]}
+                    entries = transcript_window(render(path), turn)
+                    for entry in entries:
+                        text = outbound(entry['text'], secrets)
+                        entry['text'] = text[:TRANSCRIPT_ENTRY_CHARS]
+                        entry['cut'] = len(text) > TRANSCRIPT_ENTRY_CHARS
+                        if entry['summary'] is not None:
+                            entry['summary'] = outbound(entry['summary'], secrets)
+                    return 200, {"entries": entries}
             except (OSError, UnicodeError, RuntimeError):
                 continue
     return missing
+
+
+def transcript_window(entries, turn):
+    seconds, ended = turn['seconds'], turn['ended_ms']
+    if seconds is None or ended is None:
+        return entries
+    started = ended - seconds * 1000
+    return [entry for entry in entries if entry['at_ms'] is None
+            or started - 2000 <= entry['at_ms'] <= ended + 2000]

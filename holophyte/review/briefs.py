@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 
 import ticket_template
 from holophyte.loop.trim_brief import pass_name
+from holophyte.review.criterion_ids import numbered
 
 
 def _changed_files(root, approved, sha):
@@ -167,14 +168,16 @@ def trim_brief(root, base_sha, sha):
 def criteria_brief(criteria, refused="REQUEST_CHANGES"):
     if not criteria:
         return ""
-    numbered = "\n".join(f"{n}. {c}" for n, c in enumerate(criteria, 1))
-    return (f"Acceptance criteria, numbered:\n{numbered}\n\n"
+    pairs = numbered(None, None, criteria)
+    listed = "\n".join(f"C{n}. {c}" for n, c in pairs)
+    example = f"C{pairs[-1][0]}"
+    return (f"Acceptance criteria, numbered:\n{listed}\n\n"
             "Before the VERDICT line, account for every criterion with "
             "exactly one line each, in this form:\n"
-            "CRITERION n: met \u2014 TEST_OR_CHECK  (name the test or check "
+            f"CRITERION {example}: met \u2014 TEST_OR_CHECK  (name the test or check "
             "that witnesses it)\n"
-            "CRITERION n: not met \u2014 WHY\n"
-            "CRITERION n: unwitnessed \u2014 WHAT_IS_MISSING\n"
+            f"CRITERION {example}: not met \u2014 WHY\n"
+            f"CRITERION {example}: unwitnessed \u2014 WHAT_IS_MISSING\n"
             "Name tests as `tests/file.py::TestClass::test_name`; the loop "
             "checks the test exists.\n"
             "In a test file that is not Python, name them as "
@@ -195,13 +198,14 @@ def witness_brief(gaps, unnamed, when):
             "criterion yourself.\n" if when else
             "The factory's witness pre-check did not run, as verify failed; "
             "judge each criterion yourself.\n")
-    names = ", ".join(str(n) for n in unnamed)
+    names = ", ".join(f"C{n}" for n in unnamed)
     return lead + (f"Criteria that name no test file: {names}.\n"
                    if unnamed else "") + "\n"
 
 
 def left_open_brief(criteria, left_open):
-    listed = "\n".join(f"{n}. {criteria[n - 1]}" for n in left_open)
+    texts = dict(numbered(None, None, criteria))
+    listed = "\n".join(f"C{n}. {texts[n]}" for n in left_open)
     if not listed:
         return ""
     return ("The newest review round left these criteria unmet or "

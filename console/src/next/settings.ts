@@ -1,0 +1,169 @@
+import { groupByHost, supervisorStale, type HostRecord } from "../lib/hosts";
+import type { ContractBodies } from "./fleet";
+import { scopedHosts } from "./scope";
+import type { ConfigValues } from "../lib/config";
+import type { SettingsEdit } from "./settingsDraft";
+
+export type PatchLine = { kind: "context" | "removed" | "added"; text: string };
+
+function tomlValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(", ")}]`;
+  return (JSON.stringify(value) ?? "").replace(/\u007f/g, "\\u007f");
+}
+
+export function patchLines(values: ConfigValues | null, edits: Record<string, SettingsEdit>): PatchLine[] {
+  const tables = new Set([...Object.keys(values ?? {}), ...Object.keys(edits).map((key) => key.slice(0, key.lastIndexOf(".")))]);
+  const lines: PatchLine[] = [];
+  for (const table of tables) {
+    const keys = new Set([
+      ...Object.keys(values?.[table] ?? {}),
+      ...Object.keys(edits).filter((key) => key.startsWith(`${table}.`)).map((key) => key.slice(table.length + 1)),
+    ]);
+    const changed = [...keys].filter((key) => `${table}.${key}` in edits);
+    if (!changed.length) continue;
+    lines.push({ kind: "context", text: `[${table}]` });
+    for (const key of changed) {
+      if (values?.[table] != null && Object.hasOwn(values[table], key)) {
+        lines.push({ kind: "removed", text: `${key} = ${tomlValue(values[table][key])}` });
+      }
+      lines.push({ kind: "added", text: `${key} = ${tomlValue(edits[`${table}.${key}`]!.value)}` });
+    }
+  }
+  return lines;
+}
+
+export const SETTINGS_TABS = [
+  { id: "general", label: "General", group: "Project" },
+  { id: "review", label: "Review", group: "Project" },
+  { id: "agents", label: "Agents", group: "Project" },
+  { id: "capture", label: "Capture", group: "Project" },
+  { id: "hold", label: "Hold / release", group: "Project" },
+  { id: "toml", label: "Raw TOML", group: "Project" },
+  { id: "hosts", label: "Hosts", group: "Factory" },
+  { id: "appearance", label: "Appearance", group: "You · this browser" },
+] as const;
+
+type SettingsHost = HostRecord<ContractBodies>;
+
+export function settingsHost<R extends SettingsHost>(hosts: R[], project: string | undefined): R | null {
+  return scopedHosts(hosts, project).find((host) => host.project != null) ?? null;
+}
+
+export function hostsNeedingAttention(hosts: SettingsHost[]): number {
+  return groupByHost(hosts).filter((group) => group.hosts.some((host) =>
+    host.error != null || (host.status != null && supervisorStale(host.name != null, host.status)),
+  )).length;
+}
+
+export type SettingsField = {
+  tab: (typeof SETTINGS_TABS)[number]["id"];
+  table: string;
+  key: string;
+  label: string;
+  help: string;
+} & (
+  | { kind: "select"; default: string; options: readonly { value: string; label: string }[] }
+  | { kind: "number"; default: number; numeric: "integer"; min: number }
+  | { kind: "boolean"; default: boolean }
+  | { kind: "text"; default: string; seat?: boolean }
+  | { kind: "lines"; default: string[] }
+);
+
+export const SETTINGS_FIELDS: readonly SettingsField[] = [
+  {
+    tab: "general", table: "merge", key: "mode", label: "Merge mode",
+    help: "Direct lands on main after review. Pull request opens one and waits for its checks.",
+    default: "local", kind: "select",
+    options: [{ value: "local", label: "Direct to main" }, { value: "pr", label: "Pull request" }],
+  },
+  {
+    tab: "general", table: "merge", key: "approve", label: "Approve",
+    help: "Auto merges once review passes and checks are green. Human waits in Needs you for your merge.",
+    default: "auto", kind: "select",
+    options: [{ value: "auto", label: "Auto" }, { value: "human", label: "Human" }],
+  },
+  {
+    tab: "general", table: "loop", key: "workers", label: "Workers",
+    help: "Tickets this project runs at once on {host}.",
+    default: 1, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "review", table: "loop", key: "review_rounds", label: "Review rounds",
+    help: "Rounds every run gets before its last adjudication. A larger diff earns more, up to the round cap.",
+    default: 2, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "review", table: "loop", key: "review_rounds_max", label: "Round cap",
+    help: "The most rounds a large diff can earn.",
+    default: 4, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "review", table: "review", key: "adversary", label: "Adversary",
+    help: "A second reviewer that tries to break risky changes, on medium and high rounds.",
+    default: false, kind: "boolean",
+  },
+  {
+    tab: "review", table: "agents", key: "review_mode", label: "Review mode",
+    help: "Verified reviews from three angles and has each finding checked before the fix turn sees it.",
+    default: "single", kind: "select",
+    options: [{ value: "single", label: "Single" }, { value: "verified", label: "Verified" }],
+  },
+  {
+    tab: "agents", table: "agents", key: "implementer", label: "Implementer",
+    help: "Writes the change in the ticket's worktree.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "agents", table: "agents", key: "implementer_fallback", label: "Implementer fallback",
+    help: "Used only when the implementer's probe fails; probed too, and the swap is recorded on the run.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "agents", table: "agents", key: "reviewer", label: "Reviewer",
+    help: "Reads the diff and the criteria each round.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "agents", table: "agents", key: "adjudicator", label: "Adjudicator",
+    help: "Settles a finding the implementer declines, before it reaches you.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "capture", table: "merge", key: "ui_capture", label: "UI capture command",
+    help: "The command that captures screenshots of a ticket marked UI change. Empty captures nothing.",
+    default: "", kind: "text",
+  },
+  {
+    tab: "capture", table: "merge", key: "ui_paths", label: "UI paths",
+    help: "Changed paths that make a change a UI change.",
+    default: [], kind: "lines",
+  },
+  {
+    tab: "capture", table: "merge", key: "ui_capture_video", label: "Video",
+    help: "A short clip of the change being used, published beside the screenshots.",
+    default: false, kind: "boolean",
+  },
+];
+
+export type DiffLine = { kind: "removed" | "added"; number: number; text: string };
+
+export function lineDiff(before: string, after: string): DiffLine[] {
+  const old = before.split("\n");
+  const next = after.split("\n");
+  const lengths = Array.from({ length: old.length + 1 }, () => new Uint32Array(next.length + 1));
+  for (let i = old.length - 1; i >= 0; i--) {
+    for (let j = next.length - 1; j >= 0; j--) {
+      lengths[i]![j] = old[i] === next[j] ? lengths[i + 1]![j + 1]! + 1 : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!);
+    }
+  }
+  const result: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < old.length || j < next.length) {
+    if (i < old.length && j < next.length && old[i] === next[j]) { i++; j++; }
+    else if (i < old.length && (j === next.length || lengths[i + 1]![j]! >= lengths[i]![j + 1]!)) {
+      result.push({ kind: "removed", number: i + 1, text: old[i++]! });
+    } else result.push({ kind: "added", number: j + 1, text: next[j++]! });
+  }
+  return result;
+}

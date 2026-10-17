@@ -43,6 +43,7 @@ from holophyte.pr import mockup
 from holophyte.pr.pullrequest import _opens_draft, _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
 from holophyte.review import reproduce
+from holophyte.review.criterion_ids import numbered
 from holophyte.story.story_claim import story_brief
 
 
@@ -120,14 +121,15 @@ def _run_stages(run, task):
         sha, unreproduced = _implement(
             project, conn, run_id, task_id, task, branch, wt, fresh and not test,
             beat_s, test.sha if test else start_sha, ticket, verify_cmd,
-            budget_min, conflicts=conflicts,
+            budget_min, conflicts=conflicts, criteria=criteria,
             opening=maintainer_notes.requeue_context(conn, run_id)
             + escalation.brief(conn, run_id, branch,
                                test.sha if test else start_sha)
             + maintainer_notes.take_hints(conn, run_id)
             + (test.opening() if test else ""),
             shadow=None if resume or not cut else shadow_starter(
-                project, conn, run_id, ticket=ticket, criteria=criteria,
+                project, conn, run_id, ticket=ticket,
+                criteria=numbered(conn, run_id, criteria),
                 task_id=task_id, verify=verify_cmd, contracts=contracts,
                 branch=branch), provider=provider)
         sha = steer_turn(project, conn, run_id, beat_s, wt, budget_min, ticket,

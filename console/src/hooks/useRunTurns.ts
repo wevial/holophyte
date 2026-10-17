@@ -9,13 +9,25 @@ export const turnsSchema = z.object({ turns: z.array(z.object({
   route: z.enum(["primary", "fallback"]),
   seconds: z.number().nullable(),
   session_id: z.string().nullable(),
+  ended_ms: z.number().int(),
+  exit_status: z.number().int().nullable(),
+  timed_out: z.boolean(),
+  input_tokens: z.number().int().nullable(),
+  output_tokens: z.number().int().nullable(),
+  cost_usd: z.number().nullable(),
 }).strict()) }).strict();
 
 export type RunTurnsBody = z.infer<typeof turnsSchema>;
 
 export const transcriptSchema = z.object({ entries: z.array(z.object({
-  speaker: z.enum(["user", "assistant", "command", "tool"]),
+  speaker: z.enum(["user", "assistant", "command", "tool", "error"]),
   text: z.string(),
+  at_ms: z.number().int().nullable(),
+  tool: z.string().nullable(),
+  call: z.string().nullable(),
+  failed: z.boolean(),
+  cut: z.boolean(),
+  summary: z.string().nullable(),
 }).strict()) }).strict();
 
 export type ChainTurns = { id: number; turns: RunTurnsBody["turns"] }[];

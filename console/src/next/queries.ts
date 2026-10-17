@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { fetchConfig } from "../lib/config";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
@@ -6,6 +8,7 @@ import {
   boardSchema,
   findingsSchema,
   historySchema,
+  holdsSchema,
   ledgerSchema,
   mergeReadinessSchema,
   peersSchema,
@@ -16,6 +19,7 @@ import {
   shippedSchema,
   storyDetailSchema,
   ticketDetailSchema,
+  transcriptSchema,
   type Board,
   type BoardStory,
   type Findings,
@@ -39,9 +43,10 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
-import { scopedHosts } from "./scope";
+import { PollDepsContext, scopedHosts } from "./scope";
 import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
+import { pastDays, type DayAnswers, type DayWindow } from "./runDays";
 
 /** One daemon route's cache key: the base it hangs off and its path. */
 export function routeKey(base: string, path: string): readonly ["route", string, string] {
@@ -132,6 +137,16 @@ export function useRunTurns(base: string, id: number, open: boolean, live: boole
     enabled: open,
     refetchInterval: live ? POLL_INTERVAL_MS : false,
     staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+export function useTurnTranscript(base: string, run: number, turn: number, deps: { fetch: Fetch }) {
+  const path = `/runs/${run}/turns/${turn}/transcript`;
+  return useQuery({
+    queryKey: routeKey(base, path),
+    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, transcriptSchema),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
   });
 }
 
@@ -281,6 +296,71 @@ export function useHistory(hosts: HostRecord<PollBodies>[], now: number, deps: {
   return useAnswers(hosts, `/history?since=${localMidnight(localMidnight(now) - 1)}`, historySchema, deps);
 }
 
+function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fetch) {
+  const path = `/history?since=${day.since}&until=${day.until}&limit=${limit}`;
+  return {
+    queryKey: routeKey(base, path),
+    queryFn: () => routeOrNone(fetch, `${base}${path}`, historySchema),
+    staleTime: 60_000,
+  };
+}
+
+class HistoryAttemptError extends Error {
+  constructor(cause: unknown, readonly askedAt: number) {
+    super("History query failed", { cause });
+  }
+}
+
+export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[], deps: { fetch: Fetch; now?: () => number } = defaultPollDeps) {
+  const asked = hosts.filter((host) => host.status != null).flatMap((host) => days.map((day) => ({ host, day })));
+  const results = useQueries({
+    queries: asked.map(({ host, day }) => {
+      const query = historyDayQuery(host.base, day, 500, deps.fetch);
+      return {
+        ...query,
+        retry: false,
+        refetchOnMount: "always" as const,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        queryFn: async () => {
+          const askedAt = (deps.now ?? Date.now)();
+          try {
+            return await query.queryFn();
+          } catch (cause) {
+            throw new HistoryAttemptError(cause, askedAt);
+          }
+        },
+      };
+    }),
+  });
+  const answers: DayAnswers = new Map();
+  asked.forEach(({ host, day }, index) => {
+    const data = results[index]?.data;
+    if (!data) return;
+    const byHost = answers.get(day.since) ?? new Map<string, History>();
+    byHost.set(host.key, data);
+    answers.set(day.since, byHost);
+  });
+  const queries = asked.map(({ host, day }, index) => {
+    const result = results[index]!;
+    return { host, day, ...result, askedAt: result.error instanceof HistoryAttemptError ? result.error.askedAt : null };
+  });
+  return { answers, queries };
+}
+
+export function useHistoryTotal(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps) {
+  const days = pastDays(now);
+  const window = { since: days[days.length - 1]!.since, until: days[0]!.until };
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.map((host) => historyDayQuery(host.base, window, 1, deps.fetch)),
+  });
+  const complete = asked.length > 0 && asked.length === hosts.length && results.every((result) => result.status === "success" && result.data != null);
+  const total = complete ? results.reduce((sum, result) => sum + (result.data?.total ?? 0), 0) : undefined;
+  const queries = asked.map((host, index) => ({ host, ...results[index] }));
+  return { total, queries };
+}
+
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first
  *  load names before the fleet's whole poll settles. */
 export function usePeerList(origin: string, enabled: boolean, deps: { fetch: Fetch }): Peers | null {
@@ -352,4 +432,23 @@ export function useBoardStories(hosts: HostRecord<PollBodies>[], deps: { fetch: 
   stories.sort((a, b) => a.ticket.localeCompare(b.ticket, undefined, { numeric: true }));
   const answered = asked.every((_, index) => results[index]?.status !== "pending");
   return { answered, stories };
+}
+
+export function useConfig(base: string | null) {
+  const deps = useContext(PollDepsContext);
+  return useQuery({
+    queryKey: routeKey(base ?? "", "/config"),
+    queryFn: () => fetchConfig(base!, deps.fetch),
+    enabled: base != null,
+  });
+}
+
+export function useHolds(base: string) {
+  const deps = useContext(PollDepsContext);
+  return useQuery({
+    queryKey: routeKey(base, "/holds"),
+    queryFn: () => routeOrNone(deps.fetch, `${base}/holds`, holdsSchema),
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+  });
 }

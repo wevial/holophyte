@@ -113,10 +113,21 @@
   }
 }
 
+@theme {
+  --font-read: "IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-font="serif"] {
+  --font-read: "IBM Plex Serif", Georgia, serif;
+}
+
+:root[data-font="hyperlegible"] {
+  --font-read: "Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif;
+}
+
 @theme inline {
   --font-sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-read: "IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
 
   --color-canvas: var(--canvas);
   --color-paper: var(--paper);
@@ -447,4 +458,9 @@ body {
 
 .day-log-scroll:hover {
   scrollbar-color: var(--rule) transparent;
+}
+
+:root[data-density="compact"] [data-row] {
+  min-height: 44px;
+  padding-block: 6px;
 }

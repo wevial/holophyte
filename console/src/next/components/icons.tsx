@@ -208,3 +208,33 @@ export function LoopIcon() {
     </Stroke>
   );
 }
+
+export function SettingsIcon() {
+  return (
+    <Stroke>
+      <path d="M2 5h3m4 0h5M2 11h7m4 0h1" />
+      <circle cx="7" cy="5" r="2" />
+      <circle cx="11" cy="11" r="2" />
+    </Stroke>
+  );
+}
+
+export function TurnArrow({ next = false }: { next?: boolean }) {
+  return (
+    <Stroke className={next ? "rotate-180" : undefined}>
+      <path d="M13 8H3m5-5L3 8l5 5" />
+    </Stroke>
+  );
+}
+
+export function TranscriptIcon({ kind }: { kind: "prompt" | "note" | "said" | "tool" | "error" | "end" }) {
+  const paths = {
+    prompt: "M3.5 1.5h6l3 3v10h-9ZM9.5 1.5v3h3M6 8h4M6 11h4",
+    note: "M3.5 1.5h6l3 3v10h-9ZM9.5 1.5v3h3M6 8h4M6 11h4",
+    said: "M2 2.5h12v9H6l-4 3v-12Z",
+    tool: "m3 4 4 4-4 4M9 12h4",
+    error: "M8 1.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13zM5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4",
+    end: "M2 8h12M8 4v8",
+  };
+  return <Stroke><path d={paths[kind]} /></Stroke>;
+}

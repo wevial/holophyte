@@ -150,6 +150,7 @@ Each module, one line:
   fast-forward-only commit imports with environment-file exclusions.
 - `holophyte/agents/roles.py` — the agent routes and the `agent()` call, one turn
   of a role.
+- `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
@@ -163,6 +164,8 @@ Each module, one line:
 - `holophyte/agents/turn_progress.py` — a streaming Claude turn's tool calls
   counted and labelled, recorded as a `turn_progress` event at most once a
   minute.
+- `holophyte/review/criterion_ids.py` — stable criterion numbers for run prompts
+  and replies, with positional fallback for tickets without stored criteria.
 - `holophyte/review/briefs.py` — the scope, criteria, tests, trim and evidence
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
@@ -321,7 +324,7 @@ Each module, one line:
   the `ESCALATION:` choice the escalated turn declares.
 - `holophyte/loop/contradiction.py` — an acceptance criterion the implement
   or fix turn declares unmeetable as written: the brief, the
-  `CONTRADICTION: criterion N` lines, the `contradiction` event and the park
+  `CONTRADICTION: criterion CN` lines, the `contradiction` event and the park
   on a question to the operator.
 - `holophyte/loop/trim.py` — the trim step between the implement turn and
   the first review: one turn, its commits judged by subject, file scope and
@@ -867,13 +870,30 @@ console page can link to the classic view behind it.
 `console/src/next/components/LimitedMarkdown.tsx` renders asks and latest events
 with a restricted Markdown vocabulary and expandable line clamps.
 
+Browser appearance choices live in `console/src/next/appearance.ts`;
+`console/src/next/components/AppearanceTab.tsx` renders theme and reading-font
+radio cards, sharing theme state with the sidebar.
 Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 
 `console/src/next/router.tsx` routes it with TanStack Router over hash
 history, since the static route has no single-page fallback: `#/` is
 Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
-each in the shell its root renders, and any other path is a not-found page.
+each in the shell its root renders. Settings lives at `#/settings` (General)
+and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
+`toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
+`console/src/next/settingsDraft.ts` holds per-project field and raw drafts for the Settings page.
+`console/src/next/components/TomlEditor.tsx` edits and checks the whole TOML file with a line gutter.
+`console/src/next/components/SettingRow.tsx` binds the shared field rows, and
+`console/src/next/components/UnsavedBar.tsx` lists and discards pending changes.
+`console/src/next/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
+`console/src/next/components/HostsTab.tsx` renders their health, projects and last reports.
+`console/src/next/components/RouteTable.tsx` lists their agent routes, probes and recorded fallback use.
+
+`console/src/next/settings.ts` defines the grouped tabs and host attention
+count; `console/src/next/pages/Settings.tsx` frames the project picker and
+placeholder panels. The sidebar footer links to Settings. Any other path
+is a not-found page.
 The root route's search holds one optional `project`, the project's name
 as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
 scoped view; every route inherits it, the sidebar's links carry it, and
@@ -906,6 +926,10 @@ rewrites `project` on the current route and is kept in session storage under
 `holophyte.next.project`, so opening `/next.html` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
 
+`console/src/next/runDays.ts` defines thirty local-day windows and aggregates
+each day’s runs. `console/src/next/pages/RunsHistory.tsx` renders their counts,
+work totals and five-day pager.
+
 The Run page’s `next/components/CriteriaList.tsx` shows review marks and
 witness notes, with its verdict count supplied by `criteriaClause()` in
 `next/run.ts`.
@@ -917,6 +941,14 @@ shared run detail and asks queries.
 The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
 queries in `next/queries.ts` fetch only while the fold is open.
+
+The Turn page (`console/src/next/pages/Turn.tsx`) shows one recorded turn’s
+figures and links to its neighbours. `console/src/next/turn.ts` selects its
+host and run and shares turn titles with the Details fold. Run and Turn
+share page framing in `console/src/next/pages/runShared.tsx`.
+The Turn page’s `console/src/next/components/TurnEntries.tsx` lists transcript
+entries with folded prompts and tool calls, opening failed calls automatically.
+`console/src/next/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
 
 ### Desktop wrapper
 
@@ -1024,3 +1056,8 @@ when no certificate is in the keychain; notarisation, auto-update and other
 platforms are not covered. The packaged app finds the console URL exactly as
 the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
 never from anything baked into the bundle.
+
+`console/src/next/components/HostToken.tsx` manages each Hosts card’s browser token, including saving, forgetting and undo.
+
+`console/src/next/components/HoldTab.tsx` shows project admission, reasoned hold
+and release actions, and the polled admission history.

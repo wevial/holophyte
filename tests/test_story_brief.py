@@ -56,6 +56,8 @@ def body(title, depends_on=()):
 class StoryBriefTests(LoopFixture):
     def setUp(self):
         super().setUp()
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         env = {k: v for k, v in os.environ.items() if k != "LINEAR_API_KEY"}
         for patcher in (patch.dict(os.environ, env, clear=True),
                         patch.object(linear_provider, "_gql", self.no_linear)):
@@ -70,6 +72,11 @@ class StoryBriefTests(LoopFixture):
 
     def no_linear(self, *args, **kwargs):
         raise AssertionError("a native project asked Linear")
+
+    def test_the_temporary_repository_turns_off_automatic_maintenance(self):
+        self.assertEqual(self.git("config", "--get", "gc.auto").strip(), "0")
+        self.assertEqual(
+            self.git("config", "--get", "maintenance.auto").strip(), "false")
 
     def file(self, title, column="ready", depends_on=()):
         identifier = store.board.file_ticket(

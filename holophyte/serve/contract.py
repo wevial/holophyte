@@ -19,13 +19,29 @@ class ActiveRoute(TypedDict):
     fallback: NotRequired[str]
 
 
+class RouteProbe(TypedDict):
+    ok: bool
+    at_ms: int
+    duration_ms: int
+    why: str | None
+    age_ms: int
+
+
+class SeatProbes(TypedDict):
+    primary: RouteProbe | None
+    fallback: RouteProbe | None
+
+
 class RouteLabels(TypedDict):
     implementer: str
+    implementer_fallback: str | None
     reviewer: str
     reviewer_fallback: str | None
     adjudicator: str
+    adjudicator_fallback: str | None
     writer: str
     trimmer: str
+    trimmer_fallback: str | None
 
 
 class ToilWindow(TypedDict):
@@ -97,6 +113,7 @@ class Status(TypedDict):
     workers: int
     schema_version: int
     active_routes: dict[str, ActiveRoute]
+    route_probes: dict[str, SeatProbes]
     route_labels: RouteLabels
     workers_on_previous_build: int
     host: str
@@ -503,6 +520,7 @@ class SteerNote(TypedDict):
 
 
 class RunCriterion(TypedDict):
+    id: str
     n: int
     text: str
     status: Literal["met", "not_met", "unwitnessed"]
@@ -579,10 +597,31 @@ class RunTurn(TypedDict):
     route: Literal["primary", "fallback"]
     seconds: float | None
     session_id: str | None
+    ended_ms: int
+    exit_status: int | None
+    timed_out: bool
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
 
 
 class RunTurns(TypedDict):
     turns: list[RunTurn]
+
+
+class TranscriptEntry(TypedDict):
+    speaker: Literal["user", "assistant", "command", "tool", "error"]
+    text: str
+    at_ms: int | None
+    tool: str | None
+    call: str | None
+    summary: str | None
+    failed: bool
+    cut: bool
+
+
+class Transcript(TypedDict):
+    entries: list[TranscriptEntry]
 
 
 class ShippedRow(TypedDict):
@@ -630,6 +669,8 @@ class HistoryRow(TypedDict):
     started_ms: int
     ended_ms: int | None
     elapsed_ms: int
+    working_ms: int | None
+    estimate_ms: int | None
     heartbeat_age_ms: int | None
     rounds: int
     max_rounds: int
@@ -640,8 +681,10 @@ class HistoryRow(TypedDict):
 class History(TypedDict):
     rows: list[HistoryRow]
     since: int
+    until: int | None
     limit: int
     truncated: bool
+    total: int
     now: int
 
 
@@ -825,6 +868,11 @@ class TicketSteer(TypedDict):
     withdrawn: bool
 
 
+class TicketCriterion(TypedDict):
+    id: str
+    text: str
+
+
 class TicketDetail(TypedDict):
     ticket: str
     ticket_url: str | None
@@ -832,6 +880,7 @@ class TicketDetail(TypedDict):
     status: str
     body: str
     acceptance_criteria: list[str]
+    criteria: list[TicketCriterion]
     verification_commands: list[str]
     time_box_ms: int | None
     run: int | None
@@ -842,6 +891,12 @@ class TicketDetail(TypedDict):
     notes: list[TicketNote]
     runs: list[TicketRun]
     steers: list[TicketSteer]
+
+
+class TicketCheck(TypedDict):
+    problems: list[str]
+    advisories: list[str]
+    blocks: bool
 
 
 class StoryChildRow(TypedDict):
@@ -900,6 +955,7 @@ ROUTES = {
     "run-asks": (RunAsks, "GET /runs/N/asks"),
     "run-files": (RunFiles, "GET /runs/N/files"),
     "run-turns": (RunTurns, "GET /runs/N/turns"),
+    "run-transcript": (Transcript, "GET /runs/N/turns/T/transcript"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
     "holds": (Holds, "GET /holds"),
@@ -907,6 +963,7 @@ ROUTES = {
     "findings": (Findings, "GET /findings"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
+    "ticket-check": (TicketCheck, "POST /tickets/check"),
     "story": (StoryDetail, "GET /stories/KEY"),
 }
 

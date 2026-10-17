@@ -1,9 +1,10 @@
-import { useContext, useEffect, useState, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
-import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
+import { useTheme } from "../appearance";
 import { classicHref, writeView } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
+import { hostsNeedingAttention } from "../settings";
 import { switcherRows } from "../projects";
 import { useBoardStories, useReadiness, type ListedStory } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
@@ -17,6 +18,7 @@ import {
   OverviewIcon,
   RunsIcon,
   SignalIcon,
+  SettingsIcon,
   TicketsIcon,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -50,30 +52,13 @@ function writeFolded(folded: boolean, key = RAIL_KEY): void {
 
 type Shown = "light" | "dark";
 
-const DARK_QUERY = "(prefers-color-scheme: dark)";
-
-function systemDark(): boolean {
-  return window.matchMedia?.(DARK_QUERY).matches ?? false;
-}
-
 const FOOTER_BUTTON =
   "flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink";
 
 const THEME_NAMES: Record<Shown, string> = { light: "Dawn", dark: "Night" };
 
 function ThemeToggle({ folded }: { folded: boolean }) {
-  const [stored, setStored] = useState(readTheme);
-  const [dark, setDark] = useState(systemDark);
-  useEffect(() => {
-    if (stored !== "system") return;
-    const query = window.matchMedia?.(DARK_QUERY);
-    if (!query) return;
-    const follow = () => setDark(query.matches);
-    follow();
-    query.addEventListener("change", follow);
-    return () => query.removeEventListener("change", follow);
-  }, [stored]);
-  const theme: Shown = stored === "system" ? (dark ? "dark" : "light") : stored;
+  const { resolvedTheme: theme, setTheme } = useTheme();
   const other: Shown = theme === "dark" ? "light" : "dark";
   const name = THEME_NAMES[theme];
   return (
@@ -81,16 +66,21 @@ function ThemeToggle({ folded }: { folded: boolean }) {
       type="button"
       aria-label={`Colour theme: ${name.toLowerCase()}. Switch to ${THEME_NAMES[other].toLowerCase()}`}
       title={folded ? name : undefined}
-      onClick={() => {
-        writeTheme(other);
-        applyTheme(other);
-        setStored(other);
-      }}
+      onClick={() => setTheme(other)}
       className={FOOTER_BUTTON}
     >
       <MoonIcon />
       {!folded && <span>{name}</span>}
     </button>
+  );
+}
+
+function LinkBadge({ badge, folded }: { badge: number; folded: boolean }) {
+  if (badge <= 0) return null;
+  return (
+    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal text-need ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
+      {badge}
+    </span>
   );
 }
 
@@ -125,22 +115,10 @@ function PageLink({
     >
       <span className="relative">
         {icon}
-        {folded && badge > 0 && (
-          <span
-            data-badge
-            aria-hidden="true"
-            className="absolute -top-2 -right-2.5 font-mono text-[9px] leading-none font-semibold text-need"
-          >
-            {badge}
-          </span>
-        )}
+        {folded && <LinkBadge badge={badge} folded />}
       </span>
       {!folded && <span className="flex-1">{label}</span>}
-      {!folded && badge > 0 && (
-        <span data-badge aria-hidden="true" className="font-mono text-[12px] font-semibold tracking-normal text-need">
-          {badge}
-        </span>
-      )}
+      {!folded && <LinkBadge badge={badge} folded={false} />}
     </Link>
   );
 }
@@ -231,6 +209,8 @@ export function Sidebar() {
   const readiness = useReadiness(hosts, deps);
   const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
   const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
+  const onSettings = useRouterState({ select: (state) => /^\/settings(\/|$)/.test(state.location.pathname) });
+  const hostNeeds = hostsNeedingAttention(hosts);
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const open = useOpenCount(scopedHosts(hosts, project), now);
@@ -309,6 +289,22 @@ export function Sidebar() {
             </span>
           )}
         </p>
+        <Link
+          to="/settings/$tab"
+          params={{ tab: "general" }}
+          search={keepScope}
+          aria-current={onSettings ? "page" : undefined}
+          aria-label={hostNeeds > 0 ? `Settings, ${hostNeeds} ${hostNeeds === 1 ? "host needs" : "hosts need"} attention` : "Settings"}
+          title={folded ? "Settings" : undefined}
+          className={FOOTER_BUTTON}
+        >
+          <span className="relative">
+            <SettingsIcon />
+            {folded && <LinkBadge badge={hostNeeds} folded />}
+          </span>
+          {!folded && <span>Settings</span>}
+          {!folded && <LinkBadge badge={hostNeeds} folded={false} />}
+        </Link>
         <a
           href={classicHref()}
           onClick={() => writeView("classic")}

@@ -1,6 +1,6 @@
 {
   "project": "/repo",
-  "schema_version": 52,
+  "schema_version": 53,
   "admission": "enabled",
   "hold_note": null,
   "workers": 1,
@@ -27,7 +27,10 @@
     "reviewer_fallback": null,
     "adjudicator": "codex gpt-6-astra",
     "writer": "claude opus",
-    "trimmer": "claude opus"
+    "trimmer": "claude opus",
+    "implementer_fallback": null,
+    "adjudicator_fallback": null,
+    "trimmer_fallback": null
   },
   "workers_on_previous_build": 0,
   "host": "writer",
@@ -138,5 +141,27 @@
       "pr_url": "https://github.com/example/repo/pull/9",
       "waiting_ms": 60000
     }
-  ]
+  ],
+  "route_probes": {
+    "implementer": {
+      "primary": null,
+      "fallback": null
+    },
+    "reviewer": {
+      "primary": null,
+      "fallback": null
+    },
+    "adjudicator": {
+      "primary": null,
+      "fallback": null
+    },
+    "writer": {
+      "primary": null,
+      "fallback": null
+    },
+    "trimmer": {
+      "primary": null,
+      "fallback": null
+    }
+  }
 }

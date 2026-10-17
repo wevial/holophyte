@@ -23,10 +23,10 @@ those writing routes. A project with no store answers 503.
 `console/contract/` holds the machine-readable shapes of `GET /status`,
 `GET /attention` and `GET /peers`, of the host root's `GET /status`
 and `GET /attention`, of the run routes `GET /runs/N`,
-`GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
-`GET /runs/N/turns`, and of the list routes
+`GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
+`GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board` and
-`GET /tickets/KEY`: one
+`GET /tickets/KEY`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -43,9 +43,18 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
                     "adjudicator": {"command": "codex"},
                     "writer": {"command": null},
                     "trimmer": {"command": null}},
-  "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
+  "route_probes": {"implementer": {"primary": {"ok": false,
+                     "at_ms": 1788450354491, "duration_ms": 1800,
+                     "why": "exit 1", "age_ms": 180000}, "fallback": null},
+                   "reviewer": {"primary": null, "fallback": null},
+                   "adjudicator": {"primary": null, "fallback": null},
+                   "writer": {"primary": null, "fallback": null},
+                   "trimmer": {"primary": null, "fallback": null}},
+  "route_labels": {"implementer": "claude opus", "implementer_fallback": null,
+                   "reviewer": "codex gpt-5.6-sol",
                    "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
-                   "writer": "claude opus", "trimmer": "claude opus"},
+                   "adjudicator_fallback": null, "writer": "claude opus",
+                   "trimmer": "claude opus", "trimmer_fallback": null},
   "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
@@ -142,7 +151,18 @@ key, while it is `false`. `route_labels` names what each seat is configured
 to run, labelled as a recorded turn is: the command's first word plus its
 `-m`/`--model` value. A seat left unset shows the default the loop
 dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset
-`reviewer_fallback` null. `active_routes` holds one entry per seat
+fallback label null. `implementer_fallback`, `reviewer_fallback`,
+`adjudicator_fallback` and `trimmer_fallback` name the configured fallback
+using the same label format. `route_probes` holds each seat’s latest `primary`
+and `fallback` probe, each null when absent or the probe file is unreadable.
+An entry carries `ok`, the end time `at_ms` in epoch milliseconds,
+`duration_ms`, and `age_ms` (`now` minus `at_ms`). `why` is null on success,
+otherwise the failure reason, redacted and limited to 200 characters;
+commands and output tails are never recorded. Probes run at loop start
+and before a fallback is used, not on a timer. The loop keeps the newest
+entry per seat and route in `route-probes.json` under the project’s
+`holo_dir`, using a lock and atomic replacement.
+`active_routes` holds one entry per seat
 (`implementer`, `reviewer`, `adjudicator`, `writer`, `trimmer`) naming what the seat
 runs now: `command` is the executable alone, never its arguments, null for
 a seat left unset in `[agents]`; while a running loop has switched the seat
@@ -285,7 +305,7 @@ Releasing a hold requires a reason, just like holding: `holo release` requires
 `note`, and `POST /actions/release-hold` rejects a blank `note`. The Release
 UI and its required-reason form are covered by HOLO-403.
 
-## `GET /history?since=MS&limit=N`
+## `GET /history?since=MS&until=MS&limit=N`
 
 ```json
 {"rows": [
@@ -293,44 +313,57 @@ UI and its required-reason form are covered by HOLO-403.
    "title": "Run page: chain strip", "attempt": 2, "phase": "reviewing",
    "outcome": null, "outcome_reason": null, "failure_kind": null,
    "park_kind": null, "started_ms": 1788478203000, "ended_ms": null,
-   "elapsed_ms": 540000, "heartbeat_age_ms": 12000, "rounds": 1,
+   "elapsed_ms": 540000, "working_ms": 480000, "estimate_ms": 1800000,
+   "heartbeat_age_ms": 12000, "rounds": 1,
    "max_rounds": 2, "pr_url": null, "host": "writer-1"},
   {"id": 225, "ticket": "KO-255", "ticket_url": null,
    "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
    "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
    "failure_kind": "verify", "park_kind": null,
    "started_ms": 1788470000000, "ended_ms": 1788471200000,
-   "elapsed_ms": 1200000, "heartbeat_age_ms": null, "rounds": 0,
+   "elapsed_ms": 1200000, "working_ms": null, "estimate_ms": null,
+   "heartbeat_age_ms": null, "rounds": 0,
    "max_rounds": 2, "pr_url": null, "host": "writer-1"}
-], "since": 1788393600000, "limit": 200, "truncated": false,
+], "since": 1788393600000, "until": null, "limit": 200,
+ "truncated": false, "total": 2,
  "now": 1788478743000}
 ```
 
-Runs one row per run, for the console's Runs page: every run that has not
-ended, whenever it started, plus every run that started at or after
+Without `until`, returns one row per run for the console's Runs page:
+every run that has not ended, whenever it started, plus every run that
+started at or after
 `since`, ordered by `started_ms` descending then `id` descending. A run
 that a later run of its ticket continues keeps its own row; nothing is
 folded into a chain as `/shipped` folds it. A run that ended before
 `since` is absent, a paused one included.
 
-`since` is required and is epoch milliseconds. Each row is the run's
-`id`, `ticket`, `ticket_url`, `title`, `attempt` and `phase`; `outcome`
+With `until`, only ended runs whose start is in `[since, until)` are
+returned, in the same order. Open runs, including parked runs, are absent.
+
+`since` is required; it and optional `until` are epoch milliseconds.
+Each row is the run's `id`, `ticket`, `ticket_url`, `title`, `attempt` and
+`phase`; `outcome`
 (null while open); `outcome_reason` (the stored reason cut at 400
 characters, null when absent); `failure_kind` (the failed run's kind,
 null unless it failed); `park_kind` (what a parked run waits on, as the
 store recorded it); `started_ms` and `ended_ms` (null while open);
 `elapsed_ms`, from the start to `ended_ms`, or to `now` while open;
+`working_ms`, measured working time through `ended_ms`, or through `now`
+while open (null when never measured); `estimate_ms`, the ticket estimate
+snapshotted when the run was claimed (null when it had none);
 `heartbeat_age_ms`, `now` minus the run's last heartbeat while open, else
 null; `rounds`, the run's own review rounds (those not in error);
 `max_rounds`, its cap, or the loop's base as `/runs/N` answers it; and
 `pr_url` and `host`, as `/shipped` spells them.
 
-The body echoes `since` and the `limit` applied, and carries `now`, the
-daemon's clock the open rows were measured against. `limit` defaults to
+The body echoes `since`, `until` (null when omitted) and the `limit` applied,
+and carries `total`, the number of matching runs before the limit, and
+`now`, the daemon's clock the open rows were measured against. `limit` defaults to
 200 and is capped at 500; `truncated` is true when more runs matched than
 `limit`, and there is no paging past it. A missing or non-integer `since`,
-or a non-positive or non-integer `limit`, is 400 with an `error` naming
-the parameter.
+a non-integer `until`, or a non-positive or non-integer `limit`, is 400
+with an `error` naming the parameter. An `until` at or before `since` is
+400 with `"until must be after since"`.
 
 ## `GET /runs/N`
 
@@ -399,10 +432,10 @@ the parameter.
    "consumed_ms": 1788450571675, "interrupt": false, "withdrawn": false}
  ],
  "criteria": [
-  {"n": 1, "text": "Given an expired lease, then the run is requeued",
+  {"n": 1, "id": "C1", "text": "Given an expired lease, then the run is requeued",
    "status": "met", "note": "tests/test_lease.py::test_expired_lease_requeues",
    "run": 52, "round": 2},
-  {"n": 2, "text": "Given a requeue, then the ledger names it",
+  {"n": 2, "id": "C2", "text": "Given a requeue, then the ledger names it",
    "status": "met", "note": "tests/test_lease.py::test_requeue_is_ledgered",
    "run": 52, "round": 2}
  ]}
@@ -488,10 +521,12 @@ true when a later withdrawal took the amendment back.
 criteria over the chain: run N's latest round when it has judged them,
 else the latest round of the newest earlier run of the chain that did, so
 a requeued run starts from what its predecessor's last review said. Each
-criterion, in order, has its number `n`, its `text`, its `status` (`met`,
+criterion, in order, has its stable `id` (for example `C4`), its number `n`,
+its `text`, its `status` (`met`,
 `not_met` or `unwitnessed`) and the reviewer's `note`, which for a met
 criterion names its witness; `run` and `round` name the review that
-judged it. `[]` until a round of the chain has judged them.
+judged it. Older events without an id serve `C` plus `n` as their `id`.
+`[]` until a round of the chain has judged them.
 
 ## `GET /runs/N/files`
 
@@ -554,9 +589,13 @@ contents or diff hunks and writes nothing to the repository.
 {"turns": [
   {"id": 4410, "role": "implement", "route": "primary",
    "label": "claude opus", "seconds": 372.5,
-   "session_id": "0198c2a4-5e1f-7b3a-9d6e-2f4c8a1b3d5e"},
+   "session_id": "0198c2a4-5e1f-7b3a-9d6e-2f4c8a1b3d5e",
+   "ended_ms": 1760000000000, "exit_status": 0, "timed_out": false,
+   "input_tokens": 52100, "output_tokens": 9300, "cost_usd": 0.92},
   {"id": 4433, "role": "review", "route": "fallback",
-   "label": "codex gpt-5.6-sol", "seconds": 95.25, "session_id": null}
+   "label": "codex gpt-5.6-sol", "seconds": 95.25, "session_id": null,
+   "ended_ms": 1760000095250, "exit_status": 1, "timed_out": true,
+   "input_tokens": null, "output_tokens": null, "cost_usd": null}
  ]}
 ```
 
@@ -570,11 +609,65 @@ first word plus its `-m`/`--model` value, null for a turn recorded
 without one. `route` is `primary`, or `fallback` when the seat ran its
 configured `*_fallback`. `seconds` is how long the turn ran, null when
 its record carries no duration. `session_id` is the agent session the
-turn ran in, null when none was recorded beside it. A run with no turns
-answers an empty list.
+turn ran in, null when none was recorded beside it. `ended_ms` is the event's
+recorded timestamp in epoch milliseconds, when the turn ended. `exit_status`
+is the recorded integer exit status, null when none was recorded.
+`timed_out` says whether the turn timed out, false when absent from the record.
+`input_tokens` and `output_tokens` are the recorded non-negative integer token
+counts; input tokens include cache reads. `cost_usd` is the recorded cost in
+US dollars. Each usage field is null when usage is absent or its value is
+not a valid number. These facts come from the run record even when no
+transcript is kept. A run with no turns answers an empty list.
 
 `N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
 is 404 carrying `run`. The route writes nothing.
+
+## `GET /runs/N/turns/T/transcript`
+
+```json
+{"entries": [
+  {"speaker": "command", "text": "python3 -m unittest", "at_ms": 1760000000000,
+   "tool": "Bash", "call": "tool-1", "summary": "python3 -m unittest",
+   "failed": false, "cut": false},
+  {"speaker": "tool", "text": "OK", "at_ms": 1760000001000,
+   "tool": null, "call": "tool-1", "summary": null,
+   "failed": false, "cut": false}
+ ]}
+```
+
+The transcript entries written while turn T of run N ran, in session order.
+The daemon reads Claude Code sessions, Codex rollouts and Devin exports only
+under the roots configured in `[serve] transcripts`, never following a link
+out of a root. Timestamped entries use the turn's recorded duration and end
+with two seconds of tolerance on either side. Entries without timestamps are
+retained; when the turn has no duration or end timestamp, the whole session
+is returned.
+
+Every entry carries all eight keys:
+
+- `speaker` is `user`, `assistant`, `command`, `tool` or `error`.
+- `text` is the message, command or tool output, always a string.
+- `at_ms` is the entry's timestamp in epoch milliseconds, null when the
+  session provides no valid timestamp.
+- `tool` is the tool name for a command, null when absent or for other entries.
+- `call` is the tool call identifier linking a command and its result, null
+  when unavailable or for entries unrelated to a tool call.
+- `summary` is a command's short description, such as its first line or file
+  path, null when unavailable or for other entries.
+- `failed` is true for an error entry or a tool result marked as failed;
+  otherwise false.
+- `cut` is true when the redacted `text` exceeded 20,000 characters and was
+  cut to its first 20,000 characters; otherwise false.
+
+Every `text` and non-null `summary` is redacted with the project's known
+secrets. Redaction happens before cutting `text`, including when a secret
+straddles the cut. The full session file stays on the host; this route does
+not serve the remainder of a cut entry.
+
+404 `{"error": "transcript unavailable"}` when no root is configured, T is
+not one of run N's turns, the turn has no session, or no session file is
+found. With roots configured, `N` parses as on `/runs/N`: a non-integer is
+400, an integer with no run is 404 carrying `run`. The route writes nothing.
 
 ## `GET /runs/N/merge`
 
@@ -1056,6 +1149,7 @@ console shows when the operator opens a ticket without leaving for Linear.
 {"ticket": "KO-n", "title": "…", "status": "in_flight",
  "body": "# The store mirrors a ticket's body…\n\n## Summary\n…",
  "acceptance_criteria": ["Given …, when …, then …"],
+ "criteria": [{"id": "C1", "text": "Given …, when …, then …"}],
  "verification_commands": ["ruff check ."],
  "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000,
  "runs": [{"run": 52, "attempt": 2, "phase": "reviewing", "outcome": null,
@@ -1078,7 +1172,12 @@ store's status, any of the seven including `merged` and `abandoned`;
 text Linear held then and not rendered, so it is the exact contract the
 run worked from, which Linear's current text may no longer be (empty for
 a ticket mirrored before the store kept bodies); `acceptance_criteria`
-and `verification_commands` are the lists the mirror parsed from it;
+and `verification_commands` are the lists the mirror parsed from it.
+`criteria` lists current criteria in `acceptance_criteria` order, each with
+a stable `id` (for example `C4`) and its `text`; retired criteria are omitted.
+Tickets without criterion records use positional ids `C1`, `C2`, and so on.
+The console joins run judgements to current criteria by `id`.
+The `claimed` snapshot keeps its `acceptance_criteria` list;
 `run` is the ticket's active run, null when none is working it;
 `mirrored_ms` is when the store last mirrored the ticket. `runs` is every
 run of the ticket, newest attempt first, each with its phase, outcome
@@ -1394,6 +1493,41 @@ to `ready` fails the template or `Depends on:` names a ticket the project
 does not hold. A body filed to `backlog` with problems is saved as a
 draft.
 
+## `POST /tickets/check`
+
+A host daemon checks a native ticket body without filing or editing it, at
+`/projects/NAME/tickets/check`. It passes the gate of
+[`POST /tickets`](#post-tickets): the machine token on every bind, host
+`[serve] actions` on and a native board, with no `If-Match`.
+
+```
+POST /projects/holophyte/tickets/check
+Authorization: Bearer MACHINE_TOKEN
+Content-Type: application/json
+
+{"body": "# …\n\n## Summary\n…", "ticket": "NAT-1", "column": "ready"}
+```
+
+```json
+{"problems": [], "advisories": [], "blocks": false}
+```
+
+`body` is the full ticket text; a missing or blank body is 400. `column`
+is optional, `ready` by default or `backlog`; any other value is 400.
+GET on this route answers 405 with `Allow: POST`.
+When optional `ticket` names an existing ticket, its own column determines
+whether the problems block an edit. A project with no store answers 503.
+
+The 200 answer lists `problems` and `advisories` in checker order, with the
+`advisory: ` prefix removed from advisories. It applies the template and
+repository checks used by filing, without the freshness advisories.
+Unknown `Depends on` entries are problems, including the ticket itself
+when checking an edit. `blocks` is true for unknown dependencies or any
+problem that blocks filing in the selected column; ordinary template
+problems do not block `backlog`, but private-data problems block every
+column. The store is opened read-only: no ticket, revision or sequence
+is written.
+
 ## `POST /tickets/ID/move`
 
 A host daemon's move of a native ticket between Ready and Backlog, at
@@ -1610,6 +1744,7 @@ included on every path but the `/actions/` routes and `PUT` on every path
 but `/config`, both in [The daemon's actions](daemon.md), and a host
 daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)); a host
 daemon also takes `POST` on `/tickets` ([`POST /tickets`](#post-tickets)),
+`/tickets/check` ([`POST /tickets/check`](#post-ticketscheck)),
 `/tickets/ID/move` ([`POST /tickets/ID/move`](#post-ticketsidmove)) and
 `/tickets/ID/cancel` ([`POST /tickets/ID/cancel`](#post-ticketsidcancel)),
 each behind the machine token alone.
@@ -1620,9 +1755,9 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off |
-| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET` |
+| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | any request while the daemon drains for restart (`daemon restarting`); the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
 | 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |

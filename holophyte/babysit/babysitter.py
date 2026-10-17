@@ -74,6 +74,7 @@ from holophyte.review.briefs import (
     stale_approval_brief,
     tests_brief,
 )
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     _review_reply,
     criteria_findings,
@@ -431,6 +432,7 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
                      out, stale=()):
     from holophyte.loop.review_round import _verify_brief, agent, set_phase
     from holophyte.pr.pullrequest import _park_on_pr
+    criteria = numbered(conn, run_id, criteria)
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
     record_step(conn, run_id, "covering_review")
     base_sha = main_merge_base(wt, sha)
@@ -879,16 +881,17 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
                  resume_step=None, no_commit_why=None, reviewed=None,
                  criteria=(), reviewed_by_caller=False, notes=()):
-    from holophyte.loop.branch_sync import _candidate_drift
+    from holophyte.loop.branch_sync import _candidate_drift, onto_pushed
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     if resume_step is None:
         record_step(conn, run_id, "fix")
-        maintainer_notes.start_fix(conn, run_id, addressed)
+        prompt = (goal + note_context(notes) if goal
+                  else babysitter.fix_brief(pull, addressed, ticket, notes))
+        maintainer_notes.start_fix(conn, run_id, addressed, prompt, pull.url)
         spec = _spec_digest(project, wt, task_id, ticket)
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
-            goal + note_context(notes) if goal
-            else babysitter.fix_brief(pull, addressed, ticket, notes))
+            prompt)
         saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
                                pass_no, review_follows), spec=spec)
     else:
@@ -921,6 +924,7 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} left the worktree"
                          f" unclean ({unclean.splitlines()[0]}); branch"
                          f" {branch} preserved at {fixed[:12]}")
+    fixed = onto_pushed(wt, branch, sha, fixed)
     _review_spec_only_fix(
         project, conn, run_id, provider, task_id, branch, wt, sha, fixed,
         beat_s, pull, ticket, verify_cmd, contracts, criteria, budget_min,

@@ -831,6 +831,9 @@ class RouteLabelsTests(ServeTestCase):
             'implementer = "claude-implement --model opus"\n'
             'review_model = "gpt-6-astra"\n'), {
                 "implementer": "claude-implement opus",
+                "implementer_fallback": None,
+                "adjudicator_fallback": None,
+                "trimmer_fallback": None,
                 "reviewer": "codex gpt-6-astra",
                 "reviewer_fallback": None,
                 "adjudicator": "codex gpt-6-astra",
@@ -839,12 +842,18 @@ class RouteLabelsTests(ServeTestCase):
 
     def test_configured_seats_show_their_command_and_model(self):
         self.assertEqual(self.labels(
+            'implementer_fallback = "devin --model swe-1"\n'
+            'adjudicator_fallback = "codex-adjudicate --model gpt-6-sol"\n'
+            'trimmer_fallback = "claude-trim --model sonnet"\n'
             'reviewer = "codex-review -m gpt-6-astra"\n'
             'reviewer_fallback = "devin --model swe-1"\n'
             'adjudicator = "codex-adjudicate --model gpt-6-astra"\n'
             'writer = "claude-write --model sonnet"\n'
             'trimmer = "claude-trim --model haiku"\n'), {
                 "implementer": "claude opus",
+                "implementer_fallback": "devin swe-1",
+                "adjudicator_fallback": "codex-adjudicate gpt-6-sol",
+                "trimmer_fallback": "claude-trim sonnet",
                 "reviewer": "codex-review gpt-6-astra",
                 "reviewer_fallback": "devin swe-1",
                 "adjudicator": "codex-adjudicate gpt-6-astra",
@@ -959,6 +968,30 @@ class TurnTests(TranscriptCase):
         url = f"{path}/{rows[0]['id']}/transcript"
         self.assertEqual(self.request('GET', url)[0], 404)
 
+    def test_turn_rows_carry_recorded_end_exit_and_usage_without_transcripts(self):
+        self.seed()
+        self.assertEqual(self.run, 1)
+        with store.open(str(self.db)) as conn:
+            store.record_event(conn, self.run, 'agent_turn', 'ended',
+                               level='detail', now=1760000000000,
+                               payload=json.dumps(dict(
+                                   role='implement', route='primary', seconds=185,
+                                   exit_status=0, usage=dict(input_tokens=52100,
+                                   output_tokens=9300, cost_usd=0.92))))
+            store.record_event(conn, self.run, 'agent_turn', 'ended',
+                               level='detail', now=1760000001000,
+                               payload=json.dumps(dict(
+                                   role='review', route='primary', seconds=1,
+                                   exit_status=1, timed_out=True)))
+        self.start()
+        code, _, body = self.request('GET', '/runs/1/turns')
+        self.assertEqual(code, 200)
+        keys = ('ended_ms', 'exit_status', 'timed_out', 'input_tokens',
+                'output_tokens', 'cost_usd')
+        self.assertEqual([tuple(row[key] for key in keys) for row in body['turns']],
+                         [(1760000000000, 0, False, 52100, 9300, 0.92),
+                          (1760000001000, 1, True, None, None, None)])
+
     def test_every_role_carries_its_recorded_label(self):
         self.seed()
         recorded = [('implement', 'primary', 'claude-implement opus', 10),
@@ -999,13 +1032,120 @@ class TurnTests(TranscriptCase):
         code, _, body = self.request('GET', url)
         self.assertEqual(code, 200)
         self.assertEqual(body, {'entries': [
-            {'speaker': 'assistant', 'text': '[redacted] is here'}]})
+            {'speaker': 'assistant', 'text': '[redacted] is here',
+             'at_ms': None, 'tool': None, 'call': None, 'failed': False,
+             'summary': None, 'cut': False}]})
         outside = self.root / file.name
         file.rename(outside)
         self.assertEqual(self.request('GET', url)[0], 404)
         file.symlink_to(outside)
         self.assertEqual(self.request('GET', url)[0], 404)
         self.assertEqual(self.request('GET', f'{path}/999999/transcript')[0], 404)
+
+    def test_transcript_cuts_tool_output_after_redacting_boundary_secret(self):
+        path = self.turns()
+        allowed = self.root / 'sessions'
+        secret = 'boundary-secret-12345678'
+        output = 'a' * 19990 + secret + 'b' * (25000 - 19990 - len(secret))
+        file = self.transcript(allowed, output, 'claude')
+        with file.open('a') as stream:
+            for text in ('x' * 20000, 'short message'):
+                stream.write(json.dumps({'type': 'assistant', 'message': {
+                    'content': [{'type': 'text', 'text': text}]}}) + '\n')
+        self.start(f'[serve]\ntranscripts = ["{allowed}"]\n'
+                   f'[extra]\napi_key = "{secret}"\n')
+        turn = self.request('GET', path)[2]['turns'][0]
+        code, _, body = self.request('GET', f"{path}/{turn['id']}/transcript")
+        self.assertEqual(code, 200)
+        entry, boundary, short = body['entries']
+        self.assertEqual(entry['speaker'], 'tool')
+        self.assertEqual(len(entry['text']), 20000)
+        self.assertNotIn(secret[:8], entry['text'])
+        self.assertTrue(entry['text'].endswith('[redacted]'))
+        self.assertIs(entry['cut'], True)
+        self.assertEqual(boundary['text'], 'x' * 20000)
+        self.assertEqual(short['text'], 'short message')
+        self.assertEqual([boundary['cut'], short['cut']], [False, False])
+
+    def test_claude_tool_results_are_redacted_and_confined(self):
+        path = self.turns()
+        allowed = self.root / 'sessions'
+        file = self.transcript(allowed, 'registered-secret-value is here', 'claude')
+        self.start(f'[serve]\ntranscripts = ["{allowed}"]\n'
+                   '[extra]\napi_key = "registered-secret-value"\n')
+        turn = self.request('GET', path)[2]['turns'][0]
+        url = f"{path}/{turn['id']}/transcript"
+        code, _, body = self.request('GET', url)
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {'entries': [
+            {'speaker': 'tool', 'text': '[redacted] is here', 'at_ms': None,
+             'tool': None, 'call': 'call-1', 'failed': True, 'summary': None,
+             'cut': False}]})
+        with file.open('a') as stream:
+            stream.write(json.dumps({'type': 'assistant', 'message': {'content': [
+                {'type': 'tool_use', 'id': 'call-2', 'name': 'Bash',
+                 'input': {'command': 'echo registered-secret-value\ntrue'}}]}}))
+        command = self.request('GET', url)[2]['entries'][-1]
+        self.assertEqual(command['text'], 'echo [redacted]\ntrue')
+        self.assertEqual(command['summary'], 'echo [redacted]')
+        outside = self.root / file.name
+        file.rename(outside)
+        file.symlink_to(outside)
+        self.assertEqual(self.request('GET', url)[0], 404)
+
+    def test_resumed_claude_session_is_windowed_to_each_turn(self):
+        self.seed()
+        with store.open(str(self.db)) as conn:
+            store.record_agent_session(conn, self.run, 'first', 'implement', 'primary')
+            for ended in (1792231200000, 1792231500000):
+                store.record_event(conn, self.run, 'agent_turn', 'ended',
+                                   level='detail', now=ended,
+                                   payload=json.dumps(dict(role='implement',
+                                                           route='primary',
+                                                           seconds=60)))
+        file = self.transcript(self.root / 'sessions', '', 'claude')
+        file.write_text('\n'.join(json.dumps({
+            'type': 'assistant', 'timestamp': timestamp,
+            'message': {'content': [{'type': 'text', 'text': text}]}})
+            for timestamp, text in [('2026-10-17T09:59:30Z', 'first turn'),
+                                    ('2026-10-17T10:04:30Z', 'second turn')]))
+        self.start(f'[serve]\ntranscripts = ["{file.parent}"]\n')
+        path = f'/runs/{self.run}/turns'
+        turns = self.request('GET', path)[2]['turns']
+        self.assertEqual([turn['session_id'] for turn in turns], ['first', 'first'])
+        for turn, expected in zip(turns, ['first turn', 'second turn'], strict=True):
+            code, _, body = self.request('GET', f"{path}/{turn['id']}/transcript")
+            self.assertEqual(code, 200)
+            self.assertEqual([entry['text'] for entry in body['entries']], [expected])
+
+    def test_transcript_window_includes_slack_undated_and_untimed_turns(self):
+        path = self.turns()
+        file = self.transcript(self.root / 'sessions', '', 'claude')
+        self.start(f'[serve]\ntranscripts = ["{file.parent}"]\n')
+        turn = self.request('GET', path)[2]['turns'][0]
+        end = turn['ended_ms']
+        from datetime import datetime, timezone
+        offsets = [-12001, -12000, 2000, 2001, None]
+        file.write_text('\n'.join(json.dumps({
+            'type': 'assistant',
+            'timestamp': (datetime.fromtimestamp((end + offset) / 1000, timezone.utc)
+                          .isoformat() if offset is not None else None),
+            'message': {'content': [{'type': 'text', 'text': str(offset)}]}})
+            for offset in offsets))
+        url = f"{path}/{turn['id']}/transcript"
+        code, _, body = self.request('GET', url)
+        self.assertEqual(code, 200)
+        self.assertEqual([entry['text'] for entry in body['entries']],
+                         ['-12000', '2000', 'None'])
+        with store.open(str(self.db)) as conn:
+            store.record_event(conn, self.run, 'agent_turn', 'ended', level='detail',
+                               payload=json.dumps(dict(role='implement',
+                                                       route='primary')))
+        untimed = self.request('GET', path)[2]['turns'][-1]
+        code, _, body = self.request('GET', f"{path}/{untimed['id']}/transcript")
+        self.assertEqual(code, 200)
+        self.assertEqual([entry['text'] for entry in body['entries']],
+                         ['-12001', '-12000', '2000', '2001', 'None'])
 
     def test_devin_export_under_a_single_configured_root(self):
         path = self.turns()

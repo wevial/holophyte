@@ -1,5 +1,7 @@
 import json
 
+from holophyte.review.criterion_ids import numbered
+
 
 def line(value):
     return ' '.join(str(value).split())
@@ -21,7 +23,7 @@ def compose(kind, **facts):
                 f"{line(facts.get('last_output_line', '(no output)'))}")
     elif kind == 'adjudication':
         criteria = '; '.join(
-            f"criterion {c['number']} {c['status']}: {line(c['text'])[:65]}"
+            f"criterion C{c['number']} {c['status']}: {line(c['text'])[:65]}"
             for c in facts['criteria'])
         text = (f"terminal adjudication: {facts['decision']}; "
                 f"{criteria or 'no criterion detail supplied'}")
@@ -55,7 +57,7 @@ def adjudication(findings, criteria, decision, context):
 
     block = criteria_block('\n'.join(f['message'] for f in findings))
     failed = [{'number': n, 'status': block[n][0], 'text': text}
-              for n, text in enumerate(criteria, 1) if n in block]
+              for n, text in numbered(None, None, criteria) if n in block]
     return compose('adjudication', decision=decision, criteria=failed,
                    context=context)
 

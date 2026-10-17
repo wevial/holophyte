@@ -6,6 +6,12 @@
       "route": "primary",
       "label": "claude opus",
       "seconds": 372.5,
+      "ended_ms": 1750000000000,
+      "exit_status": 0,
+      "timed_out": false,
+      "input_tokens": 52100,
+      "output_tokens": 9300,
+      "cost_usd": 0.92,
       "session_id": "session-1"
     },
     {
@@ -14,6 +20,12 @@
       "route": "fallback",
       "label": "codex gpt-5.6-sol",
       "seconds": 95.25,
+      "ended_ms": 1750000000000,
+      "exit_status": 0,
+      "timed_out": false,
+      "input_tokens": null,
+      "output_tokens": null,
+      "cost_usd": null,
       "session_id": null
     }
   ]

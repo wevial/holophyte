@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS ticketCriteria (
     status        TEXT NOT NULL
         {_enums.check_clause('status', _enums.CriterionStatus)},
     source        TEXT NOT NULL,
+    steerNoteId   INTEGER REFERENCES steerNotes (id),
     at            INTEGER NOT NULL
 );
 

@@ -2,8 +2,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext } from "react";
 import { actionBase, postAction } from "../lib/actions";
 import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
+import { putConfig, type ConfigWrite } from "../lib/config";
 import { useToast } from "./components/Toast";
 import { PollDepsContext } from "./scope";
+import { routeKey } from "./queries";
+
+export function useConfigSave() {
+  const deps = useContext(PollDepsContext);
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (write: { base: string; revision: string } & ConfigWrite) =>
+      putConfig(write.base, "text" in write ? { text: write.text } : { patch: write.patch }, deps.fetch, write.revision),
+    onSettled: (_result, _error, write) => client.invalidateQueries({ queryKey: routeKey(write.base, "/config") }),
+  });
+}
 
 /** One post: `route` for `label` on the daemon whose project answers at
  *  `base`, and the sentence the toast says when the daemon takes it. */

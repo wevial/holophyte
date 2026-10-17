@@ -32,6 +32,7 @@ from holophyte.serve.contract import (
     Status,
     StoryChildRow,
     StoryDetail,
+    Transcript,
     main,
 )
 from holophyte.serve.contract_emit import ContractError, json_schema
@@ -40,8 +41,9 @@ FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
+           "run-transcript",
            "shipped", "history", "holds", "ledger", "findings", "board", "ticket",
-           "story")
+           "story", "ticket-check")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -137,8 +139,8 @@ class GeneratedFilesTests(unittest.TestCase):
                              "attention", "board", "findings", "history", "holds",
                              "host-attention", "host-status", "ledger",
                              "peers", "run-asks", "run-detail", "run-files",
-                             "run-merge", "run-turns", "shipped", "status",
-                             "story", "ticket")])
+                             "run-merge", "run-transcript", "run-turns", "shipped",
+                             "status", "story", "ticket-check", "ticket")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,6 +185,24 @@ class EmitterTests(unittest.TestCase):
 
 
 class PinnedAnswerTests(unittest.TestCase):
+    def test_transcript_entries_require_declared_keys_and_boolean_cut(self):
+        walk(pinned("run-transcript"), Transcript, "run-transcript")
+        for change, error in (("missing", "cut: missing"),
+                              ("undeclared", "truncated: undeclared"),
+                              ("mistyped", "cut: not bool")):
+            with self.subTest(change=change):
+                body = pinned("run-transcript")
+                entry = body["entries"][0]
+                if change == "missing":
+                    del entry["cut"]
+                elif change == "undeclared":
+                    entry["truncated"] = False
+                else:
+                    entry["cut"] = "false"
+                with self.assertRaisesRegex(
+                        AssertionError, rf"^run-transcript\.entries\.0\.{error}"):
+                    walk(body, Transcript, "run-transcript")
+
     def test_each_pinned_answer_walks_clean_against_its_route_type(self):
         for stem in ANSWERS:
             with self.subTest(answer=stem):
@@ -192,9 +212,10 @@ class PinnedAnswerTests(unittest.TestCase):
         hints = typing.get_type_hints(Status, include_extras=True)
         narrower = typing.TypedDict("Status", {key: hint for key, hint
                                                in hints.items()
-                                               if key != "queued"})
+                                               if key != "route_probes"})
         body = json.loads((FIXTURES / "status.json").read_text())
-        with self.assertRaisesRegex(AssertionError, r"^status\.queued: undeclared$"):
+        with self.assertRaisesRegex(
+                AssertionError, r"^status\.route_probes: undeclared$"):
             walk(body, narrower, "status")
 
     def test_a_round_type_without_operator_notes_fails_the_run_detail_walk(self):
