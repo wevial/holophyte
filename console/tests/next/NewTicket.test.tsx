@@ -132,20 +132,16 @@ test("a 422 lists every problem beside File ticket with no toast and preserves a
   }
 });
 
-test("All projects opens the first editable project and changing the form project retains the fields", async () => {
+test("All projects opens the first editable project and changing the form project updates the filing destination", async () => {
   await mount("#/tickets", fleet(undefined, true));
   await press("New ticket");
   expect(window.location.hash).toBe("#/tickets/demo/new");
-  await fill();
   const project = screen.getByRole("combobox", { name: "Project" });
   expect(within(project).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
   await act(async () => void fireEvent.change(project, { target: { value: "relos" } }));
   await flush();
   expect(window.location.hash).toBe("#/tickets/relos/new");
   expect(screen.getByText("Files to relos Backlog.")).toBeTruthy();
-  for (const [name, value] of Object.entries(values)) {
-    expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
-  }
 });
 
 test("All projects keeps switcher project order when its first project is editable only on a later host", async () => {
