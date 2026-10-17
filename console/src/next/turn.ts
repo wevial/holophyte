@@ -107,3 +107,43 @@ export function transcriptRows(entries: TranscriptEntry[], turn: RunTurn): Trans
   rows.push({ kind: "end", offset: transcriptOffset(turn.ended_ms, start), text: `Turn ended${ending}` });
   return rows;
 }
+
+export type TurnFilter = "All" | "Said" | "Tools" | "Errors";
+
+export function failedRow(row: TranscriptRow): boolean {
+  return row.kind === "error" || (row.kind === "tool" && row.failed === true);
+}
+
+export function matchParts(text: string, query: string): { text: string; match: boolean }[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [{ text, match: false }];
+  const lower = text.toLowerCase();
+  const parts = [];
+  let start = 0;
+  let index = lower.indexOf(needle);
+  while (index !== -1) {
+    if (index > start) parts.push({ text: text.slice(start, index), match: false });
+    parts.push({ text: text.slice(index, index + needle.length), match: true });
+    start = index + needle.length;
+    index = lower.indexOf(needle, start);
+  }
+  if (start < text.length) parts.push({ text: text.slice(start), match: false });
+  return parts;
+}
+
+export function searchTranscript(rows: TranscriptRow[], query: string, filter: TurnFilter) {
+  const counts = { All: rows.length, Said: 0, Tools: 0, Errors: 0 };
+  const entries = rows.map((row, index) => {
+    const said = row.kind === "said" || row.kind === "note";
+    const tool = row.kind === "tool" || row.kind === "prompt";
+    const failed = failedRow(row);
+    counts.Said += Number(said);
+    counts.Tools += Number(tool);
+    counts.Errors += Number(failed);
+    const texts = row.kind === "tool" ? [row.summary, row.input?.text ?? "", row.output?.text ?? ""] : [row.text];
+    const matches = texts.reduce((total, text) => total + matchParts(text, query).filter(part => part.match).length, 0);
+    const passes = filter === "All" || (filter === "Said" && said) || (filter === "Tools" && tool) || (filter === "Errors" && failed);
+    return { row, index, matches, visible: passes && (!query.trim() || matches > 0) };
+  });
+  return { counts, entries, matches: entries.reduce((total, entry) => total + entry.matches, 0), matchingEntries: entries.filter(entry => entry.matches > 0).length };
+}
