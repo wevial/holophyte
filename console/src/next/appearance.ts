@@ -66,11 +66,9 @@ function subscribeSystem(listener: () => void) {
 export function useTheme() {
   const theme: Theme = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot);
   const dark = useSyncExternalStore(subscribeSystem, systemDark);
-  const resolvedTheme = theme === "system" ? (dark ? "dark" : "light") : theme;
-  return { theme, setTheme: themeStore.set, resolvedTheme };
+  return { theme, setTheme: themeStore.set, resolvedTheme: theme === "system" ? (dark ? "dark" : "light") : theme };
 }
 
 export function useReadingFont() {
-  const font = useSyncExternalStore(fontStore.subscribe, fontStore.getSnapshot);
-  return { font, setFont: fontStore.set };
+  return { font: useSyncExternalStore(fontStore.subscribe, fontStore.getSnapshot), setFont: fontStore.set };
 }
