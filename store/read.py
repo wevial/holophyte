@@ -31,6 +31,7 @@ from store.run_reads import (  # noqa: F401
     finished_runs,
     last_independent_verdict,
     latest_human_intervention_at,
+    latest_intervention,
     live_runs,
     merged_runs,
     newest_run_id,
