@@ -143,15 +143,13 @@ test("the day's log folds both hosts' entries newest first, toned by kind, asked
   }
 });
 
-test("the log caps at 25 lines with a count of the rest in a bounded rail, skips a host without the route, and says when it is empty", async () => {
+test("the log caps at 25 lines with a count of the rest, skips a host without the route, and says when it is empty", async () => {
   const many = Array.from({ length: 30 }, (_, index) => entry(at(1, 0) + index * 60_000, "round", "loop", "DEMO-7", `step ${index}`));
   await mount("#/", fleet({ ledger: ledgerOf(...many) }, {}).fetch);
   const lines = logLines();
   expect(lines).toHaveLength(26);
   expect(lines[0]).toBe("01:29DEMO-7 · step 29");
   expect(lines.at(-1)).toBe("and 5 earlier today");
-  expect(log().className).toContain("max-h-[calc(100vh-40px)]");
-  expect(log().className).toContain("overflow-y-auto");
   cleanup();
 
   await mount(

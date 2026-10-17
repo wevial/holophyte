@@ -45,6 +45,21 @@ Prototype: the decided screens, click-through.
 | [`Ticket.dc.html`](Ticket.dc.html) | Ticket · HOLO-231 | One ticket's page |
 | [`Findings.dc.html`](Findings.dc.html) | Findings · all projects, or one via the sidebar | Findings page |
 
+New pages: added to the canvas on 2026-10-16.
+
+| Board | Title in `canvas.json` | Console area |
+|---|---|---|
+| [`Hosts.dc.html`](Hosts.dc.html) | Hosts · a card per daemon: healthy, one route down, unreachable | Hosts tab in Settings |
+| [`Settings.dc.html`](Settings.dc.html) | Settings · per project, plus your Appearance | Settings page |
+| [`Ticket-Edit.dc.html`](Ticket-Edit.dc.html) | New ticket and Edit ticket · live checker, stale-revision conflict | New ticket and Edit ticket |
+| [`Turn.dc.html`](Turn.dc.html) | Turn transcript · run 231, implementer turn 2 | One agent turn's transcript |
+| [`Runs-History.dc.html`](Runs-History.dc.html) | Runs history · older than yesterday, a day at a time | Runs history before yesterday |
+
+The maintainer's answers override these drawings: the work items are named
+"Tickets", Settings is one entry in the sidebar footer with Hosts as a tab
+inside it (not the Hosts and Settings nav items the boards draw), and
+Settings is laid out as tabs.
+
 Components: the parts the screens share.
 
 | Board | Title in `canvas.json` | Console area | Render |
