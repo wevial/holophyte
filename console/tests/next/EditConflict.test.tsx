@@ -197,6 +197,16 @@ test("my edited introduction lands once beside their changed Blast radius paragr
   expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(theirs.replace("under the run", "under each run"));
 });
 
+test("my edited introduction comes back on top of a revision that removed it from a plain-text What / Why / How", () => {
+  const base = "# Notes show\n\n## What / Why / How\n\nThey sit under the run.\n\n**What:** List the notes.\n\n**Blast radius:** The run page only.\n";
+  const theirs = "# Notes show\n\n## What / Why / How\n\n**What:** List the notes.\n\n<!-- where -->\n**Blast radius:** The run page only.\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map(other => other.index === -1 ? { ...other, text: other.text.replace("under the run", "under each run") } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe("# Notes show\n\n## What / Why / How\n\nThey sit under each run.\n\n**What:** List the notes.\n\n<!-- where -->\n**Blast radius:** The run page only.\n");
+});
+
 test("the changed-field names count a removed section and skip one that only moved", () => {
   const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
   const read = loadEdit(base, null);

@@ -478,22 +478,27 @@ function placed(text: string, was: string): { key: string; part: string; at: num
   });
 }
 
-/** `text` with each piece of `was` it still holds swapped for `mine`'s piece
- *  of its key, a piece both changed swapped for `mine`'s, a piece only
- *  `text` changed kept, and `mine`'s pieces `was` lacks added at its end. */
+/** `text` with each piece of `was` it holds swapped for `mine`'s, a piece
+ *  both changed taking `mine`'s, one only `text` changed kept, one it removed
+ *  and `mine` changed put back, and `mine`'s new pieces added at its end. */
 function rebased(text: string, was: string, mine: string): string {
   const parts = new Map(unlabelledParts(mine));
   const theirs = new Map(unlabelledParts(text));
-  const swaps = placed(text, was).flatMap(({ key, part, at }) => {
+  const pieces = placed(text, was);
+  const swaps = pieces.flatMap(({ key, part, at }, index) => {
     const my = parts.get(key) ?? "";
     parts.delete(key);
     if (at >= 0) return [{ part, at, my }];
     const their = theirs.get(key);
+    if (their === undefined && my && my !== part) {
+      const before = pieces.slice(0, index).findLast(each => each.at >= 0);
+      return [before ? { part: "", at: before.at + before.part.length, my: `\n\n${my}` } : { part: "", at: 0, my: `${my}\n\n` }];
+    }
     const found = their === undefined || my === part ? -1 : text.indexOf(their);
     return found < 0 ? [] : [{ part: their!, at: found, my }];
   });
   let result = text;
-  for (const { part, at, my } of swaps.sort((a, b) => b.at - a.at)) result = result.slice(0, at) + my + result.slice(at + part.length);
+  for (const { part, at, my } of swaps.sort((a, b) => b.at - a.at || b.part.length - a.part.length)) result = result.slice(0, at) + my + result.slice(at + part.length);
   return [result, ...parts.values()].filter(each => each.trim()).join("\n\n");
 }
 
