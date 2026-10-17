@@ -44,16 +44,13 @@ export function pastDays(now: number): DayWindow[] {
 export function dayGroups(hosts: HostRecord<ContractBodies>[], answers: DayAnswers, days: DayWindow[]): DayGroup[] {
   return days.map((day) => {
     const capped = { limit: 0, total: 0 };
-    for (const host of hosts) {
+    const rows = hosts.flatMap((host): DayRun[] => {
+      const status = host.status;
       const answer = answers.get(day.since)?.get(host.key);
       if (answer?.truncated) {
         capped.limit += answer.limit;
         capped.total += answer.total;
       }
-    }
-    const rows = hosts.flatMap((host): DayRun[] => {
-      const status = host.status;
-      const answer = answers.get(day.since)?.get(host.key);
       if (!status || !answer) return [];
       return answer.rows.map((run) => ({
         ...run,
