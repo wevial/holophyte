@@ -44,7 +44,7 @@ test("one build emits the classic page and the new console's page, each with its
         expect(new URL(fonts[0]!).searchParams.getAll("family")).toEqual([
           "Archivo:wdth,wght@100..125,400..800",
           "IBM Plex Mono:wght@400;500;600",
-          "IBM Plex Sans:wght@500",
+          "IBM Plex Sans:wght@400;500;600",
         ]);
       }
     }

@@ -4,7 +4,7 @@ import type { CardLook } from "../state";
 export type CardMark = "need" | "fail" | "wait";
 
 const LOOKS: Record<CardLook, { card: string; title: string }> = {
-  merged: { card: "border border-rule-2 bg-live-wash/50", title: "text-[14px] font-medium text-ink-2" },
+  merged: { card: "border border-rule-2 bg-live-wash/50", title: "text-[15px] font-medium text-ink-2" },
   live: { card: "border-2 border-live bg-live-wash", title: "text-[15px] font-semibold text-ink" },
   todo: { card: "border border-rule bg-paper", title: "text-[15px] font-semibold text-ink" },
   backlog: { card: "border border-dashed border-rule text-ink-3", title: "text-[15px] font-medium text-ink-3" },
@@ -24,7 +24,7 @@ export function cardSurface(look: CardLook, mark?: CardMark): string {
 export function Card({ look, mark, title, children }: { look: CardLook; mark?: CardMark; title?: ReactNode; children?: ReactNode }) {
   return (
     <article data-card={look} data-mark={mark} className={`flex flex-col gap-1.5 px-4 py-3 ${cardSurface(look, mark)}`}>
-      {title != null && <h3 className={`font-sans ${LOOKS[look].title}`}>{title}</h3>}
+      {title != null && <h3 className={`font-read leading-[1.35] ${LOOKS[look].title}`}>{title}</h3>}
       {children}
     </article>
   );

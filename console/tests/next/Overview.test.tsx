@@ -331,3 +331,18 @@ test("the wide log fills its pinned grid wrapper with a thin hover scrollbar and
   expect(classes(log)).toEqual(expect.arrayContaining(["h-full", "overflow-y-auto", "[scrollbar-width:thin]", "day-log-scroll"]));
   expect(classes(log)).not.toContain("max-h-[calc(100vh-40px)]");
 });
+
+test("Then titles use medium reading text and the day log uses 13 px mono while headings keep Archivo", async () => {
+  const hosts = fleet({ items: [blocked, ...failed.map((item) => ({ ...item, title: "Recover the silent lease" }))] }, { items: [prPark] });
+  const fetch: Fetch = async (url) => url.includes("/ledger?")
+    ? Response.json({ active_outages: [], since: 0, limit: 200, entries: [{ at: NOW - MINUTE, run: 1, ticket: "DEMO-1", kind: "round", source: "loop", text: "Review complete" }] })
+    : hosts(url);
+  await mount("#/", fetch);
+  const title = within(screen.getByRole("list", { name: "Then" })).getByText("Recover the silent lease");
+  expect(classes(title)).toEqual(expect.arrayContaining(["font-read", "font-medium", "text-[15px]", "leading-[1.35]"]));
+  expect(classes(screen.getByRole("heading", { level: 1 }))).toContain("font-sans");
+  for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
+    expect(classes(within(section(name)).getByText(name))).toContain("font-sans");
+  }
+  expect(classes(within(dayLog()).getByRole("list"))).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "leading-[1.5]"]));
+});

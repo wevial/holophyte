@@ -93,7 +93,7 @@ export function Findings() {
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Findings</h1>
         {page.answered && (
           <>
-            <p data-verdict className="flex items-start gap-2 font-plex text-[17px] leading-[1.45] text-ink">
+            <p data-verdict className="flex items-start gap-2 font-read text-[17px] leading-[1.45] text-ink">
               <span className="mt-[5px] shrink-0"><StateDot state={verdict.state} hideWord /></span>
               <span>{verdict.sentence}</span>
             </p>

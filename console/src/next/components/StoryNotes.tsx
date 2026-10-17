@@ -55,10 +55,10 @@ export function StoryNotes({ story, now }: { story: StoryDetail; now: number }) 
             <li
               key={note.id}
               data-note={note.id}
-              className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-rule-2 py-2.5 text-[14px] leading-[1.45] max-[720px]:grid-cols-1"
+              className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-rule-2 py-2.5 max-[720px]:grid-cols-1"
             >
               <span data-note-kind className={`font-mono text-[11px] font-medium leading-[1.4] tracking-[0.1em] ${note.tone}`}>{note.kind}</span>
-              <span className="[overflow-wrap:anywhere] text-ink">{note.text}</span>
+              <span className="max-w-[75ch] font-read text-[15px] leading-[1.5] [overflow-wrap:anywhere] text-ink">{note.text}</span>
               <span className="whitespace-nowrap font-mono text-[12px] leading-[1.4] text-ink-3">{note.meta}</span>
             </li>
           ))}
