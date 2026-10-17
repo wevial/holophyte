@@ -165,6 +165,7 @@ test("All projects keeps switcher project order when its first project is editab
   await press("New ticket");
   expect(window.location.hash).toBe("#/tickets/demo/new");
   expect(within(screen.getByRole("combobox", { name: "Project" })).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
+  await type("Title", "Steer notes show on the run detail card");
   await press("File ticket");
   expect(answer.seen.map((request) => request.url)).toEqual([`${otherDemo}/tickets`]);
 });
@@ -179,6 +180,7 @@ const posted = (answer: ReturnType<typeof fakeFetch>, index = 0) => answer.seen[
 test("criteria rows reorder and remove the claims sent in the Acceptance criteria section", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
   expect((screen.getByRole("textbox", { name: "AC1" }) as HTMLInputElement).value).toBe("");
   expect(screen.queryByRole("textbox", { name: "AC2" })).toBeNull();
   await press("+ Add a criterion");
@@ -205,6 +207,7 @@ test("criteria rows reorder and remove the claims sent in the Acceptance criteri
 test("estimate, priority and unique uppercase dependency chips serialize and removal clears the dependency", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
   expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("25");
   expect(screen.getByRole("button", { name: "P2" }).getAttribute("aria-pressed")).toBe("true");
   for (let index = 0; index < 4; index += 1) await press("Increase estimate");
@@ -260,6 +263,7 @@ test.each([[true, "Needs you"], [false, "In flight"]] as const)("a pull-request 
 test("UI change serializes its major declaration, mock-up and approval and switching off removes them", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
   const toggle = screen.getByRole("switch", { name: "This ticket changes the UI" });
   expect(screen.queryByRole("textbox", { name: "Mock-up link" })).toBeNull();
   await act(async () => void fireEvent.click(toggle));
@@ -286,6 +290,7 @@ test("UI change serializes its major declaration, mock-up and approval and switc
 test("estimate stepping stops at 5 and 120 minutes and files those boundary values", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
   for (let index = 0; index < 5; index += 1) await press("Decrease estimate");
   expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("5");
   await press("File ticket");
@@ -302,6 +307,7 @@ test("estimate stepping stops at 5 and 120 minutes and files those boundary valu
 test("typing an estimate digit by digit preserves the intended number when filing", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
   const user = userEvent.setup();
   const estimate = screen.getByRole("spinbutton", { name: "Estimate" });
   await act(async () => {

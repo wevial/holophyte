@@ -1,3 +1,4 @@
+import { ticketCheckSchema, type TicketCheck } from "./contract.gen";
 import { addressOf } from "./hosts";
 import type { Fetch } from "./poll";
 import { withToken } from "./token";
@@ -67,6 +68,24 @@ export async function fileTicket(base: string, body: string, priority: number | 
   if (status === 201 && typeof record.ticket === "string") return { ok: true, ticket: record.ticket };
   if (status === 422 && Array.isArray(record.problems)) return { ok: false, problems: record.problems.map(String) };
   return { ok: false, error: refusal(url, status, record) };
+}
+
+/** What a check answered: the judgement filing would make, `"unsupported"`
+ *  when the daemon has no `/tickets/check` (404), or the reason as `error`. */
+export type CheckResult = TicketCheck | "unsupported" | { error: string };
+
+/** Judge `body` as filing into Backlog would, writing nothing:
+ *  `POST` `{"body", "column": "backlog"}` to `base`'s `/tickets/check`.
+ *  Never throws. */
+export async function checkTicket(base: string, body: string, fetchImpl: Fetch): Promise<CheckResult> {
+  const url = `${base}/tickets/check`;
+  const sent = await send(base, url, "POST", { body, column: "backlog" }, fetchImpl);
+  if ("error" in sent) return { error: sent.error };
+  const { status, record } = sent;
+  if (status === 404) return "unsupported";
+  const parsed = ticketCheckSchema.safeParse(record);
+  if (status === 200 && parsed.success) return parsed.data;
+  return { error: status === 200 ? `${url} answered an unreadable judgement` : refusal(url, status, record) };
 }
 
 /** One revision-checked write: `payload` to `base`'s `/tickets/ID` plus
