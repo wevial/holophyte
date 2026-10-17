@@ -1,0 +1,129 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+import store
+import store.board
+import store.steer_notes
+import store.tickets
+from holophyte.babysit.maintainer_notes import PREFIX, carry_amendments
+from holophyte.review.criterion_ids import numbered
+from tests.test_ticket_criteria_rows import ticket_body
+
+FILED = ["the list shows every entry", "the list is sorted by name",
+         "the list labels each age"]
+
+
+class SteerCriteriaTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.conn = store.open(Path(directory.name) / "store.db")
+        self.addCleanup(self.conn.close)
+        self.project_id = store.tickets.ensure_project(
+            self.conn, "native-team", directory.name)
+        self.key = store.board.file_ticket(
+            self.conn, self.project_id, "NAT", ticket_body(FILED))
+        self.ticket = self.conn.execute(
+            "SELECT id FROM tickets WHERE linearIdentifier = ?", (self.key,)
+        ).fetchone()[0]
+
+    def amend(self, text, **kwargs):
+        return store.steer_notes.steer(
+            self.conn, self.ticket, text, "maintainer", **kwargs)
+
+    def claim(self):
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        return store.claim(self.conn, self.project_id, self.ticket)
+
+    def test_replacement_preserves_filed_history_and_review_id(self):
+        note = self.amend("REPLACE C2: the list is sorted by age")
+        rows = self.conn.execute(
+            "SELECT text, steerNoteId FROM ticketCriteria"
+            " WHERE ticketId = ? AND criterion = 2 ORDER BY id", (self.ticket,)
+        ).fetchall()
+        self.assertEqual(rows, [("the list is sorted by name", None),
+                                ("the list is sorted by age", note.id)])
+        run = self.claim()
+        expected = [(1, FILED[0]), (2, "the list is sorted by age"), (3, FILED[2])]
+        self.assertEqual(numbered(self.conn, run, FILED), expected)
+        self.assertEqual(numbered(self.conn, run, list(enumerate(FILED, 1))),
+                         expected)
+
+    def test_drop_add_and_withdraw_restore_filed_text_without_reusing_ids(self):
+        self.amend("REPLACE C2: the list is sorted by age")
+        note = self.amend("DROP C3: covered by C2\n"
+                          "ADD: the empty list shows a placeholder line")
+        self.assertEqual(self.conn.execute(
+            "SELECT criterion, status FROM ticketCriteria"
+            " WHERE steerNoteId = ? ORDER BY id", (note.id,)).fetchall(),
+            [(3, "retired"), (4, "open")])
+        run = self.claim()
+        self.assertEqual(numbered(self.conn, run, FILED), [
+            (1, FILED[0]), (2, "the list is sorted by age"),
+            (4, "the empty list shows a placeholder line")])
+        store.release(self.conn, run, "failed", "retry")
+        store.steer_notes.withdraw(self.conn, self.ticket, "restore the contract")
+        self.assertEqual(numbered(self.conn, run, FILED), list(enumerate(FILED, 1)))
+        self.amend("ADD: the list displays a count")
+        self.assertEqual(numbered(self.conn, run, FILED),
+                         list(enumerate(FILED, 1)) + [(5, "the list displays a count")])
+
+    def test_invalid_edits_roll_back_the_entire_note_and_its_rows(self):
+        for text, hint, reason in (
+            ("REPLACE C9: x", False, "C9"),
+            ("DROP C1", True, "hint"),
+            ("ADD: After the merge, the operator checks the page", False,
+             "test file or verify command"),
+            ("ADD: a count is shown\nREPLACE C9: x", False, "C9"),
+        ):
+            with self.subTest(text=text, hint=hint):
+                before = list(self.conn.iterdump())
+                with self.assertRaisesRegex(store.steer_notes.SteerRefused, reason):
+                    self.amend(text, hint=hint)
+                self.assertEqual(list(self.conn.iterdump()), before)
+
+    def test_replacement_rederives_witness_and_add_accepts_verify_witness(self):
+        note = self.amend(
+            "replace c2: the list is sorted in `tests/test_store_board.py`\n"
+            "add: After the merge, the operator checks `ruff check .`")
+        self.assertEqual(self.conn.execute(
+            "SELECT criterion, witnessKind, witnessTarget FROM ticketCriteria"
+            " WHERE steerNoteId = ? ORDER BY id", (note.id,)).fetchall(), [
+                (2, "test", "tests/test_store_board.py"),
+                (4, "verify", "ruff check .")])
+
+    def test_carry_renders_one_amended_block_and_only_free_note_lines(self):
+        note = self.amend("REPLACE C2: the list is sorted by age\n"
+                          "DROP C3: covered by C2\nKeep the old flag name")
+        rendered = carry_amendments(self.conn, self.claim(), "Filed ticket body")
+        self.assertTrue(rendered.startswith("Filed ticket body"))
+        self.assertEqual(rendered.count("**C1**"), 1)
+        self.assertEqual(rendered.count("**C2**"), 1)
+        self.assertRegex(rendered, r"\*\*C1\*\*[^\n]*the list shows every entry")
+        self.assertRegex(rendered, r"\*\*C2\*\*[^\n]*the list is sorted by age")
+        self.assertRegex(rendered, r"C3[^\n]*[Dd]ropped[^\n]*covered by C2")
+        self.assertIn(f"{PREFIX}\nsteer note {note.id} by maintainer:\n"
+                      "Keep the old flag name", rendered)
+        self.assertNotIn("REPLACE C2:", rendered)
+        self.assertNotIn("DROP C3:", rendered)
+        self.assertNotIn("the list is sorted by name", rendered)
+
+    def test_replacement_matching_another_criterion_text_keeps_both_ids(self):
+        self.amend("REPLACE C2: the list shows every entry")
+        run = self.claim()
+        self.assertEqual(numbered(self.conn, run, FILED), [
+            (1, "the list shows every entry"),
+            (2, "the list shows every entry"), (3, FILED[2])])
+
+    def test_body_update_supersedes_replacement_even_after_withdrawal(self):
+        self.amend("REPLACE C2: the list is sorted by age")
+        revised = [FILED[0], "**C2** the list is sorted by score", FILED[2]]
+        store.board.edit_ticket(self.conn, self.project_id, self.key,
+                                ticket_body(revised), expected_revision=1)
+        run = self.claim()
+        expected = [(1, FILED[0]), (2, "the list is sorted by score"), (3, FILED[2])]
+        self.assertEqual(numbered(self.conn, run, revised), expected)
+        store.release(self.conn, run, "failed", "retry")
+        store.steer_notes.withdraw(self.conn, self.ticket, "restore the contract")
+        self.assertEqual(numbered(self.conn, run, revised), expected)

@@ -1,10 +1,12 @@
 import re
 from dataclasses import replace
 
+import store.criteria
 from holophyte.pr.github import Thread
 from holophyte.review.findings import decode_findings
 from store import console_asks, operator_notes, steer_notes
 from store.read import run_snapshot
+from ticket_criteria import amendment_edits
 
 PREFIX = "Maintainer's instruction (amends the ticket where they conflict):"
 HINT_PREFIX = "Maintainer's hint for this turn (advice, not part of the contract):"
@@ -52,7 +54,26 @@ def carry_amendments(conn, run_id, ticket):
         conn, run_snapshot(conn, run_id).ticketId)
         if not n.live or n.consumed_by is not None]
     steer_notes.consume(conn, [n.id for n in amendments], run_id)
-    return ticket + "".join(f"\n\n{steer_text(n)}" for n in amendments)
+    parsed = [(n, *amendment_edits(n.note)) for n in amendments]
+    if any(edits for _, edits, _ in parsed):
+        ticket += _criteria_block(conn, run_id, parsed)
+    return ticket + "".join(f"\n\n{steer_text(n._replace(note=other))}"
+                            for n, _, other in parsed if other.strip())
+
+
+def _criteria_block(conn, run_id, parsed):
+    rows = store.criteria.current(conn, run_snapshot(conn, run_id).ticketId)
+    reasons = {(note.id, number): text for note, edits, _ in parsed
+               for verb, number, text in edits if verb == "DROP"}
+    lines = []
+    for row in sorted(rows, key=lambda row: row["criterion"]):
+        number = row["criterion"]
+        if row["status"] != "retired":
+            lines.append(f"- **C{number}** {row['text']}")
+        elif (row["steerNoteId"], number) in reasons:
+            reason = reasons[row["steerNoteId"], number]
+            lines.append(f"- C{number} dropped" + (f": {reason}" if reason else ""))
+    return "\n\nAmended acceptance criteria:\n" + "\n".join(lines)
 
 
 def take_hints(conn, run_id):

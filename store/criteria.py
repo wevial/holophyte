@@ -5,12 +5,13 @@ from ticket_criteria import split_id, witnesses
 
 
 def _append(conn, ticket_id, criterion, position, text, kind, target,
-            status, source, now):
+            status, source, now, steer_note_id=None):
     conn.execute(
         "INSERT INTO ticketCriteria (ticketId, criterion, position, text,"
-        " witnessKind, witnessTarget, status, source, at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (ticket_id, criterion, position, text, kind, target, status, source, now))
+        " witnessKind, witnessTarget, status, source, at, steerNoteId)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (ticket_id, criterion, position, text, kind, target, status, source, now,
+         steer_note_id))
 
 
 def _number(explicit, text, history, taken, highest):
@@ -27,8 +28,8 @@ def record_criteria(conn, ticket_id, criteria, commands, now):
         "SELECT criterion, position, text, witnessKind, witnessTarget, status"
         " FROM ticketCriteria WHERE ticketId = ? ORDER BY id", (ticket_id,)
     ).fetchall()
-    current = {row[0]: row for row in history}
-    highest = max(current, default=0)
+    latest = {row["criterion"]: row for row in current(conn, ticket_id)}
+    highest = max((row[0] for row in history), default=0)
     taken = set()
     texts = [split_id(text) for text in criteria]
     for position, ((explicit, text), (kind, target)) in enumerate(
@@ -36,14 +37,16 @@ def record_criteria(conn, ticket_id, criteria, commands, now):
         criterion = _number(explicit, text, history, taken, highest)
         taken.add(criterion)
         highest = max(highest, criterion)
-        previous = current.get(criterion)
-        if previous is None or (previous[1], previous[2], previous[5]) != (
+        previous = latest.get(criterion)
+        if previous is None or previous["steerNoteId"] is not None or (
+                previous["position"], previous["text"], previous["status"]) != (
                 position, text, "open"):
             _append(conn, ticket_id, criterion, position, text, kind, target,
                     "open", "filed", now)
-    for criterion, row in current.items():
-        if criterion not in taken and row[5] == "open":
-            _append(conn, ticket_id, criterion, None, row[2], row[3], row[4],
+    for criterion, row in latest.items():
+        if criterion not in taken and row["status"] == "open":
+            _append(conn, ticket_id, criterion, None, row["text"],
+                    row["witnessKind"], row["witnessTarget"],
                     "retired", "filed", now)
 
 
@@ -64,9 +67,69 @@ def backfill(conn):
 
 def numbers(conn, ticket_id):
     rows = conn.execute(
-        "SELECT text, criterion FROM ticketCriteria WHERE ticketId = ?"
-        " ORDER BY id DESC", (ticket_id,)).fetchall()
+        "SELECT c.text, c.criterion FROM ticketCriteria c"
+        " LEFT JOIN steerNotes s ON s.id = c.steerNoteId"
+        " WHERE c.ticketId = ? AND s.withdrawnBy IS NULL"
+        " ORDER BY c.steerNoteId IS NOT NULL, c.id DESC", (ticket_id,)).fetchall()
     result = {}
     for text, criterion in rows:
         result.setdefault(text, criterion)
     return result
+
+
+def current(conn, ticket_id):
+    columns = ("id", "criterion", "position", "text", "witnessKind",
+               "witnessTarget", "status", "source", "steerNoteId")
+    rows = conn.execute(
+        "SELECT " + ", ".join("c." + column for column in columns)
+        + " FROM ticketCriteria c LEFT JOIN steerNotes s ON s.id = c.steerNoteId"
+        " WHERE c.ticketId = ? AND s.withdrawnBy IS NULL ORDER BY c.id DESC",
+        (ticket_id,)).fetchall()
+    latest = {}
+    for row in rows:
+        latest.setdefault(row[1], dict(zip(columns, row)))
+    return sorted(latest.values(), key=lambda row: row["criterion"])
+
+
+def amend(conn, ticket_id, edits, steer_note_id, now):
+    from types import SimpleNamespace
+
+    from ticket_criteria import witness_problems
+
+    from .steer_notes import SteerRefused
+
+    latest = {row["criterion"]: row for row in current(conn, ticket_id)}
+    highest = conn.execute(
+        "SELECT COALESCE(MAX(criterion), 0) FROM ticketCriteria WHERE ticketId = ?",
+        (ticket_id,)).fetchone()[0]
+    commands = json.loads(conn.execute(
+        "SELECT verificationCommands FROM tickets WHERE id = ?",
+        (ticket_id,)).fetchone()[0])
+    for verb, number, text in edits:
+        if verb != "ADD" and (number not in latest
+                                  or latest[number]["status"] == "retired"):
+            raise SteerRefused(f"{verb} C{number} names no current criterion")
+        if verb == "DROP":
+            row = latest[number]
+            _append(conn, ticket_id, number, None, row["text"],
+                    row["witnessKind"], row["witnessTarget"], "retired",
+                    "amendment", now, steer_note_id)
+            latest[number] = {**row, "status": "retired"}
+            continue
+        problems = witness_problems(SimpleNamespace(
+            acceptance=[text], acceptance_done=[], acceptance_other=[],
+            verify_commands=commands))
+        if problems:
+            raise SteerRefused("; ".join(problems))
+        if verb == "ADD":
+            highest += 1
+            number = highest
+            position = max((row["position"] or 0 for row in latest.values()),
+                           default=0) + 1
+        else:
+            position = latest[number]["position"]
+        kind, target = witnesses([text], commands)[0]
+        _append(conn, ticket_id, number, position, text, kind, target, "open",
+                "amendment", now, steer_note_id)
+        latest[number] = dict(criterion=number, position=position, text=text,
+                              witnessKind=kind, witnessTarget=target, status="open")

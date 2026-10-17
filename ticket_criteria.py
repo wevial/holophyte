@@ -5,6 +5,25 @@ import ticket_template
 _ID = re.compile(r"^\s*\*\*C([1-9][0-9]*)\*\*\s*")
 _SPAN = re.compile(r"`([^`\n]+)`")
 _CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)", re.DOTALL)
+_EDIT = re.compile(
+    r"^\s*(?:(REPLACE)\s+C([1-9][0-9]*)\s*:\s*(\S.*?)|"
+    r"(DROP)\s+C([1-9][0-9]*)(?:\s*:\s*(.*?))?|"
+    r"(ADD)\s*:\s*(\S.*?))\s*$", re.IGNORECASE)
+
+
+def amendment_edits(note):
+    edits, other = [], []
+    for line in note.splitlines():
+        match = _EDIT.fullmatch(line)
+        if match is None:
+            other.append(line)
+        elif match[1]:
+            edits.append(("REPLACE", int(match[2]), match[3]))
+        elif match[4]:
+            edits.append(("DROP", int(match[5]), match[6] or ""))
+        else:
+            edits.append(("ADD", None, match[8]))
+    return edits, "\n".join(other) if edits else note
 
 
 def split_id(text):

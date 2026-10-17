@@ -3,8 +3,9 @@ import time
 from typing import NamedTuple
 
 import store
+from ticket_criteria import amendment_edits
 
-from . import operator_notes
+from . import criteria, operator_notes
 from .operate import record_intervention, record_project_intervention
 from .schema import _transaction
 
@@ -216,11 +217,16 @@ def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
 
 def _insert(conn, ticket_id, run_id, kind, note, author, now, intervention_id,
             event_id, interrupt=False):
+    edits, _ = amendment_edits(note)
+    if edits and kind == HINT:
+        raise SteerRefused("criterion edits require an amendment, not a hint")
     note_id = conn.execute(
         "INSERT INTO steerNotes (ticketId, runId, kind, note, author, at,"
         " interventionId, eventId, interrupt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (ticket_id, run_id, kind, note, author, now, intervention_id,
          event_id, 1 if interrupt else None)).lastrowid
+    if edits:
+        criteria.amend(conn, ticket_id, edits, note_id, now)
     return Steer(note_id, kind, intervention_id, run_id, event_id)
 
 

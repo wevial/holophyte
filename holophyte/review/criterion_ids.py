@@ -9,10 +9,26 @@ def parse(token):
 
 def numbered(conn, run_id, criteria):
     criteria = list(criteria or ())
+    snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
+    result = _number_filed(conn, snapshot, criteria)
+    if snapshot is None:
+        return result
+    edits = {row["criterion"]: row for row in
+             store.criteria.current(conn, snapshot.ticketId)
+             if row["steerNoteId"] is not None}
+    amended = [(n, edits[n]["text"] if n in edits else text)
+               for n, text in result
+               if n not in edits or edits[n]["status"] != "retired"]
+    present = {n for n, _ in result}
+    amended.extend((n, row["text"]) for n, row in sorted(edits.items())
+                   if n not in present and row["status"] != "retired")
+    return amended
+
+
+def _number_filed(conn, snapshot, criteria):
     if not criteria or isinstance(criteria[0], (tuple, list)):
         return criteria
     texts = [split_id(text) for text in criteria]
-    snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
     held = store.criteria.numbers(conn, snapshot.ticketId) if snapshot else {}
     if not held:
         return [(n, text) for n, (_, text) in enumerate(texts, 1)]
