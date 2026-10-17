@@ -5,7 +5,10 @@ import { hostName } from "../../lib/hosts";
 import { storeScope, switcherRows } from "../projects";
 import { useConfig } from "../queries";
 import { keepScope, useConsolePeers } from "../scope";
-import { hostsNeedingAttention, settingsHost, SETTINGS_TABS } from "../settings";
+import { hostsNeedingAttention, settingsHost, SETTINGS_FIELDS, SETTINGS_TABS } from "../settings";
+import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
+import { SettingRow } from "../components/SettingRow";
+import { UnsavedBar } from "../components/UnsavedBar";
 import { NotFound } from "./Placeholder";
 
 type Tab = (typeof SETTINGS_TABS)[number];
@@ -46,6 +49,9 @@ function SettingsPage({ tab }: { tab: Tab }) {
   const file = answer?.state === "ok" ? answer.config.path.split("/").pop() || "config.toml" : "config.toml";
   const hostLabel = host ? hostName(host) : "its host";
   const attention = hostsNeedingAttention(hosts);
+  const draft = useSettingsDraft();
+  const edits = draft.projects[project] ?? {};
+  const count = (tab: string) => SETTINGS_FIELDS.filter((field) => field.tab === tab && `${field.table}.${field.key}` in edits).length;
   return (
     <section aria-labelledby="page-title" className="max-w-[1180px] px-5 py-7 min-[720px]:px-8">
       <header className="border-b border-rule pb-5">
@@ -80,19 +86,32 @@ function SettingsPage({ tab }: { tab: Tab }) {
                 className={`flex min-h-10 items-center gap-3 border-l-2 px-3 py-2 text-[14px] ${tab.id === item.id ? "border-act bg-act-wash text-act" : "border-transparent text-ink-2 hover:bg-paper-2 hover:text-ink"}`}
               >
                 {item.label}
+                {item.group === "Project" && count(item.id) > 0 && <span className="ml-auto font-mono text-[11px] text-act">{count(item.id)}</span>}
                 {item.id === "hold" && host?.status?.admission === "held" && <span className="font-mono text-[11px] text-wait">held</span>}
                 {item.id === "hosts" && attention > 0 && <span className="ml-auto font-mono text-[12px] text-need">{attention}</span>}
               </Link>
             </Fragment>
           ))}
         </nav>
-        <section className="min-w-0 flex-1 border border-rule bg-paper p-5 min-[720px]:p-6">
+        <div className="min-w-0 flex-1">
+        <section className="border border-rule bg-paper p-5 min-[720px]:p-6">
           <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
             <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
             <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
           </header>
-          <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>
+          {tab.id === "general" && host && answer?.state === "ok" ? (
+            <div className="mt-6">
+              {SETTINGS_FIELDS.filter((field) => field.tab === tab.id).map((field) => {
+                const key = `${field.table}.${field.key}`;
+                return <SettingRow key={key} field={field} values={answer.config.values} value={edits[key]?.value}
+                  onChange={(value, original) => draft.edit(project, key, original, value)}
+                  project={project} host={hostLabel} applies={answer.config.applies} />;
+              })}
+            </div>
+          ) : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
+        <UnsavedBar project={project} />
+        </div>
       </div>
       <footer className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
         <p>project settings live in {file} on its host; each save keeps the previous text as a backup</p>
@@ -105,5 +124,5 @@ function SettingsPage({ tab }: { tab: Tab }) {
 export function Settings() {
   const { tab: id = "general" } = useParams({ strict: false });
   const tab = SETTINGS_TABS.find((tab) => tab.id === id);
-  return tab ? <SettingsPage tab={tab} /> : <NotFound />;
+  return <SettingsDraftProvider>{tab ? <SettingsPage tab={tab} /> : <NotFound />}</SettingsDraftProvider>;
 }
