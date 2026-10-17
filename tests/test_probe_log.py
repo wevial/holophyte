@@ -18,6 +18,25 @@ from tests.serve_fixture import ServeTestCase
 
 
 class ProbeLogTests(ServeTestCase):
+    def test_unknown_launch_error_is_private_to_local_diagnostic(self):
+        self.seed()
+        self.start('[agents]\nimplementer = "agent"\n')
+        detail = "token sk-runtime-secret rejected"
+        with patch("holophyte.agents.probes.launcher.launch",
+                   side_effect=RuntimeError(detail)):
+            probe = probe_implementer(self.project)
+        self.assertFalse(probe.ok)
+        self.assertIn(detail, probe_diagnostic(self.project, probe))
+        entry = last_probes(self.project)["implementer"]["primary"]
+        self.assertEqual(entry["why"], "could not start: launch failed")
+        raw = (self.project.holo_dir / "route-probes.json").read_text()
+        self.assertNotIn("sk-runtime-secret", raw)
+        code, _, status = self.request("GET", "/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(status["route_probes"]["implementer"]["primary"]["why"],
+                         "could not start: launch failed")
+        self.assertNotIn("sk-runtime-secret", json.dumps(status))
+
     def test_missing_codex_cause_survives_in_diagnostic_and_probe_log(self):
         for args in (("init",), ("-c", "user.name=Test", "-c",
                                 "user.email=test@example.com", "commit",
@@ -54,7 +73,7 @@ class ProbeLogTests(ServeTestCase):
             (RuntimeError("`private-command` failed:\nprivate-stderr-tail-marker"),
              "command failed"),
             (RuntimeError("implementer credential variable TOKEN is not set"),
-             "implementer credential variable TOKEN is not set"),
+             "launch failed"),
         )
         for failure, cause in failures:
             with self.subTest(cause=cause), patch(

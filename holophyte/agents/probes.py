@@ -139,9 +139,13 @@ def launch_failure_reason(error):
     if isinstance(error, OSError) and error.errno is not None:
         return os.strerror(error.errno)
     message = str(error)
+    for reason in ("Codex CLI is not installed", "review preflight did not complete",
+                   "command failed (1)"):
+        if message == reason or message.startswith(reason + ": "):
+            return reason
     if message.startswith("`") and "` failed:" in message:
         return "command failed"
-    return message.partition(": ")[0].partition("\n")[0] or type(error).__name__
+    return "launch failed"
 
 
 def probe_route(project, role, fallback, timeout, entry):
