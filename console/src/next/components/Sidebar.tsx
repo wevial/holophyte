@@ -1,6 +1,6 @@
-import { useContext, useEffect, useState, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
-import { applyTheme, readTheme, writeTheme } from "../../lib/theme";
+import { useTheme } from "../appearance";
 import { classicHref, writeView } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
@@ -52,30 +52,13 @@ function writeFolded(folded: boolean, key = RAIL_KEY): void {
 
 type Shown = "light" | "dark";
 
-const DARK_QUERY = "(prefers-color-scheme: dark)";
-
-function systemDark(): boolean {
-  return window.matchMedia?.(DARK_QUERY).matches ?? false;
-}
-
 const FOOTER_BUTTON =
   "flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink";
 
 const THEME_NAMES: Record<Shown, string> = { light: "Dawn", dark: "Night" };
 
 function ThemeToggle({ folded }: { folded: boolean }) {
-  const [stored, setStored] = useState(readTheme);
-  const [dark, setDark] = useState(systemDark);
-  useEffect(() => {
-    if (stored !== "system") return;
-    const query = window.matchMedia?.(DARK_QUERY);
-    if (!query) return;
-    const follow = () => setDark(query.matches);
-    follow();
-    query.addEventListener("change", follow);
-    return () => query.removeEventListener("change", follow);
-  }, [stored]);
-  const theme: Shown = stored === "system" ? (dark ? "dark" : "light") : stored;
+  const { resolvedTheme: theme, setTheme } = useTheme();
   const other: Shown = theme === "dark" ? "light" : "dark";
   const name = THEME_NAMES[theme];
   return (
@@ -83,11 +66,7 @@ function ThemeToggle({ folded }: { folded: boolean }) {
       type="button"
       aria-label={`Colour theme: ${name.toLowerCase()}. Switch to ${THEME_NAMES[other].toLowerCase()}`}
       title={folded ? name : undefined}
-      onClick={() => {
-        writeTheme(other);
-        applyTheme(other);
-        setStored(other);
-      }}
+      onClick={() => setTheme(other)}
       className={FOOTER_BUTTON}
     >
       <MoonIcon />
