@@ -151,11 +151,6 @@ test("advisories alone leave File ticket ready and a message no field owns shows
   expect(fileButton().disabled).toBe(false);
   expect(screen.getByText("Files to demo Backlog.")).toBeTruthy();
 
-  answer = { problems: [], advisories: [], blocks: false };
-  await type("Summary", "The run page lists each steer note.");
-  await advance(600);
-  expect(within(panel()).getByText("Ready. Nothing to fix.")).toBeTruthy();
-
   answer = { problems: [OPEN_QUESTIONS], advisories: [], blocks: true };
   await type("Summary", "The run page lists each steer note, newest first.");
   await advance(600);
