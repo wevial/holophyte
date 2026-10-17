@@ -1,0 +1,11 @@
+{
+  "problems": [
+    "'Summary' is empty",
+    "acceptance criterion #2 is empty",
+    "estimate is 120 min; the cap is 90 min — split the ticket"
+  ],
+  "advisories": [
+    "path does not exist in Implementation notes: holophyte/nope_missing.py"
+  ],
+  "blocks": true
+}
