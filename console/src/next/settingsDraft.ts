@@ -30,7 +30,7 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
   });
   const discard = (project: string) => setDraft((previous) => {
     const { [project]: _dropped, ...rest } = previous.projects;
-    return { ...previous, projects: rest, discards: { ...previous.discards, [project]: (previous.discards[project] ?? 0) + 1 } };
+    return { projects: rest, discards: { ...previous.discards, [project]: (previous.discards[project] ?? 0) + 1 } };
   });
   const saved: DraftContext["saved"] = (project, submitted) => setDraft((previous) => {
     const edits = { ...previous.projects[project] };
