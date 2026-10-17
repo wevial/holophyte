@@ -459,3 +459,8 @@ body {
 .day-log-scroll:hover {
   scrollbar-color: var(--rule) transparent;
 }
+
+:root[data-density="compact"] [data-row] {
+  min-height: 44px;
+  padding-block: 6px;
+}
