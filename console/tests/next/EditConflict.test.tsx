@@ -78,6 +78,15 @@ test("an edit to a section their revision now draws as fields replaces that sect
   expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(base.replace("The notes show.", "Each note shows."));
 });
 
+test("a section their revision only redraws as fields shows their commands, not a removal", () => {
+  const base = "# Notes show\n\n## Verify command(s)\n\n<!-- each on its own line -->\n```\nruff check .\n```\n";
+  const theirs = "# Notes show\n\n## Verify command(s)\n\n```\nruff check .\n```\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: [{ ...read.others[0]!, text: "<!-- each on its own line -->\n```\nbun --cwd=console test\n```" }] };
+  const merge = mergeEdit(read, loadEdit(theirs, null), mine);
+  expect(merge.both).toEqual([{ name: "Verify command(s)", theirs: "ruff check .", mine: "<!-- each on its own line -->\n```\nbun --cwd=console test\n```" }]);
+});
+
 test("a section restored by one rebase survives the next", () => {
   const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
   const fourth = "# Notes show\n\n## Summary\n\nThe notes show.\n";

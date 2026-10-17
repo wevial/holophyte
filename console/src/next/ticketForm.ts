@@ -394,6 +394,15 @@ function shown(value: unknown): string {
   return String(value);
 }
 
+/** `form`'s text for the section `name` as its fields draw it, labelled
+ *  when several fields share it; undefined when none of them holds text. */
+function drawnText(form: EditFields, name: string): string | undefined {
+  const fields = FIELD_NAMES.filter(([field]) => (field === "title" ? "Title" : (sections as Record<string, string>)[field]) === name);
+  const parts = fields.map(([field, label]) => [label, shown(form[field])]).filter(([, text]) => text && text !== "none");
+  if (!parts.length) return undefined;
+  return fields.length === 1 ? parts[0]![1] : parts.map(([label, text]) => `${label}: ${text}`).join("\n");
+}
+
 /** `mine`, an edit of `base`, set against `theirs`, a newer revision of it,
  *  field by field: each criterion by its position, each other section by
  *  its name. `onTop` is `theirs` with every field `mine` changed set to
@@ -432,8 +441,7 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
   for (const [key, other] of was) {
     const text = my.get(key)?.text;
     if (their.has(key) || text === undefined) continue;
-    const drawn = FIELD_NAMES.find(([, name]) => name === other.name)?.[0];
-    if (judge(other.name, other.text, drawn && theirs[drawn], text)) merge.onTop.others = [...merge.onTop.others, { index: other.index < 0 ? other.index : ADDED_SECTION, name: other.name, text }];
+    if (judge(other.name, other.text, other.index === -1 ? undefined : drawnText(theirs, other.name), text)) merge.onTop.others = [...merge.onTop.others, { index: other.index < 0 ? other.index : ADDED_SECTION, name: other.name, text }];
   }
   for (const [key, other] of my) {
     if (was.has(key) || their.has(key)) continue;
