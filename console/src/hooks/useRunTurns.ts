@@ -20,8 +20,13 @@ export const turnsSchema = z.object({ turns: z.array(z.object({
 export type RunTurnsBody = z.infer<typeof turnsSchema>;
 
 export const transcriptSchema = z.object({ entries: z.array(z.object({
-  speaker: z.enum(["user", "assistant", "command", "tool"]),
+  speaker: z.enum(["user", "assistant", "command", "tool", "error"]),
   text: z.string(),
+  at_ms: z.number().int().nullable(),
+  tool: z.string().nullable(),
+  call: z.string().nullable(),
+  failed: z.boolean(),
+  summary: z.string().nullable(),
 }).strict()) }).strict();
 
 export type ChainTurns = { id: number; turns: RunTurnsBody["turns"] }[];

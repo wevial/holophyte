@@ -19,16 +19,139 @@ FIXTURES = Path(__file__).parent / 'fixtures' / 'transcripts'
 
 class TranscriptTests(unittest.TestCase):
     def test_codex_rollout_in_order(self):
-        self.assertEqual(render(FIXTURES / 'codex.jsonl'), [
+        self.assertEqual([(e['speaker'], e['text']) for e in
+                          render(FIXTURES / 'codex.jsonl')], [
             ('user', 'Check the project.'),
             ('assistant', 'I will run the checks.'),
             ('command', 'await tools.exec_command({cmd: "echo checked"});'),
             ('tool', 'checked\n\nExit code: 0'),
             ('assistant', 'All checks passed.'),
+            ('command', 'await tools.exec_command({cmd: "false"});'),
+            ('tool', 'failed\n\nExit code: 1'),
         ])
 
+    def test_codex_call_metadata_and_failed_result(self):
+        entries = render(FIXTURES / 'codex.jsonl')
+        self.assertEqual(entries[2]['tool'], 'exec')
+        self.assertEqual(entries[2]['call'], 'call-1')
+        self.assertEqual(entries[2]['call'], entries[3]['call'])
+        self.assertFalse(entries[3]['failed'])
+        self.assertEqual(entries[5]['tool'], 'exec')
+        self.assertEqual(entries[5]['call'], 'call-2')
+        self.assertEqual(entries[5]['call'], entries[6]['call'])
+        self.assertTrue(entries[6]['failed'])
+
+    def test_claude_fixture_preserves_order_timestamps_and_tool_metadata(self):
+        entries = render(FIXTURES / 'claude.jsonl')
+        self.assertEqual([e['speaker'] for e in entries],
+                         ['user', 'assistant', 'command', 'tool',
+                          'command', 'tool', 'error'])
+        self.assertEqual([e['at_ms'] for e in entries], [
+            1767261601000, 1767261603500, 1767261604000, 1767261606000,
+            1767261609000, 1767261609200, 1767261612000])
+        self.assertEqual(entries[0]['text'], 'Make the greeting test pass.')
+        self.assertEqual(entries[1]['text'], 'I will run the tests first.')
+        self.assertEqual(entries[2]['tool'], 'Bash')
+        self.assertEqual(entries[2]['call'], 'toolu_01CCCCCCCCCCCCCCCCCCCCCC')
+        self.assertEqual(entries[3]['call'], entries[2]['call'])
+        self.assertTrue(entries[3]['failed'])
+        self.assertEqual(entries[2]['text'], 'python3 -m unittest discover -s tests')
+        self.assertEqual(entries[2]['summary'], 'python3 -m unittest discover -s tests')
+        self.assertEqual(entries[4]['tool'], 'Edit')
+        self.assertEqual(entries[4]['summary'], 'src/example.py')
+        self.assertEqual(entries[5]['call'], entries[4]['call'])
+        self.assertFalse(entries[5]['failed'])
+        self.assertEqual(entries[6]['text'],
+                         'Connection dropped (ECONNRESET) · retry 1 of 10')
+        self.assertTrue(entries[6]['failed'])
+        self.assertNotIn('The test probably expects', json.dumps(entries))
+        self.assertNotIn('Subagent note', json.dumps(entries))
+
+    def test_claude_malformed_tool_fields_keep_text_and_metadata_schema_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'session.jsonl'
+            for value in (None, 42, True, ['unexpected'], {'unexpected': 'value'}):
+                with self.subTest(value=value):
+                    records = [
+                        dict(type='assistant', message=dict(content=[
+                            dict(type='tool_use', name='Bash', id=value,
+                                 input=dict(command=value)),
+                            dict(type='tool_use', name=value, id=value, input={}),
+                            dict(type='tool_use', name='Search', id='search',
+                                 input=dict(description=value))])),
+                        dict(type='user', message=dict(content=[
+                            dict(type='tool_result', tool_use_id=value,
+                                 content='Result')]))]
+                    path.write_text('\n'.join(json.dumps(r) for r in records))
+                    entries = render(path)
+                    self.assertEqual(len(entries), 4)
+                    for entry in entries:
+                        self.assertIsInstance(entry['text'], str)
+                        for key in ('tool', 'call', 'summary'):
+                            self.assertTrue(entry[key] is None
+                                            or isinstance(entry[key], str), key)
+                    self.assertEqual(json.loads(entries[0]['text']),
+                                     {'command': value})
+                    self.assertEqual(entries[0]['tool'], 'Bash')
+                    self.assertIsNone(entries[0]['call'])
+                    self.assertIsNone(entries[1]['tool'])
+                    self.assertIsNone(entries[1]['call'])
+                    self.assertEqual(entries[2]['call'], 'search')
+                    self.assertEqual(entries[3]['text'], 'Result')
+                    self.assertIsNone(entries[3]['call'])
+
+    def test_claude_api_error_and_unknown_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'session.jsonl'
+            records = [
+                dict(type='assistant', timestamp='2026-10-17T10:00:00Z',
+                     isApiErrorMessage=True,
+                     message=dict(content=[dict(type='text', text='Overloaded')])),
+                dict(type='assistant', isSidechain=True,
+                     message=dict(content='Hidden sidechain')),
+                dict(type='assistant', message=dict(content=[
+                    dict(type='thinking', thinking='Hidden reasoning')])),
+                dict(type='user', message=dict(content='Next step')),
+            ]
+            path.write_text('\n'.join(json.dumps(r) for r in records) + '\n{partial')
+            self.assertEqual(render(path), [
+                dict(speaker='error', text='Overloaded', at_ms=1792231200000,
+                     tool=None, call=None, failed=True, summary=None),
+                dict(speaker='user', text='Next step', at_ms=None,
+                     tool=None, call=None, failed=False, summary=None),
+            ])
+
+    def test_claude_tool_summaries_preserve_paths_outside_cwd(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'session.jsonl'
+            records = [
+                dict(type='assistant', cwd='/project',
+                     message=dict(content=[
+                         dict(type='tool_use', id='read', name='Read',
+                              input=dict(file_path='/project-other/file.py')),
+                         dict(type='tool_use', id='search', name='Search',
+                              input=dict(description='Find callers'))])),
+                dict(type='user', message=dict(content=[
+                    dict(type='tool_result', tool_use_id='read', is_error=False,
+                         content=[dict(type='text', text='File contents')])])),
+                dict(type='system', subtype='api_error',
+                     error=dict(message='Service unavailable'),
+                     retryAttempt=2, maxRetries=5),
+            ]
+            path.write_text('\n'.join(json.dumps(r) for r in records))
+            entries = render(path)
+            self.assertEqual(entries[0]['summary'], '/project-other/file.py')
+            self.assertEqual(entries[1]['summary'], 'Find callers')
+            self.assertEqual(entries[2]['call'], entries[0]['call'])
+            self.assertEqual(entries[2]['text'], 'File contents')
+            self.assertFalse(entries[2]['failed'])
+            self.assertEqual(entries[3]['text'],
+                             'Service unavailable · retry 2 of 5')
+            self.assertTrue(entries[3]['failed'])
+
     def test_devin_export_in_order(self):
-        self.assertEqual(render(FIXTURES / 'devin.json'), [
+        self.assertEqual([(e['speaker'], e['text']) for e in
+                          render(FIXTURES / 'devin.json')], [
             ('user', 'Check the project.'),
             ('assistant', 'I will run the checks.'),
             ('command', 'echo checked'),
@@ -76,7 +199,7 @@ class TranscriptTests(unittest.TestCase):
             path.write_text('\n'.join(json.dumps({'type': 'response_item',
                                                   'payload': p}) for p in payloads)
                             + '\nnull\n{partial')
-            self.assertEqual(render(path), [
+            self.assertEqual([(e['speaker'], e['text']) for e in render(path)], [
                 ('command', 'false'),
                 ('tool', 'Process exited with code 1\nOutput:\n'),
                 ('command', 'wait for cell 8'),
@@ -244,6 +367,7 @@ class TranscriptFallbackTests(TranscriptCase):
         code, _, body = self.request('GET', url)
         self.assertEqual(code, 200)
         self.assertEqual(body, {'entries': [
-            {'speaker': 'assistant', 'text': 'Recovered transcript'}]})
+            {'speaker': 'assistant', 'text': 'Recovered transcript', 'at_ms': None,
+             'tool': None, 'call': None, 'failed': False, 'summary': None}]})
         (valid / 'rollout-first.jsonl').unlink()
         self.assertEqual(self.request('GET', url)[0], 404)
