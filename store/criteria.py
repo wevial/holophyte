@@ -1,7 +1,8 @@
 import json
 import time
+from types import SimpleNamespace
 
-from ticket_criteria import split_id, witnesses
+from ticket_criteria import split_id, witness_problems, witnesses
 
 
 def _append(conn, ticket_id, criterion, position, text, kind, target,
@@ -92,10 +93,6 @@ def current(conn, ticket_id):
 
 
 def amend(conn, ticket_id, edits, steer_note_id, now):
-    from types import SimpleNamespace
-
-    from ticket_criteria import witness_problems
-
     from .steer_notes import SteerRefused
 
     latest = {row["criterion"]: row for row in current(conn, ticket_id)}

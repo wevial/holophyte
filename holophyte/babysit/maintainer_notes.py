@@ -1,10 +1,9 @@
 import re
 from dataclasses import replace
 
-import store.criteria
 from holophyte.pr.github import Thread
 from holophyte.review.findings import decode_findings
-from store import console_asks, operator_notes, steer_notes
+from store import console_asks, criteria, operator_notes, steer_notes
 from store.read import run_snapshot
 from ticket_criteria import amendment_edits
 
@@ -62,7 +61,7 @@ def carry_amendments(conn, run_id, ticket):
 
 
 def _criteria_block(conn, run_id, parsed):
-    rows = store.criteria.current(conn, run_snapshot(conn, run_id).ticketId)
+    rows = criteria.current(conn, run_snapshot(conn, run_id).ticketId)
     reasons = {(note.id, number): text for note, edits, _ in parsed
                for verb, number, text in edits if verb == "DROP"}
     lines = []
