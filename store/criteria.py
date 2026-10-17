@@ -60,3 +60,13 @@ def backfill(conn):
                 zip(texts, witnesses(texts, json.loads(commands))), 1):
             _append(conn, ticket_id, position, position, text, kind, target,
                     "open", "backfill", now)
+
+
+def numbers(conn, ticket_id):
+    rows = conn.execute(
+        "SELECT text, criterion FROM ticketCriteria WHERE ticketId = ?"
+        " ORDER BY id DESC", (ticket_id,)).fetchall()
+    result = {}
+    for text, criterion in rows:
+        result.setdefault(text, criterion)
+    return result

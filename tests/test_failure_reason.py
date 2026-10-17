@@ -51,8 +51,8 @@ class FailureReasonTests(LoopFixture):
         self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES,
                   Commit(), verdict, provider=StubProvider(task))
         reason = self.reason()
-        for text in ('criterion 2', 'Second behavior',
-                     'criterion 4', 'Fourth behavior'):
+        for text in ('criterion C2', 'Second behavior',
+                     'criterion C4', 'Fourth behavior'):
             self.assertIn(text, reason)
         ((payload,),) = self.read(
             "SELECT payload FROM runEvents WHERE kind = 'failure'")

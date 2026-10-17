@@ -78,14 +78,14 @@ class CriteriaFindingsAgreeTests(WorktreeCase):
         self.add_witness()
         findings = self.assert_findings_are_the_unmet_statuses()
         self.assertEqual([f["message"] for f in findings], [
-            f"CRITERION 2: not met — the row names loop\n{CRITERIA[1]}",
-            f"CRITERION 3: unwitnessed — {UNWITNESSED_NOTE}\n"
+            f"CRITERION C2: not met — the row names loop\n{CRITERIA[1]}",
+            f"CRITERION C3: unwitnessed — {UNWITNESSED_NOTE}\n"
             f"{CRITERIA[2]}"])
 
     def test_missing_witness_finding_carries_the_missing_note(self):
         findings = self.assert_findings_are_the_unmet_statuses()
         self.assertTrue(findings[0]["message"].startswith(
-            f"CRITERION 1: unwitnessed — {MISSING_WITNESS_NOTE}"),
+            f"CRITERION C1: unwitnessed — {MISSING_WITNESS_NOTE}"),
             findings[0]["message"])
 
 

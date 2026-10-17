@@ -69,7 +69,7 @@ class ScriptTitleApprovalCitationTests(ApprovedRepoCase):
     def test_absent_title_in_capture_file_leaves_criterion_unwitnessed(self):
         (finding,) = self.findings(
             'e2e/smoke/readme.capture.ts::"the README pictures: the inbox"')
-        self.assertIn("CRITERION 1: unwitnessed", finding["message"])
+        self.assertIn("CRITERION C1: unwitnessed", finding["message"])
         self.assertIn("e2e/smoke/readme.capture.ts", finding["message"])
         self.assertIn("the README pictures: the inbox", finding["message"])
         self.assertIn("no test named", finding["message"])
@@ -78,7 +78,7 @@ class ScriptTitleApprovalCitationTests(ApprovedRepoCase):
         (finding,) = self.findings("src/lib/format.ts::formatDate")
         self.assertEqual(
             finding["message"].splitlines()[0],
-            "CRITERION 1: unwitnessed — named test not found: "
+            "CRITERION C1: unwitnessed — named test not found: "
             "prior approval must name a test")
 
 

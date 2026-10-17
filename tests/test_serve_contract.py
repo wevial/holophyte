@@ -192,9 +192,10 @@ class PinnedAnswerTests(unittest.TestCase):
         hints = typing.get_type_hints(Status, include_extras=True)
         narrower = typing.TypedDict("Status", {key: hint for key, hint
                                                in hints.items()
-                                               if key != "queued"})
+                                               if key != "route_probes"})
         body = json.loads((FIXTURES / "status.json").read_text())
-        with self.assertRaisesRegex(AssertionError, r"^status\.queued: undeclared$"):
+        with self.assertRaisesRegex(
+                AssertionError, r"^status\.route_probes: undeclared$"):
             walk(body, narrower, "status")
 
     def test_a_round_type_without_operator_notes_fails_the_run_detail_walk(self):

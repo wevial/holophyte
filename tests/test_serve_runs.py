@@ -831,6 +831,9 @@ class RouteLabelsTests(ServeTestCase):
             'implementer = "claude-implement --model opus"\n'
             'review_model = "gpt-6-astra"\n'), {
                 "implementer": "claude-implement opus",
+                "implementer_fallback": None,
+                "adjudicator_fallback": None,
+                "trimmer_fallback": None,
                 "reviewer": "codex gpt-6-astra",
                 "reviewer_fallback": None,
                 "adjudicator": "codex gpt-6-astra",
@@ -839,12 +842,18 @@ class RouteLabelsTests(ServeTestCase):
 
     def test_configured_seats_show_their_command_and_model(self):
         self.assertEqual(self.labels(
+            'implementer_fallback = "devin --model swe-1"\n'
+            'adjudicator_fallback = "codex-adjudicate --model gpt-6-sol"\n'
+            'trimmer_fallback = "claude-trim --model sonnet"\n'
             'reviewer = "codex-review -m gpt-6-astra"\n'
             'reviewer_fallback = "devin --model swe-1"\n'
             'adjudicator = "codex-adjudicate --model gpt-6-astra"\n'
             'writer = "claude-write --model sonnet"\n'
             'trimmer = "claude-trim --model haiku"\n'), {
                 "implementer": "claude opus",
+                "implementer_fallback": "devin swe-1",
+                "adjudicator_fallback": "codex-adjudicate gpt-6-sol",
+                "trimmer_fallback": "claude-trim sonnet",
                 "reviewer": "codex-review gpt-6-astra",
                 "reviewer_fallback": "devin swe-1",
                 "adjudicator": "codex-adjudicate gpt-6-astra",

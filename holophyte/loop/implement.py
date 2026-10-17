@@ -45,7 +45,7 @@ from holophyte.pr import mockup
 from holophyte.pr.pr_media import implementer_brief as _capture_brief
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
-from holophyte.review import blast_radius, reproduce
+from holophyte.review import blast_radius, criterion_ids, reproduce
 from store.working import agent_work
 
 
@@ -665,7 +665,7 @@ def _orchestration(project, conn, run_id, ticket):
 
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening="",
-               shadow=None, provider=None):
+               shadow=None, provider=None, criteria=()):
     commands = _commands_brief(project, verify_cmd)
     _check_run_cap(project, conn, run_id, budget_min, start_sha)
     orchestration = _orchestration(project, conn, run_id, ticket)
@@ -679,7 +679,8 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             "co-author lines for an AI." + orchestration
             + _capture_brief(project, ticket, task_id)
             + mockup.implementer_brief(wt) + blast_radius.BRIEF
-            + reproduce.BRIEF + contradiction.BRIEF)
+            + reproduce.BRIEF + contradiction.brief(
+                criterion_ids.numbered(conn, run_id, criteria)))
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     if shadow and fresh and not conflicts and not opening and not steered:
         shadow(goal, start_sha, seconds)

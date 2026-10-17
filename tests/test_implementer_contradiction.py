@@ -96,11 +96,11 @@ class ImplementTurnContradictionTests(LoopFixture):
         with self.subTest("blocked question"):
             self.assertEqual(
                 question.splitlines()[0],
-                "implementer: criterion 1 cannot be met as written: "
+                "implementer: criterion C1 cannot be met as written: "
                 "`tickets.parkKind` does not exist; the reader reads `runs.parkKind`.")
         with self.subTest("event criteria"):
             self.assertEqual(json.loads(payload)["criteria"], [{
-                "criterion": 1,
+                "criterion": 1, "id": "C1",
                 "reason": "`tickets.parkKind` does not exist; "
                           "the reader reads `runs.parkKind`.",
             }])
@@ -120,12 +120,12 @@ class ImplementTurnContradictionTests(LoopFixture):
         self.assertEqual(status, "blocked_on_operator")
         self.assertEqual(
             question.splitlines()[0],
-            f"implementer: criterion 2 cannot be met as written: {REASON}")
+            f"implementer: criterion C2 cannot be met as written: {REASON}")
         ((payload,),) = self.read(
             "SELECT payload FROM runEvents WHERE kind = 'contradiction'")
         self.assertEqual(json.loads(payload), {
             "turn": "implement", "head": head,
-            "criteria": [{"criterion": 2, "reason": REASON}]})
+            "criteria": [{"criterion": 2, "id": "C2", "reason": REASON}]})
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
@@ -146,7 +146,7 @@ class RequeueAfterContradictionTests(LoopFixture):
 
         fake, _ = self.loop(Commit("render the amended word"), APPROVE)
 
-        self.assertIn("CONTRADICTION: criterion N", fake.turns[0].goal)
+        self.assertIn("CONTRADICTION: criterion C1", fake.turns[0].goal)
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
                                    " WHERE runId = 2 AND kind = 'contradiction'"),
@@ -216,13 +216,13 @@ class FixTurnContradictionTests(LoopFixture):
         payload = json.loads(payload)
         self.assertEqual(payload["turn"], "fix")
         self.assertEqual(payload["criteria"], [
-            {"criterion": 1, "reason": "the facts lack a field"},
-            {"criterion": 3, "reason": "the file-size pin forbids it"}])
+            {"criterion": 1, "id": "C1", "reason": "the facts lack a field"},
+            {"criterion": 3, "id": "C3", "reason": "the file-size pin forbids it"}])
         ((question,),) = self.read("SELECT blockedQuestion FROM tickets")
         first = question.splitlines()[0]
-        self.assertIn("criterion 1 cannot be met as written: the facts lack"
+        self.assertIn("criterion C1 cannot be met as written: the facts lack"
                       " a field", first)
-        self.assertIn("criterion 3 cannot be met as written: the file-size"
+        self.assertIn("criterion C3 cannot be met as written: the file-size"
                       " pin forbids it", first)
 
     def test_a_pause_requested_in_the_fix_turn_still_parks_the_contradiction(self):
