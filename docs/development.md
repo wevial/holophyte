@@ -1053,3 +1053,6 @@ the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
 never from anything baked into the bundle.
 
 `console/src/next/components/HostToken.tsx` manages each Hosts card’s browser token, including saving, forgetting and undo.
+
+`console/src/next/components/HoldTab.tsx` shows project admission, reasoned hold
+and release actions, and the polled admission history.

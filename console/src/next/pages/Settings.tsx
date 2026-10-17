@@ -16,6 +16,7 @@ import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
 import { AppearanceTab } from "../components/AppearanceTab";
+import { HoldTab } from "../components/HoldTab";
 import { HostsTab } from "../components/HostsTab";
 import { NotFound } from "./Placeholder";
 
@@ -171,7 +172,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
                   project={project} host={hostLabel} applies={answer.config.applies} />;
               })}
             </div>
-          ) : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
+          ) : tab.id === "hold" && host?.status ? <HoldTab base={host.base} project={project} status={host.status} /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
         <UnsavedBar project={project} onDiscard={() => setErrors({})} disabled={!canSave || save.isPending} onSave={() => { setRefusal(null); setConfirm(true); }} />
         {confirm && <ConfirmDialog label="Save · holophyte" heading="Save these changes?" confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(false); }} onConfirm={() => void write()}
