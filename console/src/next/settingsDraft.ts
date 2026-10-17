@@ -12,22 +12,27 @@ type DraftContext = {
 const Context = createContext<DraftContext | null>(null);
 
 export function SettingsDraftProvider({ children }: { children: ReactNode }) {
-  const [projects, setProjects] = useState<Record<string, ProjectEdits>>({});
-  const edit: DraftContext["edit"] = (project, key, old, value) => setProjects((previous) => {
-    const edits = { ...previous[project] };
+  const [{ projects, discards }, setDraft] = useState<{ projects: Record<string, ProjectEdits>; discards: Record<string, number> }>({ projects: {}, discards: {} });
+  const edit: DraftContext["edit"] = (project, key, old, value) => setDraft((previous) => {
+    const edits = { ...previous.projects[project] };
     if (same(old, value)) delete edits[key];
     else edits[key] = { old, value };
-    return { ...previous, [project]: edits };
+    return { ...previous, projects: { ...previous.projects, [project]: edits } };
   });
-  const discard = (project: string) => setProjects(({ [project]: _dropped, ...rest }) => rest);
-  const saved: DraftContext["saved"] = (project, submitted) => setProjects((previous) => {
-    const edits = { ...previous[project] };
+  const discard = (project: string) => setDraft((previous) => {
+    const { [project]: _dropped, ...rest } = previous.projects;
+    return { projects: rest, discards: { ...previous.discards, [project]: (previous.discards[project] ?? 0) + 1 } };
+  });
+  const saved: DraftContext["saved"] = (project, submitted) => setDraft((previous) => {
+    const edits = { ...previous.projects[project] };
+    const discarded = previous.discards[project] !== discards[project];
     for (const [key, sent] of Object.entries(submitted)) {
+      if (!edits[key] && discarded) continue;
       const current = edits[key] ?? { old: sent.value, value: sent.old };
       if (same(current.value, sent.value)) delete edits[key];
       else edits[key] = { ...current, old: sent.value };
     }
-    return { ...previous, [project]: edits };
+    return { ...previous, projects: { ...previous.projects, [project]: edits } };
   });
   return createElement(Context.Provider, { value: { projects, edit, discard, saved } }, children);
 }

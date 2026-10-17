@@ -128,6 +128,32 @@ test.each([4, 2])("a completed save preserves the newer Workers value %s after B
   expect(JSON.parse(String(source.writes[1]!.body))).toEqual({ patch: { "loop.workers": value } });
 });
 
+test.each([false, true])("a completed save does not restore discarded fields with a new draft: %s", async (newDraft) => {
+  let complete!: () => void;
+  const pending = new Promise<void>((resolve) => { complete = resolve; });
+  const source = await mount({ pending });
+  await act(async () => { window.location.hash = "#/settings/general?project=other"; await settle(); });
+  await act(async () => { window.location.hash = "#/settings/general?project=demo"; await settle(); });
+  edit(); review(); await save();
+  expect(source.writes).toHaveLength(1);
+  await act(async () => { window.history.back(); await settle(); });
+  expect(screen.getByText("other · config.toml on its host")).toBeTruthy();
+  await act(async () => { window.history.forward(); await settle(); });
+  expect(screen.queryByRole("dialog") === null).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  expect(unsaved()).toBeNull();
+  if (newDraft) fireEvent.click(screen.getByRole("button", { name: "Human" }));
+  await act(async () => { complete(); await settle(); });
+  await act(settle);
+  expect(screen.getByText(/demo · config.toml on writer-host · revision 92b73d4/)).toBeTruthy();
+  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("3");
+  if (newDraft) {
+    review();
+    expect(dialog().textContent).toContain('+ approve = "human"');
+    expect(dialog().textContent).not.toContain("workers =");
+  } else expect(unsaved()).toBeNull();
+});
+
 test("a revision conflict re-reads the file, keeps edits and uses the refreshed revision for a deliberate retry", async () => {
   const source = await mount({ status: 409 });
   const reads = source.reads();
