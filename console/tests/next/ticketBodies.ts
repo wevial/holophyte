@@ -247,3 +247,16 @@ export const inlineHtmlBody = `## What / Why / How
 <span>Keep reading.</span>
 <https://example.com/record>
 `;
+
+export const literalVerifyBody = `## Verify command(s)
+
+<!-- Keep the guidance. -->
+
+\`\`\`sh
+printf "<!-- keep -->"
+\`\`\`
+
+## Open questions
+
+- None
+`;

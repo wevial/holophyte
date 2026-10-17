@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentHtmlBody, inlineHtmlBody } from "./ticketBodies";
+import { adjacentHtmlBody, inlineHtmlBody, literalVerifyBody } from "./ticketBodies";
 import { adjacentFencesBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, labeledCommentBody, mockupBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
 
@@ -302,11 +302,11 @@ test("How paragraphs continue after trailing spaces and UI insertion keeps How's
   );
 });
 
-test("closed comments end at the first closing marker even inside inline code and fences", () => {
+test("closed comments end at the first closing marker in prose but remain literal in fences", () => {
   const form = parseBody(closedCommentsBody);
   expect(composeBody(form)).toBe(closedCommentsBody);
   expect(fieldOf(form, "summary")).toBe("Show `` literally.  Visible tail.");
-  expect(fieldOf(form, "verify")).toEqual(["printf 'start'", "printf 'done'"]);
+  expect(fieldOf(form, "verify")).toEqual(["printf 'start'<!-- hidden", "still hidden -->", "printf 'done'"]);
 });
 
 test("a comment between a field label and its value survives a visible-text edit", () => {
@@ -317,15 +317,27 @@ test("a comment between a field label and its value survives a visible-text edit
   );
 });
 
-test("verify edits retain comments inside a fence with its closing marker on its own line", () => {
+test("replacing verify commands removes their literal HTML markers and preserves the closing fence", () => {
   const form = parseBody(closedCommentsBody);
   for (const commands of [["printf 'new'"], []]) {
     const edited = composeBody(withField(form, "verify", commands));
     expect(edited).toBe(closedCommentsBody.replace(
-      "printf 'start'<!-- hidden\nstill hidden -->\nprintf 'done'",
-      commands.join("\n") + "<!-- hidden\nstill hidden -->",
+      "printf 'start'<!-- hidden\nstill hidden -->\nprintf 'done'\n",
+      commands.length ? commands.join("\n") + "\n" : "",
     ));
     expect(fieldOf(parseBody(edited), "verify")).toEqual(commands);
     expect(fieldOf(parseBody(edited), "openQuestions")).toBe("- None");
+  }
+});
+
+test("appending verify commands preserves literal HTML markers and surrounding sections", () => {
+  for (const eol of ["\n", "\r\n"]) {
+    const body = literalVerifyBody.replaceAll("\n", eol);
+    const form = parseBody(body);
+    const commands = fieldOf(form, "verify");
+    expect(commands).toEqual(['printf "<!-- keep -->"']);
+    expect(composeBody(withField(form, "verify", [...commands, "bun test"]))).toBe(
+      body.replace('printf "<!-- keep -->"', `printf "<!-- keep -->"${eol}bun test`),
+    );
   }
 });

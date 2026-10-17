@@ -135,7 +135,7 @@ function verifySpan(text: string): Span | undefined {
   const width = opening.text.trimStart().match(/^`+/)![0].length;
   const closing = rows.slice(index + 1).find(line => new RegExp(`^ {0,3}\x60{${width},}[ \\t]*$`).test(line.text));
   const end = closing?.start ?? text.length;
-  return { start: opening.end, end, value: withoutComments(text.slice(opening.end, end)) };
+  return { start: opening.end, end, value: text.slice(opening.end, end) };
 }
 const estimatePattern = /^Estimate: (.*?) min · Depends on: (.*)$/;
 
@@ -212,7 +212,7 @@ function editText(text: string, field: Exclude<Field, "title">, value: Fields[Fi
   if (field === "verify") {
     const commands = (value as string[]).join(eol);
     const span = verifySpan(text);
-    return span ? splice(text, span.start, span.end, commands ? commands + eol : "") : append(text, "```" + eol + (commands ? commands + eol : "") + "```", eol);
+    return span ? text.slice(0, span.start) + (commands ? commands + eol : "") + text.slice(span.end) : append(text, "```" + eol + (commands ? commands + eol : "") + "```", eol);
   }
   const match = matching(text, estimatePattern)[0]?.text.match(estimatePattern);
   const estimate = field === "estimate" ? value ?? "" : match?.[1] ?? "";
