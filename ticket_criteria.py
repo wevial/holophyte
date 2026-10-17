@@ -4,6 +4,7 @@ import ticket_template
 
 _ID = re.compile(r"^\s*\*\*C([1-9][0-9]*)\*\*\s*")
 _SPAN = re.compile(r"`([^`\n]+)`")
+_CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)", re.DOTALL)
 
 
 def split_id(text):
@@ -37,5 +38,5 @@ def witness_problems(ticket):
             "name a test file or verify command"
             for number, (text, (kind, _target)) in enumerate(zip(texts, kinds), 1)
             if kind == "reviewer_read" and any(
-                phrase in _SPAN.sub(" ", text).lower()
+                phrase in _CODE_SPAN.sub(" ", text).lower()
                 for phrase in ticket_template.OPERATOR_WITNESS_PHRASES)]

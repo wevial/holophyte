@@ -132,10 +132,23 @@ class TicketCriteriaRowsTests(unittest.TestCase):
                             for problem in problems))
         for witnessed in (text + " (in `tests/test_store_board.py`)",
                           text + " (verified by `ruff check .`)",
-                          "The column is named `operator`."):
+                          "The column is named `operator`.",
+                          "The column is named `` `operator` ``.",
+                          "The column is named ``` ``operator`` ```."):
             with self.subTest(criterion=witnessed):
                 _, ticket_id = self.file([witnessed])
                 self.assertEqual(self.current(ticket_id)[1][5], "open")
+
+    def test_ready_filing_keeps_operator_prose_outside_complete_code_spans(self):
+        for text in ("The column is named ``operator`.",
+                     "The column is named `operator``.",
+                     "The column is named `` `value` `` by the operator."):
+            with self.subTest(criterion=text):
+                with self.assertRaises(store.board.FilingRefused) as refused:
+                    self.file([text])
+                self.assertRegex(
+                    str(refused.exception),
+                    r"criterion 1 reads as a post-merge or operator witness")
 
     def test_previous_version_backfills_only_open_tickets_once(self):
         self.conn.close()
