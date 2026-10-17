@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
+import type { RunCriterion } from "../src/lib/contract.gen";
 import { criteriaRows } from "../src/lib/criteria";
 import { summaryOf } from "../src/lib/ticket";
 
 const rows = [{ id: "C1", text: "first" }, { id: "C2", text: "second" }, { id: "C4", text: "fourth" }];
 
 test("criteriaRows joins verdicts by id across retired criteria and preserves unjudged standings", () => {
-  const judged = [
-    { id: "C4", status: "not_met" as const },
-    { id: "C1", status: "met" as const },
+  const judged: RunCriterion[] = [
+    { id: "C4", n: 4, text: "fourth", status: "not_met", note: "Missing coverage", run: 12, round: 1 },
+    { id: "C1", n: 1, text: "first", status: "met", note: "Verified", run: 12, round: 1 },
   ];
   for (const entries of [judged, [...judged].reverse()]) {
     expect(criteriaRows(rows, entries, true)).toEqual([
