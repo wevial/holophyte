@@ -16,6 +16,7 @@ import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
 import { AppearanceTab } from "../components/AppearanceTab";
+import { HoldTab } from "../components/HoldTab";
 import { HostsTab } from "../components/HostsTab";
 import { TomlEditor, type TomlCheckState } from "../components/TomlEditor";
 import { NotFound } from "./Placeholder";
@@ -209,7 +210,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
               })}
               </fieldset>
             </div>
-          ) : tab.id === "toml" && host && answer?.state === "ok" ? <TomlEditor
+          ) : tab.id === "hold" && host?.status ? <HoldTab base={host.base} project={project} status={host.status} /> : tab.id === "toml" && host && answer?.state === "ok" ? <TomlEditor
             base={host.base} file={file} project={project} revision={answer.config.revision}
             original={answer.config.text} text={rawText} fieldChanges={Object.keys(edits).length}
             disabled={host.status?.config_edit !== true} busy={save.isPending} refusal={rawRefusal}

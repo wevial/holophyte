@@ -8,6 +8,7 @@ import {
   boardSchema,
   findingsSchema,
   historySchema,
+  holdsSchema,
   ledgerSchema,
   mergeReadinessSchema,
   peersSchema,
@@ -402,5 +403,15 @@ export function useConfig(base: string | null) {
     queryKey: routeKey(base ?? "", "/config"),
     queryFn: () => fetchConfig(base!, deps.fetch),
     enabled: base != null,
+  });
+}
+
+export function useHolds(base: string) {
+  const deps = useContext(PollDepsContext);
+  return useQuery({
+    queryKey: routeKey(base, "/holds"),
+    queryFn: () => routeOrNone(deps.fetch, `${base}/holds`, holdsSchema),
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
   });
 }
