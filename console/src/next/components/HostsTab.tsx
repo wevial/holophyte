@@ -1,4 +1,12 @@
-import { useId } from "react";
+import { useContext, useId } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ACTIONS_OFF, ROUTES } from "../../lib/actions";
+import { formatClock } from "../../lib/format";
+import { useAction } from "../actions";
+import { OriginContext, PollDepsContext } from "../scope";
+import { Btn } from "./Btn";
+import { HostToken } from "./HostToken";
+import { useToast } from "./Toast";
 import { useHostsTab, type HostCard } from "../hosts";
 
 const tones = { live: "text-live", need: "text-need", bad: "text-bad", "ink-3": "text-ink-3" };
@@ -16,16 +24,45 @@ function LastReport({ host }: { host: HostCard }) {
   );
 }
 
+function useRetry(daemons: HostCard[]) {
+  const client = useQueryClient();
+  const origin = useContext(OriginContext);
+  const deps = useContext(PollDepsContext);
+  const toast = useToast();
+  return useMutation({
+    mutationFn: async () => {
+      const queryKey = ["fleet", origin];
+      await client.refetchQueries({ queryKey }, { cancelRefetch: false });
+      const fleet = client.getQueryData<{ hosts: HostCard["record"][] }>(queryKey);
+      const failed = daemons.filter((daemon) => {
+        const record = fleet?.hosts.find((record) => record.address === daemon.key);
+        return record && !record.needs_token && (record.root_failed || (!record.host_status && record.error != null));
+      });
+      if (failed.length) toast(`${failed.map((host) => host.name).join(" and ")} still ${failed.length === 1 ? "is" : "are"} not answering. Tried at ${formatClock(deps.now())}.`);
+    },
+  });
+}
+
 function DaemonCard({ host }: { host: HostCard }) {
   const id = useId();
+  const sweep = useAction();
+  const retry = useRetry([host]);
+  const root = host.record.host_status;
   return (
     <article aria-labelledby={id} className="min-w-0 border border-rule bg-paper">
       {host.down && <LastReport host={host} />}
       <header className="p-4 min-[1100px]:p-5">
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <h2 id={id} className="font-sans text-[19px] font-semibold text-ink">{host.name}</h2>
           <p className={`font-mono text-[12px] ${tones[host.health.tone]}`}><span aria-hidden="true">{host.health.glyph} </span>{host.health.text}</p>
+          <div className="ml-auto flex gap-2">
+            {host.down && <Btn variant="primary" busy={retry.isPending} busyLabel="Retrying…" onClick={() => retry.mutate()}>Retry now</Btn>}
+            {root && <Btn busy={sweep.isPending} busyLabel="Sweeping…" disabled={host.down || !root.actions}
+              title={!root.actions ? ACTIONS_OFF : undefined}
+              onClick={() => sweep.mutate({ label: "Run sweep", base: host.record.base, route: ROUTES["Run sweep"]!, body: {}, said: `Asked ${host.name} to sweep.` })}>Run sweep</Btn>}
+          </div>
         </div>
+        {sweep.data && !sweep.data.ok && <p className="mt-3 font-mono text-[12px] text-bad">{sweep.data.detail}</p>}
         <p className={`${mono} mt-3 break-words leading-6`}>
           <span className="text-ink">{host.address}</span> · build {host.build}
           {host.checkout && <span className="text-wait"> · checkout at {host.checkout}</span>}
@@ -57,17 +94,22 @@ function DaemonCard({ host }: { host: HostCard }) {
           {host.sweepNote && <p className={`${mono} mt-2 leading-5`}>{host.sweepNote}</p>}
         </section>
       </div>
+      <HostToken host={host} />
     </article>
   );
 }
 
 export function HostsTab() {
   const { summary, daemons, allDown } = useHostsTab();
+  const retry = useRetry(daemons);
   return (
     <div className="mt-6 max-w-[1180px] space-y-4">
       <p className="font-mono text-[13px] text-ink-2">{summary}</p>
       {allDown && <div role="status" className="border-l-2 border-need bg-need-wash p-4">
-        <p className="text-[14px] text-need">No host is answering this console.</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[14px] text-need">No host is answering this console.</p>
+          <Btn variant="primary" busy={retry.isPending} busyLabel="Retrying…" onClick={() => retry.mutate()}>Try again</Btn>
+        </div>
         <p className={`${mono} mt-1`}>last answer from {daemons.map((host) => `${host.name} ${host.seen ? `at ${host.seen}` : "never answered"}`).join(" · ")}</p>
       </div>}
       {daemons.map((host) => <DaemonCard key={host.key} host={host} />)}
