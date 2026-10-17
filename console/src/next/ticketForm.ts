@@ -1,5 +1,5 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
-import { same, unlabelledParts, type EditFields } from "./ticketEdit";
+import { partSpans, same, unlabelledParts, type EditFields } from "./ticketEdit";
 
 export interface Fields {
   title: string;
@@ -281,9 +281,10 @@ export function withCriteria(form: TicketForm, rows: { origin: number | null; te
   const text = at < 0 ? "" : form.sections[at].text;
   const blocks = criterionBlocks(text);
   if (!blocks.length) {
-    const titled = withField(form, "criteria", rows.map(row => row.text));
-    const fresh = rows.map((row, origin) => ({ ...row, origin }));
-    return rows.some(row => row.detail?.trim()) && criterionBlocks(titled.sections.find(section => section.name === sections.criteria)?.text ?? "").length === rows.length ? withCriteria(titled, fresh) : titled;
+    const kept = rows.filter(row => row.text.trim() || row.detail?.trim());
+    const titled = withField(form, "criteria", kept.map(row => row.text));
+    const fresh = kept.map((row, origin) => ({ ...row, origin }));
+    return kept.some(row => row.detail?.trim()) && criterionBlocks(titled.sections.find(section => section.name === sections.criteria)?.text ?? "").length === kept.length ? withCriteria(titled, fresh) : titled;
   }
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   const gaps = blocks.slice(1).map((block, index) => text.slice(blocks[index].end, block.start));
@@ -467,15 +468,17 @@ function unlabelledIn(theirs: EditFields, was: string): string | undefined {
   return plain && placed(plain.text, was).every(each => each.at >= 0) ? was : plain?.text;
 }
 
+/** Where `part` sits inside the span of `text` keyed `key`; -1 when absent. */
+function within(text: string, key: string, part: string): number {
+  const span = partSpans(text).find(each => each.key === key);
+  const at = span ? text.indexOf(part, span.start) : -1;
+  return at >= 0 && at + part.length <= span!.end ? at : -1;
+}
+
 /** Where each piece of the unlabelled `was` sits in `text`, in order; -1
  *  for a piece `text` changed. */
 function placed(text: string, was: string): { key: string; part: string; at: number }[] {
-  let from = 0;
-  return unlabelledParts(was).map(([key, part]) => {
-    const at = text.indexOf(part, from);
-    from = at < 0 ? from : at + part.length;
-    return { key, part, at };
-  });
+  return unlabelledParts(was).map(([key, part]) => ({ key, part, at: within(text, key, part) }));
 }
 
 /** `text` with each piece of `was` it holds swapped for `mine`'s, a piece
@@ -494,7 +497,7 @@ function rebased(text: string, was: string, mine: string): string {
       const before = pieces.slice(0, index).findLast(each => each.at >= 0);
       return [before ? { part: "", at: before.at + before.part.length, my: `\n\n${my}` } : { part: "", at: 0, my: `${my}\n\n` }];
     }
-    const found = their === undefined || my === part ? -1 : text.indexOf(their);
+    const found = their === undefined || my === part ? -1 : within(text, key, their);
     return found < 0 ? [] : [{ part: their!, at: found, my }];
   });
   let result = text;

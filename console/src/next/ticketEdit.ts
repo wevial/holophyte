@@ -91,15 +91,21 @@ function segments(text: string): Segment[] {
   return found;
 }
 
-/** Unlabelled What / Why / How `text` cut at its label lines, each piece
- *  keyed by its label and how many of that label came before it. */
-export function unlabelledParts(text: string): [string, string][] {
+/** What / Why / How `text` cut at its label lines, each span keyed by its
+ *  label and how many of that label came before it. */
+export function partSpans(text: string): { key: string; start: number; end: number }[] {
   const seen = new Map<string, number>();
-  return segments(text).flatMap(segment => {
-    const piece = text.slice(segment.start, segment.end).trim();
+  return segments(text).map(segment => {
     const count = seen.get(segment.label ?? "") ?? 0;
     seen.set(segment.label ?? "", count + 1);
-    return piece ? [[`${segment.label ?? ""}#${count}`, piece] as [string, string]] : [];
+    return { key: `${segment.label ?? ""}#${count}`, start: segment.start, end: segment.end };
+  });
+}
+
+export function unlabelledParts(text: string): [string, string][] {
+  return partSpans(text).flatMap(({ key, start, end }) => {
+    const piece = text.slice(start, end).trim();
+    return piece ? [[key, piece] as [string, string]] : [];
   });
 }
 
