@@ -6,7 +6,7 @@ import { projectName } from "../../lib/derive";
 import { Btn } from "../components/Btn";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
-import { useBoards } from "../queries";
+import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { blankForm, composeBody, fieldOf, withField } from "../ticketForm";
 import { boardColumn, COLUMN_HEADS, hostCards } from "../tickets";
@@ -39,6 +39,7 @@ export function NewTicket() {
     return match && row.name != null ? [{ name: row.name, base: match.host.base }] : [];
   });
   const target = editable.find(row => row.name === project);
+  const readiness = useReadiness(peers.hosts.filter(host => host.base === target?.base), deps);
   const answered = boards.some(({ host }) => host.project != null && projectName(host.project) === project);
   const [template, setTemplate] = useState(() => {
     const form = blankForm();
@@ -55,7 +56,7 @@ export function NewTicket() {
   const estimate = Math.min(120, Math.max(5, Math.round((Number(estimateDraft) || 25) / 5) * 5));
   const dependsOn = fieldOf(template, "dependsOn");
   const uiChange = fieldOf(template, "uiChange");
-  const cards = boards.filter(({ host }) => host.base === target?.base).flatMap(({ host, board }) => hostCards(host, board, new Map(), peers.now));
+  const cards = boards.filter(({ host }) => host.base === target?.base).flatMap(({ host, board }) => hostCards(host, board, readiness, peers.now));
   const changeCriteria = (next: string[]) => setCriteria(next.length ? next : [""]);
   const moveCriterion = (index: number, delta: number) => {
     const next = [...criteria];

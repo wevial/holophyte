@@ -8,7 +8,7 @@ import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeFetch } from "../actionFakes";
 import { fakeDeps, peersFetch, settle } from "../harness";
-import { DEMO, NOW, SERVE, WRITER } from "./needsFleet";
+import { DEMO, NOW, prPark, SERVE, WRITER } from "./needsFleet";
 
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const board = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
@@ -236,6 +236,25 @@ test("a dependency listed in the board's Ready column shows that column label", 
   await press("Add");
   expect(screen.getByText("DEMO-3 · Ready", { exact: true })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Remove DEMO-3" })).toBeTruthy();
+});
+
+test.each([[true, "Needs you"], [false, "In flight"]] as const)("a pull-request dependency uses merge readiness %s for its Tickets column label", async (ready, label) => {
+  const polls = fleet();
+  const merge = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
+  const parkedBoard = {
+    ...board,
+    columns: board.columns.map(column => ({ ...column, tickets: column.state === "blocked_on_operator" ? [{ ...column.tickets[0]!, ticket: "DEMO-9" }] : [] })),
+    editable: true,
+  };
+  await mount("#/tickets/demo/new", async (url, init) => {
+    if (url === `${DEMO}/board`) return Response.json(parkedBoard);
+    if (url === `${DEMO}/attention`) return Response.json({ level: "attention", now: NOW, project: "/srv/dev/demo", items: [{ ...prPark, ticket: "DEMO-9" }] });
+    if (url === `${DEMO}/runs/9/merge`) return Response.json({ ...merge, run: 9, ticket: "DEMO-9", ready });
+    return polls(url, init);
+  });
+  await type("Depends on", "DEMO-9");
+  await press("Add");
+  expect(screen.getByText(`DEMO-9 · ${label}`, { exact: true })).toBeTruthy();
 });
 
 test("UI change serializes its major declaration, mock-up and approval and switching off removes them", async () => {
