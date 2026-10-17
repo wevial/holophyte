@@ -879,6 +879,9 @@ Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
 each in the shell its root renders. Settings lives at `#/settings` (General)
 and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
+`console/src/next/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
+`console/src/next/components/HostsTab.tsx` renders their health, projects and last reports.
+
 `console/src/next/settings.ts` defines the grouped tabs and host attention
 count; `console/src/next/pages/Settings.tsx` frames the project picker and
 placeholder panels. The sidebar footer links to Settings. Any other path
