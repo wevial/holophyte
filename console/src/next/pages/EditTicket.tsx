@@ -16,6 +16,7 @@ import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
 import { CRUMB_LINK } from "./runShared";
 
+const SETTLED = new Set(["merged", "abandoned"]);
 const COLUMN_WORDS: Record<string, string> = { ready: "Ready", backlog: "Backlog" };
 
 function Frame({ project, ticketKey, children }: { project: string; ticketKey: string; children?: ReactNode }) {
@@ -67,11 +68,12 @@ export function EditTicket() {
   const { ticket } = page;
   const card = board.columns.flatMap((column) => column.tickets).find((each) => each.ticket === key);
   const revision = ticket.current?.revision ?? card?.revision ?? null;
-  if (board.editable !== true || revision == null) {
+  const settled = SETTLED.has(ticket.status);
+  if (board.editable !== true || revision == null || settled) {
     return (
       <Frame project={project} ticketKey={key}>
         <div className="mt-6 font-mono text-[13px] text-ink-2">
-          <p>{key} cannot be edited from the console: its board is on Linear, or its host has actions off.</p>
+          <p>{settled ? `${key} is ${ticket.status} and can no longer be edited.` : `${key} cannot be edited from the console: its board is on Linear, or its host has actions off.`}</p>
           <Link to="/tickets/$project/$key" params={{ project, key }} search={{}} className="mt-3 inline-block text-act underline">Back to {key}</Link>
         </div>
       </Frame>

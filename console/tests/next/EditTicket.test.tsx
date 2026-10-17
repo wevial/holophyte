@@ -183,6 +183,15 @@ test("the Ticket page links Edit to the edit page only while its board is editab
   expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
 });
 
+test("the edit page refuses a merged or abandoned ticket opened by its address", async () => {
+  for (const status of ["merged", "abandoned"] as const) {
+    await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ status }) });
+    expect(screen.getByText(`DEMO-2 is ${status} and can no longer be edited.`)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save revision 4" })).toBeNull();
+    cleanup();
+  }
+});
+
 test("the edit page loads the current revision with its header line and holds Save until a field changes", async () => {
   await mount("#/tickets/demo/DEMO-2/edit");
   expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe("Tickets / demo / DEMO-2 / edit");
@@ -279,6 +288,13 @@ test("a criterion's indented detail is its own field and saves under that criter
   expect(box("AC1 detail").closest("[data-changed]")).not.toBeNull();
   await pressSave();
   expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("  Its author and time show beside it.", "  Its author shows beside it.")]);
+});
+
+test("an unindented detail line saves indented under its criterion", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await type("AC1 detail", "  Its author shows.\nIts time shows too.");
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("  Its author and time show beside it.", "  Its author shows.\n  Its time shows too.")]);
 });
 
 test("How holds every paragraph up to the next label, and section text under no field is reachable under Other sections", async () => {

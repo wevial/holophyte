@@ -226,6 +226,8 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
   return composeBody(form);
 }
 
+const indented = (detail: string) => detail.split("\n").map(line => !line.trim() || /^[ \t]/.test(line) ? line : `  ${line}`).join("\n");
+
 /** Criteria still in their served places with their details as served are
  *  retitled line by line; any move, removal, addition or detail edit
  *  rebuilds the list from the served blocks. */
@@ -240,6 +242,6 @@ function composeCriteria(form: TicketForm, loaded: EditFields, edited: EditField
   return withCriteria(form, edited.criteria.map((text, index) => {
     const origin = edited.criteriaFrom[index] ?? null;
     const detail = edited.criteriaDetail[index] ?? "";
-    return { origin, text, detail: origin !== null && detail === loaded.criteriaDetail[origin] ? undefined : detail };
+    return { origin, text, detail: origin !== null && detail === loaded.criteriaDetail[origin] ? undefined : indented(detail) };
   }));
 }
