@@ -213,7 +213,7 @@ def pr_body_stub(task, reason, issue_url, native=False):
 PR_TITLE_MAX = 120
 
 
-def parse_pr_text(reply):
+def parse_pr_text(reply, *, title_optional=False):
     if not reply:
         return None
     lines = reply.splitlines()
@@ -223,7 +223,7 @@ def parse_pr_text(reply):
             if not title or len(title) > PR_TITLE_MAX:
                 return None
             return title, "\n".join(lines[n + 1:]).strip()
-    return None
+    return ("", reply.strip()) if title_optional else None
 
 
 def pr_body_written(body, task_id, issue_url, native=False):
