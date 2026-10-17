@@ -662,6 +662,8 @@ export const historyRowSchema = z.looseObject({
   started_ms: z.int(),
   ended_ms: z.int().nullable(),
   elapsed_ms: z.int(),
+  working_ms: z.int().nullable(),
+  estimate_ms: z.int().nullable(),
   heartbeat_age_ms: z.int().nullable(),
   rounds: z.int(),
   max_rounds: z.int(),
@@ -673,8 +675,10 @@ export type HistoryRow = z.infer<typeof historyRowSchema>;
 export const historySchema = z.looseObject({
   rows: z.array(historyRowSchema),
   since: z.int(),
+  until: z.int().nullable(),
   limit: z.int(),
   truncated: z.boolean(),
+  total: z.int(),
   now: z.int(),
 });
 export type History = z.infer<typeof historySchema>;
