@@ -464,30 +464,36 @@ const plainAt = (others: EditFields["others"], name: string) => others.findIndex
  *  that whole section, or undefined when `theirs` has none. */
 function unlabelledIn(theirs: EditFields, was: string): string | undefined {
   const plain = theirs.others[plainAt(theirs.others, "What / Why / How")];
-  return plain && placed(plain.text, was) ? was : plain?.text;
+  return plain && placed(plain.text, was).every(each => each.at >= 0) ? was : plain?.text;
 }
 
-/** Where each piece of the unlabelled `was` sits in `text`, in order;
- *  null when one of them is not there. */
-function placed(text: string, was: string): { key: string; part: string; at: number }[] | null {
+/** Where each piece of the unlabelled `was` sits in `text`, in order; -1
+ *  for a piece `text` changed. */
+function placed(text: string, was: string): { key: string; part: string; at: number }[] {
   let from = 0;
-  const found = unlabelledParts(was).map(([key, part]) => {
+  return unlabelledParts(was).map(([key, part]) => {
     const at = text.indexOf(part, from);
     from = at < 0 ? from : at + part.length;
     return { key, part, at };
   });
-  return found.every(each => each.at >= 0) ? found : null;
 }
 
-/** `text` with each piece of `was` swapped for `mine`'s piece of its key,
- *  and `mine`'s pieces `was` lacks added at its end. */
-function rebased(text: string, found: { key: string; part: string; at: number }[], mine: string): string {
+/** `text` with each piece of `was` it still holds swapped for `mine`'s piece
+ *  of its key, a piece both changed swapped for `mine`'s, a piece only
+ *  `text` changed kept, and `mine`'s pieces `was` lacks added at its end. */
+function rebased(text: string, was: string, mine: string): string {
   const parts = new Map(unlabelledParts(mine));
-  let result = text;
-  for (const { key, part, at } of [...found].reverse()) {
-    result = result.slice(0, at) + (parts.get(key) ?? "") + result.slice(at + part.length);
+  const theirs = new Map(unlabelledParts(text));
+  const swaps = placed(text, was).flatMap(({ key, part, at }) => {
+    const my = parts.get(key) ?? "";
     parts.delete(key);
-  }
+    if (at >= 0) return [{ part, at, my }];
+    const their = theirs.get(key);
+    const found = their === undefined || my === part ? -1 : text.indexOf(their);
+    return found < 0 ? [] : [{ part: their!, at: found, my }];
+  });
+  let result = text;
+  for (const { part, at, my } of swaps.sort((a, b) => b.at - a.at)) result = result.slice(0, at) + my + result.slice(at + part.length);
   return [result, ...parts.values()].filter(each => each.trim()).join("\n\n");
 }
 
@@ -498,10 +504,7 @@ function rebased(text: string, found: { key: string; part: string; at: number }[
 function restored(others: EditFields["others"], other: EditFields["others"][number], theirs: EditFields, was?: string): EditFields["others"] {
   if (other.index !== -1) return [...others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
   const plain = plainAt(others, other.name);
-  const replaced = (text: string) => {
-    const found = was ? placed(text, was) : null;
-    return found ? rebased(text, found, other.text) : `${text}\n\n${other.text}`;
-  };
+  const replaced = (text: string) => was ? rebased(text, was, other.text) : `${text}\n\n${other.text}`;
   if (plain >= 0) return others.map((each, index) => index === plain ? { ...each, text: replaced(each.text) } : each);
   return [...others, theirs.what || theirs.why || theirs.how || theirs.uiChange ? other : { ...other, index: ADDED_SECTION }];
 }
