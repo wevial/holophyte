@@ -133,6 +133,12 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
     return probe
 
 
+def launch_failure_reason(error):
+    if isinstance(error, OSError) and error.errno is not None:
+        return os.strerror(error.errno)
+    return type(error).__name__
+
+
 def probe_route(project, role, fallback, timeout, entry):
     goal = REVIEW_PROBE_GOAL if role in SHA_ROLES else PROBE_GOAL
     cmd = agent_command(project, role, goal, fallback=fallback, entry=entry)
@@ -183,7 +189,8 @@ def probe_route(project, role, fallback, timeout, entry):
                                expected_commit=sha, entry=entry)
         # The config write has already landed: a route that cannot start fails.
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
-            return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+            return ProbeResult(cmd, None, "", cap,
+                               launch_error=launch_failure_reason(failed),
                                seat=AGENT_CONFIG_KEYS[role], expected_commit=sha,
                                entry=entry)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
@@ -203,7 +210,8 @@ def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
                 partial = partial.decode(errors="replace")
             return ProbeResult(cmd, None, partial, cap, seat=seat, entry=entry)
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
-            return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+            return ProbeResult(cmd, None, "", cap,
+                               launch_error=launch_failure_reason(failed),
                                seat=seat, entry=entry)
     probe = ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
     if claude:
