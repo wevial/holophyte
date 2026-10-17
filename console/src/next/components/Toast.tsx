@@ -2,10 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 
 const TOAST_MS = 6000;
 
-const ToastContext = createContext<(text: string) => void>(() => {});
+type ToastAction = { label: string; run: () => void };
+type Say = (text: string, action?: ToastAction) => void;
+
+const ToastContext = createContext<Say>(() => {});
 
 /** Says `text` in the shell's one toast, replacing whatever it said. */
-export function useToast(): (text: string) => void {
+export function useToast(): Say {
   return useContext(ToastContext);
 }
 
@@ -13,11 +16,11 @@ export function useToast(): (text: string) => void {
  *  gone after `TOAST_MS`. The live region stays mounted so a screen reader
  *  hears each new sentence. */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [said, setSaid] = useState<{ text: string; at: number } | null>(null);
+  const [said, setSaid] = useState<{ text: string; at: number; action?: ToastAction } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const say = useCallback((text: string) => {
+  const say = useCallback((text: string, action?: ToastAction) => {
     if (timer.current != null) clearTimeout(timer.current);
-    setSaid({ text, at: Date.now() });
+    setSaid({ text, at: Date.now(), action });
     timer.current = setTimeout(() => setSaid(null), TOAST_MS);
   }, []);
   useEffect(() => () => {
@@ -30,7 +33,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         role="status"
         aria-live="polite"
         data-toast
-        className="pointer-events-none fixed bottom-6 right-6 z-40 max-w-[calc(100%-48px)]"
+        className={`${said?.action ? "pointer-events-auto" : "pointer-events-none"} fixed bottom-6 right-6 z-40 max-w-[calc(100%-48px)]`}
       >
         {said != null && (
           <p
@@ -38,6 +41,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className="toast-in flex min-h-11 max-w-full items-center bg-ink px-4 py-2 font-mono text-[12.5px] font-medium leading-[1.4] text-paper"
           >
             {said.text}
+            {said.action && <button
+              type="button"
+              className="ml-4 shrink-0 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-current"
+              onClick={() => {
+                if (timer.current != null) clearTimeout(timer.current);
+                setSaid(null);
+                said.action?.run();
+              }}
+            >{said.action.label}</button>}
           </p>
         )}
       </div>
