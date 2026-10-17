@@ -32,6 +32,10 @@ DOCUMENTED_COLUMNS = {
         "revision", "pushState", "pushFrom", "pushAt", "goneSince",
         "parentTicketId",
     },
+    "ticketCriteria": {
+        "id", "ticketId", "criterion", "position", "text", "witnessKind",
+        "witnessTarget", "status", "source", "at",
+    },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",
         "providerSessionId", "branch", "prUrl", "parkKind", "startedAt",
