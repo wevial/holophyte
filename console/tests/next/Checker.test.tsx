@@ -119,8 +119,11 @@ test("edits 200 ms apart send one check 600 ms after the last, and a late answer
   let release!: () => void;
   const older = fakeFetch(pinned, new Promise<void>(resolve => { release = resolve; }));
   const newer = fakeFetch({ problems: [], advisories: [], blocks: false });
-  let calls = 0;
-  await mount((url, init) => (calls++ === 0 ? older : newer).fetchImpl(url, init));
+  const signals: (AbortSignal | null | undefined)[] = [];
+  await mount((url, init) => {
+    signals.push(init?.signal);
+    return (signals.length === 1 ? older : newer).fetchImpl(url, init);
+  });
   await type("Title", "One");
   await advance(200);
   await type("Title", "One two");
@@ -132,6 +135,7 @@ test("edits 200 ms apart send one check 600 ms after the last, and a late answer
   expect(older.seen.map(request => (request.body as { body: string }).body.split("\n")[0])).toEqual(["# One two three"]);
 
   await type("Title", "One two three four");
+  expect(signals[0]?.aborted).toBe(true);
   await advance(600);
   expect(newer.seen).toHaveLength(1);
   expect(within(panel()).getByText("Ready. Nothing to fix.")).toBeTruthy();
@@ -140,6 +144,36 @@ test("edits 200 ms apart send one check 600 ms after the last, and a late answer
   expect(within(panel()).getByText("Ready. Nothing to fix.")).toBeTruthy();
   expect(within(panel()).queryByText(/errors block filing/)).toBeNull();
   expect(fileButton().disabled).toBe(false);
+});
+
+test("an older body's answer landing during the next edit's wait is not shown", async () => {
+  let release!: () => void;
+  const older = fakeFetch(pinned, new Promise<void>(resolve => { release = resolve; }));
+  const newer = fakeFetch({ problems: [], advisories: [], blocks: false });
+  let calls = 0;
+  await mount((url, init) => (calls++ === 0 ? older : newer).fetchImpl(url, init));
+  await type("Title", "One");
+  await advance(600);
+  await type("Title", "One two");
+  await advance(300);
+  release();
+  await flush();
+  expect(within(panel()).queryByText(/errors block filing/)).toBeNull();
+  expect(fileButton().disabled).toBe(false);
+  await advance(300);
+  expect(newer.seen).toHaveLength(1);
+  expect(within(panel()).getByText("Ready. Nothing to fix.")).toBeTruthy();
+});
+
+test("a list-level criteria error marks each criterion input invalid and describes it", async () => {
+  const cap = "'Acceptance criteria' has 11 items; the cap is 10 — split the ticket";
+  await mount(fakeFetch({ problems: [cap], advisories: [], blocks: true }).fetchImpl);
+  await type("Title", "Steer notes show on the run detail card");
+  await type("AC1", "Notes show");
+  await advance(600);
+  const criterion = screen.getByRole("textbox", { name: "AC1" });
+  expect(criterion.getAttribute("aria-invalid")).toBe("true");
+  expect(under(criterion)).toContain(cap);
 });
 
 test("advisories alone leave File ticket ready and a message no field owns shows only in the panel under Ticket", async () => {

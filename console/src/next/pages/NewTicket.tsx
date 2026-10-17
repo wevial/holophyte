@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { checkTicket, fileTicket, type CheckResult } from "../../lib/boardWrites";
 import { projectName } from "../../lib/derive";
 import type { PollDeps } from "../../lib/poll";
@@ -23,22 +23,24 @@ const CHECK_DELAY_MS = 600;
 const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;
 
 /** The checker's judgement of `body` once it has stood unedited for
- *  `CHECK_DELAY_MS`; an answer for an older body never replaces the newer
- *  one's. `null` while the form is blank, `undefined` until first answered. */
+ *  `CHECK_DELAY_MS`. An edit aborts the request in flight, so one check
+ *  runs at a time and an answer for an older body is never shown.
+ *  `null` while the form is blank, `undefined` until first answered. */
 function useTicketCheck(base: string | undefined, body: string | null, deps: PollDeps): CheckResult | null | undefined {
-  const [settled, setSettled] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<{ base: string; result: CheckResult } | null>(null);
   useEffect(() => {
-    if (body === null) return setSettled(null);
-    return deps.timer(() => setSettled(body), CHECK_DELAY_MS);
-  }, [body, deps]);
-  const query = useQuery({
-    queryKey: ["ticket-check", base, settled],
-    queryFn: () => checkTicket(base!, settled!, deps.fetch),
-    enabled: base != null && settled != null,
-    placeholderData: keepPreviousData,
-    staleTime: Infinity,
-  });
-  return body === null ? null : settled === null ? undefined : query.data;
+    if (body === null || base == null) return setAnswer(null);
+    const controller = new AbortController();
+    const cancel = deps.timer(() => void checkTicket(base, body, deps.fetch, controller.signal).then(result => {
+      if (!controller.signal.aborted) setAnswer({ base, result });
+    }), CHECK_DELAY_MS);
+    return () => {
+      cancel();
+      controller.abort();
+    };
+  }, [base, body, deps]);
+  if (body === null) return null;
+  return answer && answer.base === base ? answer.result : undefined;
 }
 
 function Messages({ id, messages }: { id: string; messages: Message[] }) {
@@ -134,12 +136,12 @@ export function NewTicket() {
   const held = blank || errors > 0;
   const summary = checkSummary(check);
   const messagesOf = (field: string) => messages.filter(message => message.field === field);
-  const marks = (field: string, className: string) => {
-    const own = messagesOf(field);
-    const invalid = own.some(message => message.error);
+  const marks = (fields: string | string[], className: string) => {
+    const owners = [fields].flat().filter(field => messagesOf(field).length);
+    const invalid = owners.some(field => messagesOf(field).some(message => message.error));
     return {
       "aria-invalid": invalid || undefined,
-      "aria-describedby": own.length ? messagesId(field) : undefined,
+      "aria-describedby": owners.length ? owners.map(messagesId).join(" ") : undefined,
       className: invalid ? className.replace("border-rule", "border-bad") : className,
     };
   };
@@ -206,7 +208,7 @@ export function NewTicket() {
                 <div className="mt-3 space-y-3">
                   {criteria.map((criterion, index) => <div key={index} className="flex flex-wrap items-center gap-2 border-b border-rule-2 pb-3">
                     <label htmlFor={`criterion-${index}`} className="w-8 font-mono text-[11px] text-ink-3">AC{index + 1}</label>
-                    <input id={`criterion-${index}`} {...marks(`AC${index + 1}`, `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => changeCriteria(criteria.map((value, at) => at === index ? event.target.value : value))} />
+                    <input id={`criterion-${index}`} {...marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => changeCriteria(criteria.map((value, at) => at === index ? event.target.value : value))} />
                     <div className="ml-auto flex gap-1">
                       <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} up`} disabled={index === 0} onClick={() => moveCriterion(index, -1)}>↑</Btn>
                       <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} down`} disabled={index === criteria.length - 1} onClick={() => moveCriterion(index, 1)}>↓</Btn>

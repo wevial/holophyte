@@ -28,11 +28,13 @@ async function send(
   payload: unknown,
   fetchImpl: Fetch,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<{ status: number; record: Record<string, unknown> } | { error: string }> {
   const init = withToken(addressOf(base), {
     method,
     headers: { "content-type": "application/json", accept: "application/json", ...headers },
     body: JSON.stringify(payload),
+    signal,
   });
   let response: Response;
   try {
@@ -75,11 +77,11 @@ export async function fileTicket(base: string, body: string, priority: number | 
 export type CheckResult = TicketCheck | "unsupported" | { error: string };
 
 /** Judge `body` as filing into Backlog would, writing nothing:
- *  `POST` `{"body", "column": "backlog"}` to `base`'s `/tickets/check`.
- *  Never throws. */
-export async function checkTicket(base: string, body: string, fetchImpl: Fetch): Promise<CheckResult> {
+ *  `POST` `{"body", "column": "backlog"}` to `base`'s `/tickets/check`,
+ *  abandoned when `signal` aborts. Never throws. */
+export async function checkTicket(base: string, body: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<CheckResult> {
   const url = `${base}/tickets/check`;
-  const sent = await send(base, url, "POST", { body, column: "backlog" }, fetchImpl);
+  const sent = await send(base, url, "POST", { body, column: "backlog" }, fetchImpl, {}, signal);
   if ("error" in sent) return { error: sent.error };
   const { status, record } = sent;
   if (status === 404) return "unsupported";
