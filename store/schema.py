@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 51
+SCHEMA_VERSION = 52
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -345,6 +345,9 @@ def init(conn):
                 " boardColumn FROM tickets WHERE revision = 0",
                 (int(time.time() * 1000),))
             conn.execute("UPDATE tickets SET revision = 1 WHERE revision = 0")
+        if version < 52:
+            from .criteria import backfill as backfill_criteria
+            backfill_criteria(conn)
         if version < SCHEMA_VERSION:
             _record_migration(conn, version)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION:d}")

@@ -679,6 +679,24 @@ export const historySchema = z.looseObject({
 });
 export type History = z.infer<typeof historySchema>;
 
+export const holdRowSchema = z.looseObject({
+  id: z.int(),
+  at: z.int(),
+  action: z.enum(["hold", "release_hold", "disable"]),
+  note: z.string().nullable(),
+  actor: z.enum(["maintainer", "operator", "supervisor"]).nullable(),
+});
+export type HoldRow = z.infer<typeof holdRowSchema>;
+
+export const holdsSchema = z.looseObject({
+  admission: z.enum(["enabled", "held", "disabled"]),
+  note: z.string().nullable(),
+  rows: z.array(holdRowSchema),
+  limit: z.int(),
+  truncated: z.boolean(),
+});
+export type Holds = z.infer<typeof holdsSchema>;
+
 export const ledgerEntrySchema = z.looseObject({
   at: z.int(),
   kind: z.string(),
@@ -891,6 +909,13 @@ export const ticketDetailSchema = z.looseObject({
   steers: z.array(ticketSteerSchema),
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
+
+export const ticketCheckSchema = z.looseObject({
+  problems: z.array(z.string()),
+  advisories: z.array(z.string()),
+  blocks: z.boolean(),
+});
+export type TicketCheck = z.infer<typeof ticketCheckSchema>;
 
 export const storyChildRowSchema = z.looseObject({
   ticket: z.string(),

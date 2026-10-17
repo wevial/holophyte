@@ -96,6 +96,34 @@ to `HOLOPHYTE_HOME/host-actions.jsonl` and synced, with `at`, `action`
 `ok` and `detail` are as on the unit actions below. The console's
 "Run sweep" on a stale sweep or supervisor row is this route.
 
+## `POST /actions/restart-daemon`
+
+At a host daemon's root, behind `host.toml`'s `[serve] actions` and the
+machine token. Body: optional, a JSON object with `note` and `author`.
+Before restarting, one JSON line is appended to
+`HOLOPHYTE_HOME/host-actions.jsonl` and synced, with `at`, `action`
+(`restart_daemon`), `via`, `pid`, `author` (default `maintainer`) and `note`.
+If the ledger cannot be written, the daemon keeps running and answers 200
+with `ok: false`, `recorded: null` and `detail` naming the ledger.
+
+```json
+{"action": "restart-daemon", "ok": true,
+ "detail": "the daemon drains its requests and restarts",
+ "recorded": "HOLOPHYTE_HOME/host-actions.jsonl"}
+```
+
+`recorded` is the ledger's resolved path. After writing the answer, the
+daemon stops accepting requests and drains active requests for at most
+`DRAIN_SEC`, logging `restart requested over HTTP`. With an adopted socket
+it exits 0; the service manager starts the next daemon when a request
+arrives on that socket. Otherwise it re-executes itself. It comes back on
+the checkout's code; a greater root `/status` `daemon.started_ms`
+identifies the new daemon. Requests while draining answer 503
+`daemon restarting`.
+
+This route does not restart the supervisor, sweep or loop. It is 404 on a
+project daemon and under `/projects/NAME/actions/` on a host daemon.
+
 ## `POST /actions/restart-supervisor`
 
 Runs `systemctl --user restart holophyte-supervise@NAME`, where `NAME` is
@@ -282,7 +310,7 @@ the loop's user.
 `GET /config` answers
 
 ```json
-{"text": "[serve]\ntoken_file = \"...\"\n...", "values": {"serve": {"token_file": "..."}, "loop": {"workers": 2}}, "path": "/home/.../config.toml", "applies": "next loop start"}
+{"text": "[serve]\ntoken_file = \"...\"\n...", "values": {"serve": {"token_file": "..."}, "loop": {"workers": 2}}, "path": "/home/.../config.toml", "applies": "next loop start", "revision": "<sha256>", "modified_ms": 1791969120000, "saved": {"at_ms": 1791969120000, "actor": "maintainer"}}
 ```
 
 `text` is the file as written, except that the value of every key whose
@@ -303,10 +331,31 @@ the file once at startup, so a written change waits for the next start
 (`POST /actions/launch-loop`, or the supervisor's), and a running loop is
 not touched.
 
+`revision` is the SHA-256 hex digest of the file's text before redaction,
+as read by the daemon; an absent file has the digest of empty text.
+`modified_ms` is the file's modification time in epoch milliseconds, or
+null with no file. `saved` names the newest `config_edit` intervention on
+this project's runs: `at_ms` is its timestamp and `actor` is `maintainer`,
+`operator`, `supervisor`, or null for an older row with no recorded actor.
+With no such intervention, `saved` is null. A manual file edit changes the
+revision and modification time but does not create a save record.
+
+Send the revision read in `If-Match` when saving either `text` or `patch`.
+Under the write lock, the daemon compares it with the current file before
+restoring secrets, validating, recording or writing. A mismatch answers
+409, without creating a backup or intervention:
+
+```json
+{"ok": false, "error": "config.toml changed since this revision was read; read it again", "current": "<current-sha256>"}
+```
+
+The error names the project's own file. Omitting `If-Match` preserves
+unconditional writes for existing clients.
+
 `PUT /config` takes `{"text": "..."}`, the whole new file. Every
 `"[redacted]"` value in it -- any TOML string reading `[redacted]`,
 however quoted, a comment beside it or not -- is replaced by the current
-file's value for the same key in the same table before anything else, so
+file's value for the same key in the same table after the revision check, so
 a round trip through the page never blanks a secret; a `[redacted]` under
 a key the current file does not hold is 400 naming it. The text is then parsed as
 TOML and run through the loader's startup checks -- unknown keys, every
@@ -329,14 +378,15 @@ to `config.toml.bak-STAMP` beside the file, `STAMP` the UTC time to the
 second (`-2`, `-3` when that second already has one), and the new text
 lands by rename from a staging file of its own, so a reader sees the old
 file or the new one and never a torn one. Writes are taken one at a time,
-from the read of the current file to the rename, so two clients cannot
-back up the same text twice and lose an edit. The reply is
+from the read of the current file to the rename. Clients sending `If-Match`
+cannot overwrite an intervening save with a stale revision. The reply is
 
 ```json
-{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42, "probe": null}
+{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42, "probe": null, "revision": "<written-sha256>"}
 ```
 
-`backup` is null when there was no file to keep. Backups are not pruned.
+`revision` names the written file. `backup` is null when there was no file
+to keep. Backups are not pruned.
 
 `PUT /config` also takes `{"patch": {...}}` in place of `text`: a flat
 object of dotted `table.key` to a string, an integer, a boolean or a list
@@ -425,6 +475,6 @@ reading GitHub.
 | --- | --- |
 | 400 | the body is not a JSON object, or `requeue` has no `ticket`, a non-boolean `force`, or `"force": true` without a non-blank `note`, or `merge` has no positive integer `run`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
-| 404 | `[serve] actions` is not `true`, or the action is not one of this page's; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
+| 404 | `[serve] actions` is not `true`, or the action is not one of this page's; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` or `restart-daemon`; `restart-daemon` on a project daemon or under `/projects/NAME/actions/` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
-| 503 | `requeue` or `merge` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |
+| 503 | any request while the daemon drains for restart (`daemon restarting`); `requeue` or `merge` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |

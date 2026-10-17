@@ -645,6 +645,22 @@ class History(TypedDict):
     now: int
 
 
+class HoldRow(TypedDict):
+    id: int
+    at: int
+    action: Literal["hold", "release_hold", "disable"]
+    note: str | None
+    actor: Literal["maintainer", "operator", "supervisor"] | None
+
+
+class Holds(TypedDict):
+    admission: Literal["enabled", "held", "disabled"]
+    note: str | None
+    rows: list[HoldRow]
+    limit: int
+    truncated: bool
+
+
 class RunLedgerEntry(TypedDict):
     at: int
     kind: str
@@ -828,6 +844,12 @@ class TicketDetail(TypedDict):
     steers: list[TicketSteer]
 
 
+class TicketCheck(TypedDict):
+    problems: list[str]
+    advisories: list[str]
+    blocks: bool
+
+
 class StoryChildRow(TypedDict):
     ticket: str
     title: str
@@ -886,10 +908,12 @@ ROUTES = {
     "run-turns": (RunTurns, "GET /runs/N/turns"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
+    "holds": (Holds, "GET /holds"),
     "ledger": (Ledger, "GET /ledger"),
     "findings": (Findings, "GET /findings"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
+    "ticket-check": (TicketCheck, "POST /tickets/check"),
     "story": (StoryDetail, "GET /stories/KEY"),
 }
 

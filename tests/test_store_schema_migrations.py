@@ -490,7 +490,8 @@ class AdmissionMigrationTests(unittest.TestCase):
 
 STORY_TABLES = ('stories', 'storyChildren', 'witnessResults', 'storyDecisions')
 # Tables newer than version 26, left empty by its migration.
-EMPTY_TABLES = (*STORY_TABLES, 'followUps', 'storyProposals', 'steerNotes')
+EMPTY_TABLES = (*STORY_TABLES, 'followUps', 'storyProposals', 'steerNotes',
+                'ticketCriteria')
 
 
 class Version26EnumMigrationTests(unittest.TestCase):
@@ -943,9 +944,9 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 51)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 52)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (51,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (52,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)
