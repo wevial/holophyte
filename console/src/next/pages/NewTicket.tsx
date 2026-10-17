@@ -1,10 +1,13 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { fileTicket } from "../../lib/boardWrites";
+import { checkTicket, fileTicket, type CheckResult } from "../../lib/boardWrites";
 import { formatClock } from "../../lib/format";
 import { projectName } from "../../lib/derive";
+import type { PollDeps } from "../../lib/poll";
+import { checkSummary, fileNote, placeMessage, WHOLE_TICKET } from "../checker";
 import { Btn } from "../components/Btn";
+import { TONE_TEXT } from "../components/StateDot";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
 import { useBoards, useReadiness } from "../queries";
@@ -16,6 +19,39 @@ import { CRUMB_LINK } from "./runShared";
 const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
+type Message = { text: string; error: boolean; field: string };
+const CHECK_DELAY_MS = 600;
+const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;
+
+/** The checker's judgement of `body` once it has stood unedited for
+ *  `CHECK_DELAY_MS`. An edit aborts the request in flight, so one check
+ *  runs at a time and an answer for an older body is never shown.
+ *  `null` while the form is blank, `undefined` until first answered. */
+function useTicketCheck(base: string | undefined, body: string | null, deps: PollDeps): CheckResult | null | undefined {
+  const [answer, setAnswer] = useState<{ base: string; body: string; result: CheckResult } | null>(null);
+  useEffect(() => {
+    if (body === null || base == null) return setAnswer(null);
+    const controller = new AbortController();
+    const cancel = deps.timer(() => void checkTicket(base, body, deps.fetch, controller.signal).then(result => {
+      if (!controller.signal.aborted) setAnswer({ base, body, result });
+    }), CHECK_DELAY_MS);
+    return () => {
+      cancel();
+      controller.abort();
+    };
+  }, [base, body, deps]);
+  if (body === null) return null;
+  return answer && answer.base === base && answer.body === body ? answer.result : undefined;
+}
+
+function Messages({ id, messages }: { id: string; messages: Message[] }) {
+  if (!messages.length) return null;
+  return <ul id={id} className="mt-2 space-y-1 font-mono text-[12px] [overflow-wrap:anywhere]">
+    {messages.map((message, index) => <li key={index} className={message.error ? "text-bad" : "text-ask"}>
+      <span aria-hidden="true" className="mr-1.5">{message.error ? "×" : "!"}</span>{message.text}
+    </li>)}
+  </ul>;
+}
 
 const emptyValues = () => Object.fromEntries(FIELDS.map(field => [field, ""])) as Record<TextField, string>;
 const draftKey = (project: string) => `holo.newTicket.${project}`;
@@ -81,7 +117,7 @@ function clearDraft(project: string) {
   }
 }
 
-function Field({ label, optional = false, hint, extra, children }: { label: string; optional?: boolean; hint?: string; extra?: string; children: ReactNode }) {
+function Field({ label, optional = false, hint, extra, messages = [], children }: { label: string; optional?: boolean; hint?: string; extra?: string; messages?: Message[]; children: ReactNode }) {
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-baseline gap-x-2">
@@ -90,6 +126,7 @@ function Field({ label, optional = false, hint, extra, children }: { label: stri
       </div>
       {hint && <p className="mt-1 text-[13px] text-ink-2">{hint}</p>}
       {children}
+      <Messages id={messagesId(label)} messages={messages} />
     </div>
   );
 }
@@ -156,32 +193,52 @@ export function NewTicket() {
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
+  let form = withField(withField(template, "criteria", criteria), "estimate", estimate);
+  for (const field of FIELDS) {
+    if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, values[field] ? values[field].split("\n") : []);
+    else if (field === "notes") form = withField(form, field, values[field].split("\n").filter(line => line.trim()).map(line => `- ${line}`).join("\n"));
+    else form = withField(form, field, values[field]);
+  }
+  if (uiChange) {
+    form = withField(withField(withField(form, "mockupLink", mockupLink), "mockupApproval", approval), "mockupImages", mockupBoards.split("\n").filter(url => url.trim()).map(url => `![board](${url.trim()})`));
+  }
+  const body = composeBody(form);
+  const blank = !values.title.trim() && !values.summary.trim() && !values.what.trim();
+  const check = useTicketCheck(target?.base, blank ? null : body, deps);
+  const judged = typeof check === "object" && check !== null && !("error" in check) ? check : null;
+  const messages: Message[] = judged ? [
+    ...judged.problems.map(text => ({ text, error: true, field: placeMessage(text) })),
+    ...judged.advisories.map(text => ({ text, error: false, field: placeMessage(text) })),
+  ] : [];
+  const errors = judged?.problems.length ?? 0;
+  const held = blank || errors > 0;
+  const summary = checkSummary(check);
+  const messagesOf = (field: string) => messages.filter(message => message.field === field);
+  const marks = (fields: string | string[], className: string) => {
+    const owners = [fields].flat().filter(field => messagesOf(field).length);
+    const invalid = owners.some(field => messagesOf(field).some(message => message.error));
+    return {
+      "aria-invalid": invalid || undefined,
+      "aria-describedby": owners.length ? owners.map(messagesId).join(" ") : undefined,
+      className: invalid ? className.replace("border-rule", "border-bad") : className,
+    };
+  };
+  const fieldId = (field: string) => field.startsWith("AC") ? `criterion-${Number(field.slice(2)) - 1}`
+    : field === "Acceptance criteria" ? "criterion-0" : field === "Estimate" ? "estimate" : `new-${field}`;
   const input = (field: TextField, label: string, hint?: string, optional = false) => {
     const placeholder = template.hints[field];
     const props = {
       id: `new-${label}`, value: values[field], placeholder: Array.isArray(placeholder) ? placeholder.join("\n") : placeholder,
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues(previous => ({ ...previous, [field]: event.target.value })),
     };
-    return <Field label={label} hint={hint} optional={optional} extra={field === "verify" ? " · one a line, run as written" : undefined}>
-      {field === "title" ? <input {...props} className={`${INPUT} font-sans text-[18px] font-semibold`} /> :
-        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} className={`${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`} />}
+    return <Field label={label} hint={hint} optional={optional} messages={messagesOf(label)} extra={field === "verify" ? " · one a line, run as written" : undefined}>
+      {field === "title" ? <input {...props} {...marks(label, `${INPUT} font-sans text-[18px] font-semibold`)} /> :
+        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
-  };
-  const body = () => {
-    let form = withField(withField(template, "criteria", criteria.filter(value => value.trim())), "estimate", estimate);
-    for (const field of FIELDS) {
-      if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, values[field] ? values[field].split("\n") : []);
-      else if (field === "notes") form = withField(form, field, values[field].split("\n").filter(line => line.trim()).map(line => `- ${line}`).join("\n"));
-      else form = withField(form, field, values[field]);
-    }
-    if (uiChange) {
-      form = withField(withField(withField(form, "mockupLink", mockupLink), "mockupApproval", approval), "mockupImages", mockupBoards.split("\n").filter(url => url.trim()).map(url => `![board](${url.trim()})`));
-    }
-    return composeBody(form);
   };
   const save = () => {
     try {
-      localStorage.setItem(draftKey(project), JSON.stringify({ body: body(), priority, savedAt: Date.now() }));
+      localStorage.setItem(draftKey(project), JSON.stringify({ body, priority, savedAt: Date.now() }));
       toast("Draft kept in this browser.");
     } catch {
       toast("This browser keeps no drafts.");
@@ -193,10 +250,10 @@ export function NewTicket() {
     setProblems([]);
   };
   const file = async () => {
-    if (!target || busy) return;
+    if (!target || busy || held) return;
     setBusy(true);
     setProblems([]);
-    const result = await fileTicket(target.base, body(), priority, deps.fetch, "backlog");
+    const result = await fileTicket(target.base, body, priority, deps.fetch, "backlog");
     setBusy(false);
     if (!result.ok) {
       setProblems("problems" in result ? result.problems : [result.error]);
@@ -243,16 +300,17 @@ export function NewTicket() {
               {input("how", "How")}
               {input("inScope", "In scope", "One a line.")}
               {input("outOfScope", "Out of scope", "One a line.")}
-              <Field label="Acceptance criteria" extra=" · each one a reviewer can witness" hint="Screenshots and clips go under Evidence on the run, not here.">
+              <Field label="Acceptance criteria" extra=" · each one a reviewer can witness" hint="Screenshots and clips go under Evidence on the run, not here." messages={messagesOf("Acceptance criteria")}>
                 <div className="mt-3 space-y-3">
                   {criteria.map((criterion, index) => <div key={index} className="flex flex-wrap items-center gap-2 border-b border-rule-2 pb-3">
                     <label htmlFor={`criterion-${index}`} className="w-8 font-mono text-[11px] text-ink-3">AC{index + 1}</label>
-                    <input id={`criterion-${index}`} className={`${INPUT} !mt-0 flex-1 basis-[160px]`} value={criterion} onChange={event => changeCriteria(criteria.map((value, at) => at === index ? event.target.value : value))} />
+                    <input id={`criterion-${index}`} {...marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => changeCriteria(criteria.map((value, at) => at === index ? event.target.value : value))} />
                     <div className="ml-auto flex gap-1">
                       <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} up`} disabled={index === 0} onClick={() => moveCriterion(index, -1)}>↑</Btn>
                       <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} down`} disabled={index === criteria.length - 1} onClick={() => moveCriterion(index, 1)}>↓</Btn>
                       <Btn className="!w-10 !h-10 !p-0" aria-label={`Remove AC${index + 1}`} onClick={() => changeCriteria(criteria.filter((_, at) => at !== index))}>×</Btn>
                     </div>
+                    <div className="basis-full empty:hidden"><Messages id={messagesId(`AC${index + 1}`)} messages={messagesOf(`AC${index + 1}`)} /></div>
                   </div>)}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -266,10 +324,11 @@ export function NewTicket() {
                   <label htmlFor="estimate" className="text-[14px] font-semibold">Estimate <span className="ml-2 font-mono text-[10.5px] font-normal uppercase text-ink-3">Minutes</span></label>
                   <div className="mt-2 flex items-center">
                     <Btn aria-label="Decrease estimate" disabled={estimate <= 5} onClick={() => changeEstimate(estimate - 5)}>–</Btn>
-                    <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={estimateDraft} onChange={event => setEstimateDraft(event.target.value)} onBlur={() => changeEstimate(estimate)} className="h-11 w-16 border border-rule bg-canvas text-center font-mono text-ink" />
+                    <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={estimateDraft} onChange={event => setEstimateDraft(event.target.value)} onBlur={() => changeEstimate(estimate)} {...marks("Estimate", "h-11 w-16 border border-rule bg-canvas text-center font-mono text-ink")} />
                     <Btn aria-label="Increase estimate" disabled={estimate >= 120} onClick={() => changeEstimate(estimate + 5)}>+</Btn>
                   </div>
                   <p className="mt-2 font-mono text-[12px] text-ink-3">sets the run's time box · cap 90</p>
+                  <Messages id={messagesId("Estimate")} messages={messagesOf("Estimate")} />
                 </div>
                 <div role="group" aria-label="Priority">
                   <p className="text-[14px] font-semibold">Priority</p>
@@ -280,7 +339,7 @@ export function NewTicket() {
                   </div>
                   <p className="mt-2 font-mono text-[12px] text-ink-3">P1 is the highest</p>
                 </div>
-                <Field label="Depends on" optional>
+                <Field label="Depends on" optional messages={messagesOf("Depends on")}>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {dependsOn.map(key => {
                       const card = cards.find(card => card.key === key);
@@ -291,18 +350,19 @@ export function NewTicket() {
                     })}
                   </div>
                   <div className="mt-2 flex gap-2">
-                    <input id="new-Depends on" className={`${INPUT} !mt-0`} value={dependency} onChange={event => setDependency(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDependency(); } }} />
+                    <input id="new-Depends on" {...marks("Depends on", `${INPUT} !mt-0`)} value={dependency} onChange={event => setDependency(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDependency(); } }} />
                     <Btn onClick={addDependency}>Add</Btn>
                   </div>
                 </Field>
               </div>
               <div className="space-y-5">
                 <label className="flex items-center gap-3 text-[14px] font-semibold">
-                  <input type="checkbox" role="switch" checked={uiChange !== null} onChange={toggleUI} className="h-5 w-9 accent-act" />This ticket changes the UI
+                  <input id="new-UI change" type="checkbox" role="switch" checked={uiChange !== null} onChange={toggleUI} {...marks("UI change", "h-5 w-9 accent-act")} />This ticket changes the UI
                 </label>
+                <Messages id={messagesId("UI change")} messages={messagesOf("UI change")} />
                 {uiChange && <>
-                  <Field label="Mock-up link" extra=" for a UI change" hint="The design the implementer builds to and the reviewer compares against.">
-                    <input id="new-Mock-up link" className={INPUT} placeholder="https://…" value={mockupLink} onChange={event => setMockupLink(event.target.value)} />
+                  <Field label="Mock-up link" extra=" for a UI change" hint="The design the implementer builds to and the reviewer compares against." messages={messagesOf("Mock-up link")}>
+                    <input id="new-Mock-up link" {...marks("Mock-up link", INPUT)} placeholder="https://…" value={mockupLink} onChange={event => setMockupLink(event.target.value)} />
                   </Field>
                   <Field label="Approval">
                     <input id="new-Approval" className={`${INPUT} font-mono`} value={approval} onChange={event => setApproval(event.target.value)} />
@@ -315,12 +375,28 @@ export function NewTicket() {
               {input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
             </div>
             <aside aria-label="File ticket" className="min-w-0">
+              <section aria-label="Checker" className="mb-4 border border-rule bg-paper p-5">
+                <div className="flex items-baseline justify-between gap-2 border-b border-rule-2 pb-2">
+                  <h2 className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-2">Checker</h2>
+                  <span className="font-mono text-[11px] text-ink-3">as you type</span>
+                </div>
+                <p aria-live="polite" className={`mt-3 font-mono text-[13px] [overflow-wrap:anywhere] ${TONE_TEXT[summary.tone]}`}>{summary.text}</p>
+                {messages.length > 0 && <ul aria-label="Checker messages" className="mt-3 space-y-1">{messages.map((message, index) => {
+                  const row = <>
+                    <span aria-hidden="true" className={`mr-1.5 ${message.error ? "text-bad" : "text-ask"}`}>{message.error ? "×" : "!"}</span>
+                    <span className="mr-1.5 font-mono text-[12px] font-semibold text-ink">{message.field}</span>
+                    <span className="text-[13px] text-ink-2">{message.text}</span>
+                  </>;
+                  return <li key={index} className="[overflow-wrap:anywhere]">{message.field === WHOLE_TICKET ? <div className="py-1">{row}</div> :
+                    <button type="button" className="w-full py-1 text-left hover:bg-canvas focus:outline-act" onClick={() => document.getElementById(fieldId(message.field))?.focus()}>{row}</button>}</li>;
+                })}</ul>}
+              </section>
               <div className="border border-rule bg-paper p-5">
                 <div className="flex flex-wrap gap-2">
-                  <Btn variant="primary" busy={busy} busyLabel="Filing…" onClick={() => void file()}>File ticket</Btn>
+                  <Btn variant="primary" busy={busy} busyLabel="Filing…" disabled={held} onClick={() => void file()}>File ticket</Btn>
                   <Btn disabled={busy || ((priority === null || priority === 0 || priority === 2) && !FIELDS.some(field => values[field].trim()) && !criteria.some(value => value.trim()) && estimate === 25 && !dependsOn.length && !dependency.trim() && !uiChange)} onClick={save}>Save draft</Btn>
                 </div>
-                <p className="mt-3 font-mono text-[12px] text-ink-2">Files to {project} Backlog.</p>
+                <p className="mt-3 font-mono text-[12px] text-ink-2">{fileNote(blank, errors, project)}</p>
                 {problems.length > 0 && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{problems.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
               </div>
               <p className="mt-4 font-mono text-[12px] text-ink-3">From the ticket template. Errors block; advisories are the house style and do not.</p>
