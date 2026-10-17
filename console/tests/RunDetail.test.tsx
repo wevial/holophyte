@@ -812,13 +812,13 @@ test("a pending files 409 renders the branch wait in muted text", async () => {
   expect(note.className).not.toContain("text-bad");
 });
 
-test("Turns lists recorded sessions and opens rendered transcript entries in a panel", async () => {
+test("Turns accepts recorded end, exit and usage facts and opens transcript entries", async () => {
   const requested: string[] = [];
   const fetch: Fetch = async url => {
     requested.push(url);
     if (url.endsWith("/turns")) return Response.json({ turns: [
-      { id: 4, role: "implement", label: "claude-implement opus", route: "primary", seconds: 12, session_id: "session-one" },
-      { id: 5, role: "adjudicate", label: null, route: "primary", seconds: 3, session_id: null },
+      { id: 4, role: "implement", label: "claude-implement opus", route: "primary", seconds: 12, ended_ms: T, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: "session-one" },
+      { id: 5, role: "adjudicate", label: null, route: "primary", seconds: 3, ended_ms: T, exit_status: null, timed_out: false, input_tokens: null, output_tokens: null, cost_usd: null, session_id: null },
     ] });
     if (url.endsWith("/turns/4/transcript")) return Response.json({ entries: [
       { speaker: "user", text: "Check the project." },
@@ -847,7 +847,7 @@ test("Turns lists recorded sessions and opens rendered transcript entries in a p
 
 test("Turns from an older daemon without labels still render their rows", async () => {
   const fetch: Fetch = async url => url.endsWith("/turns")
-    ? Response.json({ turns: [{ id: 6, role: "implement", route: "fallback", seconds: 7, session_id: null }] })
+    ? Response.json({ turns: [{ id: 6, role: "implement", route: "fallback", seconds: 7, ended_ms: T, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null }] })
     : answering(DETAIL)(url);
   render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
   const turns = await screen.findByRole("region", { name: "Turns" });
@@ -857,7 +857,7 @@ test("Turns from an older daemon without labels still render their rows", async 
 
 test("an unavailable transcript explains the missing file or opt-in inside the panel", async () => {
   const fetch: Fetch = async url => url.endsWith("/turns")
-    ? Response.json({ turns: [{ id: 8, role: "review", route: "primary", seconds: 4, session_id: "review-session" }] })
+    ? Response.json({ turns: [{ id: 8, role: "review", route: "primary", seconds: 4, ended_ms: T, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: "review-session" }] })
     : answering(DETAIL)(url);
   render(<RunDetail base={BASE} id={91} now={T} polls={1} deps={{ fetch }} />);
   await screen.findByRole("link", { name: "Open transcript" });
@@ -876,8 +876,8 @@ test("the header shows the implementer and reviewer the run's turns used as chip
     return card.querySelector("header")!;
   };
   const chips = (header: Element) => [...header.querySelectorAll("[data-seat]")].map((chip) => chip.textContent);
-  const implement = { id: 1, role: "implement", label: "claude-implement opus", route: "primary", seconds: 40, session_id: null };
-  const review = { id: 2, role: "review", label: "codex-review gpt-6-astra", route: "primary", seconds: 9, session_id: null };
+  const implement = { id: 1, role: "implement", label: "claude-implement opus", route: "primary", seconds: 40, ended_ms: T, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null };
+  const review = { id: 2, role: "review", label: "codex-review gpt-6-astra", route: "primary", seconds: 9, ended_ms: T, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null };
   expect(chips(await header([implement, review]))).toEqual(["Implementer Claude · Opus", "Reviewer Codex · GPT-6 Astra"]);
   const unreviewed = await header([implement]);
   expect(chips(unreviewed)).toEqual(["Implementer Claude · Opus"]);
@@ -905,7 +905,7 @@ async function mountSentBackChain(requested: string[]) {
     chainEntry(90, T - 10 * MINUTE, T - 5 * MINUTE),
     chainEntry(91, T, T + 30 * MINUTE, { outcome: "merged" }),
   ]) };
-  const turn = (id: number) => ({ id, role: "implement", label: null, route: "primary", seconds: 60, session_id: `session-${id}` });
+  const turn = (id: number) => ({ id, role: "implement", label: null, route: "primary", seconds: 60, ended_ms: T, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: `session-${id}` });
   const fetch: Fetch = async (url) => {
     requested.push(url);
     if (url.endsWith("/runs/89/turns")) return Response.json({ turns: [1, 2, 3, 4, 5, 6, 7].map(turn) });

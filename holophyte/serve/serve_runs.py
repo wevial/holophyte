@@ -234,7 +234,7 @@ def chain_turns(conn, chain):
 
 def turn_events(conn, run_id):
     return conn.execute(
-        "SELECT seq, kind, payload FROM runEvents WHERE runId=? "
+        "SELECT seq, kind, payload, at FROM runEvents WHERE runId=? "
         "AND kind IN ('agent_turn', 'agent_session') ORDER BY seq", (run_id,))
 
 
