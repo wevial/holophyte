@@ -1,3 +1,23 @@
+export const adjacentFencesBody = `# Adjacent blocks
+
+## What / Why / How
+
+**What:** Original outcome.
+\`\`\`text
+Keep this example.
+\`\`\`
+
+**Why:** Original reason.
+   ~~~~text
+Keep this explanation.
+   ~~~~
+
+**How:** Original prose.
+\`\`\`sh
+echo keep-me
+\`\`\`
+`;
+
 export const detailedBody = `# Steer notes
 
 Preamble stays here.

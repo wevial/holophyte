@@ -1,7 +1,24 @@
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { detailedBody, fencedBody, mockupBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, detailedBody, fencedBody, mockupBody, windowsBody } from "./ticketBodies";
+
+test("What/Why/How edits preserve adjacent fenced blocks outside the prose paragraph", () => {
+  const cases = [
+    ["what", "Original outcome."],
+    ["why", "Original reason."],
+    ["how", "Original prose."],
+  ] as const;
+  for (const body of [adjacentFencesBody, adjacentFencesBody.replaceAll("\n", "\r\n")]) {
+    const form = parseBody(body);
+    for (const [field, prose] of cases) {
+      expect(fieldOf(form, field)).toBe(prose);
+      expect(composeBody(withField(form, field, "Revised prose."))).toBe(
+        body.replace(prose, "Revised prose."),
+      );
+    }
+  }
+});
 
 test("parsing and composing preserve template, extensions, CRLF, and fence contents byte for byte", () => {
   for (const body of [TEMPLATE, detailedBody, windowsBody, fencedBody, "", "No headings or final newline", "## Summary"]) {

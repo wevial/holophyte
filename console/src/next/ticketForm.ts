@@ -89,7 +89,7 @@ function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(first.text)![0];
   let end = first.start + first.text.length;
   for (const line of rows.slice(index + 1)) {
-    if (!line.text.trim() || /^(\*\*|<!--|>)/.test(line.text)) break;
+    if (!line.text.trim() || /^(\*\*|<!--|>| {0,3}(?:`{3,}|~{3,}))/.test(line.text)) break;
     end = line.start + line.text.length;
   }
   const start = first.start + prefix.length;
