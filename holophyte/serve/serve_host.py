@@ -305,14 +305,13 @@ def restart_daemon(home, body):
            "via": f"POST {ACTIONS_PREFIX}{RESTART_DAEMON}", "pid": os.getpid(),
            "author": author if isinstance(author, str) else "maintainer",
            "note": note if isinstance(note, str) else None}
-    reply = {"action": RESTART_DAEMON}
     try:
         record_host_action(home, row)
     except OSError as bad:
-        return 200, {**reply, "ok": False, "recorded": None,
+        return 200, {"action": RESTART_DAEMON, "ok": False, "recorded": None,
                      "detail": f"could not record in {home / HOST_LEDGER}"
                                f" ({bad}); nothing restarted"}
-    return 200, {**reply, "ok": True,
+    return 200, {"action": RESTART_DAEMON, "ok": True,
                  "detail": "the daemon drains its requests and restarts",
                  "recorded": str(home / HOST_LEDGER)}
 
@@ -391,9 +390,6 @@ class HostHandler(StatusHandler):
                     and not self.admitted(self.server.write_token):
                 return self.answer(401, {})
             return self.post(scope, path)
-        self.post_host(path)
-
-    def post_host(self, path):
         if not path.startswith(ACTIONS_PREFIX):
             return self.refuse()
         server = self.server

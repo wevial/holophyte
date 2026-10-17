@@ -198,8 +198,7 @@ class RestartDaemonTests(HostFixture):
         self.assert_same_daemon(process, before["daemon"]["started_ms"])
 
     def test_project_daemon_has_no_restart_daemon_route(self):
-        listener = self.listener()
-        listener.close()
+        self.listener().close()
         config = Project.locate(self.project).config_path
         config.write_text(config.read_text() +
                           f'\n[serve]\nactions = true\ntoken_file = "{self.token}"\n')
