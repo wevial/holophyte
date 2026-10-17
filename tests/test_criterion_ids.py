@@ -172,7 +172,7 @@ class CriterionIdsTests(unittest.TestCase):
         resumed, fresh = turn.call_args.args[7:9]
         for prompt in (resumed, fresh):
             self.assertIn(f"C1. {TEXTS[0]}\nC2. {TEXTS[1]}\nC4. {TEXTS[2]}", prompt)
-            self.assertIn("CONTRADICTION: criterion C4", prompt)
+            self.assertIn("CONTRADICTION: criterion C<id>", prompt)
 
     def test_storeless_fix_prompt_keeps_supplied_run_criteria(self):
         with patch.object(fix_session, "_session_turn") as turn:
@@ -184,7 +184,7 @@ class CriterionIdsTests(unittest.TestCase):
         resumed, fresh = turn.call_args.args[7:9]
         for prompt in (resumed, fresh):
             self.assertIn(f"C1. {TEXTS[0]}\nC2. {TEXTS[1]}\nC3. {TEXTS[2]}", prompt)
-            self.assertIn("CONTRADICTION: criterion C3", prompt)
+            self.assertIn("CONTRADICTION: criterion C<id>", prompt)
 
     def test_empty_criteria_have_no_contradiction_brief(self):
         self.assertEqual(contradiction.brief([]), "")

@@ -2,11 +2,13 @@ import { addressOf, rootOf } from "./hosts";
 import type { Fetch } from "./poll";
 import { withToken } from "./token";
 
+export const RESTART_LABEL = "Restart supervisor";
+
 /** The `POST /actions/...` routes the console's buttons post to, by the
  *  label `lib/attention.ts` draws; a label absent here is drawn disabled
  *  as "not wired yet" until its own ticket lands a daemon route. */
 export const ROUTES: Record<string, string> = {
-  "Restart supervisor": "/actions/restart-supervisor",
+  [RESTART_LABEL]: "/actions/restart-supervisor",
   // A host daemon's root route (holophyte/serve/serve_host.py `run_sweep()`):
   // posted at `rootOf()` the row's base, never under a project's prefix.
   "Run sweep": "/actions/run-sweep",
