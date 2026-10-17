@@ -61,6 +61,7 @@ class ProbeResult:
     expected_commit: str = None
     entry: int = 0
     answer: str = None
+    launch_diagnostic: str = None
 
     @property
     def timed_out(self):
@@ -91,7 +92,8 @@ class ProbeResult:
         shown = " ".join(shlex.quote(part) for part in self.command)
         if self.ok:
             return f"[holo2] {self.seat} probe passed: {shown}"
-        why = self.reason()
+        why = (f"could not start: {self.launch_diagnostic}"
+               if self.launch_diagnostic else self.reason())
         tail = self.tail()
         lines = [f"[holo2] {self.seat} probe failed ({why}): {shown}"]
         lines += [f"[holo2]   | {line}" for line in tail] or [
@@ -194,6 +196,7 @@ def probe_route(project, role, fallback, timeout, entry):
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap,
                                launch_error=launch_failure_reason(failed),
+                               launch_diagnostic=str(failed),
                                seat=AGENT_CONFIG_KEYS[role], expected_commit=sha,
                                entry=entry)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
@@ -215,6 +218,7 @@ def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap,
                                launch_error=launch_failure_reason(failed),
+                               launch_diagnostic=str(failed),
                                seat=seat, entry=entry)
     probe = ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
     if claude:
