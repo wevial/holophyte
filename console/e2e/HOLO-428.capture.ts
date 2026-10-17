@@ -79,8 +79,10 @@ test("History outcomes, empty project and the Runs entry link", async ({ browser
   await expect(page.getByText("times PDT", { exact: true })).toBeVisible();
   await shot(page, "04-runs-older-link.png");
   await older.click();
-  await page.getByRole("button", { name: "Failed 1", exact: true }).click();
+  const failed = page.getByRole("button", { name: "Failed 1", exact: true });
+  await failed.click();
   await expect(page).toHaveURL(/outcome=failed/);
+  await expect(failed).toHaveAttribute("aria-pressed", "true");
   await page.setViewportSize({ width: 390, height: 900 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await shot(page, "05-history-filter-390.png");
