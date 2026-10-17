@@ -70,8 +70,7 @@ const sections: Record<Exclude<Field, "title">, string> = {
   inScope: "In scope", outOfScope: "Out of scope", criteria: "Acceptance criteria",
   verify: "Verify command(s)", estimate: "Estimate & dependencies", dependsOn: "Estimate & dependencies",
 };
-const template = parseBody(TEMPLATE);
-const order = template.sections.map(section => section.name);
+const order = parseBody(TEMPLATE).sections.map(section => section.name);
 const labels = { what: "What", why: "Why", how: "How" };
 const scopePattern = /^- (.*)$/;
 const mockupLinkPattern = /^https?:\/\/\S+[ \t]*$/;
@@ -150,11 +149,10 @@ function replaceItems(text: string, field: keyof typeof itemPatterns, value: str
   const prefix = field === "criteria" ? "- [ ] " : field === "mockupImages" ? "" : "- ";
   const replacement = value.map(item => prefix + item).join(eol);
   if (!rows.length) return replacement ? eol + replacement + eol + text : text;
-  let result = text;
   for (const row of rows.slice().reverse()) {
-    result = splice(result, row.start, row.end, row === rows[0] && replacement ? replacement + row.eol : "");
+    text = splice(text, row.start, row.end, row === rows[0] && replacement ? replacement + row.eol : "");
   }
-  return result;
+  return text;
 }
 
 function editText(text: string, field: Exclude<Field, "title">, value: Fields[Field], eol: string): string {
@@ -183,8 +181,7 @@ function editText(text: string, field: Exclude<Field, "title">, value: Fields[Fi
     const span = verifySpan(text);
     return span ? splice(text, span.start, span.end, commands ? commands + eol : "") : append(text, "```" + eol + (commands ? commands + eol : "") + "```", eol);
   }
-  const row = matching(text, estimatePattern)[0];
-  const match = row?.text.match(estimatePattern);
+  const match = matching(text, estimatePattern)[0]?.text.match(estimatePattern);
   const estimate = field === "estimate" ? value ?? "" : match?.[1] ?? "";
   const dependencies = field === "dependsOn" ? (value as string[]).join(", ") || "none" : match?.[2] ?? "none";
   return replaceLine(text, estimatePattern, `Estimate: ${estimate} min · Depends on: ${dependencies}`, eol);
@@ -235,6 +232,5 @@ export function blankForm(): TicketForm {
   let form = parseBody(uncommented.replace(/^>.*(?:\r?\n|$)/gm, "").replace(/<[^>]*>/g, "").replace("{{TITLE}}", ""));
   form.sections = form.sections.filter(section => !optional.has(section.name));
   form = withField(form, "verify", []);
-  form = withField(form, "openQuestions", "- None");
-  return { ...form, hints };
+  return { ...withField(form, "openQuestions", "- None"), hints };
 }
