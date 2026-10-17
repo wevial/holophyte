@@ -135,7 +135,8 @@ def refusal_line(text, error, restored=None):
     if location:
         line, column = map(int, location.groups())
         return submitted_line(text, restored, line, column)
-    named = re.search(r"\[([\w.-]+)\]\s+([\w-]+)\b", error)
+    named = (re.search(r": \[([\w.-]+)\] (.*?): unknown key;", error, re.DOTALL)
+             or re.search(r"\[([\w.-]+)\]\s+([\w-]+)\b", error))
     if not named:
         return None
     table, key = named.groups()
@@ -179,7 +180,7 @@ def config_key_lines(text):
             return re.sub(r"[^\n]", " ", value)
         return value
     depth = 0
-    for line in re.sub(strings, mask, text).splitlines():
+    for line in re.sub(strings, mask, text).split("\n"):
         yield line if depth == 0 else ""
         if depth == 0 and line.lstrip().startswith("["):
             continue
