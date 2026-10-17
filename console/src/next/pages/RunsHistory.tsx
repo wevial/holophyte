@@ -139,11 +139,8 @@ export function RunsHistory() {
               </div>
               <Btn onClick={() => { for (const query of day.failed) void query.refetch(); }}>Try again</Btn>
             </div>
-          ) : <>
-
-          {day.rows.length > 0 && <DayRunTable day={day} label={dayName.format(day.since)} />}
-          {day.rows.length === 0 && <p className="px-4 py-4 font-mono text-[12.5px] text-ink-3 [overflow-wrap:anywhere]">{runWords} this day.</p>}
-          </>}
+          ) : day.rows.length > 0 ? <DayRunTable day={day} label={dayName.format(day.since)} />
+            : <p className="px-4 py-4 font-mono text-[12.5px] text-ink-3 [overflow-wrap:anywhere]">{runWords} this day.</p>}
         </section>
       ))}
       <footer className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-b border-rule pb-[18px] font-mono text-[12px] leading-[1.4] text-ink-3">
