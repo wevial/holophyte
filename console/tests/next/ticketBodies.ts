@@ -169,3 +169,16 @@ export const commentedCriteriaBody = `## Acceptance criteria
 - [ ] Visible criterion
 <!-- - [ ] Another hidden note -->
 `;
+
+export const inlineCommentMarkerBody = `## Summary
+
+Render the literal \`<!--\` in the editor.
+
+## Acceptance criteria
+
+- [ ] Keep the criterion.
+
+## Estimate & dependencies
+
+Estimate: 30 min · Depends on: none
+`;

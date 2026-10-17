@@ -28,6 +28,24 @@ export interface TicketForm {
 }
 interface Line { start: number; end: number; text: string; eol: string; fenced: boolean; commented: boolean }
 
+function commentState(text: string, inComment: boolean): { commented: boolean; inComment: boolean } {
+  let commented = inComment;
+  const tokens = [...text.matchAll(/`+|<!--|-->/g)];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i][0];
+    if (inComment) {
+      if (token === "-->") inComment = false;
+    } else if (token === "<!--") {
+      inComment = true;
+      commented = true;
+    } else if (token.startsWith("`")) {
+      const closing = tokens.findIndex((candidate, index) => index > i && candidate[0] === token);
+      if (closing >= 0) i = closing;
+    }
+  }
+  return { commented, inComment };
+}
+
 function lines(text: string): Line[] {
   const result: Line[] = [];
   let fence = "";
@@ -38,12 +56,9 @@ function lines(text: string): Line[] {
     const content = raw.replace(/\r?\n$/, "");
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(content);
     const fenced = !!fence;
-    const commented = inComment || (!fenced && content.includes("<!--"));
-    if (!fenced) {
-      for (const token of content.matchAll(/<!--|-->/g)) {
-        inComment = token[0] === "<!--";
-      }
-    }
+    const state: ReturnType<typeof commentState> = fenced ? { commented: inComment, inComment } : commentState(content, inComment);
+    const commented = state.commented;
+    inComment = state.inComment;
     if (marker && !commented) {
       if (!fence) fence = marker[1];
       else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";

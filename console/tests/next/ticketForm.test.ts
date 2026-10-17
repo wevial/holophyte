@@ -1,7 +1,19 @@
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentFencesBody, adjacentMarkdownBody, commentedCriteriaBody, detailedBody, fencedBody, mockupBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentMarkdownBody, commentedCriteriaBody, detailedBody, fencedBody, inlineCommentMarkerBody, mockupBody, windowsBody } from "./ticketBodies";
+
+test("Summary edits preserve later sections when inline code contains an HTML comment marker", () => {
+  for (const prose of ["Render the literal `<!--` in the editor.", "Render the literal `` `<!--` `` in the editor."]) {
+    for (const eol of ["\n", "\r\n"]) {
+      const body = inlineCommentMarkerBody.replace("Render the literal `<!--` in the editor.", prose).replaceAll("\n", eol);
+      const form = parseBody(body);
+      expect(composeBody(withField(form, "summary", "New summary."))).toBe(body.replace(prose, "New summary."));
+      expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
+      expect(fieldOf(form, "estimate")).toBe(30);
+    }
+  }
+});
 
 test("What/Why/How edits preserve adjacent fenced blocks outside the prose paragraph", () => {
   const cases = [
