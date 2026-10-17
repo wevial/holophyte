@@ -2,6 +2,7 @@ import contextlib
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import store.board
 import store.read
@@ -145,6 +146,45 @@ class ServeTicketCheckTests(ServeBoardCase):
             "([merge] private_patterns #0)",
         ])
         self.assertNotIn("internal-marker", json.dumps(answer))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_store_check_redacts_unknown_private_dependency(self):
+        Project.locate(self.paths["native"]).config_path.write_text(
+            NATIVE + '[merge]\nprivate_patterns = ["NAT-9"]\n')
+        before = self.snapshot()
+        with mock.patch("holophyte.redact._environment_values", frozenset()):
+            with self.store("native") as (conn, project):
+                answer = store.board.check_ticket(
+                    conn, project, body(depends="NAT-9"), column="backlog")
+        self.assertIs(answer["blocks"], True)
+        self.assertIn("'Depends on' names no ticket of this project: [redacted]",
+                      answer["problems"])
+        self.assertNotIn("NAT-9", json.dumps(answer))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_private_check_preserves_later_whole_suite_filing_refusal(self):
+        Project.locate(self.paths["native"]).config_path.write_text(
+            NATIVE + '[merge]\nprivate_patterns = ["discovers"]\n')
+        self.start_host()
+        before = self.snapshot()
+        with mock.patch("holophyte.redact._environment_values", frozenset()):
+            status, private = self.check({"body": body("A title discovers")})
+            self.assertEqual(status, 200)
+            self.assertIs(private["blocks"], True)
+            text = body().replace("echo ok", "python3 -m unittest discover -s tests")
+            status, checked = self.check({"body": text})
+            self.assertEqual(status, 200)
+            self.assertIs(checked["blocks"], True)
+            self.assertFalse(any("whole unit suite" in advisory
+                                 for advisory in checked["advisories"]))
+            status, filed, _ = self.request(
+                "POST", "/projects/native/tickets",
+                {"body": text, "column": "ready"}, revision=None)
+            self.assertEqual(status, 422)
+            self.assertEqual(filed["problems"], checked["problems"])
+            self.assertTrue(any("whole unit suite" in problem
+                                for problem in filed["problems"]))
+            self.assertNotIn("discovers", json.dumps(filed))
         self.assertEqual(self.snapshot(), before)
 
     def test_store_check_keeps_profile_advisory_without_a_transaction(self):

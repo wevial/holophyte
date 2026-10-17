@@ -33,7 +33,7 @@ class FilingRefused(ValueError):
 
 
 def ticket_problems(text, repo):
-    return ticket_template.filing_refusals(_ticket_findings(text, repo))
+    return _ticket_judgement(text, repo)[0]
 
 
 def _ticket_findings(text, repo):
@@ -43,7 +43,6 @@ def _ticket_findings(text, repo):
         # Deferred: holophyte imports this module.
         from holophyte.config.project import Project
         from holophyte.isolation.launcher import container_docker_problems
-        from holophyte.leak_guard import ticket_problems as private_problems
         from holophyte.loop.implementer_profile import filing_problems
         from holophyte.pr import mockup
         from holophyte.pr.pr_media import project_problems
@@ -52,15 +51,26 @@ def _ticket_findings(text, repo):
         problems += mockup.filing_problems(project, ticket)
         problems += container_docker_problems(project, ticket)
         problems += filing_problems(project, ticket)
-        problems = private_problems(repo, text, problems)
     return problems
 
 
-def check_ticket(conn, project_id, text, identifier=None, column="ready"):
-    findings = _ticket_findings(text, _repo_path(conn, project_id))
+def _ticket_judgement(text, repo):
+    from holophyte.leak_guard import ticket_problems as private_problems
+    from holophyte.redact import redact_values
+
+    findings = _ticket_findings(text, repo)
     problems = ticket_template.filing_refusals(findings)
     advisories = [finding.removeprefix(ticket_template.ADVISORY_PREFIX)
                   for finding in findings if finding not in problems]
+    if repo:
+        problems = private_problems(repo, text, problems)
+    return problems, [redact_values(advisory) for advisory in advisories]
+
+
+def check_ticket(conn, project_id, text, identifier=None, column="ready"):
+    from holophyte.redact import redact_values
+
+    problems, advisories = _ticket_judgement(text, _repo_path(conn, project_id))
     self_id = None
     if identifier is not None:
         row = conn.execute(
@@ -72,7 +82,7 @@ def check_ticket(conn, project_id, text, identifier=None, column="ready"):
     try:
         _dependencies(conn, project_id, text, self_id)
     except FilingRefused as refused:
-        unknown = refused.problems
+        unknown = [redact_values(problem) for problem in refused.problems]
     return {"problems": problems + unknown, "advisories": advisories,
             "blocks": bool(unknown) or _blocks_filing(problems, column)}
 
