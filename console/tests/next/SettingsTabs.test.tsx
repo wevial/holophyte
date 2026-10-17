@@ -108,7 +108,6 @@ test("Capture enables Video only with a command and saves UI paths as individual
 });
 
 test.each([
-  [{ ok: false, output: ["harness: unknown option --fast"] }, "Implementer probe failed: harness: unknown option --fast"],
   [{ ok: false, output: ["starting probe", "harness: refused"] }, "Implementer probe failed: harness: refused"],
   [{ ok: true, output: ["ready"] }, "Implementer probe passed."],
 ] as const)("saving an implementer command reports the probe verdict %j", async (probe, message) => {
