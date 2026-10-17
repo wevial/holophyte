@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, inlineHtmlBody, labeledCommentBody, literalVerifyBody, mockupBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, inlineHtmlBody, labeledCommentBody, literalVerifyBody, mockupBody, openMarkerVerifyBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
 
 function checkerFieldsWithoutComments(body: string) {
@@ -338,5 +338,17 @@ test("appending verify commands preserves literal HTML markers and surrounding s
     expect(composeBody(withField(form, "verify", [...commands, "bun test"]))).toBe(
       body.replace('printf "<!-- keep -->"', `printf "<!-- keep -->"${eol}bun test`),
     );
+  }
+});
+
+test("editing verify commands with a literal HTML opening marker preserves the closing fence and subsequent sections", () => {
+  for (const eol of ["\n", "\r\n"]) {
+    const body = openMarkerVerifyBody.replaceAll("\n", eol);
+    const form = parseBody(body);
+    expect(composeBody(withField(form, "verify", ["bun test"]))).toBe(
+      body.replace('printf "<!--"', "bun test"),
+    );
+    expect(fieldOf(form, "verify")).toEqual(['printf "<!--"']);
+    expect(fieldOf(form, "estimate")).toBe(30);
   }
 });

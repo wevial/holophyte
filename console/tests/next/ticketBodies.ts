@@ -260,3 +260,24 @@ printf "<!-- keep -->"
 
 - None
 `;
+
+export const openMarkerVerifyBody = `## Verify command(s)
+
+\`\`\`sh
+printf "<!--"
+\`\`\`
+
+## Implementation notes
+
+Keep the implementation notes.
+<!-- note -->
+
+## Estimate & dependencies
+
+Estimate: 30 min · Depends on: none
+Orchestration: subagents
+
+## Open questions
+
+- None
+`;

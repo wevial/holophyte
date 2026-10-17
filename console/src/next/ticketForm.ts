@@ -37,10 +37,22 @@ function visibleSource(text: string) {
   let visible = "";
   const offsets: number[] = [];
   let start = 0;
-  for (const match of [...text.matchAll(commentPattern), { index: text.length, 0: "" }]) {
-    visible += text.slice(start, match.index);
-    for (let i = start; i < match.index; i++) offsets.push(i);
-    start = match.index + match[0].length;
+  let fence = "";
+  const markers = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/gm;
+  const tokens = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)|<!--[\s\S]*?-->/gm;
+  while (start < text.length) {
+    const pattern = fence ? markers : tokens;
+    pattern.lastIndex = start;
+    const match = pattern.exec(text);
+    const comment = match && !match[1];
+    const end = match ? match.index + (comment ? 0 : match[0].length) : text.length;
+    visible += text.slice(start, end);
+    for (let i = start; i < end; i++) offsets.push(i);
+    if (match?.[1]) {
+      if (!fence) fence = match[1];
+      else if (match[1][0] === fence[0] && match[1].length >= fence.length && !match[2].trim()) fence = "";
+    }
+    start = match ? match.index + match[0].length : text.length;
   }
   offsets.push(text.length);
   return { visible, offsets };
