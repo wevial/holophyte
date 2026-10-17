@@ -70,12 +70,7 @@ export function NewTicket() {
     if (key && !dependsOn.includes(key)) setTemplate(previous => withField(previous, "dependsOn", [...dependsOn, key]));
     setDependency("");
   };
-  const toggleUI = () => setTemplate(previous => {
-    if (fieldOf(previous, "uiChange")) {
-      return withField(previous, "uiChange", null);
-    }
-    return withField(previous, "uiChange", "major");
-  });
+  const toggleUI = () => setTemplate(previous => withField(previous, "uiChange", fieldOf(previous, "uiChange") ? null : "major"));
   const [values, setValues] = useState(() => Object.fromEntries(FIELDS.map(field => [field, ""])) as Record<TextField, string>);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
