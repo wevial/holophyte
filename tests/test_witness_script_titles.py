@@ -78,7 +78,7 @@ class ScriptTitleApprovalCitationTests(ApprovedRepoCase):
         (finding,) = self.findings("src/lib/format.ts::formatDate")
         self.assertEqual(
             finding["message"].splitlines()[0],
-            "CRITERION 1: unwitnessed — named test not found: "
+            "CRITERION C1: unwitnessed — named test not found: "
             "prior approval must name a test")
 
 

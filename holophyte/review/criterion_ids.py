@@ -9,7 +9,7 @@ def parse(token):
 
 def numbered(conn, run_id, criteria):
     criteria = list(criteria or ())
-    if criteria and isinstance(criteria[0], (tuple, list)):
+    if not criteria or isinstance(criteria[0], (tuple, list)):
         return criteria
     texts = [split_id(text) for text in criteria]
     snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
