@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { CONFIG_EDIT_OFF, namedKey, type ConfigAnswer, type ConfigBody } from "../../lib/config";
+import { CONFIG_EDIT_OFF, bind, namedKey, type ConfigProbe, type ConfigAnswer, type ConfigBody } from "../../lib/config";
 import { hostName, underHost } from "../../lib/hosts";
 import { RESTART_LABEL, ROUTES, ACTIONS_OFF } from "../../lib/actions";
 import { RUN_SWEEP } from "../../lib/attention";
@@ -85,8 +85,26 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
   const save = useConfigSave();
   const restart = useAction();
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [banner, setBanner] = useState<{ revision: string; applies: string } | null>(null);
+  const [serverErrors, setErrors] = useState<Record<string, string>>({});
+  const [banner, setBanner] = useState<{ revision: string; applies: string; probe?: ConfigProbe | null } | null>(null);
+  const values = answer?.state === "ok" ? answer.config.values : null;
+  const effective = (key: string) => {
+    if (edits[key]) return edits[key].value;
+    const field = SETTINGS_FIELDS.find((field) => `${field.table}.${field.key}` === key)!;
+    const bound = bind(field, values);
+    return bound.state === "bound" ? bound.value : bound.state === "absent" ? field.default : undefined;
+  };
+  const errors = { ...serverErrors };
+  const rounds = effective("loop.review_rounds");
+  const cap = effective("loop.review_rounds_max");
+  if (typeof rounds === "number" && typeof cap === "number" && rounds > cap) {
+    errors["loop.review_rounds"] = `Above the round cap of ${cap}. Raise the cap or lower this.`;
+  }
+  for (const field of SETTINGS_FIELDS.filter((field) => field.tab === "agents")) {
+    const key = `${field.table}.${field.key}`;
+    const value = edits[key]?.value;
+    if (typeof value === "string" && !value.trim()) errors[key] = "A seat needs a command. Remove the key in Raw TOML to use the default.";
+  }
   const canSave = host?.status?.config_edit === true && answer?.state === "ok" && (rawMode ? rawChanged && check?.text === rawText && !check.pending && !check.error : !rawChanged && answer.config.values !== null && Object.keys(errors).length === 0);
   const restartLabel = host && underHost(host.base) ? RUN_SWEEP : RESTART_LABEL;
   const write = async () => {
@@ -97,7 +115,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
       if (rawMode) draft.savedRaw(project, rawText);
       else draft.saved(project, edits);
       setConfirm(null);
-      setBanner(result);
+      setBanner({ ...result, probe: rawMode || edits["agents.implementer"] ? result.probe : undefined });
     } else if ("conflict" in result) {
       setRefusal(`config.toml changed on ${hostLabel} since this page read it. It has been read again: check the fields and save once more.`);
     } else if (rawMode && result.refused) {
@@ -163,6 +181,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
         {banner && <div role="status" className="mb-4 border border-live bg-paper p-5">
           <p className="font-mono text-[13px] text-live">Saved config.toml at revision {banner.revision.slice(0, 7)}.</p>
           <p className="mt-2 font-read text-[14px] text-ink-2">It applies at the {banner.applies}.</p>
+          {banner.probe && <p className={`mt-2 font-mono text-[13px] ${banner.probe.ok ? "text-live" : "text-bad"}`}>{banner.probe.ok ? "Implementer probe passed." : `Implementer probe failed: ${banner.probe.output.at(-1) ?? ""}`}</p>}
           <div className="mt-4 flex gap-2">
             <Btn variant="primary" disabled={host?.status?.actions !== true} title={host?.status?.actions !== true ? ACTIONS_OFF : undefined} busy={restart.isPending} busyLabel="Restarting…" onClick={() => host && restart.mutate({ label: restartLabel, base: host.base, route: ROUTES[restartLabel]!, body: {}, said: "Restart request accepted." })}>{restartLabel}</Btn>
             <Btn onClick={() => setBanner(null)}>Later</Btn>
@@ -174,13 +193,14 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
             <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
             <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
           </header>
-          {tab.id === "general" && host && answer?.state === "ok" && answer.config.values !== null ? (
+          {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
             <div className="mt-6">
               {rawChanged && <p className="mb-4 font-mono text-[13px] text-ink-3">Save or revert the raw edit first.</p>}
               <fieldset disabled={rawChanged || save.isPending}>
               {SETTINGS_FIELDS.filter((field) => field.tab === tab.id).map((field) => {
                 const key = `${field.table}.${field.key}`;
                 return <SettingRow key={key} field={field} values={answer.config.values} value={edits[key]?.value}
+                  status={host.status ?? undefined} disabled={key === "merge.ui_capture_video" && !effective("merge.ui_capture")}
                   error={errors[key]} onChange={(value, original) => {
                     setErrors(({ [key]: _cleared, ...rest }) => rest);
                     draft.edit(project, key, original, value);
@@ -198,7 +218,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
             onCheck={(state) => { setCheck(state); if (!state.pending) setCheckRefused(state.error !== null); }} onSave={() => { setRefusal(null); setConfirm("raw"); }}
           /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
-        <UnsavedBar project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
+        <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
         {confirm && <ConfirmDialog label="Save · holophyte" heading={rawMode ? `Save ${file}?` : "Save these changes?"} confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(null); }} onConfirm={() => void write()}
           refusal={refusal && <p role="alert" className="mt-4 font-mono text-[13px] text-bad">{refusal}</p>}>
           <p className="mt-4 font-read text-[15px] text-ink-2">These lines change in config.toml on {hostLabel}.</p>

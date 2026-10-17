@@ -25,7 +25,7 @@ export function bind(field: { table: string; key: string; kind: string; numeric?
   const value: unknown = table[field.key];
   if (typeof value === "number" && ((field.numeric === "integer" && !Number.isInteger(value)) || (field.min !== undefined && value < field.min))) return { state: "unbound", value };
   const fits =
-    field.kind === "number" ? typeof value === "number" && Number.isFinite(value) : field.kind === "lines" ? isLines(value) : typeof value === "string";
+    field.kind === "number" ? typeof value === "number" && Number.isFinite(value) : field.kind === "lines" ? isLines(value) : field.kind === "boolean" ? typeof value === "boolean" : typeof value === "string";
   return fits ? { state: "bound", value: value as PatchValue } : { state: "unbound", value };
 }
 
@@ -80,13 +80,15 @@ export async function fetchConfig(base: string, fetchImpl: Fetch): Promise<Confi
 const isValues = (candidate: unknown): candidate is ConfigValues =>
   typeof candidate === "object" && candidate != null && !Array.isArray(candidate);
 
+export type ConfigProbe = { ok: boolean; output: string[] };
+
 /** The daemon's verdict on a `PUT /config`: accepted, with the backup it
  *  wrote and when the change applies, or refused with its sentence. A
  *  400 is the daemon's refusal (`refused`) -- the loader's, naming the
  *  file, table and key, or the patch's, naming the dotted key. A revision
  *  conflict carries the current revision; other failures carry the status. */
 export type ConfigVerdict =
-  | { ok: true; backup: string | null; applies: string; revision: string }
+  | { ok: true; backup: string | null; applies: string; revision: string; probe?: ConfigProbe | null }
   | { ok: false; conflict: true; current: string }
   | { ok: false; error: string; refused: true; line: number | null }
   | { ok: false; error: string; refused: false };
@@ -150,8 +152,10 @@ export async function putConfig(base: string, write: ConfigWrite, fetchImpl: Fet
   if (response.status === 409 && revision !== undefined) return { ok: false, conflict: true, current: typeof record.current === "string" ? record.current : "" };
   if (response.status === 400) return { ok: false, error: error || `${url} answered 400`, refused: true, line: typeof record.line === "number" ? record.line : null };
   if (!response.ok) return { ok: false, error: `${url} answered ${response.status}${error ? `: ${error}` : ""}`, refused: false };
+  const probe = record.probe as Partial<ConfigProbe> | null | undefined;
   return {
     ok: true,
+    ...(probe && typeof probe.ok === "boolean" && isLines(probe.output) ? { probe: { ok: probe.ok, output: probe.output } } : {}),
     backup: typeof record.backup === "string" ? record.backup : null,
     applies: typeof record.applies === "string" ? record.applies : "next loop start",
     revision: typeof record.revision === "string" ? record.revision : "",
