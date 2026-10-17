@@ -75,7 +75,8 @@ TODAYS_BRIEF = (
     "behaviour or wording, and do not write a test that asserts a substitute."
     " Do the rest of the ticket, commit it, and end the reply with one line "
     "per such criterion, using its id above, with a one-line reason naming "
-    "what is missing or what contradicts it:\nCONTRADICTION: criterion C1 — reason")
+    "what is missing or what contradicts it:\n"
+    "CONTRADICTION: criterion C<id> — <one-line reason>")
 
 CODEX = '[agents.implementer]\nharness = "codex"\n'
 CLAUDE = '[agents.implementer]\nharness = "claude"\n'
