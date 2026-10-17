@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ACTIONS_OFF, ROUTES, actionBase, postAction } from "../lib/actions";
 import { RUN_SWEEP } from "../lib/attention";
 import { underHost } from "../lib/hosts";
-import { CONFIG_EDIT_OFF, fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigValues, type ConfigWrite, type PatchValue } from "../lib/config";
+import { CONFIG_EDIT_OFF, UNBOUND_NOTE, bind, isLines, same, fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigWrite, type PatchValue } from "../lib/config";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { Status } from "../lib/types";
 import { ActionButton } from "./ActionButton";
@@ -14,10 +14,7 @@ export const APPLIES_LINE = "A saved change applies at the loop's next start.";
  *  project behind a host daemon has no supervisor of its own and gets
  *  the host sweep's `RUN_SWEEP` instead. */
 export const RESTART_LABEL = "Restart supervisor";
-/** The note under a field whose key the file holds in another shape than
- *  the field edits (a table where a string is expected, a list of numbers):
- *  the field shows the value as the daemon parsed it, read-only. */
-export const UNBOUND_NOTE = "edit this one in the raw tab";
+export { UNBOUND_NOTE } from "../lib/config";
 /** The line over the fields when the daemon could not parse the file. */
 export const UNPARSED_LINE = "The file does not parse as TOML; the fields are empty until the raw tab fixes it.";
 
@@ -51,24 +48,6 @@ export const FIELDS: readonly Field[] = [
 ];
 
 const fieldId = (field: Field) => `${field.table}.${field.key}`;
-
-/** What the daemon's `values` hold for a field: `absent` when the key is
- *  not in the file, the typed value when it is in the field's shape, or
- *  `unbound` with the value as parsed when it is in another shape. */
-type Bound = { state: "absent" } | { state: "bound"; value: PatchValue } | { state: "unbound"; value: unknown };
-
-const isLines = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
-
-function bind(field: Field, values: ConfigValues | null): Bound {
-  const table = values?.[field.table];
-  if (table == null || typeof table !== "object" || !(field.key in table)) return { state: "absent" };
-  const value: unknown = table[field.key];
-  const fits =
-    field.kind === "number" ? typeof value === "number" && Number.isFinite(value) : field.kind === "lines" ? isLines(value) : typeof value === "string";
-  return fits ? { state: "bound", value: value as PatchValue } : { state: "unbound", value };
-}
-
-const same = (a: PatchValue, b: PatchValue) => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((item, at) => item === b[at]) : a === b);
 
 type Verdict = { ok: true; detail: string } | { ok: false; error: string; at: string | null };
 
