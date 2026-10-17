@@ -53,12 +53,14 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
 
     # The box the loop armed, judged against `agent_ms`, not `working_ms`.
     scale = budget_scale(project)
+    seats = active_routes(project)
     return 200, {
         "project": str(project.path),
         "admission": admission, "hold_note": hold_note,
         "workers": loop_config(project).workers,
         "schema_version": schema_version,
-        "active_routes": active_routes(project),
+        "active_routes": seats,
+        "route_probes": route_probe_view(project, seats, now),
         "route_labels": route_labels(project),
         "workers_on_previous_build": workers_on_previous_build(project),
         "host": host_label(project, socket.gethostname()),
@@ -99,6 +101,16 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                     "waiting_ms": now - ticket.endedAt}
                    for ticket in queued],
     }
+
+
+def route_probe_view(project, seats, now):
+    from holophyte.agents.probe_log import last_probes
+
+    probes = last_probes(project)
+    return {seat: {route: ({**entry, "age_ms": now - entry["at_ms"]}
+                          if (entry := probes.get(seat, {}).get(route)) else None)
+                   for route in ("primary", "fallback")}
+            for seat in seats}
 
 
 def supervisor_view(project, beat, now, knobs, stale_ms=None):

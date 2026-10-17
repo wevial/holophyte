@@ -150,6 +150,7 @@ Each module, one line:
   fast-forward-only commit imports with environment-file exclusions.
 - `holophyte/agents/roles.py` — the agent routes and the `agent()` call, one turn
   of a role.
+- `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
@@ -163,6 +164,8 @@ Each module, one line:
 - `holophyte/agents/turn_progress.py` — a streaming Claude turn's tool calls
   counted and labelled, recorded as a `turn_progress` event at most once a
   minute.
+- `holophyte/review/criterion_ids.py` — stable criterion numbers for run prompts
+  and replies, with positional fallback for tickets without stored criteria.
 - `holophyte/review/briefs.py` — the scope, criteria, tests, trim and evidence
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
@@ -321,7 +324,7 @@ Each module, one line:
   the `ESCALATION:` choice the escalated turn declares.
 - `holophyte/loop/contradiction.py` — an acceptance criterion the implement
   or fix turn declares unmeetable as written: the brief, the
-  `CONTRADICTION: criterion N` lines, the `contradiction` event and the park
+  `CONTRADICTION: criterion CN` lines, the `contradiction` event and the park
   on a question to the operator.
 - `holophyte/loop/trim.py` — the trim step between the implement turn and
   the first review: one turn, its commits judged by subject, file scope and

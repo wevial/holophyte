@@ -280,7 +280,9 @@ class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
-                                 (store.criteria, ["backfill", "record_criteria"]),
+                                 # HOLO-390: historical criterion numbers.
+                                 (store.criteria, ["backfill", "numbers",
+                                                   "record_criteria"]),
                                  # KO-750: the native board's writers;
                                  # KO-753: moves/cancels; HOLO-404: check reader.
                                  (store.board, ["cancel_ticket", "check_ticket",

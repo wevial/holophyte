@@ -74,6 +74,7 @@ from holophyte.review.briefs import (
     stale_approval_brief,
     tests_brief,
 )
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     _review_reply,
     criteria_findings,
@@ -431,6 +432,7 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
                      out, stale=()):
     from holophyte.loop.review_round import _verify_brief, agent, set_phase
     from holophyte.pr.pullrequest import _park_on_pr
+    criteria = numbered(conn, run_id, criteria)
     set_phase(conn, run_id, "reviewing", f"review of the fix at {sha[:12]}")
     record_step(conn, run_id, "covering_review")
     base_sha = main_merge_base(wt, sha)
