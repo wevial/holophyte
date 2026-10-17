@@ -8,7 +8,6 @@ import { PollDepsContext } from "../scope";
 import { transcriptRows, type TranscriptRow } from "../turn";
 import { TranscriptIcon } from "./icons";
 
-const LABEL = "mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.1em]";
 const PROSE = "m-0 max-w-[72ch] whitespace-pre-wrap font-read text-[15px] leading-[1.6] [overflow-wrap:anywhere]";
 
 function TextBox({ label, text, cut, failed = false }: { label: string; text: string; cut: boolean; failed?: boolean }) {
@@ -45,7 +44,7 @@ function Entry({ row }: { row: TranscriptRow }) {
   return <li className={`grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-rule-2 px-5 py-4 [&+li]:border-t max-[720px]:grid-cols-1 max-[720px]:gap-2 max-[720px]:px-3 ${failed ? "bg-bad-wash shadow-[inset_2px_0_0_var(--bad)]" : ""}`}>
     <span className="font-mono text-[12px] leading-4 text-ink-3">{row.offset}</span>
     <div className="min-w-0">
-      <div className={`${LABEL} ${tone}`}><TranscriptIcon kind={row.kind} />{label}</div>
+      <div className={`mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.1em] ${tone}`}><TranscriptIcon kind={row.kind} />{label}</div>
       {row.kind === "tool" || row.kind === "prompt" ? <Fold row={row} /> :
         <p className={`${PROSE} ${row.kind === "error" ? "text-bad" : "text-ink-2"}`}>{row.text}
           {"cut" in row && row.cut && <span className="block font-mono text-[12px] text-ink-3">cut at 20,000 characters</span>}

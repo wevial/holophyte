@@ -78,8 +78,7 @@ export function transcriptRows(entries: TranscriptEntry[], turn: RunTurn): Trans
   const prompt = entries.find((entry) => entry.speaker === "user");
   const timed = entries.filter((entry) => entry.at_ms != null).sort((a, b) => a.at_ms! - b.at_ms!);
   let timedIndex = 0;
-  const ordered = entries.map((entry) => entry.at_ms == null ? entry : timed[timedIndex++]!);
-  for (const entry of ordered) {
+  for (const entry of entries.map((entry) => entry.at_ms == null ? entry : timed[timedIndex++]!)) {
     const offset = transcriptOffset(entry.at_ms, start);
     if (entry.speaker === "command") {
       rows.push(toolRow(entry, entry.call == null ? undefined : results.get(entry.call), offset));
