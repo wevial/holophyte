@@ -47,7 +47,7 @@ function lines(text: string): Line[] {
 }
 
 export function parseBody(text: string): TicketForm {
-  const headings = lines(text).filter(line => !line.fenced && line.text.startsWith("## "));
+  const headings = matching(text, /^## /);
   return {
     preamble: text.slice(0, headings[0]?.start ?? text.length),
     sections: headings.map((line, i) => ({
@@ -73,8 +73,11 @@ const sections: Record<Exclude<Field, "title">, string> = {
 const template = parseBody(TEMPLATE);
 const order = template.sections.map(section => section.name);
 const labels = { what: "What", why: "Why", how: "How" };
+const scopePattern = /^- (.*)$/;
+const mockupLinkPattern = /^https?:\/\/\S+[ \t]*$/;
+const mockupApprovalPattern = /^Approved \d{4}-\d{2}-\d{2}:.*$/;
 const itemPatterns = {
-  inScope: /^- (.*)$/, outOfScope: /^- (.*)$/, criteria: /^- \[ \] (.*)$/,
+  inScope: scopePattern, outOfScope: scopePattern, criteria: /^- \[ \] (.*)$/,
   mockupImages: /^(!\[[^\]]*\]\(.*\))$/,
 };
 type Span = { start: number; end: number; value: string };
@@ -116,8 +119,8 @@ export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] 
   else if (field === "summary" || field === "notes" || field === "openQuestions") value = text.trim();
   else if (field === "what" || field === "why" || field === "how") value = paragraph(text, field)?.value ?? "";
   else if (field === "uiChange") value = (matching(text, /^\*\*UI change:\*\* (major|minor)[ \t]*$/)[0]?.text.match(/(major|minor)/)?.[1] as Fields["uiChange"]) ?? null;
-  else if (field === "mockupLink") value = matching(text, /^https?:\/\/\S+[ \t]*$/)[0]?.text.trim() ?? "";
-  else if (field === "mockupApproval") value = matching(text, /^Approved \d{4}-\d{2}-\d{2}:.*$/)[0]?.text ?? "";
+  else if (field === "mockupLink") value = matching(text, mockupLinkPattern)[0]?.text.trim() ?? "";
+  else if (field === "mockupApproval") value = matching(text, mockupApprovalPattern)[0]?.text ?? "";
   else if (field in itemPatterns) {
     const pattern = itemPatterns[field as keyof typeof itemPatterns];
     value = matching(text, pattern).map(line => pattern.exec(line.text)![1]);
@@ -172,8 +175,8 @@ function editText(text: string, field: Exclude<Field, "title">, value: Fields[Fi
     }
     return replaceLine(text, pattern, value === null ? "" : `**UI change:** ${value}`, eol);
   }
-  if (field === "mockupLink") return replaceLine(text, /^https?:\/\/\S+[ \t]*$/, String(value), eol);
-  if (field === "mockupApproval") return replaceLine(text, /^Approved \d{4}-\d{2}-\d{2}:.*$/, String(value), eol);
+  if (field === "mockupLink") return replaceLine(text, mockupLinkPattern, String(value), eol);
+  if (field === "mockupApproval") return replaceLine(text, mockupApprovalPattern, String(value), eol);
   if (field in itemPatterns) return replaceItems(text, field as keyof typeof itemPatterns, value as string[], eol);
   if (field === "verify") {
     const commands = (value as string[]).join(eol);
