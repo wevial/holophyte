@@ -435,5 +435,10 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
     const drawn = FIELD_NAMES.find(([, name]) => name === other.name)?.[0];
     if (judge(other.name, other.text, drawn && theirs[drawn], text)) merge.onTop.others = [...merge.onTop.others, { index: other.index < 0 ? other.index : ADDED_SECTION, name: other.name, text }];
   }
+  for (const [key, other] of my) {
+    if (was.has(key) || their.has(key)) continue;
+    merge.onlyMine.push(other.name);
+    merge.onTop.others = [...merge.onTop.others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
+  }
   return merge;
 }

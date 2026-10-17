@@ -150,7 +150,7 @@ const differs = (loaded: EditFields, edited: EditFields, field: keyof Omit<EditF
 /** The names of the fields `edited` holds differently from `loaded`. */
 export function changedNames(loaded: EditFields, edited: EditFields): string[] {
   const fields = FIELD_NAMES.filter(([field]) => differs(loaded, edited, field)).map(([, name]) => name);
-  const others = edited.others.filter((other, at) => other.text !== loaded.others[at]?.text).map(other => other.name);
+  const others = edited.others.filter(other => other.text !== loaded.others.find(each => each.index === other.index && each.name === other.name)?.text).map(other => other.name);
   return [...fields, ...others];
 }
 

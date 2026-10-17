@@ -144,20 +144,22 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const toast = useToast();
   const client = useQueryClient();
   const [read, setRead] = useState(() => readOf(loaded));
-  const [rebased, setRebased] = useState(false);
+  const [rebasedFrom, setRebasedFrom] = useState<EditFields | null>(null);
   const drawn = (part: string) => !read.raw.has(part);
   const [fields, setFields] = useState<EditFields>(read.fields);
   const [dependency, setDependency] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string[]>([]);
-  const changes = changedNames(read.fields, fields);
+  const served = rebasedFrom ?? read.fields;
+  const changes = changedNames(served, fields);
+  const dirty = changes.length > 0;
   const theirs = loaded.revision > read.revision ? readOf(loaded) : null;
-  if (theirs && !changes.length) {
+  if (theirs && !dirty) {
     setRead(theirs);
     setFields(theirs.fields);
-    setRebased(false);
+    setRebasedFrom(null);
   }
-  const conflict = theirs && changes.length ? { theirs, merge: mergeEdit(read.fields, theirs.fields, fields), theirChanges: changedNames(read.fields, theirs.fields) } : null;
+  const conflict = theirs && dirty ? { theirs, merge: mergeEdit(served, theirs.fields, fields), theirChanges: changedNames(served, theirs.fields) } : null;
   const body = composeEdit(read.body, read.fields, fields);
   const check = useTicketCheck(base, body, deps, ticketKey);
   const checked = checkMarks(check);
@@ -165,7 +167,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const errors = judged?.problems.length ?? 0;
   const blocks = judged?.blocks === true;
   const set = <K extends keyof EditFields>(field: K, value: EditFields[K]) => setFields(previous => ({ ...previous, [field]: value }));
-  const changed = (field: keyof EditFields) => !same(read.fields[field], fields[field]);
+  const changed = (field: keyof EditFields) => !same(served[field], fields[field]);
   const estimate = clampEstimate(Number(fields.estimate) || 25);
 
   const input = (field: "title" | "summary" | "what" | "why" | "how" | "inScope" | "outOfScope" | "verify" | "notes", label: string, hint?: string, optional = false) => {
@@ -175,20 +177,31 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
         <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };
-  const resolve = (theirs: typeof read, next: EditFields, onTop: boolean, message: string) => {
+  const takeTheirs = (theirs: typeof read) => {
     setRead(theirs);
-    setFields(next);
-    setRebased(onTop);
+    setFields(theirs.fields);
+    setRebasedFrom(null);
     setRefusal([]);
-    toast(message);
+    toast(`Took revision ${theirs.revision}. Your edits were dropped.`);
+  };
+  const putOnTop = (theirs: typeof read, onTop: EditFields) => {
+    const onTopRead = readOf({ ...theirs, body: composeEdit(theirs.body, theirs.fields, onTop), priority: onTop.priority });
+    setRead(onTopRead);
+    setFields(onTopRead.fields);
+    setRebasedFrom(theirs.fields);
+    setRefusal([]);
+    toast(`Revision ${theirs.revision} loaded with your edits on top. Review, then save as revision ${theirs.revision + 1}.`);
   };
   const discard = () => {
-    setFields(read.fields);
+    const restored = rebasedFrom ? readOf(loaded) : read;
+    setRead(restored);
+    setRebasedFrom(null);
+    setFields(restored.fields);
     setDependency("");
     setRefusal([]);
   };
   const save = async () => {
-    if (busy || !changes.length || blocks || conflict) return;
+    if (busy || !dirty || blocks || conflict) return;
     setBusy(true);
     setRefusal([]);
     const result = await editTicket(base, ticketKey, read.revision, body, deps.fetch, fields.priority);
@@ -204,14 +217,14 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
     void navigate({ to: "/tickets/$project/$key", params: { project, key: ticketKey }, search: {} });
   };
   const line = conflict ? `revision ${read.revision} · newer revision ${conflict.theirs.revision} exists`
-    : rebased && changes.length ? `revision ${read.revision} + your edit`
+    : rebasedFrom && dirty ? `revision ${read.revision} + your edit`
     : [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
 
   return (
     <Frame project={project} ticketKey={ticketKey}>
       <p className="mt-1.5 border-b border-rule pb-[18px] font-mono text-[13px] text-ink-2">{line}</p>
-      {conflict && <ConflictBanner ticketKey={ticketKey} started={read.revision} newer={conflict.theirs} theirChanges={conflict.theirChanges} merge={conflict.merge} onTop={() => resolve(conflict.theirs, conflict.merge.onTop, true, `Revision ${conflict.theirs.revision} loaded with your edits on top. Review, then save as revision ${conflict.theirs.revision + 1}.`)}
-        takeTheirs={() => resolve(conflict.theirs, conflict.theirs.fields, false, `Took revision ${conflict.theirs.revision}. Your edits were dropped.`)} />}
+      {conflict && <ConflictBanner ticketKey={ticketKey} started={read.revision} newer={conflict.theirs} theirChanges={conflict.theirChanges} merge={conflict.merge} onTop={() => putOnTop(conflict.theirs, conflict.merge.onTop)}
+        takeTheirs={() => takeTheirs(conflict.theirs)} />}
       <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
           <Field label="Project">
@@ -237,10 +250,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
               return detail || (from != null && read.fields.criteriaDetail[from]) ? detail : null;
             })}
             onDetail={(index, detail) => set("criteriaDetail", fields.criteriaDetail.map((each, at) => at === index ? detail : each))}
-            changed={index => fields.criteriaFrom[index] !== index || fields.criteria[index] !== read.fields.criteria[index]}
+            changed={index => fields.criteriaFrom[index] !== index || fields.criteria[index] !== served.criteria[index]}
             detailChanged={index => {
               const from = fields.criteriaFrom[index];
-              return fields.criteriaDetail[index] !== (from == null ? "" : read.fields.criteriaDetail[from]);
+              return fields.criteriaDetail[index] !== (from == null ? "" : served.criteriaDetail[from]);
             }} />}
           {drawn("Verify command(s)") && input("verify", "Verify commands", "The implementer runs these before review; a red one fails the run.")}
           <div className="flex flex-wrap gap-6">
@@ -284,8 +297,8 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
           <CheckerPanel summary={checkSummary(check, true)} marks={checked} />
           <div className="border border-rule bg-paper p-5">
             <div className="flex flex-wrap gap-2">
-              <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!changes.length || blocks || conflict != null} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
-              <Btn disabled={busy || !changes.length} onClick={discard}>Discard</Btn>
+              <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!dirty || blocks || conflict != null} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
+              <Btn disabled={busy || !dirty} onClick={discard}>Discard</Btn>
             </div>
             <p className="mt-3 font-mono text-[12px] text-ink-2">{conflict ? "Resolve the newer revision first. Your edit is safe." : saveNote(changes, errors, blocks, ticketKey)}</p>
             {refusal.length > 0 && !conflict && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{refusal.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}

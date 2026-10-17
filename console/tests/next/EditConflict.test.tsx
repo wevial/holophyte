@@ -78,6 +78,20 @@ test("an edit to a section their revision now draws as fields replaces that sect
   expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(base.replace("The notes show.", "Each note shows."));
 });
 
+test("a section restored by one rebase survives the next", () => {
+  const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
+  const fourth = "# Notes show\n\n## Summary\n\nThe notes show.\n";
+  const fifth = fourth.replace("# Notes show", "# Every note shows");
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: [{ ...read.others[0]!, text: "- 02-notes.png" }] };
+  const fourthFields = loadEdit(fourth, null);
+  const onFourth = composeEdit(fourth, fourthFields, mergeEdit(read, fourthFields, mine).onTop);
+  const fifthFields = loadEdit(fifth, null);
+  const merge = mergeEdit(fourthFields, fifthFields, loadEdit(onFourth, null));
+  expect([merge.onlyTheirs, merge.onlyMine, merge.both]).toEqual([["Title"], ["Evidence"], []]);
+  expect(composeEdit(fifth, fifthFields, merge.onTop)).toBe(`${fifth}\n## Evidence\n\n- 02-notes.png\n`);
+});
+
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
@@ -183,8 +197,8 @@ const press = async (name: string) => {
 const type = async (name: string, value: string) => act(async () => void fireEvent.change(box(name), { target: { value } }));
 const header = () => document.querySelector("#page-title + p")?.textContent;
 
-async function conflicted() {
-  await mount(() => new Response("unexpected", { status: 500 }));
+async function conflicted(save = () => new Response("unexpected", { status: 500 })) {
+  await mount(save);
   await type("AC2", MY_AC2);
   await poll(REVISION_4);
 }
@@ -211,17 +225,33 @@ test("a newer revision polled under an edit shows both AC2 texts and holds Save"
 });
 
 test("Put mine on top loads revision 4 with my AC2 and saves it as revision 5", async () => {
-  await conflicted();
+  await conflicted(() => Response.json({ ticket: "DEMO-2", revision: 5 }));
   await press("Put mine on top of revision 4");
   expect(toast()).toBe("Revision 4 loaded with your edits on top. Review, then save as revision 5.");
   expect(banner()).toBeNull();
   expect(header()).toBe("revision 4 + your edit");
   expect([box("AC2").value, box("AC3").value]).toEqual([MY_AC2, THEIR_AC3]);
+  expect([box("AC2").closest("[data-changed]") != null, box("AC3").closest("[data-changed]") != null]).toEqual([true, false]);
   expect(saveButton().textContent).toBe("Save revision 5");
   served = { ...REVISION_4, current: { ...REVISION_4.current!, revision: 5 } };
   await act(async () => void fireEvent.click(saveButton()));
   await flush();
   expect(puts).toEqual([{ ifMatch: "4", body: THEIR_BODY.replace(THEIR_AC2, MY_AC2) }]);
+  expect(toast()).toBe("Saved DEMO-2 as revision 5.");
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-2");
+});
+
+test("on top of a revision that holds Summary as plain text, the Summary shown is the one Save sends", async () => {
+  await mount(() => Response.json({ ticket: "DEMO-2", revision: 5 }));
+  await type("Summary", "My notes show.");
+  const theirBody = BODY.replace("The run page lists each steer note the operator left.", "<!-- one line -->\nTheir notes show.");
+  await poll(demo2(4, theirBody, "cli"));
+  await press("Put mine on top of revision 4");
+  expect(box("Summary").value).toBe("<!-- one line -->\nMy notes show.");
+  await type("Summary", "<!-- one line -->\nOur notes show.");
+  await act(async () => void fireEvent.click(saveButton()));
+  await flush();
+  expect(puts).toEqual([{ ifMatch: "4", body: theirBody.replace("Their notes show.", "Our notes show.") }]);
 });
 
 test("Take revision 4 drops my edit and sends nothing", async () => {
