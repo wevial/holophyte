@@ -21,7 +21,6 @@ def brief(criteria):
     pairs = criterion_ids.numbered(None, None, criteria)
     if not pairs:
         return ""
-    example = pairs[-1][0]
     listed = "\n".join(f"C{n}. {text}" for n, text in pairs)
     return ("\n\nAcceptance criterion ids:\n" + listed
             + "\n\nWhen an acceptance criterion cannot be met as written (the data "
@@ -31,7 +30,7 @@ def brief(criteria):
             "asserts a substitute. Do the rest of the ticket, commit it, and end "
             "the reply with one line per such criterion, using its id above, "
             "with a one-line reason naming what is missing or what contradicts it:\n"
-            f"CONTRADICTION: criterion C{example} — reason")
+            f"CONTRADICTION: criterion C{pairs[-1][0]} — reason")
 
 
 def declared(reply):
