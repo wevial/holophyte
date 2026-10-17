@@ -82,7 +82,6 @@ const board = (editable: boolean): Board => ({
   columns: [{ state: "ready", tickets: [{ ...template, ticket: "DEMO-2", title: "Steer notes show on the run page", column: "ready", revision: 3, run: null } as BoardTicket]}],
 });
 
-let requested: string[] = [];
 let puts: { ifMatch: string | null; body: unknown }[] = [];
 let checks: unknown[] = [];
 
@@ -98,11 +97,9 @@ async function flush() {
 async function mount(hash: string, { editable = true, ticket = demo2(), check = { problems: [], advisories: [], blocks: false }, save }: { editable?: boolean; ticket?: TicketDetail; check?: TicketCheck | (() => TicketCheck); save?: Fetch } = {}) {
   window.location.hash = hash;
   const polls = fleet({ items: [] }, { items: [] });
-  requested = [];
   puts = [];
   checks = [];
   const fake = fakeDeps(async (url, init) => {
-    requested.push(url);
     if (url === `${DEMO}/tickets/check`) {
       checks.push(JSON.parse(String(init?.body)));
       return Response.json(typeof check === "function" ? check() : check);
