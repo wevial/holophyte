@@ -30,6 +30,11 @@ The run page lists each steer note the operator left.
 
 **How:** Read the stored steers.
 
+1. Fetch them with the run.
+2. Render each under its turn.
+
+**Blast radius:** medium
+
 ## In scope
 
 - The run page
@@ -241,4 +246,32 @@ test("a blocking check holds Save, a draft's problems do not, and a 409 keeps th
   expect(box("AC2").value).toBe("Another criterion");
   expect(box("Title").value).toBe(SERVED.Title);
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-2/edit");
+});
+
+async function pressSave() {
+  await act(async () => void fireEvent.click(saveButton()));
+  await flush();
+}
+
+test("moving or removing a criterion carries its indented detail with it", async () => {
+  const AC1 = "- [ ] Each note shows on the run page.\n  Its author and time show beside it.\n";
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Move AC1 down" })));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(`${AC1}- [ ] ${AC2}\n`, `- [ ] ${AC2}\n${AC1}`)]);
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Remove AC1" })));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(AC1, "")]);
+});
+
+test("How holds every paragraph up to the next label, and section text under no field is reachable under Other sections", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(box("How").value).toBe("Read the stored steers.\n\n1. Fetch them with the run.\n2. Render each under its turn.");
+  expect(box("What / Why / How").value).toBe("**Blast radius:** medium");
+  await type("How", "Read the steers once.");
+  await pressSave();
+  const served = "Read the stored steers.\n\n1. Fetch them with the run.\n2. Render each under its turn.";
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(served, "Read the steers once.")]);
 });

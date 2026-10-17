@@ -247,6 +247,40 @@ export function withCriterion(form: TicketForm, index: number, value: string): T
   return { ...form, sections: updated };
 }
 
+/** `form` with its acceptance criteria rebuilt as `rows`: a row with an
+ *  `origin` carries that criterion's whole served block, its line and the
+ *  indented lines under it, retitled to `text`; a row without one is new. */
+export function withCriteria(form: TicketForm, rows: { origin: number | null; text: string }[]): TicketForm {
+  const at = form.sections.findIndex(section => section.name === sections.criteria);
+  const text = at < 0 ? "" : form.sections[at].text;
+  const heads = matching(text, itemPatterns.criteria);
+  if (!heads.length) return withField(form, "criteria", rows.map(row => row.text));
+  const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
+  const all = lines(text);
+  const blocks = heads.map((head, index) => {
+    let last = all.findIndex(line => line.start === head.start);
+    for (let next = last + 1; next < all.length && all[next].start !== heads[index + 1]?.start; next++) {
+      if (!all[next].text.trim()) continue;
+      if (!/^[ \t]/.test(all[next].text)) break;
+      last = next;
+    }
+    return { head, start: head.start, end: all[last].end };
+  });
+  const gaps = blocks.slice(1).map((block, index) => text.slice(blocks[index].end, block.start));
+  const separator = gaps.find(gap => !gap.trim()) ?? "";
+  const rebuilt = rows.map(row => {
+    if (row.origin === null) return `- [ ] ${row.text}${eol}`;
+    const { head, start, end } = blocks[row.origin];
+    const piece = splice(text.slice(start, end), 0, head.contentEnd - start, `- [ ] ${row.text}`);
+    return piece.endsWith("\n") ? piece : piece + eol;
+  }).join(separator);
+  const end = blocks[blocks.length - 1].end;
+  const tail = text.slice(end);
+  const updated = form.sections.slice();
+  updated[at] = { ...updated[at], text: text.slice(0, blocks[0].start) + (end === text.length && !text.endsWith("\n") ? rebuilt.replace(/\r?\n$/, "") : rebuilt) + gaps.filter(gap => gap.trim()).join("") + tail };
+  return { ...form, sections: updated };
+}
+
 export function withField<K extends Field>(form: TicketForm, field: K, value: Fields[K]): TicketForm {
   const present = field === "title" || form.sections.some(section => section.name === sections[field as Exclude<Field, "title">]);
   if (present && JSON.stringify(fieldOf(form, field)) === JSON.stringify(value)) return form;

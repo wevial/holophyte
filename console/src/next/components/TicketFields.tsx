@@ -86,11 +86,15 @@ export function Field({ label, optional = false, hint, extra, messages = [], cha
 }
 
 /** The acceptance criteria as one input a row, reorderable and removable;
- *  `changed` marks the rows whose text differs from the loaded revision. */
-export function CriteriaField({ criteria, onChange, marks, changed = () => false }: { criteria: string[]; onChange: (next: string[]) => void; marks: Marks; changed?: (index: number) => boolean }) {
-  const change = (next: string[]) => onChange(next.length ? next : [""]);
+ *  `changed` marks the rows whose text differs from the loaded revision.
+ *  `onChange` names, for each new row, the index of the row it was, or
+ *  null for a row added. */
+export function CriteriaField({ criteria, onChange, marks, changed = () => false }: { criteria: string[]; onChange: (next: string[], from: (number | null)[]) => void; marks: Marks; changed?: (index: number) => boolean }) {
+  const change = (from: (number | null)[], next = from.map(index => index === null ? "" : criteria[index]!)) =>
+    from.length ? onChange(next, from) : onChange([""], [null]);
+  const rows = criteria.map((_, index): number | null => index);
   const move = (index: number, delta: number) => {
-    const next = [...criteria];
+    const next = [...rows];
     [next[index], next[index + delta]] = [next[index + delta]!, next[index]!];
     change(next);
   };
@@ -98,17 +102,17 @@ export function CriteriaField({ criteria, onChange, marks, changed = () => false
     <div className="mt-3 space-y-3">
       {criteria.map((criterion, index) => <div key={index} data-changed={changed(index) || undefined} className={`flex flex-wrap items-center gap-2 border-b border-rule-2 pb-3 ${changed(index) ? `${CHANGED} pl-2 pt-2` : ""}`}>
         <label htmlFor={`criterion-${index}`} className="w-8 font-mono text-[11px] text-ink-3">AC{index + 1}</label>
-        <input id={`criterion-${index}`} {...marks.marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => change(criteria.map((value, at) => at === index ? event.target.value : value))} />
+        <input id={`criterion-${index}`} {...marks.marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => change(rows, criteria.map((value, at) => at === index ? event.target.value : value))} />
         <div className="ml-auto flex gap-1">
           <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} up`} disabled={index === 0} onClick={() => move(index, -1)}>↑</Btn>
           <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} down`} disabled={index === criteria.length - 1} onClick={() => move(index, 1)}>↓</Btn>
-          <Btn className="!w-10 !h-10 !p-0" aria-label={`Remove AC${index + 1}`} onClick={() => change(criteria.filter((_, at) => at !== index))}>×</Btn>
+          <Btn className="!w-10 !h-10 !p-0" aria-label={`Remove AC${index + 1}`} onClick={() => change(rows.filter((_, at) => at !== index))}>×</Btn>
         </div>
         <div className="basis-full empty:hidden"><Messages id={messagesId(`AC${index + 1}`)} messages={marks.messagesOf(`AC${index + 1}`)} /></div>
       </div>)}
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-3">
-      <Btn onClick={() => change([...criteria, ""])}>+ Add a criterion</Btn>
+      <Btn onClick={() => change([...rows, null])}>+ Add a criterion</Btn>
       <span className="font-mono text-[12px] text-ink-3">{criteria.filter(value => value.trim()).length} of {criteria.length} written</span>
     </div>
   </Field>;

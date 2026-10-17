@@ -155,7 +155,9 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
           {input("how", "How")}
           {input("inScope", "In scope", "One a line.")}
           {input("outOfScope", "Out of scope", "One a line.")}
-          <CriteriaField criteria={fields.criteria} onChange={next => set("criteria", next)} marks={checked} changed={index => fields.criteria[index] !== read.fields.criteria[index]} />
+          <CriteriaField criteria={fields.criteria} marks={checked}
+            onChange={(next, from) => setFields(previous => ({ ...previous, criteria: next, criteriaFrom: from.map(index => index === null ? null : previous.criteriaFrom[index] ?? null) }))}
+            changed={index => fields.criteriaFrom[index] !== index || fields.criteria[index] !== read.fields.criteria[index]} />
           {input("verify", "Verify commands", "The implementer runs these before review; a red one fails the run.")}
           <div className="flex flex-wrap gap-6">
             <EstimateField draft={fields.estimate} onDraft={draft => set("estimate", draft)} estimate={estimate} marks={checked} changed={changed("estimate")} />
