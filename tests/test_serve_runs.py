@@ -968,6 +968,30 @@ class TurnTests(TranscriptCase):
         url = f"{path}/{rows[0]['id']}/transcript"
         self.assertEqual(self.request('GET', url)[0], 404)
 
+    def test_turn_rows_carry_recorded_end_exit_and_usage_without_transcripts(self):
+        self.seed()
+        self.assertEqual(self.run, 1)
+        with store.open(str(self.db)) as conn:
+            store.record_event(conn, self.run, 'agent_turn', 'ended',
+                               level='detail', now=1760000000000,
+                               payload=json.dumps(dict(
+                                   role='implement', route='primary', seconds=185,
+                                   exit_status=0, usage=dict(input_tokens=52100,
+                                   output_tokens=9300, cost_usd=0.92))))
+            store.record_event(conn, self.run, 'agent_turn', 'ended',
+                               level='detail', now=1760000001000,
+                               payload=json.dumps(dict(
+                                   role='review', route='primary', seconds=1,
+                                   exit_status=1, timed_out=True)))
+        self.start()
+        code, _, body = self.request('GET', '/runs/1/turns')
+        self.assertEqual(code, 200)
+        keys = ('ended_ms', 'exit_status', 'timed_out', 'input_tokens',
+                'output_tokens', 'cost_usd')
+        self.assertEqual([tuple(row[key] for key in keys) for row in body['turns']],
+                         [(1760000000000, 0, False, 52100, 9300, 0.92),
+                          (1760000001000, 1, True, None, None, None)])
+
     def test_every_role_carries_its_recorded_label(self):
         self.seed()
         recorded = [('implement', 'primary', 'claude-implement opus', 10),

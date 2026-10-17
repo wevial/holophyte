@@ -152,14 +152,16 @@ def contract_answers(case):
     with store.open(str(case.db)) as conn:
         store.record_agent_session(conn, case.run, "session-1", "implement",
                                    "primary")
-        for role, route, label, seconds in [
-                ("implement", "primary", "claude opus", 372.5),
-                ("review", "fallback", "codex gpt-5.6-sol", 95.25)]:
+        for role, route, label, seconds, usage in [
+                ("implement", "primary", "claude opus", 372.5,
+                 dict(input_tokens=52100, output_tokens=9300, cost_usd=0.92)),
+                ("review", "fallback", "codex gpt-5.6-sol", 95.25, None)]:
+            payload = dict(role=role, label=label, route=route,
+                           exit_status=0, timed_out=False, seconds=seconds)
+            if usage is not None:
+                payload["usage"] = usage
             store.record_event(conn, case.run, "agent_turn", f"{role} turn ended",
-                               level="detail", payload=json.dumps(dict(
-                                   role=role, label=label, route=route,
-                                   exit_status=0, timed_out=False,
-                                   seconds=seconds)))
+                               level="detail", payload=json.dumps(payload))
     code, body = holophyte.serve.serve_runs.run_turns(target, str(case.run))
     case.assertEqual(code, 200)
     answers["run-turns"] = normalize_contract(body)

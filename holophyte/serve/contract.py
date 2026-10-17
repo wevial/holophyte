@@ -596,6 +596,12 @@ class RunTurn(TypedDict):
     route: Literal["primary", "fallback"]
     seconds: float | None
     session_id: str | None
+    ended_ms: int
+    exit_status: int | None
+    timed_out: bool
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
 
 
 class RunTurns(TypedDict):
