@@ -20,7 +20,7 @@ def numbered(conn, run_id, criteria):
                for n, text in result
                if n not in edits or edits[n]["status"] != "retired"]
     present = {n for n, _ in result}
-    amended.extend((n, row["text"]) for n, row in sorted(edits.items())
+    amended.extend((n, row["text"]) for n, row in edits.items()
                    if n not in present and row["status"] != "retired")
     return amended
 

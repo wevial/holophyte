@@ -131,5 +131,5 @@ def amend(conn, ticket_id, edits, steer_note_id, now):
         kind, target = witnesses([text], commands)[0]
         _append(conn, ticket_id, number, position, text, kind, target, "open",
                 "amendment", now, steer_note_id)
-        latest[number] = dict(criterion=number, position=position, text=text,
+        latest[number] = dict(position=position, text=text,
                               witnessKind=kind, witnessTarget=target, status="open")

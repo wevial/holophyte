@@ -66,7 +66,7 @@ def _criteria_block(conn, run_id, parsed):
     reasons = {(note.id, number): text for note, edits, _ in parsed
                for verb, number, text in edits if verb == "DROP"}
     lines = []
-    for row in sorted(rows, key=lambda row: row["criterion"]):
+    for row in rows:
         number = row["criterion"]
         if row["status"] != "retired":
             lines.append(f"- **C{number}** {row['text']}")
