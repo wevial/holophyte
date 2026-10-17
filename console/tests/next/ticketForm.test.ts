@@ -2,8 +2,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentHtmlBody, inlineHtmlBody, literalVerifyBody } from "./ticketBodies";
-import { adjacentFencesBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, labeledCommentBody, mockupBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, inlineHtmlBody, labeledCommentBody, literalVerifyBody, mockupBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
 
 function checkerFieldsWithoutComments(body: string) {
