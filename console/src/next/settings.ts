@@ -1,6 +1,36 @@
 import { groupByHost, supervisorStale, type HostRecord } from "../lib/hosts";
 import type { ContractBodies } from "./fleet";
 import { scopedHosts } from "./scope";
+import type { ConfigValues } from "../lib/config";
+import type { SettingsEdit } from "./settingsDraft";
+
+export type PatchLine = { kind: "context" | "removed" | "added"; text: string };
+
+function tomlValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(", ")}]`;
+  return (JSON.stringify(value) ?? "").replace(/\u007f/g, "\\u007f");
+}
+
+export function patchLines(values: ConfigValues | null, edits: Record<string, SettingsEdit>): PatchLine[] {
+  const tables = new Set([...Object.keys(values ?? {}), ...Object.keys(edits).map((key) => key.slice(0, key.lastIndexOf(".")))]);
+  const lines: PatchLine[] = [];
+  for (const table of tables) {
+    const keys = new Set([
+      ...Object.keys(values?.[table] ?? {}),
+      ...Object.keys(edits).filter((key) => key.startsWith(`${table}.`)).map((key) => key.slice(table.length + 1)),
+    ]);
+    const changed = [...keys].filter((key) => `${table}.${key}` in edits);
+    if (!changed.length) continue;
+    lines.push({ kind: "context", text: `[${table}]` });
+    for (const key of changed) {
+      if (values?.[table] != null && Object.hasOwn(values[table], key)) {
+        lines.push({ kind: "removed", text: `${key} = ${tomlValue(values[table][key])}` });
+      }
+      lines.push({ kind: "added", text: `${key} = ${tomlValue(edits[`${table}.${key}`]!.value)}` });
+    }
+  }
+  return lines;
+}
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General", group: "Project" },
@@ -34,6 +64,9 @@ export type SettingsField = {
 } & (
   | { kind: "select"; default: string; options: readonly { value: string; label: string }[] }
   | { kind: "number"; default: number; numeric: "integer"; min: number }
+  | { kind: "boolean"; default: boolean }
+  | { kind: "text"; default: string; seat?: boolean }
+  | { kind: "lines"; default: string[] }
 );
 
 export const SETTINGS_FIELDS: readonly SettingsField[] = [
@@ -53,5 +86,61 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
     tab: "general", table: "loop", key: "workers", label: "Workers",
     help: "Tickets this project runs at once on {host}.",
     default: 1, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "review", table: "loop", key: "review_rounds", label: "Review rounds",
+    help: "Rounds every run gets before its last adjudication. A larger diff earns more, up to the round cap.",
+    default: 2, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "review", table: "loop", key: "review_rounds_max", label: "Round cap",
+    help: "The most rounds a large diff can earn.",
+    default: 4, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "review", table: "review", key: "adversary", label: "Adversary",
+    help: "A second reviewer that tries to break risky changes, on medium and high rounds.",
+    default: false, kind: "boolean",
+  },
+  {
+    tab: "review", table: "agents", key: "review_mode", label: "Review mode",
+    help: "Verified reviews from three angles and has each finding checked before the fix turn sees it.",
+    default: "single", kind: "select",
+    options: [{ value: "single", label: "Single" }, { value: "verified", label: "Verified" }],
+  },
+  {
+    tab: "agents", table: "agents", key: "implementer", label: "Implementer",
+    help: "Writes the change in the ticket's worktree.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "agents", table: "agents", key: "implementer_fallback", label: "Implementer fallback",
+    help: "Used only when the implementer's probe fails; probed too, and the swap is recorded on the run.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "agents", table: "agents", key: "reviewer", label: "Reviewer",
+    help: "Reads the diff and the criteria each round.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "agents", table: "agents", key: "adjudicator", label: "Adjudicator",
+    help: "Settles a finding the implementer declines, before it reaches you.",
+    default: "", kind: "text", seat: true,
+  },
+  {
+    tab: "capture", table: "merge", key: "ui_capture", label: "UI capture command",
+    help: "The command that captures screenshots of a ticket marked UI change. Empty captures nothing.",
+    default: "", kind: "text",
+  },
+  {
+    tab: "capture", table: "merge", key: "ui_paths", label: "UI paths",
+    help: "Changed paths that make a change a UI change.",
+    default: [], kind: "lines",
+  },
+  {
+    tab: "capture", table: "merge", key: "ui_capture_video", label: "Video",
+    help: "A short clip of the change being used, published beside the screenshots.",
+    default: false, kind: "boolean",
   },
 ];
