@@ -20,6 +20,7 @@ import { Overview } from "./pages/Overview";
 import { TurnPage } from "./pages/Turn";
 import { RunPage } from "./pages/Run";
 import { Runs } from "./pages/Runs";
+import { RunsHistory, validateHistorySearch } from "./pages/RunsHistory";
 import { Settings } from "./pages/Settings";
 import { StoriesIndex, Story } from "./pages/Story";
 import { TicketPage } from "./pages/Ticket";
@@ -54,6 +55,7 @@ function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/runs/history", validateSearch: validateHistorySearch, component: RunsHistory }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run", component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets", validateSearch: validateTicketsSearch, component: Tickets }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
