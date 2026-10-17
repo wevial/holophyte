@@ -520,6 +520,7 @@ class SteerNote(TypedDict):
 
 
 class RunCriterion(TypedDict):
+    id: str
     n: int
     text: str
     status: Literal["met", "not_met", "unwitnessed"]
@@ -606,6 +607,21 @@ class RunTurn(TypedDict):
 
 class RunTurns(TypedDict):
     turns: list[RunTurn]
+
+
+class TranscriptEntry(TypedDict):
+    speaker: Literal["user", "assistant", "command", "tool", "error"]
+    text: str
+    at_ms: int | None
+    tool: str | None
+    call: str | None
+    summary: str | None
+    failed: bool
+    cut: bool
+
+
+class Transcript(TypedDict):
+    entries: list[TranscriptEntry]
 
 
 class ShippedRow(TypedDict):
@@ -852,6 +868,11 @@ class TicketSteer(TypedDict):
     withdrawn: bool
 
 
+class TicketCriterion(TypedDict):
+    id: str
+    text: str
+
+
 class TicketDetail(TypedDict):
     ticket: str
     ticket_url: str | None
@@ -859,6 +880,7 @@ class TicketDetail(TypedDict):
     status: str
     body: str
     acceptance_criteria: list[str]
+    criteria: list[TicketCriterion]
     verification_commands: list[str]
     time_box_ms: int | None
     run: int | None
@@ -933,6 +955,7 @@ ROUTES = {
     "run-asks": (RunAsks, "GET /runs/N/asks"),
     "run-files": (RunFiles, "GET /runs/N/files"),
     "run-turns": (RunTurns, "GET /runs/N/turns"),
+    "run-transcript": (Transcript, "GET /runs/N/turns/T/transcript"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
     "holds": (Holds, "GET /holds"),

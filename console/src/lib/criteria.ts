@@ -4,19 +4,17 @@ import type { RunCriterion } from "./contract.gen";
 export type Standing = "met" | "unmet" | "open" | "todo";
 
 export interface CriterionRow {
-  n: number;
+  id: string;
   text: string;
   standing: Standing;
 }
 
 const STANDING: Record<RunCriterion["status"], Standing> = { met: "met", not_met: "unmet", unwitnessed: "open" };
 
-/** One row per criterion text, numbered from 1, its standing from the
- *  `judged` entry with the same `n`. */
-export function criteriaRows(texts: string[], judged: Pick<RunCriterion, "n" | "status">[], hasRun: boolean): CriterionRow[] {
-  const byN = new Map(judged.map((entry) => [entry.n, entry.status]));
-  return texts.map((text, index) => {
-    const status = byN.get(index + 1);
-    return { n: index + 1, text, standing: status != null ? STANDING[status] : hasRun ? "open" : "todo" };
+export function criteriaRows(criteria: { id: string; text: string }[], judged: Pick<RunCriterion, "id" | "status">[], hasRun: boolean): CriterionRow[] {
+  const byId = new Map(judged.map((entry) => [entry.id, entry.status]));
+  return criteria.map(({ id, text }) => {
+    const status = byId.get(id);
+    return { id, text, standing: status != null ? STANDING[status] : hasRun ? "open" : "todo" };
   });
 }

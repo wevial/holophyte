@@ -1,6 +1,8 @@
 """Seed and normalize the JSON contracts shared with the console tests."""
 import json
 import re
+import shutil
+from pathlib import Path
 
 import holophyte.serve.serve_findings
 import holophyte.serve.serve_history
@@ -23,6 +25,7 @@ from store.stories import (
 from tests.phase_fixture import park_run
 
 NOW = 1_750_000_000_000
+CLAUDE_TURN_ENDED = 1_767_261_612_000
 MIGRATED_BY = re.compile(r" by \S+, pid \d+, [^)]*\)$")
 STORY_WITNESS = {"key": "W1", "criterion": "the story works",
                  "file": "tests/test_story.py",
@@ -38,11 +41,13 @@ def normalize_contract(value, key=""):
         return [normalize_contract(v) for v in value]
     if value is None:
         return None
+    if key == "id" and isinstance(value, str):
+        return value
     if key in {"host", "project"}:
         return "writer" if key == "host" else "/repo"
     if key in {"id", "event_id", "run_id", "pid", "now", "at", "started_ms",
                "ended_ms", "work_started_ms", "verify_started_ms",
-               "approved_at"}:
+               "approved_at", "at_ms"}:
         return 1 if key in {"id", "event_id", "run_id", "pid"} else NOW
     if key == "text":
         return MIGRATED_BY.sub(" by BUILD, pid 1, COMMAND)", value)
@@ -161,10 +166,22 @@ def contract_answers(case):
             if usage is not None:
                 payload["usage"] = usage
             store.record_event(conn, case.run, "agent_turn", f"{role} turn ended",
-                               level="detail", payload=json.dumps(payload))
+                               level="detail", payload=json.dumps(payload),
+                               now=CLAUDE_TURN_ENDED)
     code, body = holophyte.serve.serve_runs.run_turns(target, str(case.run))
     case.assertEqual(code, 200)
     answers["run-turns"] = normalize_contract(body)
+    transcripts = case.root / "transcripts"
+    transcripts.mkdir()
+    shutil.copyfile(Path(__file__).parent / "fixtures/transcripts/claude.jsonl",
+                    transcripts / "session-1.jsonl")
+    (case.db.parent / "config.toml").write_text(
+        f'[serve]\ntranscripts = ["{transcripts}"]\n')
+    code, transcript = holophyte.serve.serve_runs.run_transcript(
+        Project.locate(case.target), f"{case.run}/turns/{body['turns'][0]['id']}")
+    case.assertEqual(code, 200)
+    case.assertTrue(transcript["entries"])
+    answers["run-transcript"] = normalize_contract(transcript)
     seed_story(case.db, case.target)
     code, body = holophyte.serve.serve_stories.story_detail(target, "KO-11")
     case.assertEqual(code, 200)

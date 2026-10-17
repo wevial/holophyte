@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Transcript",
+  "description": "GET /runs/N/turns/T/transcript",
+  "$ref": "#/$defs/Transcript",
+  "$defs": {
+    "TranscriptEntry": {
+      "type": "object",
+      "properties": {
+        "speaker": {
+          "enum": [
+            "user",
+            "assistant",
+            "command",
+            "tool",
+            "error"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "at_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "call": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failed": {
+          "type": "boolean"
+        },
+        "cut": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "speaker",
+        "text",
+        "at_ms",
+        "tool",
+        "call",
+        "summary",
+        "failed",
+        "cut"
+      ],
+      "additionalProperties": true
+    },
+    "Transcript": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TranscriptEntry"
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

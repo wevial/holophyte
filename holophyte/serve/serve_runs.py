@@ -327,7 +327,8 @@ def chain_criteria(conn, run_ids):
     newest = next(iter(store.read.criteria_events(conn, run_ids)), None)
     if newest is None:
         return []
-    return [{"n": c["n"], "text": c["text"], "status": c["status"],
+    return [{"n": c["n"], "id": c.get("id", f"C{c['n']}"),
+             "text": c["text"], "status": c["status"],
              "note": c["note"], "run": newest.runId,
              "round": newest.payload["round"]}
             for c in sorted(newest.payload["criteria"], key=lambda c: c["n"])]
@@ -558,6 +559,7 @@ def seat_route(fallback, table, seat):
             **({"fallback": fallback[seat]} if seat in fallback else {})}
 
 
+TRANSCRIPT_ENTRY_CHARS = 20_000
 RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
 RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
 
@@ -599,7 +601,9 @@ def run_transcript(project, segment):
                 if path is not None:
                     entries = transcript_window(render(path), turn)
                     for entry in entries:
-                        entry['text'] = outbound(entry['text'], secrets)
+                        text = outbound(entry['text'], secrets)
+                        entry['text'] = text[:TRANSCRIPT_ENTRY_CHARS]
+                        entry['cut'] = len(text) > TRANSCRIPT_ENTRY_CHARS
                         if entry['summary'] is not None:
                             entry['summary'] = outbound(entry['summary'], secrets)
                     return 200, {"entries": entries}

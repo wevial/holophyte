@@ -28,8 +28,12 @@ def numbered(conn, run_id, criteria):
 def _number_filed(conn, snapshot, criteria):
     if not criteria or isinstance(criteria[0], (tuple, list)):
         return criteria
-    texts = [split_id(text) for text in criteria]
     held = store.criteria.numbers(conn, snapshot.ticketId) if snapshot else {}
+    return with_numbers(criteria, held)
+
+
+def with_numbers(criteria, held):
+    texts = [split_id(text) for text in criteria]
     if not held:
         return [(n, text) for n, (_, text) in enumerate(texts, 1)]
     assigned = [explicit if explicit is not None else held.get(text)

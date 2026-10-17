@@ -1034,13 +1034,38 @@ class TurnTests(TranscriptCase):
         self.assertEqual(body, {'entries': [
             {'speaker': 'assistant', 'text': '[redacted] is here',
              'at_ms': None, 'tool': None, 'call': None, 'failed': False,
-             'summary': None}]})
+             'summary': None, 'cut': False}]})
         outside = self.root / file.name
         file.rename(outside)
         self.assertEqual(self.request('GET', url)[0], 404)
         file.symlink_to(outside)
         self.assertEqual(self.request('GET', url)[0], 404)
         self.assertEqual(self.request('GET', f'{path}/999999/transcript')[0], 404)
+
+    def test_transcript_cuts_tool_output_after_redacting_boundary_secret(self):
+        path = self.turns()
+        allowed = self.root / 'sessions'
+        secret = 'boundary-secret-12345678'
+        output = 'a' * 19990 + secret + 'b' * (25000 - 19990 - len(secret))
+        file = self.transcript(allowed, output, 'claude')
+        with file.open('a') as stream:
+            for text in ('x' * 20000, 'short message'):
+                stream.write(json.dumps({'type': 'assistant', 'message': {
+                    'content': [{'type': 'text', 'text': text}]}}) + '\n')
+        self.start(f'[serve]\ntranscripts = ["{allowed}"]\n'
+                   f'[extra]\napi_key = "{secret}"\n')
+        turn = self.request('GET', path)[2]['turns'][0]
+        code, _, body = self.request('GET', f"{path}/{turn['id']}/transcript")
+        self.assertEqual(code, 200)
+        entry, boundary, short = body['entries']
+        self.assertEqual(entry['speaker'], 'tool')
+        self.assertEqual(len(entry['text']), 20000)
+        self.assertNotIn(secret[:8], entry['text'])
+        self.assertTrue(entry['text'].endswith('[redacted]'))
+        self.assertIs(entry['cut'], True)
+        self.assertEqual(boundary['text'], 'x' * 20000)
+        self.assertEqual(short['text'], 'short message')
+        self.assertEqual([boundary['cut'], short['cut']], [False, False])
 
     def test_claude_tool_results_are_redacted_and_confined(self):
         path = self.turns()
@@ -1054,7 +1079,8 @@ class TurnTests(TranscriptCase):
         self.assertEqual(code, 200)
         self.assertEqual(body, {'entries': [
             {'speaker': 'tool', 'text': '[redacted] is here', 'at_ms': None,
-             'tool': None, 'call': 'call-1', 'failed': True, 'summary': None}]})
+             'tool': None, 'call': 'call-1', 'failed': True, 'summary': None,
+             'cut': False}]})
         with file.open('a') as stream:
             stream.write(json.dumps({'type': 'assistant', 'message': {'content': [
                 {'type': 'tool_use', 'id': 'call-2', 'name': 'Bash',

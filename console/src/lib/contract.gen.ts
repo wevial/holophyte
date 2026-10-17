@@ -542,6 +542,7 @@ export const steerNoteSchema = z.looseObject({
 export type SteerNote = z.infer<typeof steerNoteSchema>;
 
 export const runCriterionSchema = z.looseObject({
+  id: z.string(),
   n: z.int(),
   text: z.string(),
   status: z.enum(["met", "not_met", "unwitnessed"]),
@@ -639,6 +640,23 @@ export const runTurnsSchema = z.looseObject({
   turns: z.array(runTurnSchema),
 });
 export type RunTurns = z.infer<typeof runTurnsSchema>;
+
+export const transcriptEntrySchema = z.looseObject({
+  speaker: z.enum(["user", "assistant", "command", "tool", "error"]),
+  text: z.string(),
+  at_ms: z.int().nullable(),
+  tool: z.string().nullable(),
+  call: z.string().nullable(),
+  summary: z.string().nullable(),
+  failed: z.boolean(),
+  cut: z.boolean(),
+});
+export type TranscriptEntry = z.infer<typeof transcriptEntrySchema>;
+
+export const transcriptSchema = z.looseObject({
+  entries: z.array(transcriptEntrySchema),
+});
+export type Transcript = z.infer<typeof transcriptSchema>;
 
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
@@ -856,6 +874,12 @@ export const boardSchema = z.looseObject({
 });
 export type Board = z.infer<typeof boardSchema>;
 
+export const ticketCriterionSchema = z.looseObject({
+  id: z.string(),
+  text: z.string(),
+});
+export type TicketCriterion = z.infer<typeof ticketCriterionSchema>;
+
 export const ticketRevisionSchema = z.looseObject({
   revision: z.int(),
   at: z.int(),
@@ -926,6 +950,7 @@ export const ticketDetailSchema = z.looseObject({
   status: z.string(),
   body: z.string(),
   acceptance_criteria: z.array(z.string()),
+  criteria: z.array(ticketCriterionSchema),
   verification_commands: z.array(z.string()),
   time_box_ms: z.int().nullable(),
   run: z.int().nullable(),

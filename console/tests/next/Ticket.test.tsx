@@ -66,18 +66,18 @@ const stories: Record<string, StoryDetail> = {
 };
 
 const tickets: Record<string, TicketDetail> = {
-  "DEMO-3": detail("DEMO-3", { run: 9, time_box_ms: 25 * MINUTE, acceptance_criteria: CRITERIA, verification_commands: COMMANDS, runs: DEMO_3_RUNS }),
+  "DEMO-3": detail("DEMO-3", { run: 9, time_box_ms: 25 * MINUTE, acceptance_criteria: CRITERIA, criteria: CRITERIA.map((text, index) => ({ id: `C${index + 1}`, text })), verification_commands: COMMANDS, runs: DEMO_3_RUNS }),
   "DEMO-2": detail("DEMO-2", { run: null, status: "ready" }),
   "DEMO-20": detail("DEMO-20", { run: null, status: "ready" }),
   "DEMO-22": detail("DEMO-22", { run: null, status: "ready" }),
   "DEMO-30": detail("DEMO-30", { run: null, status: "ready" }),
-  "DEMO-5": detail("DEMO-5", { run: null, status: "blocked_on_deps", acceptance_criteria: CRITERIA.slice(0, 2) }),
+  "DEMO-5": detail("DEMO-5", { run: null, status: "blocked_on_deps", acceptance_criteria: CRITERIA.slice(0, 2), criteria: CRITERIA.slice(0, 2).map((text, index) => ({ id: `C${index + 1}`, text })) }),
   "DEMO-10": detail("DEMO-10", { run: null, status: "merged" }),
   "DEMO-6": detail("DEMO-6", { run: null, status: "abandoned", current: { ...servedTicket.current!, column: "canceled" } }),
 };
 
 const judged = servedRun.criteria[0]!;
-const standing = (n: number, status: RunCriterion["status"]): RunCriterion => ({ ...judged, n, text: CRITERIA[n - 1]!, status, run: 9 });
+const standing = (n: number, status: RunCriterion["status"]): RunCriterion => ({ ...judged, id: `C${n}`, n, text: CRITERIA[n - 1]!, status, run: 9 });
 const criteria = [standing(1, "met"), standing(2, "met"), standing(3, "unwitnessed")];
 
 /** DEMO serves the board above, runs DEMO-3 as run 9 reviewing round 2 of 3
@@ -153,7 +153,7 @@ test("the panel shows the summary, keyed criteria counted in their run, the fold
   expect(screen.getByText(SUMMARY)).toBeTruthy();
   const list = screen.getByRole("region", { name: "Acceptance criteria" });
   expect(list.querySelector("[data-met-count]")!.textContent).toBe("2 of 3 met in run 9");
-  expect(within(list).getAllByRole("listitem").map((row) => row.textContent)).toEqual(CRITERIA.map((text, index) => `AC${index + 1}${text}`));
+  expect(within(list).getAllByRole("listitem").map((row) => row.textContent)).toEqual(CRITERIA.map((text, index) => `C${index + 1}${text}`));
   expect(Array.from(list.querySelectorAll("[data-standing]")).map((mark) => mark.getAttribute("data-standing"))).toEqual(["met", "met", "open"]);
 
   const verify = screen.getByText("Verify").closest("details")!;
