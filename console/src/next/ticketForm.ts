@@ -158,7 +158,7 @@ function editText(text: string, field: Exclude<Field, "title">, value: Fields[Fi
   if (field === "summary" || field === "notes" || field === "openQuestions") {
     if (!text.trim()) return append(text, String(value), eol);
     const start = text.length - text.trimStart().length;
-    return splice(text, start, Math.max(start, text.trimEnd().length), String(value));
+    return splice(text, start, text.trimEnd().length, String(value));
   }
   if (field === "what" || field === "why" || field === "how") {
     const span = paragraph(text, field);
