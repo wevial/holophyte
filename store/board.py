@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 
+import ticket_criteria
 import ticket_template
 from ticket_depends import rewrite_depends
 
@@ -39,6 +40,7 @@ def ticket_problems(text, repo):
 def _ticket_findings(text, repo):
     ticket = ticket_template.parse(text)
     problems = ticket_template.validate(ticket, repo=repo)
+    problems += ticket_criteria.witness_problems(ticket)
     if repo:
         # Deferred: holophyte imports this module.
         from holophyte.config.project import Project

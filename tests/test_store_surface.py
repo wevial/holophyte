@@ -18,6 +18,7 @@ from unittest.mock import patch
 import store
 import store.board
 import store.console_asks
+import store.criteria
 import store.follow_ups
 import store.gap_layers
 import store.operate
@@ -279,6 +280,7 @@ class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
+                                 (store.criteria, ["backfill", "record_criteria"]),
                                  # KO-750: the native board's writers;
                                  # KO-753: moves/cancels; HOLO-404: check reader.
                                  (store.board, ["cancel_ticket", "check_ticket",
