@@ -24,6 +24,17 @@ class TicketStatus(str, Enum):
     ABANDONED = 'abandoned'
 
 
+class CriterionWitnessKind(str, Enum):
+    TEST = 'test'
+    VERIFY = 'verify'
+    REVIEWER_READ = 'reviewer_read'
+
+
+class CriterionStatus(str, Enum):
+    OPEN = 'open'
+    RETIRED = 'retired'
+
+
 class BoardColumn(str, Enum):
     BACKLOG = 'backlog'
     READY = 'ready'
@@ -260,6 +271,8 @@ CONSTRAINED_COLUMNS = {
     ('tickets', 'status'): TicketStatus,
     ('tickets', 'affinity'): Affinity,
     ('tickets', 'boardColumn'): BoardColumn,
+    ('ticketCriteria', 'witnessKind'): CriterionWitnessKind,
+    ('ticketCriteria', 'status'): CriterionStatus,
     ('runs', 'phase'): RunPhase,
     ('runs', 'parkKind'): ParkKind,
     ('runs', 'outcome'): RunOutcome,

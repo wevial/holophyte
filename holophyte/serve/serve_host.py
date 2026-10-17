@@ -52,6 +52,7 @@ from store.schema import SCHEMA_VERSION, SchemaNewer, _readable_from
 PROJECTS_PREFIX = "/projects/"
 MACHINE_TOKEN_KEY = "[serve] machine_token_file"
 RUN_SWEEP = "run-sweep"
+RESTART_DAEMON = "restart-daemon"
 # A file, not a store: no store owns the sweep, and stores may be down.
 HOST_LEDGER = "host-actions.jsonl"
 HOST_ACTIONS = ACTIONS - {"restart-supervisor"}
@@ -298,6 +299,23 @@ def project_token(knobs):
         return ()
 
 
+def restart_daemon(home, body):
+    note, author = body.get("note"), body.get("author")
+    row = {"at": int(time() * 1000), "action": "restart_daemon",
+           "via": f"POST {ACTIONS_PREFIX}{RESTART_DAEMON}", "pid": os.getpid(),
+           "author": author if isinstance(author, str) else "maintainer",
+           "note": note if isinstance(note, str) else None}
+    try:
+        record_host_action(home, row)
+    except OSError as bad:
+        return 200, {"action": RESTART_DAEMON, "ok": False, "recorded": None,
+                     "detail": f"could not record in {home / HOST_LEDGER}"
+                               f" ({bad}); nothing restarted"}
+    return 200, {"action": RESTART_DAEMON, "ok": True,
+                 "detail": "the daemon drains its requests and restarts",
+                 "recorded": str(home / HOST_LEDGER)}
+
+
 class HostHandler(StatusHandler):
     def handle_one_request(self):
         with store.read.lock_wait(HOST_READ_WAIT_S):
@@ -378,13 +396,19 @@ class HostHandler(StatusHandler):
         if not self.admitted(server.write_token if server.actions
                              else server.read_token):
             return self.answer(401, {})
-        if not server.actions or path != ACTIONS_PREFIX + RUN_SWEEP:
+        action = path[len(ACTIONS_PREFIX):]
+        if not server.actions or action not in (RUN_SWEEP, RESTART_DAEMON):
             return self.answer(404, {"error": "not found", "path": path})
         try:
             body = self.read_body()
         except ValueError as bad:
             return self.answer(400, {"error": str(bad)})
-        self.answer(*run_sweep(server.host.home, body))
+        handler = run_sweep if action == RUN_SWEEP else restart_daemon
+        code, reply = handler(server.host.home, body)
+        self.answer(code, reply)
+        if action == RESTART_DAEMON and reply["ok"]:
+            self.wfile.flush()
+            server.request_restart()
 
     def act(self, scope, action, body):
         return self.refused(scope) or super().act(scope, action, body)

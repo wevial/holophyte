@@ -18,6 +18,7 @@ from unittest.mock import patch
 import store
 import store.board
 import store.console_asks
+import store.criteria
 import store.follow_ups
 import store.gap_layers
 import store.operate
@@ -279,6 +280,7 @@ class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
+                                 (store.criteria, ["backfill", "record_criteria"]),
                                  # KO-750: the native board's writers;
                                  # KO-753: its moves, cancels and waits.
                                  (store.board, ["cancel_ticket", "edit_ticket",
@@ -292,7 +294,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "settle_work", "verify_work",
                                                   "working"]),
                                  # The run reads `store.read` re-exports.
-                                 (store.run_reads, ["approved_candidate",
+                                 (store.run_reads, ["admission_changes",  # HOLO-402
+                                                    "approved_candidate",
                                                     "babysit_note",
                                                     # HOLO-326: `/runs/N`'s
                                                     # criteria over a chain.
@@ -302,6 +305,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "finished_runs",
                                                     "last_independent_verdict",
                                                     "latest_human_intervention_at",
+                                                    # HOLO-396: config last save.
+                                                    "latest_intervention",
                                                     "live_runs", "merged_runs",
                                                     "newest_run_id",
                                                     # HOLO-155: the merge
