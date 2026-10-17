@@ -292,7 +292,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "settle_work", "verify_work",
                                                   "working"]),
                                  # The run reads `store.read` re-exports.
-                                 (store.run_reads, ["approved_candidate",
+                                 (store.run_reads, ["admission_changes",  # HOLO-402
+                                                    "approved_candidate",
                                                     "babysit_note",
                                                     # HOLO-326: `/runs/N`'s
                                                     # criteria over a chain.
@@ -302,6 +303,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "finished_runs",
                                                     "last_independent_verdict",
                                                     "latest_human_intervention_at",
+                                                    # HOLO-396: config last save.
+                                                    "latest_intervention",
                                                     "live_runs", "merged_runs",
                                                     "newest_run_id",
                                                     # HOLO-155: the merge

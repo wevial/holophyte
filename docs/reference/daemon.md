@@ -310,7 +310,7 @@ the loop's user.
 `GET /config` answers
 
 ```json
-{"text": "[serve]\ntoken_file = \"...\"\n...", "values": {"serve": {"token_file": "..."}, "loop": {"workers": 2}}, "path": "/home/.../config.toml", "applies": "next loop start"}
+{"text": "[serve]\ntoken_file = \"...\"\n...", "values": {"serve": {"token_file": "..."}, "loop": {"workers": 2}}, "path": "/home/.../config.toml", "applies": "next loop start", "revision": "<sha256>", "modified_ms": 1791969120000, "saved": {"at_ms": 1791969120000, "actor": "maintainer"}}
 ```
 
 `text` is the file as written, except that the value of every key whose
@@ -331,10 +331,31 @@ the file once at startup, so a written change waits for the next start
 (`POST /actions/launch-loop`, or the supervisor's), and a running loop is
 not touched.
 
+`revision` is the SHA-256 hex digest of the file's text before redaction,
+as read by the daemon; an absent file has the digest of empty text.
+`modified_ms` is the file's modification time in epoch milliseconds, or
+null with no file. `saved` names the newest `config_edit` intervention on
+this project's runs: `at_ms` is its timestamp and `actor` is `maintainer`,
+`operator`, `supervisor`, or null for an older row with no recorded actor.
+With no such intervention, `saved` is null. A manual file edit changes the
+revision and modification time but does not create a save record.
+
+Send the revision read in `If-Match` when saving either `text` or `patch`.
+Under the write lock, the daemon compares it with the current file before
+restoring secrets, validating, recording or writing. A mismatch answers
+409, without creating a backup or intervention:
+
+```json
+{"ok": false, "error": "config.toml changed since this revision was read; read it again", "current": "<current-sha256>"}
+```
+
+The error names the project's own file. Omitting `If-Match` preserves
+unconditional writes for existing clients.
+
 `PUT /config` takes `{"text": "..."}`, the whole new file. Every
 `"[redacted]"` value in it -- any TOML string reading `[redacted]`,
 however quoted, a comment beside it or not -- is replaced by the current
-file's value for the same key in the same table before anything else, so
+file's value for the same key in the same table after the revision check, so
 a round trip through the page never blanks a secret; a `[redacted]` under
 a key the current file does not hold is 400 naming it. The text is then parsed as
 TOML and run through the loader's startup checks -- unknown keys, every
@@ -357,14 +378,15 @@ to `config.toml.bak-STAMP` beside the file, `STAMP` the UTC time to the
 second (`-2`, `-3` when that second already has one), and the new text
 lands by rename from a staging file of its own, so a reader sees the old
 file or the new one and never a torn one. Writes are taken one at a time,
-from the read of the current file to the rename, so two clients cannot
-back up the same text twice and lose an edit. The reply is
+from the read of the current file to the rename. Clients sending `If-Match`
+cannot overwrite an intervening save with a stale revision. The reply is
 
 ```json
-{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42, "probe": null}
+{"ok": true, "path": "/home/.../config.toml", "backup": "/home/.../config.toml.bak-20260910T120000Z", "applies": "next loop start", "recorded": 42, "probe": null, "revision": "<written-sha256>"}
 ```
 
-`backup` is null when there was no file to keep. Backups are not pruned.
+`revision` names the written file. `backup` is null when there was no file
+to keep. Backups are not pruned.
 
 `PUT /config` also takes `{"patch": {...}}` in place of `text`: a flat
 object of dotted `table.key` to a string, an integer, a boolean or a list
