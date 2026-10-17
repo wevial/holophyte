@@ -35,6 +35,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
   };
   return (
     <li
+      data-row
       data-run={row.id}
       data-need={need ? "" : undefined}
       className={`${GRID} relative border-b border-rule-2 p-3 text-[14px] transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}

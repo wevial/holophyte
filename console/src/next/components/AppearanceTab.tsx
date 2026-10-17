@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useReadingFont, useTheme, type ReadingFont } from "../appearance";
+import { useDensity, useReadingFont, useTheme, type ReadingFont } from "../appearance";
 import type { Theme } from "../../lib/theme";
 
 const THEMES: { value: Theme; name: string; line: string; colors: string[] }[] = [
@@ -47,6 +47,7 @@ function Card({ group, name, checked, onChange, children, swatch }: {
 export function AppearanceTab() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { font, setFont } = useReadingFont();
+  const { density, setDensity } = useDensity();
   return (
     <div className="mt-5">
       <Row title="Theme" help="System follows your computer's light or dark setting.">
@@ -65,6 +66,35 @@ export function AppearanceTab() {
           </Card>
         ))}
       </Row>
+      <div className="grid gap-5 border-t border-rule-2 py-5 min-[860px]:grid-cols-[minmax(140px,0.8fr)_minmax(0,1.4fr)]">
+        <div>
+          <h3 id="appearance-density" className="font-sans text-[15px] font-semibold">Density</h3>
+          <p id="appearance-density-help" className="mt-1.5 font-sans text-[14px] text-ink-2">Compact tightens rows on Overview, Runs and Tickets. Buttons keep their 44px.</p>
+        </div>
+        <div className="min-w-0">
+          <div role="group" aria-labelledby="appearance-density" aria-describedby="appearance-density-help" className="inline-flex border border-rule">
+            {(["comfortable", "compact"] as const).map((value) => (
+              <button key={value} type="button" aria-pressed={density === value} onClick={() => setDensity(value)}
+                className={`min-h-11 px-4 font-mono text-[12px] ${density === value ? "bg-act text-act-ink" : "bg-paper text-ink-2 hover:bg-paper-2"}`}>
+                {value === "comfortable" ? "Comfortable" : "Compact"}
+              </button>
+            ))}
+          </div>
+          <div role="region" aria-label="Preview" className="mt-4">
+            <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Preview</p>
+            <div className="border border-rule bg-paper">
+              {[0, 1].map((row) => (
+                <div key={row} data-row className="flex min-h-[66px] flex-wrap items-center gap-x-3 gap-y-1 border-rule-2 px-3 py-3.5 not-first:border-t">
+                  <span className="font-mono text-[12px] text-live">reviewing</span>
+                  <span className="font-mono text-[12px] text-ink-2">HOLO-231</span>
+                  <span className="font-read text-[14.5px] text-ink">The sweep frees a silent lease</span>
+                  <span className="ml-auto font-mono text-[12px] text-ink-3">16m / 25m</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
