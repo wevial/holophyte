@@ -636,6 +636,8 @@ class HistoryRow(TypedDict):
     started_ms: int
     ended_ms: int | None
     elapsed_ms: int
+    working_ms: int | None
+    estimate_ms: int | None
     heartbeat_age_ms: int | None
     rounds: int
     max_rounds: int
@@ -646,8 +648,10 @@ class HistoryRow(TypedDict):
 class History(TypedDict):
     rows: list[HistoryRow]
     since: int
+    until: int | None
     limit: int
     truncated: bool
+    total: int
     now: int
 
 
