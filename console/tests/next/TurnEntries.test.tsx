@@ -113,6 +113,8 @@ test("a pending transcript announces fetching while the turn figures remain visi
   await mount("pending");
   expect(within(screen.getByRole("main")).getByRole("status").textContent).toBe("Fetching the transcript from writer-host…");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Implementer · turn 1");
+  const duration = screen.getByText("Duration", { selector: "dt" }).parentElement!;
+  expect(within(duration).getByText("3m 05s")).toBeTruthy();
 });
 
 test("an untimed first user entry remains the folded prompt before a later note", async () => {
