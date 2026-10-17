@@ -208,3 +208,13 @@ export function LoopIcon() {
     </Stroke>
   );
 }
+
+export function SettingsIcon() {
+  return (
+    <Stroke>
+      <path d="M2 5h3m4 0h5M2 11h7m4 0h1" />
+      <circle cx="7" cy="5" r="2" />
+      <circle cx="11" cy="11" r="2" />
+    </Stroke>
+  );
+}

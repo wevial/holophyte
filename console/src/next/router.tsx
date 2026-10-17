@@ -19,6 +19,7 @@ import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
 import { RunPage } from "./pages/Run";
 import { Runs } from "./pages/Runs";
+import { Settings } from "./pages/Settings";
 import { StoriesIndex, Story } from "./pages/Story";
 import { TicketPage } from "./pages/Ticket";
 import { Tickets } from "./pages/Tickets";
@@ -58,6 +59,8 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   pageRoute("/findings", Findings),
+  pageRoute("/settings", Settings),
+  pageRoute("/settings/$tab", Settings),
 ]);
 
 function createConsoleRouter() {
