@@ -11,7 +11,7 @@ import { PollDepsContext, useConsolePeers } from "../scope";
 import { blankForm, composeBody, withField } from "../ticketForm";
 import { CRUMB_LINK } from "./runShared";
 
-const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 font-sans text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
+const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
 
@@ -53,8 +53,8 @@ export function NewTicket() {
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues(previous => ({ ...previous, [field]: event.target.value })),
     };
     return <Field label={label} hint={hint} optional={optional} extra={field === "verify" ? " · one a line, run as written" : undefined}>
-      {field === "title" ? <input {...props} className={`${INPUT} text-[18px] font-semibold`} /> :
-        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} className={`${INPUT} resize-y ${field === "verify" ? "font-mono" : ""}`} />}
+      {field === "title" ? <input {...props} className={`${INPUT} font-sans text-[18px] font-semibold`} /> :
+        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} className={`${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`} />}
     </Field>;
   };
   const file = async () => {
@@ -95,7 +95,7 @@ export function NewTicket() {
           <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
               <Field label="Project">
-                <select id="new-Project" className={INPUT} value={project} disabled={busy} onChange={event => {
+                <select id="new-Project" className={`${INPUT} font-sans`} value={project} disabled={busy} onChange={event => {
                   setProblems([]);
                   void navigate({ to: "/tickets/$project/new", params: { project: event.target.value }, search: {} });
                 }}>{editable.map(row => <option key={row.name} value={row.name}>{row.name}</option>)}</select>
