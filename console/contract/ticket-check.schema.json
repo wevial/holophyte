@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TicketCheck",
+  "description": "POST /tickets/check",
+  "$ref": "#/$defs/TicketCheck",
+  "$defs": {
+    "TicketCheck": {
+      "type": "object",
+      "properties": {
+        "problems": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blocks": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "problems",
+        "advisories",
+        "blocks"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
