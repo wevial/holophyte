@@ -265,6 +265,7 @@ PINNED = {
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
     "store/board.py": 7,
+    "store/criteria.py": 0,
     "store/console_asks.py": 0,
     "store/ddl.py": 5,
     "store/enums.py": 7,
@@ -292,6 +293,7 @@ PINNED = {
     "story_template.py": 1,
     "ticket_depends.py": 3,
     "ticket_template.py": 24,
+    "ticket_criteria.py": 0,
 }
 
 CITED = {

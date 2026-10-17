@@ -5,6 +5,7 @@ from urllib.parse import unquote
 
 import store
 import store.board
+import store.read
 import store.tickets
 from holophyte.config.config_tables import board_config, board_mode
 from holophyte.loop.runs import open_store
@@ -30,6 +31,8 @@ def ticket_path(path):
 
 
 def post_path(path):
+    if path == TICKETS + "/check":
+        return "check", None
     if path == TICKETS:
         return "file", None
     identifier, _, verb = path.rpartition("/")
@@ -65,6 +68,14 @@ def edit_fields(body):
 def file_fields(body):
     text, priority, _ = edit_fields({**body, "labels": None})
     return text, column_field(body.get("column", "ready")), priority
+
+
+def check_fields(body):
+    text, _, _ = edit_fields({"body": body.get("body")})
+    identifier = body.get("ticket")
+    if identifier is not None and not isinstance(identifier, str):
+        raise ValueError("ticket must be a string")
+    return text, identifier, column_field(body.get("column", "ready"))
 
 
 def move_fields(body):
@@ -107,9 +118,11 @@ def put_ticket(handler, scope, path, identifier):
 
 
 def post_ticket(handler, scope, path, verb, identifier):
-    if verb == "file":
-        return write(handler, scope, path, file_fields,
-                     lambda project, _, *fields: new_ticket(project, *fields),
+    if verb in ("check", "file"):
+        parse, act = {"check": (check_fields, check),
+                      "file": (file_fields, new_ticket)}[verb]
+        return write(handler, scope, path, parse,
+                     lambda project, _, *fields: act(project, *fields),
                      revisioned=False)
     parse, act = {"move": (move_fields, move),
                   "cancel": (cancel_fields, cancel)}[verb]
@@ -155,6 +168,18 @@ def on_store(project, act):
             return 409, {"error": str(moved), "current": moved.current}
         except store.board.FilingRefused as refused:
             return 422, {"problems": refused.problems}
+
+
+def check(project, text, identifier, column):
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    with closing(store.read.open_readonly(project.store_path)) as conn:
+        row = conn.execute("SELECT id FROM projects WHERE repoPath = ?",
+                           (str(project.path),)).fetchone()
+        if row is None:
+            return 503, no_store(project)
+        return 200, store.board.check_ticket(
+            conn, row[0], text, identifier=identifier, column=column)
 
 
 def edit(project, identifier, expected, text, priority, labels):

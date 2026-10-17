@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 
+import ticket_criteria
 import ticket_template
 from ticket_depends import rewrite_depends
 
@@ -33,14 +34,17 @@ class FilingRefused(ValueError):
 
 
 def ticket_problems(text, repo):
+    return _ticket_judgement(text, repo)[0]
+
+
+def _ticket_findings(text, repo):
     ticket = ticket_template.parse(text)
-    problems = ticket_template.filing_refusals(
-        ticket_template.validate(ticket, repo=repo))
+    problems = ticket_template.validate(ticket, repo=repo)
+    problems += ticket_criteria.witness_problems(ticket)
     if repo:
         # Deferred: holophyte imports this module.
         from holophyte.config.project import Project
         from holophyte.isolation.launcher import container_docker_problems
-        from holophyte.leak_guard import ticket_problems as private_problems
         from holophyte.loop.implementer_profile import filing_problems
         from holophyte.pr import mockup
         from holophyte.pr.pr_media import project_problems
@@ -48,10 +52,41 @@ def ticket_problems(text, repo):
         problems += project_problems(project, ticket)
         problems += mockup.filing_problems(project, ticket)
         problems += container_docker_problems(project, ticket)
-        problems += ticket_template.filing_refusals(
-            filing_problems(project, ticket))
-        problems = private_problems(repo, text, problems)
+        problems += filing_problems(project, ticket)
     return problems
+
+
+def _ticket_judgement(text, repo):
+    from holophyte.leak_guard import ticket_problems as private_problems
+    from holophyte.redact import redact_values
+
+    findings = _ticket_findings(text, repo)
+    problems = ticket_template.filing_refusals(findings)
+    advisories = [finding.removeprefix(ticket_template.ADVISORY_PREFIX)
+                  for finding in findings if finding not in problems]
+    if repo:
+        problems = private_problems(repo, text, problems)
+    return problems, [redact_values(advisory) for advisory in advisories]
+
+
+def check_ticket(conn, project_id, text, identifier=None, column="ready"):
+    from holophyte.redact import redact_values
+
+    problems, advisories = _ticket_judgement(text, _repo_path(conn, project_id))
+    self_id = None
+    if identifier is not None:
+        row = conn.execute(
+            "SELECT id, boardColumn FROM tickets WHERE projectId = ?"
+            " AND linearIdentifier = ?", (project_id, identifier)).fetchone()
+        if row is not None:
+            self_id, column = row
+    unknown = []
+    try:
+        _dependencies(conn, project_id, text, self_id)
+    except FilingRefused as refused:
+        unknown = [redact_values(problem) for problem in refused.problems]
+    return {"problems": problems + unknown, "advisories": advisories,
+            "blocks": bool(unknown) or _blocks_filing(problems, column)}
 
 
 def _blocks_filing(problems, column):

@@ -641,6 +641,8 @@ The store is its own package:
   re-exported from the package.
 - `store/repair.py` — `repair_references()`: a dry run, then a recorded
   rewrite of foreign keys that name a dropped table.
+- `store/criteria.py` — append-only criterion versions, stable ticket-local
+  numbers and open-ticket migration backfill.
 - `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
@@ -701,6 +703,8 @@ At the root:
   set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `review_runner.py` — exact-SHA staging and the model-neutral local
   reviewer boundary (see [Reviewing](reviewing.md)).
+- `ticket_criteria.py` — explicit criterion ids, test and verify witnesses,
+  and blocking post-merge or operator witness checks for native filings.
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
@@ -870,7 +874,13 @@ Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 `console/src/next/router.tsx` routes it with TanStack Router over hash
 history, since the static route has no single-page fallback: `#/` is
 Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
-each in the shell its root renders, and any other path is a not-found page.
+each in the shell its root renders. Settings lives at `#/settings` (General)
+and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
+`toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
+`console/src/next/settings.ts` defines the grouped tabs and host attention
+count; `console/src/next/pages/Settings.tsx` frames the project picker and
+placeholder panels. The sidebar footer links to Settings. Any other path
+is a not-found page.
 The root route's search holds one optional `project`, the project's name
 as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
 scoped view; every route inherits it, the sidebar's links carry it, and
