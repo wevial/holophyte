@@ -180,14 +180,7 @@ test("prose edits include bold continuation and preserve adjacent Markdown block
       const form = parseBody(body);
       expect(fieldOf(form, "how")).toBe(`Read the record.${eol}**Keep** reading.`);
       expect(composeBody(withField(form, "how", "Read the updated record."))).toBe(
-        `## What / Why / How
-
-**How:** Read the updated record.
-${block}
-\`\`\`sh
-echo keep-me
-\`\`\`
-`.replaceAll("\n", eol),
+        body.replace(`Read the record.${eol}**Keep** reading.`, "Read the updated record."),
       );
     }
   }
@@ -199,16 +192,7 @@ test("criteria edits exclude HTML comments and keep replacement items visible", 
     const form = parseBody(body);
     expect(fieldOf(form, "criteria")).toEqual(["Visible criterion"]);
     const edited = composeBody(withField(form, "criteria", ["Replacement criterion"]));
-    expect(edited).toBe(`## Acceptance criteria
-
-<!--
-- [ ] Hidden editor note
-\`\`\`
-## Hidden heading
--->
-- [ ] Replacement criterion
-<!-- - [ ] Another hidden note -->
-`.replaceAll("\n", eol));
+    expect(edited).toBe(body.replace("Visible criterion", "Replacement criterion"));
     expect(fieldOf(parseBody(edited), "criteria")).toEqual(["Replacement criterion"]);
   }
 });
