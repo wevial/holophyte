@@ -105,6 +105,26 @@ test("Save draft restores every field, P1 and the saved time only in its project
   expect(screen.getByRole("button", { name: "Start over" })).toBeTruthy();
 });
 
+test("Save draft stays disabled on a blank form with None selected until text is entered", async () => {
+  await mount();
+  expectBlank();
+  await press("None");
+  const save = screen.getByRole("button", { name: "Save draft" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  await act(async () => void fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: title } }));
+  expect(save.disabled).toBe(false);
+});
+
+test("Save draft stays disabled on a restored blank draft with null priority until text is entered", async () => {
+  storage.setItem(key, JSON.stringify({ body: "", priority: null, savedAt: NOW }));
+  await mount();
+  expect(screen.getByText(/^Draft from .* restored\.$/)).toBeTruthy();
+  const save = screen.getByRole("button", { name: "Save draft" }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  await act(async () => void fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: title } }));
+  expect(save.disabled).toBe(false);
+});
+
 test("switching projects clears fields and priority without a draft and restores the saved project's draft", async () => {
   await mount();
   await fill();

@@ -318,7 +318,7 @@ export function NewTicket() {
               <div className="border border-rule bg-paper p-5">
                 <div className="flex flex-wrap gap-2">
                   <Btn variant="primary" busy={busy} busyLabel="Filing…" onClick={() => void file()}>File ticket</Btn>
-                  <Btn disabled={busy || (priority === 2 && !FIELDS.some(field => values[field].trim()) && !criteria.some(value => value.trim()) && estimate === 25 && !dependsOn.length && !dependency.trim() && !uiChange)} onClick={save}>Save draft</Btn>
+                  <Btn disabled={busy || ((priority === null || priority === 0 || priority === 2) && !FIELDS.some(field => values[field].trim()) && !criteria.some(value => value.trim()) && estimate === 25 && !dependsOn.length && !dependency.trim() && !uiChange)} onClick={save}>Save draft</Btn>
                 </div>
                 <p className="mt-3 font-mono text-[12px] text-ink-2">Files to {project} Backlog.</p>
                 {problems.length > 0 && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{problems.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
