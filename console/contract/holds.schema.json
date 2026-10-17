@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Holds",
+  "description": "GET /holds",
+  "$ref": "#/$defs/Holds",
+  "$defs": {
+    "HoldRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "action": {
+          "enum": [
+            "hold",
+            "release_hold",
+            "disable"
+          ]
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "anyOf": [
+            {
+              "enum": [
+                "maintainer",
+                "operator",
+                "supervisor"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "action",
+        "note",
+        "actor"
+      ],
+      "additionalProperties": true
+    },
+    "Holds": {
+      "type": "object",
+      "properties": {
+        "admission": {
+          "enum": [
+            "enabled",
+            "held",
+            "disabled"
+          ]
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HoldRow"
+          }
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "admission",
+        "note",
+        "rows",
+        "limit",
+        "truncated"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

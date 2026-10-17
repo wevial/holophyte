@@ -49,6 +49,10 @@ class HttpReferenceTests(unittest.TestCase):
         assert_covers(self, section(self.document, "`GET /status`"),
                       "status.json")
 
+    def test_holds_section_names_every_pinned_key(self):
+        assert_covers(self, section(self.document, "`GET /holds?limit=N`"),
+                      "holds.json")
+
     def test_run_detail_section_names_every_pinned_key(self):
         assert_covers(self, section(self.document, "`GET /runs/N`"),
                       "run-detail.json")
