@@ -58,14 +58,6 @@ class ServeTicketCheckTests(ServeBoardCase):
         self.assertEqual(status, 200)
         fixture = Path(__file__).parent / "fixtures/serve/ticket-check.json"
         self.assertEqual(answer, json.loads(fixture.read_text()))
-        self.assertEqual(answer["problems"], [
-            "'Summary' is empty",
-            "acceptance criterion #2 is empty",
-            "estimate is 120 min; the cap is 90 min — split the ticket",
-        ])
-        self.assertEqual(answer["advisories"], [
-            "path does not exist in Implementation notes: holophyte/nope_missing.py",
-        ])
         self.assertIs(answer["blocks"], True)
         self.assertEqual(self.snapshot(), before)
 
