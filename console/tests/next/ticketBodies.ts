@@ -182,3 +182,14 @@ Render the literal \`<!--\` in the editor.
 
 Estimate: 30 min · Depends on: none
 `;
+
+export const annotatedFieldsBody = `## What / Why / How
+
+**How:** Read the stored notes. <!-- keep explanation -->
+
+## Acceptance criteria
+
+- [ ] Saved notes appear. <!-- keep note -->
+
+> Keep reviewer rules.
+`;

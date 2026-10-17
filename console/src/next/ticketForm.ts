@@ -26,44 +26,50 @@ export interface TicketForm {
   sections: TicketSection[];
   hints: Partial<Record<Field, string | string[]>>;
 }
-interface Line { start: number; end: number; text: string; eol: string; fenced: boolean; commented: boolean }
+interface Line { start: number; end: number; text: string; eol: string; suffix: string; fenced: boolean; commented: boolean }
 
-function commentState(text: string, inComment: boolean): { commented: boolean; inComment: boolean } {
-  let commented = inComment;
-  const tokens = [...text.matchAll(/`+|<!--|-->/g)];
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i][0];
+function commentState(text: string, inComment: boolean, inlineCode: string, following: string) {
+  let visibleEnd = inComment ? 0 : text.length;
+  for (const match of text.matchAll(/`+|<!--|-->/g)) {
+    const token = match[0];
     if (inComment) {
       if (token === "-->") inComment = false;
+    } else if (inlineCode) {
+      if (token === inlineCode) inlineCode = "";
     } else if (token === "<!--") {
       inComment = true;
-      commented = true;
+      visibleEnd = Math.min(visibleEnd, match.index);
     } else if (token.startsWith("`")) {
-      const closing = tokens.findIndex((candidate, index) => index > i && candidate[0] === token);
-      if (closing >= 0) i = closing;
+      const rest = text.slice(match.index + token.length) + following;
+      if ([...rest.matchAll(/`+/g)].some(candidate => candidate[0] === token)) inlineCode = token;
     }
   }
-  return { commented, inComment };
+  const visible = visibleEnd < text.length ? text.slice(0, visibleEnd).trimEnd() : text;
+  return { visible, inComment, inlineCode, commented: visibleEnd < text.length && !visible.trim() };
 }
 
 function lines(text: string): Line[] {
   const result: Line[] = [];
   let fence = "";
   let inComment = false;
+  let inlineCode = "";
   for (const match of text.matchAll(/[^\n]*(?:\n|$)/g)) {
     if (!match[0]) continue;
     const raw = match[0];
     const content = raw.replace(/\r?\n$/, "");
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(content);
     const fenced = !!fence;
-    const state: ReturnType<typeof commentState> = fenced ? { commented: inComment, inComment } : commentState(content, inComment);
+    const state: ReturnType<typeof commentState> = fenced || (marker && !inComment && !inlineCode)
+      ? { visible: content, commented: false, inComment, inlineCode: "" }
+      : commentState(content, inComment, inlineCode, text.slice(match.index! + content.length));
     const commented = state.commented;
     inComment = state.inComment;
+    inlineCode = state.inlineCode;
     if (marker && !commented) {
       if (!fence) fence = marker[1];
       else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
     }
-    result.push({ start: match.index!, end: match.index! + raw.length, text: content, eol: raw.slice(content.length), fenced, commented });
+    result.push({ start: match.index!, end: match.index! + raw.length, text: state.visible, suffix: content.slice(state.visible.length), eol: raw.slice(content.length), fenced, commented });
   }
   return result;
 }
@@ -110,9 +116,10 @@ function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const first = rows[index];
   const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(first.text)![0];
   let end = first.start + first.text.length;
-  for (const line of rows.slice(index + 1)) {
+  for (const line of first.suffix ? [] : rows.slice(index + 1)) {
     if (!line.text.trim() || line.commented || /^(\*\*[^*\r\n]+:\*\*| {0,3}(?:>|#{1,6}(?:[ \t]|$)|[-+*][ \t]+|1[.)][ \t]+|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|`{3,}|~{3,}))/.test(line.text)) break;
     end = line.start + line.text.length;
+    if (line.suffix) break;
   }
   const start = first.start + prefix.length;
   return { start, end, value: text.slice(start, end) };
@@ -164,7 +171,7 @@ function append(text: string, value: string, eol: string): string {
 function replaceLine(text: string, pattern: RegExp, value: string, eol: string): string {
   const line = matching(text, pattern)[0];
   if (!line) return value ? append(text, value, eol) : text;
-  return splice(text, line.start, value ? line.start + line.text.length : line.end, value);
+  return splice(text, line.start, value || line.suffix ? line.start + line.text.length : line.end, value);
 }
 function replaceItems(text: string, field: keyof typeof itemPatterns, value: string[], eol: string): string {
   const rows = matching(text, itemPatterns[field]);
@@ -172,7 +179,7 @@ function replaceItems(text: string, field: keyof typeof itemPatterns, value: str
   const replacement = value.map(item => prefix + item).join(eol);
   if (!rows.length) return replacement ? eol + replacement + eol + text : text;
   for (const row of rows.slice().reverse()) {
-    text = splice(text, row.start, row.end, row === rows[0] && replacement ? replacement + row.eol : "");
+    text = splice(text, row.start, row.end, (row === rows[0] ? replacement : "") + row.suffix + (row.suffix || (row === rows[0] && replacement) ? row.eol : ""));
   }
   return text;
 }

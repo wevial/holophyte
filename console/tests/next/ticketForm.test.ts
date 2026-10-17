@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentFencesBody, adjacentMarkdownBody, commentedCriteriaBody, detailedBody, fencedBody, inlineCommentMarkerBody, mockupBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, detailedBody, fencedBody, inlineCommentMarkerBody, mockupBody, windowsBody } from "./ticketBodies";
 
 test("Summary edits preserve later sections when inline code contains an HTML comment marker", () => {
-  for (const prose of ["Render the literal `<!--` in the editor.", "Render the literal `` `<!--` `` in the editor."]) {
+  for (const prose of ["Render the literal `<!--` in the editor.", "Render the literal `` `<!--` `` in the editor.", "Show `the opening marker\nvalue <!--` literally.", "Show ``the opening marker\nvalue ` <!--`` literally."]) {
     for (const eol of ["\n", "\r\n"]) {
       const body = inlineCommentMarkerBody.replace("Render the literal `<!--` in the editor.", prose).replaceAll("\n", eol);
       const form = parseBody(body);
-      expect(composeBody(withField(form, "summary", "New summary."))).toBe(body.replace(prose, "New summary."));
+      expect(composeBody(withField(form, "summary", "New summary."))).toBe(body.replace(prose.replaceAll("\n", eol), "New summary."));
       expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
       expect(fieldOf(form, "estimate")).toBe(30);
     }
@@ -206,5 +206,19 @@ test("criteria edits exclude HTML comments and keep replacement items visible", 
     const edited = composeBody(withField(form, "criteria", ["Replacement criterion"]));
     expect(edited).toBe(body.replace("Visible criterion", "Replacement criterion"));
     expect(fieldOf(parseBody(edited), "criteria")).toEqual(["Replacement criterion"]);
+  }
+});
+
+
+test("fields with trailing HTML comments read and edit visible text while preserving annotations", () => {
+  for (const eol of ["\n", "\r\n"]) {
+    const body = annotatedFieldsBody.replaceAll("\n", eol);
+    const form = parseBody(body);
+    expect(fieldOf(form, "criteria")).toEqual(["Saved notes appear."]);
+    expect(fieldOf(form, "how")).toBe("Read the stored notes.");
+    const edited = withField(withField(form, "criteria", ["Updated notes appear."]), "how", "Read the run record.");
+    expect(composeBody(edited)).toBe(body.replace("Saved notes appear.", "Updated notes appear.").replace("Read the stored notes.", "Read the run record."));
+    expect(fieldOf(parseBody(composeBody(edited)), "criteria")).toEqual(["Updated notes appear."]);
+    expect(fieldOf(parseBody(composeBody(edited)), "how")).toBe("Read the run record.");
   }
 });
