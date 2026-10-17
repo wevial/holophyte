@@ -40,6 +40,7 @@ FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
+           "run-transcript",
            "shipped", "history", "holds", "ledger", "findings", "board", "ticket",
            "story", "ticket-check")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
@@ -137,8 +138,8 @@ class GeneratedFilesTests(unittest.TestCase):
                              "attention", "board", "findings", "history", "holds",
                              "host-attention", "host-status", "ledger",
                              "peers", "run-asks", "run-detail", "run-files",
-                             "run-merge", "run-turns", "shipped", "status",
-                             "story", "ticket-check", "ticket")])
+                             "run-merge", "run-transcript", "run-turns", "shipped",
+                             "status", "story", "ticket-check", "ticket")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:

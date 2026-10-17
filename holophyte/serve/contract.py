@@ -608,6 +608,21 @@ class RunTurns(TypedDict):
     turns: list[RunTurn]
 
 
+class TranscriptEntry(TypedDict):
+    speaker: Literal["user", "assistant", "command", "tool", "error"]
+    text: str
+    at_ms: int | None
+    tool: str | None
+    call: str | None
+    summary: str | None
+    failed: bool
+    cut: bool
+
+
+class Transcript(TypedDict):
+    entries: list[TranscriptEntry]
+
+
 class ShippedRow(TypedDict):
     id: int
     ticket: str
@@ -933,6 +948,7 @@ ROUTES = {
     "run-asks": (RunAsks, "GET /runs/N/asks"),
     "run-files": (RunFiles, "GET /runs/N/files"),
     "run-turns": (RunTurns, "GET /runs/N/turns"),
+    "run-transcript": (Transcript, "GET /runs/N/turns/T/transcript"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
     "holds": (Holds, "GET /holds"),
