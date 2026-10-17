@@ -64,7 +64,7 @@ function Contract({ card }: { card: TicketCard }) {
       <div className={`${SECTION_LABEL} mt-5`}>Summary</div>
       <p className="m-0 mt-2.5 max-w-[75ch] line-clamp-4 font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
       <div className="mt-[18px]">
-        <Criteria rows={criteriaRows(ticket.acceptance_criteria, run.data?.criteria ?? [], runId != null)} />
+        <Criteria rows={criteriaRows(ticket.criteria, run.data?.criteria ?? [], runId != null)} />
       </div>
     </>
   );

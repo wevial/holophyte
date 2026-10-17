@@ -368,6 +368,7 @@ class TranscriptFallbackTests(TranscriptCase):
         self.assertEqual(code, 200)
         self.assertEqual(body, {'entries': [
             {'speaker': 'assistant', 'text': 'Recovered transcript', 'at_ms': None,
-             'tool': None, 'call': None, 'failed': False, 'summary': None}]})
+             'tool': None, 'call': None, 'failed': False, 'summary': None,
+             'cut': False}]})
         (valid / 'rollout-first.jsonl').unlink()
         self.assertEqual(self.request('GET', url)[0], 404)

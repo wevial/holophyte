@@ -25,9 +25,9 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
             {criteria.map((criterion) => {
               const waiting = live && (criterion.run !== run.id || (criterion.status !== "met" && active != null && criterion.round < active.round));
               return (
-                <li key={criterion.n} className="flex flex-wrap items-center gap-3 border-b border-rule-2 py-3">
+                <li key={criterion.id} className="flex flex-wrap items-center gap-3 border-b border-rule-2 py-3">
                   <CriterionMark status={criterion.status} />
-                  <span className="w-[34px] shrink-0 font-mono text-[11px] font-semibold text-ink-3">AC{criterion.n}</span>
+                  <strong className="w-[34px] shrink-0 font-mono text-[11px] font-bold text-ink-3">{criterion.id}</strong>
                   <span className="min-w-0 flex-1 font-read text-[14px] text-ink-2">{criterion.text}</span>
                   {waiting && <span className="font-mono text-[11px] text-ink-3">waits on round {pending}</span>}
                 </li>
@@ -40,7 +40,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
             </summary>
             <ul className="m-0 list-none whitespace-pre-wrap p-0 font-mono text-[12px] leading-[1.8] text-ink-2 [overflow-wrap:anywhere]">
               {notes.map((criterion) => (
-                <li key={criterion.n}>AC{criterion.n} · {criterion.status !== "met" && `round ${criterion.round}: `}{criterion.note}</li>
+                <li key={criterion.id}><strong>{criterion.id}</strong> · {criterion.status !== "met" && `round ${criterion.round}: `}{criterion.note}</li>
               ))}
             </ul>
           </details>

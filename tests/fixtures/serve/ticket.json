@@ -75,5 +75,11 @@
       "read_ms": null,
       "withdrawn": false
     }
+  ],
+  "criteria": [
+    {
+      "id": "C1",
+      "text": "Run without an estimate"
+    }
   ]
 }
