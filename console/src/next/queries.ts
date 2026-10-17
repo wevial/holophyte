@@ -300,12 +300,11 @@ export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[
   });
   const answers: DayAnswers = new Map();
   asked.forEach(({ host, day }, index) => {
-    const query = results[index];
-    if (query?.data) {
-      const byHost = answers.get(day.since) ?? new Map<string, History>();
-      byHost.set(host.key, query.data);
-      answers.set(day.since, byHost);
-    }
+    const data = results[index]?.data;
+    if (!data) return;
+    const byHost = answers.get(day.since) ?? new Map<string, History>();
+    byHost.set(host.key, data);
+    answers.set(day.since, byHost);
   });
   return { answers };
 }
