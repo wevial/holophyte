@@ -10,6 +10,24 @@ from tests.serve_fixture import ServeTestCase
 
 
 class ProbeLogTests(ServeTestCase):
+    def test_real_launch_failure_records_reason_without_executable_path(self):
+        script = self.root / "private-agent-probe"
+        script.write_text("#!/bin/sh\necho private-output\n")
+        script.chmod(0o644)
+        (self.db.parent / "config.toml").write_text(
+            f'[agents]\nimplementer = "{script}"\n')
+        project = Project.locate(self.target)
+        probe = probe_implementer(project)
+        self.assertFalse(probe.ok)
+        self.assertIn("Permission denied", probe.launch_error)
+        entry = last_probes(project)["implementer"]["primary"]
+        self.assertFalse(entry["ok"])
+        self.assertIn("could not start:", entry["why"])
+        self.assertIn("Permission denied", entry["why"])
+        raw = (project.holo_dir / "route-probes.json").read_text()
+        for private in (str(script), script.name, "private-output"):
+            self.assertNotIn(private, raw)
+
     def test_real_probe_replaces_result_and_status_serves_failure_and_fallback(self):
         self.seed()
         script = self.root / "agent-probe"

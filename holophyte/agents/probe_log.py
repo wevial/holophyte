@@ -5,6 +5,15 @@ import tempfile
 from pathlib import Path
 
 from holophyte.agents.agent_routes import route_prose
+from holophyte.redact import redact_prose
+
+
+def probe_reason(project, probe):
+    if probe.ok:
+        return None
+    executable = probe.command[:1]
+    private = {*executable, *(repr(part)[1:-1] for part in executable)}
+    return route_prose(project, redact_prose(probe.reason(), private))[:200]
 
 
 def record_probe(project, probe, fallback, started, ended):
@@ -14,7 +23,7 @@ def record_probe(project, probe, fallback, started, ended):
         "ok": probe.ok,
         "at_ms": int(ended * 1000),
         "duration_ms": max(0, int((ended - started) * 1000)),
-        "why": None if probe.ok else route_prose(project, probe.reason())[:200],
+        "why": probe_reason(project, probe),
     }
     project.holo_dir.mkdir(parents=True, exist_ok=True)
     with (project.holo_dir / "route-probes.lock").open("a") as lock:
