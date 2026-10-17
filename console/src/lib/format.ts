@@ -82,6 +82,11 @@ export function formatClock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+export function formatStamp(ms: number): string {
+  const date = new Date(ms);
+  return `${date.toLocaleDateString("en-US", { month: "short" })} ${date.getDate()} ${formatClock(ms)}`;
+}
+
 /** A host's age line: days keep their hours (`3d 4h`), anything shorter is
  *  one unit rounded down (`11h`, `20m`, `12s`). */
 export function age(ms: number): string {
