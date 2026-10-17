@@ -135,8 +135,12 @@ def instruction(thread):
             f"Cite operator_note event {event_id(thread)} in the fix commit message.")
 
 
-def start_fix(conn, run_id, addressed):
+def start_fix(conn, run_id, addressed, prompt, url):
     ids = [event_id(t) for _, t, _ in addressed if is_note(t)]
+    ids.extend(n["event_id"] for n in standing_notes(
+        conn, run_id, pending=True, pr_url=url)
+        if not n.get("hint") and n["event_id"] not in ids
+        and f"operator_note event {n['event_id']} by {n['author']}:" in prompt)
     if ids:
         rnd = conn.execute("SELECT MAX(round) FROM reviewRounds WHERE runId = ?",
                            (run_id,)).fetchone()[0]
