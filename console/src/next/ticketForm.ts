@@ -246,7 +246,7 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
 export function blankForm(): TicketForm {
   const optional = new Set(["Reproduce", "Mock-up", "Contract checks", "Evidence", "Story"]);
   const hints: TicketForm["hints"] = {};
-  const uncommented = TEMPLATE.replace(/<!--[\s\S]*?-->/g, "");
+  const uncommented = withoutComments(TEMPLATE);
   const hintTemplate = parseBody(uncommented);
   for (const field of Object.keys(sections) as Exclude<Field, "title">[]) {
     const section = hintTemplate.sections.find(section => section.name === sections[field])!.text;
