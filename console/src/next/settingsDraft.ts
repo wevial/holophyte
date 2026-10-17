@@ -12,19 +12,13 @@ const Context = createContext<DraftContext | null>(null);
 
 export function SettingsDraftProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Record<string, ProjectEdits>>({});
-  const edit: DraftContext["edit"] = (project, key, old, value) => {
-    setProjects((previous) => {
-      const edits = { ...previous[project] };
-      if (same(old, value)) delete edits[key];
-      else edits[key] = { old, value };
-      return { ...previous, [project]: edits };
-    });
-  };
-  const discard = (project: string) => setProjects((previous) => {
-    const next = { ...previous };
-    delete next[project];
-    return next;
+  const edit: DraftContext["edit"] = (project, key, old, value) => setProjects((previous) => {
+    const edits = { ...previous[project] };
+    if (same(old, value)) delete edits[key];
+    else edits[key] = { old, value };
+    return { ...previous, [project]: edits };
   });
+  const discard = (project: string) => setProjects(({ [project]: _dropped, ...rest }) => rest);
   return createElement(Context.Provider, { value: { projects, edit, discard } }, children);
 }
 
