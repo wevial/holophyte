@@ -67,6 +67,39 @@ class TranscriptTests(unittest.TestCase):
         self.assertNotIn('The test probably expects', json.dumps(entries))
         self.assertNotIn('Subagent note', json.dumps(entries))
 
+    def test_claude_malformed_tool_fields_keep_text_and_metadata_schema_safe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'session.jsonl'
+            for value in (None, 42, True, ['unexpected'], {'unexpected': 'value'}):
+                with self.subTest(value=value):
+                    records = [
+                        dict(type='assistant', message=dict(content=[
+                            dict(type='tool_use', name='Bash', id=value,
+                                 input=dict(command=value)),
+                            dict(type='tool_use', name=value, id=value, input={}),
+                            dict(type='tool_use', name='Search', id='search',
+                                 input=dict(description=value))])),
+                        dict(type='user', message=dict(content=[
+                            dict(type='tool_result', tool_use_id=value,
+                                 content='Result')]))]
+                    path.write_text('\n'.join(json.dumps(r) for r in records))
+                    entries = render(path)
+                    self.assertEqual(len(entries), 4)
+                    for entry in entries:
+                        self.assertIsInstance(entry['text'], str)
+                        for key in ('tool', 'call', 'summary'):
+                            self.assertTrue(entry[key] is None
+                                            or isinstance(entry[key], str), key)
+                    self.assertEqual(json.loads(entries[0]['text']),
+                                     {'command': value})
+                    self.assertEqual(entries[0]['tool'], 'Bash')
+                    self.assertIsNone(entries[0]['call'])
+                    self.assertIsNone(entries[1]['tool'])
+                    self.assertIsNone(entries[1]['call'])
+                    self.assertEqual(entries[2]['call'], 'search')
+                    self.assertEqual(entries[3]['text'], 'Result')
+                    self.assertIsNone(entries[3]['call'])
+
     def test_claude_api_error_and_unknown_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'session.jsonl'

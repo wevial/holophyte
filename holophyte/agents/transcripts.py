@@ -206,17 +206,23 @@ def claude_block(block, record):
         speaker = 'error' if record.get('isApiErrorMessage') else role
         return entry(speaker, block['text'], record)
     if role == 'user' and kind == 'tool_result':
+        call = block.get('tool_use_id')
         return entry('tool', claude_content(block.get('content')), record,
-                     call=block.get('tool_use_id'),
+                     call=call if isinstance(call, str) else None,
                      failed=block.get('is_error') is True)
     if role == 'assistant' and kind == 'tool_use':
         args = block.get('input', {})
         if not isinstance(args, dict):
             return None
-        name = block.get('name')
+        name, call = block.get('name'), block.get('id')
+        name = name if isinstance(name, str) else None
         text = args.get('command', '') if name == 'Bash' else json.dumps(args, indent=2)
-        return entry('command', text, record, name, block.get('id'),
-                     summary=claude_summary(name, args, record))
+        if not isinstance(text, str):
+            text = json.dumps(args, indent=2)
+        summary = claude_summary(name, args, record)
+        return entry('command', text, record, name,
+                     call if isinstance(call, str) else None,
+                     summary=summary if isinstance(summary, str) else None)
     return None
 
 
