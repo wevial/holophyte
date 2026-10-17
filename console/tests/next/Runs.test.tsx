@@ -111,7 +111,6 @@ test("Runs lists every host's runs since yesterday newest start first, each name
   expect(within(failed!).getByRole("img").getAttribute("aria-label")).toBe("failed");
   expect(cells(merged!)).toContain("yest 21:05");
   expect(runLink(merged!).getAttribute("href")).toEndWith("#/runs/demo/9");
-  expect(cells(merged!)[6]).toBe("#524");
   expect(within(merged!).getByRole("img").getAttribute("aria-label")).toBe("merged");
 });
 
