@@ -607,6 +607,12 @@ export const runTurnSchema = z.looseObject({
   route: z.enum(["primary", "fallback"]),
   seconds: z.number().nullable(),
   session_id: z.string().nullable(),
+  ended_ms: z.int(),
+  exit_status: z.int().nullable(),
+  timed_out: z.boolean(),
+  input_tokens: z.int().nullable(),
+  output_tokens: z.int().nullable(),
+  cost_usd: z.number().nullable(),
 });
 export type RunTurn = z.infer<typeof runTurnSchema>;
 
