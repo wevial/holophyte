@@ -61,12 +61,12 @@ async function fill() {
   for (const [name, value] of Object.entries(values)) {
     await act(async () => void fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } }));
   }
-  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "Priority" }), { target: { value: "1" } }));
+  await press("P1");
 }
 
 function expectBlank() {
   for (const name of Object.keys(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe("");
-  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).value).toBe("");
+  expect(screen.getByRole("button", { name: "P2" }).getAttribute("aria-pressed")).toBe("true");
   expect(screen.queryByText(/^Draft from .* restored\.$/)).toBeNull();
   expect((screen.getByRole("button", { name: "Save draft" }) as HTMLButtonElement).disabled).toBe(true);
 }
@@ -99,7 +99,7 @@ test("Save draft restores every field, P1 and the saved time only in its project
   cleanup();
   await mount();
   for (const [name, value] of Object.entries(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
-  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).value).toBe("1");
+  expect(screen.getByRole("button", { name: "P1" }).getAttribute("aria-pressed")).toBe("true");
   const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(draft.savedAt);
   expect(screen.getByText(`Draft from ${time} restored.`)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Start over" })).toBeTruthy();
@@ -117,7 +117,7 @@ test("switching projects clears fields and priority without a draft and restores
   await flush();
   expect(window.location.hash).toBe("#/tickets/demo/new");
   for (const [name, value] of Object.entries(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
-  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).value).toBe("1");
+  expect(screen.getByRole("button", { name: "P1" }).getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByText(/^Draft from .* restored\.$/)).toBeTruthy();
 });
 
