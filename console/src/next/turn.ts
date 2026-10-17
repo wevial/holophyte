@@ -72,8 +72,22 @@ function toolRow(input: TranscriptEntry | undefined, output: TranscriptEntry | u
 
 export function transcriptRows(entries: TranscriptEntry[], turn: RunTurn): TranscriptRow[] {
   const start = turn.seconds == null ? null : turn.ended_ms - turn.seconds * 1000;
-  const commands = new Set(entries.filter((entry) => entry.speaker === "command" && entry.call != null).map((entry) => entry.call));
-  const results = new Map(entries.filter((entry) => entry.speaker === "tool" && entry.call != null).map((entry) => [entry.call, entry]));
+  const resultQueues = new Map<string, TranscriptEntry[]>();
+  for (const entry of entries) {
+    if (entry.speaker !== "tool" || entry.call == null) continue;
+    const queue = resultQueues.get(entry.call) ?? [];
+    queue.push(entry);
+    resultQueues.set(entry.call, queue);
+  }
+  const pairedResults = new Map<TranscriptEntry, TranscriptEntry>();
+  const matchedResults = new Set<TranscriptEntry>();
+  for (const entry of entries) {
+    if (entry.speaker !== "command" || entry.call == null) continue;
+    const result = resultQueues.get(entry.call)?.shift();
+    if (result == null) continue;
+    pairedResults.set(entry, result);
+    matchedResults.add(result);
+  }
   const rows: TranscriptRow[] = [];
   const prompt = entries.find((entry) => entry.speaker === "user");
   const timed = entries.filter((entry) => entry.at_ms != null).sort((a, b) => a.at_ms! - b.at_ms!);
@@ -81,9 +95,9 @@ export function transcriptRows(entries: TranscriptEntry[], turn: RunTurn): Trans
   for (const entry of entries.map((entry) => entry.at_ms == null ? entry : timed[timedIndex++]!)) {
     const offset = transcriptOffset(entry.at_ms, start);
     if (entry.speaker === "command") {
-      rows.push(toolRow(entry, entry.call == null ? undefined : results.get(entry.call), offset));
+      rows.push(toolRow(entry, pairedResults.get(entry), offset));
     } else if (entry.speaker === "tool") {
-      if (entry.call == null || !commands.has(entry.call)) rows.push(toolRow(undefined, entry, offset));
+      if (!matchedResults.has(entry)) rows.push(toolRow(undefined, entry, offset));
     } else {
       const kind = entry.speaker === "user" ? entry === prompt ? "prompt" : "note" : entry.speaker === "assistant" ? "said" : "error";
       rows.push({ kind, offset, text: entry.text, cut: entry.cut });

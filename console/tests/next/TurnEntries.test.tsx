@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { runTurnsSchema, transcriptSchema, type RunDetail, type Transcript } from "../../src/lib/contract.gen";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import { transcriptRows } from "../../src/next/turn";
 import { fakeDeps, settle } from "../harness";
 import { DEMO, fleet, SERVE } from "./needsFleet";
 
@@ -51,6 +52,26 @@ afterAll(() => {
   else process.env.TZ = zone;
 });
 afterEach(() => { cleanup(); window.location.hash = ""; });
+
+test("duplicate call IDs pair by occurrence, preserving excess results and unpaired null IDs", () => {
+  const answer = transcriptSchema.parse({ entries: [
+    { ...baseEntry, speaker: "command", call: "repeat", text: "first input", at_ms: 1000 },
+    { ...baseEntry, speaker: "tool", call: "repeat", text: "first failure", failed: true, at_ms: 3300 },
+    { ...baseEntry, speaker: "command", call: "repeat", text: "second input", at_ms: 4000 },
+    { ...baseEntry, speaker: "tool", call: "repeat", text: "second success", at_ms: 5000 },
+    { ...baseEntry, speaker: "tool", call: "repeat", text: "excess output", at_ms: 6000 },
+    { ...baseEntry, speaker: "command", text: "anonymous input", at_ms: 7000 },
+    { ...baseEntry, speaker: "tool", text: "anonymous output", at_ms: 8000 },
+  ] });
+  const calls = transcriptRows(answer.entries, turn).filter(row => row.kind === "tool");
+  expect(calls.map(row => ({ input: row.input?.text, output: row.output?.text, failed: row.failed, duration: row.duration }))).toEqual([
+    { input: "first input", output: "first failure", failed: true, duration: 2.3 },
+    { input: "second input", output: "second success", failed: false, duration: 1 },
+    { input: undefined, output: "excess output", failed: false, duration: null },
+    { input: "anonymous input", output: undefined, failed: null, duration: null },
+    { input: undefined, output: "anonymous output", failed: false, duration: null },
+  ]);
+});
 
 test("the transcript pairs calls in chronological speaker rows, opens failures and ends with the recorded exit", async () => {
   const urls = await mount();
