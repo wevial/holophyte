@@ -821,11 +821,11 @@ test("Turns accepts recorded end, exit and usage facts and opens dated transcrip
       { id: 5, role: "adjudicate", label: null, route: "primary", seconds: 3, ended_ms: T, exit_status: null, timed_out: false, input_tokens: null, output_tokens: null, cost_usd: null, session_id: null },
     ] });
     if (url.endsWith("/turns/4/transcript")) return Response.json({ entries: [
-      { speaker: "user", text: "Check the project.", at_ms: T, tool: null, call: null, failed: false, summary: null },
-      { speaker: "command", text: "echo checked", at_ms: T + 1, tool: "Bash", call: "call-one", failed: false, summary: "echo checked" },
-      { speaker: "tool", text: "checked\nExit code: 0", at_ms: T + 2, tool: null, call: "call-one", failed: false, summary: null },
-      { speaker: "assistant", text: "All checks passed. <script>literal</script>", at_ms: T + 3, tool: null, call: null, failed: false, summary: null },
-      { speaker: "error", text: "529 overloaded · retry 1 of 10", at_ms: T + 4, tool: null, call: null, failed: true, summary: null },
+      { speaker: "user", text: "Check the project.", at_ms: T, tool: null, call: null, failed: false, cut: false, summary: null },
+      { speaker: "command", text: "echo checked", at_ms: T + 1, tool: "Bash", call: "call-one", failed: false, cut: false, summary: "echo checked" },
+      { speaker: "tool", text: "checked\nExit code: 0", at_ms: T + 2, tool: null, call: "call-one", failed: false, cut: false, summary: null },
+      { speaker: "assistant", text: "All checks passed. <script>literal</script>", at_ms: T + 3, tool: null, call: null, failed: false, cut: false, summary: null },
+      { speaker: "error", text: "529 overloaded · retry 1 of 10", at_ms: T + 4, tool: null, call: null, failed: true, cut: false, summary: null },
     ] });
     return answering(DETAIL)(url);
   };
@@ -912,7 +912,7 @@ async function mountSentBackChain(requested: string[]) {
     requested.push(url);
     if (url.endsWith("/runs/89/turns")) return Response.json({ turns: [1, 2, 3, 4, 5, 6, 7].map(turn) });
     if (url.endsWith("/runs/90/turns")) return Response.json({ turns: [] });
-    if (url.endsWith("/transcript")) return Response.json({ entries: [{ speaker: "user", text: "Run 89's turn.", at_ms: null, tool: null, call: null, failed: false, summary: null }] });
+    if (url.endsWith("/transcript")) return Response.json({ entries: [{ speaker: "user", text: "Run 89's turn.", at_ms: null, tool: null, call: null, failed: false, cut: false, summary: null }] });
     return answering(body)(url);
   };
   render(<RunDetail base={BASE} id={91} now={T + 30 * MINUTE} polls={1} deps={{ fetch }} />);

@@ -1,0 +1,74 @@
+{
+  "entries": [
+    {
+      "speaker": "user",
+      "text": "Make the greeting test pass.",
+      "at_ms": 1750000000000,
+      "tool": null,
+      "call": null,
+      "failed": false,
+      "summary": null,
+      "cut": false
+    },
+    {
+      "speaker": "assistant",
+      "text": "I will run the tests first.",
+      "at_ms": 1750000000000,
+      "tool": null,
+      "call": null,
+      "failed": false,
+      "summary": null,
+      "cut": false
+    },
+    {
+      "speaker": "command",
+      "text": "python3 -m unittest discover -s tests",
+      "at_ms": 1750000000000,
+      "tool": "Bash",
+      "call": "toolu_01CCCCCCCCCCCCCCCCCCCCCC",
+      "failed": false,
+      "summary": "python3 -m unittest discover -s tests",
+      "cut": false
+    },
+    {
+      "speaker": "tool",
+      "text": "Exit code 1\nFAIL: test_greeting (tests.test_example.ExampleTest)\nAssertionError: 'hello' != 'hello, world'",
+      "at_ms": 1750000000000,
+      "tool": null,
+      "call": "toolu_01CCCCCCCCCCCCCCCCCCCCCC",
+      "failed": true,
+      "summary": null,
+      "cut": false
+    },
+    {
+      "speaker": "command",
+      "text": "{\n  \"replace_all\": false,\n  \"file_path\": \"/workspace/app/src/example.py\",\n  \"old_string\": \"    return 'hello'\",\n  \"new_string\": \"    return 'hello, world'\"\n}",
+      "at_ms": 1750000000000,
+      "tool": "Edit",
+      "call": "toolu_01DDDDDDDDDDDDDDDDDDDDDD",
+      "failed": false,
+      "summary": "src/example.py",
+      "cut": false
+    },
+    {
+      "speaker": "tool",
+      "text": "The file /workspace/app/src/example.py has been updated successfully.",
+      "at_ms": 1750000000000,
+      "tool": null,
+      "call": "toolu_01DDDDDDDDDDDDDDDDDDDDDD",
+      "failed": false,
+      "summary": null,
+      "cut": false
+    },
+    {
+      "speaker": "error",
+      "text": "Connection dropped (ECONNRESET) \u00b7 retry 1 of 10",
+      "at_ms": 1750000000000,
+      "tool": null,
+      "call": null,
+      "failed": true,
+      "summary": null,
+      "cut": false
+    }
+  ]
+}

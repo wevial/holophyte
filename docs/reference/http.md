@@ -23,8 +23,8 @@ those writing routes. A project with no store answers 503.
 `console/contract/` holds the machine-readable shapes of `GET /status`,
 `GET /attention` and `GET /peers`, of the host root's `GET /status`
 and `GET /attention`, of the run routes `GET /runs/N`,
-`GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
-`GET /runs/N/turns`, and of the list routes
+`GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
+`GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board` and
 `GET /tickets/KEY`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
@@ -619,6 +619,53 @@ transcript is kept. A run with no turns answers an empty list.
 
 `N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
 is 404 carrying `run`. The route writes nothing.
+
+## `GET /runs/N/turns/T/transcript`
+
+```json
+{"entries": [
+  {"speaker": "command", "text": "python3 -m unittest", "at_ms": 1760000000000,
+   "tool": "Bash", "call": "tool-1", "summary": "python3 -m unittest",
+   "failed": false, "cut": false},
+  {"speaker": "tool", "text": "OK", "at_ms": 1760000001000,
+   "tool": null, "call": "tool-1", "summary": null,
+   "failed": false, "cut": false}
+ ]}
+```
+
+The transcript entries written while turn T of run N ran, in session order.
+The daemon reads Claude Code sessions, Codex rollouts and Devin exports only
+under the roots configured in `[serve] transcripts`, never following a link
+out of a root. Timestamped entries use the turn's recorded duration and end
+with two seconds of tolerance on either side. Entries without timestamps are
+retained; when the turn has no duration or end timestamp, the whole session
+is returned.
+
+Every entry carries all eight keys:
+
+- `speaker` is `user`, `assistant`, `command`, `tool` or `error`.
+- `text` is the message, command or tool output, always a string.
+- `at_ms` is the entry's timestamp in epoch milliseconds, null when the
+  session provides no valid timestamp.
+- `tool` is the tool name for a command, null when absent or for other entries.
+- `call` is the tool call identifier linking a command and its result, null
+  when unavailable or for entries unrelated to a tool call.
+- `summary` is a command's short description, such as its first line or file
+  path, null when unavailable or for other entries.
+- `failed` is true for an error entry or a tool result marked as failed;
+  otherwise false.
+- `cut` is true when the redacted `text` exceeded 20,000 characters and was
+  cut to its first 20,000 characters; otherwise false.
+
+Every `text` and non-null `summary` is redacted with the project's known
+secrets. Redaction happens before cutting `text`, including when a secret
+straddles the cut. The full session file stays on the host; this route does
+not serve the remainder of a cut entry.
+
+404 `{"error": "transcript unavailable"}` when no root is configured, T is
+not one of run N's turns, the turn has no session, or no session file is
+found. With roots configured, `N` parses as on `/runs/N`: a non-integer is
+400, an integer with no run is 404 carrying `run`. The route writes nothing.
 
 ## `GET /runs/N/merge`
 

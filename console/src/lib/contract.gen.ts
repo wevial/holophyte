@@ -640,6 +640,23 @@ export const runTurnsSchema = z.looseObject({
 });
 export type RunTurns = z.infer<typeof runTurnsSchema>;
 
+export const transcriptEntrySchema = z.looseObject({
+  speaker: z.enum(["user", "assistant", "command", "tool", "error"]),
+  text: z.string(),
+  at_ms: z.int().nullable(),
+  tool: z.string().nullable(),
+  call: z.string().nullable(),
+  summary: z.string().nullable(),
+  failed: z.boolean(),
+  cut: z.boolean(),
+});
+export type TranscriptEntry = z.infer<typeof transcriptEntrySchema>;
+
+export const transcriptSchema = z.looseObject({
+  entries: z.array(transcriptEntrySchema),
+});
+export type Transcript = z.infer<typeof transcriptSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),

@@ -12,6 +12,7 @@ import {
   runDetailSchema,
   runFilesSchema,
   runTurnsSchema,
+  transcriptSchema,
   shippedSchema,
   statusSchema,
   storyDetailSchema,
@@ -27,6 +28,7 @@ import runMergeReady from "../../tests/fixtures/serve/run-merge-ready.json";
 import runMergeBypassable from "../../tests/fixtures/serve/run-merge-bypassable.json";
 import runFiles from "../../tests/fixtures/serve/run-files.json";
 import runTurns from "../../tests/fixtures/serve/run-turns.json";
+import transcript from "../../tests/fixtures/serve/run-transcript.json";
 import pinnedAsks from "../../tests/fixtures/serve/run-asks.json";
 import shipped from "../../tests/fixtures/serve/shipped.json";
 import ledger from "../../tests/fixtures/serve/ledger.json";
@@ -127,4 +129,10 @@ test("an attention item's kind narrows it to its own fields", () => {
   const question: string | null = item.question;
   expect(question).toBeUndefined();
   expect(number).toBe(10);
+});
+
+test("the pinned transcript parses unchanged; a system speaker fails at its path", () => {
+  expect<unknown>(transcriptSchema.parse(transcript)).toEqual(transcript);
+  const system = { ...transcript, entries: [{ ...transcript.entries[0], speaker: "system" }, ...transcript.entries.slice(1)] };
+  expect(firstIssuePath(transcriptSchema.safeParse(system))).toBe("entries.0.speaker");
 });

@@ -26,6 +26,7 @@ export const transcriptSchema = z.object({ entries: z.array(z.object({
   tool: z.string().nullable(),
   call: z.string().nullable(),
   failed: z.boolean(),
+  cut: z.boolean(),
   summary: z.string().nullable(),
 }).strict()) }).strict();
 
