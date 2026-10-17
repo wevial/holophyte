@@ -52,10 +52,15 @@ def run_module(tests, path, timeout=None):
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="holophyte-home-") as home, \
             tempfile.TemporaryFile("w+") as out:
+        env = dict(os.environ, HOLOPHYTE_HOME=home)
+        index = int(env.get("GIT_CONFIG_COUNT", "0"))
+        env.update({f"GIT_CONFIG_KEY_{index}": "maintenance.auto",
+                    f"GIT_CONFIG_VALUE_{index}": "false",
+                    "GIT_CONFIG_COUNT": str(index + 1)})
         proc = subprocess.Popen(
             [sys.executable, "-m", "unittest", "discover",
              "-s", str(tests), "-p", path.name],
-            cwd=tests.parent, env=dict(os.environ, HOLOPHYTE_HOME=home),
+            cwd=tests.parent, env=env,
             stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
             start_new_session=True)
         try:
