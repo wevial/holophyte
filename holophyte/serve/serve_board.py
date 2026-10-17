@@ -118,13 +118,11 @@ def put_ticket(handler, scope, path, identifier):
 
 
 def post_ticket(handler, scope, path, verb, identifier):
-    if verb == "check":
-        return write(handler, scope, path, check_fields,
-                     lambda project, _, *fields: check(project, *fields),
-                     revisioned=False)
-    if verb == "file":
-        return write(handler, scope, path, file_fields,
-                     lambda project, _, *fields: new_ticket(project, *fields),
+    if verb in ("check", "file"):
+        parse, act = {"check": (check_fields, check),
+                      "file": (file_fields, new_ticket)}[verb]
+        return write(handler, scope, path, parse,
+                     lambda project, _, *fields: act(project, *fields),
                      revisioned=False)
     parse, act = {"move": (move_fields, move),
                   "cancel": (cancel_fields, cancel)}[verb]
