@@ -9,6 +9,7 @@ import { hostsNeedingAttention, settingsHost, SETTINGS_FIELDS, SETTINGS_TABS } f
 import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
+import { HostsTab } from "../components/HostsTab";
 import { NotFound } from "./Placeholder";
 
 type Tab = (typeof SETTINGS_TABS)[number];
@@ -109,7 +110,7 @@ function SettingsPage({ tab }: { tab: Tab }) {
                   project={project} host={hostLabel} applies={answer.config.applies} />;
               })}
             </div>
-          ) : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
+          ) : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
         <UnsavedBar project={project} />
         </div>
