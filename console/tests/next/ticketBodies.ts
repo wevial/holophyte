@@ -148,3 +148,21 @@ A real section.
 ## Still inside four backticks
 \`\`\`\`
 `;
+
+export const adjacentMarkdownBody = `## What / Why / How
+
+**How:** Read the record.
+Continue reading.
+- Keep the existing database.
+`;
+
+export const commentedCriteriaBody = `## Acceptance criteria
+
+<!--
+- [ ] Hidden editor note
+\`\`\`
+## Hidden heading
+-->
+- [ ] Visible criterion
+<!-- - [ ] Another hidden note -->
+`;

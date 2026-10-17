@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentFencesBody, detailedBody, fencedBody, mockupBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentMarkdownBody, commentedCriteriaBody, detailedBody, fencedBody, mockupBody, windowsBody } from "./ticketBodies";
 
 test("What/Why/How edits preserve adjacent fenced blocks outside the prose paragraph", () => {
   const cases = [
@@ -171,4 +171,28 @@ test("setting an empty field inserts its absent section in template order", () =
   expect(criteria.sections.map((section) => section.name)).toEqual([
     "What / Why / How", "Mock-up", "In scope", "Acceptance criteria",
   ]);
+});
+
+test("prose edits preserve adjacent lists, headings, quotes, and thematic breaks", () => {
+  for (const block of ["- Keep the existing database.", "* Keep the database.", "+ Keep the database.", "1. Keep the database.", "1) Keep the database.", "### Keep the heading", "   > Keep the quote", "---", "***", "___"]) {
+    for (const eol of ["\n", "\r\n"]) {
+      const body = adjacentMarkdownBody.replace("- Keep the existing database.", block).replaceAll("\n", eol);
+      const form = parseBody(body);
+      expect(fieldOf(form, "how")).toBe(`Read the record.${eol}Continue reading.`);
+      expect(composeBody(withField(form, "how", "Read the updated record."))).toBe(
+        body.replace(`Read the record.${eol}Continue reading.`, "Read the updated record."),
+      );
+    }
+  }
+});
+
+test("criteria edits exclude HTML comments and keep replacement items visible", () => {
+  for (const eol of ["\n", "\r\n"]) {
+    const body = commentedCriteriaBody.replaceAll("\n", eol);
+    const form = parseBody(body);
+    expect(fieldOf(form, "criteria")).toEqual(["Visible criterion"]);
+    const edited = composeBody(withField(form, "criteria", ["Replacement criterion"]));
+    expect(edited).toBe(body.replace("- [ ] Visible criterion", "- [ ] Replacement criterion"));
+    expect(fieldOf(parseBody(edited), "criteria")).toEqual(["Replacement criterion"]);
+  }
 });
