@@ -46,10 +46,9 @@ function Fold({ row, query, open, onOpen }: FoldState & { row: Extract<Transcrip
 }
 
 function Entry({ row, query, open, onOpen, rowRef }: FoldState & { row: TranscriptRow; rowRef: (node: HTMLLIElement | null) => void }) {
-  const failed = row.kind === "error" || (row.kind === "tool" && row.failed);
   const label = { prompt: "Factory", note: "Factory", said: "Assistant", tool: "Tool call", error: "Error", end: "End" }[row.kind];
   const tone = row.kind === "error" ? "text-bad" : row.kind === "tool" ? "text-wait" : row.kind === "said" ? "text-ink-2" : "text-ink-3";
-  return <li ref={rowRef} tabIndex={-1} className={`grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-rule-2 px-5 py-4 [&+li]:border-t max-[720px]:grid-cols-1 max-[720px]:gap-2 max-[720px]:px-3 ${failed ? "bg-bad-wash shadow-[inset_2px_0_0_var(--bad)]" : ""}`}>
+  return <li ref={rowRef} tabIndex={-1} className={`grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-rule-2 px-5 py-4 [&+li]:border-t max-[720px]:grid-cols-1 max-[720px]:gap-2 max-[720px]:px-3 ${failedRow(row) ? "bg-bad-wash shadow-[inset_2px_0_0_var(--bad)]" : ""}`}>
     <span className="font-mono text-[12px] leading-4 text-ink-3">{row.offset}</span>
     <div className="min-w-0">
       <div className={`mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.1em] ${tone}`}><TranscriptIcon kind={row.kind} />{label}</div>
