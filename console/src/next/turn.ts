@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import type { RunDetail, RunTurn } from "../lib/contract.gen";
+import type { RunDetail, RunTurn, TranscriptEntry } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { AnswerError } from "../lib/poll";
 import { useRun, useRunTurns } from "./queries";
@@ -28,7 +28,7 @@ type TurnPage =
   | { kind: "unknown_project" }
   | { kind: "not_found" }
   | { kind: "turn_not_found" }
-  | { kind: "turn"; detail: RunDetail; turns: RunTurn[]; turn: RunTurn };
+  | { kind: "turn"; base: string; detail: RunDetail; turns: RunTurn[]; turn: RunTurn };
 
 export function useTurnPage(project: string, run: number | null, turn: number | null): TurnPage {
   const deps = useContext(PollDepsContext);
@@ -44,5 +44,53 @@ export function useTurnPage(project: string, run: number | null, turn: number | 
   if (turns.data == null) return { kind: "loading" };
   const selected = turns.data.turns.find((each) => each.id === turn);
   if (selected == null) return { kind: "turn_not_found" };
-  return { kind: "turn", detail, turns: turns.data.turns, turn: selected };
+  return { kind: "turn", base: host.base, detail, turns: turns.data.turns, turn: selected };
+}
+
+export type TranscriptRow =
+  | { kind: "prompt" | "note" | "said" | "error"; offset: string; text: string; cut: boolean }
+  | { kind: "tool"; offset: string; name: string; summary: string; input?: TranscriptEntry; output?: TranscriptEntry; failed: boolean; duration: number | null }
+  | { kind: "end"; offset: string; text: string };
+
+function transcriptOffset(at: number | null, start: number | null): string {
+  if (at == null || start == null) return "—";
+  const seconds = Math.floor((at - start) / 1000);
+  const absolute = Math.abs(seconds);
+  return `${seconds < 0 ? "-" : "+"}${Math.floor(absolute / 60)}:${String(absolute % 60).padStart(2, "0")}`;
+}
+
+function toolRow(input: TranscriptEntry | undefined, output: TranscriptEntry | undefined, offset: string): TranscriptRow {
+  return {
+    kind: "tool", offset,
+    name: input?.tool ?? output?.tool ?? "Tool",
+    summary: input?.summary ?? output?.summary ?? "",
+    input, output,
+    failed: output?.failed ?? false,
+    duration: input?.at_ms != null && output?.at_ms != null ? (output.at_ms - input.at_ms) / 1000 : null,
+  };
+}
+
+export function transcriptRows(entries: TranscriptEntry[], turn: RunTurn): TranscriptRow[] {
+  const start = turn.seconds == null ? null : turn.ended_ms - turn.seconds * 1000;
+  const commands = new Set(entries.filter((entry) => entry.speaker === "command" && entry.call != null).map((entry) => entry.call));
+  const results = new Map(entries.filter((entry) => entry.speaker === "tool" && entry.call != null).map((entry) => [entry.call, entry]));
+  const rows: TranscriptRow[] = [];
+  const prompt = entries.find((entry) => entry.speaker === "user");
+  const timed = entries.filter((entry) => entry.at_ms != null).sort((a, b) => a.at_ms! - b.at_ms!);
+  let timedIndex = 0;
+  const ordered = entries.map((entry) => entry.at_ms == null ? entry : timed[timedIndex++]!);
+  for (const entry of ordered) {
+    const offset = transcriptOffset(entry.at_ms, start);
+    if (entry.speaker === "command") {
+      rows.push(toolRow(entry, entry.call == null ? undefined : results.get(entry.call), offset));
+    } else if (entry.speaker === "tool") {
+      if (entry.call == null || !commands.has(entry.call)) rows.push(toolRow(undefined, entry, offset));
+    } else {
+      const kind = entry.speaker === "user" ? entry === prompt ? "prompt" : "note" : entry.speaker === "assistant" ? "said" : "error";
+      rows.push({ kind, offset, text: entry.text, cut: entry.cut });
+    }
+  }
+  const ending = turn.timed_out ? " · timed out" : turn.exit_status == null ? "" : ` · exit ${turn.exit_status}`;
+  rows.push({ kind: "end", offset: transcriptOffset(turn.ended_ms, start), text: `Turn ended${ending}` });
+  return rows;
 }

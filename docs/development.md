@@ -946,6 +946,8 @@ The Turn page (`console/src/next/pages/Turn.tsx`) shows one recorded turn’s
 figures and links to its neighbours. `console/src/next/turn.ts` selects its
 host and run and shares turn titles with the Details fold. Run and Turn
 share page framing in `console/src/next/pages/runShared.tsx`.
+The Turn page’s `console/src/next/components/TurnEntries.tsx` lists transcript
+entries with folded prompts and tool calls, opening failed calls automatically.
 
 ### Desktop wrapper
 
