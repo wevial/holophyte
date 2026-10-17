@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { bind, UNBOUND_NOTE, type ConfigValues, type PatchValue } from "../../lib/config";
 import type { SettingsField } from "../settings";
 
-export function SettingRow({ field, values, value: draft, onChange, project, host, applies }: {
+export function SettingRow({ field, values, value: draft, onChange, project, host, applies, error }: {
   field: SettingsField;
   values: ConfigValues | null;
   value?: PatchValue;
@@ -11,6 +11,7 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
   project: string;
   host: string;
   applies: string;
+  error?: string;
 }) {
   const id = useId();
   const bound = bind(field, values);
@@ -25,6 +26,7 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
         <p className="mt-1 font-mono text-[12px] text-ink-3">{field.table}.{field.key}</p>
         <p className="mt-2 max-w-[46ch] font-read text-[14px] leading-relaxed text-ink-2">{field.help.replace("{host}", host)}</p>
         {changed && <p className="mt-3 flex items-center gap-2 font-mono text-[12px] text-ink-3"><svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5} className="shrink-0 text-ask"><path d="M13 6a5 5 0 0 0-8.5-3.5L2 5m0-4v4h4M3 10a5 5 0 0 0 8.5 3.5L14 11m0 4v-4h-4" /></svg>applies at the {applies}</p>}
+        {error && <p role="alert" className="mt-3 font-mono text-[12px] text-bad">{error}</p>}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-3 min-[860px]:max-w-[48%] min-[860px]:justify-end">
         {bound.state === "unbound" ? <div className="min-w-0">

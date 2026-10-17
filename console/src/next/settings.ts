@@ -1,6 +1,36 @@
 import { groupByHost, supervisorStale, type HostRecord } from "../lib/hosts";
 import type { ContractBodies } from "./fleet";
 import { scopedHosts } from "./scope";
+import type { ConfigValues } from "../lib/config";
+import type { SettingsEdit } from "./settingsDraft";
+
+export type PatchLine = { kind: "context" | "removed" | "added"; text: string };
+
+function tomlValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(", ")}]`;
+  return (JSON.stringify(value) ?? "").replace(/\u007f/g, "\\u007f");
+}
+
+export function patchLines(values: ConfigValues | null, edits: Record<string, SettingsEdit>): PatchLine[] {
+  const tables = new Set([...Object.keys(values ?? {}), ...Object.keys(edits).map((key) => key.slice(0, key.lastIndexOf(".")))]);
+  const lines: PatchLine[] = [];
+  for (const table of tables) {
+    const keys = new Set([
+      ...Object.keys(values?.[table] ?? {}),
+      ...Object.keys(edits).filter((key) => key.startsWith(`${table}.`)).map((key) => key.slice(table.length + 1)),
+    ]);
+    const changed = [...keys].filter((key) => `${table}.${key}` in edits);
+    if (!changed.length) continue;
+    lines.push({ kind: "context", text: `[${table}]` });
+    for (const key of changed) {
+      if (values?.[table] != null && Object.hasOwn(values[table], key)) {
+        lines.push({ kind: "removed", text: `${key} = ${tomlValue(values[table][key])}` });
+      }
+      lines.push({ kind: "added", text: `${key} = ${tomlValue(edits[`${table}.${key}`]!.value)}` });
+    }
+  }
+  return lines;
+}
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General", group: "Project" },

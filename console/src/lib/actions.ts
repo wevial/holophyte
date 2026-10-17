@@ -2,6 +2,8 @@ import { addressOf, rootOf } from "./hosts";
 import type { Fetch } from "./poll";
 import { withToken } from "./token";
 
+export const RESTART_LABEL = "Restart supervisor";
+
 /** The `POST /actions/...` routes the console's buttons post to, by the
  *  label `lib/attention.ts` draws; a label absent here is drawn disabled
  *  as "not wired yet" until its own ticket lands a daemon route. */
