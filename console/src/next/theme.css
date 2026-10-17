@@ -440,3 +440,11 @@ body {
     transform: translateY(3px);
   }
 }
+
+.day-log-scroll {
+  scrollbar-color: transparent transparent;
+}
+
+.day-log-scroll:hover {
+  scrollbar-color: var(--rule) transparent;
+}

@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Holophyte · Hosts</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--live-wash:rgba(134,217,147,.10);--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16;--bad-wash:rgba(255,123,114,.09);--done:#7b84a1;--scrim:rgba(5,7,15,.74)}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--live-wash:rgba(31,122,53,.08);--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff;--bad-wash:rgba(192,50,31,.07);--done:#8b90a8;--scrim:rgba(236,234,243,.8)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.cm{position:absolute;width:12px;height:12px;pointer-events:none}
+.cm::before,.cm::after{content:"";position:absolute;background:var(--ink-3)}
+.cm::before{width:12px;height:1px;top:5.5px}.cm::after{width:1px;height:12px;left:5.5px}
+.cm.tl{top:-6.5px;left:-6.5px}.cm.tr{top:-6.5px;right:-6.5px}.cm.bl{bottom:-6.5px;left:-6.5px}.cm.br{bottom:-6.5px;right:-6.5px}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.cell{display:inline-block;width:9px;height:9px;flex:none;position:relative;box-sizing:border-box}
+.c-live{background:var(--live)}.c-need{background:var(--need)}.c-bad{background:var(--bad)}.c-done{background:var(--done)}
+.c-wait{box-shadow:inset 0 0 0 1.5px var(--wait)}
+.c-held{background:linear-gradient(90deg,var(--wait) 0 3px,transparent 3px 6px,var(--wait) 6px)}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}.btn.danger.fill:not(.busy){color:var(--bi)}.btn.danger.fill:not(.busy)::before{transform:scaleX(1)}
+.btn.quiet.on-ink{--b:var(--paper);--bi:var(--ink);color:var(--paper)}.btn.quiet.on-ink:hover,.btn.quiet.on-ink:focus-visible{color:var(--ink)}
+.btn.busy{pointer-events:none;color:var(--b,var(--act));box-shadow:none;clip-path:none}
+.btn.busy::before,.btn.busy::after{display:none}
+.btn .ants-o{display:none}.btn.busy .ants-o{display:block}.btn .ants-r{stroke:var(--b,var(--act))}
+.ants-o{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.ants-o rect{width:calc(100% - 1.5px);height:calc(100% - 1.5px)}
+.ants-r{fill:none;stroke:var(--wait);stroke-width:1.5;stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+.btn[disabled]{cursor:not-allowed;opacity:.5}.btn[disabled]::before{display:none}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;cursor:pointer;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+.link:hover{color:var(--ink);border-bottom-color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.nav-a:hover{color:var(--ink)!important}
+.shell{--pg-t:20px;--pg-x:24px;--pg-b:32px;--hd-t:12px;--hd-b:12px;--sec:14px;height:100vh;overflow:hidden}
+.pg-title{margin:0;font:600 20px/1.25 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em;color:var(--ink)}
+.shell > aside{height:100vh;box-sizing:border-box}.shell > aside nav{flex:0 1 auto;min-height:0;overflow-y:auto}
+.shell > .pad-main{height:100vh;overflow-y:auto}
+.pg-w{position:relative}
+.pg-t{position:absolute;right:4px;top:6px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--ink-3)}
+.pg-a{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 10px 0 12px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.pg-a .badge{margin-left:auto;color:var(--need);letter-spacing:0;font-weight:600}
+.pg-sub{margin:2px 0 6px 20px;padding:0 0 4px;border-left:1px solid var(--rule)}
+.sub-h{padding:10px 8px 4px 12px;font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.sub-l{list-style:none;margin:0;padding:0}
+.vw-a{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 8px 0 12px;text-decoration:none;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink-2)}
+.vw-n{margin-left:auto;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;min-height:44px;padding:7px 8px 8px 12px;box-sizing:border-box;text-decoration:none;color:var(--ink-2)}
+.st-k,.st-p{font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-t{grid-column:1 / -1;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif}
+.nav-sep{height:1px;margin:8px 4px;background:var(--rule)}
+.sw{position:relative;margin:12px 0 4px}
+.sw-b{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px 0 12px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-align:left;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-b .tag,.sw-o .tag{color:var(--wait);font-size:11px;font-weight:400}
+.sw-need{margin-left:auto;color:var(--need);font-weight:600}
+.sw-c{margin-left:6px;color:var(--ink-3)}.sw-need[hidden]+.sw-c{margin-left:auto}
+.sw-back{position:fixed;inset:0;z-index:55;border:0;padding:0;background:transparent;cursor:default}
+.sw-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:264px;box-sizing:border-box;padding:8px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.sw-q{display:block;box-sizing:border-box;width:100%;min-height:36px;padding:0 10px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sw-q:focus{outline:2px solid var(--act);outline-offset:-1px}.sw-q::placeholder{color:var(--ink-2)}
+.sw-l{list-style:none;margin:8px 0 0;padding:0}
+.sw-o{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 8px;cursor:pointer;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-o:hover{background:var(--paper-2)!important}.sw-o[aria-selected="true"]{color:var(--act)}
+.sw-cnt{margin-left:auto;display:inline-flex;gap:10px;font-weight:400;font-size:12px;color:var(--ink-3)}.sw-cnt b{color:var(--need);font-weight:600}
+.sw-none{margin:0;padding:10px 8px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.side-b{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);cursor:pointer;text-decoration:none;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.side-b:hover{color:var(--ink);border-color:var(--ink-3)}
+.think{display:inline-flex;gap:4px}.think i{display:inline-block;width:7px;height:7px;background:var(--rule);animation:think 1.2s steps(1,end) infinite}
+.think i:nth-child(2){animation-delay:.2s}.think i:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,100%{background:var(--rule)}33%{background:var(--ink-3)}}
+.fault{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 14px;padding:12px 14px;background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+.calm{padding:36px 28px;background:var(--paper);border:1px solid var(--rule)}
+.calm h2{margin:0;font-family:'Archivo','Helvetica Neue',sans-serif;font-weight:700;font-size:26px;color:var(--ink)}
+.calm p{margin:8px 0 0;max-width:62ch;color:var(--ink-2)}
+.toast-in{animation:roll .28s cubic-bezier(.2,.7,.2,1)}
+@keyframes roll{from{transform:translateY(12px)}}
+.settle{animation:settle 1.1s cubic-bezier(.2,.7,.2,1)}
+@keyframes settle{from{background-color:var(--act-wash)}}
+[hidden]{display:none!important}
+.hd-m{margin:6px 0 0;font:400 13px/1.6 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.hd-m b{color:var(--ink);font-weight:600}.hd-m i{font-style:normal;color:var(--ink-3);margin:0 6px}
+.hc{background:var(--paper);border:1px solid var(--rule)}
+.hc + .hc{margin-top:20px}
+.hc-h{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px 24px;padding:20px 24px 18px;border-bottom:1px solid var(--rule-2)}
+.hc-n{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.hc-n h2{margin:0;font:600 19px/1.2 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em}
+.hc-st{display:inline-flex;align-items:center;gap:8px;font:500 12.5px/1.3 'IBM Plex Mono',ui-monospace,monospace}
+.hc-m{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:8px;font:400 12px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.hc-m b{font-weight:500;color:var(--ink-2)}
+.hc-a{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.hc-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:18px 28px;padding:18px 24px 20px;border-bottom:1px solid var(--rule-2)}
+.kv{margin:10px 0 0;font:400 12.5px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.kv b{display:block;font:500 14px/1.4 'IBM Plex Sans',system-ui,sans-serif}
+.pj-l{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.pj-l li{display:flex;align-items:center;gap:10px;font:400 12.5px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.pj-l a{color:var(--ink);font-weight:500;text-decoration:none;border-bottom:1px solid var(--rule)}
+.pj-l a:hover{border-bottom-color:var(--ink)}
+.rt{padding:16px 24px 6px;border-bottom:1px solid var(--rule-2);overflow-x:auto}
+.rt-in{min-width:720px}
+.rt-g{display:grid;grid-template-columns:120px minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);gap:12px;align-items:center}
+.rt-hd{margin-top:12px;padding:0 10px 8px;border-bottom:1px solid var(--rule);font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.rt-l{list-style:none;margin:0;padding:0}
+.rt-row{min-height:44px;padding:8px 10px;box-sizing:border-box;border-bottom:1px dashed var(--rule-2);font:400 12.5px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.rt-row:last-child{border-bottom:0}
+.rt-row.bad{background:var(--bad-wash);box-shadow:inset 2px 0 0 var(--bad)}
+.rt-seat{color:var(--ink);font-weight:500}
+.rt-p{display:inline-flex;align-items:flex-start;gap:8px}
+.inuse{display:inline-block;margin-left:6px;padding:2px 6px;border:1px solid var(--ask);color:var(--ask);font-size:11px;line-height:1.3}
+.tk-r{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:14px 24px 16px}
+.tk-r .lab{font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.tk-v{font:500 13px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.tk-n{flex:1 1 240px;min-width:0;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.inp{box-sizing:border-box;min-height:44px;padding:0 12px;border:1px solid var(--rule);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.inp:focus{outline:2px solid var(--act);outline-offset:-1px}.inp::placeholder{color:var(--ink-3)}
+.sk{display:block;height:10px;background:var(--rule-2)}
+@media (max-width:720px){.shell{height:auto;overflow:visible}.shell > aside,.shell > .pad-main{height:auto;overflow:visible}.pad-main{padding:16px 8px 32px!important}.pad-x{padding-left:16px!important;padding-right:16px!important}.hc-a{margin-left:0}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}} shell" style="min-height: 100vh; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: stretch; background-color: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+
+<aside aria-label="Console" style="flex: 1 1 232px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; background: var(--paper-2); border-right: 1px solid var(--rule); padding: 0 8px 16px">
+<div style="display: flex; align-items: center; min-height: 60px; margin: 0 -8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--rule)">
+<a href="Main.dc.html" aria-label="Holophyte console, overview" style="display: flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink)">
+<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="flex: none"><g style="fill: var(--act); stroke: var(--paper-2); stroke-width: 1.1; stroke-linejoin: round"><path d="M12 17 C7.4 17.6 3.6 15.6 2 12.2 C5.6 11.8 9.4 13.6 12 17Z"></path><path d="M12 17 C16.6 17.6 20.4 15.6 22 12.2 C18.4 11.8 14.6 13.6 12 17Z"></path><path d="M12 17 C8.2 16.6 5.6 13 6 8 C9 9.2 11.2 12.6 12 17Z"></path><path d="M12 17 C15.8 16.6 18.4 13 18 8 C15 9.2 12.8 12.6 12 17Z"></path><path d="M12 4 C15.2 7.2 15.2 13 12 17 C8.8 13 8.8 7.2 12 4Z"></path></g><path d="M6 20.2 H18" style="fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-linecap: round"></path></svg>
+<b style="font: 600 15px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.01em">holophyte</b>
+</a>
+</div>
+<div class="sw" onKeyDown="{{sw.key}}">
+<button type="button" class="nav-a sw-b" onClick="{{sw.toggle}}" aria-haspopup="listbox" aria-expanded="{{sw.open}}" aria-label="{{sw.aria}}" title="{{sw.title}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{sw.iconColor}}"><path d="{{sw.icon}}"></path></svg><span>{{sw.name}}</span><span class="tag" hidden="{{sw.noTag}}">held</span><span class="sw-need" hidden="{{sw.noNeed}}">{{sw.need}}</span><svg class="ico sw-c" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></button>
+<sc-if value="{{sw.open}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="sw-back" tabindex="-1" aria-hidden="true" onClick="{{sw.close}}"></button>
+<div class="sw-pop" role="dialog" aria-label="Switch project">
+<label class="sr" for="swq">Find a project</label>
+<input id="swq" class="sw-q" type="text" value="{{sw.q}}" onChange="{{sw.onQ}}" placeholder="Find a project" autocomplete="off" autoFocus="{{ true }}" role="combobox" aria-expanded="true" aria-controls="swl" aria-activedescendant="{{sw.activeId}}">
+<ul id="swl" role="listbox" aria-label="Projects" class="sw-l">
+<sc-for list="{{sw.items}}" as="it" hint-placeholder-count="4"><li id="{{it.id}}" role="option" aria-selected="{{it.sel}}" class="sw-o" onClick="{{it.pick}}" style="background: {{it.bg}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{it.iconColor}}"><path d="{{it.icon}}"></path></svg><span>{{it.name}}</span><span class="tag" hidden="{{it.noTag}}">held</span><span class="sw-cnt"><b hidden="{{it.noNeed}}">{{it.need}}</b><span>{{it.runs}}</span></span></li></sc-for>
+</ul>
+<p class="sw-none" hidden="{{sw.hasItems}}">No project matches.</p>
+</div>
+</sc-if>
+</div>
+<nav aria-label="Pages" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px">
+<a href="Main.dc.html" class="nav-a pg-a" aria-current="{{nav.overview.cur}}" aria-label="{{nav.overview.aria}}" style="color: {{nav.overview.color}}; background: {{nav.overview.bg}}; box-shadow: {{nav.overview.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 9.5h3.5l1 2h3l1-2H14"></path><path d="M3.6 3h8.8L14 9.5V13H2V9.5z"></path></svg><span>Overview</span><span class="badge" hidden="{{nav.overview.noBadge}}">{{nav.overview.badge}}</span></a>
+<a href="Runs.dc.html" class="nav-a pg-a" aria-current="{{nav.runs.cur}}" aria-label="{{nav.runs.aria}}" style="color: {{nav.runs.color}}; background: {{nav.runs.bg}}; box-shadow: {{nav.runs.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"></path><path d="M6.6 5.4v5.2L10.8 8z"></path></svg><span>Runs</span></a>
+<div class="pg-w"><a href="Issues.dc.html" class="nav-a pg-a" aria-current="{{nav.tickets.cur}}" aria-label="{{nav.tickets.aria}}" style="color: {{nav.tickets.color}}; background: {{nav.tickets.bg}}; box-shadow: {{nav.tickets.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4"></path></svg><span>Tickets</span></a><button type="button" class="nav-a pg-t" aria-expanded="{{nav.subOpen}}" aria-controls="nav-sub" aria-label="{{nav.subAria}}" onClick="{{nav.toggleSub}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; transform: {{nav.subRot}}"><path d="M6 4l4 4-4 4"></path></svg></button>
+<sc-if value="{{nav.subShow}}" hint-placeholder-val="{{ true }}"><div id="nav-sub" class="pg-sub">
+<div class="sub-h" id="nv-views">Views</div>
+<ul class="sub-l" aria-labelledby="nv-views"><sc-for list="{{nav.views}}" as="v" hint-placeholder-count="3"><li><a href="Issues.dc.html" class="nav-a vw-a" aria-label="{{v.aria}}"><span>{{v.label}}</span><span class="vw-n">{{v.n}}</span></a></li></sc-for></ul>
+<div class="sub-h" id="nv-stories">Stories</div>
+<ul class="sub-l" aria-labelledby="nv-stories"><sc-for list="{{nav.stories}}" as="st" hint-placeholder-count="3"><li><a href="Story.dc.html" class="nav-a st-a" aria-label="{{st.aria}}"><span class="st-k">{{st.key}}</span><span class="st-p">{{st.prog}}</span><span class="st-t">{{st.title}}</span></a></li></sc-for></ul>
+</div></sc-if></div>
+<a href="Findings.dc.html" class="nav-a pg-a" aria-current="{{nav.findings.cur}}" aria-label="{{nav.findings.aria}}" style="color: {{nav.findings.color}}; background: {{nav.findings.bg}}; box-shadow: {{nav.findings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5"></path></svg><span>Findings</span><span class="badge" hidden="{{nav.findings.noBadge}}">{{nav.findings.badge}}</span></a>
+<div class="nav-sep" aria-hidden="true"></div>
+<a href="Hosts.dc.html" class="nav-a pg-a" aria-current="{{nav.hosts.cur}}" aria-label="{{nav.hosts.aria}}" style="color: {{nav.hosts.color}}; background: {{nav.hosts.bg}}; box-shadow: {{nav.hosts.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2.5 2.5h11v4.5h-11zM2.5 9h11v4.5h-11z"></path><path d="M5 4.75h.1M5 11.25h.1"></path></svg><span>Hosts</span><span class="badge" hidden="{{nav.hosts.noBadge}}">{{nav.hosts.badge}}</span></a>
+<a href="Settings.dc.html" class="nav-a pg-a" aria-current="{{nav.settings.cur}}" aria-label="{{nav.settings.aria}}" style="color: {{nav.settings.color}}; background: {{nav.settings.bg}}; box-shadow: {{nav.settings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 4.5h12M2 11.5h12"></path><path d="M5.5 2.8v3.4M10.5 9.8v3.4"></path></svg><span>Settings</span></a>
+</nav>
+<div style="margin: auto -8px 0; padding: 14px 8px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+<div style="display: flex; align-items: center; gap: 12px; padding-left: 14px; font: 400 11px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg><span>writer-host · polled 4s ago</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; padding-left: 8px">
+<button type="button" class="side-b" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>{{themeWord}}</button>
+<a class="side-b" href="#classic">Classic console</a>
+</div>
+</div>
+</aside>
+
+<div class="pad-main" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: var(--pg-t) var(--pg-x) var(--pg-b)">
+<main style="max-width: 1180px; margin: 0 auto">
+<section aria-labelledby="hH">
+<div class="pad-x" style="padding: var(--hd-t) 0 var(--hd-b); border-bottom: 1px solid var(--rule)">
+<h1 id="hH" class="pg-title">Hosts</h1>
+<p class="hd-m">{{headLine}}</p>
+</div>
+
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; align-items: center; gap: 12px; margin-top: 20px; font: 400 13px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span class="think" aria-hidden="true"><i></i><i></i><i></i></span>Asking writer-host, runner-host and writer-host-2 for their state…</div>
+<div style="margin-top: 16px">
+<sc-for list="{{skel}}" as="k" hint-placeholder-count="3"><div class="hc" aria-hidden="true"><div class="hc-h"><div style="flex: 1 1 420px"><div class="hc-n"><h2 style="color: var(--ink-3)">{{k}}</h2></div><div style="display: grid; gap: 8px; margin-top: 12px; max-width: 520px"><span class="sk" style="width: 90%"></span><span class="sk" style="width: 60%"></span></div></div></div><div class="hc-g"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div></sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{isEmpty}}" hint-placeholder-val="{{ false }}">
+<div class="calm" style="margin-top: 20px"><h2>No hosts yet.</h2><p>The console finds a daemon from its address and serve token. Add one under <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 13.5px">[hosts]</span> in the console's config, then reload this page.</p></div>
+</sc-if>
+
+<sc-if value="{{isError}}" hint-placeholder-val="{{ false }}">
+<div role="status" class="fault" style="margin-top: 20px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; width: 16px; height: 16px; color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">No host is answering this console.</div><div style="margin-top: 2px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">last answer from writer-host at 16:48 · runner-host at 16:47 · writer-host-2 at 16:39 · nothing here can act until one answers</div></div><button type="button" class="btn quiet">Try again</button></div>
+</sc-if>
+
+<sc-if value="{{isData}}" hint-placeholder-val="{{ true }}">
+<div style="margin-top: 20px">
+<sc-for list="{{cards}}" as="h" hint-placeholder-count="3">
+<article class="hc {{h.cls}}" aria-labelledby="{{h.hid}}">
+<div class="hc-h">
+<div style="flex: 1 1 460px; min-width: 0">
+<div class="hc-n"><h2 id="{{h.hid}}">{{h.name}}</h2><span class="hc-st" style="color: {{h.sc}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="{{h.sr}}"></circle><path d="{{h.sp}}"></path></svg>{{h.stWord}}</span></div>
+<div class="hc-m"><span><b>{{h.addr}}</b></span><span>v{{h.ver}}</span><span>build {{h.build}} · {{h.built}}</span><span>up {{h.up}}</span><span>last sweep {{h.lastSweep}}</span></div>
+</div>
+<div class="hc-a">
+<sc-if value="{{h.isDown}}" hint-placeholder-val="{{ false }}"><button type="button" class="btn quiet {{h.rtCls}}" onClick="{{h.retry}}">{{h.rtLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></sc-if>
+<button type="button" class="btn quiet {{h.swCls}}" onClick="{{h.sweep}}" disabled="{{h.noAct}}">{{h.swLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button>
+<button type="button" class="btn danger" onClick="{{h.restart}}" disabled="{{h.noAct}}">Restart daemon</button>
+</div>
+</div>
+<sc-if value="{{h.isDown}}" hint-placeholder-val="{{ false }}">
+<div class="fault" style="margin: 16px 24px 0"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div style="flex: 1 1 300px; min-width: 0"><div style="font-weight: 500">writer-host-2 has not answered since 16:39.</div><div style="margin-top: 2px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">everything below is its last report · it holds no projects, so no run is waiting on it · Run sweep and Restart need it to answer</div></div></div>
+</sc-if>
+<sc-if value="{{h.restarting}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; align-items: center; gap: 12px; margin: 16px 24px 0; font: 400 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span class="think" aria-hidden="true"><i></i><i></i><i></i></span>Restarting the daemon. Runs keep their worktrees and re-attach when it is back.</div>
+</sc-if>
+<div class="hc-g">
+<div><div class="label">Projects</div>
+<ul class="pj-l" hidden="{{h.noProjects}}"><sc-for list="{{h.projects}}" as="p" hint-placeholder-count="2"><li><i class="{{p.cls}}" aria-hidden="true"></i><a href="Settings.dc.html">{{p.name}}</a><span>{{p.note}}</span></li></sc-for></ul>
+<p class="kv" hidden="{{h.hasProjects}}">None. A spare host: it answers sweeps but claims nothing.</p>
+</div>
+<div><div class="label">Supervisor</div><p class="kv"><b style="color: {{h.supColor}}">{{h.supWord}}</b>{{h.supNote}}</p></div>
+<div><div class="label">Sweep</div><p class="kv"><b style="color: {{h.swpColor}}">{{h.swpWord}}</b>{{h.swpNote}}</p></div>
+</div>
+<div class="rt"><div class="rt-in">
+<div class="label">Agent routes <span style="color: var(--ink-3); letter-spacing: 0.04em; text-transform: none; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 400">{{h.rtNote}}</span></div>
+<div class="rt-g rt-hd" aria-hidden="true"><span>Seat</span><span>Route</span><span>Probe</span><span>Fallback</span></div>
+<ul class="rt-l" aria-label="Agent routes on {{h.name}}"><sc-for list="{{h.routes}}" as="r" hint-placeholder-count="4"><li class="rt-g {{r.cls}}" aria-label="{{r.aria}}"><span class="rt-seat">{{r.seat}}</span><span style="color: var(--ink)">{{r.route}}</span><span class="rt-p" style="color: {{r.pc}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 1px"><circle cx="8" cy="8" r="6.5"></circle><path d="{{r.pp}}"></path></svg><span>{{r.probe}} <span style="color: var(--ink-3)">· {{r.pNote}}</span></span></span><span>{{r.fb}}<span class="inuse" hidden="{{r.noUse}}">in use · recorded</span></span></li></sc-for></ul>
+</div></div>
+<div class="tk-r">
+<span class="lab">Serve token</span>
+<sc-if value="{{h.tokOn}}" hint-placeholder-val="{{ true }}"><span class="tk-v">{{h.tokMask}}</span><span class="tk-n">{{h.tokNote}}</span><button type="button" class="btn quiet" onClick="{{h.forget}}">Forget</button></sc-if>
+<sc-if value="{{h.tokOff}}" hint-placeholder-val="{{ false }}"><span class="tk-n" style="color: var(--need)">No token in this browser. Actions on {{h.name}} ask for one.</span><label class="sr" for="{{h.tokInId}}">Serve token for {{h.name}}</label><input id="{{h.tokInId}}" class="inp" type="password" value="{{h.draft}}" onChange="{{h.onDraft}}" placeholder="Paste the serve token" autocomplete="off" style="flex: 1 1 220px; min-width: 0"><button type="button" class="btn" onClick="{{h.saveTok}}" disabled="{{h.noDraft}}">Save token</button></sc-if>
+</div>
+</article>
+</sc-for>
+</div>
+</sc-if>
+
+<div class="pad-x" style="display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 28px; padding: var(--sec) 0; border-top: 1px solid var(--rule); font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span>routes are probed every 60s; a fallback is probed before use and recorded on the run</span><span>the token stays in this browser</span><span>times PT</span></div>
+</section>
+</main>
+</div>
+
+<sc-if value="{{modalOn}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim)">
+<section role="dialog" aria-modal="true" aria-labelledby="rsH" style="position: relative; box-sizing: border-box; width: 100%; max-width: 520px; background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px 24px; box-shadow: 0 24px 60px rgba(0,0,0,.45)">
+<i class="cm tl" aria-hidden="true"></i><i class="cm tr" aria-hidden="true"></i><i class="cm bl" aria-hidden="true"></i><i class="cm br" aria-hidden="true"></i>
+<div class="label">Restart · {{m.name}}</div>
+<h2 id="rsH" style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 112%; font-size: 30px; line-height: 1.05; letter-spacing: -0.01em">Restart the daemon on {{m.name}}?</h2>
+<p style="margin: 10px 0 0; color: var(--ink-2)">The supervisor and the sweep stop, then start again on build {{m.build}}. A restart does not update the build.</p>
+<ul style="list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><i class="cell c-live" aria-hidden="true"></i>{{m.runsLine}}</li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><i class="cell c-live" aria-hidden="true"></i>no merge in progress</li>
+<li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ask)"><circle cx="8" cy="8" r="6.5"></circle><path d="M8 4.8v3.6M8 11.1v.1"></path></svg>this console loses {{m.name}} for about 20s</li>
+</ul>
+<div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px">
+<button type="button" class="btn quiet" onClick="{{closeModal}}">Keep running</button>
+<button type="button" class="btn danger fill {{mBusy}}" onClick="{{confirmRestart}}">{{mLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{toastOn}}" hint-placeholder-val="{{ false }}">
+<div role="status" aria-live="polite" class="toast-in" style="position: fixed; right: 24px; bottom: 24px; z-index: 40; display: flex; align-items: center; gap: 16px; max-width: calc(100% - 48px); box-sizing: border-box; min-height: 44px; padding: 8px 8px 8px 16px; background: var(--ink); font: 500 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--paper)"><span>{{toast}}</span><sc-if value="{{undoOn}}" hint-placeholder-val="{{ true }}"><button type="button" class="btn quiet on-ink" onClick="{{undo}}">Undo</button></sc-if></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"view":{"editor":"enum","options":["data","empty","loading","error"],"default":"data","section":"State"},"$preview":{"width":1440,"height":2160}}'>
+const NAV_GRID = 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z';
+const NAV_FOLDER = 'M2 4.5h4.2l1.5 1.5H14v7.5H2z';
+const NAV_SCOPES = [['', 'All projects'], ['holophyte', 'holophyte'], ['lotuspod', 'lotuspod'], ['relos', 'relos']];
+const NAV_RUNS = { '': 14, holophyte: 9, lotuspod: 3, relos: 2 };
+const NAV_NEED = { '': 5, holophyte: 4, lotuspod: 0, relos: 1 };
+const NAV_FIND = { '': 2, holophyte: 1, lotuspod: 0, relos: 1 };
+const NAV_HELD = { relos: true };
+const NAV_VIEWS = { '': [6, 2, 14], holophyte: [4, 1, 9], lotuspod: [1, 1, 3], relos: [1, 0, 2] };
+const NAV_STORIES = [['HOLO-220', 'Unattended runs recover themselves', 'holophyte', '4/7'], ['HOLO-241', 'The console tells the truth', 'holophyte', '1/7'],
+  ['HOLO-245', 'Findings become guardrails', 'holophyte', '1/5'], ['LOTUS-50', 'Two-way pages', 'lotuspod', '1/5']];
+function readScope(fallback) { try { const v = window.sessionStorage.getItem('holo.scope'); if (v !== null) return v; } catch (e) {} return fallback; }
+function saveScope(v) { try { window.sessionStorage.setItem('holo.scope', v); } catch (e) {} }
+function shellVals(cmp, screen) {
+  const s = cmp.state, theme = s.theme || cmp.props.theme || 'night', scope = s.proj || '';
+  const sw = s.sw || { open: false, q: '', i: 0 };
+  const setSw = (p) => cmp.setState({ sw: Object.assign({}, cmp.state.sw || { open: false, q: '', i: 0 }, p) });
+  const pick = (id) => { saveScope(id); setSw({ open: false, q: '', i: 0 }); cmp.setState({ proj: id || null }); };
+  const q = sw.q.trim().toLowerCase();
+  const list = NAV_SCOPES.filter((x) => !q || x[1].toLowerCase().indexOf(q) >= 0);
+  const i = Math.min(sw.i, Math.max(list.length - 1, 0));
+  const colorOf = (id) => (NAV_HELD[id] ? 'var(--wait)' : (id ? 'var(--live)' : 'var(--ink-2)'));
+  const items = list.map((x, k) => ({ id: 'sw-' + (x[0] || 'all'), name: x[1], icon: x[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(x[0]),
+    noTag: !NAV_HELD[x[0]], need: String(NAV_NEED[x[0]]), noNeed: !NAV_NEED[x[0]], runs: NAV_RUNS[x[0]] + ' open', sel: x[0] === scope ? 'true' : 'false',
+    bg: k === i ? 'var(--paper-2)' : 'transparent', pick: () => pick(x[0]) }));
+  const cur = NAV_SCOPES.filter((x) => x[0] === scope)[0] || NAV_SCOPES[0];
+  const key = (e) => {
+    if (e.key === 'Escape') { if (sw.open) { e.preventDefault(); setSw({ open: false }); } return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sw.open) { setSw({ open: true, q: '', i: 0 }); return; }
+      const n = list.length;
+      if (n) setSw({ i: (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+      return;
+    }
+    if (e.key === 'Enter' && sw.open && list[i] && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); pick(list[i][0]); }
+  };
+  const it = (id, label, n, word) => { const on = id === screen; return { cur: on ? 'page' : null, color: on ? 'var(--act)' : 'var(--ink-2)', bg: on ? 'var(--act-wash)' : 'transparent',
+    sh: on ? 'inset 2px 0 0 var(--act)' : 'none', aria: label + (n ? ', ' + n + ' ' + word : ''), badge: n ? String(n) : '', noBadge: !n }; };
+  let open = s.navSt;
+  if (open === undefined) { open = true; try { open = window.sessionStorage.getItem('holo.stories') !== '0'; } catch (e) {} }
+  const vw = NAV_VIEWS[scope] || NAV_VIEWS[''];
+  return {
+    themeClass: 't-' + theme,
+    themeWord: theme === 'dawn' ? 'Dawn' : 'Night',
+    themeLabel: theme === 'dawn' ? 'Colour theme: dawn. Switch to night' : 'Colour theme: night. Switch to dawn',
+    toggleTheme: () => cmp.setState({ theme: theme === 'dawn' ? 'night' : 'dawn' }),
+    sw: { open: sw.open, q: sw.q, name: cur[1], icon: cur[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(cur[0]),
+      noTag: !NAV_HELD[cur[0]], need: String(NAV_NEED[cur[0]]), noNeed: !NAV_NEED[cur[0]],
+      aria: 'Project: ' + cur[1] + (NAV_HELD[cur[0]] ? ', held' : '') + (NAV_NEED[cur[0]] ? ', ' + NAV_NEED[cur[0]] + ' need you' : '') + '. Switch project',
+      title: cur[1] + (NAV_NEED[cur[0]] ? ' · ' + NAV_NEED[cur[0]] + ' need you' : ''),
+      items: items, hasItems: items.length > 0, activeId: items[i] ? items[i].id : '',
+      toggle: () => setSw({ open: !sw.open, q: '', i: 0 }), close: () => setSw({ open: false }),
+      onQ: (e) => setSw({ q: e.target.value, i: 0, open: true }), key: key },
+    nav: { overview: it('overview', 'Overview', NAV_NEED[scope], 'need you'), runs: it('runs', 'Runs'), tickets: it('tickets', 'Tickets'),
+      findings: it('findings', 'Findings', NAV_FIND[scope], 'open'), hosts: it('hosts', 'Hosts', 1, 'not answering'), settings: it('settings', 'Settings'),
+      subShow: open, subOpen: open ? 'true' : 'false', subRot: open ? 'rotate(90deg)' : 'none', subAria: (open ? 'Hide' : 'Show') + ' views and stories',
+      toggleSub: () => { const v = !open; try { window.sessionStorage.setItem('holo.stories', v ? '1' : '0'); } catch (e) {} cmp.setState({ navSt: v }); },
+      views: [['Ready', vw[0]], ['Needs spec', vw[1]], ['Backlog', vw[2]]].map((x) => ({ label: x[0], n: String(x[1]), aria: x[0] + ', ' + x[1] + ' tickets' })),
+      stories: NAV_STORIES.filter((x) => !scope || x[2] === scope).map((x) => ({ key: x[0], title: x[1], prog: x[3], aria: x[0] + ' ' + x[1] + ', ' + x[3].replace('/', ' of ') + ' merged' })) }
+  };
+}
+
+const P = { check: 'M5 8.3 7.1 10.4 11 6.2', x: 'M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4', tri: 'M8 2 14.5 13.5h-13zM8 6.3v3.2M8 11.6v.1', clock: 'M8 4.8V8l2.3 1.6' };
+const HOSTS = [
+  { id: 'wh', name: 'writer-host', st: 'ok', addr: 'http://writer-host:8765', ver: '0.38.2', build: '9f3a1c2', built: 'Oct 16 08:12', up: '3d 4h', sweep: '2m ago',
+    projects: [['holophyte', 'taking work · 2 workers', 'live'], ['lotuspod', 'taking work · 2 workers', 'live']],
+    sup: ['Running', '3 of 4 workers busy · ticks every 30s · next in 12s'], swp: ['OK', 'last 16:50 · freed 0 leases · next 16:55'],
+    routes: [['implementer', 'claude opus', 'ok', '41s ago · 1.8s', 'claude sonnet'], ['reviewer', 'codex gpt-6-sol', 'ok', '41s ago · 2.4s', 'claude opus'],
+      ['adjudicator', 'claude fable', 'ok', '41s ago · 2.1s', 'none'], ['shadow', 'claude sonnet', 'ok', '41s ago · 1.2s', 'none'], ['triage', 'codex gpt-6-luna', 'ok', '41s ago · 0.6s', 'none']],
+    token: ['••••3f9a', 'saved in this browser Oct 9 · accepted 4s ago'], runs: 3 },
+  { id: 'rh', name: 'runner-host', st: 'route', addr: 'http://runner-host:8765', ver: '0.38.2', build: '9f3a1c2', built: 'Oct 16 08:12', up: '19h 02m', sweep: '4m ago',
+    projects: [['relos', 'held · 1 worker', 'held']],
+    sup: ['Running', '1 of 1 worker busy · ticks every 30s · next in 21s'], swp: ['OK', 'last 16:48 · freed 1 lease · next 16:53'],
+    routes: [['implementer', 'claude opus', 'ok', '38s ago · 1.9s', 'claude sonnet'], ['reviewer', 'codex gpt-6-sol', 'down', 'failed 3m ago · 429 rate limited · 4 tries', 'claude opus'],
+      ['adjudicator', 'claude fable', 'ok', '38s ago · 2.2s', 'none'], ['triage', 'codex gpt-6-luna', 'ok', '38s ago · 0.7s', 'none']],
+    token: ['••••b71e', 'saved in this browser Oct 9 · accepted 6s ago'], runs: 1 },
+  { id: 'w2', name: 'writer-host-2', st: 'down', addr: 'http://writer-host-2:8765', ver: '0.37.9', build: '0a1b2c3', built: 'Oct 12 19:40', up: 'unknown', sweep: '16:36',
+    projects: [], sup: ['Unknown', 'last report 16:39: running, 0 of 2 workers busy'], swp: ['Unknown', 'last report 16:36: ok, freed 0 leases'],
+    routes: [['implementer', 'claude sonnet', 'stale', 'ok at 16:38 · not probed since', 'none'], ['reviewer', 'codex gpt-6-sol', 'stale', 'ok at 16:38 · not probed since', 'claude opus']],
+    token: ['••••0c55', 'saved in this browser Oct 2 · not checked while the host is down'], runs: 0 }
+];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, proj: readScope('') || null, busy: {}, swept: {}, restarted: {}, tok: {}, drafts: {}, modal: null, mBusy: false, toast: null, undoKey: null };
+    this.timers = [];
+    let reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    this.wait = reduce ? 0 : 900;
+  }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); }
+  later(fn, ms) { this.timers.push(setTimeout(fn, ms)); }
+  say(text, undoKey) {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.setState({ toast: text, undoKey: undoKey == null ? null : undoKey });
+    this.toastTimer = setTimeout(() => this.setState({ toast: null, undoKey: null }), 6000);
+    this.timers.push(this.toastTimer);
+  }
+  put(field, id, v) {
+    this.setState((st) => { const o = Object.assign({}, st[field]); if (v === undefined) delete o[id]; else o[id] = v; const p = {}; p[field] = o; return p; });
+  }
+  sweep(h) {
+    if (this.state.busy[h.id]) return;
+    this.put('busy', h.id, 'sweep');
+    this.later(() => { this.put('busy', h.id); this.put('swept', h.id, true); this.say('Swept ' + h.name + ': no silent leases to free.'); }, this.wait);
+  }
+  retry(h) {
+    if (this.state.busy[h.id]) return;
+    this.put('busy', h.id, 'retry');
+    this.later(() => { this.put('busy', h.id); this.say(h.name + ' still is not answering. Tried at 16:53.'); }, this.wait * 2);
+  }
+  confirmRestart() {
+    const id = this.state.modal;
+    if (this.state.mBusy || !id) return;
+    this.setState({ mBusy: true });
+    this.later(() => {
+      this.setState({ modal: null, mBusy: false });
+      this.put('busy', id, 'restart');
+      this.later(() => {
+        const h = HOSTS.filter((x) => x.id === id)[0];
+        this.put('busy', id); this.put('restarted', id, true);
+        this.say('Restarted the daemon on ' + h.name + '. ' + h.runs + (h.runs === 1 ? ' run' : ' runs') + ' re-attached.');
+      }, this.wait * 2);
+    }, this.wait);
+  }
+  forget(h) { this.put('tok', h.id, 'gone'); this.say('Forgot the token for ' + h.name + ' in this browser.', h.id); }
+  saveTok(h) {
+    if (!(this.state.drafts[h.id] || '').trim()) return;
+    this.put('tok', h.id, 'new'); this.put('drafts', h.id);
+    this.say(h.name + ' accepted the new token.');
+  }
+  undo() { const id = this.state.undoKey; if (id == null) return; this.put('tok', id); this.setState({ toast: null, undoKey: null }); }
+  renderVals() {
+    const s = this.state, view = this.props.view || 'data';
+    const cards = HOSTS.map((h) => {
+      const b = s.busy[h.id], down = h.st === 'down', restarting = b === 'restart', tk = s.tok[h.id], draft = s.drafts[h.id] || '';
+      const head = restarting ? ['var(--wait)', P.clock, 'Restarting · back in about 20s'] : (down ? ['var(--need)', P.tri, 'Not answering · last seen 14m ago']
+        : (h.st === 'route' ? ['var(--bad)', P.tri, '1 route down · reviewer on its fallback'] : ['var(--live)', P.check, 'Healthy']));
+      const routes = h.routes.map((r) => {
+        const st = r[2], ok = st === 'ok', bad = st === 'down';
+        return { seat: r[0], route: r[1], probe: ok ? 'ok' : (bad ? 'down' : 'unknown'), pNote: r[3], pc: ok ? 'var(--live)' : (bad ? 'var(--bad)' : 'var(--ink-3)'),
+          pp: ok ? P.check : (bad ? P.x : P.clock), fb: r[4], noUse: !bad, cls: bad ? 'rt-row bad' : 'rt-row',
+          aria: r[0] + ': ' + r[1] + ', probe ' + (ok ? 'ok' : (bad ? 'down' : 'unknown')) + ', fallback ' + r[4] + (bad ? ', fallback in use' : '') };
+      });
+      return { id: h.id, hid: 'host-' + h.id, name: h.name, cls: s.restarted[h.id] ? 'settle' : '', sc: head[0], sp: head[1], sr: head[1] === P.tri ? '0' : '6.5', stWord: head[2],
+        addr: h.addr, ver: h.ver, build: h.build, built: h.built, up: s.restarted[h.id] ? '4s' : h.up, lastSweep: s.swept[h.id] ? 'just now' : h.sweep,
+        isDown: down, restarting: restarting, noAct: down || restarting,
+        projects: h.projects.map((p) => ({ name: p[0], note: p[1], cls: 'cell ' + (p[2] === 'live' ? 'c-live' : 'c-held') })), noProjects: !h.projects.length, hasProjects: h.projects.length > 0,
+        supWord: restarting ? 'Restarting' : h.sup[0], supNote: h.sup[1], supColor: down ? 'var(--ink-3)' : (restarting ? 'var(--wait)' : 'var(--live)'),
+        swpWord: h.swp[0], swpNote: s.swept[h.id] ? 'last 16:53 · freed 0 leases · next 16:58' : h.swp[1], swpColor: down ? 'var(--ink-3)' : 'var(--live)',
+        rtNote: down ? 'as of 16:39' : 'probed every 60s', routes: routes,
+        swCls: b === 'sweep' ? 'busy' : '', swLabel: b === 'sweep' ? 'Sweeping…' : 'Run sweep', sweep: () => this.sweep(h),
+        restart: () => this.setState({ modal: h.id, mBusy: false }),
+        rtCls: b === 'retry' ? 'busy' : '', rtLabel: b === 'retry' ? 'Retrying…' : 'Retry now', retry: () => this.retry(h),
+        tokOn: tk !== 'gone', tokOff: tk === 'gone', tokMask: tk === 'new' ? '••••e2d0' : h.token[0], tokNote: tk === 'new' ? 'saved in this browser just now · accepted' : h.token[1],
+        forget: () => this.forget(h), tokInId: 'tok-' + h.id, draft: draft, noDraft: !draft.trim(),
+        onDraft: (e) => this.put('drafts', h.id, e.target.value), saveTok: () => this.saveTok(h) };
+    });
+    const mh = HOSTS.filter((x) => x.id === s.modal)[0] || HOSTS[0];
+    return Object.assign(shellVals(this, 'hosts'), {
+      isData: view === 'data', isEmpty: view === 'empty', isLoading: view === 'loading', isError: view === 'error',
+      headLine: view === 'empty' ? 'no daemons configured' : (view === 'loading' ? '3 daemons · asking…' : (view === 'error' ? '3 daemons · none answering' : '3 daemons · 2 answering · 1 route on a fallback · polled 4s ago')),
+      skel: ['writer-host', 'runner-host', 'writer-host-2'], cards: cards,
+      modalOn: !!s.modal, m: { name: mh.name, build: mh.build, runsLine: mh.runs ? mh.runs + (mh.runs === 1 ? ' run' : ' runs') + ' in flight keep their worktrees and re-attach' : 'no runs in flight' },
+      mBusy: s.mBusy ? 'busy' : '', mLabel: s.mBusy ? 'Restarting…' : 'Restart daemon',
+      closeModal: () => this.setState({ modal: null, mBusy: false }), confirmRestart: () => this.confirmRestart(),
+      toastOn: !!s.toast, toast: s.toast || '', undoOn: s.undoKey != null, undo: () => this.undo()
+    });
+  }
+}
+</script>
+</body>
+</html>
