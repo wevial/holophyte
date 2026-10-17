@@ -44,7 +44,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       ) : (
         <a href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)} {...linkProps} />
       )}
-      <span className="font-mono text-[12px] font-medium leading-[1.4] tabular-nums text-ink-3 [overflow-wrap:anywhere]">
+      <span className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3 [overflow-wrap:anywhere]">
         <Link
           to="/tickets/$project/$key"
           params={{ project: row.project, key: row.ticket }}
@@ -54,7 +54,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
           {row.ticket}
         </Link>
       </span>
-      <span className={`min-w-0 font-sans font-semibold ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
+      <span className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
       <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
       <span className="inline-flex items-start gap-1.5">
         <StateDot state={row.state} hideWord />

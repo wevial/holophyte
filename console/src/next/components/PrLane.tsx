@@ -118,7 +118,7 @@ function PrLaneRow({
                   {{ draft: "Draft", ready: "Ready", closed: "Closed", merged: "Merged" }[pr.state]}
                 </span>
               )}
-              <span className="min-w-0 font-sans text-[14.5px] font-medium leading-[1.45] text-ink">{title}</span>
+              <span className="min-w-0 font-read text-[15px] font-medium leading-[1.35] text-ink">{title}</span>
             </span>
             <span className={`min-w-0 ${UNDER_TITLE}`}>
               <PrFacts facts={facts} form="line" />

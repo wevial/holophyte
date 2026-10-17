@@ -84,15 +84,18 @@ test("a story that starts with one ticket says so beside Step 1", () => {
   expect(notes).toEqual(["starts the story", null]);
 });
 
-test("a card shows a long title whole, with no line clamp", () => {
+test("graph and narrow cards show whole reading titles while Step labels keep Archivo", () => {
   const title = "Requeue a run whose lease went silent, page the operator once, and keep the run's worktree, branch and review rounds intact for the retry";
   expect(title.length).toBeGreaterThan(120);
   render(<StoryGraph nodes={[node("A", [], { title })]} base={SEEDED_BASE} />);
   const cards = Array.from(document.querySelectorAll('[data-node="A"]'));
   expect(cards.map((card) => (card.closest("[data-graph]") != null ? "graph" : card.closest("[data-step]") != null ? "steps" : "other"))).toEqual(["graph", "steps"]);
+  const narrowStep = document.querySelector('[data-step="1"]')!;
+  expect(narrowStep.querySelector("h3")!.classList).toContain("font-sans");
   for (const card of cards) {
     const shown = Array.from(card.querySelectorAll("span")).find((span) => span.textContent === title)!;
     expect(shown).toBeDefined();
+    expect(Array.from(shown.classList)).toEqual(expect.arrayContaining(["font-read", "text-[15px]", "leading-[1.35]"]));
     expect(Array.from(shown.classList).filter((name) => name.startsWith("line-clamp") || name === "truncate")).toEqual([]);
     expect(card.classList.contains("overflow-hidden")).toBe(false);
   }
