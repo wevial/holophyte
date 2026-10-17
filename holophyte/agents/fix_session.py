@@ -59,13 +59,15 @@ STEER_ASK = ('Apply the maintainer\'s notes above to your work on this '
 
 
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
-             *, timed, check_cap):
+             *, timed, check_cap, criteria=None):
     pending = pending_prompt(conn, run_id) if conn is not None else ''
-    parsed = ticket_template.parse(ticket)
-    criteria = [*parsed.acceptance, *parsed.acceptance_done, *parsed.acceptance_other]
-    if not criteria and conn is not None and run_id is not None:
-        criteria = json.loads(store.run_contract(conn, run_id) or "{}").get(
-            "acceptanceCriteria", [])
+    if criteria is None:
+        parsed = ticket_template.parse(ticket)
+        criteria = [*parsed.acceptance, *parsed.acceptance_done,
+                    *parsed.acceptance_other]
+        if not criteria and conn is not None and run_id is not None:
+            criteria = json.loads(store.run_contract(conn, run_id) or "{}").get(
+                "acceptanceCriteria", [])
     findings = steering.take(conn, run_id) + pending + (
         f'Reviewer findings:\n\n{verdict}\n\n'
         'For EACH finding, adjudicate it first: ADDRESS (concrete '

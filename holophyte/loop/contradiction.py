@@ -19,7 +19,9 @@ ANSWERS = ("Amend the ticket (holo file --update {key} FILE), then holo requeue"
 
 def brief(criteria):
     pairs = criterion_ids.numbered(None, None, criteria)
-    example = pairs[-1][0] if pairs else 1
+    if not pairs:
+        return ""
+    example = pairs[-1][0]
     listed = "\n".join(f"C{n}. {text}" for n, text in pairs)
     return ("\n\nAcceptance criterion ids:\n" + listed
             + "\n\nWhen an acceptance criterion cannot be met as written (the data "

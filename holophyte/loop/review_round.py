@@ -338,7 +338,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
-            without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap)
+            without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap,
+            criteria=numbered(conn, run_id, criteria))
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                f"Reviewer findings:\n{verdict}\n\n"

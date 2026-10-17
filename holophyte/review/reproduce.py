@@ -26,7 +26,7 @@ from holophyte.loop.steering import close as close_steering
 from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
-from holophyte.review import skipped_tests
+from holophyte.review import criterion_ids, skipped_tests
 from holophyte.review.reply_parsing import raw_finding
 from store.working import working
 
@@ -348,7 +348,8 @@ def _fix(loop, frame, reasons, ok, out, headline):
         frame.budget_min, reviewed_ticket(frame.conn, frame.run_id,
                                           frame.ticket),
         f"{reasons}\n\n{REDECLARE}",
-        frame.sha, timed=loop._timed, check_cap=loop._check_run_cap)
+        frame.sha, timed=loop._timed, check_cap=loop._check_run_cap,
+        criteria=criterion_ids.numbered(frame.conn, frame.run_id, frame.criteria))
     boundary(frame.conn, frame.run_id, "verifying", rnd=2,
              declared=declared(fixes))
     ledger(frame.conn, frame.run_id, frame.task_id, "round",
