@@ -141,10 +141,10 @@ class ExistsAndChanged(Repository):
 
         gaps = [entry["gaps"] for entry in entries]
         self.assertEqual(gaps[0], [])
-        self.assertEqual(gaps[1], ["criterion 2 names `tests/test_old.py`; "
+        self.assertEqual(gaps[1], ["criterion C2 names `tests/test_old.py`; "
                                    "this branch neither adds nor changes it"])
         self.assertEqual(gaps[2], [])
-        self.assertEqual(gaps[3], ["criterion 4 names `tests/test_gone.py`; "
+        self.assertEqual(gaps[3], ["criterion C4 names `tests/test_gone.py`; "
                                    f"it does not exist at {sha[:12]}"])
 
 
@@ -161,7 +161,7 @@ class Ran(Repository):
         self.assertEqual(entries[0]["gaps"], [])
         self.assertEqual(entries[0]["checks"][0]["ran"], "ran")
         self.assertEqual(entries[1]["gaps"], [
-            "criterion 2 names `tests/test_gated.py`; its tests ran only "
+            "criterion C2 names `tests/test_gated.py`; its tests ran only "
             "skipped in verify (needs a browser)"])
 
     def test_an_added_test_skipped_beside_a_running_one_is_named(self):
@@ -172,7 +172,7 @@ class Ran(Repository):
 
         self.assertEqual(entry["checks"][0]["ran"], "added_skipped")
         self.assertEqual(entry["gaps"], [
-            "criterion 1 names `tests/test_mixed.py`; "
+            "criterion C1 names `tests/test_mixed.py`; "
             "`tests/test_mixed.py::Mixed::test_it_draws` was skipped in verify"
             " (needs a browser)"])
 
@@ -186,7 +186,7 @@ class Ran(Repository):
 
         self.assertEqual(entries[0]["gaps"], [])
         self.assertEqual(entries[1]["gaps"], [
-            "criterion 2 names `tests/test_other.py`; the verify commands run"
+            "criterion C2 names `tests/test_other.py`; the verify commands run"
             " no test from it"])
 
 
@@ -199,7 +199,7 @@ class RanPerFile(Repository):
         _, (entry,) = self.check(["`tests/test_docs_*.py` pass"])
 
         self.assertEqual(entry["gaps"], [
-            "criterion 1 names `tests/test_docs_gated.py`; its tests ran only "
+            "criterion C1 names `tests/test_docs_gated.py`; its tests ran only "
             "skipped in verify (needs a browser)"])
 
     def test_an_added_mixin_test_run_through_its_test_case_ran(self):
@@ -226,7 +226,7 @@ class RanUnderPytest(Repository):
             verify="python3 -m pytest -q tests")
 
         self.assertEqual(entry["gaps"], [
-            "criterion 1 names `tests/test_gated.py`; its tests ran only "
+            "criterion C1 names `tests/test_gated.py`; its tests ran only "
             "skipped in verify (needs a browser)"])
 
 
@@ -282,7 +282,7 @@ class InTheLoop(LoopFixture):
         ((seq, _, level, text, _),) = prechecks
         self.assertEqual(level, "narrative")
         self.assertLess(seq, modes[0][0])
-        self.assertIn("criterion 1 names `tests/test_gated.py`; its tests ran"
+        self.assertIn("criterion C1 names `tests/test_gated.py`; its tests ran"
                       " only skipped in verify (needs a browser)", text)
         ((_, _, level, _, payload),) = results
         self.assertEqual(level, "detail")

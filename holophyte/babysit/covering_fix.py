@@ -96,7 +96,7 @@ def _change(finding):
     path, line = finding.get("path", ""), finding.get("line")
     if path == store.CRITERIA_PATH:
         criterion = str(finding.get("message", "")).partition("\n")[2]
-        return (f"Meet acceptance criterion {line} and name the test that"
+        return (f"Meet acceptance criterion C{line} and name the test that"
                 f" witnesses it: {' '.join(criterion.split()) or message}")
     if message.startswith(f"SCOPE {path}:"):
         return (f"Keep {path} to what the ticket needs, or take its change"
