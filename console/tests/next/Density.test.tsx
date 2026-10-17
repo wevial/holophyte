@@ -5,6 +5,7 @@ import type { Board, History } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import { StoryGraph } from "../../src/next/components/StoryGraph";
 import { writeView } from "../../src/next/components/ViewToggle";
 import { fakeDeps, settle } from "../harness";
 import { declarations } from "../cssTokens";
@@ -123,4 +124,18 @@ test("the shared compact rule tightens marked rows to a 44 px minimum and 6 px b
   const compact = css.filter((entry) => entry.path.length === 1 && entry.path[0] === ':root[data-density="compact"] [data-row]');
   expect(compact.find((entry) => entry.name === "min-height")?.value).toBe("44px");
   expect(compact.find((entry) => entry.name === "padding-block")?.value).toBe("6px");
+});
+
+test("compact density selectors leave Story graph steps and cards untouched", async () => {
+  root.setAttribute("data-density", "compact");
+  const { container } = render(<StoryGraph base={DEMO} nodes={[
+    { ticket: "DEMO-1", title: "First step", run: null, time_box_ms: null, state: "todo", word: "to do", kind: "ready", depends_on: [] },
+    { ticket: "DEMO-2", title: "Dependent step", run: null, time_box_ms: null, state: "todo", word: "to do", kind: "ready", depends_on: ["DEMO-1"] },
+  ]} />);
+  expect(screen.getByRole("group", { name: "Step 1" })).toBeTruthy();
+  expect(screen.getByRole("group", { name: "Step 2" })).toBeTruthy();
+  const css = declarations(await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text());
+  const selectors = [...new Set(css.flatMap((entry) => entry.path.filter((selector) => selector.includes('[data-density="compact"]'))))];
+  expect(selectors.length).toBeGreaterThan(0);
+  for (const selector of selectors) expect(Array.from(document.querySelectorAll(selector)).filter((element) => container.contains(element))).toHaveLength(0);
 });
