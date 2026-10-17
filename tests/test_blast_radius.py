@@ -47,6 +47,8 @@ class Repository:
         test.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
         self.git("init", "-q", "-b", "main")
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         self.git("config", "user.email", "factory@example.invalid")
         self.git("config", "user.name", "Factory Test")
         self.base = self.commit({"README.md": "base\n", **files})
