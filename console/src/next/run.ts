@@ -3,11 +3,12 @@ import { describe, needsYouEntries, type Fact } from "../lib/attention";
 import type { ConsoleAsk, RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
-import { hostItems, sinceSeen } from "../lib/hosts";
+import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
 import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
+import type { ContractBodies } from "./fleet";
 import { failureWord } from "./history";
 import { progressLines, type ProgressLine } from "./progress";
 import { useReadiness, useRun, useRunAsks } from "./queries";
@@ -23,6 +24,11 @@ export type RunPage =
       /** The base of the host that serves the run. */
       base: string;
       detail: RunDetail;
+      host: HostRecord<ContractBodies>;
+      liveRun: StatusRun | null;
+      liveTicket: boolean;
+      actions: boolean;
+      stops: string;
       state: State;
       /** The run's agent clock and its box, both null when the daemon gave none. */
       agentMs: number | null;
@@ -35,7 +41,6 @@ export type RunPage =
       progress: ProgressLine[];
       asks: ConsoleAsk[];
       agentState: string;
-      actions: boolean;
       phase: string;
       stoppable: boolean;
       /** Whether the run is still under way, so its Progress may grow. */
@@ -101,8 +106,16 @@ interface Facts {
   now: number;
 }
 
+const stepOf = (phase: string) => STEPS[phase] ?? { stage: capital(phaseLabel(phase)), doing: capital(phaseLabel(phase)) };
+
+/** What an abort stops, said the way the verdict says the step. */
+function stopsWord(phase: string, live: StatusRun | null): string {
+  const step = stepOf(phase);
+  return phase === "reviewing" && live != null ? `${step.stage} round ${live.round + 1}` : step.doing;
+}
+
 function liveWords({ live, phase }: Facts): { stage: string; sentence: string } {
-  const step = STEPS[phase] ?? { stage: capital(phaseLabel(phase)), doing: capital(phaseLabel(phase)) };
+  const step = stepOf(phase);
   const round = phase === "reviewing" && live != null ? `round ${live.round + 1} of ${live.max_rounds}` : null;
   const stop = live?.stop_requested == null ? null : clause(live.stop_action === "pause" ? "Pause requested" : "Abort requested", live.stop_requested);
   return {
@@ -196,6 +209,10 @@ export function useRunPage(project: string, run: number | null): RunPage {
     phase,
     stoppable: live != null && detail.run.outcome == null && !["awaiting_merge_approval", "paused", "done", "failed", "killed", "rejected"].includes(phase),
     detail,
+    host,
+    liveRun: live,
+    liveTicket: status.runs.some((each) => each.ticket === detail.run.ticket),
+    stops: stopsWord(phase, live),
     state,
     agentMs: live == null ? agentMs(detail.run) : agentMs(live, since),
     boxMs: live?.time_box_ms ?? detail.run.time_box_ms,
