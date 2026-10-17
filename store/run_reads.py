@@ -323,10 +323,19 @@ class RecentRun:
     reviewRoundCap: int | None
     prUrl: str | None
     host: str | None
+    timeBoxMs: int | None
+    workingMs: int | None
+    workStartedAt: int | None
 
 
-def recent_runs(conn, since, limit):
+def recent_runs(conn, since, limit, until=None):
     since = max(SQLITE_INT64_MIN, min(since, SQLITE_INT64_MAX))
+    where = "r.endedAt IS NULL OR r.startedAt >= ?"
+    params = [since]
+    if until is not None:
+        until = max(SQLITE_INT64_MIN, min(until, SQLITE_INT64_MAX))
+        where = "r.endedAt IS NOT NULL AND r.startedAt >= ? AND r.startedAt < ?"
+        params.append(until)
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.url, t.title, r.attempt, r.phase,"
         " r.outcome, r.outcomeReason, r.failureKind, r.parkKind, r.startedAt,"
@@ -334,12 +343,13 @@ def recent_runs(conn, since, limit):
         " CASE WHEN r.endedAt IS NULL THEN (SELECT COUNT(*) FROM reviewRounds rr"
         "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
         " ELSE r.reviewRoundCount END,"
-        " r.reviewRoundCap, r.prUrl, r.host"
+        " r.reviewRoundCap, r.prUrl, r.host, r.timeBoxMs, r.workingMs,"
+        " r.workStartedAt, COUNT(*) OVER ()"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.endedAt IS NULL OR r.startedAt >= ?"
+        f" WHERE {where}"
         " ORDER BY r.startedAt DESC, r.id DESC LIMIT ?",
-        (since, limit)).fetchall()
-    return [RecentRun(*row) for row in rows]
+        (*params, limit)).fetchall()
+    return [RecentRun(*row[:-1]) for row in rows], rows[0][-1] if rows else 0
 
 
 @dataclass(frozen=True)
