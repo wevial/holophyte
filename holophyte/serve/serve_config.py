@@ -26,6 +26,8 @@ CONFIG_APPLIES = "next loop start"
 CONFIG_LOCK = threading.Lock()
 BACKUP_STAMP = "%Y%m%dT%H%M%SZ"
 PATCH_VALUE_TYPES = (str, int, float, bool, list)
+TOML_KEY_PART = r'"(?:\\.|[^"\\])*"|\'[^\']*\'|[\w-]+'
+TOML_KEY = rf"(?:{TOML_KEY_PART})(?:\s*\.\s*(?:{TOML_KEY_PART}))*"
 TOMLKIT_MISSING = ("[holo2] the daemon needs the tomlkit module to edit the"
                    " config in place (PUT /config patch); install it with"
                    " python3 -m pip install --user -r requirements.txt")
@@ -137,15 +139,16 @@ def refusal_line(text, error, restored=None):
     if not named:
         return None
     table, key = named.groups()
-    section = ""
+    section = ()
     for number, line in enumerate(config_key_lines(text), 1):
-        header = re.fullmatch(r"\s*(\[\[?)\s*([^\[\]]+)\s*\]\]?\s*", line)
+        header = re.fullmatch(rf"\s*(\[\[?)\s*({TOML_KEY})\s*\]\]?\s*", line)
         if header:
-            section = header[2].strip().strip("\"'")
+            section = decoded_key(header[2])
             if header[1] == "[[":
-                section += "[]"
-        name = key if section == table else f"{table}.{key}" if not section else None
-        if name and re.match(r"\s*" + dotted_key_pattern(name) + r"\s*=", line):
+                section += ("[]",)
+        assignment = re.match(rf"\s*({TOML_KEY})\s*=", line)
+        if (assignment
+                and section + decoded_key(assignment[1]) == (*table.split("."), key)):
             return number
     return None
 
@@ -175,13 +178,25 @@ def config_key_lines(text):
         if value.startswith(("#", '\"\"\"', "'''")):
             return re.sub(r"[^\n]", " ", value)
         return value
-    return re.sub(strings, mask, text).splitlines()
+    depth = 0
+    for line in re.sub(strings, mask, text).splitlines():
+        yield line if depth == 0 else ""
+        if depth == 0 and line.lstrip().startswith("["):
+            continue
+        structural = re.sub(strings, "", line)
+        depth += structural.count("[") - structural.count("]")
 
 
-def dotted_key_pattern(name):
-    return r"\s*\.\s*".join(
-        rf"(?:{re.escape(part)}|\"{re.escape(part)}\"|'{re.escape(part)}')"
-        for part in name.split("."))
+def decoded_key(name):
+    try:
+        document = tomllib.loads(f"{name} = 0")
+    except tomllib.TOMLDecodeError:
+        return ()
+    parts = []
+    while isinstance(document, dict):
+        part, document = next(iter(document.items()))
+        parts.append(part)
+    return tuple(parts)
 
 
 def restored_config(project, text, current):

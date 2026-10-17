@@ -270,6 +270,11 @@ class ConfigEditTests(ServeTestCase):
             ("[loop]\nworkers = = 2\n", 2, "malformed TOML"),
             ('[loop]\nworkers = "at line 99"\n', 2, "[loop] workers"),
             ("# workers = 8\nloop.workers = 0\n", 2, "[loop] workers"),
+            ('["lo\\u006fp"]\nworkers = 0\n', 2, "[loop] workers"),
+            ('[loop]\n"work\\u0065rs" = 0\n', 2, "[loop] workers"),
+            ('"lo\\u006fp"."work\\u0065rs" = 0\n', 1, "[loop] workers"),
+            ('linear.api_key = [\n["loop"]\n]\nloop.workers = 0\n',
+             4, "[loop] workers"),
             ('[agents]\nimplementer = """\n[loop]\nworkers = 7\n"""\n'
              '["loop"] # settings\n"workers" = 0\n', 7, "[loop] workers"),
             ('[other]\ntoken = "[redacted]"\n', 2, "[other] token"),
