@@ -280,7 +280,6 @@ class StoreSurfaceTests(unittest.TestCase):
     def test_public_functions_match_the_allow_list(self):
         for module, expected in ((store, EXPECTED),
                                  (store.schema, EXPECTED_SCHEMA),
-                                 # Historical criterion numbers and amendment writers.
                                  (store.criteria, ["amend", "backfill", "current",
                                                    "numbers",
                                                    "record_criteria"]),
