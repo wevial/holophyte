@@ -50,7 +50,6 @@ export function TurnPage() {
   const index = titles.findIndex((entry) => entry.turn.id === turn.id);
   const current = titles[index]!;
   const previous = titles[index - 1];
-  const next = titles[index + 1];
   const title = current.title.charAt(0).toUpperCase() + current.title.slice(1);
   const cost = titles.slice(0, index + 1).reduce((sum, entry) => sum + (entry.turn.cost_usd ?? 0), 0);
   const clock = turn.seconds == null ? undefined : `${formatClockSeconds(turn.ended_ms - turn.seconds * 1000)} – ${formatClockSeconds(turn.ended_ms)} ${zoneName(turn.ended_ms)}`;
@@ -72,7 +71,7 @@ export function TurnPage() {
           </div>
           <div className="flex items-center gap-2">
             <TurnLink project={project} run={run.id} turn={previous?.turn} />
-            <TurnLink project={project} run={run.id} turn={next?.turn} next />
+            <TurnLink project={project} run={run.id} turn={titles[index + 1]?.turn} next />
             <Link {...runPage(project, run.id)} className="btn" data-variant="quiet">Back to the run</Link>
           </div>
         </div>

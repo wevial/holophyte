@@ -28,12 +28,10 @@ function ReviewRound({ round, max }: { round: Round; max: number }) {
 
 function Turns({ turns }: { turns: RunTurn[] }) {
   return <ol className="m-0 list-none p-0">
-    {turnTitles(turns).map(({ turn, seat, ordinal }) => {
-      return <li key={turn.id} className={ROW}>
-        <span>{seat} · {turn.label ?? "label unknown"}{ordinal && ` · ${ordinal}`}</span>
-        <span className="shrink-0">{turn.seconds == null ? "running" : formatDuration(turn.seconds * 1000)}</span>
-      </li>;
-    })}
+    {turnTitles(turns).map(({ turn, seat, ordinal }) => <li key={turn.id} className={ROW}>
+      <span>{seat} · {turn.label ?? "label unknown"}{ordinal && ` · ${ordinal}`}</span>
+      <span className="shrink-0">{turn.seconds == null ? "running" : formatDuration(turn.seconds * 1000)}</span>
+    </li>)}
   </ol>;
 }
 
