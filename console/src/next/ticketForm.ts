@@ -1,5 +1,5 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
-import { same, type EditFields } from "./ticketEdit";
+import { same, unlabelledParts, type EditFields } from "./ticketEdit";
 
 export interface Fields {
   title: string;
@@ -280,7 +280,11 @@ export function withCriteria(form: TicketForm, rows: { origin: number | null; te
   const at = form.sections.findIndex(section => section.name === sections.criteria);
   const text = at < 0 ? "" : form.sections[at].text;
   const blocks = criterionBlocks(text);
-  if (!blocks.length) return withField(form, "criteria", rows.map(row => row.text));
+  if (!blocks.length) {
+    const titled = withField(form, "criteria", rows.map(row => row.text));
+    const fresh = rows.map((row, origin) => ({ ...row, origin }));
+    return rows.some(row => row.detail?.trim()) && criterionBlocks(titled.sections.find(section => section.name === sections.criteria)?.text ?? "").length === rows.length ? withCriteria(titled, fresh) : titled;
+  }
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   const gaps = blocks.slice(1).map((block, index) => text.slice(blocks[index].end, block.start));
   const separator = gaps.find(gap => !gap.trim()) ?? "";
@@ -460,7 +464,31 @@ const plainAt = (others: EditFields["others"], name: string) => others.findIndex
  *  that whole section, or undefined when `theirs` has none. */
 function unlabelledIn(theirs: EditFields, was: string): string | undefined {
   const plain = theirs.others[plainAt(theirs.others, "What / Why / How")];
-  return plain?.text.includes(was) ? was : plain?.text;
+  return plain && placed(plain.text, was) ? was : plain?.text;
+}
+
+/** Where each piece of the unlabelled `was` sits in `text`, in order;
+ *  null when one of them is not there. */
+function placed(text: string, was: string): { key: string; part: string; at: number }[] | null {
+  let from = 0;
+  const found = unlabelledParts(was).map(([key, part]) => {
+    const at = text.indexOf(part, from);
+    from = at < 0 ? from : at + part.length;
+    return { key, part, at };
+  });
+  return found.every(each => each.at >= 0) ? found : null;
+}
+
+/** `text` with each piece of `was` swapped for `mine`'s piece of its key,
+ *  and `mine`'s pieces `was` lacks added at its end. */
+function rebased(text: string, found: { key: string; part: string; at: number }[], mine: string): string {
+  const parts = new Map(unlabelledParts(mine));
+  let result = text;
+  for (const { key, part, at } of [...found].reverse()) {
+    result = result.slice(0, at) + (parts.get(key) ?? "") + result.slice(at + part.length);
+    parts.delete(key);
+  }
+  return [result, ...parts.values()].filter(each => each.trim()).join("\n\n");
 }
 
 /** `others` with `other`, a section `theirs` lacks, put back: unlabelled
@@ -470,7 +498,10 @@ function unlabelledIn(theirs: EditFields, was: string): string | undefined {
 function restored(others: EditFields["others"], other: EditFields["others"][number], theirs: EditFields, was?: string): EditFields["others"] {
   if (other.index !== -1) return [...others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
   const plain = plainAt(others, other.name);
-  const replaced = (text: string) => was && text.includes(was) ? text.replace(was, () => other.text) : `${text}\n\n${other.text}`;
+  const replaced = (text: string) => {
+    const found = was ? placed(text, was) : null;
+    return found ? rebased(text, found, other.text) : `${text}\n\n${other.text}`;
+  };
   if (plain >= 0) return others.map((each, index) => index === plain ? { ...each, text: replaced(each.text) } : each);
   return [...others, theirs.what || theirs.why || theirs.how || theirs.uiChange ? other : { ...other, index: ADDED_SECTION }];
 }

@@ -165,6 +165,28 @@ test("my unlabelled What / Why / How text replaces the old text in a revision th
   expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(theirs.replace("under the run", "under each run"));
 });
 
+test("my criterion and its detail survive on top of a revision that removed every criterion", () => {
+  const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Acceptance criteria\n\n- [ ] Each note shows.\n  Beside the run.\n";
+  const theirs = "# Notes show\n\n## Summary\n\nEvery note shows.\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, criteria: ["Each note shows in bold."], criteriaDetail: ["  Under the run."] };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  const rebased = composeEdit(theirs, theirFields, merge.onTop);
+  expect(rebased).toContain("## Acceptance criteria\n\n- [ ] Each note shows in bold.\n  Under the run.\n");
+  expect([loadEdit(rebased, null).criteria, loadEdit(rebased, null).criteriaDetail]).toEqual([["Each note shows in bold."], ["  Under the run."]]);
+});
+
+test("my edited introduction replaces theirs once in a plain-text What / Why / How that also holds a Blast radius paragraph", () => {
+  const base = "# Notes show\n\n## What / Why / How\n\nThey sit under the run.\n\n**What:** List the notes.\n\n**Blast radius:** The run page only.\n";
+  const theirs = base.replace("**What:**", "<!-- where -->\n**What:**");
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map(other => other.index === -1 ? { ...other, text: other.text.replace("under the run", "under each run") } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(theirs.replace("under the run", "under each run"));
+});
+
 test("the changed-field names count a removed section and skip one that only moved", () => {
   const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
   const read = loadEdit(base, null);

@@ -91,6 +91,18 @@ function segments(text: string): Segment[] {
   return found;
 }
 
+/** Unlabelled What / Why / How `text` cut at its label lines, each piece
+ *  keyed by its label and how many of that label came before it. */
+export function unlabelledParts(text: string): [string, string][] {
+  const seen = new Map<string, number>();
+  return segments(text).flatMap(segment => {
+    const piece = text.slice(segment.start, segment.end).trim();
+    const count = seen.get(segment.label ?? "") ?? 0;
+    seen.set(segment.label ?? "", count + 1);
+    return piece ? [[`${segment.label ?? ""}#${count}`, piece] as [string, string]] : [];
+  });
+}
+
 /** The segment each of What, Why and How is read from: its label's first. */
 function owners(found: Segment[]): Map<Segment, "what" | "why" | "how"> {
   const owned = new Map<Segment, "what" | "why" | "how">();
