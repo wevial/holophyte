@@ -239,7 +239,6 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
 
 
 def _record_criteria(conn, run_id, rnd, reply, criteria, root, approved_range):
-    criteria = numbered(conn, run_id, criteria)
     statuses = criteria_statuses(reply, criteria, root,
                                  approved_range=approved_range)
     entries = [dict(status, id=f"C{n}", text=text)
