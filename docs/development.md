@@ -882,7 +882,8 @@ Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
 each in the shell its root renders. Settings lives at `#/settings` (General)
 and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
-`console/src/next/settingsDraft.ts` holds per-project edits for the Settings page.
+`console/src/next/settingsDraft.ts` holds per-project field and raw drafts for the Settings page.
+`console/src/next/components/TomlEditor.tsx` edits and checks the whole TOML file with a line gutter.
 `console/src/next/components/SettingRow.tsx` binds the shared field rows, and
 `console/src/next/components/UnsavedBar.tsx` lists and discards pending changes.
 `console/src/next/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
@@ -1054,3 +1055,6 @@ the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
 never from anything baked into the bundle.
 
 `console/src/next/components/HostToken.tsx` manages each Hosts card’s browser token, including saving, forgetting and undo.
+
+`console/src/next/components/HoldTab.tsx` shows project admission, reasoned hold
+and release actions, and the polled admission history.
