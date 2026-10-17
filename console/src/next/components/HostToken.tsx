@@ -49,6 +49,7 @@ export function HostToken({ host }: { host: HostCard }) {
         say(`Saved the token for ${host.name} in this browser.`);
         refresh();
       }}>
+        {host.record.token_rejected && <p className="mb-3 font-mono text-[12px] text-ink-3">{checked}</p>}
         <p className="mb-3 font-mono text-[12px] text-ink-3">No token in this browser. Actions on {host.name} ask for one.</p>
         <div className="flex flex-wrap items-center gap-2">
           <input

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { HostStatus, Status } from "../../src/lib/contract.gen";
-import type { Fetch } from "../../src/lib/poll";
+import { tokenedFetch, type Fetch } from "../../src/lib/poll";
 import { storeToken, tokenKey } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
@@ -179,4 +179,25 @@ test("Save token refuses header-unsafe input and saves a valid token with an emp
   expect(view.statuses.length).toBeGreaterThan(before);
   await press("Forget");
   expect((within(card()).getByLabelText("Serve token for writer-host", { selector: "input" }) as HTMLInputElement).value).toBe("");
+});
+
+
+test("a fleet poll rejecting a saved bearer shows the 401 refusal beside the replacement token field", async () => {
+  const secret = "rejected-secret-7d2a";
+  storeToken(ADDRESS, secret);
+  const input = source();
+  let rejected = false;
+  const view = await mount({ ...input, fetch: tokenedFetch(async (url, init) => {
+    if (rejected && url.startsWith(ORIGIN)) return new Response("Unauthorized", { status: 401 });
+    return input.fetch(url, init);
+  }) });
+  rejected = true;
+  await view.poll();
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
+  expect(card().textContent).toContain("refused: the daemon answered 401");
+  expect(within(card()).getByLabelText("Serve token for writer-host", { selector: "input" })).toBeTruthy();
+  expect(document.body.innerHTML).not.toContain(secret);
+  rejected = false;
+  await view.poll();
+  expect(card().textContent).not.toContain("refused: the daemon answered 401");
 });
