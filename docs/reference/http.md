@@ -285,7 +285,7 @@ Releasing a hold requires a reason, just like holding: `holo release` requires
 `note`, and `POST /actions/release-hold` rejects a blank `note`. The Release
 UI and its required-reason form are covered by HOLO-403.
 
-## `GET /history?since=MS&limit=N`
+## `GET /history?since=MS&until=MS&limit=N`
 
 ```json
 {"rows": [
@@ -293,44 +293,57 @@ UI and its required-reason form are covered by HOLO-403.
    "title": "Run page: chain strip", "attempt": 2, "phase": "reviewing",
    "outcome": null, "outcome_reason": null, "failure_kind": null,
    "park_kind": null, "started_ms": 1788478203000, "ended_ms": null,
-   "elapsed_ms": 540000, "heartbeat_age_ms": 12000, "rounds": 1,
+   "elapsed_ms": 540000, "working_ms": 480000, "estimate_ms": 1800000,
+   "heartbeat_age_ms": 12000, "rounds": 1,
    "max_rounds": 2, "pr_url": null, "host": "writer-1"},
   {"id": 225, "ticket": "KO-255", "ticket_url": null,
    "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
    "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
    "failure_kind": "verify", "park_kind": null,
    "started_ms": 1788470000000, "ended_ms": 1788471200000,
-   "elapsed_ms": 1200000, "heartbeat_age_ms": null, "rounds": 0,
+   "elapsed_ms": 1200000, "working_ms": null, "estimate_ms": null,
+   "heartbeat_age_ms": null, "rounds": 0,
    "max_rounds": 2, "pr_url": null, "host": "writer-1"}
-], "since": 1788393600000, "limit": 200, "truncated": false,
+], "since": 1788393600000, "until": null, "limit": 200,
+ "truncated": false, "total": 2,
  "now": 1788478743000}
 ```
 
-Runs one row per run, for the console's Runs page: every run that has not
-ended, whenever it started, plus every run that started at or after
+Without `until`, returns one row per run for the console's Runs page:
+every run that has not ended, whenever it started, plus every run that
+started at or after
 `since`, ordered by `started_ms` descending then `id` descending. A run
 that a later run of its ticket continues keeps its own row; nothing is
 folded into a chain as `/shipped` folds it. A run that ended before
 `since` is absent, a paused one included.
 
-`since` is required and is epoch milliseconds. Each row is the run's
-`id`, `ticket`, `ticket_url`, `title`, `attempt` and `phase`; `outcome`
+With `until`, only ended runs whose start is in `[since, until)` are
+returned, in the same order. Open runs, including parked runs, are absent.
+
+`since` is required; it and optional `until` are epoch milliseconds.
+Each row is the run's `id`, `ticket`, `ticket_url`, `title`, `attempt` and
+`phase`; `outcome`
 (null while open); `outcome_reason` (the stored reason cut at 400
 characters, null when absent); `failure_kind` (the failed run's kind,
 null unless it failed); `park_kind` (what a parked run waits on, as the
 store recorded it); `started_ms` and `ended_ms` (null while open);
 `elapsed_ms`, from the start to `ended_ms`, or to `now` while open;
+`working_ms`, measured working time through `ended_ms`, or through `now`
+while open (null when never measured); `estimate_ms`, the ticket estimate
+snapshotted when the run was claimed (null when it had none);
 `heartbeat_age_ms`, `now` minus the run's last heartbeat while open, else
 null; `rounds`, the run's own review rounds (those not in error);
 `max_rounds`, its cap, or the loop's base as `/runs/N` answers it; and
 `pr_url` and `host`, as `/shipped` spells them.
 
-The body echoes `since` and the `limit` applied, and carries `now`, the
-daemon's clock the open rows were measured against. `limit` defaults to
+The body echoes `since`, `until` (null when omitted) and the `limit` applied,
+and carries `total`, the number of matching runs before the limit, and
+`now`, the daemon's clock the open rows were measured against. `limit` defaults to
 200 and is capped at 500; `truncated` is true when more runs matched than
 `limit`, and there is no paging past it. A missing or non-integer `since`,
-or a non-positive or non-integer `limit`, is 400 with an `error` naming
-the parameter.
+a non-integer `until`, or a non-positive or non-integer `limit`, is 400
+with an `error` naming the parameter. An `until` at or before `since` is
+400 with `"until must be after since"`.
 
 ## `GET /runs/N`
 
@@ -1667,7 +1680,7 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off |
 | 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
