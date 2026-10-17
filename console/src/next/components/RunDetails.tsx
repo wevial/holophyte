@@ -1,10 +1,12 @@
+import { Link } from "@tanstack/react-router";
 import { useContext, useState } from "react";
 import type { Round, RunDetail, RunTurn } from "../../lib/contract.gen";
 import { formatClock, formatDuration } from "../../lib/format";
 import { AnswerError } from "../../lib/poll";
 import { useRunFiles, useRunTurns } from "../queries";
 import { PollDepsContext } from "../scope";
-import { turnTitles } from "../turn";
+import { CRUMB_LINK } from "../pages/runShared";
+import { turnPage, turnTitles } from "../turn";
 import { SECTION_LABEL } from "./Criteria";
 
 const ROW = "flex justify-between gap-3 border-b border-dashed border-rule-2 py-1 font-mono text-[12.5px] leading-[1.8]";
@@ -26,16 +28,16 @@ function ReviewRound({ round, max }: { round: Round; max: number }) {
   </li>;
 }
 
-function Turns({ turns }: { turns: RunTurn[] }) {
+function Turns({ project, run, turns }: { project: string; run: number; turns: RunTurn[] }) {
   return <ol className="m-0 list-none p-0">
     {turnTitles(turns).map(({ turn, seat, ordinal }) => <li key={turn.id} className={ROW}>
-      <span>{seat} · {turn.label ?? "label unknown"}{ordinal && ` · ${ordinal}`}</span>
+      <Link {...turnPage(project, run, turn.id)} className={CRUMB_LINK}>{seat} · {turn.label ?? "label unknown"}{ordinal && ` · ${ordinal}`}</Link>
       <span className="shrink-0">{turn.seconds == null ? "running" : formatDuration(turn.seconds * 1000)}</span>
     </li>)}
   </ol>;
 }
 
-export function RunDetails({ base, detail, live }: { base: string; detail: RunDetail; live: boolean }) {
+export function RunDetails({ project, base, detail, live }: { project: string; base: string; detail: RunDetail; live: boolean }) {
   const [open, setOpen] = useState(false);
   const deps = useContext(PollDepsContext);
   const files = useRunFiles(base, detail.run.id, open, live, deps);
@@ -73,7 +75,7 @@ export function RunDetails({ base, detail, live }: { base: string; detail: RunDe
       <section aria-label="Transcript">
         <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Transcript{turns.data && ` · ${turns.data.turns.length} turns`}</h3>
         {turns.isPending && <p role="status">Loading turns…</p>}
-        {turns.isError ? <p role="alert">Could not load turns.</p> : turns.data && <Turns turns={turns.data.turns} />}
+        {turns.isError ? <p role="alert">Could not load turns.</p> : turns.data && <Turns project={project} run={detail.run.id} turns={turns.data.turns} />}
       </section>
     </div>}
   </details>;
