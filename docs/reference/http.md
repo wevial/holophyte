@@ -432,10 +432,10 @@ with an `error` naming the parameter. An `until` at or before `since` is
    "consumed_ms": 1788450571675, "interrupt": false, "withdrawn": false}
  ],
  "criteria": [
-  {"n": 1, "text": "Given an expired lease, then the run is requeued",
+  {"n": 1, "id": "C1", "text": "Given an expired lease, then the run is requeued",
    "status": "met", "note": "tests/test_lease.py::test_expired_lease_requeues",
    "run": 52, "round": 2},
-  {"n": 2, "text": "Given a requeue, then the ledger names it",
+  {"n": 2, "id": "C2", "text": "Given a requeue, then the ledger names it",
    "status": "met", "note": "tests/test_lease.py::test_requeue_is_ledgered",
    "run": 52, "round": 2}
  ]}
@@ -521,10 +521,12 @@ true when a later withdrawal took the amendment back.
 criteria over the chain: run N's latest round when it has judged them,
 else the latest round of the newest earlier run of the chain that did, so
 a requeued run starts from what its predecessor's last review said. Each
-criterion, in order, has its number `n`, its `text`, its `status` (`met`,
+criterion, in order, has its stable `id` (for example `C4`), its number `n`,
+its `text`, its `status` (`met`,
 `not_met` or `unwitnessed`) and the reviewer's `note`, which for a met
 criterion names its witness; `run` and `round` name the review that
-judged it. `[]` until a round of the chain has judged them.
+judged it. Older events without an id serve `C` plus `n` as their `id`.
+`[]` until a round of the chain has judged them.
 
 ## `GET /runs/N/files`
 
@@ -1100,6 +1102,7 @@ console shows when the operator opens a ticket without leaving for Linear.
 {"ticket": "KO-n", "title": "…", "status": "in_flight",
  "body": "# The store mirrors a ticket's body…\n\n## Summary\n…",
  "acceptance_criteria": ["Given …, when …, then …"],
+ "criteria": [{"id": "C1", "text": "Given …, when …, then …"}],
  "verification_commands": ["ruff check ."],
  "time_box_ms": 1800000, "run": 52, "mirrored_ms": 1788449000000,
  "runs": [{"run": 52, "attempt": 2, "phase": "reviewing", "outcome": null,
@@ -1122,7 +1125,12 @@ store's status, any of the seven including `merged` and `abandoned`;
 text Linear held then and not rendered, so it is the exact contract the
 run worked from, which Linear's current text may no longer be (empty for
 a ticket mirrored before the store kept bodies); `acceptance_criteria`
-and `verification_commands` are the lists the mirror parsed from it;
+and `verification_commands` are the lists the mirror parsed from it.
+`criteria` lists current criteria in `acceptance_criteria` order, each with
+a stable `id` (for example `C4`) and its `text`; retired criteria are omitted.
+Tickets without criterion records use positional ids `C1`, `C2`, and so on.
+The console joins run judgements to current criteria by `id`.
+The `claimed` snapshot keeps its `acceptance_criteria` list;
 `run` is the ticket's active run, null when none is working it;
 `mirrored_ms` is when the store last mirrored the ticket. `runs` is every
 run of the ticket, newest attempt first, each with its phase, outcome

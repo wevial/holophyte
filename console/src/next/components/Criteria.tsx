@@ -34,16 +34,13 @@ function Mark({ standing }: { standing: Standing }) {
   );
 }
 
-/** Acceptance criteria and their met count in `run`; `keys` adds AC1, AC2…,
- *  and `held` withholds count and standings while the run's are not on hand. */
+/** `held` withholds count and standings while the run's are not on hand. */
 export function Criteria({
   rows,
-  keys = false,
   run = null,
   held = null,
 }: {
   rows: CriterionRow[];
-  keys?: boolean;
   run?: number | null;
   held?: "loading" | "unavailable" | null;
 }) {
@@ -59,8 +56,8 @@ export function Criteria({
       </div>
       <ul className="m-0 mt-2 list-none p-0">
         {rows.map((row) => (
-          <li key={row.n} className="flex items-start gap-2.5 border-b border-rule-2 py-[7px] max-w-[75ch] font-read text-[15px] leading-[1.5] text-ink">
-            {keys && <span className="mt-[3px] w-[34px] shrink-0 font-mono text-[11px] font-semibold leading-none text-ink-3">AC{row.n}</span>}
+          <li key={row.id} className="flex items-start gap-2.5 border-b border-rule-2 py-[7px] max-w-[75ch] font-read text-[15px] leading-[1.5] text-ink">
+            <strong className="mt-[3px] w-[34px] shrink-0 font-mono text-[11px] font-bold leading-none text-ink-3">{row.id}</strong>
             {held == null ? <Mark standing={row.standing} /> : <span className="size-3.5 shrink-0" />}
             <span className="min-w-0 [overflow-wrap:anywhere]">{row.text}</span>
           </li>

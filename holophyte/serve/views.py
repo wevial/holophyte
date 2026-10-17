@@ -5,6 +5,7 @@ import os
 import socket
 from time import time
 
+import store.criteria
 import store.read
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale
@@ -13,6 +14,7 @@ from holophyte.config.serve_settings import serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.loop.runs import MAX_ROUNDS
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
+from holophyte.review.criterion_ids import with_numbers
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
 from store.steer_notes import chain_notes
@@ -304,6 +306,8 @@ def ticket_detail(project, identifier):
                  else store.read.ticket_notes(conn, ticket.id))
         runs = ([] if ticket is None
                 else store.read.ticket_runs(conn, ticket.id))
+        criteria = ([] if ticket is None else with_numbers(
+            ticket.acceptanceCriteria, store.criteria.numbers(conn, ticket.id)))
         steered = ([] if ticket is None
                    else chain_notes(conn, ticket.id, 0)[::-1])
     finally:
@@ -315,6 +319,8 @@ def ticket_detail(project, identifier):
                  "ticket_url": ticket.ticketUrl, "title": ticket.title,
                  "status": ticket.status, "body": ticket.body,
                  "acceptance_criteria": list(ticket.acceptanceCriteria),
+                 "criteria": [{"id": f"C{n}", "text": text}
+                              for n, text in criteria],
                  "verification_commands": list(ticket.verificationCommands),
                  "time_box_ms": ticket.timeBoxMs, "run": ticket.activeRunId,
                  "mirrored_ms": ticket.mirroredAt,

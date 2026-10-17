@@ -327,7 +327,8 @@ def chain_criteria(conn, run_ids):
     newest = next(iter(store.read.criteria_events(conn, run_ids)), None)
     if newest is None:
         return []
-    return [{"n": c["n"], "text": c["text"], "status": c["status"],
+    return [{"n": c["n"], "id": c.get("id", f"C{c['n']}"),
+             "text": c["text"], "status": c["status"],
              "note": c["note"], "run": newest.runId,
              "round": newest.payload["round"]}
             for c in sorted(newest.payload["criteria"], key=lambda c: c["n"])]
