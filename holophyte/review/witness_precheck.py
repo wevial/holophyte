@@ -12,7 +12,7 @@ from holophyte.config.reader import VERIFY_TIMEOUT
 from holophyte.loop.gates import _verify_command, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
-from holophyte.review import skipped_tests
+from holophyte.review import criterion_ids, skipped_tests
 from store.working import working
 
 SPAN = re.compile(r"`([^`\n]+)`")
@@ -92,7 +92,7 @@ def _ran(path, probed):
 
 
 def _gaps(n, path, ran, detail):
-    named = f"criterion {n} names `{path}`; "
+    named = f"criterion C{n} names `{path}`; "
     if ran == "skipped":
         return [f"{named}its tests ran only skipped in verify "
                 f"({'; '.join(detail)})"]
@@ -109,11 +109,11 @@ def _file(n, path, existing, tree, changed, sha, probed):
     result = {"file": path, "exists": bool(matches),
               **({"matches": matches} if glob else {})}
     if not matches:
-        return result, [f"criterion {n} names `{path}`; it does not exist "
+        return result, [f"criterion C{n} names `{path}`; it does not exist "
                         f"at {sha[:12]}"]
     result["changed"] = None if existing else path in changed
     gaps = ([] if result["changed"] is not False else
-            [f"criterion {n} names `{path}`; this branch neither adds nor "
+            [f"criterion C{n} names `{path}`; this branch neither adds nor "
              "changes it"])
     runs = {match: _ran(match, probed) for match in matches}
     details = {match: detail for match, (_, detail) in runs.items() if detail}
@@ -146,14 +146,15 @@ def check(wt, base, sha, criteria, verify_cmd, probe):
                   cwd=wt).splitlines())
     changed = set(sh(["git", "diff", "--name-only", f"{base}...{sha}"],
                      cwd=wt).splitlines())
-    named = named_files(criteria)
+    pairs = criterion_ids.numbered(None, None, criteria)
+    named = named_files([text for _, text in pairs])
     wanted = any(path.endswith(".py") for files in named for path in files)
     probed = _probed(wt, base, sha, verify_cmd, wanted, probe)
     entries = []
-    for n, (text, files) in enumerate(zip(criteria, named), 1):
+    for (n, text), files in zip(pairs, named):
         existing = (bool(EXISTING.search(text)) or len(files) > 1
                     or any(GLOB.search(path) for path in files))
-        entry = {"criterion": n, "files": files,
+        entry = {"criterion": n, "id": f"C{n}", "files": files,
                  "named": "ok" if files else "no_file", "checks": [],
                  "gaps": []}
         for path in files:
@@ -170,7 +171,7 @@ def summary(sha, entries):
     lines = [f"witness pre-check at {sha[:12]}: {witnessed} of "
              f"{len(entries)} criteria witnessed"]
     lines += [gap for entry in entries for gap in entry["gaps"]]
-    lines += [f"criterion {entry['criterion']} names no test file"
+    lines += [f"criterion C{entry['criterion']} names no test file"
               for entry in entries if not entry["files"]]
     return "\n".join(lines)
 
@@ -192,7 +193,8 @@ def record(project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
     if not ok:
         store.record_event(conn, run_id, "witness_precheck", NOT_RUN)
         return
-    entries = check(wt, base_sha, sha, list(criteria or ()), verify_cmd,
+    entries = check(wt, base_sha, sha,
+                    criterion_ids.numbered(conn, run_id, criteria), verify_cmd,
                     partial(_probe, project, conn, run_id, beat_s, wt))
     text = summary(sha, entries)
     print(f"[holo2] {text}")

@@ -29,7 +29,7 @@ from holophyte.loop.stop import command  # noqa: E402 - as above
 
 VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
 CRITERION = "A test in `tests/test_gate.py` witnesses it."
-GAP = ("criterion 1 names `tests/test_gate.py`; its tests ran only skipped"
+GAP = ("criterion C1 names `tests/test_gate.py`; its tests ran only skipped"
        " in verify (needs a browser)")
 RUNS = """import unittest
 
@@ -124,13 +124,13 @@ class WitnessTurns(LoopFixture):
                             body=OPENED), APPROVE)
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
-        self.assertIn("criterion 1 names", fake.turns[1].goal)
+        self.assertIn("criterion C1 names", fake.turns[1].goal)
         self.assertIn("ran only skipped in verify", fake.turns[1].goal)
         self.assertEqual(len(self.summaries("witness_turn")), 1)
         first, second = self.summaries("witness_precheck")
         self.assertIn(GAP, first)
         self.assertIn("1 of 1 criteria witnessed", second)
-        self.assertNotIn("criterion 1 names", second)
+        self.assertNotIn("criterion C1 names", second)
         self.assertNotIn("witness pre-check found these gaps",
                          self.review_goal(fake))
         self.assert_merged_after_round_one()
@@ -170,7 +170,7 @@ class WitnessTurns(LoopFixture):
                              criteria=a_task()["criteria"])
 
         self.assertEqual(fake.roles, ["implement", "review"])
-        self.assertIn("Criteria that name no test file: 1.",
+        self.assertIn("Criteria that name no test file: C1.",
                       self.review_goal(fake))
         self.assertEqual(self.summaries("witness_turn"), [])
 
@@ -181,7 +181,7 @@ class WitnessTurns(LoopFixture):
 
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertEqual(self.summaries("witness_turn"), [])
-        self.assertIn("criterion 1 names `tests/test_runs.py`; this branch"
+        self.assertIn("criterion C1 names `tests/test_runs.py`; this branch"
                       " neither adds nor changes it", self.review_goal(fake))
 
     def test_a_witness_turn_that_turns_verify_red_ends_the_turns(self):
@@ -201,7 +201,7 @@ class WitnessTurns(LoopFixture):
             " WHERE kind = 'witness_precheck_results'")]
         self.assertIn(f"found these gaps at {gapped[:12]}, before verify went"
                       f" red; judge each criterion yourself:\n{GAP}\n", goal)
-        self.assertIn("Criteria that name no test file: 2.", goal)
+        self.assertIn("Criteria that name no test file: C2.", goal)
 
     def test_a_red_verify_before_any_check_still_names_unnamed_criteria(self):
         fake = self.run_task(
@@ -216,7 +216,7 @@ class WitnessTurns(LoopFixture):
         self.assertIn("FAILED with output below", goal)
         self.assertIn("witness pre-check did not run, as verify failed; judge"
                       " each criterion yourself.\nCriteria that name no test"
-                      " file: 1.\n", goal)
+                      " file: C1.\n", goal)
 
     def test_a_spent_time_box_fails_the_run_before_a_witness_turn(self):
         fake = FakeAgent(gated())

@@ -29,7 +29,7 @@ LEFT_UNWITNESSED = Reply(
     "CRITERION 1: unwitnessed — the measurement is not in the pull "
     "request description\nVERDICT: REQUEST_CHANGES")
 LEFT_OPEN = ("The newest review round left these criteria unmet or "
-             f"unwitnessed:\n1. {CRITERION}\n")
+             f"unwitnessed:\nC1. {CRITERION}\n")
 
 
 class PausingCommit:
@@ -68,7 +68,7 @@ class AdjudicationCriteriaTests(LoopFixture):
         self.assertIn("fix round 2", self.subjects(BRANCH))
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
         self.assertTrue(reason.startswith("terminal adjudication: FAIL"), reason)
-        self.assertIn(f"criterion 1 {status}", reason)
+        self.assertIn(f"criterion C1 {status}", reason)
         ((verdict, findings),) = self.read(
             "SELECT verdict, findings FROM reviewRounds WHERE round = 3")
         self.assertEqual(verdict, "changes_requested")
@@ -94,7 +94,7 @@ class AdjudicationCriteriaTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs"
                                  " WHERE outcome = 'failed'")
-        self.assertIn("criterion 1 unwitnessed", reason)
+        self.assertIn("criterion C1 unwitnessed", reason)
 
     def test_a_run_resumed_after_its_final_fix_still_refuses_a_prose_pass(self):
         self.loop(Commit("first cut"), REQUEST_CHANGES,
@@ -112,7 +112,7 @@ class AdjudicationCriteriaTests(LoopFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs"
                                  " WHERE outcome = 'failed'")
-        self.assertIn("criterion 1 unwitnessed", reason)
+        self.assertIn("criterion C1 unwitnessed", reason)
 
     def test_a_pass_with_no_criterion_line_fails(self):
         self.adjudicate("Mergeable as it stands.\nVERDICT: PASS")
@@ -155,7 +155,7 @@ class SteeredAdjudicationTests(SteerFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs")
-        self.assertIn("criterion 1 unwitnessed", reason)
+        self.assertIn("criterion C1 unwitnessed", reason)
 
     def test_a_steered_adjudication_paused_and_resumed_still_refuses_a_prose_pass(self):
         paused, _ = self.loop(
@@ -177,7 +177,7 @@ class SteeredAdjudicationTests(SteerFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs"
                                  " WHERE outcome = 'failed'")
-        self.assertIn("criterion 1 unwitnessed", reason)
+        self.assertIn("criterion C1 unwitnessed", reason)
 
     def test_a_resume_whose_raised_cap_runs_a_review_gates_on_that_review(self):
         self.loop(Commit("first cut"), REQUEST_CHANGES,
@@ -204,7 +204,7 @@ class SteeredAdjudicationTests(SteerFixture):
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
         ((reason,),) = self.read("SELECT outcomeReason FROM runs"
                                  " WHERE outcome = 'failed'")
-        self.assertIn("criterion 1 unwitnessed", reason)
+        self.assertIn("criterion C1 unwitnessed", reason)
 
 
 if __name__ == "__main__":

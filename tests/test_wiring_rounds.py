@@ -329,7 +329,7 @@ class ReviewRoundRowTests(unittest.TestCase):
         first, second = self.rounds()
         self.assertEqual(first["verdict"], "changes_requested")
         (finding,) = json.loads(first["findings"])
-        self.assertIn("CRITERION 2", finding["message"])
+        self.assertIn("CRITERION C2", finding["message"])
         self.assertIn("no test covers the carry-over", finding["message"])
         self.assertIn("carry over", finding["message"])
         self.assertEqual((finding["path"], finding["line"]), ("criteria", 2))
@@ -403,7 +403,7 @@ class ReviewRoundRowTests(unittest.TestCase):
                 (finding,) = json.loads(first["findings"])
                 self.assertEqual((finding["path"], finding["line"]),
                                  ("criteria", 1))
-                self.assertIn("CRITERION 1: unwitnessed \u2014 named test not "
+                self.assertIn("CRITERION C1: unwitnessed \u2014 named test not "
                               "found: tests/test_gates.py::VerifyGateTests::"
                               "test_cap_reaps", finding["message"])
 

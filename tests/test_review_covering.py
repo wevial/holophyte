@@ -166,7 +166,7 @@ class NonPythonApprovalCitationTests(unittest.TestCase):
 
     def test_absent_title_leaves_criterion_unwitnessed(self):
         (finding,) = self.criterion_five(self.findings("Turns sort by date"))
-        self.assertIn("CRITERION 5: unwitnessed", finding["message"])
+        self.assertIn("CRITERION C5: unwitnessed", finding["message"])
         self.assertIn("console/tests/RunDetail.test.tsx", finding["message"])
         self.assertIn("Turns sort by date", finding["message"])
 
