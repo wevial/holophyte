@@ -2,6 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { TicketLink } from "../../components/TicketLink";
 import type { RunTurn } from "../../lib/contract.gen";
 import { formatClockSeconds, formatSpan } from "../../lib/format";
+import { TurnEntries } from "../components/TurnEntries";
 import { TurnArrow } from "../components/icons";
 import { runPage } from "../run";
 import { turnPage, turnTitles, useTurnPage } from "../turn";
@@ -91,6 +92,7 @@ export function TurnPage() {
           </Link>
         ))}
       </nav>
+      <TurnEntries key={turn.id} base={page.base} project={project} run={run.id} host={run.host} turn={turn} />
     </Page>
   );
 }
