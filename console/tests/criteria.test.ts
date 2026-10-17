@@ -1,22 +1,24 @@
 import { expect, test } from "bun:test";
+import type { RunCriterion } from "../src/lib/contract.gen";
 import { criteriaRows } from "../src/lib/criteria";
 import { summaryOf } from "../src/lib/ticket";
 
-const texts = ["first", "second", "third", "fourth"];
+const rows = [{ id: "C1", text: "first" }, { id: "C2", text: "second" }, { id: "C4", text: "fourth" }];
 
-test("criteriaRows takes each standing from the entry with its n, and a missing entry is open with a run and todo without", () => {
-  const judged = [
-    { n: 1, status: "met" as const },
-    { n: 2, status: "not_met" as const },
-    { n: 3, status: "unwitnessed" as const },
+test("criteriaRows joins verdicts by id across retired criteria and preserves unjudged standings", () => {
+  const judged: RunCriterion[] = [
+    { id: "C4", n: 4, text: "fourth", status: "not_met", note: "Missing coverage", run: 12, round: 1 },
+    { id: "C1", n: 1, text: "first", status: "met", note: "Verified", run: 12, round: 1 },
   ];
-  expect(criteriaRows(texts, judged, true)).toEqual([
-    { n: 1, text: "first", standing: "met" },
-    { n: 2, text: "second", standing: "unmet" },
-    { n: 3, text: "third", standing: "open" },
-    { n: 4, text: "fourth", standing: "open" },
-  ]);
-  expect(criteriaRows(texts, [], false).map((row) => row.standing)).toEqual(["todo", "todo", "todo", "todo"]);
+  for (const entries of [judged, [...judged].reverse()]) {
+    expect(criteriaRows(rows, entries, true)).toEqual([
+      { id: "C1", text: "first", standing: "met" },
+      { id: "C2", text: "second", standing: "open" },
+      { id: "C4", text: "fourth", standing: "unmet" },
+    ]);
+  }
+  expect(criteriaRows(rows, [], false).map((row) => row.standing)).toEqual(["todo", "todo", "todo"]);
+  expect(criteriaRows(rows, [{ id: "C2", status: "unwitnessed" }], true)[1]?.standing).toBe("open");
 });
 
 test("summaryOf answers only the Summary section's text, and empty for a body without one", () => {

@@ -115,8 +115,7 @@ export function TicketPage() {
           <p className="m-0 mt-3 max-w-[75ch] font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
           <div className="mt-[26px]">
             <Criteria
-              rows={criteriaRows(ticket.acceptance_criteria, typeof judged === "string" ? [] : judged, ticket.run != null)}
-              keys
+              rows={criteriaRows(ticket.criteria, typeof judged === "string" ? [] : judged, ticket.run != null)}
               run={ticket.run}
               held={typeof judged === "string" ? judged : null}
             />

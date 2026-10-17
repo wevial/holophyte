@@ -42,9 +42,9 @@ ${SUMMARY}
 
 **What:** a cache.
 `,
-  acceptance_criteria: CRITERIA,
+  acceptance_criteria: CRITERIA, criteria: CRITERIA.map((text, index) => ({ id: `C${index + 1}`, text })),
 };
-const standing = (n: number, status: RunCriterion["status"]): RunCriterion => ({ ...judged, n, text: CRITERIA[n - 1]!, status, run: 3 });
+const standing = (n: number, status: RunCriterion["status"]): RunCriterion => ({ ...judged, id: `C${n}`, n, text: CRITERIA[n - 1]!, status, run: 3 });
 
 /** DEMO serves the board above with DEMO-3's run 3 working; WRITER has no board.
  *  `/tickets/DEMO-3` answers `ticket` (404 when null) and `/runs/3` carries `criteria`. */
@@ -126,7 +126,7 @@ test("the peek shows the ticket's summary clamped to four lines and each criteri
   expect(within(peek()!).getByText("Acceptance criteria", { exact: false })).toBeTruthy();
   expect(metCount()).toBe("1 of 2 met");
   expect(marks().map((mark) => mark.getAttribute("aria-label"))).toEqual(["met", "not yet witnessed"]);
-  expect(within(peek()!).getAllByRole("listitem").map((row) => row.textContent)).toEqual(CRITERIA);
+  expect(within(peek()!).getAllByRole("listitem").map((row) => row.textContent)).toEqual(CRITERIA.map((text, index) => `C${index + 1}${text}`));
 });
 
 test("a run with no recorded standings marks every criterion not yet witnessed", async () => {

@@ -882,6 +882,9 @@
     "RunCriterion": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "string"
+        },
         "n": {
           "type": "integer"
         },
@@ -906,6 +909,7 @@
         }
       },
       "required": [
+        "id",
         "n",
         "text",
         "status",

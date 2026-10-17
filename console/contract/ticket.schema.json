@@ -4,6 +4,22 @@
   "description": "GET /tickets/KEY",
   "$ref": "#/$defs/TicketDetail",
   "$defs": {
+    "TicketCriterion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "additionalProperties": true
+    },
     "TicketRevision": {
       "type": "object",
       "properties": {
@@ -321,6 +337,12 @@
             "type": "string"
           }
         },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TicketCriterion"
+          }
+        },
         "verification_commands": {
           "type": "array",
           "items": {
@@ -405,6 +427,7 @@
         "status",
         "body",
         "acceptance_criteria",
+        "criteria",
         "verification_commands",
         "time_box_ms",
         "run",

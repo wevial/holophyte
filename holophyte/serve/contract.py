@@ -520,6 +520,7 @@ class SteerNote(TypedDict):
 
 
 class RunCriterion(TypedDict):
+    id: str
     n: int
     text: str
     status: Literal["met", "not_met", "unwitnessed"]
@@ -867,6 +868,11 @@ class TicketSteer(TypedDict):
     withdrawn: bool
 
 
+class TicketCriterion(TypedDict):
+    id: str
+    text: str
+
+
 class TicketDetail(TypedDict):
     ticket: str
     ticket_url: str | None
@@ -874,6 +880,7 @@ class TicketDetail(TypedDict):
     status: str
     body: str
     acceptance_criteria: list[str]
+    criteria: list[TicketCriterion]
     verification_commands: list[str]
     time_box_ms: int | None
     run: int | None
