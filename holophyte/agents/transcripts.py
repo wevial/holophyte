@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from holophyte.agents.agent_output import count
@@ -13,7 +14,8 @@ def locate(kind, session_id, scratch_root):
         return None
     root = Path(scratch_root).resolve()
     patterns = {'codex': f'**/*-{session_id}.jsonl',
-                'devin': f'**/{session_id}/**/*.json'}
+                'devin': f'**/{session_id}/**/*.json',
+                'claude': f'**/{session_id}.jsonl'}
     if kind not in patterns:
         return None
     for candidate in sorted(root.glob(patterns[kind])):
@@ -73,6 +75,37 @@ def tool_text(output):
     return text + (f'\nExit code: {status}' if isinstance(status, int) else '')
 
 
+def entry(speaker, text, record=None, tool=None, call=None, failed=False, summary=None):
+    timestamp = (record or {}).get('timestamp')
+    try:
+        at = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        at_ms = int(at.replace(tzinfo=at.tzinfo or timezone.utc).timestamp() * 1000)
+    except (AttributeError, ValueError, TypeError, OverflowError):
+        at_ms = None
+    return dict(speaker=speaker, text=text, at_ms=at_ms, tool=tool, call=call,
+                failed=failed or speaker == 'error', summary=summary)
+
+
+def result_failed(output):
+    if isinstance(output, str):
+        output = decoded(output)
+    if isinstance(output, list):
+        return any(result_failed(part.get('text')) for part in output
+                   if isinstance(part, dict))
+    return (isinstance(output, dict) and type(output.get('exit_code')) is int
+            and output['exit_code'] != 0)
+
+
+def codex_summary(item, text):
+    name = item.get('name')
+    if name in ('exec', 'exec_command', 'shell', 'shell_command'):
+        return text.split('\n', 1)[0]
+    args = item.get('arguments', {})
+    if isinstance(args, str):
+        args = decoded(args)
+    return args.get('description') or name if isinstance(args, dict) else name
+
+
 def codex_entry(record, calls):
     """Response items are canonical; event_msg mirrors are skipped on purpose."""
     item = record.get('payload')
@@ -83,18 +116,21 @@ def codex_entry(record, calls):
         content = item.get('content', [])
         if not isinstance(content, list):
             return []
-        return [(item['role'], part['text']) for part in content
+        return [entry(item['role'], part['text'], record) for part in content
                 if isinstance(part, dict) and part.get('type') in
                 ('input_text', 'output_text') and isinstance(part.get('text'), str)]
     if kind in ('function_call', 'custom_tool_call'):
         text = command_text(item)
         if text is not None and isinstance(item.get('call_id'), str):
             calls.add(item['call_id'])
-            return [('command', text)]
+            return [entry('command', text, record, item.get('name'), item['call_id'],
+                          summary=codex_summary(item, text))]
     if kind in ('function_call_output', 'custom_tool_call_output'):
         if isinstance(item.get('call_id'), str) and item['call_id'] in calls:
             text = tool_text(item.get('output'))
-            return [('tool', text)] if text is not None else []
+            return ([entry('tool', text, record, call=item['call_id'],
+                           failed=result_failed(item.get('output')))]
+                    if text is not None else [])
     return []
 
 
@@ -108,7 +144,8 @@ def devin_commands(step):
         text = args.get('command') if isinstance(args, dict) else None
         call_id = call.get('tool_call_id')
         if isinstance(text, str) and isinstance(call_id, str):
-            entries.append(('command', text))
+            entries.append(entry('command', text, tool='exec', call=call_id,
+                                 summary=text.split('\n', 1)[0]))
             known.add(call_id)
     observation = step.get('observation', {})
     results = observation.get('results', []) if isinstance(observation, dict) else []
@@ -117,7 +154,7 @@ def devin_commands(step):
             continue
         call_id, content = result.get('source_call_id'), result.get('content')
         if isinstance(call_id, str) and call_id in known and isinstance(content, str):
-            entries.append(('tool', content))
+            entries.append(entry('tool', content, call=call_id))
     return entries
 
 
@@ -133,9 +170,83 @@ def devin_entries(document):
         speaker = ('user' if source == 'user' else
                    'assistant' if source == 'agent' else None)
         if speaker and isinstance(message, str) and message:
-            entries.append((speaker, message))
+            entries.append(entry(speaker, message))
         if source == 'agent':
             entries.extend(devin_commands(step))
+    return entries
+
+
+def claude_summary(name, args, record):
+    if name == 'Bash':
+        return str(args.get('command', '')).split('\n', 1)[0]
+    if name in ('Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit'):
+        path = args.get('file_path', args.get('notebook_path', ''))
+        cwd = record.get('cwd')
+        if not isinstance(path, str):
+            return ''
+        return (path.removeprefix(cwd.rstrip('/') + '/')
+                if isinstance(cwd, str) else path)
+    return args.get('description') or name
+
+
+def claude_content(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return '\n'.join(block['text'] for block in content
+                         if isinstance(block, dict) and block.get('type') == 'text'
+                         and isinstance(block.get('text'), str))
+    return ''
+
+
+def claude_block(block, record):
+    role = record['type']
+    kind = block.get('type')
+    if kind == 'text' and isinstance(block.get('text'), str):
+        speaker = 'error' if record.get('isApiErrorMessage') else role
+        return entry(speaker, block['text'], record)
+    if role == 'user' and kind == 'tool_result':
+        return entry('tool', claude_content(block.get('content')), record,
+                     call=block.get('tool_use_id'),
+                     failed=block.get('is_error') is True)
+    if role == 'assistant' and kind == 'tool_use':
+        args = block.get('input', {})
+        if not isinstance(args, dict):
+            return None
+        name = block.get('name')
+        text = args.get('command', '') if name == 'Bash' else json.dumps(args, indent=2)
+        return entry('command', text, record, name, block.get('id'),
+                     summary=claude_summary(name, args, record))
+    return None
+
+
+def claude_entries(lines):
+    entries = []
+    for line in lines:
+        record = decoded(line)
+        if record.get('isSidechain'):
+            continue
+        role = record.get('type')
+        if role == 'system' and record.get('subtype') == 'api_error':
+            error = record.get('error', {})
+            if not isinstance(error, dict):
+                continue
+            text = error.get('formatted') or error.get('message')
+            if not isinstance(text, str):
+                continue
+            if 'retryAttempt' in record and 'maxRetries' in record:
+                text += f" · retry {record['retryAttempt']} of {record['maxRetries']}"
+            entries.append(entry('error', text, record))
+        elif role in ('user', 'assistant'):
+            message = record.get('message', {})
+            content = message.get('content', []) if isinstance(message, dict) else []
+            if isinstance(content, str):
+                content = [dict(type='text', text=content)]
+            for block in content if isinstance(content, list) else []:
+                result = (claude_block(block, record)
+                          if isinstance(block, dict) else None)
+                if result is not None:
+                    entries.append(result)
     return entries
 
 
@@ -147,7 +258,11 @@ def render(path):
             return devin_entries(decoded(stream.read()))
         entries, calls = [], set()
         for line in stream:
-            entries.extend(codex_entry(decoded(line), calls))
+            record = decoded(line)
+            if record.get('type') in ('user', 'assistant', 'system'):
+                entries.extend(claude_entries([line]))
+            else:
+                entries.extend(codex_entry(record, calls))
         return entries
 
 
