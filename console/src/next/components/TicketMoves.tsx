@@ -1,4 +1,5 @@
 import { useContext, useId, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import type { TicketDetail } from "../../lib/contract.gen";
 import type { HostRecord } from "../../lib/hosts";
 import { useBoardWrite, writeRefusal, type BoardWrite } from "../actions";
@@ -23,7 +24,7 @@ function Refusal({ lines, className }: { lines: string[] | null; className: stri
   );
 }
 
-/** Move to backlog, Requeue and Cancel ticket for `ticketKey`, drawn only
+/** Edit, Move to backlog, Requeue and Cancel ticket for `ticketKey`, drawn only
  *  while `host`'s `/board` takes writes, each posted at the revision the
  *  page read: the ticket's current one, else its board card's. */
 export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { project: string; ticketKey: string; ticket: TicketDetail; host: HostRecord<ContractBodies>; liveRun: number | null }) {
@@ -64,6 +65,7 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { pro
 
   return (
     <>
+      <Link to="/tickets/$project/$key/edit" params={{ project, key: ticketKey }} search={{}} className="btn" data-variant="quiet">Edit</Link>
       {ticket.run == null && column !== "backlog" && (
         <Btn busy={write.isPending && last === "backlog"} busyLabel="Moving…" disabled={write.isPending && last !== "backlog"} onClick={() => move("backlog")}>
           Move to backlog

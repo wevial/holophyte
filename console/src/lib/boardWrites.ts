@@ -78,10 +78,11 @@ export type CheckResult = TicketCheck | "unsupported" | { error: string };
 
 /** Judge `body` as filing into Backlog would, writing nothing:
  *  `POST` `{"body", "column": "backlog"}` to `base`'s `/tickets/check`,
- *  abandoned when `signal` aborts. Never throws. */
-export async function checkTicket(base: string, body: string, fetchImpl: Fetch, signal?: AbortSignal): Promise<CheckResult> {
+ *  abandoned when `signal` aborts. Naming `ticket` judges an edit of it,
+ *  in its own column. Never throws. */
+export async function checkTicket(base: string, body: string, fetchImpl: Fetch, signal?: AbortSignal, ticket?: string): Promise<CheckResult> {
   const url = `${base}/tickets/check`;
-  const sent = await send(base, url, "POST", { body, column: "backlog" }, fetchImpl, {}, signal);
+  const sent = await send(base, url, "POST", { body, column: "backlog", ticket }, fetchImpl, {}, signal);
   if ("error" in sent) return { error: sent.error };
   const { status, record } = sent;
   if (status === 404) return "unsupported";
@@ -112,9 +113,10 @@ async function revised(
 }
 
 /** Save `body` as ticket `id`'s full text: `PUT /tickets/ID` at the
- *  `revision` the sheet read. Never throws. */
-export function editTicket(base: string, id: string, revision: number, body: string, fetchImpl: Fetch): Promise<WriteResult> {
-  return revised(base, id, "", "PUT", revision, { body }, fetchImpl);
+ *  `revision` the sheet read, with `priority` (0 to 4, null for none)
+ *  when given, else keeping the ticket's own. Never throws. */
+export function editTicket(base: string, id: string, revision: number, body: string, fetchImpl: Fetch, priority?: number | null): Promise<WriteResult> {
+  return revised(base, id, "", "PUT", revision, { body, priority }, fetchImpl);
 }
 
 /** Move ticket `id` to `column`, `ready` or `backlog`:

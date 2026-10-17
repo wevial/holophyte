@@ -1,57 +1,22 @@
-import { useContext, useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { checkTicket, fileTicket, type CheckResult } from "../../lib/boardWrites";
+import { fileTicket } from "../../lib/boardWrites";
 import { formatClock } from "../../lib/format";
 import { projectName } from "../../lib/derive";
-import type { PollDeps } from "../../lib/poll";
-import { checkSummary, fileNote, placeMessage, WHOLE_TICKET } from "../checker";
+import { checkSummary, fileNote } from "../checker";
 import { Btn } from "../components/Btn";
-import { TONE_TEXT } from "../components/StateDot";
+import { CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
-import { blankForm, composeBody, fieldOf, parseBody, withField } from "../ticketForm";
-import { boardColumn, COLUMN_HEADS, hostCards } from "../tickets";
+import { blankForm, clampEstimate, composeBody, fieldOf, parseBody, withField } from "../ticketForm";
+import { hostCards } from "../tickets";
 import { CRUMB_LINK } from "./runShared";
 
-const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
-type Message = { text: string; error: boolean; field: string };
-const CHECK_DELAY_MS = 600;
-const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;
-
-/** The checker's judgement of `body` once it has stood unedited for
- *  `CHECK_DELAY_MS`. An edit aborts the request in flight, so one check
- *  runs at a time and an answer for an older body is never shown.
- *  `null` while the form is blank, `undefined` until first answered. */
-function useTicketCheck(base: string | undefined, body: string | null, deps: PollDeps): CheckResult | null | undefined {
-  const [answer, setAnswer] = useState<{ base: string; body: string; result: CheckResult } | null>(null);
-  useEffect(() => {
-    if (body === null || base == null) return setAnswer(null);
-    const controller = new AbortController();
-    const cancel = deps.timer(() => void checkTicket(base, body, deps.fetch, controller.signal).then(result => {
-      if (!controller.signal.aborted) setAnswer({ base, body, result });
-    }), CHECK_DELAY_MS);
-    return () => {
-      cancel();
-      controller.abort();
-    };
-  }, [base, body, deps]);
-  if (body === null) return null;
-  return answer && answer.base === base && answer.body === body ? answer.result : undefined;
-}
-
-function Messages({ id, messages }: { id: string; messages: Message[] }) {
-  if (!messages.length) return null;
-  return <ul id={id} className="mt-2 space-y-1 font-mono text-[12px] [overflow-wrap:anywhere]">
-    {messages.map((message, index) => <li key={index} className={message.error ? "text-bad" : "text-ask"}>
-      <span aria-hidden="true" className="mr-1.5">{message.error ? "×" : "!"}</span>{message.text}
-    </li>)}
-  </ul>;
-}
 
 const emptyValues = () => Object.fromEntries(FIELDS.map(field => [field, ""])) as Record<TextField, string>;
 const draftKey = (project: string) => `holo.newTicket.${project}`;
@@ -117,20 +82,6 @@ function clearDraft(project: string) {
   }
 }
 
-function Field({ label, optional = false, hint, extra, messages = [], children }: { label: string; optional?: boolean; hint?: string; extra?: string; messages?: Message[]; children: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <label htmlFor={`new-${label}`} className="font-['IBM_Plex_Sans'] text-[14px] font-semibold text-ink">{label}</label>
-        <span className="font-mono text-[10.5px] uppercase text-ink-3">{optional ? "Optional" : "Required"}{extra}</span>
-      </div>
-      {hint && <p className="mt-1 text-[13px] text-ink-2">{hint}</p>}
-      {children}
-      <Messages id={messagesId(label)} messages={messages} />
-    </div>
-  );
-}
-
 export function NewTicket() {
   const { project } = useParams({ from: "/tickets/$project/new" });
   const peers = useConsolePeers();
@@ -151,24 +102,10 @@ export function NewTicket() {
   const [approval, setApproval] = useState(() => `Approved ${new Date().toISOString().slice(0, 10)}: `);
   const [criteria, setCriteria] = useState([""]);
   const [estimateDraft, setEstimateDraft] = useState("25");
-  const estimate = Math.min(120, Math.max(5, Math.round((Number(estimateDraft) || 25) / 5) * 5));
+  const estimate = clampEstimate(Number(estimateDraft) || 25);
   const dependsOn = fieldOf(template, "dependsOn");
   const uiChange = fieldOf(template, "uiChange");
   const cards = boards.filter(({ host }) => host.base === target?.base).flatMap(({ host, board }) => hostCards(host, board, readiness, peers.now));
-  const changeCriteria = (next: string[]) => setCriteria(next.length ? next : [""]);
-  const moveCriterion = (index: number, delta: number) => {
-    const next = [...criteria];
-    [next[index], next[index + delta]] = [next[index + delta]!, next[index]!];
-    changeCriteria(next);
-  };
-  const changeEstimate = (value: number) => {
-    if (Number.isFinite(value)) setEstimateDraft(String(Math.min(120, Math.max(5, Math.round(value / 5) * 5))));
-  };
-  const addDependency = () => {
-    const key = dependency.trim().toUpperCase();
-    if (key && !dependsOn.includes(key)) setTemplate(previous => withField(previous, "dependsOn", [...dependsOn, key]));
-    setDependency("");
-  };
   const toggleUI = () => setTemplate(previous => withField(previous, "uiChange", fieldOf(previous, "uiChange") ? null : "major"));
   const [values, setValues] = useState(emptyValues);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
@@ -205,26 +142,11 @@ export function NewTicket() {
   const body = composeBody(form);
   const blank = !values.title.trim() && !values.summary.trim() && !values.what.trim();
   const check = useTicketCheck(target?.base, blank ? null : body, deps);
-  const judged = typeof check === "object" && check !== null && !("error" in check) ? check : null;
-  const messages: Message[] = judged ? [
-    ...judged.problems.map(text => ({ text, error: true, field: placeMessage(text) })),
-    ...judged.advisories.map(text => ({ text, error: false, field: placeMessage(text) })),
-  ] : [];
+  const checked = checkMarks(check);
+  const { judged, messagesOf, marks } = checked;
   const errors = judged?.problems.length ?? 0;
   const held = blank || errors > 0;
   const summary = checkSummary(check);
-  const messagesOf = (field: string) => messages.filter(message => message.field === field);
-  const marks = (fields: string | string[], className: string) => {
-    const owners = [fields].flat().filter(field => messagesOf(field).length);
-    const invalid = owners.some(field => messagesOf(field).some(message => message.error));
-    return {
-      "aria-invalid": invalid || undefined,
-      "aria-describedby": owners.length ? owners.map(messagesId).join(" ") : undefined,
-      className: invalid ? className.replace("border-rule", "border-bad") : className,
-    };
-  };
-  const fieldId = (field: string) => field.startsWith("AC") ? `criterion-${Number(field.slice(2)) - 1}`
-    : field === "Acceptance criteria" ? "criterion-0" : field === "Estimate" ? "estimate" : `new-${field}`;
   const input = (field: TextField, label: string, hint?: string, optional = false) => {
     const placeholder = template.hints[field];
     const props = {
@@ -300,60 +222,12 @@ export function NewTicket() {
               {input("how", "How")}
               {input("inScope", "In scope", "One a line.")}
               {input("outOfScope", "Out of scope", "One a line.")}
-              <Field label="Acceptance criteria" extra=" · each one a reviewer can witness" hint="Screenshots and clips go under Evidence on the run, not here." messages={messagesOf("Acceptance criteria")}>
-                <div className="mt-3 space-y-3">
-                  {criteria.map((criterion, index) => <div key={index} className="flex flex-wrap items-center gap-2 border-b border-rule-2 pb-3">
-                    <label htmlFor={`criterion-${index}`} className="w-8 font-mono text-[11px] text-ink-3">AC{index + 1}</label>
-                    <input id={`criterion-${index}`} {...marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => changeCriteria(criteria.map((value, at) => at === index ? event.target.value : value))} />
-                    <div className="ml-auto flex gap-1">
-                      <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} up`} disabled={index === 0} onClick={() => moveCriterion(index, -1)}>↑</Btn>
-                      <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} down`} disabled={index === criteria.length - 1} onClick={() => moveCriterion(index, 1)}>↓</Btn>
-                      <Btn className="!w-10 !h-10 !p-0" aria-label={`Remove AC${index + 1}`} onClick={() => changeCriteria(criteria.filter((_, at) => at !== index))}>×</Btn>
-                    </div>
-                    <div className="basis-full empty:hidden"><Messages id={messagesId(`AC${index + 1}`)} messages={messagesOf(`AC${index + 1}`)} /></div>
-                  </div>)}
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <Btn onClick={() => changeCriteria([...criteria, ""])}>+ Add a criterion</Btn>
-                  <span className="font-mono text-[12px] text-ink-3">{criteria.filter(value => value.trim()).length} of {criteria.length} written</span>
-                </div>
-              </Field>
+              <CriteriaField criteria={criteria} onChange={setCriteria} marks={checked} />
               {input("verify", "Verify commands", "The implementer runs these before review; a red one fails the run.")}
               <div className="flex flex-wrap gap-6">
-                <div>
-                  <label htmlFor="estimate" className="text-[14px] font-semibold">Estimate <span className="ml-2 font-mono text-[10.5px] font-normal uppercase text-ink-3">Minutes</span></label>
-                  <div className="mt-2 flex items-center">
-                    <Btn aria-label="Decrease estimate" disabled={estimate <= 5} onClick={() => changeEstimate(estimate - 5)}>–</Btn>
-                    <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={estimateDraft} onChange={event => setEstimateDraft(event.target.value)} onBlur={() => changeEstimate(estimate)} {...marks("Estimate", "h-11 w-16 border border-rule bg-canvas text-center font-mono text-ink")} />
-                    <Btn aria-label="Increase estimate" disabled={estimate >= 120} onClick={() => changeEstimate(estimate + 5)}>+</Btn>
-                  </div>
-                  <p className="mt-2 font-mono text-[12px] text-ink-3">sets the run's time box · cap 90</p>
-                  <Messages id={messagesId("Estimate")} messages={messagesOf("Estimate")} />
-                </div>
-                <div role="group" aria-label="Priority">
-                  <p className="text-[14px] font-semibold">Priority</p>
-                  <div className="mt-2 flex flex-wrap">
-                    {[0, 1, 2, 3, 4].map(value => <Btn key={value} className="!px-2" aria-pressed={priority === value} variant={priority === value ? "primary" : "quiet"} onClick={() => setPriority(value)}>
-                      {value > 0 && <span aria-hidden="true" className="mr-1.5 h-2 w-2" style={{ background: `var(--${value === 4 ? "ink-3" : `p${value}`})` }} />}{value === 0 ? "None" : `P${value}`}
-                    </Btn>)}
-                  </div>
-                  <p className="mt-2 font-mono text-[12px] text-ink-3">P1 is the highest</p>
-                </div>
-                <Field label="Depends on" optional messages={messagesOf("Depends on")}>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {dependsOn.map(key => {
-                      const card = cards.find(card => card.key === key);
-                      return <span key={key} className="inline-flex max-w-full items-center gap-2 border border-rule bg-canvas pl-2 font-mono text-[12px]">
-                        <span className="min-w-0 [overflow-wrap:anywhere]">{key}{card ? ` · ${COLUMN_HEADS[boardColumn(card)].label}` : ""}</span>
-                        <Btn className="!w-8 !h-8 !p-0 shrink-0" aria-label={`Remove ${key}`} onClick={() => setTemplate(previous => withField(previous, "dependsOn", dependsOn.filter(value => value !== key)))}>×</Btn>
-                      </span>;
-                    })}
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    <input id="new-Depends on" {...marks("Depends on", `${INPUT} !mt-0`)} value={dependency} onChange={event => setDependency(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addDependency(); } }} />
-                    <Btn onClick={addDependency}>Add</Btn>
-                  </div>
-                </Field>
+                <EstimateField draft={estimateDraft} onDraft={setEstimateDraft} estimate={estimate} marks={checked} />
+                <PriorityField priority={priority} onChange={setPriority} />
+                <DependsField dependsOn={dependsOn} onChange={next => setTemplate(previous => withField(previous, "dependsOn", next))} dependency={dependency} onDependency={setDependency} cards={cards} marks={checked} />
               </div>
               <div className="space-y-5">
                 <label className="flex items-center gap-3 text-[14px] font-semibold">
@@ -375,22 +249,7 @@ export function NewTicket() {
               {input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
             </div>
             <aside aria-label="File ticket" className="min-w-0">
-              <section aria-label="Checker" className="mb-4 border border-rule bg-paper p-5">
-                <div className="flex items-baseline justify-between gap-2 border-b border-rule-2 pb-2">
-                  <h2 className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-2">Checker</h2>
-                  <span className="font-mono text-[11px] text-ink-3">as you type</span>
-                </div>
-                <p aria-live="polite" className={`mt-3 font-mono text-[13px] [overflow-wrap:anywhere] ${TONE_TEXT[summary.tone]}`}>{summary.text}</p>
-                {messages.length > 0 && <ul aria-label="Checker messages" className="mt-3 space-y-1">{messages.map((message, index) => {
-                  const row = <>
-                    <span aria-hidden="true" className={`mr-1.5 ${message.error ? "text-bad" : "text-ask"}`}>{message.error ? "×" : "!"}</span>
-                    <span className="mr-1.5 font-mono text-[12px] font-semibold text-ink">{message.field}</span>
-                    <span className="text-[13px] text-ink-2">{message.text}</span>
-                  </>;
-                  return <li key={index} className="[overflow-wrap:anywhere]">{message.field === WHOLE_TICKET ? <div className="py-1">{row}</div> :
-                    <button type="button" className="w-full py-1 text-left hover:bg-canvas focus:outline-act" onClick={() => document.getElementById(fieldId(message.field))?.focus()}>{row}</button>}</li>;
-                })}</ul>}
-              </section>
+              <CheckerPanel summary={summary} marks={checked} />
               <div className="border border-rule bg-paper p-5">
                 <div className="flex flex-wrap gap-2">
                   <Btn variant="primary" busy={busy} busyLabel="Filing…" disabled={held} onClick={() => void file()}>File ticket</Btn>
