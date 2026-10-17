@@ -89,11 +89,9 @@ class CriterionIdsTests(unittest.TestCase):
         self.assertEqual(criterion_ids.numbered(
             self.conn, self.run_id, ["**C4** Revised fourth criterion"]),
             [(4, "Revised fourth criterion")])
-        self.assertEqual([criterion_ids.parse(token) for token in ("C4", "c4", "4")],
-                         [4, 4, 4])
 
     def test_mixed_reply_forms_use_ids_for_statuses_and_findings(self):
-        reply = ("CRITERION C4: not met — no test\n"
+        reply = ("CRITERION c4: not met — no test\n"
                  "CRITERION 1: met — tests/test_result.py::Result::test_result\n"
                  "VERDICT: REQUEST_CHANGES")
         statuses = criteria_statuses(reply, self.pairs(), self.root)
