@@ -867,6 +867,9 @@ console page can link to the classic view behind it.
 `console/src/next/components/LimitedMarkdown.tsx` renders asks and latest events
 with a restricted Markdown vocabulary and expandable line clamps.
 
+Browser appearance choices live in `console/src/next/appearance.ts`;
+`console/src/next/components/AppearanceTab.tsx` renders theme and reading-font
+radio cards, sharing theme state with the sidebar.
 Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 
@@ -926,6 +929,11 @@ shared run detail and asks queries.
 The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
 queries in `next/queries.ts` fetch only while the fold is open.
+
+The Turn page (`console/src/next/pages/Turn.tsx`) shows one recorded turn’s
+figures and links to its neighbours. `console/src/next/turn.ts` selects its
+host and run and shares turn titles with the Details fold. Run and Turn
+share page framing in `console/src/next/pages/runShared.tsx`.
 
 ### Desktop wrapper
 
