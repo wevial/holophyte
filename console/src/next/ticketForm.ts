@@ -1,4 +1,5 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import { same, unlabelledParts, type EditFields } from "./ticketEdit";
 
 export interface Fields {
   title: string;
@@ -279,13 +280,17 @@ export function withCriteria(form: TicketForm, rows: { origin: number | null; te
   const at = form.sections.findIndex(section => section.name === sections.criteria);
   const text = at < 0 ? "" : form.sections[at].text;
   const blocks = criterionBlocks(text);
-  if (!blocks.length) return withField(form, "criteria", rows.map(row => row.text));
+  if (!blocks.length) {
+    const titled = withField(form, "criteria", rows.map(row => row.text));
+    const fresh = rows.map((row, origin) => ({ ...row, origin }));
+    return rows.some(row => row.detail?.trim()) && criterionBlocks(titled.sections.find(section => section.name === sections.criteria)?.text ?? "").length === rows.length ? withCriteria(titled, fresh) : titled;
+  }
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   const gaps = blocks.slice(1).map((block, index) => text.slice(blocks[index].end, block.start));
   const separator = gaps.find(gap => !gap.trim()) ?? "";
   const line = (piece: string) => piece.endsWith("\n") ? piece : piece + eol;
   const rebuilt = rows.map(row => {
-    if (row.origin === null) return `- [ ] ${row.text}${eol}`;
+    if (row.origin === null) return `- [ ] ${row.text}${eol}` + (row.detail?.trim() ? line(row.detail) : "");
     const { head, start, headEnd, end } = blocks[row.origin];
     const title = line(splice(text.slice(start, headEnd), 0, head.contentEnd - start, `- [ ] ${row.text}`));
     if (row.detail === undefined) return title + text.slice(headEnd, end);
@@ -347,4 +352,164 @@ export function blankForm(): TicketForm {
   const form = parseBody(uncommented.replace(/^>.*(?:\r?\n|$)/gm, "").replace(/<[^>]*>/g, "").replace("{{TITLE}}", ""));
   form.sections = form.sections.filter(section => !optional.has(section.name));
   return { ...withField(withField(form, "verify", []), "openQuestions", "- None"), hints };
+}
+
+/** Each field's name as the form labels it, in the order the form draws it. */
+export const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "criteriaDetail">, string][] = [
+  ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
+  ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
+  ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
+  ["uiChange", "UI change"], ["mockupLink", "Mock-up link"], ["mockupApproval", "Approval"], ["mockupImages", "Boards"],
+  ["notes", "Implementation notes"],
+];
+
+/** A field both sides changed differently, with each side's text. */
+interface Clash { name: string; theirs: string; mine: string }
+export interface EditMerge { onlyTheirs: string[]; onlyMine: string[]; both: Clash[]; onTop: EditFields }
+
+/** The `index` of a section the edit puts back: in place of the section of
+ *  its name that the body draws as fields, else at the body's end. */
+export const ADDED_SECTION = -3;
+
+type Criterion = { text: string; detail: string } | undefined;
+const criterionAt = (form: EditFields, index: number): Criterion =>
+  index < form.criteria.length ? { text: form.criteria[index]!, detail: form.criteriaDetail[index] ?? "" } : undefined;
+
+/** Each of `form`'s other sections by its key: the preamble, the unlabelled
+ *  What / Why / How text, or a section's name with how many before it in
+ *  the body share it, the one drawn as fields among them. */
+export function keyed(form: EditFields): Map<string, EditFields["others"][number]> {
+  const seen = new Map<string, number>();
+  return new Map(form.others.map(other => {
+    if (other.index < 0) return [`${other.index}`, other];
+    const count = seen.get(other.name) ?? (other.repeated ? 1 : 0);
+    seen.set(other.name, count + 1);
+    return [`${other.name}#${count}`, other];
+  }));
+}
+
+function shown(value: unknown): string {
+  if (value === undefined) return "(removed)";
+  if (value === null) return "none";
+  if (Array.isArray(value)) return value.join("\n");
+  if (typeof value === "object") {
+    const { text, detail } = value as { text: string; detail: string };
+    return detail ? `${text}\n${detail}` : text;
+  }
+  return String(value);
+}
+
+/** `form`'s text for the section `name` as its fields draw it, labelled
+ *  when several fields share it; undefined when none of them holds text. */
+function drawnText(form: EditFields, name: string): string | undefined {
+  const fields = FIELD_NAMES.filter(([field]) => (field === "title" ? "Title" : (sections as Record<string, string>)[field]) === name);
+  const parts = fields.map(([field, label]) => [label, field === "criteria" ? form.criteria.map((_, index) => shown(criterionAt(form, index))).join("\n") : shown(form[field])]).filter(([, text]) => text && text !== "none");
+  if (!parts.length) return undefined;
+  return fields.length === 1 ? parts[0]![1] : parts.map(([label, text]) => `${label}: ${text}`).join("\n");
+}
+
+/** `mine`, an edit of `base`, set against `theirs`, a newer revision of it,
+ *  field by field: each criterion by its position, each other section by
+ *  its name. `onTop` is `theirs` with every field `mine` changed set to
+ *  `mine`'s text. */
+export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields): EditMerge {
+  const merge: EditMerge = { onlyTheirs: [], onlyMine: [], both: [], onTop: { ...theirs } };
+  const judge = (name: string, was: unknown, their: unknown, my: unknown): boolean => {
+    const theyChanged = !same(was, their);
+    const iChanged = !same(was, my);
+    if (theyChanged && !iChanged) merge.onlyTheirs.push(name);
+    else if (iChanged && !theyChanged) merge.onlyMine.push(name);
+    else if (iChanged && !same(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
+    return iChanged;
+  };
+  for (const [field, name] of FIELD_NAMES) {
+    if (field !== "criteria") {
+      if (judge(name, base[field], theirs[field], mine[field])) merge.onTop = { ...merge.onTop, [field]: mine[field] };
+      continue;
+    }
+    const criteria: { from: number | null; text: string; detail: string }[] = [];
+    const count = Math.max(base.criteria.length, theirs.criteria.length, mine.criteria.length);
+    for (let index = 0; index < count; index += 1) {
+      const kept = judge(`AC${index + 1}`, criterionAt(base, index), criterionAt(theirs, index), criterionAt(mine, index)) ? criterionAt(mine, index) : criterionAt(theirs, index);
+      if (kept) criteria.push({ from: theirs.criteriaFrom[index] ?? null, ...kept });
+    }
+    merge.onTop = { ...merge.onTop, criteria: criteria.map(each => each.text), criteriaFrom: criteria.map(each => each.from), criteriaDetail: criteria.map(each => each.detail) };
+  }
+  const [was, their, my] = [keyed(base), keyed(theirs), keyed(mine)];
+  merge.onTop = {
+    ...merge.onTop,
+    others: [...their].map(([key, other]) => {
+      const text = my.get(key)?.text;
+      return judge(other.name, was.get(key)?.text, other.text, text) && text !== undefined ? { ...other, text } : other;
+    }),
+  };
+  for (const [key, other] of was) {
+    const text = my.get(key)?.text;
+    if (their.has(key) || text === undefined) continue;
+    const theirText = other.index === -1 ? unlabelledIn(theirs, other.text) : other.repeated ? undefined : drawnText(theirs, other.name);
+    if (judge(other.name, other.text, theirText, text)) merge.onTop.others = restored(merge.onTop.others, { ...other, text }, theirs, other.text);
+  }
+  for (const [key, other] of my) {
+    if (was.has(key) || their.has(key)) continue;
+    merge.onlyMine.push(other.name);
+    merge.onTop.others = restored(merge.onTop.others, other, theirs);
+  }
+  return merge;
+}
+
+const plainAt = (others: EditFields["others"], name: string) => others.findIndex(each => each.index >= 0 && each.name === name && !each.repeated);
+
+/** The unlabelled What / Why / How text `was` as `theirs` holds it: itself
+ *  when `theirs` keeps it inside that section drawn as plain text, else
+ *  that whole section, or undefined when `theirs` has none. */
+function unlabelledIn(theirs: EditFields, was: string): string | undefined {
+  const plain = theirs.others[plainAt(theirs.others, "What / Why / How")];
+  return plain && placed(plain.text, was).every(each => each.at >= 0) ? was : plain?.text;
+}
+
+/** Where each piece of the unlabelled `was` sits in `text`, in order; -1
+ *  for a piece `text` changed. */
+function placed(text: string, was: string): { key: string; part: string; at: number }[] {
+  let from = 0;
+  return unlabelledParts(was).map(([key, part]) => {
+    const at = text.indexOf(part, from);
+    from = at < 0 ? from : at + part.length;
+    return { key, part, at };
+  });
+}
+
+/** `text` with each piece of `was` it holds swapped for `mine`'s, a piece
+ *  both changed taking `mine`'s, one only `text` changed kept, one it removed
+ *  and `mine` changed put back, and `mine`'s new pieces added at its end. */
+function rebased(text: string, was: string, mine: string): string {
+  const parts = new Map(unlabelledParts(mine));
+  const theirs = new Map(unlabelledParts(text));
+  const pieces = placed(text, was);
+  const swaps = pieces.flatMap(({ key, part, at }, index) => {
+    const my = parts.get(key) ?? "";
+    parts.delete(key);
+    if (at >= 0) return [{ part, at, my }];
+    const their = theirs.get(key);
+    if (their === undefined && my && my !== part) {
+      const before = pieces.slice(0, index).findLast(each => each.at >= 0);
+      return [before ? { part: "", at: before.at + before.part.length, my: `\n\n${my}` } : { part: "", at: 0, my: `${my}\n\n` }];
+    }
+    const found = their === undefined || my === part ? -1 : text.indexOf(their);
+    return found < 0 ? [] : [{ part: their!, at: found, my }];
+  });
+  let result = text;
+  for (const { part, at, my } of swaps.sort((a, b) => b.at - a.at || b.part.length - a.part.length)) result = result.slice(0, at) + my + result.slice(at + part.length);
+  return [result, ...parts.values()].filter(each => each.trim()).join("\n\n");
+}
+
+/** `others` with `other`, a section `theirs` lacks, put back: unlabelled
+ *  What / Why / How text replaces `was` in that section when `theirs` draws
+ *  it as plain text, or joins it there when `was` is gone, and becomes its
+ *  own section when `theirs` has none. */
+function restored(others: EditFields["others"], other: EditFields["others"][number], theirs: EditFields, was?: string): EditFields["others"] {
+  if (other.index !== -1) return [...others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
+  const plain = plainAt(others, other.name);
+  const replaced = (text: string) => was ? rebased(text, was, other.text) : `${text}\n\n${other.text}`;
+  if (plain >= 0) return others.map((each, index) => index === plain ? { ...each, text: replaced(each.text) } : each);
+  return [...others, theirs.what || theirs.why || theirs.how || theirs.uiChange ? other : { ...other, index: ADDED_SECTION }];
 }

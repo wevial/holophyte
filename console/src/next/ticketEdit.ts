@@ -1,4 +1,4 @@
-import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { ADDED_SECTION, clampEstimate, composeBody, criterionDetails, FIELD_NAMES, fieldOf, keyed, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
 
 const TITLE = "Title";
 const nonblank = (text: string) => text.split("\n").map(line => line.replace(/\r$/, "")).filter(line => line.trim());
@@ -53,8 +53,8 @@ type Prose = typeof PROSE[number];
 /** A ticket revision as the edit form holds it: each list field one item a
  *  line, each criterion with the index it was served at (null when added)
  *  and the indented detail under it,
- *  the estimate as typed, and the undrawn sections by their index in the
- *  body, What / Why / How's unlabelled text at index -1. */
+ *  the estimate as typed, the undrawn sections by their index in the body,
+ *  `repeated` after one of their name, What / Why / How's unlabelled text at -1. */
 export type EditFields = Record<Prose, string> & {
   criteria: string[];
   criteriaFrom: (number | null)[];
@@ -63,17 +63,8 @@ export type EditFields = Record<Prose, string> & {
   priority: number | null;
   dependsOn: string[];
   uiChange: "major" | "minor" | null;
-  others: { index: number; name: string; text: string }[];
+  others: { index: number; name: string; text: string; repeated?: true }[];
 };
-
-/** Each field's name as the form labels it, in the order the form draws it. */
-const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "criteriaDetail">, string][] = [
-  ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
-  ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
-  ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
-  ["uiChange", "UI change"], ["mockupLink", "Mock-up link"], ["mockupApproval", "Approval"], ["mockupImages", "Boards"],
-  ["notes", "Implementation notes"],
-];
 
 const PROSE_SECTION = "What / Why / How";
 const LABEL = /^\*\*(What|Why|How|UI change|Blast radius):\*\*[ \t]*/;
@@ -98,6 +89,18 @@ function segments(text: string): Segment[] {
     found.push({ label: label[1]!, start: line.index, value: line.index + label[0].length, end: text.length });
   }
   return found;
+}
+
+/** Unlabelled What / Why / How `text` cut at its label lines, each piece
+ *  keyed by its label and how many of that label came before it. */
+export function unlabelledParts(text: string): [string, string][] {
+  const seen = new Map<string, number>();
+  return segments(text).flatMap(segment => {
+    const piece = text.slice(segment.start, segment.end).trim();
+    const count = seen.get(segment.label ?? "") ?? 0;
+    seen.set(segment.label ?? "", count + 1);
+    return piece ? [[`${segment.label ?? ""}#${count}`, piece] as [string, string]] : [];
+  });
 }
 
 /** The segment each of What, Why and How is read from: its label's first. */
@@ -143,7 +146,7 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     others: [
       ...(raw.has(TITLE) ? [{ index: -2, name: TITLE, text: form.preamble.trim() }] : []),
       ...(rest && !raw.has(PROSE_SECTION) ? [{ index: -1, name: PROSE_SECTION, text: rest }] : []),
-      ...form.sections.flatMap((section, index) => drawn(form, index, raw) ? [] : [{ index, name: section.name, text: section.text.trim() }]),
+      ...form.sections.flatMap((section, index) => drawn(form, index, raw) ? [] : [{ index, name: section.name, text: section.text.trim(), ...(form.sections.findIndex(each => each.name === section.name) < index ? { repeated: true as const } : {}) }]),
     ],
   };
 }
@@ -159,8 +162,10 @@ const differs = (loaded: EditFields, edited: EditFields, field: keyof Omit<EditF
 /** The names of the fields `edited` holds differently from `loaded`. */
 export function changedNames(loaded: EditFields, edited: EditFields): string[] {
   const fields = FIELD_NAMES.filter(([field]) => differs(loaded, edited, field)).map(([, name]) => name);
-  const others = edited.others.filter((other, at) => other.text !== loaded.others[at]?.text).map(other => other.name);
-  return [...fields, ...others];
+  const [was, now] = [keyed(loaded), keyed(edited)];
+  const others = [...now].filter(([key, other]) => other.text !== was.get(key)?.text).map(([, other]) => other.name);
+  const removed = [...was].filter(([key]) => !now.has(key)).map(([, other]) => other.name);
+  return [...fields, ...others, ...removed];
 }
 
 const lines = (text: string) => (text ? text.split("\n") : []);
@@ -178,7 +183,7 @@ function withProse(text: string, loaded: EditFields, edited: EditFields): string
   const owned = owners(found);
   const restAt = edited.others.findIndex(other => other.index === -1);
   const rest = restAt < 0 ? null : edited.others[restAt]!.text;
-  const restChanged = rest !== null && rest !== loaded.others[restAt]?.text;
+  const restChanged = rest !== null && rest !== loaded.others.find(other => other.index === -1)?.text;
   let result = found.map(segment => {
     const piece = text.slice(segment.start, segment.end);
     const field = owned.get(segment);
@@ -214,6 +219,17 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
       return at < 0 || edited.others[at]!.text === loaded.others[at]?.text ? section : { ...section, text: withText(section.text, edited.others[at]!.text) };
     }),
   };
+  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  for (const added of edited.others.filter(other => other.index === ADDED_SECTION)) {
+    const at = added.repeated ? -1 : form.sections.findIndex((section, index) => section.name === added.name && !edited.others.some(other => other.index === index));
+    if (at >= 0) {
+      form = { ...form, sections: form.sections.map((section, index) => index === at ? { ...section, text: withText(section.text, added.text) } : section) };
+      continue;
+    }
+    const last = form.sections.at(-1);
+    const sections = last && !last.text.endsWith(eol + eol) ? [...form.sections.slice(0, -1), { ...last, text: last.text.replace(/\s*$/, eol + eol) }] : form.sections;
+    form = { ...form, sections: [...sections, { name: added.name, heading: `## ${added.name}${eol}`, text: `${eol}${added.text}${eol}` }] };
+  }
   for (const [field] of FIELD_NAMES) {
     if (!differs(loaded, edited, field)) continue;
     if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, lines(edited[field]));
