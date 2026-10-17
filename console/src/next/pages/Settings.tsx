@@ -94,7 +94,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
     setRefusal(null);
     const result = await save.mutateAsync({ base: host.base, revision: answer.config.revision, ...(rawMode ? { text: rawText } : { patch: Object.fromEntries(Object.entries(edits).map(([key, edit]) => [key, edit.value])) }) });
     if (result.ok) {
-      if (rawMode) draft.editRaw(project, null);
+      if (rawMode) draft.savedRaw(project, rawText);
       else draft.saved(project, edits);
       setConfirm(null);
       setBanner(result);

@@ -6,6 +6,7 @@ type ProjectEdits = Record<string, SettingsEdit>;
 type DraftContext = {
   raw: Record<string, string>;
   editRaw: (project: string, text: string | null) => void;
+  savedRaw: (project: string, submitted: string) => void;
   projects: Record<string, ProjectEdits>;
   edit: (project: string, key: string, old: PatchValue, value: PatchValue) => void;
   discard: (project: string) => void;
@@ -15,6 +16,11 @@ const Context = createContext<DraftContext | null>(null);
 
 export function SettingsDraftProvider({ children }: { children: ReactNode }) {
   const [raw, setRaw] = useState<Record<string, string>>({});
+  const savedRaw = (project: string, submitted: string) => setRaw((previous) => {
+    if (previous[project] !== submitted) return previous;
+    const { [project]: _saved, ...rest } = previous;
+    return rest;
+  });
   const editRaw = (project: string, text: string | null) => setRaw((previous) => {
     const next = { ...previous };
     if (text === null) delete next[project];
@@ -43,7 +49,7 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
     }
     return { ...previous, projects: { ...previous.projects, [project]: edits } };
   });
-  return createElement(Context.Provider, { value: { projects, edit, discard, saved, raw, editRaw } }, children);
+  return createElement(Context.Provider, { value: { projects, edit, discard, saved, raw, editRaw, savedRaw } }, children);
 }
 
 export function useSettingsDraft() {

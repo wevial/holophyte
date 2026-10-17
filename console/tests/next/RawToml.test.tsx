@@ -18,7 +18,7 @@ const SENTENCE = "[loop] workers must be an integer >= 1, got 0";
 const REFUSAL = { error: `[holo2] /x/config.toml: ${SENTENCE}`, line: 2 };
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 
-async function mount(options: { tab?: string; check?: (text: string) => Promise<Response>; saveRefused?: boolean } = {}) {
+async function mount(options: { tab?: string; check?: (text: string) => Promise<Response>; saveRefused?: boolean; pending?: Promise<void> } = {}) {
   let config: ConfigBody = { text: ORIGINAL, values: { loop: { workers: 2 } }, path: "/srv/demo/config.toml", applies: "next loop start", revision: REVISION, saved: null, modified_ms: null };
   const status: Status = { ...working, project: "/srv/demo", host: "writer-host", runs: [], config_edit: true, actions: true };
   const poll = peersFetch(ORIGIN, { [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
@@ -34,6 +34,7 @@ async function mount(options: { tab?: string; check?: (text: string) => Promise<
     }
     writes.push(init);
     if (options.saveRefused) return Response.json(REFUSAL, { status: 400 });
+    await options.pending;
     config = { ...config, text: body.text, revision: "92b73d4" + "b".repeat(57), values: { loop: { workers: 3 } } };
     return Response.json({ revision: config.revision, applies: config.applies, backup: "/srv/demo/config.toml.bak" });
   };
@@ -111,6 +112,38 @@ test("Revert restores the file and a confirmed raw save sends its full text with
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(editor().value).toBe(CLEAN);
   expect(saveButton().disabled).toBe(true);
+});
+
+test("a completed raw save preserves a newer edit after Back and Forward project navigation", async () => {
+  let complete!: () => void;
+  const pending = new Promise<void>(resolve => { complete = resolve; });
+  const source = await mount({ pending });
+  await act(async () => { window.location.hash = "#/settings/toml?project=other"; await settle(); });
+  await act(async () => { window.location.hash = "#/settings/toml?project=demo"; await settle(); });
+  change(CLEAN);
+  await checked();
+  fireEvent.click(saveButton());
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(source.writes).toHaveLength(1);
+  await act(async () => { window.history.back(); await settle(); });
+  expect(screen.getByText("other · config.toml on its host")).toBeTruthy();
+  await act(async () => { window.history.forward(); await settle(); });
+  expect(editor().readOnly).toBe(false);
+  change("[loop]\nworkers = 4\n");
+  await act(async () => { complete(); await settle(); });
+  await act(settle);
+  expect(editor().value).toBe("[loop]\nworkers = 4\n");
+  await checked();
+  fireEvent.click(saveButton());
+  const confirm = within(screen.getByRole("dialog", { name: "Save config.toml?" }));
+  expect(confirm.getByText("− 2 workers = 3")).toBeTruthy();
+  expect(confirm.getByText("+ 2 workers = 4")).toBeTruthy();
+  fireEvent.click(confirm.getByRole("button", { name: "Save" }));
+  await act(settle);
+  expect(source.writes).toHaveLength(2);
+  expect(JSON.parse(String(source.writes[1]!.body))).toEqual({ text: "[loop]\nworkers = 4\n" });
+  expect(new Headers(source.writes[1]!.headers).get("If-Match")).toBe("92b73d4" + "b".repeat(57));
 });
 
 test("field and raw drafts block each other's controls across tabs until discarded or reverted", async () => {
