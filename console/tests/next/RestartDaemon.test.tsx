@@ -47,7 +47,7 @@ function source({ actions = true, projectDaemon = false, post }: { actions?: boo
     return roots(url, init);
   };
   return {
-    fetch, root,
+    fetch,
     fail: () => { daemons[ORIGIN] = { down: new Error("connection refused") }; },
     answer: (started: number) => {
       root.daemon.started_ms = started;
