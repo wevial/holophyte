@@ -13,7 +13,7 @@ type Tab = (typeof SETTINGS_TABS)[number];
 const GROUP_LABEL = "font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3";
 
 function subtitle(tab: Tab["id"], file: string, project: string): string {
-  const subtitles = {
+  return {
     general: `[merge] and [loop] in ${file}`,
     review: `[loop], [review] and [agents] in ${file}`,
     agents: `[agents] in ${file}`,
@@ -22,8 +22,7 @@ function subtitle(tab: Tab["id"], file: string, project: string): string {
     toml: file,
     hosts: "the factory's hosts",
     appearance: "yours, in this browser · applies at once, nothing to save",
-  };
-  return subtitles[tab];
+  }[tab];
 }
 
 function panelLine(tab: Tab, answer: ConfigAnswer | undefined, file: string, project: string, host: string): string {
@@ -46,7 +45,6 @@ function SettingsPage({ tab }: { tab: Tab }) {
   const file = answer?.state === "ok" ? answer.config.path.split("/").pop() || "config.toml" : "config.toml";
   const hostLabel = host ? hostName(host) : "its host";
   const attention = hostsNeedingAttention(hosts);
-  const held = host?.status?.admission === "held";
   return (
     <section aria-labelledby="page-title" className="max-w-[1180px] px-5 py-7 min-[720px]:px-8">
       <header className="border-b border-rule pb-5">
@@ -81,7 +79,7 @@ function SettingsPage({ tab }: { tab: Tab }) {
                 className={`flex min-h-10 items-center gap-3 border-l-2 px-3 py-2 text-[14px] ${tab.id === item.id ? "border-act bg-act-wash text-act" : "border-transparent text-ink-2 hover:bg-paper-2 hover:text-ink"}`}
               >
                 {item.label}
-                {item.id === "hold" && held && <span className="font-mono text-[11px] text-wait">held</span>}
+                {item.id === "hold" && host?.status?.admission === "held" && <span className="font-mono text-[11px] text-wait">held</span>}
                 {item.id === "hosts" && attention > 0 && <span className="ml-auto font-mono text-[12px] text-need">{attention}</span>}
               </Link>
             </Fragment>
