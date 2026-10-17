@@ -39,9 +39,7 @@ function source({ actions = true, projectDaemon = false, post }: { actions?: boo
   const gates = new Map<string, Promise<void>>();
   const fetch: Fetch = async (url, init) => {
     if (init?.method === "POST" && post) return post(url, init);
-    if (url.endsWith("/status")) {
-      statuses.push(url);
-    }
+    if (url.endsWith("/status")) statuses.push(url);
     await gates.get(new URL(url).origin);
     return roots(url, init);
   };
