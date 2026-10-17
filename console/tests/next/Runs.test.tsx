@@ -79,9 +79,10 @@ async function mount(hash: string, fetchImpl: Fetch) {
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
-const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("link");
+const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("listitem");
+const runLink = (row: HTMLElement) => within(row).getByRole("link", { name: /^Run \d+,/ });
 const cells = (row: HTMLElement) => Array.from(row.children, (cell) => cell.textContent);
-const stateCells = () => rows().map((row) => cells(row)[3]);
+const stateCells = () => rows().map((row) => cells(row)[4]);
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -101,11 +102,12 @@ afterAll(() => {
 });
 
 test("Runs lists every host's runs since yesterday newest start first, each named and linked to its run", async () => {
-  await mount("#/runs", fleet([demo12, demo9], [writer40]));
+  await mount("#/runs?state=all", fleet([demo12, demo9], [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["12", "40", "9"]);
   const [first, failed, merged] = rows();
-  expect(first!.getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
-  expect(first!.getAttribute("href")).toEndWith("#/runs/demo/12");
+  expect(runLink(first!).getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
+  expect(runLink(first!).getAttribute("href")).toEndWith("#/runs/demo/12");
+
   expect(within(failed!).getByRole("img").getAttribute("aria-label")).toBe("failed");
   expect(cells(merged!)).toContain("yest 21:05");
   expect(within(merged!).getByRole("img").getAttribute("aria-label")).toBe("merged");
@@ -115,8 +117,8 @@ test("a Runs row opens its run's Run page on its own project", async () => {
   const writer7 = run({ id: 7, ticket: "WRITER-7", title: "Name the writer", started_ms: today(17, 0) });
   await mount("#/runs", fleet([demo12], [writer7]));
   const row = rows().find((each) => each.getAttribute("data-run") === "7")!;
-  expect(row.getAttribute("href")).toEndWith("#/runs/writer/7");
-  await act(async () => void fireEvent.click(row));
+  expect(runLink(row).getAttribute("href")).toEndWith("#/runs/writer/7");
+  await act(async () => void fireEvent.click(runLink(row)));
   await act(settle);
   expect(window.location.hash).toBe("#/runs/writer/7");
 });
@@ -142,19 +144,29 @@ test("a Runs row whose host has not answered /status keeps the classic run link"
   window.location.hash = "#/";
   render(<RouterProvider router={createRouter({ routeTree: root.addChildren([page]), history: createHashHistory() })} />);
   await act(settle);
-  expect(rows()[0]!.getAttribute("href")).toBe(`/?classic#run=7&daemon=${encodeURIComponent(WRITER)}`);
+  expect(runLink(rows()[0]!).getAttribute("href")).toBe(`/?classic#run=7&daemon=${encodeURIComponent(WRITER)}`);
 });
 
 test("a scoped Runs lists only that project's runs, with a dash for no rounds or pull request", async () => {
-  await mount("#/runs?project=demo", fleet([demo12, demo9], [writer40]));
+  await mount("#/runs?project=demo&state=all", fleet([demo12, demo9], [writer40]));
   const [first, second] = rows();
   expect(rows()).toHaveLength(2);
-  expect(cells(first!)).toEqual(["12", "DEMO-12 Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
-  expect(cells(second!)).toEqual(["9", "DEMO-9 Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
+  expect(cells(first!)).toEqual(["12", "DEMO-12", "Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
+  expect(cells(second!)).toEqual(["9", "DEMO-9", "Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
+});
+
+test("the table heads the ticket key and the title as separate columns, the key linked to its ticket page", async () => {
+  await mount("#/runs", fleet([run({ id: 21, ticket: "HOLO-12", title: "Fix the sweep", started_ms: today(17, 0) })], []));
+  const head = document.querySelector("[data-run-table] [aria-hidden='true']")!;
+  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "State", "Rounds", "PR", "Started", "Took"]);
+  const [row] = rows();
+  expect(cells(row!).slice(1, 3)).toEqual(["HOLO-12", "Fix the sweep"]);
+  expect(runLink(row!).getAttribute("aria-label")).toStartWith("Run 21, HOLO-12 Fix the sweep, demo,");
+  expect(within(row!).getByRole("link", { name: "HOLO-12" }).getAttribute("href")).toEndWith("#/tickets/demo/HOLO-12");
 });
 
 test("a host whose daemon has no /history adds no rows and no error beside one that answers", async () => {
-  await mount("#/runs", fleet(null, [writer40]));
+  await mount("#/runs?state=all", fleet(null, [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["40"]);
   expect(screen.queryByRole("alert")).toBeNull();
   expect(document.querySelector("[data-notice]")).toBeNull();
@@ -176,7 +188,7 @@ test("a failed run's State cell names its failure stage and an abandoned run's i
     id: 10, ticket: "DEMO-10", title: "Drop", started_ms: today(15, 0), phase: "done", outcome: "abandoned",
     outcome_reason: "aborted: wrong ticket\nmore",
   });
-  await mount("#/runs", fleet([failed, abandoned], []));
+  await mount("#/runs?state=all", fleet([failed, abandoned], []));
   expect(stateCells()).toEqual(["failed at verify", "abandoned · aborted: wrong ticket"]);
 });
 
@@ -198,12 +210,12 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
     { kind: "paused", level: "attention", run: 5, ticket: "DEMO-5", ticket_url: null, title: "Hold", note: "Waiting on a key", asked_ms: NOW - MINUTE, pr_url: null },
     pullRequestItem(4, {}),
   ] as Item[];
-  await mount("#/runs", fleet([stale, question, paused, readyRun, { ...demo12, rounds: 1 }, merged], [], items, [4]));
+  await mount("#/runs?state=all", fleet([stale, question, paused, readyRun, { ...demo12, rounds: 1 }, merged], [], items, [4]));
   expect(stateCells()).toEqual([
     "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
   ]);
   expect(rows().map((row) => row.hasAttribute("data-need"))).toEqual([true, true, true, true, false, false]);
-  expect(rows()[4]!.getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
+  expect(runLink(rows()[4]!).getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
 });
 
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
@@ -217,12 +229,32 @@ const sixRuns = () => fleet([demo12, demoParked, demoFailed], [writer41, writerM
 const countLine = () => document.querySelector("[data-count-line]")!.textContent;
 const filterButtons = () => within(screen.getByRole("group", { name: "State" })).getAllByRole("button");
 const pressed = () => filterButtons().filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
+const searchState = () => new URLSearchParams(window.location.hash.split("?")[1]).get("state");
+const shownIds = () => rows().map((row) => row.getAttribute("data-run"));
 
-test("the count line and every State button count the scoped runs, with All pressed by default", async () => {
+test("the count line and every State button count the scoped runs, with Active pressed and only active runs listed by default", async () => {
   await mount("#/runs", sixRuns());
   expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first / today and yesterday");
   expect(filterButtons().map((button) => button.textContent)).toEqual(["All 6", "Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
+  expect(pressed()).toEqual(["Active 3"]);
+  expect(shownIds()).toEqual(["12", "13", "41"]);
+});
+
+test("pressing All from the default Active puts state=all in the link and lists every run", async () => {
+  await mount("#/runs", sixRuns());
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "All 6" }));
+    await settle();
+  });
+  expect(searchState()).toBe("all");
   expect(pressed()).toEqual(["All 6"]);
+  expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
+});
+
+test("a link with state=merged selects Merged and lists only the merged run", async () => {
+  await mount("#/runs?state=merged", sixRuns());
+  expect(pressed()).toEqual(["Merged 1"]);
+  expect(shownIds()).toEqual(["42"]);
 });
 
 test("pressing Failed puts state=failed in the link and lists only the failed run", async () => {
@@ -236,10 +268,10 @@ test("pressing Failed puts state=failed in the link and lists only the failed ru
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["14"]);
 });
 
-test("a state the filter does not know reads as All and lists every run", async () => {
+test("a state the filter does not know reads as Active", async () => {
   await mount("#/runs?state=bogus", sixRuns());
-  expect(pressed()).toEqual(["All 6"]);
-  expect(rows()).toHaveLength(6);
+  expect(pressed()).toEqual(["Active 3"]);
+  expect(shownIds()).toEqual(["12", "13", "41"]);
 });
 
 test("a scoped filter with no runs says so, and Show all projects drops the project but keeps the state", async () => {
