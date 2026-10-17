@@ -84,8 +84,7 @@ export function formatClock(ms: number): string {
 
 export function formatStamp(ms: number): string {
   const date = new Date(ms);
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  return `${month} ${date.getDate()} ${formatClock(ms)}`;
+  return `${date.toLocaleDateString("en-US", { month: "short" })} ${date.getDate()} ${formatClock(ms)}`;
 }
 
 /** A host's age line: days keep their hours (`3d 4h`), anything shorter is
