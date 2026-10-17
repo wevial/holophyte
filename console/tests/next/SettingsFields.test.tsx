@@ -13,7 +13,7 @@ const OTHER = "http://writer-host:7711";
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 const VALUES: ConfigValues = { merge: { mode: "pr", approve: "auto" }, loop: { workers: 2 } };
 
-async function mount(values: ConfigValues = VALUES, hash = "#/settings/general?project=demo") {
+async function mount(values: ConfigValues | null = VALUES, hash = "#/settings/general?project=demo") {
   const status = (project: string): Status => ({ ...working, runs: [], project: `/srv/${project}`, host: "writer-host" });
   const poll = peersFetch(ORIGIN, {
     [ORIGIN]: { status: status("demo"), attention: { ...NO_ATTENTION, project: "/srv/demo" } },
@@ -22,7 +22,7 @@ async function mount(values: ConfigValues = VALUES, hash = "#/settings/general?p
   const fetch: Fetch = (url, init) => {
     if (!url.endsWith("/config")) return poll(url, init);
     const config: ConfigBody = {
-      text: '[merge]\nmode = "pr"\napprove = "auto"\n[loop]\nworkers = 2\n',
+      text: values === null ? '[merge\n' : '[merge]\nmode = "pr"\napprove = "auto"\n[loop]\nworkers = 2\n',
       values: url.startsWith(OTHER) ? { merge: { mode: "local", approve: "human" }, loop: { workers: 4 } } : values,
       path: `/srv/${url.startsWith(OTHER) ? "other" : "demo"}/config.toml`,
       applies: "next loop start",
@@ -70,6 +70,18 @@ test("General shows the three ordered file values without change marks", async (
   expect(screen.getByRole("button", { name: "Auto" }).getAttribute("aria-pressed")).toBe("true");
   expect(workers()).toBe("2");
   expect(screen.getByText("Tickets this project runs at once on writer-host.")).toBeTruthy();
+  expect(unsaved()).toBeNull();
+});
+
+test("unparsable configuration shows an explanation without editable defaults", async () => {
+  await mount(null);
+  expect(screen.queryByRole("button", { name: "One more worker" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "One fewer worker" })).toBeNull();
+  for (const name of ["Direct to main", "Pull request", "Auto", "Human"]) {
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  }
+  expect(screen.queryByText("default")).toBeNull();
+  expect(screen.getByText("The file does not parse as TOML. Settings cannot be edited until the file is fixed.")).toBeTruthy();
   expect(unsaved()).toBeNull();
 });
 

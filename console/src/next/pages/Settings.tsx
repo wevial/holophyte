@@ -35,6 +35,7 @@ function panelLine(tab: Tab, answer: ConfigAnswer | undefined, file: string, pro
   if (answer.state === "off") return CONFIG_EDIT_OFF;
   if (answer.state === "error") return `${host} did not answer /config: ${answer.error}`;
   if (answer.state === "needs_token") return `${host} needs its serve token to read /config.`;
+  if (answer.config.values === null) return "The file does not parse as TOML. Settings cannot be edited until the file is fixed.";
   return "This tab comes here.";
 }
 
@@ -99,7 +100,7 @@ function SettingsPage({ tab }: { tab: Tab }) {
             <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
             <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
           </header>
-          {tab.id === "general" && host && answer?.state === "ok" ? (
+          {tab.id === "general" && host && answer?.state === "ok" && answer.config.values !== null ? (
             <div className="mt-6">
               {SETTINGS_FIELDS.filter((field) => field.tab === tab.id).map((field) => {
                 const key = `${field.table}.${field.key}`;
