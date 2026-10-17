@@ -6,7 +6,7 @@ import { addressOf } from "../../src/lib/hosts";
 import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
-import type { EditFields } from "../../src/next/ticketEdit";
+import { composeEdit, loadEdit, type EditFields } from "../../src/next/ticketEdit";
 import { mergeEdit } from "../../src/next/ticketForm";
 import { fakeDeps, settle } from "../harness";
 import { DEMO, fleet, MINUTE, NOW, SERVE } from "./needsFleet";
@@ -24,10 +24,12 @@ const BASE: EditFields = {
   others: [{ index: 6, name: "Evidence", text: "- 01-notes.png" }],
 };
 
-test("mergeEdit lists the fields both sides changed and puts mine on top of theirs", () => {
+test("mergeEdit sorts each field by who changed it and puts mine on top of theirs", () => {
   const theirs: EditFields = { ...BASE, summary: "Each steer note shows on the run page.", criteria: [BASE.criteria[0]!, "A note's author and time show.", BASE.criteria[2]!] };
   const mine: EditFields = { ...BASE, title: "Steer notes show under their run", criteria: [BASE.criteria[0]!, "A note's author shows in bold.", BASE.criteria[2]!] };
   const merge = mergeEdit(BASE, theirs, mine);
+  expect(merge.onlyTheirs).toEqual(["Summary"]);
+  expect(merge.onlyMine).toEqual(["Title"]);
   expect(merge.both).toEqual([{ name: "AC2", theirs: "A note's author and time show.", mine: "A note's author shows in bold." }]);
   expect(merge.onTop).toEqual({
     title: "Steer notes show under their run",
@@ -41,6 +43,17 @@ test("mergeEdit lists the fields both sides changed and puts mine on top of thei
     estimate: "30", priority: 2, dependsOn: [], uiChange: null,
     others: [{ index: 6, name: "Evidence", text: "- 01-notes.png" }],
   });
+});
+
+test("a section I edited that their revision removed is a clash and is added back on top", () => {
+  const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
+  const theirs = "# Notes show\n\n## Summary\n\nEvery note shows.\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map(other => other.name === "Evidence" ? { ...other, text: "- 02-notes.png" } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(merge.both).toEqual([{ name: "Evidence", theirs: "(removed)", mine: "- 02-notes.png" }]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe("# Notes show\n\n## Summary\n\nEvery note shows.\n\n## Evidence\n\n- 02-notes.png\n");
 });
 
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;

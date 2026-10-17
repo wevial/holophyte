@@ -361,7 +361,10 @@ export const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "c
 
 /** A field both sides changed differently, with each side's text. */
 interface Clash { name: string; theirs: string; mine: string }
-export interface EditMerge { both: Clash[]; onTop: EditFields }
+export interface EditMerge { onlyTheirs: string[]; onlyMine: string[]; both: Clash[]; onTop: EditFields }
+
+/** The `index` of a section the edit adds at the body's end. */
+export const ADDED_SECTION = -3;
 
 type Criterion = { text: string; detail: string } | undefined;
 const criterionAt = (form: EditFields, index: number): Criterion =>
@@ -384,10 +387,13 @@ function shown(value: unknown): string {
  *  its name. `onTop` is `theirs` with every field `mine` changed set to
  *  `mine`'s text. */
 export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields): EditMerge {
-  const merge: EditMerge = { both: [], onTop: { ...theirs } };
+  const merge: EditMerge = { onlyTheirs: [], onlyMine: [], both: [], onTop: { ...theirs } };
   const judge = (name: string, was: unknown, their: unknown, my: unknown): boolean => {
+    const theyChanged = !same(was, their);
     const iChanged = !same(was, my);
-    if (iChanged && !same(was, their) && !same(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
+    if (theyChanged && !iChanged) merge.onlyTheirs.push(name);
+    else if (iChanged && !theyChanged) merge.onlyMine.push(name);
+    else if (iChanged && !same(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
     return iChanged;
   };
   for (const [field, name] of FIELD_NAMES) {
@@ -410,5 +416,10 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
       return judge(other.name, otherNamed(base, other.name), other.text, my) && my !== undefined ? { ...other, text: my } : other;
     }),
   };
+  for (const other of base.others) {
+    const my = otherNamed(mine, other.name);
+    if (otherNamed(theirs, other.name) !== undefined || my === undefined) continue;
+    if (judge(other.name, other.text, undefined, my)) merge.onTop.others = [...merge.onTop.others, { index: ADDED_SECTION, name: other.name, text: my }];
+  }
   return merge;
 }

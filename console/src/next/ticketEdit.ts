@@ -1,4 +1,4 @@
-import { clampEstimate, composeBody, criterionDetails, FIELD_NAMES, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { ADDED_SECTION, clampEstimate, composeBody, criterionDetails, FIELD_NAMES, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
 
 const TITLE = "Title";
 const nonblank = (text: string) => text.split("\n").map(line => line.replace(/\r$/, "")).filter(line => line.trim());
@@ -205,6 +205,12 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
       return at < 0 || edited.others[at]!.text === loaded.others[at]?.text ? section : { ...section, text: withText(section.text, edited.others[at]!.text) };
     }),
   };
+  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  for (const added of edited.others.filter(other => other.index === ADDED_SECTION)) {
+    const last = form.sections.at(-1);
+    const sections = last && !last.text.endsWith(eol + eol) ? [...form.sections.slice(0, -1), { ...last, text: last.text.replace(/\s*$/, eol + eol) }] : form.sections;
+    form = { ...form, sections: [...sections, { name: added.name, heading: `## ${added.name}${eol}`, text: `${eol}${added.text}${eol}` }] };
+  }
   for (const [field] of FIELD_NAMES) {
     if (!differs(loaded, edited, field)) continue;
     if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, lines(edited[field]));
