@@ -238,7 +238,8 @@ def mirror_ticket(
         now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
-            "SELECT id, status, revision FROM tickets"
+            "SELECT id, status, revision, body, acceptanceCriteria,"
+            " verificationCommands FROM tickets"
             " WHERE linearIssueId = ? AND projectId = ?",
             (linear_issue_id, project_id),
         ).fetchone()
@@ -261,7 +262,7 @@ def mirror_ticket(
                 ),
             ).lastrowid
         else:
-            ticket_id, status, _ = row
+            ticket_id, status, _ = row[:3]
             if conn.execute("SELECT 1 FROM stories WHERE ticketId = ?",
                             (ticket_id,)).fetchone():
                 criteria, commands, derived = "[]", "[]", "needs_spec"
@@ -287,8 +288,9 @@ def mirror_ticket(
                     ticket_id,
                 ),
             )
-        record_criteria(conn, ticket_id, json.loads(criteria),
-                        json.loads(commands), now)
+        if row is None or row[3:] != (body, criteria, commands):
+            record_criteria(conn, ticket_id, json.loads(criteria),
+                            json.loads(commands), now)
         record_board_fields(conn, ticket_id, author, now)
     return ticket_id
 

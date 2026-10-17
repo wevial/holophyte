@@ -34,7 +34,7 @@ DOCUMENTED_COLUMNS = {
     },
     "ticketCriteria": {
         "id", "ticketId", "criterion", "position", "text", "witnessKind",
-        "witnessTarget", "status", "source", "at",
+        "witnessTarget", "status", "source", "at", "steerNoteId",
     },
     "runs": {
         "id", "ticketId", "projectId", "attempt", "phase", "workerId",

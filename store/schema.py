@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 52
+SCHEMA_VERSION = 53
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -151,6 +151,8 @@ def open(path, *, migrate=True):
 # CREATE TABLE IF NOT EXISTS never extends an existing table, so every column
 # added to SCHEMA needs its clause here too, CHECK included.
 ADDED_COLUMNS = (
+    ("ticketCriteria", "steerNoteId",
+     "steerNoteId INTEGER REFERENCES steerNotes (id)"),
     ("runs", "stopRequested", "stopRequested INTEGER REFERENCES interventions(id)"),
     ("runs", "workerPid", "workerPid INTEGER"),
     ("runs", "parkKind", "parkKind TEXT "
