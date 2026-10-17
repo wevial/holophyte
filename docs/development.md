@@ -948,6 +948,7 @@ host and run and shares turn titles with the Details fold. Run and Turn
 share page framing in `console/src/next/pages/runShared.tsx`.
 The Turn page’s `console/src/next/components/TurnEntries.tsx` lists transcript
 entries with folded prompts and tool calls, opening failed calls automatically.
+`console/src/next/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
 
 ### Desktop wrapper
 
