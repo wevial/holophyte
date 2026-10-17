@@ -2,8 +2,6 @@ import { useContext, useId } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ACTIONS_OFF, ROUTES } from "../../lib/actions";
 import { formatClock } from "../../lib/format";
-import type { HostRecord } from "../../lib/hosts";
-import type { ContractBodies } from "../fleet";
 import { useAction } from "../actions";
 import { OriginContext, PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
@@ -35,7 +33,7 @@ function useRetry(daemons: HostCard[]) {
     mutationFn: async () => {
       const queryKey = ["fleet", origin];
       await client.refetchQueries({ queryKey }, { cancelRefetch: false });
-      const fleet = client.getQueryData<{ hosts: HostRecord<ContractBodies>[] }>(queryKey);
+      const fleet = client.getQueryData<{ hosts: HostCard["record"][] }>(queryKey);
       const failed = daemons.filter((daemon) => {
         const record = fleet?.hosts.find((record) => record.address === daemon.key);
         return record && !record.needs_token && (record.root_failed || (!record.host_status && record.error != null));
