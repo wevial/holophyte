@@ -28,11 +28,11 @@ async function addProject(page: Page, name: string) {
   });
 }
 
-const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("link");
+const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("listitem");
 const countLine = (page: Page) => page.locator("[data-count-line]");
 const filter = (page: Page) => page.getByRole("group", { name: "State" });
 
-async function open(page: Page, hash = "#/runs") {
+async function open(page: Page, hash = "#/runs?state=all") {
   await addProject(page, "ledger");
   await page.goto(`/next.html${hash}`);
   await expect(countLine(page)).toContainText(/· [1-9]\d* runs/);

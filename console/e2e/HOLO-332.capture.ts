@@ -28,9 +28,9 @@ async function addProject(page: Page, name: string) {
   });
 }
 
-const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("link");
+const runs = (page: Page) => page.getByRole("list", { name: "Runs, newest first" }).getByRole("listitem");
 
-async function open(page: Page, hash = "#/runs") {
+async function open(page: Page, hash = "#/runs?state=all") {
   await addProject(page, "ledger");
   await page.goto(`/next.html${hash}`);
   await expect(runs(page).first()).toBeVisible();
@@ -62,7 +62,7 @@ test("02 the Runs table with one project picked in the switcher", async ({ page 
   await dialog.getByRole("combobox").fill("demo");
   await dialog.getByRole("combobox").press("Enter");
   await expect(page).toHaveURL(/project=demo/);
-  await page.goto("/next.html#/runs?project=demo");
+  await page.goto("/next.html#/runs?project=demo&state=all");
   await expect(runs(page)).toHaveCount(all / 2);
   await expect(page.getByRole("link", { name: /^Run \d+, .*, ledger, / })).toHaveCount(0);
   await shot(page, "03-runs-scoped.png");
