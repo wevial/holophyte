@@ -2,6 +2,7 @@ import json
 import shlex
 
 import store
+import ticket_template
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.harness import seat as harness_seat
 from holophyte.agents.roles import effective_role
@@ -14,6 +15,7 @@ from holophyte.loop.follow_ups import capture as capture_follow_ups
 from holophyte.loop.follow_ups import pending_prompt
 from holophyte.loop.gates import RunFailure, sh
 from holophyte.redact import safe_print as print
+from holophyte.review import criterion_ids
 
 
 def resume_template(target):
@@ -57,8 +59,15 @@ STEER_ASK = ('Apply the maintainer\'s notes above to your work on this '
 
 
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
-             *, timed, check_cap):
+             *, timed, check_cap, criteria=None):
     pending = pending_prompt(conn, run_id) if conn is not None else ''
+    if criteria is None:
+        parsed = ticket_template.parse(ticket)
+        criteria = [*parsed.acceptance, *parsed.acceptance_done,
+                    *parsed.acceptance_other]
+        if not criteria and conn is not None and run_id is not None:
+            criteria = json.loads(store.run_contract(conn, run_id) or "{}").get(
+                "acceptanceCriteria", [])
     findings = steering.take(conn, run_id) + pending + (
         f'Reviewer findings:\n\n{verdict}\n\n'
         'For EACH finding, adjudicate it first: ADDRESS (concrete '
@@ -76,7 +85,8 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
         'feature is a capability or behavior change for a later ticket; '
         'guardrail is a check, test, prompt rule or review rule that would '
         'catch this class of problem next time. The " @ PATH:LINE" tail is '
-        'optional, and so is ":LINE" within it.' + contradiction.BRIEF)
+        'optional, and so is ":LINE" within it.' + contradiction.brief(
+            criterion_ids.numbered(conn, run_id, criteria)))
     fresh = ('A reviewer left findings on your work. The ticket you '
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)

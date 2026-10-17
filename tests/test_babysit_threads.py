@@ -947,7 +947,7 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.assertEqual(
             self.read("SELECT verdict FROM reviewRounds WHERE round = 4"),
             [("changes_requested",)])
-        self.assertIn("CRITERION 1: unwitnessed", self.question())
+        self.assertIn("CRITERION C1: unwitnessed", self.question())
 
     def test_a_pass_fixes_the_defect_declines_the_nit_and_parks(self):
         self.configure('[merge]\nmode = "pr"\n')

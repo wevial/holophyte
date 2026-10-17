@@ -27,8 +27,14 @@ class TranscriptCase(ServeTestCase):
             store.record_agent_session(conn, self.run, 'third', 'implement', 'fallback')
         return f'/runs/{self.run}/turns'
 
-    def transcript(self, root, text):
+    def transcript(self, root, text, kind="codex"):
         root.mkdir(exist_ok=True)
+        if kind == 'claude':
+            path = root / 'first.jsonl'
+            path.write_text(json.dumps({'type': 'user', 'message': {'content': [
+                {'type': 'tool_result', 'tool_use_id': 'call-1',
+                 'is_error': True, 'content': text}]}}) + '\n')
+            return path
         path = root / 'rollout-first.jsonl'
         path.write_text(json.dumps({'type': 'response_item', 'payload': {
             'type': 'message', 'role': 'assistant', 'content': [

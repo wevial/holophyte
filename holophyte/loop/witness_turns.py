@@ -7,7 +7,7 @@ from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.runs import set_phase
 from holophyte.loop.stop import boundary
 from holophyte.redact import safe_print as print
-from holophyte.review import witness_precheck
+from holophyte.review import criterion_ids, witness_precheck
 from holophyte.review.briefs import witness_brief
 
 WITNESS_TURNS = 2
@@ -30,7 +30,7 @@ def _unchecked(entry):
 def _turn_gaps(entries):
     return [gap for entry in entries or ()
             for gap in entry["gaps"]
-            if not any(gap.startswith(f"criterion {entry['criterion']} names "
+            if not any(gap.startswith(f"criterion C{entry['criterion']} names "
                                       f"`{path}`;")
                        for path in _unchecked(entry))]
 
@@ -78,9 +78,11 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
         return sha, ok, out, ""
     checked = sha if entries is not None else None
     if entries is None:
-        entries = [{"criterion": n, "gaps": [], "checks": [],
-                    "named": "ok" if files else "no_file"} for n, files in
-                   enumerate(witness_precheck.named_files(criteria or ()), 1)]
+        pairs = criterion_ids.numbered(conn, run_id, criteria)
+        files_by_criterion = witness_precheck.named_files([text for _, text in pairs])
+        entries = [{"criterion": n, "id": f"C{n}", "gaps": [], "checks": [],
+                    "named": "ok" if files else "no_file"}
+                   for (n, _), files in zip(pairs, files_by_criterion)]
     while ok and (gaps := _turn_gaps(entries)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:

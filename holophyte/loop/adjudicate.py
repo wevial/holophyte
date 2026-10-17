@@ -24,6 +24,7 @@ from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import criteria_brief, left_open_brief, tests_brief
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     DEFAULT_SEVERITY,
     criteria_block,
@@ -50,22 +51,24 @@ def _findings_across_resumes(conn, run_id, review_round):
 def _left_open(conn, run_id, review_round, criteria):
     if conn is None:
         return []
+    numbers = dict(numbered(conn, run_id, criteria))
     return sorted({finding["line"] for finding
                    in _findings_across_resumes(conn, run_id, review_round)
                    if finding.get("path") == store.CRITERIA_PATH
-                   and 1 <= (finding.get("line") or 0) <= len(criteria)})
+                   and finding.get("line") in numbers})
 
 
 def _criteria_gate(reply, criteria, wt, left_open):
     findings = criteria_findings(reply, criteria, wt)
     flagged = {finding["line"] for finding in findings}
     block = criteria_block(reply)
+    texts = dict(numbered(None, None, criteria))
     for n in left_open:
         if n in flagged or test_references(block[n][1]):
             continue
-        message = (f"CRITERION {n}: unwitnessed \u2014 the review round left "
+        message = (f"CRITERION C{n}: unwitnessed \u2014 the review round left "
                    "it unmet or unwitnessed; only a named test overturns that"
-                   f"\n{criteria[n - 1]}")
+                   f"\n{texts[n]}")
         findings.append({"path": store.CRITERIA_PATH, "line": n,
                          "severity": DEFAULT_SEVERITY,
                          "message": finding_message(message)})
@@ -83,6 +86,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            verify_cmd, contracts, cap, criteria=(), resume=None,
                            review_round=None):
     """No fix round follows: anything but PASS preserves the branch and stops."""
+    criteria = numbered(conn, run_id, criteria)
     pending = resume if resume and resume.get("terminal") else {}
     ticket = reviewed_ticket(conn, run_id, ticket)
     review_round = review_round or cap

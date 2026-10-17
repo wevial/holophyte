@@ -6,6 +6,7 @@ from pathlib import Path
 
 import review_runner
 from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN, _changed_files
+from holophyte.review.criterion_ids import numbered, parse
 from store import CRITERIA_PATH
 
 # A CSI opens with ESC-[ or with the single C1 byte \x9b.
@@ -171,7 +172,7 @@ def finding_severity(block):
 
 # The separator is loose; the status word is not: only `met` clears the gate.
 CRITERION_LINE_RE = re.compile(
-    r"^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b"
+    r"^\s*CRITERION\s+([Cc]?\d+)\s*:\s*(met|not met|unwitnessed)\b"
     r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
 
 
@@ -187,7 +188,7 @@ SCOPE_LINE_RE = re.compile(
 def criteria_block(reply):
     block = {}
     for match in CRITERION_LINE_RE.finditer(reply):
-        block[int(match.group(1))] = (match.group(2).lower(), match.group(3))
+        block[parse(match.group(1))] = (match.group(2).lower(), match.group(3))
     return block
 
 
@@ -475,7 +476,7 @@ def _approval_witnesses(note, references, root, approved_range):
 
 def _judged_criteria(reply, criteria, root, approved_range):
     block = criteria_block(reply)
-    for n, criterion in enumerate(criteria or (), 1):
+    for n, criterion in numbered(None, None, criteria):
         status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
         stale = []
         if status == "met" and note and root is not None:
@@ -505,7 +506,7 @@ def criteria_findings(reply, criteria, root=None, *, approved_range=None,
             reply, criteria, root, approved_range):
         if status == "met":
             continue
-        message = (f"CRITERION {n}: {status} \u2014 {note or '(no reason given)'}"
+        message = (f"CRITERION C{n}: {status} \u2014 {note or '(no reason given)'}"
                    f"\n{criterion}")
         finding = {"path": CRITERIA_PATH, "line": n,
                    "severity": DEFAULT_SEVERITY,

@@ -35,7 +35,7 @@ sequenceDiagram
   Imp-->>WT: commits
   Fac->>WT: verify gate: ticket's command, clause by clause
   Fac->>Rev: staged export of base and candidate, read-only
-  Rev-->>Fac: CRITERION n: met — test  ·  VERDICT
+  Rev-->>Fac: CRITERION Cn: met — test  ·  VERDICT
   Fac->>Store: reviewRounds row (verdict, findings, fingerprint)
   alt REQUEST_CHANGES with a fix round left
     Fac->>Imp: findings, one fix round
@@ -144,7 +144,7 @@ Trace: the report text travels into the review prompt and the round row.
 into a fresh, detached, zero-remote repository, fingerprints it, and
 `docker run`s the reviewer image with that repository mounted read-only.
 Inside, Codex is asked to account for every acceptance criterion with one
-line each (`CRITERION n: met — tests/file.py::Class::test`, `not met`, or
+line each (`CRITERION Cn: met — tests/file.py::Class::test`, `not met`, or
 `unwitnessed`) and end with a verdict. `review.parse_findings()` turns the
 reply into structured findings keyed by `(path, line, severity)`;
 `review.criteria_findings()` resolves each named witness test against the
