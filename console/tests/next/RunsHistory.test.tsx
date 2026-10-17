@@ -232,3 +232,76 @@ test("history hooks retain each host and day's pending, error and success result
     client.clear();
   }
 });
+
+const dayRun = (id: number) => within(screen.getByRole("list", { name: "Runs on Wed 14 Oct, latest first" }))
+  .getAllByRole("listitem").find((row) => row.getAttribute("data-run") === String(id))!;
+const dayCells = (id: number) => Array.from(dayRun(id).children) as HTMLElement[];
+
+test("history rows separate ticket and title and name and link the merged run with its outcome and end time", async () => {
+  await mount("#/runs/history", fleet([{
+    ...run(213, "merged", 26, 30), ticket: "DEMO-215", title: "Stop a run that edits outside its scope",
+    rounds: 2, pr_url: "https://github.com/example/demo/pull/483", ended_ms: midnight("2026-10-14") + (19 * 60 + 45) * MINUTE,
+  }], []).fetch);
+  const link = screen.getByRole("link", {
+    name: "Run 213, DEMO-215 Stop a run that edits outside its scope, demo, merged, took 26m against 30m, ended 19:45",
+  });
+  expect(link.getAttribute("href")).toEndWith("#/runs/demo/213");
+  const cells = dayCells(213);
+  expect(cells.slice(0, 4).map((cell) => cell.textContent)).toEqual(["213", "DEMO-215", "Stop a run that edits outside its scope", "demo"]);
+  expect(within(cells[4]!).getByText("merged")).toBeTruthy();
+  expect(within(cells[4]!).getByText("PR #483")).toBeTruthy();
+  expect(cells[5]!.textContent).toBe("2");
+  expect(cells[7]!.textContent).toBe("19:45");
+  const head = document.querySelector("[data-day-run-table] [aria-hidden='true']")!;
+  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "Outcome", "Rounds", "Took · estimate", "Ended"]);
+});
+
+test("history shows whole-minute overruns and caps the working-time fill at the track's end", async () => {
+  await mount("#/runs/history", fleet([
+    run(212, "merged", 35, 30), run(194, "merged", 72, 45),
+    { ...run(193, "merged", 30, 30), working_ms: 30 * MINUTE + 20_000 },
+    { ...run(192, "merged", 30, 30), estimate_ms: 30 * MINUTE - 1_000 },
+    { ...run(191, "merged", 30, 30), working_ms: 31 * MINUTE - 1_000, estimate_ms: 30 * MINUTE - 1_000 },
+  ], []).fetch);
+  const short = dayCells(212)[6]!;
+  for (const text of ["35m", "/ 30m", "+5m"]) expect(within(short).getByText(text)).toBeTruthy();
+  expect((short.querySelector("[data-work-fill]") as HTMLElement).style.width).toBe("78%");
+  const long = dayCells(194)[6]!;
+  for (const text of ["1h 12m", "/ 45m", "+27m"]) expect(within(long).getByText(text)).toBeTruthy();
+  expect((long.querySelector("[data-work-fill]") as HTMLElement).style.width).toBe("100%");
+  expect(dayCells(193)[6]!.textContent).not.toContain("+");
+  expect(dayCells(192)[6]!.textContent).not.toContain("+");
+  expect(within(dayCells(191)[6]!).getByText("+1m")).toBeTruthy();
+});
+
+test("history explains failed and abandoned outcomes and prefixes an end on a later day", async () => {
+  await mount("#/runs/history", fleet([
+    { ...run(208, "failed", 10, 30), failure_kind: "verify" },
+    { ...run(210, "abandoned", 10, 30), outcome_reason: "superseded by a newer run\nrun 214 claimed it",
+      ended_ms: midnight("2026-10-15") + 20 * MINUTE },
+  ], []).fetch);
+  const failed = dayCells(208)[4]!;
+  expect(within(failed).getByText("failed")).toBeTruthy();
+  expect(within(failed).getByText("at verify")).toBeTruthy();
+  const abandoned = dayCells(210)[4]!;
+  expect(within(abandoned).getByText("abandoned")).toBeTruthy();
+  expect(within(abandoned).getByText("superseded by a newer run")).toBeTruthy();
+  expect(abandoned.textContent).not.toContain("run 214 claimed it");
+  expect(dayCells(210)[7]!.textContent).toBe("Thu 00:20");
+});
+
+test("history omits unknown estimates and work from bars and accessible names and shows zero rounds as a dash", async () => {
+  await mount("#/runs/history", fleet([
+    run(211, "merged", 26, null), { ...run(209, "merged", 0, 30), working_ms: null },
+  ], []).fetch);
+  const knownWork = dayCells(211);
+  expect(knownWork[6]!.textContent).toBe("26m");
+  expect(knownWork[6]!.querySelector("[data-work-bar]")).toBeNull();
+  expect(knownWork[5]!.textContent).toBe("–");
+  const knownLink = within(dayRun(211)).getByRole("link", { name: /^Run 211,/ });
+  expect(knownLink.getAttribute("aria-label")).toContain(", took 26m,");
+  expect(knownLink.getAttribute("aria-label")).not.toContain("against");
+  expect(dayCells(209)[6]!.textContent).toBe("–");
+  expect(dayCells(209)[6]!.querySelector("[data-work-bar]")).toBeNull();
+  expect(within(dayRun(209)).getByRole("link", { name: /^Run 209,/ }).getAttribute("aria-label")).not.toContain("took");
+});

@@ -38,7 +38,7 @@ export function failureWord(kind: string | null | undefined): string {
   return (kind != null && Object.hasOwn(FAILURE_WORDS, kind) ? FAILURE_WORDS[kind] : undefined) ?? "failed";
 }
 
-function firstLine(text: unknown): string {
+export function firstLine(text: unknown): string {
   return typeof text === "string" ? (text.split("\n", 1)[0] ?? "").trim() : "";
 }
 
