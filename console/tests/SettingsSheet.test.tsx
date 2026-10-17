@@ -1,9 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { Floor } from "../src/components/Floor";
-import { CONFIG_EDIT_OFF } from "../src/lib/config";
+import { CONFIG_EDIT_OFF, type ConfigValues } from "../src/lib/config";
 import { UNBOUND_NOTE } from "../src/components/SettingsSheet";
-import type { ConfigValues } from "../src/lib/config";
 import type { Fetch } from "../src/lib/poll";
 import type { Run, Status } from "../src/lib/types";
 import { fixture, settle } from "./harness";
