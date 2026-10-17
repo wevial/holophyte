@@ -281,6 +281,10 @@ an `error` naming `limit`. A store with no row for the project answers
 store answers 503. On a host daemon this route is
 `GET /projects/NAME/holds?limit=N`.
 
+Releasing a hold requires a reason, just like holding: `holo release` requires
+`note`, and `POST /actions/release-hold` rejects a blank `note`. The Release
+UI and its required-reason form are covered by HOLO-403.
+
 ## `GET /history?since=MS&limit=N`
 
 ```json
