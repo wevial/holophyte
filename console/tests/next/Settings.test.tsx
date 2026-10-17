@@ -167,7 +167,8 @@ test("the head and project subtitles use the filename returned by config and fac
     await act(settle);
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(label);
     expect(screen.getByText(subtitle)).toBeTruthy();
-    expect(screen.getByText("This tab comes here.")).toBeTruthy();
+    if (label === "Hosts") expect(screen.getByText("This tab comes here.")).toBeTruthy();
+    else expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeTruthy();
   }
 });
 
