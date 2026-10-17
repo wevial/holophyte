@@ -285,6 +285,26 @@ class ConfigEditTests(ServeTestCase):
                     self.assertEqual(body["line"], line)
                     self.assertEqual(self.on_disk(), before)
 
+    def test_parser_refusals_use_submitted_lines_after_multiline_secret_restore(self):
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        before = '[linear]\napi_key = """first\nsecond\nthird"""\n'
+        (self.db.parent / "config.toml").write_text(before)
+        for text, line in (
+            ('[linear]\napi_key = "[redacted]"\n[loop]\nworkers = = 2\n', 4),
+            ('[linear]\napi_key = "[redacted]" unexpected\n', 2),
+            ('[loop]\nworkers = = 2\n[linear]\napi_key = "[redacted]"\n', 2),
+        ):
+            for check in (True, False):
+                with self.subTest(text=text, check=check):
+                    code, _, body = self.request(
+                        "PUT", "/config", self.BEARER,
+                        body={"text": text, **({"check": True} if check else {})})
+                    self.assertEqual(code, 400, body)
+                    self.assertIn("malformed TOML", body["error"])
+                    self.assertEqual(body["line"], line)
+                    self.assertEqual(self.on_disk(), before)
+
     def test_check_rejects_patch_and_non_boolean_without_writing(self):
         self.seed()
         before = self.config("config_edit = true\n")

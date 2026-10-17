@@ -17,7 +17,7 @@ from holophyte.admission import project_of
 from holophyte.agents.probes import probe_implementer
 from holophyte.config.checks import check_document
 from holophyte.config.reader import KNOWN_KEYS
-from holophyte.redact import RedactionError, redact, restore
+from holophyte.redact import RedactionError, redact, restore, spans
 
 CONFIG_PATH = "/config"
 CONFIG_ACTION = "config_edit"
@@ -105,9 +105,9 @@ def write_config(project, body, now=None, if_match=None):
         return 400, text_refusal(text, "text must be the file's new"
                                 " contents as a string")
     if body.get("check", False):
-        _, refused = restored_config(project, text, config_text(project))
+        restored, refused = restored_config(project, text, config_text(project))
         if refused is not None:
-            return 400, text_refusal(text, refused)
+            return 400, text_refusal(text, refused, restored)
         return 200, {"ok": True, "checked": True}
     with CONFIG_LOCK:
         current = config_text(project)
@@ -120,17 +120,19 @@ def write_config(project, body, now=None, if_match=None):
     return code, reply
 
 
-def text_refusal(text, error):
-    return {"ok": False, "error": error, "line": refusal_line(text, error)}
+def text_refusal(text, error, restored=None):
+    return {"ok": False, "error": error,
+            "line": refusal_line(text, error, restored)}
 
 
-def refusal_line(text, error):
+def refusal_line(text, error, restored=None):
     if not isinstance(text, str):
         return None
     location = re.search(
-        r"^malformed TOML: .*\(at line (\d+), column \d+\)$", error)
+        r"^malformed TOML: .*\(at line (\d+), column (\d+)\)$", error)
     if location:
-        return int(location[1])
+        line, column = map(int, location.groups())
+        return submitted_line(text, restored, line, column)
     named = re.search(r"\[([\w.-]+)\]\s+([\w-]+)\b", error)
     if not named:
         return None
@@ -146,6 +148,23 @@ def refusal_line(text, error):
         if name and re.match(r"\s*" + dotted_key_pattern(name) + r"\s*=", line):
             return number
     return None
+
+
+def submitted_line(text, restored, line, column):
+    if restored is None or restored == text:
+        return line
+    offset = sum(len(part) + 1 for part in restored.split("\n")[:line - 1]) + column - 1
+    shift = 0
+    for (_, start, end), (_, restored_start, restored_end) in zip(
+            spans(text), spans(restored)):
+        if offset < restored_start:
+            break
+        if text[start:end] == restored[restored_start:restored_end]:
+            continue
+        if offset < restored_end:
+            return text.count("\n", 0, start) + 1
+        shift = text.count("\n", 0, end) - restored.count("\n", 0, restored_end)
+    return line + shift
 
 
 def config_key_lines(text):
@@ -296,7 +315,7 @@ def _write_config(project, text, now, current,
                   how="replaced {path} from the console (PUT /config)"):
     restored, refused = restored_config(project, text, current)
     if refused is not None:
-        return 400, text_refusal(text, refused), None
+        return 400, text_refusal(text, refused, restored), None
     text = restored
     path = project.config_path
     path.parent.mkdir(parents=True, exist_ok=True)
