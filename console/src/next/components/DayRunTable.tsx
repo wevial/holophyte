@@ -22,7 +22,7 @@ function reason(row: DayRun): string {
 function Took({ row }: { row: DayRun }) {
   const { working_ms: work, estimate_ms: estimate } = row;
   if (work == null) return <span className={`${MONO} text-ink-3`}>–</span>;
-  const over = estimate == null ? 0 : Math.floor(work / 60_000) - Math.floor(estimate / 60_000);
+  const over = estimate == null ? 0 : Math.floor((work - estimate) / 60_000);
   const fill = estimate === 0 ? (work > 0 ? 100 : 0) : Math.min(100, Math.round(work / (1.5 * (estimate ?? 1)) * 100));
   const tone = estimate != null && work > estimate ? "bg-need" : row.state === "merged" ? "bg-live" : "bg-ink-3";
   return (

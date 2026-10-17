@@ -260,6 +260,8 @@ test("history shows whole-minute overruns and caps the working-time fill at the 
   await mount("#/runs/history", fleet([
     run(212, "merged", 35, 30), run(194, "merged", 72, 45),
     { ...run(193, "merged", 30, 30), working_ms: 30 * MINUTE + 20_000 },
+    { ...run(192, "merged", 30, 30), estimate_ms: 30 * MINUTE - 1_000 },
+    { ...run(191, "merged", 30, 30), working_ms: 31 * MINUTE - 1_000, estimate_ms: 30 * MINUTE - 1_000 },
   ], []).fetch);
   const short = dayCells(212)[6]!;
   for (const text of ["35m", "/ 30m", "+5m"]) expect(within(short).getByText(text)).toBeTruthy();
@@ -268,6 +270,8 @@ test("history shows whole-minute overruns and caps the working-time fill at the 
   for (const text of ["1h 12m", "/ 45m", "+27m"]) expect(within(long).getByText(text)).toBeTruthy();
   expect((long.querySelector("[data-work-fill]") as HTMLElement).style.width).toBe("100%");
   expect(dayCells(193)[6]!.textContent).not.toContain("+");
+  expect(dayCells(192)[6]!.textContent).not.toContain("+");
+  expect(within(dayCells(191)[6]!).getByText("+1m")).toBeTruthy();
 });
 
 test("history explains failed and abandoned outcomes and prefixes an end on a later day", async () => {
