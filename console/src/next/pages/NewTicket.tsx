@@ -105,10 +105,8 @@ export function NewTicket() {
   useEffect(() => {
     const draft = readDraft(project);
     setRestoredAt(draft?.savedAt ?? null);
-    if (draft) {
-      setValues(draft.values);
-      setPriority(draft.priority);
-    }
+    setValues(draft?.values ?? emptyValues());
+    setPriority(draft?.priority ?? null);
   }, [project]);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);

@@ -66,7 +66,7 @@ async function fill() {
 
 function expectBlank() {
   for (const name of Object.keys(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe("");
-  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).selectedOptions[0]?.textContent).toBe("No priority");
+  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).value).toBe("");
   expect(screen.queryByText(/^Draft from .* restored\.$/)).toBeNull();
   expect((screen.getByRole("button", { name: "Save draft" }) as HTMLButtonElement).disabled).toBe(true);
 }
@@ -99,10 +99,26 @@ test("Save draft restores every field, P1 and the saved time only in its project
   cleanup();
   await mount();
   for (const [name, value] of Object.entries(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
-  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).selectedOptions[0]?.textContent).toBe("P1");
+  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).value).toBe("1");
   const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(draft.savedAt);
   expect(screen.getByText(`Draft from ${time} restored.`)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Start over" })).toBeTruthy();
+});
+
+test("switching projects clears fields and priority without a draft and restores the saved project's draft", async () => {
+  await mount();
+  await fill();
+  await press("Save draft");
+  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "relos" } }));
+  await flush();
+  expect(window.location.hash).toBe("#/tickets/relos/new");
+  expectBlank();
+  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "demo" } }));
+  await flush();
+  expect(window.location.hash).toBe("#/tickets/demo/new");
+  for (const [name, value] of Object.entries(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
+  expect((screen.getByRole("combobox", { name: "Priority" }) as HTMLSelectElement).value).toBe("1");
+  expect(screen.getByText(/^Draft from .* restored\.$/)).toBeTruthy();
 });
 
 test("Save draft preserves paragraphs and fenced field labels across repeated saves", async () => {
