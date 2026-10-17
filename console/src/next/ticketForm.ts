@@ -441,7 +441,7 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
   for (const [key, other] of was) {
     const text = my.get(key)?.text;
     if (their.has(key) || text === undefined) continue;
-    if (judge(other.name, other.text, other.index === -1 ? undefined : drawnText(theirs, other.name), text)) merge.onTop.others = [...merge.onTop.others, { index: other.index < 0 ? other.index : ADDED_SECTION, name: other.name, text }];
+    if (judge(other.name, other.text, other.index === -1 || other.repeated ? undefined : drawnText(theirs, other.name), text)) merge.onTop.others = [...merge.onTop.others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION, text }];
   }
   for (const [key, other] of my) {
     if (was.has(key) || their.has(key)) continue;

@@ -53,8 +53,8 @@ type Prose = typeof PROSE[number];
 /** A ticket revision as the edit form holds it: each list field one item a
  *  line, each criterion with the index it was served at (null when added)
  *  and the indented detail under it,
- *  the estimate as typed, and the undrawn sections by their index in the
- *  body, What / Why / How's unlabelled text at index -1. */
+ *  the estimate as typed, the undrawn sections by their index in the body,
+ *  `repeated` after one of their name, What / Why / How's unlabelled text at -1. */
 export type EditFields = Record<Prose, string> & {
   criteria: string[];
   criteriaFrom: (number | null)[];
@@ -63,7 +63,7 @@ export type EditFields = Record<Prose, string> & {
   priority: number | null;
   dependsOn: string[];
   uiChange: "major" | "minor" | null;
-  others: { index: number; name: string; text: string }[];
+  others: { index: number; name: string; text: string; repeated?: true }[];
 };
 
 const PROSE_SECTION = "What / Why / How";
@@ -134,7 +134,7 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     others: [
       ...(raw.has(TITLE) ? [{ index: -2, name: TITLE, text: form.preamble.trim() }] : []),
       ...(rest && !raw.has(PROSE_SECTION) ? [{ index: -1, name: PROSE_SECTION, text: rest }] : []),
-      ...form.sections.flatMap((section, index) => drawn(form, index, raw) ? [] : [{ index, name: section.name, text: section.text.trim() }]),
+      ...form.sections.flatMap((section, index) => drawn(form, index, raw) ? [] : [{ index, name: section.name, text: section.text.trim(), ...(form.sections.findIndex(each => each.name === section.name) < index ? { repeated: true as const } : {}) }]),
     ],
   };
 }
@@ -207,7 +207,7 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
   };
   const eol = body.includes("\r\n") ? "\r\n" : "\n";
   for (const added of edited.others.filter(other => other.index === ADDED_SECTION)) {
-    const at = form.sections.findIndex((section, index) => section.name === added.name && !edited.others.some(other => other.index === index));
+    const at = added.repeated ? -1 : form.sections.findIndex((section, index) => section.name === added.name && !edited.others.some(other => other.index === index));
     if (at >= 0) {
       form = { ...form, sections: form.sections.map((section, index) => index === at ? { ...section, text: withText(section.text, added.text) } : section) };
       continue;

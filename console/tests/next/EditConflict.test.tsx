@@ -87,6 +87,17 @@ test("a section their revision only redraws as fields shows their commands, not 
   expect(merge.both).toEqual([{ name: "Verify command(s)", theirs: "ruff check .", mine: "<!-- each on its own line -->\n```\nbun --cwd=console test\n```" }]);
 });
 
+test("an edit to the second of two repeated sections their revision removed shows it removed and adds it back after the first", () => {
+  const base = "# Notes show\n\n## Verify command(s)\n\n```\nruff check .\n```\n\n## Verify command(s)\n\n```\nbun --cwd=console test\n```\n";
+  const theirs = "# Notes show\n\n## Verify command(s)\n\n```\nruff check .\n```\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: [{ ...read.others[0]!, text: "```\nbun --cwd=console run build\n```" }] };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(merge.both).toEqual([{ name: "Verify command(s)", theirs: "(removed)", mine: "```\nbun --cwd=console run build\n```" }]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(base.replace("bun --cwd=console test", "bun --cwd=console run build"));
+});
+
 test("criteria their revision only redraws as fields show each criterion's detail under it", () => {
   const base = "# Notes show\n\n## Acceptance criteria\n\n<!-- one per line -->\n- [ ] Each note shows.\n  Under the run.\n";
   const theirs = "# Notes show\n\n## Acceptance criteria\n\n- [ ] Each note shows.\n  Under its run.\n";
