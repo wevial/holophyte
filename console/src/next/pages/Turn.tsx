@@ -1,5 +1,4 @@
 import { Link, useParams } from "@tanstack/react-router";
-import type { ReactNode } from "react";
 import { TicketLink } from "../../components/TicketLink";
 import type { RunTurn } from "../../lib/contract.gen";
 import { formatClockSeconds, formatSpan } from "../../lib/format";
@@ -28,7 +27,7 @@ function Figure({ label, value, sub }: { label: string; value: string; sub?: str
 
 function TurnLink({ project, run, turn, next = false }: { project: string; run: number; turn?: RunTurn; next?: boolean }) {
   const label = next ? "Next turn" : "Previous turn";
-  const icon: ReactNode = <TurnArrow next={next} />;
+  const icon = <TurnArrow next={next} />;
   if (!turn) return <a role="link" aria-label={label} aria-disabled="true" className="btn opacity-40" data-variant="quiet">{icon}</a>;
   return <Link {...turnPage(project, run, turn.id)} aria-label={label} className="btn" data-variant="quiet">{icon}</Link>;
 }

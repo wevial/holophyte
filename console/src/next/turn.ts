@@ -1,9 +1,7 @@
 import { useContext } from "react";
 import type { RunDetail, RunTurn } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
-import type { HostRecord } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
-import type { ContractBodies } from "./fleet";
 import { useRun, useRunTurns } from "./queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 
@@ -30,7 +28,7 @@ type TurnPage =
   | { kind: "unknown_project" }
   | { kind: "not_found" }
   | { kind: "turn_not_found" }
-  | { kind: "turn"; detail: RunDetail; host: HostRecord<ContractBodies>; turns: RunTurn[]; turn: RunTurn };
+  | { kind: "turn"; detail: RunDetail; turns: RunTurn[]; turn: RunTurn };
 
 export function useTurnPage(project: string, run: number | null, turn: number | null): TurnPage {
   const deps = useContext(PollDepsContext);
@@ -46,5 +44,5 @@ export function useTurnPage(project: string, run: number | null, turn: number | 
   if (turns.data == null) return { kind: "loading" };
   const selected = turns.data.turns.find((each) => each.id === turn);
   if (selected == null) return { kind: "turn_not_found" };
-  return { kind: "turn", detail, host, turns: turns.data.turns, turn: selected };
+  return { kind: "turn", detail, turns: turns.data.turns, turn: selected };
 }
