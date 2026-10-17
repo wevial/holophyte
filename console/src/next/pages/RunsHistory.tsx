@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { formatSettled } from "../../lib/format";
+import { DayRunTable } from "../components/DayRunTable";
 import { Btn } from "../components/Btn";
 import { ChevronIcon } from "../components/icons";
 import { useHistoryDays, useHistoryTotal } from "../queries";
@@ -61,8 +62,9 @@ export function RunsHistory() {
         <Btn disabled={page === PAGE_COUNT} onClick={() => pick(page + 1)}>Older days <ChevronIcon folded /></Btn>
       </nav>
       {groups.map(day => (
-        <section key={day.since} aria-labelledby={`day-${day.since}`} className="border border-rule bg-paper">
+        <section key={day.since} aria-labelledby={`day-${day.since}`} className="min-w-0 border border-rule bg-paper">
           <DayHead day={day} />
+          {day.rows.length > 0 && <DayRunTable day={day} label={dayName.format(day.since)} />}
           {day.rows.length === 0 && <p className="px-4 py-4 font-mono text-[12.5px] text-ink-3 [overflow-wrap:anywhere]">{project ? `No runs in ${project} this day.` : "No runs this day."}</p>}
         </section>
       ))}
