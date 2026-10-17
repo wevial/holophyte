@@ -1,5 +1,5 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
-import type { EditFields } from "./ticketEdit";
+import { same, type EditFields } from "./ticketEdit";
 
 export interface Fields {
   title: string;
@@ -367,7 +367,6 @@ type Criterion = { text: string; detail: string } | undefined;
 const criterionAt = (form: EditFields, index: number): Criterion =>
   index < form.criteria.length ? { text: form.criteria[index]!, detail: form.criteriaDetail[index] ?? "" } : undefined;
 const otherNamed = (form: EditFields, name: string) => form.others.find(other => other.name === name)?.text;
-const unchanged = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 function shown(value: unknown): string {
   if (value === undefined) return "(removed)";
@@ -387,8 +386,8 @@ function shown(value: unknown): string {
 export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields): EditMerge {
   const merge: EditMerge = { both: [], onTop: { ...theirs } };
   const judge = (name: string, was: unknown, their: unknown, my: unknown): boolean => {
-    const iChanged = !unchanged(was, my);
-    if (iChanged && !unchanged(was, their) && !unchanged(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
+    const iChanged = !same(was, my);
+    if (iChanged && !same(was, their) && !same(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
     return iChanged;
   };
   for (const [field, name] of FIELD_NAMES) {

@@ -176,21 +176,12 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
         <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };
-  const putOnTop = () => {
-    if (!conflict) return;
-    setRead(conflict.theirs);
-    setFields(conflict.merge.onTop);
-    setRebased(true);
+  const resolve = (theirs: typeof read, next: EditFields, onTop: boolean, message: string) => {
+    setRead(theirs);
+    setFields(next);
+    setRebased(onTop);
     setRefusal([]);
-    toast(`Revision ${conflict.theirs.revision} loaded with your edits on top. Review, then save as revision ${conflict.theirs.revision + 1}.`);
-  };
-  const takeTheirs = () => {
-    if (!conflict) return;
-    setRead(conflict.theirs);
-    setFields(conflict.theirs.fields);
-    setRebased(false);
-    setRefusal([]);
-    toast(`Took revision ${conflict.theirs.revision}. Your edits were dropped.`);
+    toast(message);
   };
   const discard = () => {
     setFields(read.fields);
@@ -220,7 +211,8 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   return (
     <Frame project={project} ticketKey={ticketKey}>
       <p className="mt-1.5 border-b border-rule pb-[18px] font-mono text-[13px] text-ink-2">{line}</p>
-      {conflict && <ConflictBanner ticketKey={ticketKey} started={read.revision} newer={conflict.theirs} theirChanges={conflict.theirChanges} merge={conflict.merge} onTop={putOnTop} takeTheirs={takeTheirs} />}
+      {conflict && <ConflictBanner ticketKey={ticketKey} started={read.revision} newer={conflict.theirs} theirChanges={conflict.theirChanges} merge={conflict.merge} onTop={() => resolve(conflict.theirs, conflict.merge.onTop, true, `Revision ${conflict.theirs.revision} loaded with your edits on top. Review, then save as revision ${conflict.theirs.revision + 1}.`)}
+        takeTheirs={() => resolve(conflict.theirs, conflict.theirs.fields, false, `Took revision ${conflict.theirs.revision}. Your edits were dropped.`)} />}
       <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
           <Field label="Project">
