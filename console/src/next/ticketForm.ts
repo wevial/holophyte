@@ -263,8 +263,7 @@ export function blankForm(): TicketForm {
     if (Array.isArray(raw)) hints[field] = raw.map(hint);
     else if (typeof raw === "string") hints[field] = hint(raw);
   }
-  let form = parseBody(uncommented.replace(/^>.*(?:\r?\n|$)/gm, "").replace(/<[^>]*>/g, "").replace("{{TITLE}}", ""));
+  const form = parseBody(uncommented.replace(/^>.*(?:\r?\n|$)/gm, "").replace(/<[^>]*>/g, "").replace("{{TITLE}}", ""));
   form.sections = form.sections.filter(section => !optional.has(section.name));
-  form = withField(form, "verify", []);
-  return { ...withField(form, "openQuestions", "- None"), hints };
+  return { ...withField(withField(form, "verify", []), "openQuestions", "- None"), hints };
 }
