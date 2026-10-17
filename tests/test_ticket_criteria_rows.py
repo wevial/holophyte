@@ -162,7 +162,7 @@ class TicketCriteriaRowsTests(unittest.TestCase):
                 " mirroredAt, affinity) VALUES (?, ?, ?, 'Old ticket', ?, ?, ?,"
                 " 1, 'any')", (self.project_id, identifier, identifier, status,
                                json.dumps(CRITERIA), json.dumps([COMMANDS])))
-        conn.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1}")
+        conn.execute("PRAGMA user_version = 51")
         conn.commit()
         conn.close()
         self.conn = store.open(self.path)
