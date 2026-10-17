@@ -6,6 +6,7 @@ import { useAction } from "../actions";
 import { OriginContext, PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { RestartDaemon } from "./RestartDaemon";
+import { RouteTable } from "./RouteTable";
 import { HostToken } from "./HostToken";
 import { useToast } from "./Toast";
 import { useHostsTab, type HostCard } from "../hosts";
@@ -97,6 +98,7 @@ function DaemonCard({ host, onRestart }: { host: HostCard; onRestart: (key: stri
           {host.sweepNote && <p className={`${mono} mt-2 leading-5`}>{host.sweepNote}</p>}
         </section>
       </div>
+      <RouteTable host={host} />
       <HostToken host={host} />
     </article>
   );
@@ -116,7 +118,7 @@ export function HostsTab() {
         <p className={`${mono} mt-1`}>last answer from {daemons.map((host) => `${host.name} ${host.seen ? `at ${host.seen}` : "never answered"}`).join(" · ")}</p>
       </div>}
       {daemons.map((host) => <DaemonCard key={host.key} host={host} onRestart={onRestart} />)}
-      <footer className={`${mono} border-b border-rule pb-4 pt-2`}>the token stays in this browser</footer>
+      <footer className={`${mono} border-b border-rule pb-4 pt-2`}>routes are probed when the loop starts and before a fallback is used; a fallback in use is recorded on the run · the token stays in this browser</footer>
     </div>
   );
 }
