@@ -59,7 +59,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/history", validateSearch: validateHistorySearch, component: RunsHistory }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run", component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets", validateSearch: validateTicketsSearch, component: Tickets }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/new", component: NewTicket }),
+  pageRoute("/tickets/$project/new", NewTicket),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run/turns/$turn", component: TurnPage }),
   pageRoute("/stories", StoriesIndex),

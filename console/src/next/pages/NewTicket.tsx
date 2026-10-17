@@ -9,8 +9,8 @@ import { switcherRows } from "../projects";
 import { useBoards } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { blankForm, composeBody, withField } from "../ticketForm";
+import { CRUMB_LINK } from "./runShared";
 
-const CRUMB_LINK = "border-b border-rule text-ink-3 no-underline hover:border-ink hover:text-ink";
 const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 font-sans text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
