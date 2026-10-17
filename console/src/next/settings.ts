@@ -85,3 +85,26 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
     default: 1, kind: "number", numeric: "integer", min: 1,
   },
 ];
+
+export type DiffLine = { kind: "removed" | "added"; number: number; text: string };
+
+export function lineDiff(before: string, after: string): DiffLine[] {
+  const old = before.split("\n");
+  const next = after.split("\n");
+  const lengths = Array.from({ length: old.length + 1 }, () => new Uint32Array(next.length + 1));
+  for (let i = old.length - 1; i >= 0; i--) {
+    for (let j = next.length - 1; j >= 0; j--) {
+      lengths[i]![j] = old[i] === next[j] ? lengths[i + 1]![j + 1]! + 1 : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!);
+    }
+  }
+  const result: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < old.length || j < next.length) {
+    if (i < old.length && j < next.length && old[i] === next[j]) { i++; j++; }
+    else if (i < old.length && (j === next.length || lengths[i + 1]![j]! >= lengths[i]![j + 1]!)) {
+      result.push({ kind: "removed", number: i + 1, text: old[i++]! });
+    } else result.push({ kind: "added", number: j + 1, text: next[j++]! });
+  }
+  return result;
+}

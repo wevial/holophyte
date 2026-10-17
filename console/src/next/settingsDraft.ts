@@ -4,6 +4,8 @@ import { same, type PatchValue } from "../lib/config";
 export type SettingsEdit = { old: PatchValue; value: PatchValue };
 type ProjectEdits = Record<string, SettingsEdit>;
 type DraftContext = {
+  raw: Record<string, string>;
+  editRaw: (project: string, text: string | null) => void;
   projects: Record<string, ProjectEdits>;
   edit: (project: string, key: string, old: PatchValue, value: PatchValue) => void;
   discard: (project: string) => void;
@@ -12,6 +14,13 @@ type DraftContext = {
 const Context = createContext<DraftContext | null>(null);
 
 export function SettingsDraftProvider({ children }: { children: ReactNode }) {
+  const [raw, setRaw] = useState<Record<string, string>>({});
+  const editRaw = (project: string, text: string | null) => setRaw((previous) => {
+    const next = { ...previous };
+    if (text === null) delete next[project];
+    else next[project] = text;
+    return next;
+  });
   const [{ projects, discards }, setDraft] = useState<{ projects: Record<string, ProjectEdits>; discards: Record<string, number> }>({ projects: {}, discards: {} });
   const edit: DraftContext["edit"] = (project, key, old, value) => setDraft((previous) => {
     const edits = { ...previous.projects[project] };
@@ -21,7 +30,7 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
   });
   const discard = (project: string) => setDraft((previous) => {
     const { [project]: _dropped, ...rest } = previous.projects;
-    return { projects: rest, discards: { ...previous.discards, [project]: (previous.discards[project] ?? 0) + 1 } };
+    return { ...previous, projects: rest, discards: { ...previous.discards, [project]: (previous.discards[project] ?? 0) + 1 } };
   });
   const saved: DraftContext["saved"] = (project, submitted) => setDraft((previous) => {
     const edits = { ...previous.projects[project] };
@@ -34,7 +43,7 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
     }
     return { ...previous, projects: { ...previous.projects, [project]: edits } };
   });
-  return createElement(Context.Provider, { value: { projects, edit, discard, saved } }, children);
+  return createElement(Context.Provider, { value: { projects, edit, discard, saved, raw, editRaw } }, children);
 }
 
 export function useSettingsDraft() {
