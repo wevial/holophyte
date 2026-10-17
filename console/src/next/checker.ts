@@ -35,15 +35,16 @@ export function placeMessage(text: string): string {
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** The panel's summary line and its tone for a check's state: `null` for a
- *  blank form, `undefined` while the first answer is awaited. */
-export function checkSummary(check: CheckResult | null | undefined): { text: string; tone: Tone } {
+ *  blank form, `undefined` while the first answer is awaited. `saving`
+ *  words it for an edit, whose errors block saving rather than filing. */
+export function checkSummary(check: CheckResult | null | undefined, saving = false): { text: string; tone: Tone } {
   if (check === null) return { text: "Nothing to check yet. Start with a title.", tone: "ink-3" };
   if (check === undefined) return { text: "Checking…", tone: "ink-3" };
-  if (check === "unsupported") return { text: "This host does not check as you type; File ticket still checks.", tone: "ink-3" };
+  if (check === "unsupported") return { text: `This host does not check as you type; ${saving ? "Save" : "File ticket"} still checks.`, tone: "ink-3" };
   if ("error" in check) return { text: `The checker is not answering: ${check.error}`, tone: "bad" };
   const advisories = count(check.advisories.length, "advisory", "advisories");
   if (check.problems.length) {
-    const errors = `${count(check.problems.length, "error blocks", "errors block")} filing`;
+    const errors = `${count(check.problems.length, "error blocks", "errors block")} ${saving ? "saving" : "filing"}`;
     return { text: check.advisories.length ? `${errors} · ${advisories}` : errors, tone: "bad" };
   }
   if (check.advisories.length) return { text: `Ready · ${advisories}, none blocking`, tone: "live" };

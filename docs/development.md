@@ -931,6 +931,10 @@ at Overview in that scope; a hash that names a route is shown as written.
 fields and files to an editable project’s Backlog from the Tickets page.
 `console/e2e/HOLO-406.capture.ts` captures its themes, Tickets entry, filing
 refusal and narrow layout, and checks the commands’ rendered monospace font.
+`console/src/next/pages/EditTicket.tsx` loads a native ticket's current
+revision into the same fields (`console/src/next/components/TicketFields.tsx`),
+marks each changed one and saves it as the next revision with `If-Match`;
+`console/src/next/ticketEdit.ts` rewrites only the fields that changed.
 
 `console/src/next/runDays.ts` defines thirty local-day windows and aggregates
 each day’s runs. `console/src/next/pages/RunsHistory.tsx` renders their counts,

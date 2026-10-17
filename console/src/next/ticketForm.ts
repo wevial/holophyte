@@ -263,6 +263,9 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
   return { ...form, preamble, sections: updated };
 }
 
+/** The estimate in minutes, 5 to 120 in steps of 5: the run's time box. */
+export const clampEstimate = (value: number) => Math.min(120, Math.max(5, Math.round(value / 5) * 5));
+
 export function blankForm(): TicketForm {
   const optional = new Set(["Reproduce", "Mock-up", "Contract checks", "Evidence", "Story"]);
   const hints: TicketForm["hints"] = {};
