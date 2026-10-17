@@ -151,8 +151,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string[]>([]);
   const changes = changedNames(read.fields, fields);
-  const newer = loaded.revision > read.revision ? loaded : null;
-  const theirs = newer && readOf(newer);
+  const theirs = loaded.revision > read.revision ? readOf(loaded) : null;
   if (theirs && !changes.length) {
     setRead(theirs);
     setFields(theirs.fields);
