@@ -33,7 +33,7 @@ import holophyte.board.projection  # noqa: E402 - after the sys.path insert abov
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
-from holophyte.loop.contradiction import declared  # noqa: E402
+from holophyte.loop.contradiction import brief, declared  # noqa: E402
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 REASON = "the pr_open facts carry only open_threads"
@@ -83,6 +83,26 @@ class DeclaredTests(unittest.TestCase):
                 (2, "the facts lack a field"),
                 (2, "the reader requires `parkKind`"),
             ])
+
+    def codex_echo(self, message):
+        prompt = "Implement this task in this repo:" + brief(
+            [f"criterion {n}" for n in range(1, 9)])
+        return f"user\n{prompt}\ncodex\n{message}\ntokens used\n9,120\n{message}"
+
+    def test_the_echoed_prompt_brief_declares_nothing(self):
+        self.assertEqual(declared(self.codex_echo("Done; all criteria hold.")), [])
+
+    def test_a_real_declaration_after_the_echoed_brief_still_parses(self):
+        self.assertEqual(declared(self.codex_echo(
+            "CONTRADICTION: criterion C3 — the route has no state field")),
+            [(3, "the route has no state field")])
+
+    def test_an_unfilled_reason_declares_nothing(self):
+        for line in ("CONTRADICTION: criterion C8 — reason",
+                     "CONTRADICTION: criterion C8 — <one-line reason>",
+                     "CONTRADICTION: criterion C8 —"):
+            with self.subTest(line=line):
+                self.assertEqual(declared(line), [])
 
 
 class ImplementTurnContradictionTests(LoopFixture):
@@ -146,7 +166,7 @@ class RequeueAfterContradictionTests(LoopFixture):
 
         fake, _ = self.loop(Commit("render the amended word"), APPROVE)
 
-        self.assertIn("CONTRADICTION: criterion C1", fake.turns[0].goal)
+        self.assertIn("CONTRADICTION: criterion C<id>", fake.turns[0].goal)
         self.assertEqual(fake.roles, ["implement", "review"])
         self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
                                    " WHERE runId = 2 AND kind = 'contradiction'"),
