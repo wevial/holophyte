@@ -64,6 +64,26 @@ class PullRequestRefreshTests(MergeModeFixture):
             "New description.\n\nLinear: KO-131\n\n"
             "<!-- bot -->\nAppended block.\n")
 
+    def test_refresh_without_title_replaces_prose_and_preserves_ticket_footer(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.pr_body.write_text("Old description.\n\nLinear: KO-131\n")
+        self.refresh(("Requests no longer hang.", False))
+        self.assertEqual(self.pr_body.read_text(),
+                         "Requests no longer hang.\n\nLinear: KO-131\n")
+
+    def test_refresh_without_title_records_the_change_summary(self):
+        self.configure('[merge]\nmode = "pr"\npr_changes_log = true\n')
+        self.fake_route()
+        self.pr_body.write_text("Old description.\n\nLinear: KO-131\n")
+        self.refresh(("Requests no longer hang.\n\n"
+                      "## Changes since first review\n- Requests finish promptly.",
+                      False))
+        self.assertEqual(self.pr_body.read_text(),
+                         "Requests no longer hang.\n\n"
+                         "## Changes since first review\n"
+                         "- Round 1: Requests finish promptly.\n\nLinear: KO-131\n")
+
     def test_refresh_omits_history_by_default_and_removes_existing_rounds(self):
         self.configure('[merge]\nmode = "pr"\n')
         self.fake_route()
@@ -107,7 +127,7 @@ class PullRequestRefreshTests(MergeModeFixture):
         self.assertIn("the description as it stands", prompt)
         self.assertIn("Original subquery description.", prompt)
         self.assertIn("what this fix answered", prompt)
-        self.assertIn("git diff main...HEAD", prompt)
+        self.assertIn("git diff origin/main...HEAD", prompt)
         self.refresh(("TITLE: Still ignored\nJoin with null handling.\n\n"
                       "## Changes since first review\n- Keep rows without matches.",
                       False),
@@ -119,6 +139,21 @@ class PullRequestRefreshTests(MergeModeFixture):
                       "- Round 2: Keep rows without matches.", second)
         edits = [c for c in self.recorded() if c.startswith("gh pr edit")]
         self.assertEqual(edits, [f"gh pr edit {self.URL} --body-file -"] * 2)
+
+    def test_refresh_labels_findings_and_notes_as_answered_not_open_gaps(self):
+        self.configure('[merge]\nmode = "pr"\n')
+        self.fake_route()
+        self.pr_body.write_text("Old description.\n\nLinear: KO-131\n")
+        answered = ("1. **[P1] Readable notes remain hidden**\n"
+                    "The earlier finding remains unresolved.\n"
+                    "VERDICT: REQUEST_CHANGES")
+        prompt = self.refresh(("TITLE: Ignored\nNotes are readable.", False),
+                              answered)
+        self.assertIn(
+            "what this fix answered. This round's commits answer every finding"
+            " and note below: describe the behaviour they produced, and do not"
+            " list any of them as an open gap, risk or known issue.\n\n"
+            + answered + "\n\nRewrite the description", prompt)
 
     def captured_pr(self, exit_code=0, quoted=""):
         """Evidence at A; the capture logs its sha, then fails or writes one."""
@@ -279,7 +314,7 @@ class PullRequestRefreshTests(MergeModeFixture):
                     "Capture\n<!-- bot -->tail\n")
         self.pr_body.write_text(original)
         for answer, reason in [(("", True), "ran out of time"),
-                               (("No title line", False), "no `TITLE:` line"),
+                               (("No title line", False), "missing behaviour summary"),
                                (("TITLE: Valid\nNew prose", False),
                                 "missing behaviour summary"),
                                (("TITLE: Valid\nNew prose\n\n"

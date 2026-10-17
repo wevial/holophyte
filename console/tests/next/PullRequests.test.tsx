@@ -22,7 +22,7 @@ type Item = Attention["items"][number];
 const park = (run: number, parkKind: string, ageMs: number, pr: object): Item => ({
   kind: "pr_open", level: "attention", run, ticket: `DEMO-${run}`, ticket_url: null, title: `Ticket ${run}`,
   park_kind: parkKind, reason: "PR open", asked_ms: NOW - ageMs,
-  pr_url: `https://github.com/example/demo/pull/${run + 33}`, pr: { title: null, state: null, number: run + 33, ...pr },
+  pr_url: `https://github.com/example/demo/pull/${run + 33}`, pr: { title: null, state: "ready", number: run + 33, ...pr },
 } as Item);
 const onCi = park(8, "ci", 3 * HOUR, { number: 41, checks: "pending", review: null, threads: 0, open_threads: 0 });
 const readyPark = park(9, "pull_request", 2 * HOUR, { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0 });
@@ -94,7 +94,7 @@ test("a lane per project counts its open pull requests, longest waiting first, e
 });
 
 test("a row names its pull request from its URL and lists its three facts, unknown ones as unknown", async () => {
-  const unpolled = park(11, "pull_request", 30 * 60_000, { number: null, checks: null, review: null, threads: null, open_threads: null });
+  const unpolled = park(11, "pull_request", 30 * 60_000, { number: null, checks: null, review: null, threads: null, open_threads: null, state: null });
   await mount({ items: [onCi, readyPark, threadPark, unpolled] });
   const [, , third, fourth] = rows();
   expect(within(third!).getByText("PR #43")).toBeTruthy();
