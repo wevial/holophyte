@@ -6,6 +6,7 @@ import { storeScope, switcherRows } from "../projects";
 import { useConfig } from "../queries";
 import { keepScope, useConsolePeers } from "../scope";
 import { hostsNeedingAttention, settingsHost, SETTINGS_TABS } from "../settings";
+import { AppearanceTab } from "../components/AppearanceTab";
 import { HostsTab } from "../components/HostsTab";
 import { NotFound } from "./Placeholder";
 
@@ -92,7 +93,7 @@ function SettingsPage({ tab }: { tab: Tab }) {
             <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
             <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
           </header>
-          {tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
+          {tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
       </div>
       <footer className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
