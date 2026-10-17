@@ -26,6 +26,8 @@ class TranscriptTests(unittest.TestCase):
             ('command', 'await tools.exec_command({cmd: "echo checked"});'),
             ('tool', 'checked\n\nExit code: 0'),
             ('assistant', 'All checks passed.'),
+            ('command', 'await tools.exec_command({cmd: "false"});'),
+            ('tool', 'failed\n\nExit code: 1'),
         ])
 
     def test_codex_call_metadata_and_failed_result(self):
@@ -34,11 +36,36 @@ class TranscriptTests(unittest.TestCase):
         self.assertEqual(entries[2]['call'], 'call-1')
         self.assertEqual(entries[2]['call'], entries[3]['call'])
         self.assertFalse(entries[3]['failed'])
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'failure.jsonl'
-            path.write_text((FIXTURES / 'codex.jsonl').read_text().replace(
-                '\\"exit_code\\": 0', '\\"exit_code\\": 1'))
-            self.assertTrue(render(path)[3]['failed'])
+        self.assertEqual(entries[5]['tool'], 'exec')
+        self.assertEqual(entries[5]['call'], 'call-2')
+        self.assertEqual(entries[5]['call'], entries[6]['call'])
+        self.assertTrue(entries[6]['failed'])
+
+    def test_claude_fixture_preserves_order_timestamps_and_tool_metadata(self):
+        entries = render(FIXTURES / 'claude.jsonl')
+        self.assertEqual([e['speaker'] for e in entries],
+                         ['user', 'assistant', 'command', 'tool',
+                          'command', 'tool', 'error'])
+        self.assertEqual([e['at_ms'] for e in entries], [
+            1767261601000, 1767261603500, 1767261604000, 1767261606000,
+            1767261609000, 1767261609200, 1767261612000])
+        self.assertEqual(entries[0]['text'], 'Make the greeting test pass.')
+        self.assertEqual(entries[1]['text'], 'I will run the tests first.')
+        self.assertEqual(entries[2]['tool'], 'Bash')
+        self.assertEqual(entries[2]['call'], 'toolu_01CCCCCCCCCCCCCCCCCCCCCC')
+        self.assertEqual(entries[3]['call'], entries[2]['call'])
+        self.assertTrue(entries[3]['failed'])
+        self.assertEqual(entries[2]['text'], 'python3 -m unittest discover -s tests')
+        self.assertEqual(entries[2]['summary'], 'python3 -m unittest discover -s tests')
+        self.assertEqual(entries[4]['tool'], 'Edit')
+        self.assertEqual(entries[4]['summary'], 'src/example.py')
+        self.assertEqual(entries[5]['call'], entries[4]['call'])
+        self.assertFalse(entries[5]['failed'])
+        self.assertEqual(entries[6]['text'],
+                         'Connection dropped (ECONNRESET) · retry 1 of 10')
+        self.assertTrue(entries[6]['failed'])
+        self.assertNotIn('The test probably expects', json.dumps(entries))
+        self.assertNotIn('Subagent note', json.dumps(entries))
 
     def test_claude_api_error_and_unknown_content(self):
         with tempfile.TemporaryDirectory() as tmp:
