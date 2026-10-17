@@ -1,19 +1,21 @@
+import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentFencesBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, detailedBody, fencedBody, inlineCommentMarkerBody, mockupBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, labeledCommentBody, mockupBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
-test("Summary edits preserve later sections when inline code contains an HTML comment marker", () => {
-  for (const prose of ["Render the literal `<!--` in the editor.", "Render the literal `` `<!--` `` in the editor.", "Show `the opening marker\nvalue <!--` literally.", "Show ``the opening marker\nvalue ` <!--`` literally."]) {
-    for (const eol of ["\n", "\r\n"]) {
-      const body = inlineCommentMarkerBody.replace("Render the literal `<!--` in the editor.", prose).replaceAll("\n", eol);
-      const form = parseBody(body);
-      expect(composeBody(withField(form, "summary", "New summary."))).toBe(body.replace(prose.replaceAll("\n", eol), "New summary."));
-      expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
-      expect(fieldOf(form, "estimate")).toBe(30);
-    }
-  }
-});
+
+function checkerFieldsWithoutComments(body: string) {
+  const result = Bun.spawnSync(["python3", "-c", `
+import json, sys
+from ticket_template import COMMENT_RE, parse
+ticket = parse(COMMENT_RE.sub("", sys.stdin.read()))
+print(json.dumps({"summary": ticket.summary, "criteria": ticket.acceptance,
+                  "how": ticket.how, "estimate": ticket.estimate_min}))
+`], { cwd: fileURLToPath(new URL("../../../", import.meta.url)), stdin: Buffer.from(body) });
+  expect(result.exitCode).toBe(0);
+  return JSON.parse(result.stdout.toString()) as { summary: string; criteria: string[]; how: string; estimate: number | null };
+}
 
 test("What/Why/How edits preserve adjacent fenced blocks outside the prose paragraph", () => {
   const cases = [
@@ -210,15 +212,93 @@ test("criteria edits exclude HTML comments and keep replacement items visible", 
 });
 
 
-test("fields with trailing HTML comments read and edit visible text while preserving annotations", () => {
+test("a criterion with a trailing HTML comment reads and edits only visible text", () => {
   for (const eol of ["\n", "\r\n"]) {
     const body = annotatedFieldsBody.replaceAll("\n", eol);
     const form = parseBody(body);
     expect(fieldOf(form, "criteria")).toEqual(["Saved notes appear."]);
+    expect(fieldOf(form, "criteria")).toEqual(checkerFieldsWithoutComments(body).criteria);
+    expect(composeBody(withField(form, "criteria", ["Updated notes appear."]))).toBe(
+      body.replace("Saved notes appear.", "Updated notes appear."),
+    );
+  }
+});
+
+test("a How line with a trailing HTML comment reads and edits only visible text", () => {
+  for (const eol of ["\n", "\r\n"]) {
+    const body = annotatedFieldsBody.replaceAll("\n", eol);
+    const form = parseBody(body);
     expect(fieldOf(form, "how")).toBe("Read the stored notes.");
-    const edited = withField(withField(form, "criteria", ["Updated notes appear."]), "how", "Read the run record.");
-    expect(composeBody(edited)).toBe(body.replace("Saved notes appear.", "Updated notes appear.").replace("Read the stored notes.", "Read the run record."));
-    expect(fieldOf(parseBody(composeBody(edited)), "criteria")).toEqual(["Updated notes appear."]);
-    expect(fieldOf(parseBody(composeBody(edited)), "how")).toBe("Read the run record.");
+    expect(fieldOf(form, "how")).toBe(checkerFieldsWithoutComments(body).how);
+    expect(composeBody(withField(form, "how", "Read the run record."))).toBe(
+      body.replace("Read the stored notes.", "Read the run record."),
+    );
+  }
+});
+
+test("an unclosed HTML comment in Summary leaves later fields visible", () => {
+  const form = parseBody(unclosedCommentBody);
+  const checker = checkerFieldsWithoutComments(unclosedCommentBody);
+  expect(fieldOf(form, "summary")).toBe(checker.summary);
+  expect(fieldOf(form, "criteria")).toEqual(checker.criteria);
+  expect(fieldOf(form, "estimate")).toBe(checker.estimate);
+  expect(fieldOf(form, "summary")).toBe("Render the literal <!-- in the editor.");
+  expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
+  expect(fieldOf(form, "estimate")).toBe(30);
+  expect(composeBody(withField(form, "summary", "New summary."))).toBe(
+    unclosedCommentBody.replace("Render the literal <!-- in the editor.", "New summary."),
+  );
+});
+
+test("a two-line inline code span with an unclosed comment leaves later fields visible", () => {
+  const form = parseBody(multilineInlineCodeBody);
+  const checker = checkerFieldsWithoutComments(multilineInlineCodeBody);
+  expect(fieldOf(form, "summary").replace(/\s+/g, " ")).toBe(checker.summary);
+  expect(fieldOf(form, "criteria")).toEqual(checker.criteria);
+  expect(fieldOf(form, "estimate")).toBe(checker.estimate);
+  expect(fieldOf(form, "summary")).toBe("Show `the opening marker\nvalue <!--` literally.");
+  expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
+  expect(fieldOf(form, "estimate")).toBe(30);
+  expect(composeBody(withField(form, "summary", "New summary."))).toBe(
+    multilineInlineCodeBody.replace("Show `the opening marker\nvalue <!--` literally.", "New summary."),
+  );
+});
+
+test("How paragraphs continue after trailing spaces and UI insertion keeps How's annotation on its line", () => {
+  const form = parseBody(continuedHowBody);
+  expect(fieldOf(form, "how")).toBe("Read the record.  \nContinue reading.");
+  expect(composeBody(withField(form, "how", "Read once."))).toBe(
+    continuedHowBody.replace("Read the record.  \nContinue reading.", "Read once."),
+  );
+  expect(composeBody(withField(parseBody(annotatedFieldsBody), "uiChange", "major"))).toBe(
+    annotatedFieldsBody.replace("**How:** Read the stored notes. <!-- keep explanation -->", "**How:** Read the stored notes. <!-- keep explanation -->\n\n**UI change:** major"),
+  );
+});
+
+test("closed comments end at the first closing marker even inside inline code and fences", () => {
+  const form = parseBody(closedCommentsBody);
+  expect(composeBody(form)).toBe(closedCommentsBody);
+  expect(fieldOf(form, "summary")).toBe("Show `` literally.  Visible tail.");
+  expect(fieldOf(form, "verify")).toEqual(["printf 'start'", "printf 'done'"]);
+});
+
+test("a comment between a field label and its value survives a visible-text edit", () => {
+  const form = parseBody(labeledCommentBody);
+  expect(fieldOf(form, "how")).toBe("Read the record.");
+  expect(composeBody(withField(form, "how", "Read the updated record."))).toBe(
+    labeledCommentBody.replace("Read the record.", "Read the updated record."),
+  );
+});
+
+test("verify edits retain comments inside a fence with its closing marker on its own line", () => {
+  const form = parseBody(closedCommentsBody);
+  for (const commands of [["printf 'new'"], []]) {
+    const edited = composeBody(withField(form, "verify", commands));
+    expect(edited).toBe(closedCommentsBody.replace(
+      "printf 'start'<!-- hidden\nstill hidden -->\nprintf 'done'",
+      commands.join("\n") + "<!-- hidden\nstill hidden -->",
+    ));
+    expect(fieldOf(parseBody(edited), "verify")).toEqual(commands);
+    expect(fieldOf(parseBody(edited), "openQuestions")).toBe("- None");
   }
 });

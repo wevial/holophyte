@@ -26,50 +26,46 @@ export interface TicketForm {
   sections: TicketSection[];
   hints: Partial<Record<Field, string | string[]>>;
 }
-interface Line { start: number; end: number; text: string; eol: string; suffix: string; fenced: boolean; commented: boolean }
+interface Line { start: number; end: number; contentEnd: number; text: string; eol: string; suffix: string; fenced: boolean; commented: boolean }
 
-function commentState(text: string, inComment: boolean, inlineCode: string, following: string) {
-  let visibleEnd = inComment ? 0 : text.length;
-  for (const match of text.matchAll(/`+|<!--|-->/g)) {
-    const token = match[0];
-    if (inComment) {
-      if (token === "-->") inComment = false;
-    } else if (inlineCode) {
-      if (token === inlineCode) inlineCode = "";
-    } else if (token === "<!--") {
-      inComment = true;
-      visibleEnd = Math.min(visibleEnd, match.index);
-    } else if (token.startsWith("`")) {
-      const rest = text.slice(match.index + token.length) + following;
-      if ([...rest.matchAll(/`+/g)].some(candidate => candidate[0] === token)) inlineCode = token;
-    }
+const commentPattern = /<!--[\s\S]*?-->/g;
+function withoutComments(text: string): string {
+  return text.replace(commentPattern, "");
+}
+
+function visibleSource(text: string) {
+  let visible = "";
+  const offsets: number[] = [];
+  let start = 0;
+  for (const match of [...text.matchAll(commentPattern), { index: text.length, 0: "" }]) {
+    visible += text.slice(start, match.index);
+    for (let i = start; i < match.index; i++) offsets.push(i);
+    start = match.index + match[0].length;
   }
-  const visible = visibleEnd < text.length ? text.slice(0, visibleEnd).trimEnd() : text;
-  return { visible, inComment, inlineCode, commented: visibleEnd < text.length && !visible.trim() };
+  offsets.push(text.length);
+  return { visible, offsets };
 }
 
 function lines(text: string): Line[] {
   const result: Line[] = [];
+  const { visible, offsets } = visibleSource(text);
   let fence = "";
-  let inComment = false;
-  let inlineCode = "";
-  for (const match of text.matchAll(/[^\n]*(?:\n|$)/g)) {
+  for (const match of visible.matchAll(/[^\n]*(?:\n|$)/g)) {
     if (!match[0]) continue;
     const raw = match[0];
     const content = raw.replace(/\r?\n$/, "");
-    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(content);
+    const value = content.trimEnd();
+    const start = offsets[match.index];
+    const contentEnd = value ? offsets[match.index + value.length - 1] + 1 : start;
+    const eolStart = offsets[match.index + content.length];
+    const end = raw.endsWith("\n") ? offsets[match.index + raw.length - 1] + 1 : text.length;
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(value);
     const fenced = !!fence;
-    const state: ReturnType<typeof commentState> = fenced || (marker && !inComment && !inlineCode)
-      ? { visible: content, commented: false, inComment, inlineCode: "" }
-      : commentState(content, inComment, inlineCode, text.slice(match.index! + content.length));
-    const commented = state.commented;
-    inComment = state.inComment;
-    inlineCode = state.inlineCode;
-    if (marker && !commented) {
+    if (marker) {
       if (!fence) fence = marker[1];
       else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
     }
-    result.push({ start: match.index!, end: match.index! + raw.length, text: state.visible, suffix: content.slice(state.visible.length), eol: raw.slice(content.length), fenced, commented });
+    result.push({ start, end, contentEnd, text: value, suffix: text.slice(contentEnd, eolStart), eol: raw.slice(content.length), fenced, commented: !value.trim() });
   }
   return result;
 }
@@ -107,7 +103,7 @@ const itemPatterns = {
   inScope: scopePattern, outOfScope: scopePattern, criteria: /^- \[ \] (.*)$/,
   mockupImages: /^(!\[[^\]]*\]\(.*\))$/,
 };
-type Span = { start: number; end: number; value: string };
+type Span = { start: number; end: number; value: string; after?: number };
 
 function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const rows = lines(text);
@@ -115,14 +111,14 @@ function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   if (index < 0) return;
   const first = rows[index];
   const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(first.text)![0];
-  let end = first.start + first.text.length;
-  for (const line of first.suffix ? [] : rows.slice(index + 1)) {
+  let last = first;
+  for (const line of rows.slice(index + 1)) {
     if (!line.text.trim() || line.commented || /^(\*\*[^*\r\n]+:\*\*| {0,3}(?:>|#{1,6}(?:[ \t]|$)|[-+*][ \t]+|1[.)][ \t]+|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|`{3,}|~{3,}))/.test(line.text)) break;
-    end = line.start + line.text.length;
-    if (line.suffix) break;
+    last = line;
   }
-  const start = first.start + prefix.length;
-  return { start, end, value: text.slice(start, end) };
+  const source = visibleSource(text.slice(first.start, first.contentEnd));
+  const start = first.start + source.offsets[prefix.length];
+  return { start, end: last.contentEnd, after: last.end - last.eol.length, value: withoutComments(text.slice(start, last.contentEnd)).trimEnd() };
 }
 
 function matching(text: string, pattern: RegExp): Line[] {
@@ -136,7 +132,7 @@ function verifySpan(text: string): Span | undefined {
   const width = opening.text.trimStart().match(/^`+/)![0].length;
   const closing = rows.slice(index + 1).find(line => new RegExp(`^ {0,3}\x60{${width},}[ \\t]*$`).test(line.text));
   const end = closing?.start ?? text.length;
-  return { start: opening.end, end, value: text.slice(opening.end, end) };
+  return { start: opening.end, end, value: withoutComments(text.slice(opening.end, end)) };
 }
 const estimatePattern = /^Estimate: (.*?) min · Depends on: (.*)$/;
 
@@ -144,7 +140,7 @@ export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] 
   const text = field === "title" ? form.preamble : form.sections.find(section => section.name === sections[field as Exclude<Field, "title">])?.text ?? "";
   let value: Fields[Field];
   if (field === "title") value = matching(text, /^# /)[0]?.text.slice(2) ?? "";
-  else if (field === "summary" || field === "notes" || field === "openQuestions") value = text.trim();
+  else if (field === "summary" || field === "notes" || field === "openQuestions") value = withoutComments(text).trim();
   else if (field === "what" || field === "why" || field === "how") value = paragraph(text, field)?.value ?? "";
   else if (field === "uiChange") value = (matching(text, /^\*\*UI change:\*\* (major|minor)[ \t]*$/)[0]?.text.match(/(major|minor)/)?.[1] as Fields["uiChange"]) ?? null;
   else if (field === "mockupLink") value = matching(text, mockupLinkPattern)[0]?.text.trim() ?? "";
@@ -162,7 +158,11 @@ export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] 
 }
 
 function splice(text: string, start: number, end: number, value: string): string {
-  return text.slice(0, start) + value + text.slice(end);
+  const removed = text.slice(start, end);
+  const comments = (removed.match(commentPattern) ?? []).join("");
+  const eol = comments ? /\r?\n$/.exec(value || removed)?.[0] ?? "" : "";
+  const replacement = eol && value.endsWith(eol) ? value.slice(0, -eol.length) : value;
+  return text.slice(0, start) + replacement + comments + eol + text.slice(end);
 }
 function append(text: string, value: string, eol: string): string {
   const end = text.trimEnd().length;
@@ -171,7 +171,7 @@ function append(text: string, value: string, eol: string): string {
 function replaceLine(text: string, pattern: RegExp, value: string, eol: string): string {
   const line = matching(text, pattern)[0];
   if (!line) return value ? append(text, value, eol) : text;
-  return splice(text, line.start, value || line.suffix ? line.start + line.text.length : line.end, value);
+  return splice(text, line.start, value || line.suffix ? line.contentEnd : line.end, value);
 }
 function replaceItems(text: string, field: keyof typeof itemPatterns, value: string[], eol: string): string {
   const rows = matching(text, itemPatterns[field]);
@@ -179,7 +179,7 @@ function replaceItems(text: string, field: keyof typeof itemPatterns, value: str
   const replacement = value.map(item => prefix + item).join(eol);
   if (!rows.length) return replacement ? eol + replacement + eol + text : text;
   for (const row of rows.slice().reverse()) {
-    text = splice(text, row.start, row.end, (row === rows[0] ? replacement : "") + row.suffix + (row.suffix || (row === rows[0] && replacement) ? row.eol : ""));
+    text = text.slice(0, row.start) + (row === rows[0] ? replacement : "") + (text.slice(row.start, row.contentEnd).match(commentPattern) ?? []).join("") + row.suffix + (row.suffix || (row === rows[0] && replacement) ? row.eol : "") + text.slice(row.end);
   }
   return text;
 }
@@ -198,7 +198,8 @@ function editText(text: string, field: Exclude<Field, "title">, value: Fields[Fi
     const pattern = /^\*\*UI change:\*\*.*$/;
     const how = paragraph(text, "how");
     if (value !== null && how && !matching(text, pattern).length) {
-      return splice(text, how.end, how.end, `${eol}${eol}**UI change:** ${value}`);
+      const after = how.after ?? how.end;
+      return splice(text, after, after, `${eol}${eol}**UI change:** ${value}`);
     }
     return replaceLine(text, pattern, value === null ? "" : `**UI change:** ${value}`, eol);
   }
@@ -222,7 +223,7 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   if (field === "title") {
     const row = matching(form.preamble, /^# /)[0];
-    const preamble = row ? splice(form.preamble, row.start + 2, row.start + row.text.length, String(value)) : `# ${value}${eol}${eol}` + form.preamble;
+    const preamble = row ? splice(form.preamble, row.start + 2, row.contentEnd, String(value)) : `# ${value}${eol}${eol}` + form.preamble;
     return { ...form, preamble };
   }
   const name = sections[field as Exclude<Field, "title">];

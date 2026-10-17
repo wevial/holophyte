@@ -193,3 +193,38 @@ export const annotatedFieldsBody = `## What / Why / How
 
 > Keep reviewer rules.
 `;
+
+export const unclosedCommentBody = inlineCommentMarkerBody.replace("Render the literal `<!--` in the editor.", "Render the literal <!-- in the editor.");
+export const multilineInlineCodeBody = inlineCommentMarkerBody.replace("Render the literal `<!--` in the editor.", "Show `the opening marker\nvalue <!--` literally.");
+
+export const continuedHowBody = `## What / Why / How
+
+**How:** Read the record.\u0020\u0020
+Continue reading.
+
+## In scope
+
+- Reader
+`;
+
+export const closedCommentsBody = `## Summary
+
+Show \`<!-- hidden -->\` literally. <!-- first <!-- second --> Visible tail.
+
+## Verify command(s)
+
+\`\`\`
+printf 'start'<!-- hidden
+still hidden -->
+printf 'done'
+\`\`\`
+
+## Open questions
+
+- None
+`;
+
+export const labeledCommentBody = `## What / Why / How
+
+**How:**<!-- keep explanation --> Read the record.
+`;
