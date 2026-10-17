@@ -19,13 +19,29 @@ class ActiveRoute(TypedDict):
     fallback: NotRequired[str]
 
 
+class RouteProbe(TypedDict):
+    ok: bool
+    at_ms: int
+    duration_ms: int
+    why: str | None
+    age_ms: int
+
+
+class SeatProbes(TypedDict):
+    primary: RouteProbe | None
+    fallback: RouteProbe | None
+
+
 class RouteLabels(TypedDict):
     implementer: str
+    implementer_fallback: str | None
     reviewer: str
     reviewer_fallback: str | None
     adjudicator: str
+    adjudicator_fallback: str | None
     writer: str
     trimmer: str
+    trimmer_fallback: str | None
 
 
 class ToilWindow(TypedDict):
@@ -97,6 +113,7 @@ class Status(TypedDict):
     workers: int
     schema_version: int
     active_routes: dict[str, ActiveRoute]
+    route_probes: dict[str, SeatProbes]
     route_labels: RouteLabels
     workers_on_previous_build: int
     host: str

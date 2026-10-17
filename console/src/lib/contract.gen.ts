@@ -8,13 +8,31 @@ export const activeRouteSchema = z.looseObject({
 });
 export type ActiveRoute = z.infer<typeof activeRouteSchema>;
 
+export const routeProbeSchema = z.looseObject({
+  ok: z.boolean(),
+  at_ms: z.int(),
+  duration_ms: z.int(),
+  why: z.string().nullable(),
+  age_ms: z.int(),
+});
+export type RouteProbe = z.infer<typeof routeProbeSchema>;
+
+export const seatProbesSchema = z.looseObject({
+  primary: routeProbeSchema.nullable(),
+  fallback: routeProbeSchema.nullable(),
+});
+export type SeatProbes = z.infer<typeof seatProbesSchema>;
+
 export const routeLabelsSchema = z.looseObject({
   implementer: z.string(),
+  implementer_fallback: z.string().nullable(),
   reviewer: z.string(),
   reviewer_fallback: z.string().nullable(),
   adjudicator: z.string(),
+  adjudicator_fallback: z.string().nullable(),
   writer: z.string(),
   trimmer: z.string(),
+  trimmer_fallback: z.string().nullable(),
 });
 export type RouteLabels = z.infer<typeof routeLabelsSchema>;
 
@@ -96,6 +114,7 @@ export const statusSchema = z.looseObject({
   workers: z.int(),
   schema_version: z.int(),
   active_routes: z.record(z.string(), activeRouteSchema),
+  route_probes: z.record(z.string(), seatProbesSchema),
   route_labels: routeLabelsSchema,
   workers_on_previous_build: z.int(),
   host: z.string(),

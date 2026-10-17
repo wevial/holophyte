@@ -2,6 +2,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from holophyte.agents.agent_output import claude_result, streamed
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.harness import critic_seat
 from holophyte.agents.harness import seat as harness_seat
+from holophyte.agents.probe_log import record_probe
 from holophyte.agents.review_workspace import (
     critic_workspace,
     publish_review_refs,
@@ -59,6 +61,7 @@ class ProbeResult:
     expected_commit: str = None
     entry: int = 0
     answer: str = None
+    launch_diagnostic: str = None
 
     @property
     def timed_out(self):
@@ -70,10 +73,9 @@ class ProbeResult:
         said = self.output if self.answer is None else self.answer
         return self.returncode == 0 and witness in said.lower()
 
-    def describe(self):
-        shown = " ".join(shlex.quote(part) for part in self.command)
+    def reason(self):
         if self.ok:
-            return f"[holo2] {self.seat} probe passed: {shown}"
+            return None
         if self.launch_error:
             why = f"could not start: {self.launch_error}"
         elif self.timed_out:
@@ -84,6 +86,14 @@ class ProbeResult:
             why = "route answered without reporting the commit; cannot run commands"
         else:
             why = f"exit 0 but no {PROBE_WORD!r} in the output"
+        return why
+
+    def describe(self):
+        shown = " ".join(shlex.quote(part) for part in self.command)
+        if self.ok:
+            return f"[holo2] {self.seat} probe passed: {shown}"
+        why = (f"could not start: {self.launch_diagnostic}"
+               if self.launch_diagnostic else self.reason())
         tail = self.tail()
         lines = [f"[holo2] {self.seat} probe failed ({why}): {shown}"]
         lines += [f"[holo2]   | {line}" for line in tail] or [
@@ -115,10 +125,27 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
                        if fallback else 1):
         if probe is not None:
             print(probe_diagnostic(project, probe))
+        started = time.time()
         probe = probe_route(project, role, fallback, timeout, entry)
+        ended = time.time()
+        if probe is not None:
+            record_probe(project, probe, fallback, started, ended)
         if probe is None or probe.ok:
             break
     return probe
+
+
+def launch_failure_reason(error):
+    if isinstance(error, OSError) and error.errno is not None:
+        return os.strerror(error.errno)
+    message = str(error)
+    for reason in ("Codex CLI is not installed", "review preflight did not complete",
+                   "command failed (1)"):
+        if message == reason or message.startswith(reason + ": "):
+            return reason
+    if message.startswith("`") and "` failed:" in message:
+        return "command failed"
+    return "launch failed"
 
 
 def probe_route(project, role, fallback, timeout, entry):
@@ -171,7 +198,9 @@ def probe_route(project, role, fallback, timeout, entry):
                                expected_commit=sha, entry=entry)
         # The config write has already landed: a route that cannot start fails.
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
-            return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+            return ProbeResult(cmd, None, "", cap,
+                               launch_error=launch_failure_reason(failed),
+                               launch_diagnostic=str(failed),
                                seat=AGENT_CONFIG_KEYS[role], expected_commit=sha,
                                entry=entry)
     return ProbeResult(cmd, code, out or "", cap, seat=AGENT_CONFIG_KEYS[role],
@@ -191,7 +220,9 @@ def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
                 partial = partial.decode(errors="replace")
             return ProbeResult(cmd, None, partial, cap, seat=seat, entry=entry)
         except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
-            return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+            return ProbeResult(cmd, None, "", cap,
+                               launch_error=launch_failure_reason(failed),
+                               launch_diagnostic=str(failed),
                                seat=seat, entry=entry)
     probe = ProbeResult(cmd, code, out or "", cap, seat=seat, entry=entry)
     if claude:
