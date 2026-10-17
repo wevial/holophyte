@@ -152,8 +152,11 @@ A real section.
 export const adjacentMarkdownBody = `## What / Why / How
 
 **How:** Read the record.
-Continue reading.
+**Keep** reading.
 - Keep the existing database.
+\`\`\`sh
+echo keep-me
+\`\`\`
 `;
 
 export const commentedCriteriaBody = `## Acceptance criteria

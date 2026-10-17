@@ -173,14 +173,21 @@ test("setting an empty field inserts its absent section in template order", () =
   ]);
 });
 
-test("prose edits preserve adjacent lists, headings, quotes, and thematic breaks", () => {
+test("prose edits include bold continuation and preserve adjacent Markdown blocks", () => {
   for (const block of ["- Keep the existing database.", "* Keep the database.", "+ Keep the database.", "1. Keep the database.", "1) Keep the database.", "### Keep the heading", "   > Keep the quote", "---", "***", "___"]) {
     for (const eol of ["\n", "\r\n"]) {
       const body = adjacentMarkdownBody.replace("- Keep the existing database.", block).replaceAll("\n", eol);
       const form = parseBody(body);
-      expect(fieldOf(form, "how")).toBe(`Read the record.${eol}Continue reading.`);
+      expect(fieldOf(form, "how")).toBe(`Read the record.${eol}**Keep** reading.`);
       expect(composeBody(withField(form, "how", "Read the updated record."))).toBe(
-        body.replace(`Read the record.${eol}Continue reading.`, "Read the updated record."),
+        `## What / Why / How
+
+**How:** Read the updated record.
+${block}
+\`\`\`sh
+echo keep-me
+\`\`\`
+`.replaceAll("\n", eol),
       );
     }
   }
@@ -192,7 +199,16 @@ test("criteria edits exclude HTML comments and keep replacement items visible", 
     const form = parseBody(body);
     expect(fieldOf(form, "criteria")).toEqual(["Visible criterion"]);
     const edited = composeBody(withField(form, "criteria", ["Replacement criterion"]));
-    expect(edited).toBe(body.replace("- [ ] Visible criterion", "- [ ] Replacement criterion"));
+    expect(edited).toBe(`## Acceptance criteria
+
+<!--
+- [ ] Hidden editor note
+\`\`\`
+## Hidden heading
+-->
+- [ ] Replacement criterion
+<!-- - [ ] Another hidden note -->
+`.replaceAll("\n", eol));
     expect(fieldOf(parseBody(edited), "criteria")).toEqual(["Replacement criterion"]);
   }
 });
