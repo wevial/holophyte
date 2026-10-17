@@ -23,8 +23,7 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
   const saved: DraftContext["saved"] = (project, submitted) => setProjects((previous) => {
     const edits = { ...previous[project] };
     for (const [key, sent] of Object.entries(submitted)) {
-      const current = edits[key];
-      if (!current) continue;
+      const current = edits[key] ?? { old: sent.value, value: sent.old };
       if (same(current.value, sent.value)) delete edits[key];
       else edits[key] = { ...current, old: sent.value };
     }

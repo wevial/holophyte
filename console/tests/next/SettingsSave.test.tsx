@@ -104,7 +104,7 @@ test("save sends one revision-checked patch, re-reads config, clears the draft a
   expect(screen.queryByText(/Saved config.toml at revision/)).toBeNull();
 });
 
-test("a completed save preserves newer edits made after Back and Forward project navigation", async () => {
+test.each([4, 2])("a completed save preserves the newer Workers value %s after Back and Forward project navigation", async (value) => {
   let complete!: () => void;
   const pending = new Promise<void>((resolve) => { complete = resolve; });
   const source = await mount({ pending });
@@ -115,17 +115,17 @@ test("a completed save preserves newer edits made after Back and Forward project
   await act(async () => { window.history.back(); await settle(); });
   expect(screen.getByText("other · config.toml on its host")).toBeTruthy();
   await act(async () => { window.history.forward(); await settle(); });
-  edit();
-  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("4");
+  fireEvent.click(screen.getByRole("button", { name: value === 4 ? "One more worker" : "One fewer worker" }));
+  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe(String(value));
   await act(async () => { complete(); await settle(); });
   await act(settle);
-  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("4");
-  expect(unsaved()?.textContent).toContain("workers 3 → 4");
+  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe(String(value));
+  expect(unsaved()?.textContent).toContain(`workers 3 → ${value}`);
   review();
-  expect(dialog().textContent).toMatch(/− workers = 3.*\+ workers = 4/);
+  expect(dialog().textContent).toMatch(new RegExp(`− workers = 3.*\\+ workers = ${value}`));
   await save();
   expect(new Headers(source.writes[1]!.headers).get("If-Match")).toBe(R2);
-  expect(JSON.parse(String(source.writes[1]!.body))).toEqual({ patch: { "loop.workers": 4 } });
+  expect(JSON.parse(String(source.writes[1]!.body))).toEqual({ patch: { "loop.workers": value } });
 });
 
 test("a revision conflict re-reads the file, keeps edits and uses the refreshed revision for a deliberate retry", async () => {
