@@ -1,0 +1,41 @@
+import re
+
+import ticket_template
+
+_ID = re.compile(r"^\s*\*\*C([1-9][0-9]*)\*\*\s*")
+_SPAN = re.compile(r"`([^`\n]+)`")
+
+
+def split_id(text):
+    match = _ID.match(text)
+    if match:
+        return int(match.group(1)), text[match.end():]
+    return None, text
+
+
+def witnesses(texts, commands):
+    from holophyte.review.witness_precheck import named_files
+
+    lines = {line.strip() for command in commands
+             for line in command.splitlines() if line.strip()}
+    result = []
+    for text, files in zip(texts, named_files(texts)):
+        if files:
+            result.append(("test", ",".join(files)))
+        elif command := next((span for span in _SPAN.findall(text)
+                              if span in lines), None):
+            result.append(("verify", command))
+        else:
+            result.append(("reviewer_read", None))
+    return result
+
+
+def witness_problems(ticket):
+    texts = ticket.acceptance + ticket.acceptance_done + ticket.acceptance_other
+    kinds = witnesses(texts, ticket.verify_commands)
+    return [f"criterion {number} reads as a post-merge or operator witness; "
+            "name a test file or verify command"
+            for number, (text, (kind, _target)) in enumerate(zip(texts, kinds), 1)
+            if kind == "reviewer_read" and any(
+                phrase in _SPAN.sub(" ", text).lower()
+                for phrase in ticket_template.OPERATOR_WITNESS_PHRASES)]

@@ -639,6 +639,8 @@ The store is its own package:
   re-exported from the package.
 - `store/repair.py` — `repair_references()`: a dry run, then a recorded
   rewrite of foreign keys that name a dropped table.
+- `store/criteria.py` — append-only criterion versions, stable ticket-local
+  numbers and open-ticket migration backfill.
 - `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
@@ -699,6 +701,8 @@ At the root:
   set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `review_runner.py` — exact-SHA staging and the model-neutral local
   reviewer boundary (see [Reviewing](reviewing.md)).
+- `ticket_criteria.py` — explicit criterion ids, test and verify witnesses,
+  and blocking post-merge or operator witness checks for native filings.
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
