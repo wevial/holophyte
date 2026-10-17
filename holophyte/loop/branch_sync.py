@@ -61,7 +61,7 @@ def onto_pushed(wt, branch, pushed, head):
     if ancestor.returncode != 1:
         ancestor.check_returncode()
     message = subprocess.run(
-        ["git", "log", "-1", "--format=%B", head], cwd=wt,
+        ["git", "log", "-1", "--format=format:%B", head], cwd=wt,
         capture_output=True, text=True, check=True).stdout
     rebuilt = subprocess.run(
         ["git", "commit-tree", f"{head}^{{tree}}", "-p", pushed], cwd=wt,

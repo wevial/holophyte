@@ -53,6 +53,7 @@ class FixOntoPushedTests(unittest.TestCase):
             message = "Apply fix\n\nCite operator_note event 42"
             git("commit", "--amend", "-m", message)
             head = git("rev-parse", "HEAD").stdout.strip()
+            amended_message = git("log", "-1", "--format=format:%B", head).stdout
             tree = git("rev-parse", "HEAD^{tree}").stdout.strip()
             self.assertIsNone(branch_sync._candidate_drift(wt, "fix", head))
             self.assertEqual(
@@ -67,4 +68,5 @@ class FixOntoPushedTests(unittest.TestCase):
                 git("rev-parse", f"{tip}^{{tree}}").stdout.strip(), tree)
             git("merge-base", "--is-ancestor", pushed, tip)
             self.assertEqual(
-                git("log", "-1", "--format=%B", tip).stdout.strip(), message)
+                git("log", "-1", "--format=format:%B", tip).stdout,
+                amended_message)
