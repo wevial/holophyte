@@ -16,10 +16,6 @@ export function RestartDaemon({ host, onRestart }: {
   if (!root) return null;
   const unavailable = host.down || host.record.root_failed === true || host.restarting || !root.actions;
   const runs = root.projects.reduce((sum, project) => sum + project.runs.length, 0);
-  const keepRunning = () => {
-    setOpen(false);
-    opener.current?.focus();
-  };
   const confirm = async () => {
     if (unavailable || action.isPending) return;
     const started = root.daemon.started_ms;
@@ -47,7 +43,7 @@ export function RestartDaemon({ host, onRestart }: {
       busyLabel="Restarting…"
       busy={action.isPending}
       confirmDisabled={unavailable}
-      onCancel={keepRunning}
+      onCancel={() => { setOpen(false); opener.current?.focus(); }}
       onConfirm={() => void confirm()}
       refusal={action.data && !action.data.ok && <p role="alert" className="mt-3 break-words font-mono text-[12px] text-bad">{action.data.detail}</p>}
     >
