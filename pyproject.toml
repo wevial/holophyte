@@ -12,7 +12,7 @@ dependencies = ["tomlkit==0.15.1", "mcp==2.3.0"]
 holo = "holophyte.holo.cli:main"
 
 [tool.setuptools]
-py-modules = ["provider", "linear_provider", "review_runner", "ticket_template", "story_template"]
+py-modules = ["provider", "linear_provider", "review_runner", "ticket_template", "ticket_criteria", "story_template"]
 
 [tool.setuptools.packages.find]
 include = ["holophyte*", "store*"]
