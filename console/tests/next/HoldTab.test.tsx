@@ -20,7 +20,7 @@ const history: Holds["rows"] = [
 async function mount(options: { status?: Partial<Status>; rows?: Holds["rows"]; missing?: boolean; post?: Fetch } = {}) {
   window.location.hash = "#/settings/hold?project=demo";
   const status: Status = { ...statusFixture, runs: [], project: "/srv/demo", workers: 2, actions: true, admission: "enabled", ...options.status };
-  const poll = peersFetch(BASE, { [BASE]: { status, attention: NO_ATTENTION } });
+  const poll = peersFetch(BASE, { [BASE]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
   const requests: { url: string; method: string | undefined; body: unknown }[] = [];
   const fetch: Fetch = async (url, init) => {
     if (url.endsWith("/holds")) return options.missing ? new Response("not found", { status: 404 }) : Response.json({ ...holdsFixture, rows: options.rows ?? history });
