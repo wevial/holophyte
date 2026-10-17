@@ -1,7 +1,7 @@
 import { Btn } from "./Btn";
 import { useSettingsDraft } from "../settingsDraft";
 
-export function UnsavedBar({ project, onSave, onDiscard, disabled = false }: { project: string; onSave: () => void; onDiscard: () => void; disabled?: boolean }) {
+export function UnsavedBar({ project, onSave, onDiscard, disabled = false, invalid = false }: { project: string; onSave: () => void; onDiscard: () => void; disabled?: boolean; invalid?: boolean }) {
   const { projects, discard } = useSettingsDraft();
   const edits = Object.entries(projects[project] ?? {});
   if (!edits.length) return null;
@@ -10,6 +10,7 @@ export function UnsavedBar({ project, onSave, onDiscard, disabled = false }: { p
       <p className="min-w-0 break-words font-mono text-[12px] text-ink-2">
         <span className="text-act">{edits.length}</span> unsaved {edits.length === 1 ? "change" : "changes"}
         {edits.map(([key, edit]) => <span key={key}> · {key.split(".").pop()} {String(edit.old)} → {String(edit.value)}</span>)}
+        {invalid && " · fix the error first"}
       </p>
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => { discard(project); onDiscard(); }} className="min-h-9 cursor-pointer px-3 font-mono text-[12px] text-ink-2 hover:text-ink">Discard</button>
