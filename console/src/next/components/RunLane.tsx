@@ -19,7 +19,7 @@ const HOT_PERCENT = 90;
 
 const ROW_GRID =
   "grid grid-cols-[110px_84px_minmax(0,1fr)_150px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)] @max-[640px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]";
-const TITLE_CELL = "min-w-0 font-sans text-[13px] leading-[1.45] max-[820px]:col-span-full @max-[640px]/ov-col:col-span-full max-[820px]:row-start-2 @max-[640px]/ov-col:row-start-2";
+const TITLE_CELL = "min-w-0 font-read text-[15px] font-medium leading-[1.35] max-[820px]:col-span-full @max-[640px]/ov-col:col-span-full max-[820px]:row-start-2 @max-[640px]/ov-col:row-start-2";
 const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 @max-[640px]/ov-col:col-start-3 max-[820px]:row-start-1 @max-[640px]/ov-col:row-start-1";
 
 export interface LaneGroup extends ProjectGroup {
@@ -67,8 +67,8 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
         </span>
         <span className="whitespace-nowrap text-ink-2">{run.ticket}</span>
         <span className={TITLE_CELL}>
-          <span className="mb-0.5 block text-[14.5px] font-medium text-ink">{title}</span>
-          {stop && <span className="block truncate text-ink-3">{stop}</span>}
+          <span className="mb-0.5 block text-ink">{title}</span>
+          {stop && <span className="block truncate font-sans text-[13px] font-normal leading-[1.45] text-ink-3">{stop}</span>}
         </span>
         <span className={TIME_CELL}>
           {used != null && (
@@ -100,9 +100,9 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
         <TicketLink ticket={entry.ticket} ticket_url={entry.ticket_url} />
       </span>
       <span className={TITLE_CELL}>
-        <span className="mb-0.5 block text-[14.5px] font-medium text-ink">{entry.title ?? ""}</span>
+        <span className="mb-0.5 block text-ink">{entry.title ?? ""}</span>
         {shown && (
-          <span title={reason || undefined} className="block truncate text-ink-3">
+          <span title={reason || undefined} className="block truncate font-sans text-[13px] font-normal leading-[1.45] text-ink-3">
             {shown}
           </span>
         )}

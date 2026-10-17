@@ -17,6 +17,9 @@ export interface ConfigBody {
   values: ConfigValues | null;
   path: string;
   applies: string;
+  revision: string;
+  saved: { at_ms: number; actor: "maintainer" | "operator" | "supervisor" | null } | null;
+  modified_ms: number | null;
 }
 
 /** What `GET /config` answered: the body, a 401 asking for the token, a
@@ -44,6 +47,9 @@ export async function fetchConfig(base: string, fetchImpl: Fetch): Promise<Confi
         values: isValues(body.values) ? body.values : null,
         path: typeof body.path === "string" ? body.path : "",
         applies: typeof body.applies === "string" ? body.applies : "next loop start",
+        revision: typeof body.revision === "string" ? body.revision : "",
+        saved: body.saved ?? null,
+        modified_ms: typeof body.modified_ms === "number" ? body.modified_ms : null,
       },
     };
   } catch (failure) {
@@ -57,10 +63,11 @@ const isValues = (candidate: unknown): candidate is ConfigValues =>
 /** The daemon's verdict on a `PUT /config`: accepted, with the backup it
  *  wrote and when the change applies, or refused with its sentence. A
  *  400 is the daemon's refusal (`refused`) -- the loader's, naming the
- *  file, table and key, or the patch's, naming the dotted key; any other
- *  failure carries the status and what the daemon said. */
+ *  file, table and key, or the patch's, naming the dotted key. A revision
+ *  conflict carries the current revision; other failures carry the status. */
 export type ConfigVerdict =
-  | { ok: true; backup: string | null; applies: string }
+  | { ok: true; backup: string | null; applies: string; revision: string }
+  | { ok: false; conflict: true; current: string }
   | { ok: false; error: string; refused: boolean };
 
 /** What a `PUT /config` carries: the whole new file as `text`, or a
@@ -68,13 +75,15 @@ export type ConfigVerdict =
 export type ConfigWrite = { text: string } | { patch: Record<string, PatchValue> };
 
 /** `PUT /config` with `write` as its body; never throws. */
-export async function putConfig(base: string, write: ConfigWrite, fetchImpl: Fetch): Promise<ConfigVerdict> {
+export function putConfig(base: string, write: ConfigWrite, fetchImpl: Fetch): Promise<Exclude<ConfigVerdict, { conflict: true }>>;
+export function putConfig(base: string, write: ConfigWrite, fetchImpl: Fetch, revision: string | undefined): Promise<ConfigVerdict>;
+export async function putConfig(base: string, write: ConfigWrite, fetchImpl: Fetch, revision?: string): Promise<ConfigVerdict> {
   const url = `${base}/config`;
   let response: Response;
   try {
     response = await fetchImpl(url, {
       method: "PUT",
-      headers: { "content-type": "application/json", accept: "application/json" },
+      headers: { "content-type": "application/json", accept: "application/json", ...(revision === undefined ? {} : { "If-Match": revision }) },
       body: JSON.stringify(write),
     });
   } catch (failure) {
@@ -88,12 +97,14 @@ export async function putConfig(base: string, write: ConfigWrite, fetchImpl: Fet
   }
   const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
   const error = typeof record.error === "string" ? record.error : "";
+  if (response.status === 409 && revision !== undefined) return { ok: false, conflict: true, current: typeof record.current === "string" ? record.current : "" };
   if (response.status === 400) return { ok: false, error: error || `${url} answered 400`, refused: true };
   if (!response.ok) return { ok: false, error: `${url} answered ${response.status}${error ? `: ${error}` : ""}`, refused: false };
   return {
     ok: true,
     backup: typeof record.backup === "string" ? record.backup : null,
     applies: typeof record.applies === "string" ? record.applies : "next loop start",
+    revision: typeof record.revision === "string" ? record.revision : "",
   };
 }
 

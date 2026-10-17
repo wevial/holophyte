@@ -193,7 +193,7 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   const card = cardOf("DEMO-3");
   expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
   expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
-  expect(within(card).getByRole("heading").classList).toContain("font-plex");
+  expect(within(card).getByRole("heading").classList).toContain("font-read");
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
@@ -232,11 +232,19 @@ test("a held host's ready card says it is held, and a merge of today says when i
   expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
 
-test("each card takes the look of its column: need, done, backlog or plain", async () => {
+test("cards keep their column looks and use semibold reading titles for Ready, medium for done and backlog", async () => {
   await mount("#/tickets?project=demo", fleet(demo).fetch);
   const looks = ["Needs you", "Done today", "Backlog", "Ready"].map((label) => cardsIn(label)[0]!);
   expect(looks.map((card) => card.getAttribute("data-look"))).toEqual(["need", "done", "backlog", "plain"]);
   const [, done, backlog, plain] = looks;
+  expect(Array.from(within(plain!).getByRole("heading").classList)).toEqual(expect.arrayContaining([
+    "font-read", "font-semibold", "text-[15px]", "leading-[1.35]",
+  ]));
+  for (const card of [done!, backlog!]) {
+    expect(Array.from(within(card).getByRole("heading").classList)).toEqual(expect.arrayContaining([
+      "font-read", "font-medium", "text-[15px]", "leading-[1.35]",
+    ]));
+  }
   expect(backlog!.className).toContain("border-dashed");
   expect(done!.className).toContain("bg-live-wash");
   expect(plain!.className).not.toContain("border-dashed");

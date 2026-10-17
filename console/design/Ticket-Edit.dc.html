@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Holophyte · New or edit ticket</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--live-wash:rgba(134,217,147,.10);--ask:#f0cf62;--ask-wash:rgba(240,207,98,.08);--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16;--bad-wash:rgba(255,123,114,.09);--done:#7b84a1;--p1:#ff9e85;--p2:#ecdc86;--p3:#4a5687;--scrim:rgba(5,7,15,.74)}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--live-wash:rgba(31,122,53,.08);--ask:#8a6500;--ask-wash:rgba(138,101,0,.07);--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff;--bad-wash:rgba(192,50,31,.07);--done:#8b90a8;--p1:#ffb199;--p2:#eee38a;--p3:#c9c4dc;--scrim:rgba(236,234,243,.8)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}
+.btn.quiet.on-ink{--b:var(--paper);--bi:var(--ink);color:var(--paper)}.btn.quiet.on-ink:hover,.btn.quiet.on-ink:focus-visible{color:var(--ink)}
+.btn.busy{pointer-events:none;color:var(--b,var(--act));box-shadow:none;clip-path:none}
+.btn.busy::before,.btn.busy::after{display:none}
+.btn .ants-o{display:none}.btn.busy .ants-o{display:block}.btn .ants-r{stroke:var(--b,var(--act))}
+.ants-o{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.ants-o rect{width:calc(100% - 1.5px);height:calc(100% - 1.5px)}
+.ants-r{fill:none;stroke:var(--wait);stroke-width:1.5;stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+.btn[disabled]{cursor:not-allowed;opacity:.5}.btn[disabled]::before{display:none}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;cursor:pointer;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+.link:hover{color:var(--ink);border-bottom-color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.nav-a:hover{color:var(--ink)!important}
+.shell{--pg-t:20px;--pg-x:24px;--pg-b:32px;--hd-t:12px;--hd-b:12px;--sec:14px;height:100vh;overflow:hidden}
+.pg-title{margin:0;font:600 20px/1.25 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em;color:var(--ink)}
+.shell > aside{height:100vh;box-sizing:border-box}.shell > aside nav{flex:0 1 auto;min-height:0;overflow-y:auto}
+.shell > .pad-main{height:100vh;overflow-y:auto}
+.pg-w{position:relative}
+.pg-t{position:absolute;right:4px;top:6px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--ink-3)}
+.pg-a{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 10px 0 12px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.pg-a .badge{margin-left:auto;color:var(--need);letter-spacing:0;font-weight:600}
+.pg-sub{margin:2px 0 6px 20px;padding:0 0 4px;border-left:1px solid var(--rule)}
+.sub-h{padding:10px 8px 4px 12px;font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.sub-l{list-style:none;margin:0;padding:0}
+.vw-a{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 8px 0 12px;text-decoration:none;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink-2)}
+.vw-n{margin-left:auto;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;min-height:44px;padding:7px 8px 8px 12px;box-sizing:border-box;text-decoration:none;color:var(--ink-2)}
+.st-k,.st-p{font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-t{grid-column:1 / -1;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif}
+.nav-sep{height:1px;margin:8px 4px;background:var(--rule)}
+.sw{position:relative;margin:12px 0 4px}
+.sw-b{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px 0 12px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-align:left;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-b .tag,.sw-o .tag{color:var(--wait);font-size:11px;font-weight:400}
+.sw-need{margin-left:auto;color:var(--need);font-weight:600}
+.sw-c{margin-left:6px;color:var(--ink-3)}.sw-need[hidden]+.sw-c{margin-left:auto}
+.sw-back{position:fixed;inset:0;z-index:55;border:0;padding:0;background:transparent;cursor:default}
+.sw-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:264px;box-sizing:border-box;padding:8px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.sw-q{display:block;box-sizing:border-box;width:100%;min-height:36px;padding:0 10px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sw-q:focus{outline:2px solid var(--act);outline-offset:-1px}.sw-q::placeholder{color:var(--ink-2)}
+.sw-l{list-style:none;margin:8px 0 0;padding:0}
+.sw-o{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 8px;cursor:pointer;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-o:hover{background:var(--paper-2)!important}.sw-o[aria-selected="true"]{color:var(--act)}
+.sw-cnt{margin-left:auto;display:inline-flex;gap:10px;font-weight:400;font-size:12px;color:var(--ink-3)}.sw-cnt b{color:var(--need);font-weight:600}
+.sw-none{margin:0;padding:10px 8px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.side-b{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);cursor:pointer;text-decoration:none;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.side-b:hover{color:var(--ink);border-color:var(--ink-3)}
+.think{display:inline-flex;gap:4px}.think i{display:inline-block;width:7px;height:7px;background:var(--rule);animation:think 1.2s steps(1,end) infinite}
+.think i:nth-child(2){animation-delay:.2s}.think i:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,100%{background:var(--rule)}33%{background:var(--ink-3)}}
+.fault{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 14px;padding:12px 14px;background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+.toast-in{animation:roll .28s cubic-bezier(.2,.7,.2,1)}
+@keyframes roll{from{transform:translateY(12px)}}
+[hidden]{display:none!important}
+.sk{display:block;height:10px;background:var(--rule-2)}
+.hd-m{margin:6px 0 0;font:400 13px/1.6 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.crumb{font:400 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.crumb a{color:var(--ink-3)}
+.tx{display:flex;flex-wrap:wrap;align-items:flex-start;gap:24px 28px;margin-top:20px}
+.tx-main{flex:999 1 600px;min-width:0}
+.tx-rail{flex:1 1 300px;min-width:0}
+@media (min-width:1180px){.tx-rail{flex:0 0 320px;position:sticky;top:0}}
+.card{background:var(--paper);border:1px solid var(--rule);padding:4px 28px 10px}
+.fg{padding:20px 0;border-bottom:1px solid var(--rule-2)}
+.fg:last-child{border-bottom:0}
+.fl{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:8px}
+.fl label,.fl .lt{font:500 14.5px/1.35 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink)}
+.fl .req{font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.fl .hint{flex-basis:100%;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.inp{display:block;box-sizing:border-box;width:100%;min-height:44px;padding:0 12px;border:1px solid var(--rule);background:var(--paper-2);color:var(--ink);font:400 15px/1.5 'IBM Plex Sans',system-ui,sans-serif}
+.inp.mono{font:400 13px/1.6 'IBM Plex Mono',ui-monospace,monospace}
+textarea.inp{min-height:76px;padding:10px 12px;resize:vertical}
+.inp:focus{outline:2px solid var(--act);outline-offset:-1px}.inp::placeholder{color:var(--ink-3)}
+.inp.err{border-color:var(--bad);box-shadow:inset 0 0 0 1px var(--bad)}
+.inp.chg{border-color:var(--act)}
+.msgs{display:grid;gap:6px;margin-top:8px}
+.msgs:empty{display:none}
+.msg{display:flex;align-items:flex-start;gap:8px;margin:0;font:400 12.5px/1.45 'IBM Plex Mono',ui-monospace,monospace}
+.msg .ico{margin-top:1px}
+.msg.e{color:var(--bad)}.msg.a{color:var(--ask)}
+.ttl{font:600 19px/1.35 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em}
+.www{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:16px}
+.acl{list-style:none;margin:0;padding:0;border-top:1px solid var(--rule-2)}
+.ac{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:6px 10px;align-items:start;padding:10px 0;border-bottom:1px solid var(--rule-2)}
+.ac.chg{margin:0 -28px;padding-left:26px;padding-right:28px;background:var(--act-wash);box-shadow:inset 2px 0 0 var(--act)}
+.ac-k{padding-top:14px;font:600 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.ac-b{display:flex;gap:4px}
+.ib{display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);cursor:pointer}
+.ib:hover{color:var(--ink);border-color:var(--ink-3)}.ib[disabled]{opacity:.35;cursor:default}
+.ac .msgs{grid-column:2 / -1;margin-top:0}
+.row3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:20px 28px}
+.num{display:inline-flex;border:1px solid var(--rule)}
+.num button{width:44px;height:44px;padding:0;border:0;background:var(--paper-2);color:var(--ink);cursor:pointer;font:500 16px/1 'IBM Plex Mono',ui-monospace,monospace}
+.num button:hover{background:var(--rule-2)}
+.num input{width:64px;height:44px;box-sizing:border-box;border:0;border-left:1px solid var(--rule);border-right:1px solid var(--rule);background:var(--paper);color:var(--ink);text-align:center;font:500 14px/1 'IBM Plex Mono',ui-monospace,monospace;-moz-appearance:textfield}
+.num input::-webkit-inner-spin-button{-webkit-appearance:none}
+.sg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--ink-3)}
+.seg{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:0;background:transparent;cursor:pointer;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.seg:hover{color:var(--ink)}
+.seg[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.seg i{display:inline-block;width:9px;height:9px}
+.chips{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 0 0 10px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper-2);font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.chip.bad{border-color:var(--bad);color:var(--bad)}
+.chip span{font:400 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.chip button{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-left:1px solid var(--rule);background:transparent;color:var(--ink-3);cursor:pointer}
+.chip button:hover{color:var(--ink)}
+.tg{position:relative;display:inline-flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;font:500 14.5px/1.35 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink)}
+.tg input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.tg .tr{position:relative;flex:none;width:40px;height:22px;box-sizing:border-box;border:1px solid var(--ink-3);background:var(--canvas);transition:background .15s,border-color .15s}
+.tg .tr::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;background:var(--ink-3);transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.tg input:checked + .tr{background:var(--live-wash);border-color:var(--live)}
+.tg input:checked + .tr::after{transform:translateX(18px);background:var(--live)}
+.tg input:focus-visible + .tr{outline:2px solid var(--act);outline-offset:2px}
+.sel{position:relative;display:block;min-width:0}
+.sel select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:pointer;font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sel svg{position:absolute;right:12px;top:50%;margin-top:-6px;width:12px;height:12px;pointer-events:none;color:var(--ink-3)}
+.ck{padding:18px 20px 20px;background:var(--paper);border:1px solid var(--rule)}
+.ck-s{margin:10px 0 0;font:500 13px/1.45 'IBM Plex Mono',ui-monospace,monospace}
+.ck-l{list-style:none;margin:12px 0 0;padding:0;border-top:1px solid var(--rule-2)}
+.ck-l a{display:grid;grid-template-columns:18px minmax(0,1fr);gap:8px;padding:9px 0;border-bottom:1px dashed var(--rule-2);text-decoration:none;font:400 12.5px/1.45 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.ck-l a:hover{color:var(--ink)}
+.ck-l b{display:block;font-weight:500;color:var(--ink)}
+.ck-a{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.ck-n{margin:10px 0 0;font:400 12px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.cf{margin-bottom:16px;padding:16px 18px 18px;background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+.cf-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-top:14px}
+.cf-c{padding:12px 14px;border:1px solid var(--rule);background:var(--paper)}
+.cf-c .lab{display:block;margin-bottom:6px;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.cf-c mark{background:var(--act-wash);color:var(--ink);box-shadow:inset 0 -1px 0 var(--act)}
+@media (max-width:720px){.shell{height:auto;overflow:visible}.shell > aside,.shell > .pad-main{height:auto;overflow:visible}.pad-main{padding:16px 8px 32px!important}.pad-x{padding-left:16px!important;padding-right:16px!important}.card{padding:4px 16px 10px}.ac.chg{margin:0 -16px;padding-left:14px;padding-right:16px}.ac{grid-template-columns:32px minmax(0,1fr)}.ac-b{grid-column:2}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}} shell" style="min-height: 100vh; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: stretch; background-color: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+
+<aside aria-label="Console" style="flex: 1 1 232px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; background: var(--paper-2); border-right: 1px solid var(--rule); padding: 0 8px 16px">
+<div style="display: flex; align-items: center; min-height: 60px; margin: 0 -8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--rule)">
+<a href="Main.dc.html" aria-label="Holophyte console, overview" style="display: flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink)">
+<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="flex: none"><g style="fill: var(--act); stroke: var(--paper-2); stroke-width: 1.1; stroke-linejoin: round"><path d="M12 17 C7.4 17.6 3.6 15.6 2 12.2 C5.6 11.8 9.4 13.6 12 17Z"></path><path d="M12 17 C16.6 17.6 20.4 15.6 22 12.2 C18.4 11.8 14.6 13.6 12 17Z"></path><path d="M12 17 C8.2 16.6 5.6 13 6 8 C9 9.2 11.2 12.6 12 17Z"></path><path d="M12 17 C15.8 16.6 18.4 13 18 8 C15 9.2 12.8 12.6 12 17Z"></path><path d="M12 4 C15.2 7.2 15.2 13 12 17 C8.8 13 8.8 7.2 12 4Z"></path></g><path d="M6 20.2 H18" style="fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-linecap: round"></path></svg>
+<b style="font: 600 15px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.01em">holophyte</b>
+</a>
+</div>
+<div class="sw" onKeyDown="{{sw.key}}">
+<button type="button" class="nav-a sw-b" onClick="{{sw.toggle}}" aria-haspopup="listbox" aria-expanded="{{sw.open}}" aria-label="{{sw.aria}}" title="{{sw.title}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{sw.iconColor}}"><path d="{{sw.icon}}"></path></svg><span>{{sw.name}}</span><span class="tag" hidden="{{sw.noTag}}">held</span><span class="sw-need" hidden="{{sw.noNeed}}">{{sw.need}}</span><svg class="ico sw-c" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></button>
+<sc-if value="{{sw.open}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="sw-back" tabindex="-1" aria-hidden="true" onClick="{{sw.close}}"></button>
+<div class="sw-pop" role="dialog" aria-label="Switch project">
+<label class="sr" for="swq">Find a project</label>
+<input id="swq" class="sw-q" type="text" value="{{sw.q}}" onChange="{{sw.onQ}}" placeholder="Find a project" autocomplete="off" autoFocus="{{ true }}" role="combobox" aria-expanded="true" aria-controls="swl" aria-activedescendant="{{sw.activeId}}">
+<ul id="swl" role="listbox" aria-label="Projects" class="sw-l">
+<sc-for list="{{sw.items}}" as="it" hint-placeholder-count="4"><li id="{{it.id}}" role="option" aria-selected="{{it.sel}}" class="sw-o" onClick="{{it.pick}}" style="background: {{it.bg}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{it.iconColor}}"><path d="{{it.icon}}"></path></svg><span>{{it.name}}</span><span class="tag" hidden="{{it.noTag}}">held</span><span class="sw-cnt"><b hidden="{{it.noNeed}}">{{it.need}}</b><span>{{it.runs}}</span></span></li></sc-for>
+</ul>
+<p class="sw-none" hidden="{{sw.hasItems}}">No project matches.</p>
+</div>
+</sc-if>
+</div>
+<nav aria-label="Pages" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px">
+<a href="Main.dc.html" class="nav-a pg-a" aria-current="{{nav.overview.cur}}" aria-label="{{nav.overview.aria}}" style="color: {{nav.overview.color}}; background: {{nav.overview.bg}}; box-shadow: {{nav.overview.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 9.5h3.5l1 2h3l1-2H14"></path><path d="M3.6 3h8.8L14 9.5V13H2V9.5z"></path></svg><span>Overview</span><span class="badge" hidden="{{nav.overview.noBadge}}">{{nav.overview.badge}}</span></a>
+<a href="Runs.dc.html" class="nav-a pg-a" aria-current="{{nav.runs.cur}}" aria-label="{{nav.runs.aria}}" style="color: {{nav.runs.color}}; background: {{nav.runs.bg}}; box-shadow: {{nav.runs.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"></path><path d="M6.6 5.4v5.2L10.8 8z"></path></svg><span>Runs</span></a>
+<div class="pg-w"><a href="Issues.dc.html" class="nav-a pg-a" aria-current="{{nav.tickets.cur}}" aria-label="{{nav.tickets.aria}}" style="color: {{nav.tickets.color}}; background: {{nav.tickets.bg}}; box-shadow: {{nav.tickets.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4"></path></svg><span>Tickets</span></a><button type="button" class="nav-a pg-t" aria-expanded="{{nav.subOpen}}" aria-controls="nav-sub" aria-label="{{nav.subAria}}" onClick="{{nav.toggleSub}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; transform: {{nav.subRot}}"><path d="M6 4l4 4-4 4"></path></svg></button>
+<sc-if value="{{nav.subShow}}" hint-placeholder-val="{{ true }}"><div id="nav-sub" class="pg-sub">
+<div class="sub-h" id="nv-views">Views</div>
+<ul class="sub-l" aria-labelledby="nv-views"><sc-for list="{{nav.views}}" as="v" hint-placeholder-count="3"><li><a href="Issues.dc.html" class="nav-a vw-a" aria-label="{{v.aria}}"><span>{{v.label}}</span><span class="vw-n">{{v.n}}</span></a></li></sc-for></ul>
+<div class="sub-h" id="nv-stories">Stories</div>
+<ul class="sub-l" aria-labelledby="nv-stories"><sc-for list="{{nav.stories}}" as="st" hint-placeholder-count="3"><li><a href="Story.dc.html" class="nav-a st-a" aria-label="{{st.aria}}"><span class="st-k">{{st.key}}</span><span class="st-p">{{st.prog}}</span><span class="st-t">{{st.title}}</span></a></li></sc-for></ul>
+</div></sc-if></div>
+<a href="Findings.dc.html" class="nav-a pg-a" aria-current="{{nav.findings.cur}}" aria-label="{{nav.findings.aria}}" style="color: {{nav.findings.color}}; background: {{nav.findings.bg}}; box-shadow: {{nav.findings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5"></path></svg><span>Findings</span><span class="badge" hidden="{{nav.findings.noBadge}}">{{nav.findings.badge}}</span></a>
+<div class="nav-sep" aria-hidden="true"></div>
+<a href="Hosts.dc.html" class="nav-a pg-a" aria-current="{{nav.hosts.cur}}" aria-label="{{nav.hosts.aria}}" style="color: {{nav.hosts.color}}; background: {{nav.hosts.bg}}; box-shadow: {{nav.hosts.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2.5 2.5h11v4.5h-11zM2.5 9h11v4.5h-11z"></path><path d="M5 4.75h.1M5 11.25h.1"></path></svg><span>Hosts</span><span class="badge" hidden="{{nav.hosts.noBadge}}">{{nav.hosts.badge}}</span></a>
+<a href="Settings.dc.html" class="nav-a pg-a" aria-current="{{nav.settings.cur}}" aria-label="{{nav.settings.aria}}" style="color: {{nav.settings.color}}; background: {{nav.settings.bg}}; box-shadow: {{nav.settings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 4.5h12M2 11.5h12"></path><path d="M5.5 2.8v3.4M10.5 9.8v3.4"></path></svg><span>Settings</span></a>
+</nav>
+<div style="margin: auto -8px 0; padding: 14px 8px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+<div style="display: flex; align-items: center; gap: 12px; padding-left: 14px; font: 400 11px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg><span>writer-host · polled 4s ago</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; padding-left: 8px">
+<button type="button" class="side-b" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>{{themeWord}}</button>
+<a class="side-b" href="#classic">Classic console</a>
+</div>
+</div>
+</aside>
+
+<div class="pad-main" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: var(--pg-t) var(--pg-x) var(--pg-b)">
+<main style="max-width: 1180px; margin: 0 auto">
+<section aria-labelledby="eH">
+<div class="pad-x" style="padding: var(--hd-t) 0 var(--hd-b); border-bottom: 1px solid var(--rule)">
+<div class="crumb"><a href="Issues.dc.html">Tickets</a> / <a href="Issues.dc.html">holophyte</a> / <sc-if value="{{isEdit}}" hint-placeholder-val="{{ false }}"><a href="Ticket.dc.html">HOLO-244</a> / edit</sc-if><sc-if value="{{isNew}}" hint-placeholder-val="{{ true }}">new</sc-if></div>
+<h1 id="eH" class="pg-title" style="margin-top: 8px">{{pageTitle}}</h1>
+<p class="hd-m">{{headLine}}</p>
+</div>
+
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; align-items: center; gap: 12px; margin-top: 20px; font: 400 13px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span class="think" aria-hidden="true"><i></i><i></i><i></i></span>{{loadText}}</div>
+<div class="card" aria-hidden="true" style="margin-top: 16px"><div class="fg"><span class="sk" style="width: 30%"></span><span class="sk" style="margin-top: 12px; height: 44px"></span></div><div class="fg"><span class="sk" style="width: 22%"></span><span class="sk" style="margin-top: 12px; height: 76px"></span></div><div class="fg"><span class="sk" style="width: 40%"></span><span class="sk" style="margin-top: 12px; height: 76px"></span></div></div>
+</sc-if>
+
+<sc-if value="{{showForm}}" hint-placeholder-val="{{ true }}">
+<div class="tx">
+<div class="tx-main">
+
+<sc-if value="{{isError}}" hint-placeholder-val="{{ false }}">
+<div role="alert" class="fault" style="margin-bottom: 16px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; width: 16px; height: 16px; color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">{{errTitle}}</div><div style="margin-top: 2px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">your draft is kept in this browser · nothing was lost · try again when it answers</div></div><button type="button" class="btn quiet">Try again</button></div>
+</sc-if>
+
+<sc-if value="{{conflictOn}}" hint-placeholder-val="{{ false }}">
+<section class="cf" role="alert" aria-labelledby="cfH">
+<div style="display: flex; gap: 12px; align-items: flex-start"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 3px; width: 16px; height: 16px; color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div><h2 id="cfH" style="margin: 0; font: 600 17px/1.3 'Archivo', 'Helvetica Neue', sans-serif">HOLO-244 changed while you were editing.</h2><p style="margin: 4px 0 0; font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">you started from revision 3 · the operator seat saved revision 4 at 16:51 · it changed AC2 only · nothing is saved yet</p></div></div>
+<div class="cf-g">
+<div class="cf-c"><span class="lab">AC2 · revision 4, theirs</span>A note the agent read shows read at HH:MM <mark>in Pacific time</mark>.</div>
+<div class="cf-c"><span class="lab">AC2 · yours</span>A note the agent read shows read at HH:MM<mark>; one it skipped shows skipped and why</mark>.</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px"><button type="button" class="btn" onClick="{{mergeMine}}">Put mine on top of revision 4</button><button type="button" class="btn quiet" onClick="{{takeTheirs}}">Take revision 4, drop mine</button></div>
+<p style="margin: 10px 0 0; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">Putting yours on top keeps their other edits and opens revision 5 for your review before it saves.</p>
+</section>
+</sc-if>
+
+<form class="card" aria-label="{{formLabel}}" onSubmit="{{noSubmit}}">
+
+<div class="fg" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px 28px">
+<div><div class="fl"><label for="fProj">Project</label></div><div class="sel"><select id="fProj" class="inp" value="{{d.proj}}" onChange="{{on.proj}}" disabled="{{isEdit}}"><option value="holophyte">holophyte</option><option value="lotuspod">lotuspod</option><option value="relos">relos · held</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div></div>
+<div><div class="fl"><label for="fStory">Story</label><span class="req">optional</span></div><div class="sel"><select id="fStory" class="inp" value="{{d.story}}" onChange="{{on.story}}"><option value="">none</option><option value="HOLO-220">HOLO-220 · Unattended runs recover themselves</option><option value="HOLO-241">HOLO-241 · The console tells the truth</option><option value="HOLO-245">HOLO-245 · Findings become guardrails</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div></div>
+</div>
+
+<div class="fg" id="f-title"><div class="fl"><label for="fTitle">Title</label><span class="req">required</span><span class="hint">The outcome, as the board card says it.</span></div>
+<input id="fTitle" class="inp ttl {{E.title}}" type="text" value="{{d.title}}" onChange="{{on.title}}" placeholder="What is true once this merges" aria-invalid="{{A.title}}" aria-describedby="m-title">
+<div class="msgs" id="m-title"><sc-for list="{{M.title}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+
+<div class="fg" id="f-summary"><div class="fl"><label for="fSum">Summary</label><span class="req">required</span><span class="hint">One or two sentences. Shown under the title on the card and in peek.</span></div>
+<textarea id="fSum" class="inp {{E.summary}}" value="{{d.summary}}" onChange="{{on.summary}}" style="min-height: 64px" aria-describedby="m-summary"></textarea>
+<div class="msgs" id="m-summary"><sc-for list="{{M.summary}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+
+<div class="fg"><div class="www">
+<div id="f-what"><div class="fl"><label for="fWhat">What</label><span class="req">required</span></div><textarea id="fWhat" class="inp {{E.what}}" value="{{d.what}}" onChange="{{on.what}}" style="min-height: 132px" aria-describedby="m-what"></textarea><div class="msgs" id="m-what"><sc-for list="{{M.what}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+<div id="f-why"><div class="fl"><label for="fWhy">Why</label><span class="req">required</span></div><textarea id="fWhy" class="inp {{E.why}}" value="{{d.why}}" onChange="{{on.why}}" style="min-height: 132px" aria-describedby="m-why"></textarea><div class="msgs" id="m-why"><sc-for list="{{M.why}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+<div id="f-how"><div class="fl"><label for="fHow">How</label><span class="req">optional</span></div><textarea id="fHow" class="inp {{E.how}}" value="{{d.how}}" onChange="{{on.how}}" style="min-height: 132px" aria-describedby="m-how"></textarea><div class="msgs" id="m-how"><sc-for list="{{M.how}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+</div></div>
+
+<div class="fg" id="f-scope"><div class="fl"><label for="fScope">Scope</label><span class="req">paths it may touch, one a line</span><span class="hint">The reviewer flags a change outside these as overreach.</span></div>
+<textarea id="fScope" class="inp mono {{E.scope}}" value="{{d.scope}}" onChange="{{on.scope}}" spellcheck="false" aria-describedby="m-scope"></textarea>
+<div class="msgs" id="m-scope"><sc-for list="{{M.scope}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+
+<div class="fg" id="f-crit"><div class="fl"><span class="lt" id="lCrit">Acceptance criteria</span><span class="req">required · each one a reviewer can witness</span><span class="hint">Screenshots and clips go under Evidence on the run, not here.</span></div>
+<ol class="acl" aria-labelledby="lCrit"><sc-for list="{{crit}}" as="c" hint-placeholder-count="3"><li class="{{c.cls}}"><span class="ac-k">{{c.key}}</span><div><label class="sr" for="{{c.id}}">Criterion {{c.key}}</label><input id="{{c.id}}" class="inp {{c.err}}" type="text" value="{{c.text}}" onChange="{{c.onText}}" placeholder="Something a test or a command shows"></div><div class="ac-b"><button type="button" class="ib" aria-label="Move {{c.key}} up" onClick="{{c.up}}" disabled="{{c.first}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"></path></svg></button><button type="button" class="ib" aria-label="Move {{c.key}} down" onClick="{{c.down}}" disabled="{{c.last}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg></button><button type="button" class="ib" aria-label="Remove {{c.key}}" onClick="{{c.remove}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"></path></svg></button></div><div class="msgs"><sc-for list="{{c.msgs}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></li></sc-for></ol>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 12px"><button type="button" class="btn quiet" onClick="{{addCrit}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"></path></svg>Add a criterion</button><span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">{{critNote}}</span></div>
+<div class="msgs"><sc-for list="{{M.crit}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+
+<div class="fg" id="f-verify"><div class="fl"><label for="fVer">Verify commands</label><span class="req">required · one a line, run as written</span><span class="hint">The implementer runs these before review; a red one fails the run.</span></div>
+<textarea id="fVer" class="inp mono {{E.verify}}" value="{{d.verify}}" onChange="{{on.verify}}" spellcheck="false" style="min-height: 64px" aria-describedby="m-verify"></textarea>
+<div class="msgs" id="m-verify"><sc-for list="{{M.verify}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+
+<div class="fg"><div class="row3">
+<div id="f-est"><div class="fl"><label for="fEst">Estimate</label><span class="req">minutes</span></div><div class="num"><button type="button" aria-label="Five minutes less" onClick="{{on.estDown}}">−</button><input id="fEst" type="number" min="5" max="120" step="5" value="{{d.est}}" onChange="{{on.est}}"><button type="button" aria-label="Five minutes more" onClick="{{on.estUp}}">+</button></div><p style="margin: 8px 0 0; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">sets the run's time box · cap 90</p><div class="msgs"><sc-for list="{{M.est}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+<div><div class="fl"><span class="lt" id="lPri">Priority</span></div><div class="sg" role="group" aria-labelledby="lPri"><button type="button" class="seg" aria-pressed="{{pri.p1}}" onClick="{{pri.set1}}"><i style="background: var(--p1)" aria-hidden="true"></i>P1</button><button type="button" class="seg" aria-pressed="{{pri.p2}}" onClick="{{pri.set2}}"><i style="background: var(--p2)" aria-hidden="true"></i>P2</button><button type="button" class="seg" aria-pressed="{{pri.p3}}" onClick="{{pri.set3}}"><i style="background: var(--p3)" aria-hidden="true"></i>P3</button></div><p style="margin: 8px 0 0; font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">P1 is claimed first</p></div>
+<div id="f-deps"><div class="fl"><label for="fDep">Depends on</label><span class="req">optional</span></div>
+<ul class="chips" hidden="{{noDeps}}" aria-label="Depends on"><sc-for list="{{deps}}" as="p" hint-placeholder-count="1"><li class="{{p.cls}}">{{p.key}}<span>{{p.note}}</span><button type="button" aria-label="Remove {{p.key}}" onClick="{{p.remove}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"></path></svg></button></li></sc-for></ul>
+<div style="display: flex; gap: 8px"><input id="fDep" class="inp mono" type="text" value="{{depDraft}}" onChange="{{on.depDraft}}" onKeyDown="{{on.depKey}}" placeholder="HOLO-238" style="flex: 1 1 120px; min-width: 0"><button type="button" class="btn quiet" onClick="{{on.addDep}}" disabled="{{noDepDraft}}">Add</button></div>
+<div class="msgs"><sc-for list="{{M.deps}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+</div></div>
+
+<div class="fg" id="f-ui">
+<label class="tg"><input type="checkbox" role="switch" checked="{{d.ui}}" onChange="{{on.ui}}"><span class="tr" aria-hidden="true"></span><span>This ticket changes the UI</span></label>
+<sc-if value="{{d.ui}}" hint-placeholder-val="{{ true }}">
+<div style="margin-top: 12px"><div class="fl"><label for="fMock">Mock-up link</label><span class="req">required for a UI change</span><span class="hint">The design the implementer builds to and the reviewer compares against.</span></div>
+<input id="fMock" class="inp mono {{E.mock}}" type="url" value="{{d.mock}}" onChange="{{on.mock}}" placeholder="https://…" aria-describedby="m-mock">
+<div class="msgs" id="m-mock"><sc-for list="{{M.mock}}" as="x" hint-placeholder-count="0"><p class="msg {{x.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{x.icon}}"></path></svg><span>{{x.text}}</span></p></sc-for></div></div>
+</sc-if>
+</div>
+</form>
+</div>
+
+<aside class="tx-rail" aria-labelledby="ckH">
+<div class="ck">
+<h2 id="ckH" class="label" style="margin: 0">Checker <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 400; letter-spacing: 0.04em; text-transform: none">as you type</span></h2>
+<p class="ck-s" role="status" style="color: {{ck.color}}">{{ck.sum}}</p>
+<ul class="ck-l" hidden="{{ck.none}}"><sc-for list="{{ck.items}}" as="i" hint-placeholder-count="3"><li><a href="{{i.href}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; color: {{i.color}}"><circle cx="8" cy="8" r="6.5"></circle><path d="{{i.icon}}"></path></svg><span><b>{{i.field}}</b>{{i.text}}</span></a></li></sc-for></ul>
+<sc-if value="{{isNew}}" hint-placeholder-val="{{ true }}">
+<div class="ck-a"><button type="button" class="btn {{fBusy}}" onClick="{{file}}" disabled="{{cantFile}}">{{fLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button><button type="button" class="btn quiet" onClick="{{saveDraft}}">Save draft</button></div>
+<p class="ck-n">{{fileNote}}</p>
+</sc-if>
+<sc-if value="{{isEdit}}" hint-placeholder-val="{{ false }}">
+<div class="ck-a"><button type="button" class="btn {{sBusy}}" onClick="{{save}}" disabled="{{cantSave}}">{{sLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button><button type="button" class="btn quiet" onClick="{{discard}}" disabled="{{clean}}">Discard</button></div>
+<p class="ck-n">{{saveNote}}</p>
+</sc-if>
+</div>
+<p style="margin: 14px 2px 0; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">From the holophyte ticket template, revision 7. Errors block; advisories are the house style and do not.</p>
+</aside>
+</div>
+</sc-if>
+
+<div class="pad-x" style="display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 28px; padding: var(--sec) 0; border-top: 1px solid var(--rule); font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span>a filed ticket lands in Backlog; move it to Ready when it is specced</span><span>times PT</span></div>
+</section>
+</main>
+</div>
+
+<sc-if value="{{toastOn}}" hint-placeholder-val="{{ false }}">
+<div role="status" aria-live="polite" class="toast-in" style="position: fixed; right: 24px; bottom: 24px; z-index: 40; display: flex; align-items: center; gap: 16px; max-width: calc(100% - 48px); box-sizing: border-box; min-height: 44px; padding: 8px 16px; background: var(--ink); font: 500 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--paper)"><span>{{toast}}</span></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"mode":{"editor":"enum","options":["new","edit","conflict"],"default":"new","section":"State"},"view":{"editor":"enum","options":["data","empty","loading","error"],"default":"data","section":"State"},"$preview":{"width":1440,"height":2240}}'>
+const NAV_GRID = 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z';
+const NAV_FOLDER = 'M2 4.5h4.2l1.5 1.5H14v7.5H2z';
+const NAV_SCOPES = [['', 'All projects'], ['holophyte', 'holophyte'], ['lotuspod', 'lotuspod'], ['relos', 'relos']];
+const NAV_RUNS = { '': 14, holophyte: 9, lotuspod: 3, relos: 2 };
+const NAV_NEED = { '': 5, holophyte: 4, lotuspod: 0, relos: 1 };
+const NAV_FIND = { '': 2, holophyte: 1, lotuspod: 0, relos: 1 };
+const NAV_HELD = { relos: true };
+const NAV_VIEWS = { '': [6, 2, 14], holophyte: [4, 1, 9], lotuspod: [1, 1, 3], relos: [1, 0, 2] };
+const NAV_STORIES = [['HOLO-220', 'Unattended runs recover themselves', 'holophyte', '4/7'], ['HOLO-241', 'The console tells the truth', 'holophyte', '1/7'],
+  ['HOLO-245', 'Findings become guardrails', 'holophyte', '1/5'], ['LOTUS-50', 'Two-way pages', 'lotuspod', '1/5']];
+function readScope(fallback) { try { const v = window.sessionStorage.getItem('holo.scope'); if (v !== null) return v; } catch (e) {} return fallback; }
+function saveScope(v) { try { window.sessionStorage.setItem('holo.scope', v); } catch (e) {} }
+function shellVals(cmp, screen) {
+  const s = cmp.state, theme = s.theme || cmp.props.theme || 'night', scope = s.proj || '';
+  const sw = s.sw || { open: false, q: '', i: 0 };
+  const setSw = (p) => cmp.setState({ sw: Object.assign({}, cmp.state.sw || { open: false, q: '', i: 0 }, p) });
+  const pick = (id) => { saveScope(id); setSw({ open: false, q: '', i: 0 }); cmp.setState({ proj: id || null }); };
+  const q = sw.q.trim().toLowerCase();
+  const list = NAV_SCOPES.filter((x) => !q || x[1].toLowerCase().indexOf(q) >= 0);
+  const i = Math.min(sw.i, Math.max(list.length - 1, 0));
+  const colorOf = (id) => (NAV_HELD[id] ? 'var(--wait)' : (id ? 'var(--live)' : 'var(--ink-2)'));
+  const items = list.map((x, k) => ({ id: 'sw-' + (x[0] || 'all'), name: x[1], icon: x[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(x[0]),
+    noTag: !NAV_HELD[x[0]], need: String(NAV_NEED[x[0]]), noNeed: !NAV_NEED[x[0]], runs: NAV_RUNS[x[0]] + ' open', sel: x[0] === scope ? 'true' : 'false',
+    bg: k === i ? 'var(--paper-2)' : 'transparent', pick: () => pick(x[0]) }));
+  const cur = NAV_SCOPES.filter((x) => x[0] === scope)[0] || NAV_SCOPES[0];
+  const key = (e) => {
+    if (e.key === 'Escape') { if (sw.open) { e.preventDefault(); setSw({ open: false }); } return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sw.open) { setSw({ open: true, q: '', i: 0 }); return; }
+      const n = list.length;
+      if (n) setSw({ i: (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+      return;
+    }
+    if (e.key === 'Enter' && sw.open && list[i] && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); pick(list[i][0]); }
+  };
+  const it = (id, label, n, word) => { const on = id === screen; return { cur: on ? 'page' : null, color: on ? 'var(--act)' : 'var(--ink-2)', bg: on ? 'var(--act-wash)' : 'transparent',
+    sh: on ? 'inset 2px 0 0 var(--act)' : 'none', aria: label + (n ? ', ' + n + ' ' + word : ''), badge: n ? String(n) : '', noBadge: !n }; };
+  let open = s.navSt;
+  if (open === undefined) { open = true; try { open = window.sessionStorage.getItem('holo.stories') !== '0'; } catch (e) {} }
+  const vw = NAV_VIEWS[scope] || NAV_VIEWS[''];
+  return {
+    themeClass: 't-' + theme,
+    themeWord: theme === 'dawn' ? 'Dawn' : 'Night',
+    themeLabel: theme === 'dawn' ? 'Colour theme: dawn. Switch to night' : 'Colour theme: night. Switch to dawn',
+    toggleTheme: () => cmp.setState({ theme: theme === 'dawn' ? 'night' : 'dawn' }),
+    sw: { open: sw.open, q: sw.q, name: cur[1], icon: cur[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(cur[0]),
+      noTag: !NAV_HELD[cur[0]], need: String(NAV_NEED[cur[0]]), noNeed: !NAV_NEED[cur[0]],
+      aria: 'Project: ' + cur[1] + (NAV_HELD[cur[0]] ? ', held' : '') + (NAV_NEED[cur[0]] ? ', ' + NAV_NEED[cur[0]] + ' need you' : '') + '. Switch project',
+      title: cur[1] + (NAV_NEED[cur[0]] ? ' · ' + NAV_NEED[cur[0]] + ' need you' : ''),
+      items: items, hasItems: items.length > 0, activeId: items[i] ? items[i].id : '',
+      toggle: () => setSw({ open: !sw.open, q: '', i: 0 }), close: () => setSw({ open: false }),
+      onQ: (e) => setSw({ q: e.target.value, i: 0, open: true }), key: key },
+    nav: { overview: it('overview', 'Overview', NAV_NEED[scope], 'need you'), runs: it('runs', 'Runs'), tickets: it('tickets', 'Tickets'),
+      findings: it('findings', 'Findings', NAV_FIND[scope], 'open'), hosts: it('hosts', 'Hosts', 1, 'not answering'), settings: it('settings', 'Settings'),
+      subShow: open, subOpen: open ? 'true' : 'false', subRot: open ? 'rotate(90deg)' : 'none', subAria: (open ? 'Hide' : 'Show') + ' views and stories',
+      toggleSub: () => { const v = !open; try { window.sessionStorage.setItem('holo.stories', v ? '1' : '0'); } catch (e) {} cmp.setState({ navSt: v }); },
+      views: [['Ready', vw[0]], ['Needs spec', vw[1]], ['Backlog', vw[2]]].map((x) => ({ label: x[0], n: String(x[1]), aria: x[0] + ', ' + x[1] + ' tickets' })),
+      stories: NAV_STORIES.filter((x) => !scope || x[2] === scope).map((x) => ({ key: x[0], title: x[1], prog: x[3], aria: x[0] + ' ' + x[1] + ', ' + x[3].replace('/', ' of ') + ' merged' })) }
+  };
+}
+
+const IC = { x: 'M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4', bang: 'M8 4.8v3.6M8 11.1v.1', check: 'M5 8.3 7.1 10.4 11 6.2' };
+const KNOWN = { 'HOLO-220': 'story', 'HOLO-231': 'in review', 'HOLO-233': 'merged', 'HOLO-234': 'on CI', 'HOLO-236': 'paused', 'HOLO-238': 'running', 'HOLO-240': 'queued', 'HOLO-241': 'story', 'HOLO-244': 'backlog', 'HOLO-245': 'story', 'LOTUS-57': 'running', 'RELOS-91': 'queued' };
+const NEW_DRAFT = { proj: 'holophyte', story: 'HOLO-241', title: 'Add steer notes to the run card',
+  summary: 'The run page lists each steer note you sent, when the agent read it, and what it did with it.',
+  what: 'A Steer notes block on the run detail card: one row per note with its time, kind (steer or ask), text, and the time the agent read it.',
+  why: 'Notes vanish into the agent log today, so there is no way to tell whether a steer landed before review started.',
+  how: "Read the steer rows from the run's events and render them in run_card.py beside Progress. No new table.",
+  scope: 'holophyte/console/run_card.py\nholophyte/console/static/run.css\ntests/test_console_run.py',
+  crit: ['The run detail card lists each steer note with its time and kind.', 'A note the agent read shows read at HH:MM; an unread one shows waiting.', 'A screenshot of the card in Night and Dawn.'],
+  verify: "python3 -m unittest discover -s tests -p 'test_console_run.py'\nruff check .", est: 45, pri: 'p2', deps: ['HOLO-238'], ui: true, mock: '' };
+const EDIT_BASE = { proj: 'holophyte', story: 'HOLO-241', title: 'Steer notes show on the run detail card',
+  summary: 'The run page lists each steer note you sent, when the agent read it, and what it did with it.',
+  what: 'A Steer notes block on the run detail card: one row per note with its time, kind (steer or ask), text, and the time the agent read it.',
+  why: 'Notes vanish into the agent log today, so there is no way to tell whether a steer landed before review started.',
+  how: "Read the steer rows from the run's events and render them in run_card.py beside Progress. No new table.",
+  scope: 'holophyte/console/run_card.py\nholophyte/console/static/run.css\ntests/test_console_run.py',
+  crit: ['The run detail card lists each steer note with its time and kind.', 'A note the agent read shows read at HH:MM.', 'A steer sent while review runs is listed once review returns.'],
+  verify: "python3 -m unittest discover -s tests -p 'test_console_run.py'\nruff check .", est: 45, pri: 'p2', deps: ['HOLO-238'], ui: true, mock: 'https://pods.example/run-steer-notes' };
+const BLANK = { proj: 'holophyte', story: '', title: '', summary: '', what: '', why: '', how: '', scope: '', crit: [''], verify: '', est: 25, pri: 'p2', deps: [], ui: false, mock: '' };
+const FIELD = { title: 'Title', summary: 'Summary', what: 'What', why: 'Why', how: 'How', scope: 'Scope', crit: 'Acceptance criteria', verify: 'Verify commands', est: 'Estimate', deps: 'Depends on', mock: 'Mock-up link' };
+function check(d, selfKey) { // returns messages by field, each [kind e|a, text]
+  const m = { title: [], summary: [], what: [], why: [], how: [], scope: [], crit: [], verify: [], est: [], deps: [], mock: [] }, ci = d.crit.map(() => []);
+  const t = d.title.trim();
+  if (!t) m.title.push(['e', 'A ticket needs a title.']);
+  else {
+    if (/^(add|fix|implement|make|update|create|refactor|support)\b/i.test(t)) m.title.push(['a', 'Titles here say the outcome, not the task. Try: Steer notes show on the run detail card.']);
+    if (t.length > 72) m.title.push(['a', 'The board card cuts titles at 72 characters; this one is ' + t.length + '.']);
+  }
+  if (!d.summary.trim()) m.summary.push(['e', 'Add a summary. It is what the board card shows.']);
+  if (!d.what.trim()) m.what.push(['e', 'What is required by the template.']);
+  if (!d.why.trim()) m.why.push(['e', 'Why is required by the template.']);
+  if (!d.how.trim() && (d.what.trim() || d.why.trim())) m.how.push(['a', 'Optional, but a hint here often saves the implementer a turn.']);
+  if (!d.scope.trim() && d.title.trim()) m.scope.push(['a', 'No scope, so the reviewer cannot tell overreach from the plan.']);
+  const filled = d.crit.filter((c) => c.trim());
+  if (!filled.length) m.crit.push(['e', 'Add at least one acceptance criterion.']);
+  d.crit.forEach((c, i) => {
+    if (!c.trim()) { if (d.crit.length > 1) ci[i].push(['e', 'Empty. Write it or remove it.']); return; }
+    if (/screenshot|video|clip|looks (good|right)/i.test(c)) ci[i].push(['e', 'A reviewer cannot witness a screenshot. It goes under Evidence; the run captures it when UI capture is on.']);
+  });
+  if (d.crit.length > 8) m.crit.push(['a', 'More than 8 criteria. Consider splitting the ticket.']);
+  const v = d.verify.trim();
+  if (!v) m.verify.push(['e', 'Add at least one verify command.']);
+  else {
+    if (/\bpytest\b/.test(v)) m.verify.push(['e', 'This repo runs tests with python3 -m unittest; pytest is not on the host.']);
+    if (!/ruff check/.test(v)) m.verify.push(['a', 'Add ruff check . — every ticket here runs it.']);
+  }
+  if (d.est > 90) m.est.push(['e', 'Over the 90-minute cap. Split it, or the claim is refused.']);
+  else if (d.est < 10) m.est.push(['a', 'Under 10 minutes. Is this a ticket or a note?']);
+  d.deps.forEach((k) => {
+    if (k === selfKey) m.deps.push(['e', k + ' cannot depend on itself.']);
+    else if (!KNOWN[k]) m.deps.push(['e', k + ' is not a ticket on this board.']);
+  });
+  if (d.ui) {
+    const u = d.mock.trim();
+    if (!u) m.mock.push(['e', 'A UI change needs a mock-up link.']);
+    else if (!/^https?:\/\//.test(u)) m.mock.push(['e', 'The mock-up link should be a full URL.']);
+  }
+  return { m: m, ci: ci };
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, proj: readScope('') || null, d: null, dMode: null, depDraft: '', fBusy: false, sBusy: false, resolved: false, saved: false, toast: null };
+    this.timers = [];
+    let reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    this.wait = reduce ? 0 : 900;
+  }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); }
+  later(fn, ms) { this.timers.push(setTimeout(fn, ms)); }
+  say(text) {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.setState({ toast: text });
+    this.toastTimer = setTimeout(() => this.setState({ toast: null }), 6000);
+    this.timers.push(this.toastTimer);
+  }
+  mode() { return this.props.mode || 'new'; }
+  start() {
+    const mode = this.mode(), view = this.props.view || 'data';
+    if (mode === 'new') return view === 'empty' ? BLANK : NEW_DRAFT;
+    const d = Object.assign({}, EDIT_BASE, { crit: EDIT_BASE.crit.slice() });
+    d.crit[1] = 'A note the agent read shows read at HH:MM; one it skipped shows skipped and why.';
+    return d;
+  }
+  draft() { const key = this.mode() + '/' + (this.props.view || 'data'); return this.state.d && this.state.dMode === key ? this.state.d : this.start(); }
+  put(p) { const key = this.mode() + '/' + (this.props.view || 'data'); this.setState({ d: Object.assign({}, this.draft(), p), dMode: key }); }
+  setCrit(fn) { const c = this.draft().crit.slice(); fn(c); this.put({ crit: c }); }
+  addDep() {
+    const k = this.state.depDraft.trim().toUpperCase();
+    if (!k) return;
+    const d = this.draft();
+    if (d.deps.indexOf(k) < 0) this.put({ deps: d.deps.concat([k]) });
+    this.setState({ depDraft: '' });
+  }
+  renderVals() {
+    const s = this.state, mode = this.mode(), view = this.props.view || 'data', d = this.draft();
+    const isNew = mode === 'new', isEdit = !isNew, selfKey = isEdit ? 'HOLO-244' : '';
+    const r = check(d, selfKey), m = r.m;
+    const toMsg = (x) => ({ cls: x[0], text: x[1], icon: x[0] === 'e' ? IC.x : IC.bang });
+    const M = {}, E = {}, A = {};
+    Object.keys(m).forEach((k) => { M[k] = m[k].map(toMsg); E[k] = m[k].some((x) => x[0] === 'e') ? 'err' : ''; A[k] = E[k] ? 'true' : 'false'; });
+    const base = isEdit ? EDIT_BASE : null;
+    const crit = d.crit.map((c, i) => {
+      const msgs = r.ci[i], chg = !!base && base.crit[i] !== c;
+      return { key: 'AC' + (i + 1), id: 'ac-' + i, text: c, cls: chg ? 'ac chg' : 'ac', err: msgs.some((x) => x[0] === 'e') ? 'err' : (chg ? 'chg' : ''),
+        msgs: msgs.map(toMsg), first: i === 0, last: i === d.crit.length - 1,
+        onText: (e) => { const v = e.target.value; this.setCrit((a) => { a[i] = v; }); },
+        up: () => this.setCrit((a) => { const t = a[i - 1]; a[i - 1] = a[i]; a[i] = t; }),
+        down: () => this.setCrit((a) => { const t = a[i + 1]; a[i + 1] = a[i]; a[i] = t; }),
+        remove: () => this.setCrit((a) => { a.splice(i, 1); if (!a.length) a.push(''); }) };
+    });
+    const items = [];
+    const push = (field, list, href) => list.forEach((x) => items.push({ field: field, text: x[1], kind: x[0], href: href }));
+    ['title', 'summary', 'what', 'why', 'how', 'scope'].forEach((k) => push(FIELD[k], m[k], '#f-' + k));
+    r.ci.forEach((list, i) => push('AC' + (i + 1), list, '#f-crit'));
+    push(FIELD.crit, m.crit, '#f-crit'); push(FIELD.verify, m.verify, '#f-verify'); push(FIELD.est, m.est, '#f-est'); push(FIELD.deps, m.deps, '#f-deps'); push(FIELD.mock, m.mock, '#f-ui');
+    items.sort((a, b) => (a.kind === b.kind ? 0 : (a.kind === 'e' ? -1 : 1)));
+    const errN = items.filter((x) => x.kind === 'e').length, advN = items.length - errN;
+    const blank = !d.title.trim() && !d.summary.trim() && !d.what.trim();
+    const ck = { items: items.map((x) => ({ field: x.field, text: x.text, href: x.href, color: x.kind === 'e' ? 'var(--bad)' : 'var(--ask)', icon: x.kind === 'e' ? IC.x : IC.bang })),
+      none: items.length === 0 || blank,
+      sum: blank ? 'Nothing to check yet. Start with a title.' : (errN ? errN + (errN === 1 ? ' error blocks ' : ' errors block ') + (isNew ? 'filing' : 'saving') + ' · ' + advN + (advN === 1 ? ' advisory' : ' advisories') : (advN ? 'Ready · ' + advN + (advN === 1 ? ' advisory' : ' advisories') + ', none blocking' : 'Ready. Nothing to fix.')),
+      color: blank ? 'var(--ink-3)' : (errN ? 'var(--bad)' : 'var(--live)') };
+    const conflict = mode === 'conflict' && !s.resolved;
+    const editChanged = isEdit && JSON.stringify(d) !== JSON.stringify(EDIT_BASE);
+    const deps = d.deps.map((k) => { const ok = !!KNOWN[k] && k !== selfKey; return { key: k, note: ok ? KNOWN[k] : 'unknown', cls: ok ? 'chip' : 'chip bad', remove: () => this.put({ deps: this.draft().deps.filter((x) => x !== k) }) }; });
+    const txt = (k) => (e) => { const p = {}; p[k] = e.target.value; this.put(p); };
+    const rev = s.resolved ? 5 : 4;
+    return Object.assign(shellVals(this, 'tickets'), {
+      isNew: isNew, isEdit: isEdit, isLoading: view === 'loading', isError: view === 'error', showForm: view !== 'loading',
+      pageTitle: isNew ? 'New ticket' : 'Edit HOLO-244',
+      headLine: isNew ? 'holophyte · from the ticket template · lands in Backlog' : (conflict ? 'revision 3 · newer revision 4 exists' : (s.saved ? 'revision ' + rev + ' · saved just now by you' : 'revision ' + (s.resolved ? '4 + your edit' : '3') + ' · last saved by you 2h ago · Backlog')),
+      loadText: isNew ? 'Loading the holophyte ticket template…' : 'Loading HOLO-244 at its latest revision from writer-host…',
+      errTitle: isNew ? 'Could not file: writer-host is not answering.' : 'Could not save: writer-host is not answering.',
+      formLabel: isNew ? 'New ticket' : 'Edit HOLO-244', noSubmit: (e) => { if (e) e.preventDefault(); },
+      d: d, M: M, E: E, A: A, crit: crit, critNote: d.crit.filter((c) => c.trim()).length + ' of ' + d.crit.length + ' written',
+      on: { proj: txt('proj'), story: txt('story'), title: txt('title'), summary: txt('summary'), what: txt('what'), why: txt('why'), how: txt('how'), scope: txt('scope'), verify: txt('verify'), mock: txt('mock'),
+        est: (e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n)) this.put({ est: n }); }, estDown: () => this.put({ est: Math.max(5, d.est - 5) }), estUp: () => this.put({ est: Math.min(120, d.est + 5) }),
+        ui: () => this.put({ ui: !d.ui }), depDraft: (e) => this.setState({ depDraft: e.target.value }),
+        depKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); this.addDep(); } }, addDep: () => this.addDep() },
+      addCrit: () => this.setCrit((a) => { a.push(''); }),
+      pri: { p1: d.pri === 'p1', p2: d.pri === 'p2', p3: d.pri === 'p3', set1: () => this.put({ pri: 'p1' }), set2: () => this.put({ pri: 'p2' }), set3: () => this.put({ pri: 'p3' }) },
+      deps: deps, noDeps: !deps.length, depDraft: s.depDraft, noDepDraft: !s.depDraft.trim(), ck: ck,
+      cantFile: errN > 0 || blank || view === 'error', fBusy: s.fBusy ? 'busy' : '', fLabel: s.fBusy ? 'Filing…' : 'File ticket',
+      fileNote: blank ? 'Fill in the template to file.' : (errN ? 'Fix ' + errN + (errN === 1 ? ' error' : ' errors') + ' to file. It lands in Backlog as HOLO-246.' : 'Files as HOLO-246 in holophyte Backlog.'),
+      file: () => { if (s.fBusy) return; this.setState({ fBusy: true }); this.later(() => { this.setState({ fBusy: false }); this.say('Filed HOLO-246 in holophyte Backlog.'); }, this.wait); },
+      saveDraft: () => this.say('Draft kept in this browser.'),
+      conflictOn: conflict, clean: !editChanged && !conflict,
+      cantSave: conflict || errN > 0 || !editChanged || view === 'error', sBusy: s.sBusy ? 'busy' : '', sLabel: s.sBusy ? 'Saving…' : 'Save revision ' + rev,
+      saveNote: conflict ? 'Resolve the newer revision first. Your edit is safe.' : (errN ? 'Fix ' + errN + (errN === 1 ? ' error' : ' errors') + ' to save.' : (editChanged ? '1 change · AC2 · the next run of HOLO-244 reads the new text' : 'No changes yet.')),
+      save: () => { if (s.sBusy) return; this.setState({ sBusy: true }); this.later(() => { this.setState({ sBusy: false, saved: true }); this.say('Saved HOLO-244 as revision ' + rev + '.'); }, this.wait); },
+      discard: () => this.setState({ d: null, dMode: null, resolved: false, saved: false }),
+      mergeMine: () => { this.setState({ resolved: true }); this.say('Revision 4 loaded with your AC2 on top. Review, then save as revision 5.'); },
+      takeTheirs: () => { const c = EDIT_BASE.crit.slice(); c[1] = 'A note the agent read shows read at HH:MM in Pacific time.'; this.setState({ resolved: true }); this.put({ crit: c }); this.say('Took revision 4. Your AC2 edit was dropped.'); },
+      toastOn: !!s.toast, toast: s.toast || ''
+    });
+  }
+}
+</script>
+</body>
+</html>

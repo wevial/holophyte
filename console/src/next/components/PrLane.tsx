@@ -7,13 +7,14 @@ import { projectName } from "../../lib/derive";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
+import type { PullRequestFacts } from "../../lib/contract.gen";
 import type { AttentionItem } from "../../lib/types";
 import { classicHref } from "../../lib/view";
 import type { ContractBodies } from "../fleet";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { STATES, stateOf, type State } from "../state";
 import { LaneHead } from "./LaneHead";
-import { StateDot } from "./StateDot";
+import { StateDot, TONE_TEXT } from "./StateDot";
 
 type Host = HostRecord<ContractBodies>;
 
@@ -52,8 +53,8 @@ export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number)
   });
 }
 
-/** What follows the state word: the checks a `ci` park waits on, else a
- *  plain park's first fact that is not `ok`. */
+/** What follows the state word: CI checks or
+ *  a plain park's first fact that is not `ok`. */
 function stateDetail(state: State, item: AttentionItem, facts: Fact[]): string | null {
   if (state === "on_ci") return waitingOnCi(item);
   if (state === "parked") return facts.find((fact) => fact.tone !== "ok")?.label ?? null;
@@ -80,8 +81,11 @@ function PrLaneRow({
   const { item, facts } = row;
   const run = typeof item.run === "number" ? item.run : null;
   const state = stateOf({ attention: item, readiness: run == null ? undefined : readiness.get(runKey(host.key, run)) });
-  const detail = stateDetail(state, item, facts);
-  const word = detail == null ? STATES[state].word : `${STATES[state].word} · ${detail}`;
+  const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PullRequestFacts) : null;
+  const heldDraft = state === "parked" && pr?.state === "draft";
+  const detail = heldDraft ? "held for your review" : stateDetail(state, item, facts);
+  const stateWord = heldDraft ? "draft" : STATES[state].word;
+  const word = detail == null ? stateWord : `${stateWord} · ${detail}`;
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
   const label = typeof item.pr_url === "string" ? prLabel(item.pr_url) : "PR";
   const title = prTitle(item) ?? "";
@@ -108,7 +112,14 @@ function PrLaneRow({
             className={ROW_BUTTON}
           >
             <span className="whitespace-nowrap text-ink-2">{ticket}</span>
-            <span className="min-w-0 font-sans text-[14.5px] font-medium leading-[1.45] text-ink">{title}</span>
+            <span className="flex min-w-0 flex-wrap items-baseline gap-2">
+              {pr?.state != null && (
+                <span className="border border-rule-2 bg-paper px-2 py-0.5 font-sans text-[13px] text-ink-2">
+                  {{ draft: "Draft", ready: "Ready", closed: "Closed", merged: "Merged" }[pr.state]}
+                </span>
+              )}
+              <span className="min-w-0 font-read text-[15px] font-medium leading-[1.35] text-ink">{title}</span>
+            </span>
             <span className={`min-w-0 ${UNDER_TITLE}`}>
               <PrFacts facts={facts} form="line" />
             </span>
@@ -116,8 +127,13 @@ function PrLaneRow({
         </div>
         <span className="flex flex-col items-end gap-1 text-right max-[820px]:flex-row @max-[720px]/ov-col:flex-row max-[820px]:flex-wrap @max-[720px]/ov-col:flex-wrap max-[820px]:items-baseline @max-[720px]/ov-col:items-baseline max-[820px]:gap-x-3 @max-[720px]/ov-col:gap-x-3 max-[820px]:text-left @max-[720px]/ov-col:text-left">
           <span data-pr-state>
-            <StateDot state={state} />
-            {detail != null && <span className="whitespace-nowrap"> · {detail}</span>}
+            {heldDraft ? (
+              <span className={`inline-flex items-center gap-1.5 ${TONE_TEXT[STATES[state].tone]}`}>
+                <StateDot state={state} hideWord label="draft" />
+                <span className="font-sans text-[13px] font-medium">draft</span>
+              </span>
+            ) : <StateDot state={state} />}
+            {detail != null && <span className={heldDraft ? "" : "whitespace-nowrap"}> · {detail}</span>}
           </span>
           {needIndex >= 0 && (
             <button

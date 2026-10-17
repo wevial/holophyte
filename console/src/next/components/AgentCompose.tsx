@@ -56,7 +56,7 @@ export function AgentCompose({ base, run, ticket, prUrl, actions, parked, live, 
       <textarea ref={ref} aria-label={asking ? "Question for the agent" : "Note to the agent"}
         placeholder={asking ? "Ask about this run…" : "Tell the agent what to change…"}
         value={text} disabled={disabled} onChange={(event) => setText(event.target.value)}
-        className="mt-2.5 block min-h-[88px] w-full resize-y border border-ink-3 bg-paper-2 p-2.5 font-plex text-[14px] leading-[1.45] text-ink" />
+        className="mt-2.5 block min-h-[88px] w-full resize-y border border-ink-3 bg-paper-2 p-2.5 font-read text-[14px] leading-[1.45] text-ink" />
       {!asking && <div className="mt-1 flex flex-wrap gap-x-4 font-mono text-[12px] leading-[1.4] text-ink">
         <label className="inline-flex min-h-10 items-center gap-2">
           <input type="checkbox" checked={hint} disabled={disabled} onChange={(event) => setHint(event.target.checked)} className="m-0 accent-act" />Just a hint

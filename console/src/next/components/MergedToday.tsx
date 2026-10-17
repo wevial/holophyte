@@ -18,7 +18,7 @@ export function MergedToday({ rows }: { rows: ShippedRow[] }) {
           <StateDot state="merged" hideWord />
           <span className="text-ink-2">{row.ticket}</span>
           <span className="flex min-w-0 flex-col gap-1">
-            <b className="font-sans text-[14px] font-medium break-words text-ink sm:truncate">
+            <b className="font-read text-[15px] font-medium leading-[1.35] break-words text-ink sm:truncate">
               {row.title ?? row.ticket}
             </b>
             <span>

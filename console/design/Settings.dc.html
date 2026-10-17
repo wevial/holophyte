@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Holophyte · Settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Serif:wght@400;500&amp;family=Atkinson+Hyperlegible+Next:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--live-wash:rgba(134,217,147,.10);--ask:#f0cf62;--ask-wash:rgba(240,207,98,.08);--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16;--bad-wash:rgba(255,123,114,.09);--done:#7b84a1;--scrim:rgba(5,7,15,.74)}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--live-wash:rgba(31,122,53,.08);--ask:#8a6500;--ask-wash:rgba(138,101,0,.07);--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff;--bad-wash:rgba(192,50,31,.07);--done:#8b90a8;--scrim:rgba(236,234,243,.8)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.cm{position:absolute;width:12px;height:12px;pointer-events:none}
+.cm::before,.cm::after{content:"";position:absolute;background:var(--ink-3)}
+.cm::before{width:12px;height:1px;top:5.5px}.cm::after{width:1px;height:12px;left:5.5px}
+.cm.tl{top:-6.5px;left:-6.5px}.cm.tr{top:-6.5px;right:-6.5px}.cm.bl{bottom:-6.5px;left:-6.5px}.cm.br{bottom:-6.5px;right:-6.5px}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.cell{display:inline-block;width:9px;height:9px;flex:none;position:relative;box-sizing:border-box}
+.c-live{background:var(--live)}.c-held{background:linear-gradient(90deg,var(--wait) 0 3px,transparent 3px 6px,var(--wait) 6px)}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn:not(.quiet):not(.danger):not(.busy):not([disabled]){color:var(--bi,var(--act-ink))}.btn:not(.quiet):not(.danger):not(.busy):not([disabled])::before{transform:scaleX(1)}.btn:not(.quiet):not(.danger):not(.busy):hover{filter:brightness(1.08)}
+.btn.quiet.on-ink{--b:var(--paper);--bi:var(--ink);color:var(--paper)}.btn.quiet.on-ink:hover,.btn.quiet.on-ink:focus-visible{color:var(--ink)}
+.btn.busy{pointer-events:none;color:var(--b,var(--act));box-shadow:none;clip-path:none}
+.btn.busy::before,.btn.busy::after{display:none}
+.btn .ants-o{display:none}.btn.busy .ants-o{display:block}.btn .ants-r{stroke:var(--b,var(--act))}
+.ants-o{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.ants-o rect{width:calc(100% - 1.5px);height:calc(100% - 1.5px)}
+.ants-r{fill:none;stroke:var(--wait);stroke-width:1.5;stroke-dasharray:1 1;animation:march .9s linear infinite}
+@keyframes march{to{stroke-dashoffset:-2}}
+.btn[disabled]{cursor:not-allowed;opacity:.5}.btn[disabled]::before{display:none}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;cursor:pointer;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+.link:hover{color:var(--ink);border-bottom-color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.nav-a:hover{color:var(--ink)!important}
+.shell{--pg-t:20px;--pg-x:24px;--pg-b:32px;--hd-t:12px;--hd-b:12px;--sec:14px;height:100vh;overflow:hidden}
+.pg-title{margin:0;font:600 20px/1.25 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em;color:var(--ink)}
+.shell > aside{height:100vh;box-sizing:border-box}.shell > aside nav{flex:0 1 auto;min-height:0;overflow-y:auto}
+.shell > .pad-main{height:100vh;overflow-y:auto}
+.pg-w{position:relative}
+.pg-t{position:absolute;right:4px;top:6px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--ink-3)}
+.pg-a{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 10px 0 12px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.pg-a .badge{margin-left:auto;color:var(--need);letter-spacing:0;font-weight:600}
+.pg-sub{margin:2px 0 6px 20px;padding:0 0 4px;border-left:1px solid var(--rule)}
+.sub-h{padding:10px 8px 4px 12px;font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.sub-l{list-style:none;margin:0;padding:0}
+.vw-a{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 8px 0 12px;text-decoration:none;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink-2)}
+.vw-n{margin-left:auto;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;min-height:44px;padding:7px 8px 8px 12px;box-sizing:border-box;text-decoration:none;color:var(--ink-2)}
+.st-k,.st-p{font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-t{grid-column:1 / -1;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif}
+.nav-sep{height:1px;margin:8px 4px;background:var(--rule)}
+.sw{position:relative;margin:12px 0 4px}
+.sw-b{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px 0 12px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-align:left;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-b .tag,.sw-o .tag{color:var(--wait);font-size:11px;font-weight:400}
+.sw-need{margin-left:auto;color:var(--need);font-weight:600}
+.sw-c{margin-left:6px;color:var(--ink-3)}.sw-need[hidden]+.sw-c{margin-left:auto}
+.sw-back{position:fixed;inset:0;z-index:55;border:0;padding:0;background:transparent;cursor:default}
+.sw-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:264px;box-sizing:border-box;padding:8px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.sw-q{display:block;box-sizing:border-box;width:100%;min-height:36px;padding:0 10px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sw-q:focus{outline:2px solid var(--act);outline-offset:-1px}.sw-q::placeholder{color:var(--ink-2)}
+.sw-l{list-style:none;margin:8px 0 0;padding:0}
+.sw-o{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 8px;cursor:pointer;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-o:hover{background:var(--paper-2)!important}.sw-o[aria-selected="true"]{color:var(--act)}
+.sw-cnt{margin-left:auto;display:inline-flex;gap:10px;font-weight:400;font-size:12px;color:var(--ink-3)}.sw-cnt b{color:var(--need);font-weight:600}
+.sw-none{margin:0;padding:10px 8px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.side-b{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);cursor:pointer;text-decoration:none;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.side-b:hover{color:var(--ink);border-color:var(--ink-3)}
+.think{display:inline-flex;gap:4px}.think i{display:inline-block;width:7px;height:7px;background:var(--rule);animation:think 1.2s steps(1,end) infinite}
+.think i:nth-child(2){animation-delay:.2s}.think i:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,100%{background:var(--rule)}33%{background:var(--ink-3)}}
+.fault{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 14px;padding:12px 14px;background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+.calm{padding:36px 28px;background:var(--paper);border:1px solid var(--rule)}
+.calm h2{margin:0;font-family:'Archivo','Helvetica Neue',sans-serif;font-weight:700;font-size:26px;color:var(--ink)}
+.calm p{margin:8px 0 0;max-width:62ch;color:var(--ink-2)}
+.toast-in{animation:roll .28s cubic-bezier(.2,.7,.2,1)}
+@keyframes roll{from{transform:translateY(12px)}}
+[hidden]{display:none!important}
+.sk{display:block;height:10px;background:var(--rule-2)}
+.hd-m{margin:6px 0 0;font:400 13px/1.6 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.st-wrap{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px 32px;margin-top:20px}
+.si{flex:1 1 200px;max-width:100%;min-width:0;display:flex;flex-direction:column;gap:2px}
+@media (min-width:1000px){.si{flex:0 0 212px}}
+.si-h{padding:14px 12px 6px;font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.si-h:first-child{padding-top:2px}
+.si-b{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:0 12px;box-sizing:border-box;border:0;background:transparent;cursor:pointer;text-align:left;font:400 14px/1.3 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink-2)}
+.si-b:hover{color:var(--ink);background:var(--paper)}
+.si-b[aria-current="true"]{color:var(--act);background:var(--act-wash);box-shadow:inset 2px 0 0 var(--act)}
+.si-n{margin-left:auto;font:600 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--act)}
+.sp{flex:999 1 560px;min-width:0}
+.sp fieldset{border:0;margin:0;padding:0;min-width:0}
+.card{background:var(--paper);border:1px solid var(--rule);padding:0 28px 6px}
+.card + .card{margin-top:16px}
+.card-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;padding:18px 0 14px;border-bottom:1px solid var(--rule)}
+.card-h h2{margin:0;font:600 19px/1.2 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em}
+.card-h p{margin:0;font:400 12.5px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.fr{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:10px 32px;align-items:start;padding:18px 0;border-bottom:1px solid var(--rule-2)}
+.fr:last-child{border-bottom:0}
+.fr.chg{margin:0 -28px;padding-left:26px;padding-right:28px;background:var(--act-wash);box-shadow:inset 2px 0 0 var(--act)}
+.fr-l{display:block;font:500 14.5px/1.35 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink)}
+.fr-k{display:block;margin-top:3px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.fr-h{margin:6px 0 0;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.fr-c{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;min-width:0}
+.was{font:400 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--act)}
+.when{display:inline-flex;align-items:center;gap:6px;font:400 11.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.msg{display:flex;align-items:flex-start;gap:8px;flex-basis:100%;font:400 12.5px/1.45 'IBM Plex Mono',ui-monospace,monospace;color:var(--bad)}
+.inp{display:block;box-sizing:border-box;width:100%;min-height:44px;padding:0 12px;border:1px solid var(--rule);background:var(--paper-2);color:var(--ink);font:400 14px/1.45 'IBM Plex Sans',system-ui,sans-serif}
+.inp.mono{font:400 13px/1.45 'IBM Plex Mono',ui-monospace,monospace}
+textarea.inp{min-height:84px;padding:10px 12px;resize:vertical}
+.inp:focus{outline:2px solid var(--act);outline-offset:-1px}.inp::placeholder{color:var(--ink-3)}
+.inp[disabled]{opacity:.6;cursor:not-allowed}
+.sel{position:relative;display:block;flex:1 1 240px;max-width:320px;min-width:0}
+.sel select{appearance:none;-webkit-appearance:none;padding-right:36px;cursor:pointer;font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sel svg{position:absolute;right:12px;top:50%;margin-top:-6px;width:12px;height:12px;pointer-events:none;color:var(--ink-3)}
+.num{display:inline-flex;border:1px solid var(--rule)}
+.num button{width:44px;height:44px;padding:0;border:0;background:var(--paper-2);color:var(--ink);cursor:pointer;font:500 16px/1 'IBM Plex Mono',ui-monospace,monospace}
+.num button:hover{background:var(--rule-2)}
+.num input{width:56px;height:44px;box-sizing:border-box;border:0;border-left:1px solid var(--rule);border-right:1px solid var(--rule);background:var(--paper);color:var(--ink);text-align:center;font:500 14px/1 'IBM Plex Mono',ui-monospace,monospace;-moz-appearance:textfield}
+.num input::-webkit-inner-spin-button{-webkit-appearance:none}
+.sg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--ink-3)}
+.seg{min-height:44px;padding:0 14px;border:0;background:transparent;cursor:pointer;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.seg:hover{color:var(--ink)}
+.seg[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.tg{position:relative;display:inline-flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.tg input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.tg .tr{position:relative;flex:none;width:40px;height:22px;box-sizing:border-box;border:1px solid var(--ink-3);background:var(--canvas);transition:background .15s,border-color .15s}
+.tg .tr::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;background:var(--ink-3);transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.tg input:checked + .tr{background:var(--live-wash);border-color:var(--live)}
+.tg input:checked + .tr::after{transform:translateX(18px);background:var(--live)}
+.tg input:focus-visible + .tr{outline:2px solid var(--act);outline-offset:2px}
+.probe{display:inline-flex;align-items:center;gap:6px;font:400 12px/1.3 'IBM Plex Mono',ui-monospace,monospace}
+.bn{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin-bottom:16px;padding:14px 16px}
+.bn.ask{background:var(--ask-wash);box-shadow:inset 2px 0 0 var(--ask)}
+.bn.ok{background:var(--live-wash);box-shadow:inset 2px 0 0 var(--live)}
+.bn-t{flex:1 1 320px;min-width:0}
+.bn-t b{font-weight:500}
+.bn-t span{display:block;margin-top:2px;font:400 12px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.savebar{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-top:20px;padding:10px 12px 10px 18px;background:var(--paper);border:1px solid var(--act);box-shadow:0 -10px 28px rgba(0,0,0,.22)}
+.savebar .sum{flex:1 1 320px;min-width:0;font:400 12.5px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.savebar .sum b{color:var(--act);font-weight:600}
+.diff{border:1px solid var(--rule);font:400 12.5px/1.7 'IBM Plex Mono',ui-monospace,monospace;overflow-x:auto;background:var(--canvas)}
+.dl{display:grid;grid-template-columns:18px minmax(0,1fr);padding:0 12px;white-space:pre}
+.dl.add{background:var(--live-wash)}.dl.del{background:var(--bad-wash)}.dl.ctx{color:var(--ink-3)}
+.dl.add > span:first-child{color:var(--live)}.dl.del > span:first-child{color:var(--bad)}
+.ed{position:relative;display:grid;grid-template-columns:52px minmax(0,1fr);border:1px solid var(--rule);background:var(--canvas);overflow-x:auto}
+.ed-g{list-style:none;margin:0;padding:12px 0;border-right:1px solid var(--rule-2);font:400 12.5px/20px 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);user-select:none}
+.ed-g li{display:flex;align-items:center;justify-content:flex-end;gap:6px;height:20px;padding-right:10px}
+.ed-g li.e{color:var(--bad);font-weight:600}.ed-g li.a{color:var(--ask);font-weight:600}
+.ed-g li i{display:inline-block;width:6px;height:6px;background:currentColor}
+.ed-b{position:relative;min-width:520px}
+.ed-u{position:absolute;inset:0;list-style:none;margin:0;padding:12px 0;pointer-events:none}
+.ed-u li{height:20px}.ed-u li.e{background:var(--bad-wash)}.ed-u li.a{background:var(--ask-wash)}
+.ed textarea{position:relative;display:block;box-sizing:border-box;width:100%;margin:0;padding:12px 14px;border:0;background:transparent;color:var(--ink);font:400 13px/20px 'IBM Plex Mono',ui-monospace,monospace;resize:none;white-space:pre;overflow:hidden;tab-size:2}
+.ed textarea:focus{outline:2px solid var(--act);outline-offset:-2px}
+.ck{list-style:none;margin:14px 0 0;padding:0;border-top:1px solid var(--rule-2)}
+.ck li{display:grid;grid-template-columns:18px 64px minmax(0,1fr);gap:10px;align-items:start;padding:9px 0;border-bottom:1px dashed var(--rule-2);font:400 12.5px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.ck .ln{color:var(--ink-3)}
+.hs{display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px;padding:22px 0 18px;border-bottom:1px solid var(--rule-2)}
+.hs-w{flex:1 1 360px;min-width:0}
+.hs-w b{display:flex;align-items:center;gap:10px;font:600 22px/1.2 'Archivo','Helvetica Neue',sans-serif}
+.hs-w p{margin:8px 0 0;max-width:66ch;color:var(--ink-2)}
+.hs-w q{color:var(--ink)}
+.hist{list-style:none;margin:10px 0 0;padding:0}
+.hist li{display:grid;grid-template-columns:110px 84px minmax(0,1fr);gap:12px;padding:9px 0;border-bottom:1px dashed var(--rule-2);font:400 12.5px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.hist li span:last-child{font:400 14px/1.45 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink-2)}
+.rc-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr));gap:12px}
+.rc{position:relative;display:flex;flex-direction:column;gap:10px;min-height:44px;padding:14px;border:1px solid var(--rule);background:var(--paper-2);cursor:pointer}
+.rc input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.rc:hover{border-color:var(--ink-3)}
+.rc:has(input:checked){border-color:var(--act);background:var(--act-wash)}
+.rc:has(input:focus-visible){outline:2px solid var(--act);outline-offset:2px}
+.rc-t{display:flex;align-items:center;gap:8px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink)}
+.rc-t::before{content:"";width:12px;height:12px;box-sizing:border-box;border:1.5px solid var(--ink-3);border-radius:50%}
+.rc:has(input:checked) .rc-t::before{border:4px solid var(--act)}
+.rc-s{font:400 12px/1.45 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.swatch{display:grid;grid-template-columns:2fr 1fr 1fr;height:44px;border:1px solid var(--rule)}
+.prev{margin-top:4px;border:1px solid var(--rule);background:var(--canvas)}
+@media (max-width:720px){.shell{height:auto;overflow:visible}.shell > aside,.shell > .pad-main{height:auto;overflow:visible}.pad-main{padding:16px 8px 32px!important}.pad-x{padding-left:16px!important;padding-right:16px!important}.fr{grid-template-columns:minmax(0,1fr)}.card{padding:0 16px 6px}.fr.chg{margin:0 -16px;padding-left:14px;padding-right:16px}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+</style>
+</helmet>
+<div class="{{themeClass}} shell" style="min-height: 100vh; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: stretch; background-color: var(--canvas); color: var(--ink); font-family: {{readFont}}; font-size: 15px; line-height: 1.5">
+
+<aside aria-label="Console" style="flex: 1 1 232px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; background: var(--paper-2); border-right: 1px solid var(--rule); padding: 0 8px 16px">
+<div style="display: flex; align-items: center; min-height: 60px; margin: 0 -8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--rule)">
+<a href="Main.dc.html" aria-label="Holophyte console, overview" style="display: flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink)">
+<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="flex: none"><g style="fill: var(--act); stroke: var(--paper-2); stroke-width: 1.1; stroke-linejoin: round"><path d="M12 17 C7.4 17.6 3.6 15.6 2 12.2 C5.6 11.8 9.4 13.6 12 17Z"></path><path d="M12 17 C16.6 17.6 20.4 15.6 22 12.2 C18.4 11.8 14.6 13.6 12 17Z"></path><path d="M12 17 C8.2 16.6 5.6 13 6 8 C9 9.2 11.2 12.6 12 17Z"></path><path d="M12 17 C15.8 16.6 18.4 13 18 8 C15 9.2 12.8 12.6 12 17Z"></path><path d="M12 4 C15.2 7.2 15.2 13 12 17 C8.8 13 8.8 7.2 12 4Z"></path></g><path d="M6 20.2 H18" style="fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-linecap: round"></path></svg>
+<b style="font: 600 15px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.01em">holophyte</b>
+</a>
+</div>
+<div class="sw" onKeyDown="{{sw.key}}">
+<button type="button" class="nav-a sw-b" onClick="{{sw.toggle}}" aria-haspopup="listbox" aria-expanded="{{sw.open}}" aria-label="{{sw.aria}}" title="{{sw.title}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{sw.iconColor}}"><path d="{{sw.icon}}"></path></svg><span>{{sw.name}}</span><span class="tag" hidden="{{sw.noTag}}">held</span><span class="sw-need" hidden="{{sw.noNeed}}">{{sw.need}}</span><svg class="ico sw-c" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></button>
+<sc-if value="{{sw.open}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="sw-back" tabindex="-1" aria-hidden="true" onClick="{{sw.close}}"></button>
+<div class="sw-pop" role="dialog" aria-label="Switch project">
+<label class="sr" for="swq">Find a project</label>
+<input id="swq" class="sw-q" type="text" value="{{sw.q}}" onChange="{{sw.onQ}}" placeholder="Find a project" autocomplete="off" autoFocus="{{ true }}" role="combobox" aria-expanded="true" aria-controls="swl" aria-activedescendant="{{sw.activeId}}">
+<ul id="swl" role="listbox" aria-label="Projects" class="sw-l">
+<sc-for list="{{sw.items}}" as="it" hint-placeholder-count="4"><li id="{{it.id}}" role="option" aria-selected="{{it.sel}}" class="sw-o" onClick="{{it.pick}}" style="background: {{it.bg}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{it.iconColor}}"><path d="{{it.icon}}"></path></svg><span>{{it.name}}</span><span class="tag" hidden="{{it.noTag}}">held</span><span class="sw-cnt"><b hidden="{{it.noNeed}}">{{it.need}}</b><span>{{it.runs}}</span></span></li></sc-for>
+</ul>
+<p class="sw-none" hidden="{{sw.hasItems}}">No project matches.</p>
+</div>
+</sc-if>
+</div>
+<nav aria-label="Pages" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px">
+<a href="Main.dc.html" class="nav-a pg-a" aria-current="{{nav.overview.cur}}" aria-label="{{nav.overview.aria}}" style="color: {{nav.overview.color}}; background: {{nav.overview.bg}}; box-shadow: {{nav.overview.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 9.5h3.5l1 2h3l1-2H14"></path><path d="M3.6 3h8.8L14 9.5V13H2V9.5z"></path></svg><span>Overview</span><span class="badge" hidden="{{nav.overview.noBadge}}">{{nav.overview.badge}}</span></a>
+<a href="Runs.dc.html" class="nav-a pg-a" aria-current="{{nav.runs.cur}}" aria-label="{{nav.runs.aria}}" style="color: {{nav.runs.color}}; background: {{nav.runs.bg}}; box-shadow: {{nav.runs.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"></path><path d="M6.6 5.4v5.2L10.8 8z"></path></svg><span>Runs</span></a>
+<div class="pg-w"><a href="Issues.dc.html" class="nav-a pg-a" aria-current="{{nav.tickets.cur}}" aria-label="{{nav.tickets.aria}}" style="color: {{nav.tickets.color}}; background: {{nav.tickets.bg}}; box-shadow: {{nav.tickets.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4"></path></svg><span>Tickets</span></a><button type="button" class="nav-a pg-t" aria-expanded="{{nav.subOpen}}" aria-controls="nav-sub" aria-label="{{nav.subAria}}" onClick="{{nav.toggleSub}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; transform: {{nav.subRot}}"><path d="M6 4l4 4-4 4"></path></svg></button>
+<sc-if value="{{nav.subShow}}" hint-placeholder-val="{{ true }}"><div id="nav-sub" class="pg-sub">
+<div class="sub-h" id="nv-views">Views</div>
+<ul class="sub-l" aria-labelledby="nv-views"><sc-for list="{{nav.views}}" as="v" hint-placeholder-count="3"><li><a href="Issues.dc.html" class="nav-a vw-a" aria-label="{{v.aria}}"><span>{{v.label}}</span><span class="vw-n">{{v.n}}</span></a></li></sc-for></ul>
+<div class="sub-h" id="nv-stories">Stories</div>
+<ul class="sub-l" aria-labelledby="nv-stories"><sc-for list="{{nav.stories}}" as="st" hint-placeholder-count="3"><li><a href="Story.dc.html" class="nav-a st-a" aria-label="{{st.aria}}"><span class="st-k">{{st.key}}</span><span class="st-p">{{st.prog}}</span><span class="st-t">{{st.title}}</span></a></li></sc-for></ul>
+</div></sc-if></div>
+<a href="Findings.dc.html" class="nav-a pg-a" aria-current="{{nav.findings.cur}}" aria-label="{{nav.findings.aria}}" style="color: {{nav.findings.color}}; background: {{nav.findings.bg}}; box-shadow: {{nav.findings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5"></path></svg><span>Findings</span><span class="badge" hidden="{{nav.findings.noBadge}}">{{nav.findings.badge}}</span></a>
+<div class="nav-sep" aria-hidden="true"></div>
+<a href="Hosts.dc.html" class="nav-a pg-a" aria-current="{{nav.hosts.cur}}" aria-label="{{nav.hosts.aria}}" style="color: {{nav.hosts.color}}; background: {{nav.hosts.bg}}; box-shadow: {{nav.hosts.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2.5 2.5h11v4.5h-11zM2.5 9h11v4.5h-11z"></path><path d="M5 4.75h.1M5 11.25h.1"></path></svg><span>Hosts</span><span class="badge" hidden="{{nav.hosts.noBadge}}">{{nav.hosts.badge}}</span></a>
+<a href="Settings.dc.html" class="nav-a pg-a" aria-current="{{nav.settings.cur}}" aria-label="{{nav.settings.aria}}" style="color: {{nav.settings.color}}; background: {{nav.settings.bg}}; box-shadow: {{nav.settings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 4.5h12M2 11.5h12"></path><path d="M5.5 2.8v3.4M10.5 9.8v3.4"></path></svg><span>Settings</span></a>
+</nav>
+<div style="margin: auto -8px 0; padding: 14px 8px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+<div style="display: flex; align-items: center; gap: 12px; padding-left: 14px; font: 400 11px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg><span>writer-host · polled 4s ago</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; padding-left: 8px">
+<button type="button" class="side-b" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>{{themeWord}}</button>
+<a class="side-b" href="#classic">Classic console</a>
+</div>
+</div>
+</aside>
+
+<div class="pad-main" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: var(--pg-t) var(--pg-x) var(--pg-b)">
+<main style="max-width: 1180px; margin: 0 auto">
+<section aria-labelledby="sH">
+<div class="pad-x" style="padding: var(--hd-t) 0 var(--hd-b); border-bottom: 1px solid var(--rule)">
+<h1 id="sH" class="pg-title">Settings</h1>
+<p class="hd-m">{{headLine}}</p>
+</div>
+
+<div class="st-wrap">
+<nav class="si" aria-label="Settings sections">
+<div class="si-h">Project</div>
+<div class="sel" style="max-width: none; flex: none; margin: 0 0 6px"><label class="sr" for="pjSel">Project</label><select id="pjSel" class="inp" value="{{sp}}" onChange="{{onProj}}"><option value="holophyte">holophyte</option><option value="lotuspod">lotuspod</option><option value="relos">relos · held</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div>
+<button type="button" class="si-b" aria-current="{{tab.general}}" onClick="{{go.general}}">General<span class="si-n" hidden="{{cnt.noGeneral}}">{{cnt.General}}</span></button>
+<button type="button" class="si-b" aria-current="{{tab.review}}" onClick="{{go.review}}">Review<span class="si-n" hidden="{{cnt.noReview}}">{{cnt.Review}}</span></button>
+<button type="button" class="si-b" aria-current="{{tab.agents}}" onClick="{{go.agents}}">Agents<span class="si-n" hidden="{{cnt.noAgents}}">{{cnt.Agents}}</span></button>
+<button type="button" class="si-b" aria-current="{{tab.capture}}" onClick="{{go.capture}}">Capture<span class="si-n" hidden="{{cnt.noCapture}}">{{cnt.Capture}}</span></button>
+<button type="button" class="si-b" aria-current="{{tab.hold}}" onClick="{{go.hold}}">Hold / release<span class="si-n" style="color: var(--wait)" hidden="{{notHeld}}">held</span></button>
+<button type="button" class="si-b" aria-current="{{tab.toml}}" onClick="{{go.toml}}">Raw TOML<span class="si-n" style="color: var(--bad)" hidden="{{tm.noErr}}">{{tm.errN}}</span></button>
+<div class="si-h">You · this browser</div>
+<button type="button" class="si-b" aria-current="{{tab.appearance}}" onClick="{{go.appearance}}">Appearance</button>
+</nav>
+
+<div class="sp">
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; align-items: center; gap: 12px; font: 400 13px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span class="think" aria-hidden="true"><i></i><i></i><i></i></span>Reading holophyte.toml for {{sp}} from {{host}}…</div>
+<div class="card" aria-hidden="true" style="margin-top: 14px"><div class="card-h"><h2 style="color: var(--ink-3)">General</h2></div><div class="fr"><span class="sk" style="width: 60%"></span><span class="sk"></span></div><div class="fr"><span class="sk" style="width: 40%"></span><span class="sk" style="width: 70%"></span></div><div class="fr"><span class="sk" style="width: 50%"></span><span class="sk" style="width: 30%"></span></div></div>
+</sc-if>
+
+<sc-if value="{{isEmpty}}" hint-placeholder-val="{{ false }}">
+<div class="calm"><h2>{{sp}} has no settings file yet.</h2><p>It runs on the factory defaults: pull requests, auto approval, one worker, two review rounds. Create holophyte.toml to change any of them; the file starts as those defaults.</p><div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px"><button type="button" class="btn">Create holophyte.toml</button></div></div>
+</sc-if>
+
+<sc-if value="{{isError}}" hint-placeholder-val="{{ false }}">
+<div role="status" class="fault" style="margin-bottom: 16px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; width: 16px; height: 16px; color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">{{host}} is not answering, so these settings are read-only.</div><div style="margin-top: 2px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">showing revision {{rev}} as read at 16:48 · nothing you change here can be saved until it answers</div></div><button type="button" class="btn quiet">Try again</button></div>
+</sc-if>
+
+<sc-if value="{{showPanel}}" hint-placeholder-val="{{ true }}">
+<sc-if value="{{bn.on}}" hint-placeholder-val="{{ false }}">
+<div role="status" class="bn {{bn.cls}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px; color: {{bn.color}}"><circle cx="8" cy="8" r="6.5"></circle><path d="{{bn.icon}}"></path></svg><div class="bn-t"><b>{{bn.title}}</b><span>{{bn.note}}</span></div><sc-if value="{{bn.needRestart}}" hint-placeholder-val="{{ false }}"><button type="button" class="btn {{bn.rsCls}}" onClick="{{bn.restart}}">{{bn.rsLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button><button type="button" class="link" onClick="{{bn.later}}" style="min-height: 36px">Later</button></sc-if><sc-if value="{{bn.done}}" hint-placeholder-val="{{ false }}"><button type="button" class="link" onClick="{{bn.later}}" style="min-height: 36px">Dismiss</button></sc-if></div>
+</sc-if>
+<fieldset disabled="{{ro}}">
+<legend class="sr">Settings for {{sp}}</legend>
+
+<sc-if value="{{tab.isGeneral}}" hint-placeholder-val="{{ true }}">
+<section class="card" aria-labelledby="cG">
+<div class="card-h"><h2 id="cG">General</h2><p>[project] and [factory] in holophyte.toml</p></div>
+<div class="{{F.name.cls}}"><div><label class="fr-l" for="fName">Name</label><span class="fr-k">project.name</span><p class="fr-h">Shown in the sidebar and on every card. Ticket keys keep their prefix.</p></div><div class="fr-c"><input id="fName" class="inp" type="text" value="{{F.name.v}}" onChange="{{F.name.onText}}" style="max-width: 320px"><span class="was" hidden="{{F.name.noWas}}">was {{F.name.was}}</span></div></div>
+<div class="{{F.repo.cls}}"><div><label class="fr-l" for="fRepo">Repository</label><span class="fr-k">project.repo</span><p class="fr-h">Where branches are pushed and pull requests open.</p></div><div class="fr-c"><input id="fRepo" class="inp mono" type="text" value="{{F.repo.v}}" onChange="{{F.repo.onText}}" style="max-width: 420px"><span class="was" hidden="{{F.repo.noWas}}">was {{F.repo.was}}</span></div></div>
+<div class="{{F.merge.cls}}"><div><span class="fr-l" id="lMerge">Merge mode</span><span class="fr-k">factory.merge</span><p class="fr-h">Direct lands on main after review. Pull request opens one and waits for its checks.</p></div><div class="fr-c"><div class="sg" role="group" aria-labelledby="lMerge"><button type="button" class="seg" aria-pressed="{{F.merge.is.direct}}" onClick="{{F.merge.pick.direct}}">Direct to main</button><button type="button" class="seg" aria-pressed="{{F.merge.is.pr}}" onClick="{{F.merge.pick.pr}}">Pull request</button></div><span class="was" hidden="{{F.merge.noWas}}">was {{F.merge.was}}</span></div></div>
+<div class="{{F.approve.cls}}"><div><span class="fr-l" id="lAppr">Approve</span><span class="fr-k">factory.approve</span><p class="fr-h">Auto merges once review passes and checks are green. Human waits in Needs you for your merge.</p></div><div class="fr-c"><div class="sg" role="group" aria-labelledby="lAppr"><button type="button" class="seg" aria-pressed="{{F.approve.is.auto}}" onClick="{{F.approve.pick.auto}}">Auto</button><button type="button" class="seg" aria-pressed="{{F.approve.is.human}}" onClick="{{F.approve.pick.human}}">Human</button></div><span class="was" hidden="{{F.approve.noWas}}">was {{F.approve.was}}</span></div></div>
+<div class="{{F.workers.cls}}"><div><label class="fr-l" for="fWk">Workers</label><span class="fr-k">factory.workers</span><p class="fr-h">Tickets this project runs at once on {{host}}. 1 to 8.</p></div><div class="fr-c"><div class="num"><button type="button" aria-label="One fewer worker" onClick="{{F.workers.dec}}">−</button><input id="fWk" type="number" min="1" max="8" value="{{F.workers.v}}" onChange="{{F.workers.onNum}}"><button type="button" aria-label="One more worker" onClick="{{F.workers.inc}}">+</button></div><span class="was" hidden="{{F.workers.noWas}}">was {{F.workers.was}}</span><span class="when"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--ask)"><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4"></path><path d="M3.2 2.6v2.6h2.6"></path></svg>applies after a supervisor restart</span></div></div>
+</section>
+</sc-if>
+
+<sc-if value="{{tab.isReview}}" hint-placeholder-val="{{ false }}">
+<section class="card" aria-labelledby="cR">
+<div class="card-h"><h2 id="cR">Review</h2><p>[review] · applies from the next run</p></div>
+<div class="{{F.rounds.cls}}"><div><label class="fr-l" for="fRr">Review rounds</label><span class="fr-k">review.review_rounds</span><p class="fr-h">Rounds a run gets before it stops and asks you. Each round is a review and, if asked, a fix.</p></div><div class="fr-c"><div class="num"><button type="button" aria-label="One fewer round" onClick="{{F.rounds.dec}}">−</button><input id="fRr" type="number" min="1" max="6" value="{{F.rounds.v}}" onChange="{{F.rounds.onNum}}"><button type="button" aria-label="One more round" onClick="{{F.rounds.inc}}">+</button></div><span class="was" hidden="{{F.rounds.noWas}}">was {{F.rounds.was}}</span><sc-if value="{{roundsErr}}" hint-placeholder-val="{{ false }}"><span class="msg" role="alert"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>Above the round cap of {{F.roundsMax.v}}. Raise the cap or lower this.</span></sc-if></div></div>
+<div class="{{F.roundsMax.cls}}"><div><label class="fr-l" for="fRm">Round cap</label><span class="fr-k">review.review_rounds_max</span><p class="fr-h">The most rounds a run can reach when you send it back. Past it, the run fails with round cap hit.</p></div><div class="fr-c"><div class="num"><button type="button" aria-label="Lower the cap" onClick="{{F.roundsMax.dec}}">−</button><input id="fRm" type="number" min="1" max="6" value="{{F.roundsMax.v}}" onChange="{{F.roundsMax.onNum}}"><button type="button" aria-label="Raise the cap" onClick="{{F.roundsMax.inc}}">+</button></div><span class="was" hidden="{{F.roundsMax.noWas}}">was {{F.roundsMax.was}}</span></div></div>
+<div class="{{F.adversary.cls}}"><div><span class="fr-l">Adversary</span><span class="fr-k">review.adversary</span><p class="fr-h">A second reviewer that tries to break risky changes: migrations, git, containers, permissions.</p></div><div class="fr-c"><label class="tg"><input type="checkbox" role="switch" checked="{{F.adversary.v}}" onChange="{{F.adversary.toggle}}"><span class="tr" aria-hidden="true"></span><span>{{F.adversary.word}}</span></label><span class="was" hidden="{{F.adversary.noWas}}">was {{F.adversary.was}}</span></div></div>
+<div class="{{F.mode.cls}}"><div><span class="fr-l" id="lMode">Review mode</span><span class="fr-k">review.review_mode</span><p class="fr-h">Gate blocks the merge until review passes. Advisory posts findings and merges anyway. Off skips review.</p></div><div class="fr-c"><div class="sg" role="group" aria-labelledby="lMode"><button type="button" class="seg" aria-pressed="{{F.mode.is.gate}}" onClick="{{F.mode.pick.gate}}">Gate</button><button type="button" class="seg" aria-pressed="{{F.mode.is.advisory}}" onClick="{{F.mode.pick.advisory}}">Advisory</button><button type="button" class="seg" aria-pressed="{{F.mode.is.off}}" onClick="{{F.mode.pick.off}}">Off</button></div><span class="was" hidden="{{F.mode.noWas}}">was {{F.mode.was}}</span></div></div>
+</section>
+</sc-if>
+
+<sc-if value="{{tab.isAgents}}" hint-placeholder-val="{{ false }}">
+<section class="card" aria-labelledby="cA">
+<div class="card-h"><h2 id="cA">Agents</h2><p>[agents] · probed on {{host}} before every dispatch · applies after a supervisor restart</p></div>
+<div class="{{F.impl.cls}}"><div><label class="fr-l" for="fIm">Implementer</label><span class="fr-k">agents.implementer</span><p class="fr-h">Writes the change in the ticket's worktree.</p></div><div class="fr-c"><div class="sel"><select id="fIm" class="inp" value="{{F.impl.v}}" onChange="{{F.impl.onSel}}"><option value="claude opus">claude opus</option><option value="claude sonnet">claude sonnet</option><option value="claude fable">claude fable</option><option value="codex gpt-6-sol">codex gpt-6-sol</option><option value="codex gpt-6-astra">codex gpt-6-astra</option><option value="codex gpt-6-luna">codex gpt-6-luna</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div><span class="probe" style="color: {{F.impl.pc}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{F.impl.pp}}"></path></svg>{{F.impl.pw}}</span><span class="was" hidden="{{F.impl.noWas}}">was {{F.impl.was}}</span></div></div>
+<div class="{{F.implFb.cls}}"><div><label class="fr-l" for="fIf">Implementer fallback</label><span class="fr-k">agents.implementer_fallback</span><p class="fr-h">Used only when the implementer's probe fails. It is probed too, and the swap is recorded on the run.</p></div><div class="fr-c"><div class="sel"><select id="fIf" class="inp" value="{{F.implFb.v}}" onChange="{{F.implFb.onSel}}"><option value="none">none: stop and ask</option><option value="claude opus">claude opus</option><option value="claude sonnet">claude sonnet</option><option value="claude fable">claude fable</option><option value="codex gpt-6-sol">codex gpt-6-sol</option><option value="codex gpt-6-astra">codex gpt-6-astra</option><option value="codex gpt-6-luna">codex gpt-6-luna</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div><span class="probe" style="color: {{F.implFb.pc}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{F.implFb.pp}}"></path></svg>{{F.implFb.pw}}</span><span class="was" hidden="{{F.implFb.noWas}}">was {{F.implFb.was}}</span></div></div>
+<div class="{{F.reviewer.cls}}"><div><label class="fr-l" for="fRv">Reviewer</label><span class="fr-k">agents.reviewer</span><p class="fr-h">Reads the diff and the criteria each round. Never the same route as the implementer.</p></div><div class="fr-c"><div class="sel"><select id="fRv" class="inp" value="{{F.reviewer.v}}" onChange="{{F.reviewer.onSel}}"><option value="claude opus">claude opus</option><option value="claude sonnet">claude sonnet</option><option value="claude fable">claude fable</option><option value="codex gpt-6-sol">codex gpt-6-sol</option><option value="codex gpt-6-astra">codex gpt-6-astra</option><option value="codex gpt-6-luna">codex gpt-6-luna</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div><span class="probe" style="color: {{F.reviewer.pc}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{F.reviewer.pp}}"></path></svg>{{F.reviewer.pw}}</span><span class="was" hidden="{{F.reviewer.noWas}}">was {{F.reviewer.was}}</span><sc-if value="{{sameRoute}}" hint-placeholder-val="{{ false }}"><span class="msg" role="alert"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>Same route as the implementer. No agent reviews its own work.</span></sc-if></div></div>
+<div class="{{F.adj.cls}}"><div><label class="fr-l" for="fAd">Adjudicator</label><span class="fr-k">agents.adjudicator</span><p class="fr-h">Settles a finding the implementer declines, before it reaches you.</p></div><div class="fr-c"><div class="sel"><select id="fAd" class="inp" value="{{F.adj.v}}" onChange="{{F.adj.onSel}}"><option value="claude opus">claude opus</option><option value="claude sonnet">claude sonnet</option><option value="claude fable">claude fable</option><option value="codex gpt-6-sol">codex gpt-6-sol</option><option value="codex gpt-6-astra">codex gpt-6-astra</option><option value="codex gpt-6-luna">codex gpt-6-luna</option></select><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></div><span class="probe" style="color: {{F.adj.pc}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"></circle><path d="{{F.adj.pp}}"></path></svg>{{F.adj.pw}}</span><span class="was" hidden="{{F.adj.noWas}}">was {{F.adj.was}}</span></div></div>
+</section>
+</sc-if>
+
+<sc-if value="{{tab.isCapture}}" hint-placeholder-val="{{ false }}">
+<section class="card" aria-labelledby="cC">
+<div class="card-h"><h2 id="cC">Capture</h2><p>[capture] · evidence for UI changes, attached under Evidence on the run</p></div>
+<div class="{{F.capture.cls}}"><div><span class="fr-l">UI capture</span><span class="fr-k">capture.ui_capture</span><p class="fr-h">Screenshots of every page a ticket marked UI change touches, in Night and Dawn, before and after.</p></div><div class="fr-c"><label class="tg"><input type="checkbox" role="switch" checked="{{F.capture.v}}" onChange="{{F.capture.toggle}}"><span class="tr" aria-hidden="true"></span><span>{{F.capture.word}}</span></label><span class="was" hidden="{{F.capture.noWas}}">was {{F.capture.was}}</span></div></div>
+<div class="{{F.video.cls}}"><div><span class="fr-l">Video</span><span class="fr-k">capture.ui_video</span><p class="fr-h">A short clip of the change being used. Adds about 40s to a review round. Needs UI capture on.</p></div><div class="fr-c"><label class="tg"><input type="checkbox" role="switch" checked="{{F.video.v}}" onChange="{{F.video.toggle}}" disabled="{{noCapture}}"><span class="tr" aria-hidden="true"></span><span>{{F.video.word}}</span></label><span class="was" hidden="{{F.video.noWas}}">was {{F.video.was}}</span></div></div>
+</section>
+</sc-if>
+
+<sc-if value="{{tab.isHold}}" hint-placeholder-val="{{ false }}">
+<section class="card" aria-labelledby="cH">
+<div class="card-h"><h2 id="cH">Hold / release</h2><p>admission for {{sp}} · applies now, no restart</p></div>
+<div class="hs">
+<div class="hs-w"><b style="color: {{hd.color}}"><i class="cell {{hd.cell}}" aria-hidden="true" style="width: 12px; height: 12px"></i>{{hd.word}}</b><p>{{hd.line}}<sc-if value="{{hd.held}}" hint-placeholder-val="{{ false }}"> <q>{{hd.reason}}</q></sc-if></p></div>
+<div class="sg" role="group" aria-label="Admission"><button type="button" class="seg" aria-pressed="{{hd.isOpen}}" onClick="{{hd.wantOpen}}">Taking work</button><button type="button" class="seg" aria-pressed="{{hd.isHeld}}" onClick="{{hd.wantHold}}">Held</button></div>
+</div>
+<sc-if value="{{hd.asking}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 18px 0; border-bottom: 1px solid var(--rule-2)">
+<label for="hReason" style="display: block; font: 500 11px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3)">{{hd.ask}} · reason required, shown on the Overview and saved with the change</label>
+<textarea id="hReason" class="inp" value="{{hd.reasonDraft}}" onChange="{{hd.onReason}}" placeholder="{{hd.ph}}" style="margin-top: 8px; max-width: 640px"></textarea>
+<p style="margin: 8px 0 0; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">{{hd.effect}}</p>
+<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px"><button type="button" class="btn quiet" onClick="{{hd.cancel}}">Cancel</button><button type="button" class="btn {{hd.bCls}}" onClick="{{hd.confirm}}" disabled="{{hd.noReason}}">{{hd.bLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button></div>
+</div>
+</sc-if>
+<div style="padding: 18px 0 14px">
+<div class="label">History</div>
+<ul class="hist" hidden="{{hd.noHist}}"><sc-for list="{{hd.hist}}" as="e" hint-placeholder-count="2"><li><span>{{e.at}}</span><span style="color: {{e.color}}">{{e.what}}</span><span>{{e.reason}} <span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">· {{e.by}}</span></span></li></sc-for></ul>
+<p hidden="{{hd.hasHist}}" style="margin: 10px 0 0; font: 400 13px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">Never held. It has taken work since it was added.</p>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{tab.isToml}}" hint-placeholder-val="{{ false }}">
+<section class="card" aria-labelledby="cT">
+<div class="card-h"><h2 id="cT">Raw TOML</h2><p>holophyte.toml · revision {{rev}} · checked as you type</p></div>
+<div style="padding: 18px 0 20px">
+<div class="ed"><ol class="ed-g" aria-hidden="true"><sc-for list="{{tm.lines}}" as="l" hint-placeholder-count="20"><li class="{{l.cls}}"><i hidden="{{l.plain}}"></i>{{l.n}}</li></sc-for></ol><div class="ed-b"><ol class="ed-u" aria-hidden="true"><sc-for list="{{tm.lines}}" as="l" hint-placeholder-count="20"><li class="{{l.cls}}"></li></sc-for></ol><label class="sr" for="tomlEd">holophyte.toml for {{sp}}</label><textarea id="tomlEd" spellcheck="false" wrap="off" value="{{tm.text}}" onChange="{{tm.onText}}" style="height: {{tm.h}}" aria-describedby="tomlCk"></textarea></div></div>
+<div id="tomlCk" class="label" style="margin-top: 18px">Checker <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 400; letter-spacing: 0.04em; text-transform: none; color: var(--ink-2)">{{tm.sum}}</span></div>
+<ul class="ck" hidden="{{tm.clean}}"><sc-for list="{{tm.msgs}}" as="m" hint-placeholder-count="3"><li><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; color: {{m.color}}"><circle cx="8" cy="8" r="6.5"></circle><path d="{{m.icon}}"></path></svg><span class="ln">line {{m.line}}</span><span><b style="font-weight: 500; color: {{m.color}}">{{m.kind}}</b> · {{m.text}}</span></li></sc-for></ul>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px"><button type="button" class="btn quiet" onClick="{{tm.revert}}">Revert to revision {{rev}}</button><button type="button" class="btn" onClick="{{tm.save}}" disabled="{{tm.hasErr}}">Save as revision {{nextRev}}</button><span style="font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)">{{tm.saveNote}}</span></div>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{tab.isAppearance}}" hint-placeholder-val="{{ false }}">
+<section class="card" aria-labelledby="cP">
+<div class="card-h"><h2 id="cP">Appearance</h2><p>yours, in this browser · applies at once, nothing to save</p></div>
+<div class="fr"><div><span class="fr-l" id="lTh">Theme</span><p class="fr-h">System follows your computer's light or dark setting.</p></div>
+<div class="rc-g" role="radiogroup" aria-labelledby="lTh">
+<label class="rc"><input type="radio" name="theme" checked="{{ap.night}}" onChange="{{ap.pickNight}}"><span class="swatch" aria-hidden="true"><span style="background: #05070f"></span><span style="background: #0b1020"></span><span style="background: #f5a3c7"></span></span><span class="rc-t">Night</span><span class="rc-s">deep blue, pink for you</span></label>
+<label class="rc"><input type="radio" name="theme" checked="{{ap.dawn}}" onChange="{{ap.pickDawn}}"><span class="swatch" aria-hidden="true"><span style="background: #eceaf3"></span><span style="background: #fbfafd"></span><span style="background: #b02f6b"></span></span><span class="rc-t">Dawn</span><span class="rc-s">light lavender paper</span></label>
+<label class="rc"><input type="radio" name="theme" checked="{{ap.system}}" onChange="{{ap.pickSystem}}"><span class="swatch" aria-hidden="true"><span style="background: linear-gradient(90deg, #05070f 50%, #eceaf3 50%)"></span><span style="background: linear-gradient(90deg, #0b1020 50%, #fbfafd 50%)"></span><span style="background: linear-gradient(90deg, #f5a3c7 50%, #b02f6b 50%)"></span></span><span class="rc-t">System</span><span class="rc-s">{{ap.sysNote}}</span></label>
+</div></div>
+<div class="fr"><div><span class="fr-l" id="lFt">Reading font</span><p class="fr-h">For titles, summaries and agent text. Keys, times and counts stay in Plex Mono.</p></div>
+<div class="rc-g" role="radiogroup" aria-labelledby="lFt">
+<label class="rc"><input type="radio" name="font" checked="{{ap.plex}}" onChange="{{ap.pickPlex}}"><span class="rc-t">Plex Sans</span><span style="font: 400 15px/1.5 'IBM Plex Sans', system-ui, sans-serif">The sweep frees a silent lease.</span><span class="rc-s">default</span></label>
+<label class="rc"><input type="radio" name="font" checked="{{ap.serif}}" onChange="{{ap.pickSerif}}"><span class="rc-t">Plex Serif</span><span style="font: 400 15px/1.5 'IBM Plex Serif', Georgia, serif">The sweep frees a silent lease.</span><span class="rc-s">for long reads</span></label>
+<label class="rc"><input type="radio" name="font" checked="{{ap.atk}}" onChange="{{ap.pickAtk}}"><span class="rc-t">Hyperlegible</span><span style="font: 400 15px/1.5 'Atkinson Hyperlegible Next', system-ui, sans-serif">The sweep frees a silent lease.</span><span class="rc-s">clearest letterforms</span></label>
+</div></div>
+<div class="fr"><div><span class="fr-l" id="lDn">Density</span><p class="fr-h">Compact tightens rows on Overview, Runs and Tickets. Buttons keep their 44px.</p></div>
+<div style="display: grid; gap: 12px">
+<div class="sg" role="group" aria-labelledby="lDn" style="justify-self: start"><button type="button" class="seg" aria-pressed="{{ap.comfy}}" onClick="{{ap.pickComfy}}">Comfortable</button><button type="button" class="seg" aria-pressed="{{ap.dense}}" onClick="{{ap.pickDense}}">Compact</button></div>
+<div class="prev" aria-label="Preview">
+<div style="display: grid; grid-template-columns: 110px 84px minmax(0, 1fr) auto; align-items: center; gap: 6px 16px; min-height: {{ap.rowH}}; padding: {{ap.rowPad}}; box-sizing: border-box; border-bottom: 1px solid var(--rule-2); font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span style="color: var(--live); font-weight: 500">reviewing</span><span style="color: var(--ink-2)">HOLO-231</span><span style="font-family: {{readFont}}; font-size: 14.5px; font-weight: 500; color: var(--ink)">The sweep frees a silent lease</span><span>16m / 25m</span></div>
+<div style="display: grid; grid-template-columns: 110px 84px minmax(0, 1fr) auto; align-items: center; gap: 6px 16px; min-height: {{ap.rowH}}; padding: {{ap.rowPad}}; box-sizing: border-box; font: 400 12px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span style="color: var(--live); font-weight: 500">verifying</span><span style="color: var(--ink-2)">HOLO-238</span><span style="font-family: {{readFont}}; font-size: 14.5px; font-weight: 500; color: var(--ink)">Name the host on a stale-console banner</span><span>19m / 20m</span></div>
+</div>
+</div></div>
+</section>
+</sc-if>
+
+</fieldset>
+
+<sc-if value="{{dirty}}" hint-placeholder-val="{{ true }}">
+<div class="savebar" role="region" aria-label="Unsaved changes"><span class="sum"><b>{{nDirty}}</b> {{dirtyWord}} · {{dirtySum}}</span><button type="button" class="btn quiet" onClick="{{discard}}" disabled="{{ro}}">Discard</button><button type="button" class="btn" onClick="{{openSave}}" disabled="{{cantSave}}">Review and save</button></div>
+</sc-if>
+</sc-if>
+</div>
+</div>
+
+<div class="pad-x" style="display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 28px; padding: var(--sec) 0; border-top: 1px solid var(--rule); font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span>project settings live in holophyte.toml on its host; each save is a new revision</span><span>appearance stays in this browser</span><span>times PT</span></div>
+</section>
+</main>
+</div>
+
+<sc-if value="{{modalOn}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim)">
+<section role="dialog" aria-modal="true" aria-labelledby="svH" style="position: relative; box-sizing: border-box; width: 100%; max-width: 580px; max-height: calc(100% - 32px); overflow-y: auto; background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px 24px; box-shadow: 0 24px 60px rgba(0,0,0,.45)">
+<i class="cm tl" aria-hidden="true"></i><i class="cm tr" aria-hidden="true"></i><i class="cm bl" aria-hidden="true"></i><i class="cm br" aria-hidden="true"></i>
+<div class="label">Save · {{sp}}</div>
+<h2 id="svH" style="margin: 14px 0 0; font-family: 'Archivo', 'Helvetica Neue', sans-serif; font-weight: 800; font-stretch: 112%; font-size: 30px; line-height: 1.05; letter-spacing: -0.01em">Save revision {{nextRev}}?</h2>
+<p style="margin: 10px 0 0; color: var(--ink-2)">These lines change in holophyte.toml on {{host}}.</p>
+<div class="diff" style="margin-top: 14px" aria-label="Changes to holophyte.toml"><sc-for list="{{diff}}" as="d" hint-placeholder-count="5"><div class="dl {{d.cls}}"><span>{{d.mark}}</span><span>{{d.text}}</span></div></sc-for></div>
+<ul style="list-style: none; margin: 16px 0 0; padding: 0; border-top: 1px solid var(--rule-2); font: 400 12.5px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><sc-for list="{{applyNotes}}" as="a" hint-placeholder-count="2"><li style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule-2)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{a.color}}"><circle cx="8" cy="8" r="6.5"></circle><path d="{{a.icon}}"></path></svg>{{a.text}}</li></sc-for></ul>
+<div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px">
+<button type="button" class="btn quiet" onClick="{{closeModal}}">Keep editing</button>
+<button type="button" class="btn {{mBusy}}" onClick="{{confirmSave}}">{{mLabel}}<svg class="ants-o" aria-hidden="true"><rect class="ants-r" x="0.75" y="0.75" pathLength="60"></rect></svg></button>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{toastOn}}" hint-placeholder-val="{{ false }}">
+<div role="status" aria-live="polite" class="toast-in" style="position: fixed; right: 24px; bottom: 24px; z-index: 40; display: flex; align-items: center; gap: 16px; max-width: calc(100% - 48px); box-sizing: border-box; min-height: 44px; padding: 8px 8px 8px 16px; background: var(--ink); font: 500 12.5px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--paper)"><span>{{toast}}</span><sc-if value="{{undoOn}}" hint-placeholder-val="{{ true }}"><button type="button" class="btn quiet on-ink" onClick="{{undo}}">Undo</button></sc-if></div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"tab":{"editor":"enum","options":["general","review","agents","capture","hold","toml","appearance"],"default":"general","section":"State"},"view":{"editor":"enum","options":["data","empty","loading","error"],"default":"data","section":"State"},"$preview":{"width":1440,"height":1500}}'>
+const NAV_GRID = 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z';
+const NAV_FOLDER = 'M2 4.5h4.2l1.5 1.5H14v7.5H2z';
+const NAV_SCOPES = [['', 'All projects'], ['holophyte', 'holophyte'], ['lotuspod', 'lotuspod'], ['relos', 'relos']];
+const NAV_RUNS = { '': 14, holophyte: 9, lotuspod: 3, relos: 2 };
+const NAV_NEED = { '': 5, holophyte: 4, lotuspod: 0, relos: 1 };
+const NAV_FIND = { '': 2, holophyte: 1, lotuspod: 0, relos: 1 };
+const NAV_HELD = { relos: true };
+const NAV_VIEWS = { '': [6, 2, 14], holophyte: [4, 1, 9], lotuspod: [1, 1, 3], relos: [1, 0, 2] };
+const NAV_STORIES = [['HOLO-220', 'Unattended runs recover themselves', 'holophyte', '4/7'], ['HOLO-241', 'The console tells the truth', 'holophyte', '1/7'],
+  ['HOLO-245', 'Findings become guardrails', 'holophyte', '1/5'], ['LOTUS-50', 'Two-way pages', 'lotuspod', '1/5']];
+function readScope(fallback) { try { const v = window.sessionStorage.getItem('holo.scope'); if (v !== null) return v; } catch (e) {} return fallback; }
+function saveScope(v) { try { window.sessionStorage.setItem('holo.scope', v); } catch (e) {} }
+function shellVals(cmp, screen) {
+  const s = cmp.state, theme = s.theme || cmp.props.theme || 'night', scope = s.proj || '';
+  const sw = s.sw || { open: false, q: '', i: 0 };
+  const setSw = (p) => cmp.setState({ sw: Object.assign({}, cmp.state.sw || { open: false, q: '', i: 0 }, p) });
+  const pick = (id) => { saveScope(id); setSw({ open: false, q: '', i: 0 }); cmp.setState({ proj: id || null }); };
+  const q = sw.q.trim().toLowerCase();
+  const list = NAV_SCOPES.filter((x) => !q || x[1].toLowerCase().indexOf(q) >= 0);
+  const i = Math.min(sw.i, Math.max(list.length - 1, 0));
+  const colorOf = (id) => (NAV_HELD[id] ? 'var(--wait)' : (id ? 'var(--live)' : 'var(--ink-2)'));
+  const items = list.map((x, k) => ({ id: 'sw-' + (x[0] || 'all'), name: x[1], icon: x[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(x[0]),
+    noTag: !NAV_HELD[x[0]], need: String(NAV_NEED[x[0]]), noNeed: !NAV_NEED[x[0]], runs: NAV_RUNS[x[0]] + ' open', sel: x[0] === scope ? 'true' : 'false',
+    bg: k === i ? 'var(--paper-2)' : 'transparent', pick: () => pick(x[0]) }));
+  const cur = NAV_SCOPES.filter((x) => x[0] === scope)[0] || NAV_SCOPES[0];
+  const key = (e) => {
+    if (e.key === 'Escape') { if (sw.open) { e.preventDefault(); setSw({ open: false }); } return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sw.open) { setSw({ open: true, q: '', i: 0 }); return; }
+      const n = list.length;
+      if (n) setSw({ i: (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+      return;
+    }
+    if (e.key === 'Enter' && sw.open && list[i] && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); pick(list[i][0]); }
+  };
+  const it = (id, label, n, word) => { const on = id === screen; return { cur: on ? 'page' : null, color: on ? 'var(--act)' : 'var(--ink-2)', bg: on ? 'var(--act-wash)' : 'transparent',
+    sh: on ? 'inset 2px 0 0 var(--act)' : 'none', aria: label + (n ? ', ' + n + ' ' + word : ''), badge: n ? String(n) : '', noBadge: !n }; };
+  let open = s.navSt;
+  if (open === undefined) { open = true; try { open = window.sessionStorage.getItem('holo.stories') !== '0'; } catch (e) {} }
+  const vw = NAV_VIEWS[scope] || NAV_VIEWS[''];
+  return {
+    themeClass: 't-' + theme,
+    themeWord: theme === 'dawn' ? 'Dawn' : 'Night',
+    themeLabel: theme === 'dawn' ? 'Colour theme: dawn. Switch to night' : 'Colour theme: night. Switch to dawn',
+    toggleTheme: () => cmp.setState({ theme: theme === 'dawn' ? 'night' : 'dawn', sys: false }),
+    sw: { open: sw.open, q: sw.q, name: cur[1], icon: cur[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(cur[0]),
+      noTag: !NAV_HELD[cur[0]], need: String(NAV_NEED[cur[0]]), noNeed: !NAV_NEED[cur[0]],
+      aria: 'Project: ' + cur[1] + (NAV_HELD[cur[0]] ? ', held' : '') + (NAV_NEED[cur[0]] ? ', ' + NAV_NEED[cur[0]] + ' need you' : '') + '. Switch project',
+      title: cur[1] + (NAV_NEED[cur[0]] ? ' · ' + NAV_NEED[cur[0]] + ' need you' : ''),
+      items: items, hasItems: items.length > 0, activeId: items[i] ? items[i].id : '',
+      toggle: () => setSw({ open: !sw.open, q: '', i: 0 }), close: () => setSw({ open: false }),
+      onQ: (e) => setSw({ q: e.target.value, i: 0, open: true }), key: key },
+    nav: { overview: it('overview', 'Overview', NAV_NEED[scope], 'need you'), runs: it('runs', 'Runs'), tickets: it('tickets', 'Tickets'),
+      findings: it('findings', 'Findings', NAV_FIND[scope], 'open'), hosts: it('hosts', 'Hosts', 1, 'not answering'), settings: it('settings', 'Settings'),
+      subShow: open, subOpen: open ? 'true' : 'false', subRot: open ? 'rotate(90deg)' : 'none', subAria: (open ? 'Hide' : 'Show') + ' views and stories',
+      toggleSub: () => { const v = !open; try { window.sessionStorage.setItem('holo.stories', v ? '1' : '0'); } catch (e) {} cmp.setState({ navSt: v }); },
+      views: [['Ready', vw[0]], ['Needs spec', vw[1]], ['Backlog', vw[2]]].map((x) => ({ label: x[0], n: String(x[1]), aria: x[0] + ', ' + x[1] + ' tickets' })),
+      stories: NAV_STORIES.filter((x) => !scope || x[2] === scope).map((x) => ({ key: x[0], title: x[1], prog: x[3], aria: x[0] + ' ' + x[1] + ', ' + x[3].replace('/', ' of ') + ' merged' })) }
+  };
+}
+
+const P = { check: 'M5 8.3 7.1 10.4 11 6.2', x: 'M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4', bang: 'M8 4.8v3.6M8 11.1v.1', redo: 'M3.2 8a4.8 4.8 0 1 0 1.4-3.4M3.2 2.6v2.6h2.6', dash: 'M5.5 8h5' };
+const CFG = {
+  holophyte: { host: 'writer-host', rev: 41, savedAt: 'Oct 14 09:12 by you', name: 'holophyte', repo: 'example-org/holophyte', merge: 'pr', approve: 'auto', workers: 2,
+    rounds: 3, roundsMax: 4, adversary: true, mode: 'gate', impl: 'claude opus', implFb: 'claude sonnet', reviewer: 'codex gpt-6-sol', adj: 'claude fable', capture: true, video: false, held: false },
+  lotuspod: { host: 'writer-host', rev: 18, savedAt: 'Oct 11 14:30 by the operator seat', name: 'lotuspod', repo: 'example-org/lotuspod', merge: 'pr', approve: 'auto', workers: 2,
+    rounds: 2, roundsMax: 3, adversary: false, mode: 'gate', impl: 'claude opus', implFb: 'claude sonnet', reviewer: 'codex gpt-6-sol', adj: 'claude fable', capture: true, video: true, held: false },
+  relos: { host: 'runner-host', rev: 27, savedAt: 'Oct 2 10:15 by the operator seat', name: 'relos', repo: 'example-org/relos', merge: 'pr', approve: 'human', workers: 1,
+    rounds: 2, roundsMax: 3, adversary: true, mode: 'advisory', impl: 'claude opus', implFb: 'claude sonnet', reviewer: 'codex gpt-6-sol', adj: 'claude fable', capture: true, video: false, held: true }
+};
+// key: [toml section, toml key, settings section, needs a supervisor restart]
+const KEYS = { name: ['project', 'name', 'General', 0], repo: ['project', 'repo', 'General', 0], merge: ['factory', 'merge', 'General', 0], approve: ['factory', 'approve', 'General', 0],
+  workers: ['factory', 'workers', 'General', 1], rounds: ['review', 'review_rounds', 'Review', 0], roundsMax: ['review', 'review_rounds_max', 'Review', 0], adversary: ['review', 'adversary', 'Review', 0],
+  mode: ['review', 'review_mode', 'Review', 0], impl: ['agents', 'implementer', 'Agents', 1], implFb: ['agents', 'implementer_fallback', 'Agents', 1], reviewer: ['agents', 'reviewer', 'Agents', 1],
+  adj: ['agents', 'adjudicator', 'Agents', 1], capture: ['capture', 'ui_capture', 'Capture', 0], video: ['capture', 'ui_video', 'Capture', 0] };
+const SECTIONS = ['project', 'factory', 'review', 'agents', 'capture'];
+const OPTS = { merge: ['direct', 'pr'], approve: ['auto', 'human'], mode: ['gate', 'advisory', 'off'] };
+const PROBE = { 'writer-host': { 'claude opus': ['ok', '41s ago'], 'claude sonnet': ['ok', '41s ago'], 'claude fable': ['ok', '41s ago'], 'codex gpt-6-sol': ['ok', '41s ago'], 'codex gpt-6-astra': ['unprobed', 'not routed on this host yet'], 'codex gpt-6-luna': ['ok', '41s ago'], none: ['none', 'the run stops and asks you'] },
+  'runner-host': { 'claude opus': ['ok', '38s ago'], 'claude sonnet': ['ok', '38s ago'], 'claude fable': ['ok', '38s ago'], 'codex gpt-6-sol': ['down', '429 since 16:50 · runs use claude opus'], 'codex gpt-6-astra': ['unprobed', 'not routed on this host yet'], 'codex gpt-6-luna': ['ok', '38s ago'], none: ['none', 'the run stops and asks you'] } };
+const HOLDS = {
+  holophyte: [['Oct 9 18:02', 'released', 'you', 'Schema bump is out; back to normal.'], ['Oct 9 13:40', 'held', 'you', 'Holding for the schema bump; daemons restart after it lands.']],
+  lotuspod: [],
+  relos: [['Oct 14 09:12', 'held', 'you', 'Waiting on the staging database migration; nothing should land until it finishes.'], ['Oct 2 10:15', 'released', 'the operator seat', 'Approvals are back on a person.']]
+};
+const STR = { name: 1, repo: 1, merge: 1, approve: 1, mode: 1, impl: 1, implFb: 1, reviewer: 1, adj: 1 };
+function tv(k, v) { return STR[k] ? '"' + v + '"' : String(v); }
+function tomlOf(c) {
+  const out = ['# holophyte.toml for ' + c.name + ' · revision ' + c.rev];
+  SECTIONS.forEach((sec) => { out.push(''); out.push('[' + sec + ']'); Object.keys(KEYS).filter((k) => KEYS[k][0] === sec).forEach((k) => out.push(KEYS[k][1] + ' = ' + tv(k, c[k]))); });
+  return out.join('\n');
+}
+const TOML_DEMO = ['# holophyte.toml for holophyte · revision 41', '', '[project]', 'name = "holophyte"', 'repo = "example-org/holophyte"', '', '[factory]', 'merge = "squash"', 'approve = "auto"', 'workers = 2', '',
+  '[review]', 'review_rounds = 4', 'review_rounds_max = 3', 'adversery = true', 'review_mode = "gate"', '', '[agents]', 'implementer = "claude opus"', 'implementer_fallback = "claude sonnet"',
+  'reviewer = "codex gpt-6-sol"', 'adjudicator = "claude fable"', '', '[capture]', 'ui_capture = true', 'ui_video = false'].join('\n');
+const TKEYS = {}; Object.keys(KEYS).forEach((k) => { TKEYS[KEYS[k][0] + '.' + KEYS[k][1]] = k; });
+const ENUMS = { merge: OPTS.merge, approve: OPTS.approve, mode: OPTS.mode };
+function near(a, b) {
+  const m = a.length, n = b.length, d = [];
+  for (let i = 0; i <= m; i++) { d.push([i]); for (let j = 1; j <= n; j++) d[i].push(i === 0 ? j : 0); }
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[m][n];
+}
+function checkToml(text) { // eslint-disable-line complexity
+  const lines = text.split('\n'), msgs = [], vals = {};
+  let sec = '';
+  lines.forEach((raw, idx) => {
+    const n = idx + 1, t = raw.trim();
+    if (!t || t[0] === '#') return;
+    const sm = t.match(/^\[([a-z_]+)\]$/);
+    if (sm) { sec = sm[1]; if (SECTIONS.indexOf(sec) < 0) msgs.push([n, 'e', 'unknown section [' + sec + ']']); return; }
+    const km = t.match(/^([A-Za-z_]+)\s*=\s*(.+)$/);
+    if (!km) { msgs.push([n, 'e', 'cannot read this line; expected key = value']); return; }
+    const full = sec + '.' + km[1], k = TKEYS[full], v = km[2].trim();
+    if (!k) {
+      const cands = Object.keys(KEYS).filter((x) => KEYS[x][0] === sec).map((x) => KEYS[x][1]);
+      const best = cands.sort((a, b) => near(km[1], a) - near(km[1], b))[0];
+      msgs.push([n, 'a', 'unknown key ' + km[1] + ' is ignored' + (best && near(km[1], best) <= 2 ? '; did you mean ' + best + '?' : '')]);
+      return;
+    }
+    if (STR[k]) {
+      const qm = v.match(/^"(.*)"$/);
+      if (!qm) { msgs.push([n, 'e', km[1] + ' takes a quoted string']); return; }
+      if (ENUMS[k] && ENUMS[k].indexOf(qm[1]) < 0) { msgs.push([n, 'e', km[1] + ' is ' + ENUMS[k].map((x) => '"' + x + '"').join(' or ') + ', not "' + qm[1] + '"']); return; }
+      vals[k] = [qm[1], n];
+    } else if (k === 'adversary' || k === 'capture' || k === 'video') {
+      if (v !== 'true' && v !== 'false') { msgs.push([n, 'e', km[1] + ' is true or false']); return; }
+      vals[k] = [v === 'true', n];
+    } else {
+      const num = Number(v);
+      if (!/^\d+$/.test(v)) { msgs.push([n, 'e', km[1] + ' takes a whole number']); return; }
+      if (k === 'workers' && (num < 1 || num > 8)) { msgs.push([n, 'e', 'workers is 1 to 8']); return; }
+      vals[k] = [num, n];
+    }
+  });
+  if (vals.rounds && vals.roundsMax && vals.rounds[0] > vals.roundsMax[0]) msgs.push([vals.rounds[1], 'e', 'review_rounds (' + vals.rounds[0] + ') is above review_rounds_max (' + vals.roundsMax[0] + ')']);
+  if (vals.impl && vals.reviewer && vals.impl[0] === vals.reviewer[0]) msgs.push([vals.reviewer[1], 'e', 'reviewer is the same route as implementer']);
+  msgs.sort((a, b) => a[0] - b[0]);
+  return { lines: lines, msgs: msgs };
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    let font = 'plex', dense = false;
+    try { font = window.localStorage.getItem('holo.font') || 'plex'; dense = window.localStorage.getItem('holo.dense') === '1'; } catch (e) {}
+    this.state = { theme: null, sys: false, font: font, dense: dense, proj: readScope('') || null, tab: null,
+      edits: { holophyte: { workers: 3, rounds: 2 } }, saved: {}, rev: {}, banner: {}, modal: false, mBusy: false,
+      held: {}, hist: {}, intent: null, reason: '', hBusy: false, toml: {}, toast: null, undoKey: null };
+    this.timers = [];
+    let reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    this.wait = reduce ? 0 : 900;
+  }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); }
+  later(fn, ms) { this.timers.push(setTimeout(fn, ms)); }
+  say(text, undoKey) {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.setState({ toast: text, undoKey: undoKey == null ? null : undoKey });
+    this.toastTimer = setTimeout(() => this.setState({ toast: null, undoKey: null }), 6000);
+    this.timers.push(this.toastTimer);
+  }
+  pj() { const p = this.state.proj; return CFG[p] ? p : 'holophyte'; }
+  base(p) { return Object.assign({}, CFG[p], this.state.saved[p] || {}, { rev: this.state.rev[p] || CFG[p].rev }); }
+  edit(k, x) {
+    const p = this.pj(), b = this.base(p);
+    this.setState((st) => { const e = Object.assign({}, st.edits), pe = Object.assign({}, e[p] || {}); if (x === b[k]) delete pe[k]; else pe[k] = x; e[p] = pe; return { edits: e }; });
+  }
+  local(k, v) { try { window.localStorage.setItem(k, v); } catch (e) {} }
+  pickTheme(t) {
+    if (t === 'system') {
+      let dark = true;
+      try { dark = !window.matchMedia('(prefers-color-scheme: light)').matches; } catch (e) {}
+      this.setState({ sys: true, theme: dark ? 'night' : 'dawn' });
+    } else this.setState({ sys: false, theme: t });
+  }
+  confirmSave(p, ch) {
+    if (this.state.mBusy) return;
+    this.setState({ mBusy: true });
+    this.later(() => {
+      const b = this.base(p), restart = ch.some((k) => KEYS[k][3]);
+      this.setState((st) => {
+        const saved = Object.assign({}, st.saved), edits = Object.assign({}, st.edits), rev = Object.assign({}, st.rev), banner = Object.assign({}, st.banner);
+        saved[p] = Object.assign({}, saved[p] || {}, edits[p] || {}); edits[p] = {}; rev[p] = b.rev + 1;
+        banner[p] = { restart: restart, keys: ch.filter((k) => KEYS[k][3]).map((k) => KEYS[k][1]), rev: b.rev + 1, state: restart ? 'need' : 'done' };
+        return { saved: saved, edits: edits, rev: rev, banner: banner, modal: false, mBusy: false };
+      });
+    }, this.wait);
+  }
+  restart(p) {
+    const bn = this.state.banner[p];
+    if (!bn || bn.state === 'busy') return;
+    this.setState((st) => { const b = Object.assign({}, st.banner); b[p] = Object.assign({}, b[p], { state: 'busy' }); return { banner: b }; });
+    this.later(() => this.setState((st) => { const b = Object.assign({}, st.banner); b[p] = Object.assign({}, b[p], { state: 'restarted' }); return { banner: b }; }), this.wait * 2);
+  }
+  dropBanner(p) { this.setState((st) => { const b = Object.assign({}, st.banner); delete b[p]; return { banner: b }; }); }
+  confirmHold(p, held) {
+    const reason = this.state.reason.trim();
+    if (reason.length < 3 || this.state.hBusy) return;
+    this.setState({ hBusy: true });
+    this.later(() => {
+      this.setState((st) => {
+        const h = Object.assign({}, st.held), hi = Object.assign({}, st.hist);
+        h[p] = !held; hi[p] = [['today 16:54', held ? 'released' : 'held', 'you', reason]].concat(hi[p] || HOLDS[p]);
+        return { held: h, hist: hi, intent: null, reason: '', hBusy: false };
+      });
+      this.say((held ? 'Released ' : 'Held ') + p + (held ? '. It claims work on the next tick.' : '. Nothing new is claimed.'), p);
+    }, this.wait);
+  }
+  undo() {
+    const p = this.state.undoKey;
+    if (p == null) return;
+    this.setState((st) => { const h = Object.assign({}, st.held), hi = Object.assign({}, st.hist); delete h[p]; delete hi[p]; return { held: h, hist: hi, toast: null, undoKey: null }; });
+  }
+  renderVals() {
+    const s = this.state, view = this.props.view || 'data', p = this.pj(), b = this.base(p), ed = s.edits[p] || {};
+    const tabId = s.tab || this.props.tab || 'general', host = b.host, ro = view === 'error';
+    const fmt = (v) => (v === true ? 'on' : (v === false ? 'off' : String(v)));
+    const F = {};
+    Object.keys(KEYS).forEach((k) => {
+      const chg = ed[k] !== undefined && ed[k] !== b[k], v = chg ? ed[k] : b[k], set = (x) => this.edit(k, x);
+      const pr = (PROBE[host] || PROBE['writer-host'])[v] || ['unprobed', ''];
+      const lim = k === 'workers' ? 8 : 6;
+      F[k] = { v: v, cls: chg ? 'fr chg' : 'fr', noWas: !chg, was: fmt(b[k]), word: v ? 'On' : 'Off', toggle: () => set(!v),
+        onText: (e) => set(e.target.value), onSel: (e) => set(e.target.value),
+        onNum: (e) => { const n = parseInt(e.target.value, 10); if (!isNaN(n)) set(Math.max(1, Math.min(lim, n))); },
+        dec: () => set(Math.max(1, v - 1)), inc: () => set(Math.min(lim, v + 1)), is: {}, pick: {},
+        pc: pr[0] === 'ok' ? 'var(--live)' : (pr[0] === 'down' ? 'var(--bad)' : 'var(--ink-3)'), pp: pr[0] === 'ok' ? P.check : (pr[0] === 'down' ? P.x : P.dash),
+        pw: (pr[0] === 'ok' ? 'probe ok · ' : (pr[0] === 'down' ? 'probe down · ' : (pr[0] === 'none' ? '' : 'not probed · '))) + pr[1] };
+      (OPTS[k] || []).forEach((o) => { F[k].is[o] = v === o; F[k].pick[o] = () => set(o); });
+    });
+    const ch = Object.keys(KEYS).filter((k) => ed[k] !== undefined && ed[k] !== b[k]);
+    const roundsErr = F.rounds.v > F.roundsMax.v, sameRoute = F.impl.v === F.reviewer.v;
+    const cnt = {};
+    ['General', 'Review', 'Agents', 'Capture'].forEach((sec) => { const n = ch.filter((k) => KEYS[k][2] === sec).length; cnt[sec] = String(n); cnt['no' + sec] = !n; });
+    const tabs = ['general', 'review', 'agents', 'capture', 'hold', 'toml', 'appearance'], tab = {}, go = {};
+    tabs.forEach((t) => { tab[t] = t === tabId ? 'true' : null; tab['is' + t.charAt(0).toUpperCase() + t.slice(1)] = t === tabId; go[t] = () => this.setState({ tab: t }); });
+    const diff = [];
+    SECTIONS.forEach((sec) => {
+      const ks = ch.filter((k) => KEYS[k][0] === sec);
+      if (!ks.length) return;
+      diff.push({ cls: 'ctx', mark: ' ', text: '[' + sec + ']' });
+      ks.forEach((k) => { diff.push({ cls: 'del', mark: '−', text: KEYS[k][1] + ' = ' + tv(k, b[k]) }); diff.push({ cls: 'add', mark: '+', text: KEYS[k][1] + ' = ' + tv(k, ed[k]) }); });
+    });
+    const rs = ch.filter((k) => KEYS[k][3]).map((k) => KEYS[k][1]), nr = ch.filter((k) => !KEYS[k][3]).map((k) => KEYS[k][1]);
+    const applyNotes = [];
+    if (rs.length) applyNotes.push({ color: 'var(--ask)', icon: P.redo, text: rs.join(', ') + ': after the ' + p + ' supervisor restarts' });
+    if (nr.length) applyNotes.push({ color: 'var(--live)', icon: P.check, text: nr.join(', ') + ': from the next run' });
+    applyNotes.push({ color: 'var(--live)', icon: P.check, text: 'runs in flight keep the settings they started with' });
+    const bnS = s.banner[p];
+    const bn = !bnS ? { on: false } : {
+      on: true, cls: bnS.state === 'need' || bnS.state === 'busy' ? 'ask' : 'ok', color: bnS.state === 'need' || bnS.state === 'busy' ? 'var(--ask)' : 'var(--live)',
+      icon: bnS.state === 'need' || bnS.state === 'busy' ? P.redo : P.check,
+      title: bnS.state === 'restarted' ? 'Restarted the ' + p + ' supervisor. Revision ' + bnS.rev + ' is in force.' : 'Saved revision ' + bnS.rev + '.',
+      note: bnS.state === 'restarted' ? 'workers ' + b.workers + ' · routes probed at 16:55 · 2 runs re-attached' : (bnS.restart ? bnS.keys.join(', ') + ' take effect when the ' + p + ' supervisor restarts. Runs in flight finish first.' : 'Applies from the next run.'),
+      needRestart: bnS.state === 'need' || bnS.state === 'busy', done: bnS.state === 'done' || bnS.state === 'restarted',
+      rsCls: bnS.state === 'busy' ? 'busy' : '', rsLabel: bnS.state === 'busy' ? 'Restarting…' : 'Restart the supervisor',
+      restart: () => this.restart(p), later: () => this.dropBanner(p) };
+    const isHeld = s.held[p] != null ? s.held[p] : CFG[p].held, hist = (s.hist[p] || HOLDS[p]);
+    const lastHold = hist.filter((e) => e[1] === 'held')[0];
+    const asking = s.intent === 'hold' ? !isHeld : (s.intent === 'release' ? isHeld : false);
+    const hd = { held: isHeld, isHeld: isHeld, isOpen: !isHeld, color: isHeld ? 'var(--wait)' : 'var(--live)', cell: isHeld ? 'c-held' : 'c-live', word: isHeld ? 'Held' : 'Taking work',
+      line: isHeld ? 'Held since ' + (lastHold ? lastHold[0] : 'earlier') + ' by ' + (lastHold ? lastHold[2] : 'you') + '. Runs in flight finish and open PRs still merge; nothing new is claimed.' : 'Claims Ready tickets as its ' + b.workers + (b.workers === 1 ? ' worker frees' : ' workers free') + ' up.',
+      reason: lastHold ? lastHold[3] : '', asking: asking, ask: isHeld ? 'Release ' + p : 'Hold ' + p,
+      ph: isHeld ? 'Why it can take work again' : 'Why it should stop taking work',
+      effect: isHeld ? 'Releasing: the supervisor claims on its next tick, in about 30s.' : 'Holding: no new claims from now. ' + (p === 'holophyte' ? '2 runs in flight finish; PR #523 still merges itself when green.' : 'Runs in flight finish.'),
+      reasonDraft: s.reason, onReason: (e) => this.setState({ reason: e.target.value }), noReason: s.reason.trim().length < 3 || ro,
+      bCls: s.hBusy ? 'busy' : '', bLabel: s.hBusy ? (isHeld ? 'Releasing…' : 'Holding…') : (isHeld ? 'Release ' + p : 'Hold ' + p),
+      wantHold: () => this.setState({ intent: isHeld ? null : 'hold', reason: '' }), wantOpen: () => this.setState({ intent: isHeld ? 'release' : null, reason: '' }),
+      cancel: () => this.setState({ intent: null, reason: '' }), confirm: () => this.confirmHold(p, isHeld),
+      hist: hist.map((e) => ({ at: e[0], what: e[1], by: e[2], reason: e[3], color: e[1] === 'held' ? 'var(--wait)' : 'var(--live)' })), noHist: !hist.length, hasHist: hist.length > 0 };
+    const tText = s.toml[p] != null ? s.toml[p] : (p === 'holophyte' ? TOML_DEMO : tomlOf(b));
+    const chk = checkToml(tText), byLine = {};
+    chk.msgs.forEach((m) => { if (!byLine[m[0]] || m[1] === 'e') byLine[m[0]] = m[1]; });
+    const errN = chk.msgs.filter((m) => m[1] === 'e').length, advN = chk.msgs.length - errN;
+    const setToml = (v) => this.setState((st) => { const t = Object.assign({}, st.toml); if (v == null) delete t[p]; else t[p] = v; return { toml: t }; });
+    const tm = { text: tText, onText: (e) => setToml(e.target.value), h: (chk.lines.length * 20 + 24) + 'px',
+      lines: chk.lines.map((l, i) => ({ n: String(i + 1), cls: byLine[i + 1] || '', plain: !byLine[i + 1] })),
+      msgs: chk.msgs.map((m) => ({ line: String(m[0]), kind: m[1] === 'e' ? 'error' : 'advisory', text: m[2], color: m[1] === 'e' ? 'var(--bad)' : 'var(--ask)', icon: m[1] === 'e' ? P.x : P.bang })),
+      clean: !chk.msgs.length, hasErr: errN > 0 || ro, noErr: !errN, errN: String(errN),
+      sum: errN || advN ? errN + (errN === 1 ? ' error' : ' errors') + ' block saving · ' + advN + (advN === 1 ? ' advisory' : ' advisories') : 'no errors · ready to save',
+      saveNote: errN ? 'Fix ' + errN + (errN === 1 ? ' error' : ' errors') + ' to save. Advisories do not block.' : 'Saving shows the diff first.',
+      revert: () => setToml(tomlOf(b)), save: () => { setToml(null); this.say('Saved revision ' + (b.rev + 1) + ' of holophyte.toml for ' + p + '.'); } };
+    const theme = s.theme || this.props.theme || 'night';
+    const fonts = { plex: "'IBM Plex Sans', system-ui, sans-serif", serif: "'IBM Plex Serif', Georgia, serif", atk: "'Atkinson Hyperlegible Next', system-ui, sans-serif" };
+    const ap = { night: !s.sys && theme === 'night', dawn: !s.sys && theme === 'dawn', system: !!s.sys, sysNote: s.sys ? 'now ' + (theme === 'dawn' ? 'Dawn' : 'Night') + ', from your computer' : 'follows your computer',
+      pickNight: () => this.pickTheme('night'), pickDawn: () => this.pickTheme('dawn'), pickSystem: () => this.pickTheme('system'),
+      plex: s.font === 'plex', serif: s.font === 'serif', atk: s.font === 'atk',
+      pickPlex: () => { this.local('holo.font', 'plex'); this.setState({ font: 'plex' }); }, pickSerif: () => { this.local('holo.font', 'serif'); this.setState({ font: 'serif' }); },
+      pickAtk: () => { this.local('holo.font', 'atk'); this.setState({ font: 'atk' }); },
+      comfy: !s.dense, dense: s.dense, pickComfy: () => { this.local('holo.dense', '0'); this.setState({ dense: false }); }, pickDense: () => { this.local('holo.dense', '1'); this.setState({ dense: true }); },
+      rowH: s.dense ? '44px' : '62px', rowPad: s.dense ? '6px 16px' : '14px 20px' };
+    const dataish = view === 'data' || view === 'error';
+    return Object.assign(shellVals(this, 'settings'), {
+      readFont: fonts[s.font] || fonts.plex, sp: p, host: host, rev: String(b.rev), nextRev: String(b.rev + 1),
+      headLine: p + ' · holophyte.toml on ' + host + ' · revision ' + b.rev + ' · saved ' + (s.rev[p] ? 'just now by you' : CFG[p].savedAt),
+      onProj: (e) => { saveScope(e.target.value); this.setState({ proj: e.target.value, intent: null, reason: '' }); },
+      isLoading: view === 'loading', isEmpty: view === 'empty', isError: view === 'error', showPanel: dataish, ro: ro,
+      tab: tab, go: go, cnt: cnt, notHeld: !isHeld, F: F, roundsErr: roundsErr, sameRoute: sameRoute, noCapture: !F.capture.v,
+      bn: bn, hd: hd, tm: tm, ap: ap,
+      dirty: ch.length > 0, nDirty: String(ch.length), dirtyWord: ch.length === 1 ? 'unsaved change' : 'unsaved changes',
+      dirtySum: ch.map((k) => KEYS[k][1] + ' ' + fmt(b[k]) + ' → ' + fmt(ed[k])).join(' · ') + (roundsErr || sameRoute ? ' · fix the error first' : ''),
+      cantSave: roundsErr || sameRoute || ro, discard: () => this.setState((st) => { const e = Object.assign({}, st.edits); e[p] = {}; return { edits: e }; }),
+      openSave: () => this.setState({ modal: true, mBusy: false }), modalOn: s.modal && ch.length > 0, diff: diff, applyNotes: applyNotes,
+      mBusy: s.mBusy ? 'busy' : '', mLabel: s.mBusy ? 'Saving…' : 'Save revision ' + (b.rev + 1),
+      closeModal: () => this.setState({ modal: false, mBusy: false }), confirmSave: () => this.confirmSave(p, ch),
+      toastOn: !!s.toast, toast: s.toast || '', undoOn: s.undoKey != null, undo: () => this.undo()
+    });
+  }
+}
+</script>
+</body>
+</html>

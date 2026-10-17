@@ -14,7 +14,7 @@ function markOf(node: StoryNode): CardMark | undefined {
   return WAIT_STATES.has(node.state) ? "wait" : undefined;
 }
 
-const TITLE: Record<CardLook, string> = { merged: "text-ink-2", live: "text-ink", todo: "text-ink", backlog: "text-ink-3" };
+const TITLE: Record<CardLook, string> = { merged: "font-medium text-ink-2", live: "font-semibold text-ink", todo: "font-semibold text-ink", backlog: "font-medium text-ink-3" };
 const QUIET_WORD: Partial<Record<CardLook, string>> = { merged: "text-ink-3", backlog: "text-ink-3" };
 
 const LEGEND: { look: CardLook; mark?: CardMark; icon?: State; words: string }[] = [
@@ -63,7 +63,7 @@ function NodeCard({ node, base, className, after }: { node: StoryNode; base: str
           </span>
         )}
       </span>
-      <span className={`font-sans text-[14px] font-semibold leading-[1.3] [overflow-wrap:anywhere] ${TITLE[look]}`}>{node.title}</span>
+      <span className={`font-read text-[15px] leading-[1.35] [overflow-wrap:anywhere] ${TITLE[look]}`}>{node.title}</span>
       <span data-state-line className="flex min-w-0 items-center gap-[7px] font-mono text-[11.5px] font-medium leading-[1.3]">
         <Icon state={node.state} />
         <span className={`truncate ${QUIET_WORD[look] ?? TONE_TEXT[STATES[node.state].tone]}`}>{node.word}</span>
