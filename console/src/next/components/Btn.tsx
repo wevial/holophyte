@@ -11,6 +11,9 @@ export function Btn({
   onClick,
   title,
   expanded,
+  className,
+  "aria-label": ariaLabel,
+  "aria-pressed": ariaPressed,
   ref,
   children,
 }: {
@@ -21,6 +24,9 @@ export function Btn({
   onClick?: () => void;
   title?: string;
   expanded?: boolean;
+  className?: string;
+  "aria-label"?: string;
+  "aria-pressed"?: boolean;
   ref?: Ref<HTMLButtonElement>;
   children: ReactNode;
 }) {
@@ -28,7 +34,9 @@ export function Btn({
     <button
       ref={ref}
       type="button"
-      className="btn"
+      className={`btn ${className ?? ""}`}
+      aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
       data-variant={variant}
       aria-busy={busy}
       disabled={disabled}

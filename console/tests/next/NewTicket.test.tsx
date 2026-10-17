@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Board, Status, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -7,7 +8,7 @@ import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeFetch } from "../actionFakes";
 import { fakeDeps, peersFetch, settle } from "../harness";
-import { DEMO, NOW, SERVE, WRITER } from "./needsFleet";
+import { DEMO, NOW, prPark, SERVE, WRITER } from "./needsFleet";
 
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const board = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
@@ -166,4 +167,149 @@ test("All projects keeps switcher project order when its first project is editab
   expect(within(screen.getByRole("combobox", { name: "Project" })).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
   await press("File ticket");
   expect(answer.seen.map((request) => request.url)).toEqual([`${otherDemo}/tickets`]);
+});
+
+async function type(name: string, value: string) {
+  await act(async () => void fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } }));
+}
+
+const rejectTicket = () => fakeFetch(() => Response.json({ problems: ["Complete the ticket"] }, { status: 422 }));
+const posted = (answer: ReturnType<typeof fakeFetch>, index = 0) => answer.seen[index]!.body as { body: string; priority: number };
+
+test("criteria rows reorder and remove the claims sent in the Acceptance criteria section", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  expect((screen.getByRole("textbox", { name: "AC1" }) as HTMLInputElement).value).toBe("");
+  expect(screen.queryByRole("textbox", { name: "AC2" })).toBeNull();
+  await press("+ Add a criterion");
+  await press("+ Add a criterion");
+  await type("AC1", "A");
+  await type("AC2", "B");
+  await type("AC3", "C");
+  expect((screen.getByRole("button", { name: "Move AC1 up" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Move AC3 down" }) as HTMLButtonElement).disabled).toBe(true);
+  await press("Move AC3 up");
+  expect(screen.getAllByRole("textbox", { name: /^AC\d+$/ }).map(input => (input as HTMLInputElement).value)).toEqual(["A", "C", "B"]);
+  await press("Remove AC1");
+  expect(screen.getAllByRole("textbox", { name: /^AC\d+$/ }).map(input => (input as HTMLInputElement).value)).toEqual(["C", "B"]);
+  expect(screen.getByText("2 of 2 written")).toBeTruthy();
+  await press("File ticket");
+  expect(posted(answer).body.split("## Acceptance criteria\n")[1]?.split("\n## ")[0]?.trim()).toBe("- [ ] C\n- [ ] B");
+  await press("Remove AC2");
+  await press("Remove AC1");
+  expect(screen.getAllByRole("textbox", { name: /^AC\d+$/ })).toHaveLength(1);
+  expect((screen.getByRole("textbox", { name: "AC1" }) as HTMLInputElement).value).toBe("");
+  expect(screen.getByText("0 of 1 written")).toBeTruthy();
+});
+
+test("estimate, priority and unique uppercase dependency chips serialize and removal clears the dependency", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("25");
+  expect(screen.getByRole("button", { name: "P2" }).getAttribute("aria-pressed")).toBe("true");
+  for (let index = 0; index < 4; index += 1) await press("Increase estimate");
+  await press("P1");
+  await type("Depends on", "holo-238");
+  await press("Add");
+  await type("Depends on", "holo-238");
+  await act(async () => void fireEvent.keyDown(screen.getByRole("textbox", { name: "Depends on" }), { key: "Enter" }));
+  expect(screen.getAllByRole("button", { name: "Remove HOLO-238" })).toHaveLength(1);
+  expect(screen.getByText("HOLO-238", { exact: true })).toBeTruthy();
+  expect(answer.seen).toHaveLength(0);
+  await press("File ticket");
+  expect(posted(answer).priority).toBe(1);
+  expect(posted(answer).body.match(/^Estimate:.*$/gm)?.map(line => line.trim())).toEqual(["Estimate: 45 min · Depends on: HOLO-238"]);
+  await press("Remove HOLO-238");
+  await press("File ticket");
+  expect(posted(answer, 1).body).toContain("Estimate: 45 min · Depends on: none");
+});
+
+test("a dependency listed in the board's Ready column shows that column label", async () => {
+  const polls = fleet();
+  const readyBoard = {
+    ...board,
+    columns: board.columns.map(column => ({ ...column, tickets: column.state === "ready" ? [{ ...column.tickets[0]!, ticket: "DEMO-3" }] : [] })),
+    editable: true,
+  };
+  await mount("#/tickets/demo/new", async (url, init) => url === `${DEMO}/board` ? Response.json(readyBoard) : polls(url, init));
+  await type("Depends on", "DEMO-3");
+  await press("Add");
+  expect(screen.getByText("DEMO-3 · Ready", { exact: true })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Remove DEMO-3" })).toBeTruthy();
+});
+
+test.each([[true, "Needs you"], [false, "In flight"]] as const)("a pull-request dependency uses merge readiness %s for its Tickets column label", async (ready, label) => {
+  const polls = fleet();
+  const merge = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
+  const parkedBoard = {
+    ...board,
+    columns: board.columns.map(column => ({ ...column, tickets: column.state === "blocked_on_operator" ? [{ ...column.tickets[0]!, ticket: "DEMO-9" }] : [] })),
+    editable: true,
+  };
+  await mount("#/tickets/demo/new", async (url, init) => {
+    if (url === `${DEMO}/board`) return Response.json(parkedBoard);
+    if (url === `${DEMO}/attention`) return Response.json({ level: "attention", now: NOW, project: "/srv/dev/demo", items: [{ ...prPark, ticket: "DEMO-9" }] });
+    if (url === `${DEMO}/runs/9/merge`) return Response.json({ ...merge, run: 9, ticket: "DEMO-9", ready });
+    return polls(url, init);
+  });
+  await type("Depends on", "DEMO-9");
+  await press("Add");
+  expect(screen.getByText(`DEMO-9 · ${label}`, { exact: true })).toBeTruthy();
+});
+
+test("UI change serializes its major declaration, mock-up and approval and switching off removes them", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  const toggle = screen.getByRole("switch", { name: "This ticket changes the UI" });
+  expect(screen.queryByRole("textbox", { name: "Mock-up link" })).toBeNull();
+  await act(async () => void fireEvent.click(toggle));
+  await type("Mock-up link", "https://claude.ai/artifact/abc");
+  await type("Boards", "https://example.test/board.png");
+  const approval = (screen.getByRole("textbox", { name: "Approval" }) as HTMLInputElement).value;
+  expect(approval).toMatch(/^Approved \d{4}-\d{2}-\d{2}:/);
+  await press("File ticket");
+  const body = posted(answer).body;
+  expect(body).toContain("**UI change:** major");
+  const mockup = body.split("## Mock-up\n")[1]?.split("\n## ")[0];
+  expect(mockup).toMatch(/^https:\/\/claude\.ai\/artifact\/abc\s*$/m);
+  expect(body.match(/^Approved .+$/gm)).toHaveLength(1);
+  expect(body).toContain("![board](https://example.test/board.png)");
+  await act(async () => void fireEvent.click(toggle));
+  await press("File ticket");
+  const without = posted(answer, 1).body;
+  expect(without).not.toContain("**UI change:**");
+  expect(without).not.toContain("## Mock-up");
+  expect(without).not.toContain("https://claude.ai/artifact/abc");
+  expect(without).not.toContain("https://example.test/board.png");
+});
+
+test("estimate stepping stops at 5 and 120 minutes and files those boundary values", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  for (let index = 0; index < 5; index += 1) await press("Decrease estimate");
+  expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("5");
+  await press("File ticket");
+  expect(posted(answer).body).toContain("Estimate: 5 min · Depends on: none");
+  await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "115" } }));
+  await press("Increase estimate");
+  await press("Increase estimate");
+  expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("120");
+  await press("File ticket");
+  expect(posted(answer, 1).body).toContain("Estimate: 120 min · Depends on: none");
+});
+
+
+test("typing an estimate digit by digit preserves the intended number when filing", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  const user = userEvent.setup();
+  const estimate = screen.getByRole("spinbutton", { name: "Estimate" });
+  await act(async () => {
+    await user.clear(estimate);
+    await user.type(estimate, "45");
+  });
+  expect((estimate as HTMLInputElement).value).toBe("45");
+  await act(async () => void await user.click(screen.getByRole("button", { name: "File ticket" })));
+  await flush();
+  expect(posted(answer).body.match(/^Estimate:.*$/gm)?.map(line => line.trim())).toEqual(["Estimate: 45 min · Depends on: none"]);
 });
