@@ -2,6 +2,8 @@ import json
 import re
 from pathlib import Path
 
+from holophyte.agents.agent_output import count
+
 SESSION_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,199}\Z')
 
 
@@ -160,12 +162,13 @@ def follows_turn(marks, at, trails):
 
 def turns(events):
     """A session beside one turn pairs with it; between two, the route's habit."""
-    rows = [(seq, kind, decoded(payload)) for seq, kind, payload in events]
+    rows = [(seq, kind, decoded(payload), ended_ms)
+            for seq, kind, payload, ended_ms in events]
     rows = [row for row in rows if row[2].get('role') in
             ('implement', 'review', 'adjudicate', 'write', 'trim')]
-    marks = [(kind, data.get('role'), data.get('route')) for _, kind, data in rows]
+    marks = [(kind, data.get('role'), data.get('route')) for _, kind, data, _ in rows]
     result, pending, latest, trails = [], {}, {}, {}
-    for at, (seq, kind, data) in enumerate(rows):
+    for at, (seq, kind, data, ended_ms) in enumerate(rows):
         role, route = data.get('role'), data.get('route')
         key = role, route
         if kind == 'agent_session':
@@ -180,8 +183,18 @@ def turns(events):
                     pending[key] = session_id
         elif kind == 'agent_turn':
             label = data.get('label')
+            usage = data.get('usage')
+            usage = usage if isinstance(usage, dict) else {}
+            cost = usage.get('cost_usd')
+            status = data.get('exit_status')
             result.append(dict(id=seq, role=role, route=route,
                                label=label if isinstance(label, str) else None,
-                               seconds=data.get('seconds'),
+                               seconds=data.get('seconds'), ended_ms=ended_ms,
+                               exit_status=status if type(status) is int else None,
+                               timed_out=data.get('timed_out') is True,
+                               input_tokens=count(usage.get('input_tokens')),
+                               output_tokens=count(usage.get('output_tokens')),
+                               cost_usd=cost if type(cost) in (int, float)
+                               and cost >= 0 else None,
                                session_id=pending.pop(key, latest.get(key))))
     return result

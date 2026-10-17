@@ -165,9 +165,10 @@ test("the head and project subtitles use the filename returned by config and fac
   for (const [label, subtitle] of [["Hosts", "the factory's hosts"], ["Appearance", "yours, in this browser · applies at once, nothing to save"]] as const) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(label);
+    expect(screen.getByRole("heading", { level: 2, name: label })).toBeTruthy();
     expect(screen.getByText(subtitle)).toBeTruthy();
-    expect(screen.getByText("This tab comes here.")).toBeTruthy();
+    if (label === "Hosts") expect(screen.getAllByRole("article")).toHaveLength(3);
+    else expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeTruthy();
   }
 });
 

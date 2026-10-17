@@ -567,9 +567,13 @@ contents or diff hunks and writes nothing to the repository.
 {"turns": [
   {"id": 4410, "role": "implement", "route": "primary",
    "label": "claude opus", "seconds": 372.5,
-   "session_id": "0198c2a4-5e1f-7b3a-9d6e-2f4c8a1b3d5e"},
+   "session_id": "0198c2a4-5e1f-7b3a-9d6e-2f4c8a1b3d5e",
+   "ended_ms": 1760000000000, "exit_status": 0, "timed_out": false,
+   "input_tokens": 52100, "output_tokens": 9300, "cost_usd": 0.92},
   {"id": 4433, "role": "review", "route": "fallback",
-   "label": "codex gpt-5.6-sol", "seconds": 95.25, "session_id": null}
+   "label": "codex gpt-5.6-sol", "seconds": 95.25, "session_id": null,
+   "ended_ms": 1760000095250, "exit_status": 1, "timed_out": true,
+   "input_tokens": null, "output_tokens": null, "cost_usd": null}
  ]}
 ```
 
@@ -583,8 +587,15 @@ first word plus its `-m`/`--model` value, null for a turn recorded
 without one. `route` is `primary`, or `fallback` when the seat ran its
 configured `*_fallback`. `seconds` is how long the turn ran, null when
 its record carries no duration. `session_id` is the agent session the
-turn ran in, null when none was recorded beside it. A run with no turns
-answers an empty list.
+turn ran in, null when none was recorded beside it. `ended_ms` is the event's
+recorded timestamp in epoch milliseconds, when the turn ended. `exit_status`
+is the recorded integer exit status, null when none was recorded.
+`timed_out` says whether the turn timed out, false when absent from the record.
+`input_tokens` and `output_tokens` are the recorded non-negative integer token
+counts; input tokens include cache reads. `cost_usd` is the recorded cost in
+US dollars. Each usage field is null when usage is absent or its value is
+not a valid number. These facts come from the run record even when no
+transcript is kept. A run with no turns answers an empty list.
 
 `N` parses as on `/runs/N`: a non-integer is 400, an integer with no run
 is 404 carrying `run`. The route writes nothing.
