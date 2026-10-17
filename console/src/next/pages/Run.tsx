@@ -150,7 +150,7 @@ export function RunPage() {
           <RunTicket base={page.base} ticket={run.ticket} />
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
           <ProgressLog key={run.id} lines={page.progress} live={page.live} />
-          <RunDetails key={`${page.base}/${run.id}`} base={page.base} detail={page.detail} live={page.live} />
+          <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
         </div>
         <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks}>
           {page.state !== "merged" && <AgentCompose key={`${page.base}/${run.id}`} base={page.base} run={run.id} ticket={run.ticket} prUrl={run.pr_url} actions={page.actions} parked={page.phase === "awaiting_merge_approval"} live={page.stoppable} ref={composeRef} />}

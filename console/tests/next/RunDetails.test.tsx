@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { createMemoryHistory, createRootRoute, createRouter, RouterContextProvider } from "@tanstack/react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { RunDetail, RunFiles, RunTurns } from "../../src/lib/contract.gen";
 import { consoleQueryClient } from "../../src/next/fleet";
@@ -35,25 +36,26 @@ const files: RunFiles = {
   ],
 };
 const turns: RunTurns = { turns: [
-  { id: 3, role: "implement", label: "claude opus", route: "primary", seconds: null, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
-  { id: 1, role: "implement", label: "claude opus", route: "primary", seconds: 372, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
-  { id: 2, role: "review", label: "codex gpt-6-sol", route: "primary", seconds: 80, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
+  { id: 42, role: "implement", label: "claude opus", route: "primary", seconds: null, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
+  { id: 40, role: "implement", label: "claude opus", route: "primary", seconds: 372, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
+  { id: 41, role: "review", label: "codex gpt-6-sol", route: "primary", seconds: 80, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
 ] };
 
-async function mount(fileAnswer: RunFiles | number = files, runDetail: RunDetail = detail) {
+async function mount(fileAnswer: RunFiles | number = files, runDetail: RunDetail = detail, project = "writer") {
+  const base = project === "demo" ? DEMO : WRITER;
   const urls: string[] = [];
   const polls = fleet({ items: [] }, { items: [] });
   const fake = fakeDeps(async (url) => {
     urls.push(url);
-    if (url === `${WRITER}/runs/12`) return Response.json(runDetail);
-    if (url === `${WRITER}/runs/12/files`) {
+    if (url === `${base}/runs/12`) return Response.json(runDetail);
+    if (url === `${base}/runs/12/files`) {
       return typeof fileAnswer === "number" ? new Response("unavailable", { status: fileAnswer }) : Response.json(fileAnswer);
     }
-    if (url === `${WRITER}/runs/12/turns`) return Response.json(turns);
+    if (url === `${base}/runs/12/turns`) return Response.json(turns);
     return polls(url);
   });
   fake.clock.now = NOW;
-  window.location.hash = "#/runs/writer/12";
+  window.location.hash = `#/runs/${project}/12?project=${project}`;
   render(<QueryClientProvider client={consoleQueryClient()}><NextConsole base={DEMO} pollDeps={fake.deps} /></QueryClientProvider>);
   for (let round = 0; round < 6; round += 1) await act(settle);
   return urls;
@@ -110,6 +112,27 @@ test("Transcript orders turns oldest first, counts each seat independently, and 
   ]);
 });
 
+
+test("Details links each turn with scope and separate duration, and opens the selected Turn page", async () => {
+  await mount(files, detail, "demo");
+  await openDetails();
+  const transcript = within(screen.getByRole("region", { name: "Transcript" }));
+  const implement = transcript.getByRole("link", { name: "implementer · claude opus · turn 1" });
+  const review = transcript.getByRole("link", { name: "reviewer · codex gpt-6-sol · round 1" });
+  expect(implement.getAttribute("href")).toEndWith("#/runs/demo/12/turns/40?project=demo");
+  expect(review.getAttribute("href")).toEndWith("#/runs/demo/12/turns/41?project=demo");
+  for (const [link, duration] of [[implement, "6m 12s"], [review, "1m 20s"]] as const) {
+    expect(within(link).queryByText(duration)).toBeNull();
+    expect(within(link.closest("li")!).getByText(duration).closest("a")).toBeNull();
+  }
+  await act(async () => {
+    fireEvent.click(implement);
+    await settle();
+  });
+  for (let round = 0; round < 6; round += 1) await act(settle);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Implementer · turn 1");
+});
+
 test.each([
   [409, "No branch or merge to diff."],
   [504, "git did not answer in time."],
@@ -157,9 +180,12 @@ test.each([false, true])("Details refreshes final files and durations after comp
     return new Response("not found", { status: 404 });
   });
   const client = consoleQueryClient();
+  const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory() });
   const view = (live: boolean) => <QueryClientProvider client={client}>
     <PollDepsContext.Provider value={fake.deps}>
-      <RunDetails base={WRITER} detail={detail} live={live} />
+      <RouterContextProvider router={router}>
+        <RunDetails project="writer" base={WRITER} detail={detail} live={live} />
+      </RouterContextProvider>
     </PollDepsContext.Provider>
   </QueryClientProvider>;
   const mounted = render(view(true));

@@ -28,6 +28,8 @@ function trap(event: KeyboardEvent, box: HTMLElement | null, onCancel: () => voi
  *  `busy`; `refusal` reads under the buttons. */
 export function ConfirmDialog({
   label,
+  ariaLabel,
+  labelClassName = "font-sans",
   heading,
   confirm,
   busyLabel,
@@ -41,6 +43,8 @@ export function ConfirmDialog({
   children,
 }: {
   label: string;
+  ariaLabel?: string;
+  labelClassName?: string;
   heading: string;
   confirm: string;
   busyLabel: string;
@@ -70,10 +74,11 @@ export function ConfirmDialog({
         ref={box}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={headingId}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : headingId}
         className="relative box-border w-full max-w-[520px] border border-rule bg-paper px-7 pb-6 pt-[26px] text-[15px] leading-normal text-ink shadow-[0_24px_60px_rgba(0,0,0,.45)]"
       >
-        <div className="flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[.06em] text-ink-3 after:flex-1 after:border-t after:border-rule-2 after:content-['']">
+        <div className={`${labelClassName} flex items-center gap-2.5 text-[11px] font-semibold uppercase leading-none tracking-[.06em] text-ink-3 after:flex-1 after:border-t after:border-rule-2 after:content-['']`}>
           {label}
         </div>
         <h2 id={headingId} className="mt-3.5 font-sans text-[30px] font-extrabold leading-[1.05] tracking-[-0.01em] [font-stretch:112%]">

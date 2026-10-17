@@ -44,6 +44,7 @@ import { runKey } from "../lib/runs";
 import { PollDepsContext, scopedHosts } from "./scope";
 import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
+import { pastDays, type DayAnswers, type DayWindow } from "./runDays";
 
 /** One daemon route's cache key: the base it hangs off and its path. */
 export function routeKey(base: string, path: string): readonly ["route", string, string] {
@@ -281,6 +282,45 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
  *  `now`, by its record `key`; a host without the route has no entry. */
 export function useHistory(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
   return useAnswers(hosts, `/history?since=${localMidnight(localMidnight(now) - 1)}`, historySchema, deps);
+}
+
+function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fetch) {
+  const path = `/history?since=${day.since}&until=${day.until}&limit=${limit}`;
+  return {
+    queryKey: routeKey(base, path),
+    queryFn: () => routeOrNone(fetch, `${base}${path}`, historySchema),
+    staleTime: 60_000,
+  };
+}
+
+export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[], deps: { fetch: Fetch } = defaultPollDeps) {
+  const asked = hosts.filter((host) => host.status != null).flatMap((host) => days.map((day) => ({ host, day })));
+  const results = useQueries({
+    queries: asked.map(({ host, day }) => historyDayQuery(host.base, day, 500, deps.fetch)),
+  });
+  const answers: DayAnswers = new Map();
+  asked.forEach(({ host, day }, index) => {
+    const data = results[index]?.data;
+    if (!data) return;
+    const byHost = answers.get(day.since) ?? new Map<string, History>();
+    byHost.set(host.key, data);
+    answers.set(day.since, byHost);
+  });
+  const queries = asked.map(({ host, day }, index) => ({ host, day, ...results[index] }));
+  return { answers, queries };
+}
+
+export function useHistoryTotal(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps) {
+  const days = pastDays(now);
+  const window = { since: days[days.length - 1]!.since, until: days[0]!.until };
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.map((host) => historyDayQuery(host.base, window, 1, deps.fetch)),
+  });
+  const complete = asked.length > 0 && asked.length === hosts.length && results.every((result) => result.status === "success" && result.data != null);
+  const total = complete ? results.reduce((sum, result) => sum + (result.data?.total ?? 0), 0) : undefined;
+  const queries = asked.map((host, index) => ({ host, ...results[index] }));
+  return { total, queries };
 }
 
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first

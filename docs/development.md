@@ -922,6 +922,10 @@ rewrites `project` on the current route and is kept in session storage under
 `holophyte.next.project`, so opening `/next.html` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
 
+`console/src/next/runDays.ts` defines thirty local-day windows and aggregates
+each day’s runs. `console/src/next/pages/RunsHistory.tsx` renders their counts,
+work totals and five-day pager.
+
 The Run page’s `next/components/CriteriaList.tsx` shows review marks and
 witness notes, with its verdict count supplied by `criteriaClause()` in
 `next/run.ts`.
