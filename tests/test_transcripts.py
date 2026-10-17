@@ -94,7 +94,18 @@ def turn(role, route):
 
 def paired(*events):
     return [(t['role'], t['route'], t['session_id']) for t in turns(
-        (seq, kind, json.dumps(data)) for seq, (kind, data) in enumerate(events))]
+        (seq, kind, json.dumps(data), 1760000000000)
+        for seq, (kind, data) in enumerate(events))]
+
+
+class TurnFactsTests(unittest.TestCase):
+    def test_invalid_usage_and_missing_exit_have_null_defaults(self):
+        payload = json.dumps(dict(role='implement', route='primary',
+                                  usage=dict(input_tokens='many')))
+        row = turns([(1, 'agent_turn', payload, 1760000000000)])[0]
+        self.assertIsNone(row['input_tokens'])
+        self.assertIsNone(row['exit_status'])
+        self.assertIs(row['timed_out'], False)
 
 
 class SessionPairingTests(unittest.TestCase):

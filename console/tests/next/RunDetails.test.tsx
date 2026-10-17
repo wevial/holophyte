@@ -35,9 +35,9 @@ const files: RunFiles = {
   ],
 };
 const turns: RunTurns = { turns: [
-  { id: 3, role: "implement", label: "claude opus", route: "primary", seconds: null, session_id: null },
-  { id: 1, role: "implement", label: "claude opus", route: "primary", seconds: 372, session_id: null },
-  { id: 2, role: "review", label: "codex gpt-6-sol", route: "primary", seconds: 80, session_id: null },
+  { id: 3, role: "implement", label: "claude opus", route: "primary", seconds: null, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
+  { id: 1, role: "implement", label: "claude opus", route: "primary", seconds: 372, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
+  { id: 2, role: "review", label: "codex gpt-6-sol", route: "primary", seconds: 80, ended_ms: NOW, exit_status: 0, timed_out: false, input_tokens: 52100, output_tokens: 9300, cost_usd: 0.92, session_id: null },
 ] };
 
 async function mount(fileAnswer: RunFiles | number = files, runDetail: RunDetail = detail) {
