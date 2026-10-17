@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { fetchConfig } from "../lib/config";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
@@ -39,7 +41,7 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
-import { scopedHosts } from "./scope";
+import { PollDepsContext, scopedHosts } from "./scope";
 import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow } from "../lib/types";
 
@@ -352,4 +354,13 @@ export function useBoardStories(hosts: HostRecord<PollBodies>[], deps: { fetch: 
   stories.sort((a, b) => a.ticket.localeCompare(b.ticket, undefined, { numeric: true }));
   const answered = asked.every((_, index) => results[index]?.status !== "pending");
   return { answered, stories };
+}
+
+export function useConfig(base: string | null) {
+  const deps = useContext(PollDepsContext);
+  return useQuery({
+    queryKey: routeKey(base ?? "", "/config"),
+    queryFn: () => fetchConfig(base!, deps.fetch),
+    enabled: base != null,
+  });
 }

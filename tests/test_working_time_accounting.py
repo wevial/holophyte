@@ -264,6 +264,7 @@ class WorkingTimeTests(SweepTestCase):
                     (implement, '_check_run_cap', None),
                     (review_round, '_check_run_cap', None),
                     (branch_sync, '_candidate_drift', ''),
+                    (branch_sync, 'onto_pushed', 'after'),
                     (merge_gate, '_is_ancestor', True),
                     (merge_gate, 'merge_drift', ((), None)),
                     (babysitter, '_decline_threads', ()),

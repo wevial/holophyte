@@ -284,8 +284,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                  (store.criteria, ["backfill", "numbers",
                                                    "record_criteria"]),
                                  # KO-750: the native board's writers;
-                                 # KO-753: its moves, cancels and waits.
-                                 (store.board, ["cancel_ticket", "edit_ticket",
+                                 # KO-753: moves/cancels; HOLO-404: check reader.
+                                 (store.board, ["cancel_ticket", "check_ticket",
+                                                "edit_ticket",
                                                 "file_ticket", "move_ticket",
                                                 "resolve_dependencies",
                                                 "ticket_problems"]),

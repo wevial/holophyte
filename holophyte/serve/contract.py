@@ -579,6 +579,12 @@ class RunTurn(TypedDict):
     route: Literal["primary", "fallback"]
     seconds: float | None
     session_id: str | None
+    ended_ms: int
+    exit_status: int | None
+    timed_out: bool
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
 
 
 class RunTurns(TypedDict):
@@ -844,6 +850,12 @@ class TicketDetail(TypedDict):
     steers: list[TicketSteer]
 
 
+class TicketCheck(TypedDict):
+    problems: list[str]
+    advisories: list[str]
+    blocks: bool
+
+
 class StoryChildRow(TypedDict):
     ticket: str
     title: str
@@ -907,6 +919,7 @@ ROUTES = {
     "findings": (Findings, "GET /findings"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
+    "ticket-check": (TicketCheck, "POST /tickets/check"),
     "story": (StoryDetail, "GET /stories/KEY"),
 }
 

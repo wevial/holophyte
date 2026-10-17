@@ -607,6 +607,12 @@ export const runTurnSchema = z.looseObject({
   route: z.enum(["primary", "fallback"]),
   seconds: z.number().nullable(),
   session_id: z.string().nullable(),
+  ended_ms: z.int(),
+  exit_status: z.int().nullable(),
+  timed_out: z.boolean(),
+  input_tokens: z.int().nullable(),
+  output_tokens: z.int().nullable(),
+  cost_usd: z.number().nullable(),
 });
 export type RunTurn = z.infer<typeof runTurnSchema>;
 
@@ -909,6 +915,13 @@ export const ticketDetailSchema = z.looseObject({
   steers: z.array(ticketSteerSchema),
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
+
+export const ticketCheckSchema = z.looseObject({
+  problems: z.array(z.string()),
+  advisories: z.array(z.string()),
+  blocks: z.boolean(),
+});
+export type TicketCheck = z.infer<typeof ticketCheckSchema>;
 
 export const storyChildRowSchema = z.looseObject({
   ticket: z.string(),
