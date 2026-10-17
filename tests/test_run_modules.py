@@ -76,6 +76,58 @@ class HangsWithAChild(unittest.TestCase):
         time.sleep(60)
 """
 
+COMMITS_WITHOUT_REPACKING = """
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+class CommitWithoutRepacking(unittest.TestCase):
+    def test_commit_leaves_no_automatic_pack_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+
+            def git(*args, **kwargs):
+                return subprocess.run(
+                    ["git", *args], cwd=repo, check=True,
+                    capture_output=True, text=True, **kwargs).stdout.strip()
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.name", "Test")
+            git("config", "user.email", "test@example.com")
+            found = 0
+            candidate = 0
+            while found < 2:
+                content = f"x{candidate}\\n"
+                candidate += 1
+                if git("hash-object", "--stdin", input=content).startswith("17"):
+                    (repo / f"blob-{found}").write_text(content)
+                    found += 1
+            git("add", "-A")
+            git("commit", "-qm", "m")
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                packs = list((repo / ".git/objects/pack").iterdir())
+                self.assertEqual(packs, [], "automatic maintenance wrote pack files")
+                time.sleep(0.01)
+"""
+
+CHECKS_GIT_CONFIG = """
+import subprocess
+import unittest
+
+class GitConfig(unittest.TestCase):
+    def test_existing_config_survives_with_automatic_maintenance_disabled(self):
+        def config(key):
+            return subprocess.run(
+                ["git", "config", "--get", key],
+                capture_output=True, text=True).stdout.strip()
+
+        self.assertEqual(config("core.abbrev"), "12")
+        self.assertEqual(config("maintenance.auto"), "false")
+"""
+
 
 def live_members(pgid):
     """Pids in process group `pgid` that are running (not zombies), from /proc."""
@@ -121,17 +173,34 @@ class RunModulesTests(unittest.TestCase):
         self.tests = self.root / "tests"
         self.tests.mkdir()
 
-    def run_over(self, modules, *args):
+    def run_over(self, modules, *args, git_config=None):
         for name, body in modules.items():
             (self.tests / name).write_text(textwrap.dedent(body))
         # One shared home in the runner's own environment: a module that
         # inherited it instead of getting its own would see its sibling's files.
         shared = self.root / "shared-home"
         shared.mkdir(exist_ok=True)
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("GIT_CONFIG_")}
+        env.update(git_config or {})
         return subprocess.run(
             [sys.executable, str(RUNNER), "--dir", str(self.tests), *args],
-            env=dict(os.environ, HOLOPHYTE_HOME=str(shared)),
+            env=dict(env, HOLOPHYTE_HOME=str(shared)),
             capture_output=True, text=True, timeout=120)
+
+    def test_module_commits_do_not_start_automatic_repacking(self):
+        done = self.run_over({"test_commit.py": COMMITS_WITHOUT_REPACKING})
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertTrue(self.module_lines(done)["test_commit.py"].endswith("ok"),
+                        done.stdout)
+
+    def test_existing_git_config_is_preserved_with_maintenance_disabled(self):
+        done = self.run_over({"test_config.py": CHECKS_GIT_CONFIG}, git_config={
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.abbrev",
+            "GIT_CONFIG_VALUE_0": "12",
+        })
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
     def test_failing_module_fails_the_run_and_its_output_follows_the_summary(self):
         done = self.run_over({"test_good.py": PASSING, "test_bad.py": FAILING},
