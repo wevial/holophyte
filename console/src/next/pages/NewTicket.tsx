@@ -33,8 +33,7 @@ export function NewTicket() {
   const peers = useConsolePeers();
   const deps = useContext(PollDepsContext);
   const boards = useBoards(peers.hosts, deps);
-  const rows = switcherRows(peers.hosts, peers.now, new Map());
-  const editable = rows.flatMap(row => {
+  const editable = switcherRows(peers.hosts, peers.now, new Map()).flatMap(row => {
     const match = boards.find(({ host, board }) => board.editable && host.project != null && projectName(host.project) === row.name);
     return match && row.name != null ? [{ name: row.name, base: match.host.base }] : [];
   });
