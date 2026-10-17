@@ -207,6 +207,11 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
   };
   const eol = body.includes("\r\n") ? "\r\n" : "\n";
   for (const added of edited.others.filter(other => other.index === ADDED_SECTION)) {
+    const at = form.sections.findIndex((section, index) => section.name === added.name && !edited.others.some(other => other.index === index));
+    if (at >= 0) {
+      form = { ...form, sections: form.sections.map((section, index) => index === at ? { ...section, text: withText(section.text, added.text) } : section) };
+      continue;
+    }
     const last = form.sections.at(-1);
     const sections = last && !last.text.endsWith(eol + eol) ? [...form.sections.slice(0, -1), { ...last, text: last.text.replace(/\s*$/, eol + eol) }] : form.sections;
     form = { ...form, sections: [...sections, { name: added.name, heading: `## ${added.name}${eol}`, text: `${eol}${added.text}${eol}` }] };

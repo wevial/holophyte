@@ -56,6 +56,28 @@ test("a section I edited that their revision removed is a clash and is added bac
   expect(composeEdit(theirs, theirFields, merge.onTop)).toBe("# Notes show\n\n## Summary\n\nEvery note shows.\n\n## Evidence\n\n- 02-notes.png\n");
 });
 
+test("an edit to the second of two sections sharing a heading stays on that section on top", () => {
+  const base = "# Notes show\n\n## Evidence\n\n- 01-notes.png\n\n## Evidence\n\n- 02-notes.png\n";
+  const theirs = base.replace("# Notes show", "# Every note shows");
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map((other, at) => at === 1 ? { ...other, text: "- 03-notes.png" } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect([merge.onlyTheirs, merge.onlyMine, merge.both]).toEqual([["Title"], ["Evidence"], []]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(theirs.replace("- 02-notes.png", "- 03-notes.png"));
+});
+
+test("an edit to a section their revision now draws as fields replaces that section rather than repeating it", () => {
+  const base = "# Notes show\n\n## Summary\n\n<!-- one line -->\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
+  const theirs = base.replace("<!-- one line -->\nThe notes show.", "Every note shows.");
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map(other => other.name === "Summary" ? { ...other, text: "<!-- one line -->\nEach note shows." } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(merge.both).toEqual([{ name: "Summary", theirs: "Every note shows.", mine: "<!-- one line -->\nEach note shows." }]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(base.replace("The notes show.", "Each note shows."));
+});
+
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;

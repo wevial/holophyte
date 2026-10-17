@@ -363,13 +363,25 @@ export const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "c
 interface Clash { name: string; theirs: string; mine: string }
 export interface EditMerge { onlyTheirs: string[]; onlyMine: string[]; both: Clash[]; onTop: EditFields }
 
-/** The `index` of a section the edit adds at the body's end. */
+/** The `index` of a section the edit puts back: in place of the section of
+ *  its name that the body draws as fields, else at the body's end. */
 export const ADDED_SECTION = -3;
 
 type Criterion = { text: string; detail: string } | undefined;
 const criterionAt = (form: EditFields, index: number): Criterion =>
   index < form.criteria.length ? { text: form.criteria[index]!, detail: form.criteriaDetail[index] ?? "" } : undefined;
-const otherNamed = (form: EditFields, name: string) => form.others.find(other => other.name === name)?.text;
+
+/** Each of `form`'s other sections by its key: the preamble, the unlabelled
+ *  What / Why / How text, or a section's name with how many before it share it. */
+function keyed(form: EditFields): Map<string, EditFields["others"][number]> {
+  const seen = new Map<string, number>();
+  return new Map(form.others.map(other => {
+    if (other.index < 0) return [`${other.index}`, other];
+    const count = seen.get(other.name) ?? 0;
+    seen.set(other.name, count + 1);
+    return [`${other.name}#${count}`, other];
+  }));
+}
 
 function shown(value: unknown): string {
   if (value === undefined) return "(removed)";
@@ -409,17 +421,19 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
     }
     merge.onTop = { ...merge.onTop, criteria: criteria.map(each => each.text), criteriaFrom: criteria.map(each => each.from), criteriaDetail: criteria.map(each => each.detail) };
   }
+  const [was, their, my] = [keyed(base), keyed(theirs), keyed(mine)];
   merge.onTop = {
     ...merge.onTop,
-    others: theirs.others.map(other => {
-      const my = otherNamed(mine, other.name);
-      return judge(other.name, otherNamed(base, other.name), other.text, my) && my !== undefined ? { ...other, text: my } : other;
+    others: [...their].map(([key, other]) => {
+      const text = my.get(key)?.text;
+      return judge(other.name, was.get(key)?.text, other.text, text) && text !== undefined ? { ...other, text } : other;
     }),
   };
-  for (const other of base.others) {
-    const my = otherNamed(mine, other.name);
-    if (otherNamed(theirs, other.name) !== undefined || my === undefined) continue;
-    if (judge(other.name, other.text, undefined, my)) merge.onTop.others = [...merge.onTop.others, { index: ADDED_SECTION, name: other.name, text: my }];
+  for (const [key, other] of was) {
+    const text = my.get(key)?.text;
+    if (their.has(key) || text === undefined) continue;
+    const drawn = FIELD_NAMES.find(([, name]) => name === other.name)?.[0];
+    if (judge(other.name, other.text, drawn && theirs[drawn], text)) merge.onTop.others = [...merge.onTop.others, { index: other.index < 0 ? other.index : ADDED_SECTION, name: other.name, text }];
   }
   return merge;
 }
