@@ -87,11 +87,16 @@ class SteerCriteriaTests(unittest.TestCase):
                 self.assertEqual(list(self.conn.iterdump()), before)
 
     def test_edit_verbs_in_ordinary_prose_are_carried_unchanged(self):
-        text = "Replace cache storage\nDrop caching for now\nAdd a count"
+        text = ("Replace cache storage\nDrop caching for now\nAdd a count\n"
+                "Replace C++ dependencies with Rust equivalents\n"
+                "Drop C support for this release")
+        rows = self.conn.execute("SELECT * FROM ticketCriteria").fetchall()
         note = self.amend(text)
         rendered = carry_amendments(self.conn, self.claim(), "Filed ticket body")
         self.assertEqual(rendered, "Filed ticket body\n\n" + PREFIX
                          + f"\nsteer note {note.id} by maintainer:\n" + text)
+        self.assertEqual(self.conn.execute("SELECT * FROM ticketCriteria").fetchall(),
+                         rows)
 
     def test_replacement_rederives_witness_and_add_accepts_verify_witness(self):
         note = self.amend(

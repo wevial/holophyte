@@ -10,7 +10,7 @@ _EDIT = re.compile(
     r"(DROP)\s+C([1-9][0-9]*)(?:\s*:\s*(.*?))?|"
     r"(ADD)\s*:\s*(\S.*?))\s*$", re.IGNORECASE)
 _EDIT_COMMAND = re.compile(
-    r"^\s*(?:(?:REPLACE|DROP)\s+C(?:\b|[0-9])|ADD\s*:)", re.IGNORECASE)
+    r"^\s*(?:(?:REPLACE|DROP)\s+C[0-9]+(?=\s|:|$)|ADD\s*:)", re.IGNORECASE)
 
 
 def amendment_edits(note):
