@@ -1,7 +1,9 @@
+import { useContext, useEffect, useState } from "react";
 import { age, formatClock } from "../lib/format";
 import { baseOf, buildLine, byDaemon, hostName, SWEEP_OK, type HostRecord } from "../lib/hosts";
 import type { ContractBodies } from "./fleet";
-import { useConsolePeers } from "./scope";
+import { useToast } from "./components/Toast";
+import { PollDepsContext, useConsolePeers } from "./scope";
 
 type Record = HostRecord<ContractBodies>;
 type Tone = "live" | "need" | "bad" | "ink-3";
@@ -72,12 +74,36 @@ function daemonCard(records: Record[], now: number) {
   };
 }
 
+type Restart = { started: number; until: number; name: string };
+
 export function useHostsTab() {
   const { hosts, now, polls, polledAgo } = useConsolePeers();
-  const daemons = byDaemon(hosts).map((records) => daemonCard(records, now));
+  const deps = useContext(PollDepsContext);
+  const toast = useToast();
+  const [restarts, setRestarts] = useState<Map<string, Restart>>(() => new Map());
+  useEffect(() => {
+    const finished = [...restarts].filter(([key, restart]) => {
+      const record = hosts.find((host) => host.address === key);
+      const returned = record && !record.root_failed && record.host_status && record.host_status.daemon.started_ms > restart.started;
+      if (returned) toast(`Restarted the daemon on ${restart.name}.`);
+      return returned || now >= restart.until;
+    });
+    if (finished.length) setRestarts((previous) => {
+      const next = new Map(previous);
+      for (const [key] of finished) next.delete(key);
+      return next;
+    });
+  }, [hosts, now, restarts, toast]);
+  const onRestart = (key: string, name: string, started: number) => {
+    setRestarts((previous) => new Map(previous).set(key, { name, started, until: deps.now() + 60_000 }));
+  };
+  const daemons = byDaemon(hosts).map((records) => {
+    const card = daemonCard(records, now);
+    return { ...card, restarting: restarts.has(card.key) };
+  });
   const answering = daemons.filter((daemon) => !daemon.down).length;
   return {
-    daemons, allDown: daemons.length > 0 && answering === 0,
+    daemons, onRestart, allDown: daemons.length > 0 && answering === 0,
     summary: polls === 0 ? "asking…" : `${daemons.length} daemon${daemons.length === 1 ? "" : "s"} · ${answering || "none"} answering · polled ${age(polledAgo ?? 0)} ago`,
   };
 }
