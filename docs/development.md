@@ -926,6 +926,9 @@ rewrites `project` on the current route and is kept in session storage under
 `holophyte.next.project`, so opening `/next.html` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
 
+`console/src/next/pages/NewTicket.tsx` presents the ticket template as text
+fields and files to an editable project’s Backlog from the Tickets page.
+
 `console/src/next/runDays.ts` defines thirty local-day windows and aggregates
 each day’s runs. `console/src/next/pages/RunsHistory.tsx` renders their counts,
 work totals and five-day pager.
