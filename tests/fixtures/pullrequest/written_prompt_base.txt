@@ -57,7 +57,7 @@ Estimate: 5 min · Depends on: none
 
 * None
 
-The diff against main (`git diff main...HEAD`):
+The diff against origin/main (`git diff origin/main...HEAD`):
 
 ```diff
 diff --git a/scripted-1.txt b/scripted-1.txt

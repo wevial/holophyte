@@ -142,7 +142,7 @@ test("the card lists the run's three newest events but bookkeeping, newest first
   const park = {
     kind: "pr_open", level: "attention", ticket: "DEMO-9", ticket_url: null, title: "Link each run to its pull request", run: 9, park_kind: "pull_request", asked_ms: NOW - HOUR,
     reason: "PR open", pr_url: "https://github.com/example/demo/pull/42",
-    pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run" },
+    pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run", state: "ready" },
   } as Item;
   await mount(daemon({ items: [park], details: { 9: { ...detail, events: [] } } }));
   expect(card().querySelector("[data-pr-line]")?.textContent).toBe("PR #42 · checks green · approved · no open threads");
@@ -240,7 +240,7 @@ const stale = {
 const park = {
   kind: "pr_open", level: "attention", ticket: "DEMO-9", ticket_url: null, title: "Link each run to its pull request", run: 9,
   park_kind: "pull_request", asked_ms: NOW - HOUR, reason: "PR open", pr_url: "https://github.com/example/demo/pull/42",
-  pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run" },
+  pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run", state: "ready" },
 } as Item;
 const paused = {
   kind: "paused", level: "attention", ticket: "DEMO-6", ticket_url: null, title: "Hold the migration", note: "hold", run: 6, asked_ms: NOW - HOUR, pr_url: null,
@@ -411,7 +411,7 @@ const prUrl = "https://github.com/example/repo/pull/644";
 const parkedQuestion = `PR open: ${prUrl}\nchecks failure on the head commit; Fix round made no commit; operator instruction needed:\nI couldn't reproduce the \`unit\` failure.\n\n- **The CI log:** unavailable\n- **The full suite:** passed`;
 
 const fixDeclined = (extra: object = {}) => blocked("DEMO-4", 4, HOUR, {
-  park_kind: "fix_declined", pr: { number: 644, checks: "failure", review: null, threads: null, open_threads: null, title: null }, pr_url: prUrl, question: parkedQuestion, ...extra,
+  park_kind: "fix_declined", pr: { number: 644, checks: "failure", review: null, threads: null, open_threads: null, title: null, state: "ready" }, pr_url: prUrl, question: parkedQuestion, ...extra,
 });
 
 test("a declined check fix leads with structured facts and renders the ask without machine prefixes", async () => {

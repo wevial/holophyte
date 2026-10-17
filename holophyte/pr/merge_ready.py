@@ -206,7 +206,7 @@ def _ruleset_bypass(project, pull, ruleset, asked):
         raise NoBypass(f"ruleset {name} answers current_user_can_bypass"
                        f" {bypass if isinstance(bypass, str) else 'nothing'}")
     return (f"ruleset {name} asks {' and '.join(asked)},"
-            f" current_user_can_bypass {bypass}")
+            f" current_user_can_bypass {bypass}"), bypass
 
 
 def _review_bypass(project, park):
@@ -222,8 +222,11 @@ def _review_bypass(project, park):
                     for ruleset, asked in _review_rulesets(rules).items()]
     except NoBypass as why:
         return f"{required}; no bypass: {why}", "review_not_approved"
+    detail = "; ".join(sentence for sentence, _ in bypasses)
+    if all(mode == "exempt" for _, mode in bypasses):
+        return f"{required}; the host's GitHub user is exempt: {detail}", None
     return (f"{required}; the host's GitHub user may bypass it: "
-            + "; ".join(bypasses)), REVIEW_BYPASSABLE
+            + detail), REVIEW_BYPASSABLE
 
 
 def _github_facts(project, park, reads):
@@ -238,7 +241,7 @@ def _github_facts(project, park, reads):
     if not _review_required(reads) or not others_hold:
         return facts
     detail, reason = _review_bypass(project, park)
-    return [(name, False, detail, reason) if name == REVIEW_FACT
+    return [(name, reason is None, detail, reason) if name == REVIEW_FACT
             else (name, *rest) for name, *rest in facts]
 
 
