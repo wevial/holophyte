@@ -31,6 +31,12 @@ function readDraft(project: string) {
       const value = fieldOf(form, field);
       values[field] = Array.isArray(value) ? value.join("\n") : field === "notes" ? value.replace(/^- /gm, "") : value;
     }
+    const prose = form.sections.find(section => section.name === "What / Why / How")?.text ?? "";
+    for (const field of ["what", "why", "how"] as const) {
+      const label = field[0].toUpperCase() + field.slice(1);
+      const match = new RegExp(`^\\*\\*${label}:\\*\\*[ \\t]*([\\s\\S]*?)(?=^\\*\\*(?:What|Why|How|UI change|Blast radius):\\*\\*|$(?![\\s\\S]))`, "m").exec(prose);
+      if (match) values[field] = match[1].trimEnd();
+    }
     return { values, priority: draft.priority as number | null, savedAt: draft.savedAt as number };
   } catch {
     return null;

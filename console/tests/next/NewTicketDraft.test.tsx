@@ -105,6 +105,26 @@ test("Save draft restores every field, P1 and the saved time only in its project
   expect(screen.getByRole("button", { name: "Start over" })).toBeTruthy();
 });
 
+test("Save draft preserves paragraphs and Markdown in What, Why and How across repeated saves", async () => {
+  const prose = {
+    What: "Show the notes.\n\nPreserve their order.",
+    Why: "Keep the operator informed.\n\n- Show progress\n- Keep context",
+    How: "Read the notes.\n\n1. Fetch the record\n2. Render each note\n\n```text\nKeep this block.\n```",
+  };
+  await mount();
+  for (const [name, value] of Object.entries(prose)) {
+    await act(async () => void fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } }));
+  }
+  for (let save = 0; save < 2; save += 1) {
+    await press("Save draft");
+    cleanup();
+    await mount();
+    for (const [name, value] of Object.entries(prose)) {
+      expect((screen.getByRole("textbox", { name }) as HTMLTextAreaElement).value).toBe(value);
+    }
+  }
+});
+
 test("Start over clears a restored draft and leaves a blank form on the next opening", async () => {
   await mount();
   await fill();
