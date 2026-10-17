@@ -1,4 +1,5 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { zoneName } from "../../lib/format";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { RunTable } from "../components/RunTable";
 import { stateGroup, useRunHistory, type RunFilter, type RunsSearch } from "../history";
 import { storeScope } from "../projects";
@@ -14,11 +15,6 @@ const FILTERS: { id: RunFilter; label: string }[] = [
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
-}
-
-function zoneName(now: number): string {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(now);
-  return parts.find((part) => part.type === "timeZoneName")?.value ?? "";
 }
 
 export function Runs() {
@@ -84,6 +80,7 @@ export function Runs() {
       <RunTable rows={shown} now={now} empty={`No ${word}runs in ${project ?? "any project"} today or yesterday.`} />
       <footer className="flex flex-wrap gap-x-[18px] gap-y-1.5 font-mono text-[12px] leading-[1.4] text-ink-3">
         <span>Active runs also show on the Overview. Open a run for its stage, log and agent.</span>
+        <Link to="/runs/history" search={{ project }} className="text-act underline underline-offset-2">Older days</Link>
         <span>times {zoneName(now)}</span>
       </footer>
     </section>
