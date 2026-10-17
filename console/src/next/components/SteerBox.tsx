@@ -48,7 +48,7 @@ export function SteerBox({ ticketKey, base, liveRun, onClose }: { ticketKey: str
         onChange={(event) => setNote(event.target.value)}
         rows={3}
         placeholder={hint ? `Tell run ${liveRun} what to change…` : "Change the ticket: a criterion, a constraint, the scope…"}
-        className="mt-3 block w-full max-w-[760px] resize-y border border-rule bg-paper px-3 py-2.5 font-plex text-[14px] leading-[1.5] text-ink placeholder:text-ink-3"
+        className="mt-3 block w-full max-w-[760px] resize-y border border-rule bg-paper px-3 py-2.5 font-read text-[14px] leading-[1.5] text-ink placeholder:text-ink-3"
       />
       <p id={ids.line} className="m-0 mt-2 font-mono text-[12px] leading-[1.4] text-ink-3">
         {hint ? `Run ${liveRun} reads it on its next turn. The ticket stays as written.` : "Saved with the ticket. Every run from now on reads it."}

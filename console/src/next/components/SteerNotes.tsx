@@ -36,7 +36,7 @@ export function SteerNotes({ steers, now }: { steers: TicketSteer[]; now: number
                 <div data-steer-head className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-2">
                   {headOf(steer, now)}
                 </div>
-                <p className="m-0 mt-2 max-w-[70ch] whitespace-pre-wrap font-plex text-[14px] leading-[1.5] text-ink">{steer.note}</p>
+                <p className="m-0 mt-2 max-w-[75ch] whitespace-pre-wrap font-read text-[15px] leading-[1.5] text-ink">{steer.note}</p>
                 <div data-steer-fate className={`mt-1.5 font-mono text-[12px] leading-[1.4] ${fate.read ? "text-live" : "text-ink-3"}`}>
                   {fate.text}
                 </div>

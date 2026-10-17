@@ -43,7 +43,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
       <span data-cell="key" className="text-ink-2 tabular-nums">{card.key}</span>
       <span
         data-cell="title"
-        className={`min-w-0 truncate font-plex text-[14px] font-medium leading-[1.4] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet ? "text-ink-2" : "text-ink"}`}
+        className={`min-w-0 truncate font-read text-[15px] font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet ? "text-ink-2" : "text-ink"}`}
       >
         {card.title}
       </span>

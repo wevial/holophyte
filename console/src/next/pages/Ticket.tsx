@@ -112,7 +112,7 @@ export function TicketPage() {
       <div className="mt-3.5 grid border border-rule bg-paper min-[860px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 border-b border-rule px-8 pb-8 pt-[22px] max-[720px]:px-5 min-[860px]:border-b-0 min-[860px]:border-r">
           <div className={SECTION_LABEL}>Summary</div>
-          <p className="m-0 mt-3 max-w-[70ch] font-sans text-[14px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
+          <p className="m-0 mt-3 max-w-[75ch] font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
           <div className="mt-[26px]">
             <Criteria
               rows={criteriaRows(ticket.acceptance_criteria, typeof judged === "string" ? [] : judged, ticket.run != null)}

@@ -62,7 +62,7 @@ function Contract({ card }: { card: TicketCard }) {
   return (
     <>
       <div className={`${SECTION_LABEL} mt-5`}>Summary</div>
-      <p className="m-0 mt-2.5 line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
+      <p className="m-0 mt-2.5 max-w-[75ch] line-clamp-4 font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
       <div className="mt-[18px]">
         <Criteria rows={criteriaRows(ticket.acceptance_criteria, run.data?.criteria ?? [], runId != null)} />
       </div>
@@ -92,7 +92,7 @@ function Ask({ card, now }: { card: TicketCard; now: number }) {
   return (
     <div data-peek-ask className="mt-4 border border-rule-2 bg-need-wash px-3.5 pb-3.5 pt-3 shadow-[inset_2px_0_0_var(--need)]">
       <div className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-need">Needs you</div>
-      <p className="m-0 mb-3 mt-1.5 break-words font-sans text-[14px] leading-[1.45] text-ink">{description.body}</p>
+      <p className="m-0 mb-3 mt-1.5 max-w-[75ch] break-words font-read text-[15px] leading-[1.5] text-ink">{description.body}</p>
       <CardActions
         key={`${card.id} ${ask}`}
         entry={card.need}
