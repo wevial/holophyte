@@ -3,6 +3,9 @@ import { applyTheme, readTheme, writeTheme, type Theme } from "../lib/theme";
 
 export type ReadingFont = "sans" | "serif" | "hyperlegible";
 
+export type Density = "comfortable" | "compact";
+
+const DENSITY_KEY = "holophyte.next.density";
 const FONT_KEY = "holophyte.next.font";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -29,6 +32,28 @@ export function applyFont(font: ReadingFont, root: HTMLElement = document.docume
   else root.setAttribute("data-font", font);
 }
 
+export function readDensity(fallback: Density = "comfortable"): Density {
+  try {
+    return localStorage.getItem(DENSITY_KEY) === "compact" ? "compact" : "comfortable";
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeDensity(density: Density): void {
+  try {
+    if (density === "comfortable") localStorage.removeItem(DENSITY_KEY);
+    else localStorage.setItem(DENSITY_KEY, density);
+  } catch {
+    return;
+  }
+}
+
+export function applyDensity(density: Density, root: HTMLElement = document.documentElement): void {
+  if (density === "comfortable") root.removeAttribute("data-density");
+  else root.setAttribute("data-density", density);
+}
+
 function appearanceStore<T>(read: (fallback?: T) => T, write: (value: T) => void, apply: (value: T) => void) {
   const listeners = new Set<() => void>();
   let value: T;
@@ -51,6 +76,7 @@ function appearanceStore<T>(read: (fallback?: T) => T, write: (value: T) => void
 }
 
 const themeStore = appearanceStore(readTheme, writeTheme, applyTheme);
+const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 
 function systemDark(): boolean {
@@ -71,4 +97,8 @@ export function useTheme() {
 
 export function useReadingFont() {
   return { font: useSyncExternalStore(fontStore.subscribe, fontStore.getSnapshot), setFont: fontStore.set };
+}
+
+export function useDensity() {
+  return { density: useSyncExternalStore(densityStore.subscribe, densityStore.getSnapshot), setDensity: densityStore.set };
 }

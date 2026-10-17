@@ -20,6 +20,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
   const quiet = column === "backlog" || column === "done";
   return (
     <Link
+      data-row
       id={cardElementId(card)}
       to="/tickets/$project/$key"
       params={{ project: card.project, key: card.key }}
