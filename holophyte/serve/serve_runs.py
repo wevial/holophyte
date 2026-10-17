@@ -85,10 +85,9 @@ def parse_since(query):
 
 
 def parse_until(query):
-    values = parse_qs(query, keep_blank_values=True).get("until")
-    if values is None:
+    text = parse_filter(query, "until")
+    if text is None:
         return None
-    text = values[-1]
     if not INTEGER.fullmatch(text):
         raise ValueError(f"until must be an integer of epoch milliseconds,"
                          f" got {text!r}")
