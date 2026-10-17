@@ -7,7 +7,9 @@ import store.board
 import store.steer_notes
 import store.tickets
 from holophyte.babysit.maintainer_notes import PREFIX, carry_amendments
+from holophyte.board.projection import mirror_task
 from holophyte.review.criterion_ids import numbered
+from provider import parse_body
 from tests.test_ticket_criteria_rows import ticket_body
 
 FILED = ["the list shows every entry", "the list is sorted by name",
@@ -127,3 +129,22 @@ class SteerCriteriaTests(unittest.TestCase):
         store.release(self.conn, run, "failed", "retry")
         store.steer_notes.withdraw(self.conn, self.ticket, "restore the contract")
         self.assertEqual(numbered(self.conn, run, revised), expected)
+
+    def test_unchanged_board_refresh_preserves_amendments_through_claim(self):
+        self.amend("REPLACE C2: the list is sorted by age\n"
+                   "DROP C3: covered by C2\n"
+                   "ADD: the empty list shows a placeholder line")
+        rows = self.conn.execute("SELECT * FROM ticketCriteria").fetchall()
+        task = parse_body(self.key, ticket_body(FILED))
+        mirror_task(self.conn, self.project_id, task)
+        run = self.claim()
+        mirror_task(self.conn, self.project_id, task)
+        self.assertEqual(numbered(self.conn, run, FILED), [
+            (1, FILED[0]), (2, "the list is sorted by age"),
+            (4, "the empty list shows a placeholder line")])
+        self.assertEqual(self.conn.execute("SELECT * FROM ticketCriteria").fetchall(),
+                         rows)
+        rendered = carry_amendments(self.conn, run, "Filed ticket body")
+        self.assertIn("**C2** the list is sorted by age", rendered)
+        self.assertIn("**C4** the empty list shows a placeholder line", rendered)
+        self.assertRegex(rendered, r"C3[^\n]*[Dd]ropped[^\n]*covered by C2")
