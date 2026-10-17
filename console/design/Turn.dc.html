@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Holophyte · Turn transcript</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#05070f}
+a{color:inherit}a:hover{color:inherit}
+.t-night{color-scheme:dark;--canvas:#05070f;--paper:#0b1020;--paper-2:#11182c;--ink:#e9ecf6;--ink-2:#b7bdd3;--ink-3:#8a92ad;--rule:#273050;--rule-2:#1a2140;--act:#f5a3c7;--act-ink:#1b0d16;--act-wash:rgba(245,163,199,.10);--need:#f5a3c7;--need-wash:rgba(245,163,199,.055);--live:#86d993;--live-wash:rgba(134,217,147,.10);--ask:#f0cf62;--wait:#aaa7ec;--bad:#ff7b72;--bad-ink:#1b0d16;--bad-wash:rgba(255,123,114,.09);--done:#7b84a1;--hit:rgba(240,207,98,.28)}
+.t-dawn{color-scheme:light;--canvas:#eceaf3;--paper:#fbfafd;--paper-2:#f3f1f8;--ink:#171a2c;--ink-2:#454b66;--ink-3:#5f6580;--rule:#d3d0e0;--rule-2:#e5e3ee;--act:#b02f6b;--act-ink:#ffffff;--act-wash:rgba(176,47,107,.08);--need:#b02f6b;--need-wash:rgba(176,47,107,.045);--live:#1f7a35;--live-wash:rgba(31,122,53,.08);--ask:#8a6500;--wait:#5653a6;--bad:#c0321f;--bad-ink:#ffffff;--bad-wash:rgba(192,50,31,.07);--done:#8b90a8;--hit:rgba(238,227,138,.75)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.label{display:flex;align-items:center;gap:10px;color:var(--ink-3);font:600 11px/1 'Archivo','Helvetica Neue',sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.label::after{content:"";flex:1;border-top:1px solid var(--rule-2)}
+.ico{display:inline-block;width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;isolation:isolate;box-sizing:border-box;min-height:44px;padding:0 16px 0 14px;border:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-decoration:none;background:transparent;color:var(--b,var(--act));box-shadow:inset 0 0 0 1px var(--b,var(--act));font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.04em;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);transition:color .15s cubic-bezier(.2,.7,.2,1)}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--b,var(--act));transform:scaleX(0);transform-origin:left center;transition:transform .2s cubic-bezier(.2,.7,.2,1)}
+.btn::after{content:"";position:absolute;right:0;top:0;width:9px;height:9px;z-index:1;background:linear-gradient(to bottom left,transparent calc(50% - .7px),var(--b,var(--act)) calc(50% - .7px),var(--b,var(--act)) calc(50% + .7px),transparent calc(50% + .7px))}
+.btn.quiet{--b:var(--ink-3);--bi:var(--paper);color:var(--ink)}
+.btn.danger{--b:var(--bad);--bi:var(--bad-ink)}
+.btn:hover,.btn:focus-visible{color:var(--bi,var(--act-ink))}
+.btn:hover::before,.btn:focus-visible::before{transform:scaleX(1)}
+.btn:focus-visible{outline:none}
+.btn.danger:not(.fill){color:var(--bad)}.btn.danger:not(.fill):hover,.btn.danger:not(.fill):focus-visible{color:var(--bad-ink)}
+.btn[aria-disabled="true"]{pointer-events:none;opacity:.5}
+.link{background:none;border:0;border-bottom:1px solid var(--rule);padding:0 0 2px;cursor:pointer;font:500 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);text-decoration:none}
+.link:hover{color:var(--ink);border-bottom-color:var(--ink)}
+:focus-visible{outline:2px solid var(--act);outline-offset:2px}
+.nav-a:hover{color:var(--ink)!important}
+.shell{--pg-t:20px;--pg-x:24px;--pg-b:32px;--hd-t:12px;--hd-b:12px;--sec:14px;height:100vh;overflow:hidden}
+.pg-title{margin:0;font:600 20px/1.25 'Archivo','Helvetica Neue',sans-serif;letter-spacing:-.005em;color:var(--ink)}
+.shell > aside{height:100vh;box-sizing:border-box}.shell > aside nav{flex:0 1 auto;min-height:0;overflow-y:auto}
+.shell > .pad-main{height:100vh;overflow-y:auto;scroll-behavior:smooth}
+.pg-w{position:relative}
+.pg-t{position:absolute;right:4px;top:6px;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;cursor:pointer;color:var(--ink-3)}
+.pg-a{position:relative;display:flex;align-items:center;gap:12px;min-height:44px;padding:0 10px 0 12px;font:500 12px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;text-decoration:none}
+.pg-a .badge{margin-left:auto;color:var(--need);letter-spacing:0;font-weight:600}
+.pg-sub{margin:2px 0 6px 20px;padding:0 0 4px;border-left:1px solid var(--rule)}
+.sub-h{padding:10px 8px 4px 12px;font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.sub-l{list-style:none;margin:0;padding:0}
+.vw-a{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 8px 0 12px;text-decoration:none;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif;color:var(--ink-2)}
+.vw-n{margin-left:auto;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;min-height:44px;padding:7px 8px 8px 12px;box-sizing:border-box;text-decoration:none;color:var(--ink-2)}
+.st-k,.st-p{font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.st-t{grid-column:1 / -1;font:400 13px/1.3 'IBM Plex Sans',system-ui,sans-serif}
+.nav-sep{height:1px;margin:8px 4px;background:var(--rule)}
+.sw{position:relative;margin:12px 0 4px}
+.sw-b{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 10px 0 12px;border:1px solid var(--rule);background:var(--paper);cursor:pointer;text-align:left;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-b .tag,.sw-o .tag{color:var(--wait);font-size:11px;font-weight:400}
+.sw-need{margin-left:auto;color:var(--need);font-weight:600}
+.sw-c{margin-left:6px;color:var(--ink-3)}.sw-need[hidden]+.sw-c{margin-left:auto}
+.sw-back{position:fixed;inset:0;z-index:55;border:0;padding:0;background:transparent;cursor:default}
+.sw-pop{position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:264px;box-sizing:border-box;padding:8px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.sw-q{display:block;box-sizing:border-box;width:100%;min-height:36px;padding:0 10px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.sw-q:focus{outline:2px solid var(--act);outline-offset:-1px}.sw-q::placeholder{color:var(--ink-2)}
+.sw-l{list-style:none;margin:8px 0 0;padding:0}
+.sw-o{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 8px;cursor:pointer;font:500 12.5px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.sw-o:hover{background:var(--paper-2)!important}.sw-o[aria-selected="true"]{color:var(--act)}
+.sw-cnt{margin-left:auto;display:inline-flex;gap:10px;font-weight:400;font-size:12px;color:var(--ink-3)}.sw-cnt b{color:var(--need);font-weight:600}
+.sw-none{margin:0;padding:10px 8px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.side-b{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);cursor:pointer;text-decoration:none;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.side-b:hover{color:var(--ink);border-color:var(--ink-3)}
+.think{display:inline-flex;gap:4px}.think i{display:inline-block;width:7px;height:7px;background:var(--rule);animation:think 1.2s steps(1,end) infinite}
+.think i:nth-child(2){animation-delay:.2s}.think i:nth-child(3){animation-delay:.4s}
+@keyframes think{0%,100%{background:var(--rule)}33%{background:var(--ink-3)}}
+.fault{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 14px;padding:12px 14px;background:var(--need-wash);box-shadow:inset 2px 0 0 var(--need)}
+[hidden]{display:none!important}
+.sk{display:block;height:10px;background:var(--rule-2)}
+summary{list-style:none;cursor:pointer}summary::-webkit-details-marker{display:none}
+.crumb{font:400 12px/1 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+.crumb a{color:var(--ink-3)}
+.pg{display:grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid var(--rule);background:var(--paper);color:var(--ink-2);cursor:pointer;text-decoration:none}
+.pg:hover{color:var(--ink);border-color:var(--ink-3)}.pg[aria-disabled="true"]{opacity:.4;pointer-events:none}
+.stats{display:flex;flex-wrap:wrap;gap:0;margin-top:16px;border:1px solid var(--rule);background:var(--paper)}
+.stat{flex:1 1 150px;min-width:0;padding:12px 16px;border-right:1px solid var(--rule-2)}
+.stat:last-child{border-right:0}
+.stat dt{font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.stat dd{margin:8px 0 0;font:500 15px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink)}
+.stat dd span{display:block;margin-top:3px;font-size:12px;font-weight:400;color:var(--ink-3)}
+.turns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.turn{display:inline-flex;align-items:center;gap:10px;min-height:44px;padding:0 14px;box-sizing:border-box;border:1px solid var(--rule);background:var(--paper);text-decoration:none;font:400 12.5px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.turn:hover{border-color:var(--ink-3);color:var(--ink)}
+.turn[aria-current="page"]{border-color:var(--act);background:var(--act-wash);color:var(--act)}
+.turn b{font-weight:400;color:var(--ink-3)}
+.bar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:20px;padding:10px 12px;background:var(--paper);border:1px solid var(--rule);box-shadow:0 8px 20px rgba(0,0,0,.18)}
+.q{position:relative;flex:1 1 260px;min-width:0}
+.q input{display:block;box-sizing:border-box;width:100%;min-height:44px;padding:0 12px 0 36px;border:1px solid var(--ink-3);background:var(--paper-2);color:var(--ink);font:400 13px/1 'IBM Plex Mono',ui-monospace,monospace}
+.q input:focus{outline:2px solid var(--act);outline-offset:-1px}.q input::placeholder{color:var(--ink-3)}
+.q svg{position:absolute;left:12px;top:50%;margin-top:-7px;color:var(--ink-3)}
+.qn{font:400 12px/1.3 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);white-space:nowrap}
+.sg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--ink-3)}
+.seg{min-height:44px;padding:0 12px;border:0;background:transparent;cursor:pointer;font:500 11px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.seg:hover{color:var(--ink)}
+.seg[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.seg b{margin-left:6px;font-weight:500;letter-spacing:0}
+.log{list-style:none;margin:16px 0 0;padding:0;background:var(--paper);border:1px solid var(--rule)}
+.en{display:grid;grid-template-columns:64px minmax(0,1fr);gap:4px 14px;padding:14px 20px 14px 16px;border-bottom:1px solid var(--rule-2);scroll-margin-top:84px}
+.en:last-child{border-bottom:0}
+.en.bad{background:var(--bad-wash);box-shadow:inset 2px 0 0 var(--bad)}
+.en.dim{color:var(--ink-3)}
+.en-t{padding-top:2px;font:400 12px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.en-b{min-width:0}
+.en-h{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font:500 11px/1.3 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}
+.en-h .m{letter-spacing:0;text-transform:none;font-weight:400;color:var(--ink-3)}
+.say{margin:6px 0 0;max-width:72ch;font-size:15px;line-height:1.55;color:var(--ink);white-space:pre-wrap}
+.tl{margin-top:4px}
+.tl-s{display:grid;grid-template-columns:12px 52px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:44px;padding:0 4px;font:400 12.5px/1.4 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2)}
+.tl-s:hover{color:var(--ink)}
+.tl-s::before{content:"";width:0;height:0;border-left:6px solid var(--ink-3);border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s}
+details[open] > .tl-s::before{transform:rotate(90deg)}
+.tl-n{font-weight:600;color:var(--ink)}
+.tl-c{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-r{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--ink-3)}
+.io{display:grid;gap:6px;margin:6px 0 4px 26px}
+.io-l{font:500 10.5px/1 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.io pre{margin:0 0 8px;padding:10px 12px;max-height:280px;overflow:auto;border:1px solid var(--rule-2);background:var(--canvas);font:400 12.5px/1.6 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.io pre.bad{border-color:var(--bad);color:var(--ink)}
+mark{background:var(--hit);color:inherit;box-shadow:0 0 0 1px var(--ask)}
+.none{margin:16px 0 0;padding:18px 16px;background:var(--paper);border:1px solid var(--rule);font:400 13px/1.5 'IBM Plex Mono',ui-monospace,monospace;color:var(--ink-3)}
+@media (max-width:720px){.shell{height:auto;overflow:visible}.shell > aside,.shell > .pad-main{height:auto;overflow:visible}.pad-main{padding:16px 8px 32px!important}.pad-x{padding-left:16px!important;padding-right:16px!important}.en{grid-template-columns:minmax(0,1fr);padding:12px}.tl-s{grid-template-columns:12px minmax(0,1fr) auto}.tl-n{display:none}.io{margin-left:0}.bar{position:static}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}.shell > .pad-main{scroll-behavior:auto}}
+</style>
+</helmet>
+<div class="{{themeClass}} shell" style="min-height: 100vh; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: stretch; background-color: var(--canvas); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 15px; line-height: 1.5">
+
+<aside aria-label="Console" style="flex: 1 1 232px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; background: var(--paper-2); border-right: 1px solid var(--rule); padding: 0 8px 16px">
+<div style="display: flex; align-items: center; min-height: 60px; margin: 0 -8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--rule)">
+<a href="Main.dc.html" aria-label="Holophyte console, overview" style="display: flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink)">
+<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="flex: none"><g style="fill: var(--act); stroke: var(--paper-2); stroke-width: 1.1; stroke-linejoin: round"><path d="M12 17 C7.4 17.6 3.6 15.6 2 12.2 C5.6 11.8 9.4 13.6 12 17Z"></path><path d="M12 17 C16.6 17.6 20.4 15.6 22 12.2 C18.4 11.8 14.6 13.6 12 17Z"></path><path d="M12 17 C8.2 16.6 5.6 13 6 8 C9 9.2 11.2 12.6 12 17Z"></path><path d="M12 17 C15.8 16.6 18.4 13 18 8 C15 9.2 12.8 12.6 12 17Z"></path><path d="M12 4 C15.2 7.2 15.2 13 12 17 C8.8 13 8.8 7.2 12 4Z"></path></g><path d="M6 20.2 H18" style="fill: none; stroke: var(--ink-3); stroke-width: 1.3; stroke-linecap: round"></path></svg>
+<b style="font: 600 15px/1 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.01em">holophyte</b>
+</a>
+</div>
+<div class="sw" onKeyDown="{{sw.key}}">
+<button type="button" class="nav-a sw-b" onClick="{{sw.toggle}}" aria-haspopup="listbox" aria-expanded="{{sw.open}}" aria-label="{{sw.aria}}" title="{{sw.title}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{sw.iconColor}}"><path d="{{sw.icon}}"></path></svg><span>{{sw.name}}</span><span class="tag" hidden="{{sw.noTag}}">held</span><span class="sw-need" hidden="{{sw.noNeed}}">{{sw.need}}</span><svg class="ico sw-c" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px"><path d="M4.5 6.5 8 10l3.5-3.5"></path></svg></button>
+<sc-if value="{{sw.open}}" hint-placeholder-val="{{ false }}">
+<button type="button" class="sw-back" tabindex="-1" aria-hidden="true" onClick="{{sw.close}}"></button>
+<div class="sw-pop" role="dialog" aria-label="Switch project">
+<label class="sr" for="swq">Find a project</label>
+<input id="swq" class="sw-q" type="text" value="{{sw.q}}" onChange="{{sw.onQ}}" placeholder="Find a project" autocomplete="off" autoFocus="{{ true }}" role="combobox" aria-expanded="true" aria-controls="swl" aria-activedescendant="{{sw.activeId}}">
+<ul id="swl" role="listbox" aria-label="Projects" class="sw-l">
+<sc-for list="{{sw.items}}" as="it" hint-placeholder-count="4"><li id="{{it.id}}" role="option" aria-selected="{{it.sel}}" class="sw-o" onClick="{{it.pick}}" style="background: {{it.bg}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: {{it.iconColor}}"><path d="{{it.icon}}"></path></svg><span>{{it.name}}</span><span class="tag" hidden="{{it.noTag}}">held</span><span class="sw-cnt"><b hidden="{{it.noNeed}}">{{it.need}}</b><span>{{it.runs}}</span></span></li></sc-for>
+</ul>
+<p class="sw-none" hidden="{{sw.hasItems}}">No project matches.</p>
+</div>
+</sc-if>
+</div>
+<nav aria-label="Pages" style="display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px">
+<a href="Main.dc.html" class="nav-a pg-a" aria-current="{{nav.overview.cur}}" aria-label="{{nav.overview.aria}}" style="color: {{nav.overview.color}}; background: {{nav.overview.bg}}; box-shadow: {{nav.overview.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 9.5h3.5l1 2h3l1-2H14"></path><path d="M3.6 3h8.8L14 9.5V13H2V9.5z"></path></svg><span>Overview</span><span class="badge" hidden="{{nav.overview.noBadge}}">{{nav.overview.badge}}</span></a>
+<a href="Runs.dc.html" class="nav-a pg-a" aria-current="{{nav.runs.cur}}" aria-label="{{nav.runs.aria}}" style="color: {{nav.runs.color}}; background: {{nav.runs.bg}}; box-shadow: {{nav.runs.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0z"></path><path d="M6.6 5.4v5.2L10.8 8z"></path></svg><span>Runs</span></a>
+<div class="pg-w"><a href="Issues.dc.html" class="nav-a pg-a" aria-current="{{nav.tickets.cur}}" aria-label="{{nav.tickets.aria}}" style="color: {{nav.tickets.color}}; background: {{nav.tickets.bg}}; box-shadow: {{nav.tickets.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 1.5h6l3 3v10h-9z"></path><path d="M9.5 1.5v3h3M5.8 8h4.4M5.8 10.8h4.4"></path></svg><span>Tickets</span></a><button type="button" class="nav-a pg-t" aria-expanded="{{nav.subOpen}}" aria-controls="nav-sub" aria-label="{{nav.subAria}}" onClick="{{nav.toggleSub}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 12px; height: 12px; transform: {{nav.subRot}}"><path d="M6 4l4 4-4 4"></path></svg></button>
+<sc-if value="{{nav.subShow}}" hint-placeholder-val="{{ true }}"><div id="nav-sub" class="pg-sub">
+<div class="sub-h" id="nv-views">Views</div>
+<ul class="sub-l" aria-labelledby="nv-views"><sc-for list="{{nav.views}}" as="v" hint-placeholder-count="3"><li><a href="Issues.dc.html" class="nav-a vw-a" aria-label="{{v.aria}}"><span>{{v.label}}</span><span class="vw-n">{{v.n}}</span></a></li></sc-for></ul>
+<div class="sub-h" id="nv-stories">Stories</div>
+<ul class="sub-l" aria-labelledby="nv-stories"><sc-for list="{{nav.stories}}" as="st" hint-placeholder-count="3"><li><a href="Story.dc.html" class="nav-a st-a" aria-label="{{st.aria}}"><span class="st-k">{{st.key}}</span><span class="st-p">{{st.prog}}</span><span class="st-t">{{st.title}}</span></a></li></sc-for></ul>
+</div></sc-if></div>
+<a href="Findings.dc.html" class="nav-a pg-a" aria-current="{{nav.findings.cur}}" aria-label="{{nav.findings.aria}}" style="color: {{nav.findings.color}}; background: {{nav.findings.bg}}; box-shadow: {{nav.findings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M3.5 14.5V2M3.5 2.5h8.5l-2 3 2 3H3.5"></path></svg><span>Findings</span><span class="badge" hidden="{{nav.findings.noBadge}}">{{nav.findings.badge}}</span></a>
+<div class="nav-sep" aria-hidden="true"></div>
+<a href="Hosts.dc.html" class="nav-a pg-a" aria-current="{{nav.hosts.cur}}" aria-label="{{nav.hosts.aria}}" style="color: {{nav.hosts.color}}; background: {{nav.hosts.bg}}; box-shadow: {{nav.hosts.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2.5 2.5h11v4.5h-11zM2.5 9h11v4.5h-11z"></path><path d="M5 4.75h.1M5 11.25h.1"></path></svg><span>Hosts</span><span class="badge" hidden="{{nav.hosts.noBadge}}">{{nav.hosts.badge}}</span></a>
+<a href="Settings.dc.html" class="nav-a pg-a" aria-current="{{nav.settings.cur}}" aria-label="{{nav.settings.aria}}" style="color: {{nav.settings.color}}; background: {{nav.settings.bg}}; box-shadow: {{nav.settings.sh}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="width: 16px; height: 16px"><path d="M2 4.5h12M2 11.5h12"></path><path d="M5.5 2.8v3.4M10.5 9.8v3.4"></path></svg><span>Settings</span></a>
+</nav>
+<div style="margin: auto -8px 0; padding: 14px 8px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; align-items: flex-start; gap: 10px">
+<div style="display: flex; align-items: center; gap: 12px; padding-left: 14px; font: 400 11px/1.3 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--live)"><path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1"></path></svg><span>writer-host · polled 4s ago</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; padding-left: 8px">
+<button type="button" class="side-b" onClick="{{toggleTheme}}" aria-label="{{themeLabel}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 1 1 6.4 3a4.4 4.4 0 0 0 6.6 6.6z"></path></svg>{{themeWord}}</button>
+<a class="side-b" href="#classic">Classic console</a>
+</div>
+</div>
+</aside>
+
+<div class="pad-main" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: var(--pg-t) var(--pg-x) var(--pg-b)">
+<main style="max-width: 1180px; margin: 0 auto">
+<section aria-labelledby="tH">
+<div class="pad-x" style="padding: var(--hd-t) 0 var(--hd-b); border-bottom: 1px solid var(--rule)">
+<div class="crumb"><a href="Runs.dc.html">Runs</a> / <a href="Ticket.dc.html">HOLO-231</a> / <a href="Run.dc.html">run 231</a> / turn 2</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 24px; margin-top: 8px">
+<div style="flex: 1 1 420px; min-width: 0"><h1 id="tH" class="pg-title">Implementer · turn 2</h1><p style="margin: 6px 0 0; color: var(--ink-2)">The sweep frees a silent lease · back from review round 1 to fix P1</p></div>
+<div style="display: flex; gap: 8px"><a class="pg" href="Run.dc.html" aria-label="Previous turn: reviewer, round 1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4 6 8l4 4"></path></svg></a><a class="pg" href="Run.dc.html" aria-label="Next turn: none yet" aria-disabled="true" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg></a><a class="btn quiet" href="Run.dc.html">Back to the run</a></div>
+</div>
+<dl class="stats">
+<div class="stat"><dt>Seat</dt><dd>implementer<span>worker 1 · writer-host</span></dd></div>
+<div class="stat"><dt>Model</dt><dd>claude opus<span>route probed ok at 16:45</span></dd></div>
+<div class="stat"><dt>Duration</dt><dd>3m 05s<span>16:45:12 – 16:48:17 PT</span></dd></div>
+<div class="stat"><dt>Tokens</dt><dd>61.4k<span>52.1k in · 9.3k out · 38.0k cached</span></dd></div>
+<div class="stat"><dt>Cost</dt><dd>$0.92<span>run so far $3.10</span></dd></div>
+</dl>
+<nav class="turns" aria-label="Turns in run 231">
+<a class="turn" href="Run.dc.html">implementer · turn 1 <b>6m 12s</b></a>
+<a class="turn" href="Run.dc.html">reviewer · round 1 <b>1m 40s</b></a>
+<a class="turn" href="Turn.dc.html" aria-current="page">implementer · turn 2 <b>3m 05s</b></a>
+</nav>
+</div>
+
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="display: flex; align-items: center; gap: 12px; margin-top: 20px; font: 400 13px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)"><span class="think" aria-hidden="true"><i></i><i></i><i></i></span>Fetching the transcript from writer-host · 1.4 MB…</div>
+<ul class="log" aria-hidden="true"><sc-for list="{{skel}}" as="k" hint-placeholder-count="5"><li class="en"><span class="sk" style="width: 40px"></span><div style="display: grid; gap: 8px"><span class="sk" style="width: 120px"></span><span class="sk" style="width: {{k}}"></span></div></li></sc-for></ul>
+</sc-if>
+
+<sc-if value="{{isEmpty}}" hint-placeholder-val="{{ false }}">
+<p class="none">This turn has no entries. It hit its 25m time box before the agent wrote anything, so the run moved on to verify with the turn-1 commit.</p>
+</sc-if>
+
+<sc-if value="{{isError}}" hint-placeholder-val="{{ false }}">
+<div role="status" class="fault" style="margin-top: 20px"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="margin-top: 2px; width: 16px; height: 16px; color: var(--need)"><path d="M8 2 14.5 13.5h-13z"></path><path d="M8 6.3v3.2M8 11.6v.1"></path></svg><div style="flex: 1 1 320px; min-width: 0"><div style="font-weight: 500">writer-host has no transcript for this turn.</div><div style="margin-top: 2px; font: 400 12px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-2)">transcripts are kept 30 days · the run's Progress log still has what this turn did · the stats above come from the run record</div></div><a class="btn quiet" href="Run.dc.html">Open the run</a></div>
+</sc-if>
+
+<sc-if value="{{isData}}" hint-placeholder-val="{{ true }}">
+<div class="bar" role="search" aria-label="Search and filter this turn">
+<div class="q"><label class="sr" for="tq">Search this turn</label><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.4 10.4 14 14"></path></svg><input id="tq" type="search" value="{{q}}" onChange="{{onQ}}" placeholder="Search text, commands and output" autocomplete="off"></div>
+<span class="qn" role="status">{{qNote}}</span>
+<div class="sg" role="group" aria-label="Show"><sc-for list="{{filters}}" as="f" hint-placeholder-count="4"><button type="button" class="seg" aria-pressed="{{f.on}}" onClick="{{f.pick}}">{{f.label}}<b>{{f.n}}</b></button></sc-for></div>
+<a class="btn quiet" href="{{firstErr}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--bad)"><circle cx="8" cy="8" r="6.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>Jump to first error</a>
+<button type="button" class="link" onClick="{{toggleAll}}" style="min-height: 36px">{{allLabel}}</button>
+</div>
+
+<ol class="log" aria-label="Turn 2 entries, in order" hidden="{{noRows}}">
+<sc-for list="{{rows}}" as="e" hint-placeholder-count="8">
+<li id="{{e.id}}" class="{{e.cls}}">
+<time class="en-t">{{e.t}}</time>
+<div class="en-b">
+<div class="en-h" style="color: {{e.color}}"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="{{e.icon}}"></path></svg><span>{{e.who}}</span><span class="m">{{e.meta}}</span></div>
+<sc-if value="{{e.isSay}}" hint-placeholder-val="{{ true }}"><p class="say"><sc-for list="{{e.segs}}" as="g" hint-placeholder-count="1"><sc-if value="{{g.hit}}" hint-placeholder-val="{{ false }}"><mark>{{g.t}}</mark></sc-if><sc-if value="{{g.plain}}" hint-placeholder-val="{{ true }}">{{g.t}}</sc-if></sc-for></p></sc-if>
+<sc-if value="{{e.isTool}}" hint-placeholder-val="{{ false }}"><details class="tl" open="{{e.open}}"><summary class="tl-s"><span class="tl-n">{{e.tool}}</span><span class="tl-c"><sc-for list="{{e.sumSegs}}" as="g" hint-placeholder-count="1"><sc-if value="{{g.hit}}" hint-placeholder-val="{{ false }}"><mark>{{g.t}}</mark></sc-if><sc-if value="{{g.plain}}" hint-placeholder-val="{{ true }}">{{g.t}}</sc-if></sc-for></span><span class="tl-r" style="color: {{e.stColor}}">{{e.st}}<span style="color: var(--ink-3)">{{e.dur}}</span></span></summary>
+<div class="io"><span class="io-l">Input</span><pre>{{e.input}}</pre><span class="io-l">{{e.outLabel}}</span><pre class="{{e.outCls}}"><sc-for list="{{e.outSegs}}" as="g" hint-placeholder-count="1"><sc-if value="{{g.hit}}" hint-placeholder-val="{{ false }}"><mark>{{g.t}}</mark></sc-if><sc-if value="{{g.plain}}" hint-placeholder-val="{{ true }}">{{g.t}}</sc-if></sc-for></pre></div></details></sc-if>
+</div>
+</li>
+</sc-for>
+</ol>
+<p class="none" hidden="{{hasRows}}">{{noneText}}</p>
+</sc-if>
+
+<div class="pad-x" style="display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 28px; padding: var(--sec) 0; border-top: 1px solid var(--rule); font: 400 12px/1.4 'IBM Plex Mono', ui-monospace, monospace; color: var(--ink-3)"><span>times are from the start of the turn</span><span>tool input and output fold; errors open on their own</span><span>kept 30 days</span></div>
+</section>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","dawn"],"default":"night","section":"Theme"},"view":{"editor":"enum","options":["data","empty","loading","error"],"default":"data","section":"State"},"$preview":{"width":1440,"height":2120}}'>
+const NAV_GRID = 'M2.5 2.5h4.5v4.5h-4.5zM9 2.5h4.5v4.5H9zM2.5 9h4.5v4.5h-4.5zM9 9h4.5v4.5H9z';
+const NAV_FOLDER = 'M2 4.5h4.2l1.5 1.5H14v7.5H2z';
+const NAV_SCOPES = [['', 'All projects'], ['holophyte', 'holophyte'], ['lotuspod', 'lotuspod'], ['relos', 'relos']];
+const NAV_RUNS = { '': 14, holophyte: 9, lotuspod: 3, relos: 2 };
+const NAV_NEED = { '': 5, holophyte: 4, lotuspod: 0, relos: 1 };
+const NAV_FIND = { '': 2, holophyte: 1, lotuspod: 0, relos: 1 };
+const NAV_HELD = { relos: true };
+const NAV_VIEWS = { '': [6, 2, 14], holophyte: [4, 1, 9], lotuspod: [1, 1, 3], relos: [1, 0, 2] };
+const NAV_STORIES = [['HOLO-220', 'Unattended runs recover themselves', 'holophyte', '4/7'], ['HOLO-241', 'The console tells the truth', 'holophyte', '1/7'],
+  ['HOLO-245', 'Findings become guardrails', 'holophyte', '1/5'], ['LOTUS-50', 'Two-way pages', 'lotuspod', '1/5']];
+function readScope(fallback) { try { const v = window.sessionStorage.getItem('holo.scope'); if (v !== null) return v; } catch (e) {} return fallback; }
+function saveScope(v) { try { window.sessionStorage.setItem('holo.scope', v); } catch (e) {} }
+function shellVals(cmp, screen) {
+  const s = cmp.state, theme = s.theme || cmp.props.theme || 'night', scope = s.proj || '';
+  const sw = s.sw || { open: false, q: '', i: 0 };
+  const setSw = (p) => cmp.setState({ sw: Object.assign({}, cmp.state.sw || { open: false, q: '', i: 0 }, p) });
+  const pick = (id) => { saveScope(id); setSw({ open: false, q: '', i: 0 }); cmp.setState({ proj: id || null }); };
+  const q = sw.q.trim().toLowerCase();
+  const list = NAV_SCOPES.filter((x) => !q || x[1].toLowerCase().indexOf(q) >= 0);
+  const i = Math.min(sw.i, Math.max(list.length - 1, 0));
+  const colorOf = (id) => (NAV_HELD[id] ? 'var(--wait)' : (id ? 'var(--live)' : 'var(--ink-2)'));
+  const items = list.map((x, k) => ({ id: 'sw-' + (x[0] || 'all'), name: x[1], icon: x[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(x[0]),
+    noTag: !NAV_HELD[x[0]], need: String(NAV_NEED[x[0]]), noNeed: !NAV_NEED[x[0]], runs: NAV_RUNS[x[0]] + ' open', sel: x[0] === scope ? 'true' : 'false',
+    bg: k === i ? 'var(--paper-2)' : 'transparent', pick: () => pick(x[0]) }));
+  const cur = NAV_SCOPES.filter((x) => x[0] === scope)[0] || NAV_SCOPES[0];
+  const key = (e) => {
+    if (e.key === 'Escape') { if (sw.open) { e.preventDefault(); setSw({ open: false }); } return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!sw.open) { setSw({ open: true, q: '', i: 0 }); return; }
+      const n = list.length;
+      if (n) setSw({ i: (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n });
+      return;
+    }
+    if (e.key === 'Enter' && sw.open && list[i] && e.target && e.target.tagName === 'INPUT') { e.preventDefault(); pick(list[i][0]); }
+  };
+  const it = (id, label, n, word) => { const on = id === screen; return { cur: on ? 'page' : null, color: on ? 'var(--act)' : 'var(--ink-2)', bg: on ? 'var(--act-wash)' : 'transparent',
+    sh: on ? 'inset 2px 0 0 var(--act)' : 'none', aria: label + (n ? ', ' + n + ' ' + word : ''), badge: n ? String(n) : '', noBadge: !n }; };
+  let open = s.navSt;
+  if (open === undefined) { open = true; try { open = window.sessionStorage.getItem('holo.stories') !== '0'; } catch (e) {} }
+  const vw = NAV_VIEWS[scope] || NAV_VIEWS[''];
+  return {
+    themeClass: 't-' + theme,
+    themeWord: theme === 'dawn' ? 'Dawn' : 'Night',
+    themeLabel: theme === 'dawn' ? 'Colour theme: dawn. Switch to night' : 'Colour theme: night. Switch to dawn',
+    toggleTheme: () => cmp.setState({ theme: theme === 'dawn' ? 'night' : 'dawn' }),
+    sw: { open: sw.open, q: sw.q, name: cur[1], icon: cur[0] ? NAV_FOLDER : NAV_GRID, iconColor: colorOf(cur[0]),
+      noTag: !NAV_HELD[cur[0]], need: String(NAV_NEED[cur[0]]), noNeed: !NAV_NEED[cur[0]],
+      aria: 'Project: ' + cur[1] + (NAV_HELD[cur[0]] ? ', held' : '') + (NAV_NEED[cur[0]] ? ', ' + NAV_NEED[cur[0]] + ' need you' : '') + '. Switch project',
+      title: cur[1] + (NAV_NEED[cur[0]] ? ' · ' + NAV_NEED[cur[0]] + ' need you' : ''),
+      items: items, hasItems: items.length > 0, activeId: items[i] ? items[i].id : '',
+      toggle: () => setSw({ open: !sw.open, q: '', i: 0 }), close: () => setSw({ open: false }),
+      onQ: (e) => setSw({ q: e.target.value, i: 0, open: true }), key: key },
+    nav: { overview: it('overview', 'Overview', NAV_NEED[scope], 'need you'), runs: it('runs', 'Runs'), tickets: it('tickets', 'Tickets'),
+      findings: it('findings', 'Findings', NAV_FIND[scope], 'open'), hosts: it('hosts', 'Hosts', 1, 'not answering'), settings: it('settings', 'Settings'),
+      subShow: open, subOpen: open ? 'true' : 'false', subRot: open ? 'rotate(90deg)' : 'none', subAria: (open ? 'Hide' : 'Show') + ' views and stories',
+      toggleSub: () => { const v = !open; try { window.sessionStorage.setItem('holo.stories', v ? '1' : '0'); } catch (e) {} cmp.setState({ navSt: v }); },
+      views: [['Ready', vw[0]], ['Needs spec', vw[1]], ['Backlog', vw[2]]].map((x) => ({ label: x[0], n: String(x[1]), aria: x[0] + ', ' + x[1] + ' tickets' })),
+      stories: NAV_STORIES.filter((x) => !scope || x[2] === scope).map((x) => ({ key: x[0], title: x[1], prog: x[3], aria: x[0] + ' ' + x[1] + ', ' + x[3].replace('/', ' of ') + ' merged' })) }
+  };
+}
+
+const IC = { say: 'M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z', tool: 'M2.5 3h11v10h-11zM5 6.5l2 1.5-2 1.5M8.5 10h2.5', doc: 'M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3', err: 'M8 1.5a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13zM5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4', end: 'M3 8h10' };
+const TEST = "python3 -m unittest discover -s tests -p 'test_sweep.py'";
+// kind: prompt, say, tool, err, end. Tool rows: [tool, summary, ok|fail, duration, input, output, exit]
+const LOG = [
+  { k: 'prompt', t: '+0:00', meta: '4,180 tokens', tool: 'Prompt', sum: 'ticket HOLO-231, review round 1 finding P1, your steer from 16:40', st: 'ok', dur: '',
+    input: 'Role: implementer, turn 2 of run 231.\nTicket: HOLO-231 The sweep frees a silent lease.\nReview round 1 asked for changes. Must fix:\n  P1 · the dry run writes an interventions row · holophyte/sweep/lease.py:142\nYour steer, 16:40: don\'t add a new flag for the dry run; reuse --act.\nWorktree: task/holo-231-the-sweep-frees-a-silent-lease at 3e1f0a2.',
+    output: 'Adjudicate each finding in the fix commit: ADDRESS, FOLLOW_UP or DECLINE.' },
+  { k: 'say', t: '+0:06', text: 'Round 1 found that the dry run writes an interventions row. I will move the write behind --act and add a test that a dry run leaves the table untouched.' },
+  { k: 'tool', t: '+0:09', tool: 'Read', sum: 'holophyte/sweep/lease.py · lines 120 to 160', st: 'ok', dur: '0.1s',
+    input: '{"file_path": "holophyte/sweep/lease.py", "offset": 120, "limit": 40}',
+    output: '138     for lease in stale:\n139         report.append(lease.ticket)\n140         store.record_intervention(lease.run, "sweep", "requeue")\n141         store.requeue(lease.ticket, actor="sweep")' },
+  { k: 'tool', t: '+0:31', tool: 'Edit', sum: 'holophyte/sweep/lease.py · skip the record and requeue without act', st: 'ok', dur: '0.1s',
+    input: 'old:\n        store.record_intervention(lease.run, "sweep", "requeue")\nnew:\n        if not act:\n            continue\n        store.record_intervention(lease.run, "sweep", "requeue")',
+    output: 'Applied 1 edit to holophyte/sweep/lease.py (+2 −0).' },
+  { k: 'tool', t: '+0:48', tool: 'Edit', sum: 'tests/test_sweep.py · add test_dry_run_records_nothing', st: 'ok', dur: '0.1s',
+    input: 'def test_dry_run_records_nothing(self):\n    free_silent_leases(self.store, now=self.late, act=False)\n    self.assertEqual(self.store.count("interventions"), 0, "interventions rows after a dry run")',
+    output: 'Applied 1 edit to tests/test_sweep.py (+9 −0).' },
+  { k: 'err', t: '+1:12', who: 'model API', text: '529 overloaded on the first try of this step. The harness retried after 4s and the turn carried on.' },
+  { k: 'tool', t: '+1:20', tool: 'Bash', sum: TEST, st: 'fail', dur: '2.3s', exit: 'exit 1', input: TEST,
+    output: '.......F.\n======================================================================\nFAIL: test_dry_run_records_nothing (test_sweep.SweepDryRun)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File "tests/test_sweep.py", line 88, in test_dry_run_records_nothing\n    self.assertEqual(self.store.count("interventions"), 0, "interventions rows after a dry run")\nAssertionError: 1 != 0 : interventions rows after a dry run\n----------------------------------------------------------------------\nRan 9 tests in 2.104s\n\nFAILED (failures=1)' },
+  { k: 'say', t: '+1:31', text: 'Still one row. report.flush() calls record_intervention too when it sums up the sweep. Moving the guard into flush so a dry run writes nothing at all.' },
+  { k: 'tool', t: '+1:52', tool: 'Edit', sum: 'holophyte/sweep/run.py · flush records only when act is set', st: 'ok', dur: '0.1s',
+    input: 'old:\n    store.record_intervention(run, "sweep", "summary")\nnew:\n    if act:\n        store.record_intervention(run, "sweep", "summary")',
+    output: 'Applied 1 edit to holophyte/sweep/run.py (+2 −1).' },
+  { k: 'tool', t: '+2:10', tool: 'Bash', sum: TEST, st: 'ok', dur: '2.1s', exit: 'exit 0', input: TEST, output: '.........\n----------------------------------------------------------------------\nRan 9 tests in 2.087s\n\nOK' },
+  { k: 'tool', t: '+2:20', tool: 'Bash', sum: 'ruff check .', st: 'ok', dur: '0.6s', exit: 'exit 0', input: 'ruff check .', output: 'All checks passed!' },
+  { k: 'tool', t: '+2:41', tool: 'Bash', sum: 'git commit -m "keep --sweep read-only without --act (ADDRESS P1)"', st: 'ok', dur: '0.3s', exit: 'exit 0',
+    input: 'git add -A && git commit -m "keep --sweep read-only without --act (ADDRESS P1)"',
+    output: '[task/holo-231-the-sweep-frees-a-silent-lease 9b27c4d] keep --sweep read-only without --act (ADDRESS P1)\n 3 files changed, 13 insertions(+), 1 deletion(-)' },
+  { k: 'say', t: '+3:01', text: 'Done. --sweep without --act is read-only now: no interventions row from the sweep or from its flush, and test_dry_run_records_nothing covers it. Commit 9b27c4d, ADDRESS P1. Per your steer there is no new flag. The dry run prints "would requeue HOLO-n" for each lease; tell me if you want it silent.' },
+  { k: 'end', t: '+3:05', text: 'Turn ended · end_turn · handed to verify' }
+];
+function segs(text, q) {
+  if (!q) return [{ t: text, hit: false, plain: true }];
+  const out = [], low = text.toLowerCase();
+  let at = 0, i = low.indexOf(q);
+  while (i >= 0) {
+    if (i > at) out.push({ t: text.slice(at, i), hit: false, plain: true });
+    out.push({ t: text.slice(i, i + q.length), hit: true, plain: false });
+    at = i + q.length; i = low.indexOf(q, at);
+  }
+  if (at < text.length) out.push({ t: text.slice(at), hit: false, plain: true });
+  return out;
+}
+function count(text, q) { if (!q) return 0; let n = 0, i = text.toLowerCase().indexOf(q); while (i >= 0) { n += 1; i = text.toLowerCase().indexOf(q, i + q.length); } return n; }
+const FILTERS = [['all', 'All'], ['say', 'Said'], ['tool', 'Tools'], ['err', 'Errors']];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, proj: readScope('') || null, q: '', f: 'all', openAll: null };
+  }
+  renderVals() {
+    const s = this.state, view = this.props.view || 'data', q = s.q.trim().toLowerCase();
+    const rows0 = LOG.map((e, i) => {
+      const bad = e.k === 'err' || e.st === 'fail', isTool = e.k === 'tool' || e.k === 'prompt';
+      const group = e.k === 'say' ? 'say' : (isTool ? 'tool' : (e.k === 'err' ? 'err' : 'end'));
+      const hay = [e.text || '', e.sum || '', e.input || '', e.output || ''].join('\n');
+      const hits = count(hay, q), inside = q && (count(e.input || '', q) + count(e.output || '', q) > 0);
+      const who = e.k === 'say' ? 'assistant' : (e.k === 'tool' ? 'tool call' : (e.k === 'prompt' ? 'factory' : (e.k === 'err' ? 'error · ' + e.who : 'end')));
+      const color = bad ? 'var(--bad)' : (e.k === 'say' ? 'var(--ink-2)' : (isTool ? 'var(--wait)' : 'var(--ink-3)'));
+      const icon = e.k === 'say' ? IC.say : (e.k === 'tool' ? IC.tool : (e.k === 'prompt' ? IC.doc : (e.k === 'err' ? IC.err : IC.end)));
+      let open = null;
+      if (s.openAll === true) open = true; else if (s.openAll === false) open = false; else if (e.st === 'fail' || inside) open = true;
+      return { id: 'e-' + (i + 1), t: e.t, group: group, bad: bad, hits: hits, cls: 'en' + (bad ? ' bad' : '') + (e.k === 'end' ? ' dim' : ''),
+        who: who, color: color, icon: icon, meta: e.k === 'tool' ? '' : (e.meta || ''),
+        isSay: !isTool, isTool: isTool, segs: segs(e.text || '', q), tool: e.tool || '', sumSegs: segs(e.sum || '', q),
+        st: e.k === 'prompt' ? 'sent' : (e.exit || (e.st === 'fail' ? 'failed' : 'ok')), stColor: e.st === 'fail' ? 'var(--bad)' : 'var(--live)', dur: e.dur ? ' · ' + e.dur : '',
+        input: e.input || '', outLabel: e.k === 'prompt' ? 'Closing line' : 'Output' + (e.exit ? ' · ' + e.exit : ''), outCls: e.st === 'fail' ? 'bad' : '', outSegs: segs(e.output || '', q), open: open };
+    });
+    const firstErr = rows0.filter((r) => r.bad)[0];
+    const nOf = { all: rows0.length, say: rows0.filter((r) => r.group === 'say').length, tool: rows0.filter((r) => r.group === 'tool').length, err: rows0.filter((r) => r.bad).length };
+    const rows = rows0.filter((r) => (s.f === 'all' || (s.f === 'err' ? r.bad : r.group === s.f)) && (!q || r.hits > 0));
+    const hitN = rows.reduce((a, r) => a + r.hits, 0);
+    return Object.assign(shellVals(this, 'runs'), {
+      isData: view === 'data', isEmpty: view === 'empty', isLoading: view === 'loading', isError: view === 'error',
+      skel: ['70%', '52%', '84%', '40%', '62%'],
+      q: s.q, onQ: (e) => this.setState({ q: e.target.value }),
+      qNote: q ? hitN + (hitN === 1 ? ' match' : ' matches') + ' in ' + rows.length + (rows.length === 1 ? ' entry' : ' entries') : LOG.length + ' entries · ' + nOf.err + ' errors',
+      filters: FILTERS.map((f) => ({ label: f[1], n: String(nOf[f[0]]), on: s.f === f[0], pick: () => this.setState({ f: f[0] }) })),
+      firstErr: firstErr ? '#' + firstErr.id : '#', toggleAll: () => this.setState({ openAll: s.openAll === true ? false : true }),
+      allLabel: s.openAll === true ? 'Collapse all' : 'Expand all',
+      rows: rows, noRows: rows.length === 0, hasRows: rows.length > 0,
+      noneText: q ? 'Nothing in this turn matches “' + s.q.trim() + '”.' : 'No entries of this kind in this turn.'
+    });
+  }
+}
+</script>
+</body>
+</html>

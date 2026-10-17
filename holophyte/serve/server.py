@@ -420,7 +420,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             self.answer(*self.edit_config(scope, body))
 
     def edit_config(self, scope, body):
-        return write_config(scope.project, body)
+        return write_config(scope.project, body, if_match=self.headers.get("If-Match"))
 
     def read_body(self):
         length = int(self.headers.get("Content-Length") or 0)
