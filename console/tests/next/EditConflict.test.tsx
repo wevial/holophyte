@@ -143,6 +143,28 @@ test("my unlabelled What / Why / How text survives on top of a revision that rem
   expect(composeEdit(theirs, theirFields, merge.onTop)).toBe("# Notes show\n\n## Summary\n\nEvery note shows.\n\n## What / Why / How\n\nThey sit under each run.\n");
 });
 
+test("my criterion edit with its detail survives on top of a revision that removed that criterion", () => {
+  const base = "# Notes show\n\n## Acceptance criteria\n\n- [ ] Each note shows.\n- [ ] A note's author shows.\n  Beside the note.\n";
+  const theirs = "# Notes show\n\n## Acceptance criteria\n\n- [ ] Each note shows.\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, criteria: ["Each note shows.", "A note's author shows in bold."], criteriaDetail: ["", "  Under the note."] };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(merge.both).toEqual([{ name: "AC2", theirs: "(removed)", mine: "A note's author shows in bold.\n  Under the note." }]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(`${theirs}- [ ] A note's author shows in bold.\n  Under the note.\n`);
+});
+
+test("my unlabelled What / Why / How text replaces the old text in a revision that holds the section as plain text", () => {
+  const base = "# Notes show\n\n## What / Why / How\n\nThey sit under the run.\n\n**What:** List the notes.\n";
+  const theirs = base.replace("They sit", "<!-- where -->\nThey sit");
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map(other => other.index === -1 ? { ...other, text: "They sit under each run." } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect([merge.onlyMine, merge.both]).toEqual([["What / Why / How"], []]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(theirs.replace("under the run", "under each run"));
+});
+
 test("the changed-field names count a removed section and skip one that only moved", () => {
   const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
   const read = loadEdit(base, null);

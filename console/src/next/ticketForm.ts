@@ -286,7 +286,7 @@ export function withCriteria(form: TicketForm, rows: { origin: number | null; te
   const separator = gaps.find(gap => !gap.trim()) ?? "";
   const line = (piece: string) => piece.endsWith("\n") ? piece : piece + eol;
   const rebuilt = rows.map(row => {
-    if (row.origin === null) return `- [ ] ${row.text}${eol}`;
+    if (row.origin === null) return `- [ ] ${row.text}${eol}` + (row.detail?.trim() ? line(row.detail) : "");
     const { head, start, headEnd, end } = blocks[row.origin];
     const title = line(splice(text.slice(start, headEnd), 0, head.contentEnd - start, `- [ ] ${row.text}`));
     if (row.detail === undefined) return title + text.slice(headEnd, end);
@@ -442,7 +442,8 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
   for (const [key, other] of was) {
     const text = my.get(key)?.text;
     if (their.has(key) || text === undefined) continue;
-    if (judge(other.name, other.text, other.index === -1 || other.repeated ? undefined : drawnText(theirs, other.name), text)) merge.onTop.others = restored(merge.onTop.others, { ...other, text }, theirs);
+    const theirText = other.index === -1 ? unlabelledIn(theirs, other.text) : other.repeated ? undefined : drawnText(theirs, other.name);
+    if (judge(other.name, other.text, theirText, text)) merge.onTop.others = restored(merge.onTop.others, { ...other, text }, theirs, other.text);
   }
   for (const [key, other] of my) {
     if (was.has(key) || their.has(key)) continue;
@@ -452,12 +453,24 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
   return merge;
 }
 
+const plainAt = (others: EditFields["others"], name: string) => others.findIndex(each => each.index >= 0 && each.name === name && !each.repeated);
+
+/** The unlabelled What / Why / How text `was` as `theirs` holds it: itself
+ *  when `theirs` keeps it inside that section drawn as plain text, else
+ *  that whole section, or undefined when `theirs` has none. */
+function unlabelledIn(theirs: EditFields, was: string): string | undefined {
+  const plain = theirs.others[plainAt(theirs.others, "What / Why / How")];
+  return plain?.text.includes(was) ? was : plain?.text;
+}
+
 /** `others` with `other`, a section `theirs` lacks, put back: unlabelled
- *  What / Why / How text joins that section when `theirs` draws it as plain
- *  text and becomes its own section when `theirs` has none. */
-function restored(others: EditFields["others"], other: EditFields["others"][number], theirs: EditFields): EditFields["others"] {
+ *  What / Why / How text replaces `was` in that section when `theirs` draws
+ *  it as plain text, or joins it there when `was` is gone, and becomes its
+ *  own section when `theirs` has none. */
+function restored(others: EditFields["others"], other: EditFields["others"][number], theirs: EditFields, was?: string): EditFields["others"] {
   if (other.index !== -1) return [...others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
-  const plain = others.findIndex(each => each.index >= 0 && each.name === other.name && !each.repeated);
-  if (plain >= 0) return others.map((each, index) => index === plain ? { ...each, text: `${each.text}\n\n${other.text}` } : each);
+  const plain = plainAt(others, other.name);
+  const replaced = (text: string) => was && text.includes(was) ? text.replace(was, () => other.text) : `${text}\n\n${other.text}`;
+  if (plain >= 0) return others.map((each, index) => index === plain ? { ...each, text: replaced(each.text) } : each);
   return [...others, theirs.what || theirs.why || theirs.how || theirs.uiChange ? other : { ...other, index: ADDED_SECTION }];
 }
