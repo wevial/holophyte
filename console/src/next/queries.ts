@@ -294,10 +294,33 @@ function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fet
   };
 }
 
-export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[], deps: { fetch: Fetch } = defaultPollDeps) {
+class HistoryAttemptError extends Error {
+  constructor(cause: unknown, readonly askedAt: number) {
+    super("History query failed", { cause });
+  }
+}
+
+export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[], deps: { fetch: Fetch; now?: () => number } = defaultPollDeps) {
   const asked = hosts.filter((host) => host.status != null).flatMap((host) => days.map((day) => ({ host, day })));
   const results = useQueries({
-    queries: asked.map(({ host, day }) => historyDayQuery(host.base, day, 500, deps.fetch)),
+    queries: asked.map(({ host, day }) => {
+      const query = historyDayQuery(host.base, day, 500, deps.fetch);
+      return {
+        ...query,
+        retry: false,
+        refetchOnMount: "always" as const,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        queryFn: async () => {
+          const askedAt = (deps.now ?? Date.now)();
+          try {
+            return await query.queryFn();
+          } catch (cause) {
+            throw new HistoryAttemptError(cause, askedAt);
+          }
+        },
+      };
+    }),
   });
   const answers: DayAnswers = new Map();
   asked.forEach(({ host, day }, index) => {
@@ -307,7 +330,10 @@ export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[
     byHost.set(host.key, data);
     answers.set(day.since, byHost);
   });
-  const queries = asked.map(({ host, day }, index) => ({ host, day, ...results[index] }));
+  const queries = asked.map(({ host, day }, index) => {
+    const result = results[index]!;
+    return { host, day, ...result, askedAt: result.error instanceof HistoryAttemptError ? result.error.askedAt : null };
+  });
   return { answers, queries };
 }
 

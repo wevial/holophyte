@@ -10,7 +10,7 @@ function InfoIcon() {
   );
 }
 
-function WarnIcon() {
+export function WarnIcon() {
   return (
     <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-need">
       <path d="M8 2 14.5 13.5h-13z" />

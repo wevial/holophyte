@@ -65,10 +65,10 @@ async function settlePage() {
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
-async function mount(hash: string, fetch: Fetch) {
+async function mount(hash: string, fetch: Fetch, now = NOW) {
   window.location.hash = hash;
   const fake = fakeDeps(fetch);
-  fake.clock.now = NOW;
+  fake.clock.now = now;
   render(<QueryClientProvider client={consoleQueryClient()}><NextConsole base={DEMO} pollDeps={fake.deps} /></QueryClientProvider>);
   await settlePage();
 }
@@ -166,7 +166,13 @@ test("project scope limits queries and totals, names empty days and survives the
 });
 
 test("a daemon without history leaves the other host's days visible and omits an incomplete total", async () => {
-  await mount("#/runs/history", fleet(null, writerRows).fetch);
+  const rows = [...writerRows, ...["13", "12", "11", "10"].map((date, index) => onDay(run(10 + index, "merged", 10, 20), `2026-10-${date}`))];
+  await mount("#/runs/history", fleet(null, rows).fetch);
+  for (const label of firstPage) {
+    const section = screen.getByRole("region", { name: label });
+    expect(within(section).queryByRole("status")).toBeNull();
+    expect(within(section).getByRole("list")).toBeTruthy();
+  }
   const day = screen.getByRole("region", { name: "Wed 14 Oct" });
   expect(day.textContent).toContain("3 runs");
   expect(day.textContent).toContain("1 merged");
@@ -223,7 +229,8 @@ test("history hooks retain each host and day's pending, error and success result
       expect(query.host).toBe(hosts[Math.floor(index / days.length)]!);
       expect(query.day).toBe(days[index % days.length]!);
       expect(query.status).toBe(query.host.base === DEMO ? "error" : "success");
-      expect(query.error).toBe(query.host.base === DEMO ? failure : null);
+      if (query.host.base === DEMO) expect(query.error?.cause).toBe(failure);
+      else expect(query.error).toBeNull();
     }
     for (const [index, query] of hook.result.current.total.queries.entries()) {
       expect(query.host).toBe(hosts[index]!);
@@ -372,4 +379,90 @@ test.each([
   expect(screen.getByText(sentence)).toBeTruthy();
   expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
   expect(screen.queryAllByRole("list", { name: /^Runs on/ })).toHaveLength(0);
+});
+
+const isDayQuery = (url: string, base: string, date = "2026-10-14") => {
+  const parsed = new URL(url);
+  return parsed.origin === base && parsed.pathname === "/history"
+    && parsed.searchParams.get("since") === String(midnight(date)) && parsed.searchParams.get("limit") === "500";
+};
+
+test("a pending host hides the entire day's counts and rows while other days remain visible", async () => {
+  const server = fleet(demoRows, [...writerRows, onDay(run(6, "merged", 10, 20), "2026-10-13")]);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    await mount("#/runs/history", async (url) => {
+      if (isDayQuery(url, DEMO)) await pending;
+      return server.fetch(url);
+    });
+    const day = screen.getByRole("region", { name: "Wed 14 Oct" });
+    expect(day.getAttribute("aria-busy")).toBe("true");
+    expect(within(day).queryByRole("list")).toBeNull();
+    expect(day.textContent).toBe("Wed 14 Oct");
+    expect(within(screen.getByRole("region", { name: "Tue 13 Oct" })).getByRole("link", { name: /^Run 6,/ })).toBeTruthy();
+    expect(outcomeButtons().getByRole("button", { name: "All 1" })).toBeTruthy();
+    await act(async () => void fireEvent.click(outcomeButtons().getByRole("button", { name: "Failed 0" })));
+    await settlePage();
+    expect(screen.queryByText("No failed runs from Oct 14 to Oct 10. Try older days.")).toBeNull();
+    expect(screen.getByRole("region", { name: "Wed 14 Oct" }).getAttribute("aria-busy")).toBe("true");
+  } finally {
+    release();
+    await settlePage();
+  }
+});
+
+test("a failed day names the project and attempt clock, excludes partial counts, and retries only its failed query", async () => {
+  const server = fleet(demoRows, writerRows.slice(0, 2));
+  const requests: string[] = [];
+  let failing = true;
+  await mount("#/runs/history", async (url) => {
+    requests.push(url);
+    if (failing && isDayQuery(url, DEMO)) return new Response("unavailable", { status: 500 });
+    return server.fetch(url);
+  }, Date.parse("2026-10-16T16:53:00-07:00"));
+  const day = screen.getByRole("region", { name: "Wed 14 Oct" });
+  const fault = within(day).getByRole("status");
+  expect(fault.textContent).toContain("The run store for demo did not answer.");
+  expect(fault.textContent).toContain("asked for Wed 14 Oct at 16:53 · showing nothing rather than part of a day");
+  expect(within(day).queryByRole("list")).toBeNull();
+  expect(day.textContent).not.toContain("2 runs");
+  for (const name of ["All 0", "Merged 0", "Failed 0", "Abandoned 0"]) {
+    expect(outcomeButtons().getByRole("button", { name })).toBeTruthy();
+  }
+  expect(screen.queryByText("No runs from Oct 14 to Oct 10. Try older days.")).toBeNull();
+  const beforeRetry = requests.length;
+  failing = false;
+  await act(async () => void fireEvent.click(within(day).getByRole("button", { name: "Try again" })));
+  await settlePage();
+  expect(requests.slice(beforeRetry)).toHaveLength(1);
+  expect(isDayQuery(requests[beforeRetry]!, DEMO)).toBe(true);
+  expect(within(day).queryByRole("status")).toBeNull();
+  expect(within(day).getAllByRole("listitem")).toHaveLength(4);
+  for (const id of [1, 2, 3, 4]) expect(within(day).getByRole("link", { name: new RegExp(`^Run ${id},`) })).toBeTruthy();
+  expect(outcomeButtons().getByRole("button", { name: "All 4" })).toBeTruthy();
+});
+
+test("a cut day's head reports the answer's limit and total and sums only cut hosts", async () => {
+  const cutRows = (date: string) => Array.from({ length: 500 }, (_, index) => onDay(run(index + 1, "merged", 30, 40), date));
+  const server = fleet([...cutRows("2026-10-13"), ...cutRows("2026-10-12")], cutRows("2026-10-12"));
+  await mount("#/runs/history", async (url) => {
+    const response = await server.fetch(url);
+    if (isDayQuery(url, DEMO, "2026-10-13")) {
+      return Response.json({ ...await response.json(), truncated: true, limit: 500, total: 612 });
+    }
+    if (isDayQuery(url, DEMO, "2026-10-12") || isDayQuery(url, WRITER, "2026-10-12")) {
+      return Response.json({ ...await response.json(), truncated: true, limit: 500, total: new URL(url).origin === DEMO ? 612 : 700 });
+    }
+    return response;
+  });
+  expect(within(screen.getByRole("region", { name: "Tue 13 Oct" })).getByText("newest 500 of 612 shown")).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "Mon 12 Oct" })).getByText("newest 1000 of 1312 shown")).toBeTruthy();
+});
+
+test("an unknown project scope settles to the empty page sentence without busy days", async () => {
+  await mount("#/runs/history?project=unknown", fleet().fetch);
+  expect(screen.getByText("No runs in unknown from Oct 14 to Oct 10. Try older days.")).toBeTruthy();
+  expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+  expect(document.querySelector('[aria-busy="true"]')).toBeNull();
 });
