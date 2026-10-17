@@ -88,8 +88,12 @@ export function Field({ label, optional = false, hint, extra, messages = [], cha
 /** The acceptance criteria as one input a row, reorderable and removable;
  *  `changed` marks the rows whose text differs from the loaded revision.
  *  `onChange` names, for each new row, the index of the row it was, or
- *  null for a row added. */
-export function CriteriaField({ criteria, onChange, marks, changed = () => false }: { criteria: string[]; onChange: (next: string[], from: (number | null)[]) => void; marks: Marks; changed?: (index: number) => boolean }) {
+ *  null for a row added. A row whose `details` entry is a string draws
+ *  that criterion's indented detail as its own field. */
+export function CriteriaField({ criteria, onChange, marks, changed = () => false, details = [], onDetail, detailChanged = () => false }: {
+  criteria: string[]; onChange: (next: string[], from: (number | null)[]) => void; marks: Marks; changed?: (index: number) => boolean;
+  details?: (string | null)[]; onDetail?: (index: number, detail: string) => void; detailChanged?: (index: number) => boolean;
+}) {
   const change = (from: (number | null)[], next = from.map(index => index === null ? "" : criteria[index]!)) =>
     from.length ? onChange(next, from) : onChange([""], [null]);
   const rows = criteria.map((_, index): number | null => index);
@@ -108,6 +112,9 @@ export function CriteriaField({ criteria, onChange, marks, changed = () => false
           <Btn className="!w-10 !h-10 !p-0" aria-label={`Move AC${index + 1} down`} disabled={index === criteria.length - 1} onClick={() => move(index, 1)}>↓</Btn>
           <Btn className="!w-10 !h-10 !p-0" aria-label={`Remove AC${index + 1}`} onClick={() => change(rows.filter((_, at) => at !== index))}>×</Btn>
         </div>
+        {details[index] != null && <div data-changed={detailChanged(index) || undefined} className={`basis-full pl-10 ${detailChanged(index) ? `${CHANGED} py-2` : ""}`}>
+          <textarea aria-label={`AC${index + 1} detail`} rows={2} className={`${INPUT} !mt-0 resize-y font-mono text-[13px]`} value={details[index]!} onChange={event => onDetail?.(index, event.target.value)} />
+        </div>}
         <div className="basis-full empty:hidden"><Messages id={messagesId(`AC${index + 1}`)} messages={marks.messagesOf(`AC${index + 1}`)} /></div>
       </div>)}
     </div>

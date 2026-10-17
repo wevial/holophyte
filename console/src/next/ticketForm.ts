@@ -247,33 +247,50 @@ export function withCriterion(form: TicketForm, index: number, value: string): T
   return { ...form, sections: updated };
 }
 
-/** `form` with its acceptance criteria rebuilt as `rows`: a row with an
- *  `origin` carries that criterion's whole served block, its line and the
- *  indented lines under it, retitled to `text`; a row without one is new. */
-export function withCriteria(form: TicketForm, rows: { origin: number | null; text: string }[]): TicketForm {
-  const at = form.sections.findIndex(section => section.name === sections.criteria);
-  const text = at < 0 ? "" : form.sections[at].text;
+/** Each acceptance criterion's served block in `text`: its line, then the
+ *  indented lines under it up to the next unindented one. */
+function criterionBlocks(text: string) {
   const heads = matching(text, itemPatterns.criteria);
-  if (!heads.length) return withField(form, "criteria", rows.map(row => row.text));
-  const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   const all = lines(text);
-  const blocks = heads.map((head, index) => {
-    let last = all.findIndex(line => line.start === head.start);
-    for (let next = last + 1; next < all.length && all[next].start !== heads[index + 1]?.start; next++) {
+  return heads.map((head, index) => {
+    const first = all.findIndex(line => line.start === head.start);
+    let last = first;
+    for (let next = first + 1; next < all.length && all[next].start !== heads[index + 1]?.start; next++) {
       if (!all[next].text.trim()) continue;
       if (!/^[ \t]/.test(all[next].text)) break;
       last = next;
     }
-    return { head, start: head.start, end: all[last].end };
+    return { head, start: head.start, headEnd: all[first].end, end: all[last].end };
   });
+}
+
+/** Each acceptance criterion's indented detail, as served under its line;
+ *  "" for a criterion with none. */
+export function criterionDetails(form: TicketForm): string[] {
+  const text = form.sections.find(section => section.name === sections.criteria)?.text ?? "";
+  return criterionBlocks(text).map(block => text.slice(block.headEnd, block.end).trimEnd());
+}
+
+/** `form` with its acceptance criteria rebuilt as `rows`: a row with an
+ *  `origin` carries that criterion's whole served block, its line and the
+ *  indented lines under it, retitled to `text` and, when `detail` is given,
+ *  with those lines replaced by it; a row without one is new. */
+export function withCriteria(form: TicketForm, rows: { origin: number | null; text: string; detail?: string }[]): TicketForm {
+  const at = form.sections.findIndex(section => section.name === sections.criteria);
+  const text = at < 0 ? "" : form.sections[at].text;
+  const blocks = criterionBlocks(text);
+  if (!blocks.length) return withField(form, "criteria", rows.map(row => row.text));
+  const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   const gaps = blocks.slice(1).map((block, index) => text.slice(blocks[index].end, block.start));
   const separator = gaps.find(gap => !gap.trim()) ?? "";
+  const line = (piece: string) => piece.endsWith("\n") ? piece : piece + eol;
   const rebuilt = rows.map(row => {
     if (row.origin === null) return `- [ ] ${row.text}${eol}`;
-    const { head, start, end } = blocks[row.origin];
-    const piece = splice(text.slice(start, end), 0, head.contentEnd - start, `- [ ] ${row.text}`);
-    return piece.endsWith("\n") ? piece : piece + eol;
-  }).join(separator);
+    const { head, start, headEnd, end } = blocks[row.origin];
+    const title = line(splice(text.slice(start, headEnd), 0, head.contentEnd - start, `- [ ] ${row.text}`));
+    if (row.detail === undefined) return title + text.slice(headEnd, end);
+    return title + (row.detail.trim() ? line(row.detail) : "");
+  }).map(line).join(separator);
   const end = blocks[blocks.length - 1].end;
   const tail = text.slice(end);
   const updated = form.sections.slice();

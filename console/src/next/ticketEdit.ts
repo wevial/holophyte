@@ -1,4 +1,4 @@
-import { clampEstimate, composeBody, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
 
 /** The sections the edit form draws as fields; every other section of the
  *  body is edited as plain text under "Other sections". */
@@ -8,12 +8,14 @@ const PROSE = ["title", "summary", "what", "why", "how", "inScope", "outOfScope"
 type Prose = typeof PROSE[number];
 
 /** A ticket revision as the edit form holds it: each list field one item a
- *  line, each criterion with the index it was served at (null when added),
+ *  line, each criterion with the index it was served at (null when added)
+ *  and the indented detail under it,
  *  the estimate as typed, and the undrawn sections by their index in the
  *  body, What / Why / How's unlabelled text at index -1. */
 export type EditFields = Record<Prose, string> & {
   criteria: string[];
   criteriaFrom: (number | null)[];
+  criteriaDetail: string[];
   estimate: string;
   priority: number | null;
   dependsOn: string[];
@@ -22,7 +24,7 @@ export type EditFields = Record<Prose, string> & {
 };
 
 /** Each field's name as the form labels it, in the order the form draws it. */
-const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom">, string][] = [
+const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "criteriaDetail">, string][] = [
   ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
   ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
   ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
@@ -89,6 +91,7 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     ...prose,
     criteria: criteria.length ? criteria : [""],
     criteriaFrom: criteria.length ? criteria.map((_, index) => index) : [null],
+    criteriaDetail: criteria.length ? criterionDetails(form) : [""],
     estimate: estimate == null ? "" : String(estimate),
     priority,
     dependsOn: fieldOf(form, "dependsOn"),
@@ -105,8 +108,8 @@ export const hasMockup = (body: string) => parseBody(body).sections.some(section
 
 export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-const differs = (loaded: EditFields, edited: EditFields, field: keyof Omit<EditFields, "others" | "criteriaFrom">) =>
-  !same(loaded[field], edited[field]) || (field === "criteria" && !same(loaded.criteriaFrom, edited.criteriaFrom));
+const differs = (loaded: EditFields, edited: EditFields, field: keyof Omit<EditFields, "others" | "criteriaFrom" | "criteriaDetail">) =>
+  !same(loaded[field], edited[field]) || (field === "criteria" && (!same(loaded.criteriaFrom, edited.criteriaFrom) || !same(loaded.criteriaDetail, edited.criteriaDetail)));
 
 /** The names of the fields `edited` holds differently from `loaded`. */
 export function changedNames(loaded: EditFields, edited: EditFields): string[] {
@@ -175,14 +178,20 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
   return composeBody(form);
 }
 
-/** Criteria still in their served places are retitled line by line; any
- *  move, removal or addition rebuilds the list from the served blocks. */
+/** Criteria still in their served places with their details as served are
+ *  retitled line by line; any move, removal, addition or detail edit
+ *  rebuilds the list from the served blocks. */
 function composeCriteria(form: TicketForm, loaded: EditFields, edited: EditFields): TicketForm {
-  if (edited.criteriaFrom.every((from, index) => from === index)) {
+  const inPlace = edited.criteria.length === loaded.criteria.length && edited.criteriaFrom.every((from, index) => from === index);
+  if (inPlace && same(edited.criteriaDetail, loaded.criteriaDetail)) {
     edited.criteria.forEach((criterion, index) => {
       if (criterion !== loaded.criteria[index]) form = withCriterion(form, index, criterion);
     });
     return form;
   }
-  return withCriteria(form, edited.criteria.map((text, index) => ({ origin: edited.criteriaFrom[index] ?? null, text })));
+  return withCriteria(form, edited.criteria.map((text, index) => {
+    const origin = edited.criteriaFrom[index] ?? null;
+    const detail = edited.criteriaDetail[index] ?? "";
+    return { origin, text, detail: origin !== null && detail === loaded.criteriaDetail[origin] ? undefined : detail };
+  }));
 }

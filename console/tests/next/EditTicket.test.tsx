@@ -264,6 +264,21 @@ test("moving or removing a criterion carries its indented detail with it", async
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Remove AC1" })));
   await pressSave();
   expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(AC1, "")]);
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Remove AC3" })));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("- [ ] A withdrawn note shows struck through.\n", "")]);
+});
+
+test("a criterion's indented detail is its own field and saves under that criterion", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(box("AC1 detail").value).toBe("  Its author and time show beside it.");
+  expect(screen.queryByRole("textbox", { name: "AC2 detail" })).toBeNull();
+  await type("AC1 detail", "  Its author shows beside it.");
+  expect(box("AC1 detail").closest("[data-changed]")).not.toBeNull();
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("  Its author and time show beside it.", "  Its author shows beside it.")]);
 });
 
 test("How holds every paragraph up to the next label, and section text under no field is reachable under Other sections", async () => {
