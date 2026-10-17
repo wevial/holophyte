@@ -43,9 +43,18 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
                     "adjudicator": {"command": "codex"},
                     "writer": {"command": null},
                     "trimmer": {"command": null}},
-  "route_labels": {"implementer": "claude opus", "reviewer": "codex gpt-5.6-sol",
+  "route_probes": {"implementer": {"primary": {"ok": false,
+                     "at_ms": 1788450354491, "duration_ms": 1800,
+                     "why": "exit 1", "age_ms": 180000}, "fallback": null},
+                   "reviewer": {"primary": null, "fallback": null},
+                   "adjudicator": {"primary": null, "fallback": null},
+                   "writer": {"primary": null, "fallback": null},
+                   "trimmer": {"primary": null, "fallback": null}},
+  "route_labels": {"implementer": "claude opus", "implementer_fallback": null,
+                   "reviewer": "codex gpt-5.6-sol",
                    "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
-                   "writer": "claude opus", "trimmer": "claude opus"},
+                   "adjudicator_fallback": null, "writer": "claude opus",
+                   "trimmer": "claude opus", "trimmer_fallback": null},
   "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
@@ -142,7 +151,18 @@ key, while it is `false`. `route_labels` names what each seat is configured
 to run, labelled as a recorded turn is: the command's first word plus its
 `-m`/`--model` value. A seat left unset shows the default the loop
 dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset
-`reviewer_fallback` null. `active_routes` holds one entry per seat
+fallback label null. `implementer_fallback`, `reviewer_fallback`,
+`adjudicator_fallback` and `trimmer_fallback` name the configured fallback
+using the same label format. `route_probes` holds each seat’s latest `primary`
+and `fallback` probe, each null when absent or the probe file is unreadable.
+An entry carries `ok`, the end time `at_ms` in epoch milliseconds,
+`duration_ms`, and `age_ms` (`now` minus `at_ms`). `why` is null on success,
+otherwise the failure reason, redacted and limited to 200 characters;
+commands and output tails are never recorded. Probes run at loop start
+and before a fallback is used, not on a timer. The loop keeps the newest
+entry per seat and route in `route-probes.json` under the project’s
+`holo_dir`, using a lock and atomic replacement.
+`active_routes` holds one entry per seat
 (`implementer`, `reviewer`, `adjudicator`, `writer`, `trimmer`) naming what the seat
 runs now: `command` is the executable alone, never its arguments, null for
 a seat left unset in `[agents]`; while a running loop has switched the seat

@@ -29,11 +29,86 @@
       ],
       "additionalProperties": true
     },
+    "RouteProbe": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "at_ms": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "age_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ok",
+        "at_ms",
+        "duration_ms",
+        "why",
+        "age_ms"
+      ],
+      "additionalProperties": true
+    },
+    "SeatProbes": {
+      "type": "object",
+      "properties": {
+        "primary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fallback": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "primary",
+        "fallback"
+      ],
+      "additionalProperties": true
+    },
     "RouteLabels": {
       "type": "object",
       "properties": {
         "implementer": {
           "type": "string"
+        },
+        "implementer_fallback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "reviewer": {
           "type": "string"
@@ -51,20 +126,43 @@
         "adjudicator": {
           "type": "string"
         },
+        "adjudicator_fallback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "writer": {
           "type": "string"
         },
         "trimmer": {
           "type": "string"
+        },
+        "trimmer_fallback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "implementer",
+        "implementer_fallback",
         "reviewer",
         "reviewer_fallback",
         "adjudicator",
+        "adjudicator_fallback",
         "writer",
-        "trimmer"
+        "trimmer",
+        "trimmer_fallback"
       ],
       "additionalProperties": true
     },
@@ -460,6 +558,12 @@
             "$ref": "#/$defs/ActiveRoute"
           }
         },
+        "route_probes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SeatProbes"
+          }
+        },
         "route_labels": {
           "$ref": "#/$defs/RouteLabels"
         },
@@ -510,6 +614,7 @@
         "workers",
         "schema_version",
         "active_routes",
+        "route_probes",
         "route_labels",
         "workers_on_previous_build",
         "host",

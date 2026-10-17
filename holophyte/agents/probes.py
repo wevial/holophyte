@@ -2,6 +2,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from holophyte.agents.agent_output import claude_result, streamed
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.harness import critic_seat
 from holophyte.agents.harness import seat as harness_seat
+from holophyte.agents.probe_log import record_probe
 from holophyte.agents.review_workspace import (
     critic_workspace,
     publish_review_refs,
@@ -70,10 +72,9 @@ class ProbeResult:
         said = self.output if self.answer is None else self.answer
         return self.returncode == 0 and witness in said.lower()
 
-    def describe(self):
-        shown = " ".join(shlex.quote(part) for part in self.command)
+    def reason(self):
         if self.ok:
-            return f"[holo2] {self.seat} probe passed: {shown}"
+            return None
         if self.launch_error:
             why = f"could not start: {self.launch_error}"
         elif self.timed_out:
@@ -84,6 +85,13 @@ class ProbeResult:
             why = "route answered without reporting the commit; cannot run commands"
         else:
             why = f"exit 0 but no {PROBE_WORD!r} in the output"
+        return why
+
+    def describe(self):
+        shown = " ".join(shlex.quote(part) for part in self.command)
+        if self.ok:
+            return f"[holo2] {self.seat} probe passed: {shown}"
+        why = self.reason()
         tail = self.tail()
         lines = [f"[holo2] {self.seat} probe failed ({why}): {shown}"]
         lines += [f"[holo2]   | {line}" for line in tail] or [
@@ -115,7 +123,11 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
                        if fallback else 1):
         if probe is not None:
             print(probe_diagnostic(project, probe))
+        started = time.time()
         probe = probe_route(project, role, fallback, timeout, entry)
+        ended = time.time()
+        if probe is not None:
+            record_probe(project, probe, fallback, started, ended)
         if probe is None or probe.ok:
             break
     return probe

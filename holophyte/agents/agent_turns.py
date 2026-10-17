@@ -62,11 +62,14 @@ def route_labels(project):
 
     implementer = label("implement")
     return {"implementer": implementer,
+            "implementer_fallback": label("implement", fallback=True),
             "reviewer": label("review"),
             "reviewer_fallback": label("review", fallback=True),
             "adjudicator": label("adjudicate"),
+            "adjudicator_fallback": label("adjudicate", fallback=True),
             "writer": seat_or_implementer("write"),
-            "trimmer": seat_or_implementer("trim")}
+            "trimmer": seat_or_implementer("trim"),
+            "trimmer_fallback": label("trim", fallback=True)}
 
 
 def recorded_turn(project, role, routed_role, conn, run_id, launch,
