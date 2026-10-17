@@ -594,13 +594,25 @@ def run_transcript(project, segment):
         return missing
     secrets = known_secrets(project.config())
     for root in roots:
-        for kind in ('codex', 'devin'):
+        for kind in ('codex', 'devin', 'claude'):
             try:
                 path = locate(kind, turn['session_id'], root)
                 if path is not None:
-                    return 200, {"entries": [
-                        {"speaker": speaker, "text": outbound(text, secrets)}
-                        for speaker, text in render(path)]}
+                    entries = transcript_window(render(path), turn)
+                    for entry in entries:
+                        entry['text'] = outbound(entry['text'], secrets)
+                        if entry['summary'] is not None:
+                            entry['summary'] = outbound(entry['summary'], secrets)
+                    return 200, {"entries": entries}
             except (OSError, UnicodeError, RuntimeError):
                 continue
     return missing
+
+
+def transcript_window(entries, turn):
+    seconds, ended = turn['seconds'], turn['ended_ms']
+    if seconds is None or ended is None:
+        return entries
+    started = ended - seconds * 1000
+    return [entry for entry in entries if entry['at_ms'] is None
+            or started - 2000 <= entry['at_ms'] <= ended + 2000]

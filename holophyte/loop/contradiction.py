@@ -15,6 +15,8 @@ DECLARED_RE = re.compile(
 ANSWERS = ("Amend the ticket (holo file --update {key} FILE), then holo requeue"
            " {key} -n NOTE; or holo requeue {key} -n NOTE saying how to meet it"
            " as written; or cancel {key} on the board.")
+PLACEHOLDER = "<one-line reason>"
+UNFILLED = frozenset({"", "reason", PLACEHOLDER})
 
 
 def brief(criteria):
@@ -30,7 +32,7 @@ def brief(criteria):
             "asserts a substitute. Do the rest of the ticket, commit it, and end "
             "the reply with one line per such criterion, using its id above, "
             "with a one-line reason naming what is missing or what contradicts it:\n"
-            f"CONTRADICTION: criterion C{pairs[-1][0]} — reason")
+            f"CONTRADICTION: criterion C<id> — {PLACEHOLDER}")
 
 
 def declared(reply):
@@ -42,6 +44,8 @@ def declared(reply):
                 reason = reason[1:]
             elif reason.endswith("`"):
                 reason = reason[:-1]
+        if reason.lower() in UNFILLED:
+            continue
         pairs[(criterion_ids.parse(number), reason)] = None
     return list(pairs)
 

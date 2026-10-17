@@ -4,3 +4,5 @@
 {"ordinal": 820, "type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "call-1", "output": [{"type": "input_text", "text": "{\"exit_code\": 0, \"output\": \"checked\\n\"}"}]}}
 {"type": "future_type", "payload": {"text": "DO NOT SHOW"}}
 {"ordinal": 2, "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "All checks passed."}]}}
+{"ordinal": 11, "type": "response_item", "payload": {"type": "custom_tool_call", "id": "call-2", "status": "completed", "call_id": "call-2", "name": "exec", "input": "await tools.exec_command({cmd: \"false\"});"}}
+{"ordinal": 820, "type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "call-2", "output": [{"type": "input_text", "text": "{\"exit_code\": 1, \"output\": \"failed\\n\"}"}]}}
