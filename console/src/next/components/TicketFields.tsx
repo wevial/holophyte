@@ -10,8 +10,8 @@ import type { Tone } from "../state";
 
 export const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
 /** The 2 px bar and wash of a field whose text differs from the revision the page loaded. */
-export const CHANGED = "border-l-2 border-l-act bg-act-wash";
-export type Message = { text: string; error: boolean; field: string };
+const CHANGED = "border-l-2 border-l-act bg-act-wash";
+type Message = { text: string; error: boolean; field: string };
 const CHECK_DELAY_MS = 600;
 export const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;
 
@@ -57,7 +57,7 @@ export function checkMarks(check: CheckResult | null | undefined) {
   };
   return { judged, messages, messagesOf, marks };
 }
-export type Marks = ReturnType<typeof checkMarks>;
+type Marks = ReturnType<typeof checkMarks>;
 
 const fieldId = (field: string) => field.startsWith("AC") ? `criterion-${Number(field.slice(2)) - 1}`
   : field === "Acceptance criteria" ? "criterion-0" : field === "Estimate" ? "estimate" : `new-${field}`;

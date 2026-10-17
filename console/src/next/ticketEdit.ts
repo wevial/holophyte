@@ -20,7 +20,7 @@ export type EditFields = Record<Prose, string> & {
 };
 
 /** Each field's name as the form labels it, in the order the form draws it. */
-export const FIELD_NAMES: [keyof Omit<EditFields, "others">, string][] = [
+const FIELD_NAMES: [keyof Omit<EditFields, "others">, string][] = [
   ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
   ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
   ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
