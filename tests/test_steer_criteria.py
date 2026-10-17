@@ -8,6 +8,7 @@ import store.steer_notes
 import store.tickets
 from holophyte.babysit.maintainer_notes import PREFIX, carry_amendments
 from holophyte.board.projection import mirror_task
+from holophyte.loop import steering
 from holophyte.review.criterion_ids import numbered
 from provider import parse_body
 from tests.test_ticket_criteria_rows import ticket_body
@@ -110,6 +111,36 @@ class SteerCriteriaTests(unittest.TestCase):
         self.assertNotIn("REPLACE C2:", rendered)
         self.assertNotIn("DROP C3:", rendered)
         self.assertNotIn("the list is sorted by name", rendered)
+
+    def test_live_edits_render_once_at_opening_and_after_delivery(self):
+        run = self.claim()
+        note = self.amend("REPLACE C2: the list is sorted by age\n"
+                          "DROP C3: covered by C2\nKeep the old flag name")
+        ticket = carry_amendments(self.conn, run, "Filed ticket body")
+        opening = ticket + steering.take(self.conn, run)
+        reviewed = steering.reviewed_ticket(self.conn, run, ticket)
+        for rendered in (ticket, opening, reviewed):
+            with self.subTest(rendered=rendered):
+                self.assertEqual(rendered.count("Amended acceptance criteria:"), 1)
+                self.assertIn("**C1** the list shows every entry", rendered)
+                self.assertIn("**C2** the list is sorted by age", rendered)
+                self.assertIn("C3 dropped: covered by C2", rendered)
+                self.assertEqual(rendered.count("Keep the old flag name"), 1)
+                self.assertIn(f"{PREFIX}\nsteer note {note.id} by maintainer:",
+                              rendered)
+                self.assertNotIn("REPLACE C2:", rendered)
+                self.assertNotIn("DROP C3:", rendered)
+        self.amend("REPLACE C2: the list is sorted by score\nKeep the flag short")
+        delivered = steering.take(self.conn, run)
+        reviewed = steering.reviewed_ticket(self.conn, run, ticket)
+        for rendered in (delivered, reviewed):
+            self.assertEqual(rendered.count("Amended acceptance criteria:"), 1)
+            self.assertIn("**C2** the list is sorted by score", rendered)
+            self.assertIn("Keep the flag short", rendered)
+            self.assertIn("C3 dropped: covered by C2", rendered)
+            self.assertNotIn("REPLACE C2:", rendered)
+            self.assertNotIn("the list is sorted by age", rendered)
+        self.assertFalse(steering.pending(self.conn, run))
 
     def test_replacement_matching_another_criterion_text_keeps_both_ids(self):
         self.amend("REPLACE C2: the list shows every entry")

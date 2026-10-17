@@ -51,16 +51,25 @@ def carry_amendments(conn, run_id, ticket):
         return ticket
     amendments = [n for n in steer_notes.amendments(
         conn, run_snapshot(conn, run_id).ticketId)
-        if not n.live or n.consumed_by is not None]
+        if not n.live or n.consumed_by is not None or amendment_edits(n.note)[0]]
     steer_notes.consume(conn, [n.id for n in amendments], run_id)
+    return render_amendments(conn, run_id, ticket, amendments)
+
+
+def render_amendments(conn, run_id, ticket, amendments):
     parsed = [(n, *amendment_edits(n.note)) for n in amendments]
     if any(edits for _, edits, _ in parsed):
-        ticket += _criteria_block(conn, run_id, parsed)
+        ticket = re.sub(r"\n\nAmended acceptance criteria:\n.*?(?=\n\n|\Z)",
+                        "", ticket, flags=re.DOTALL)
+        ticket += _criteria_block(conn, run_id)
     return ticket + "".join(f"\n\n{steer_text(n._replace(note=other))}"
-                            for n, _, other in parsed if other.strip())
+                            for n, _, other in parsed if other.strip()
+                            and f"steer note {n.id} by {n.author}:" not in ticket)
 
 
-def _criteria_block(conn, run_id, parsed):
+def _criteria_block(conn, run_id):
+    parsed = [(n, *amendment_edits(n.note)) for n in steer_notes.amendments(
+        conn, run_snapshot(conn, run_id).ticketId)]
     reasons = {(note.id, number): text for note, edits, _ in parsed
                for verb, number, text in edits if verb == "DROP"}
     lines = []
