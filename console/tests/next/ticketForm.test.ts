@@ -236,31 +236,20 @@ test("a How line with a trailing HTML comment reads and edits only visible text"
   }
 });
 
-test("an unclosed HTML comment in Summary leaves later fields visible", () => {
-  const form = parseBody(unclosedCommentBody);
-  const checker = checkerFieldsWithoutComments(unclosedCommentBody);
-  expect(fieldOf(form, "summary")).toBe(checker.summary);
-  expect(fieldOf(form, "criteria")).toEqual(checker.criteria);
-  expect(fieldOf(form, "estimate")).toBe(checker.estimate);
-  expect(fieldOf(form, "summary")).toBe("Render the literal <!-- in the editor.");
-  expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
-  expect(fieldOf(form, "estimate")).toBe(30);
-  expect(composeBody(withField(form, "summary", "New summary."))).toBe(
-    unclosedCommentBody.replace("Render the literal <!-- in the editor.", "New summary."),
-  );
-});
-
-test("a two-line inline code span with an unclosed comment leaves later fields visible", () => {
-  const form = parseBody(multilineInlineCodeBody);
-  const checker = checkerFieldsWithoutComments(multilineInlineCodeBody);
+test.each([
+  ["an unclosed HTML comment in Summary", unclosedCommentBody, "Render the literal <!-- in the editor."],
+  ["a two-line inline code span with an unclosed comment", multilineInlineCodeBody, "Show `the opening marker\nvalue <!--` literally."],
+])("%s leaves later fields visible", (_name, body, summary) => {
+  const form = parseBody(body);
+  const checker = checkerFieldsWithoutComments(body);
   expect(fieldOf(form, "summary").replace(/\s+/g, " ")).toBe(checker.summary);
   expect(fieldOf(form, "criteria")).toEqual(checker.criteria);
   expect(fieldOf(form, "estimate")).toBe(checker.estimate);
-  expect(fieldOf(form, "summary")).toBe("Show `the opening marker\nvalue <!--` literally.");
+  expect(fieldOf(form, "summary")).toBe(summary);
   expect(fieldOf(form, "criteria")).toEqual(["Keep the criterion."]);
   expect(fieldOf(form, "estimate")).toBe(30);
   expect(composeBody(withField(form, "summary", "New summary."))).toBe(
-    multilineInlineCodeBody.replace("Show `the opening marker\nvalue <!--` literally.", "New summary."),
+    body.replace(summary, "New summary."),
   );
 });
 
