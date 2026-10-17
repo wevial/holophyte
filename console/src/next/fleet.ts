@@ -14,13 +14,14 @@ import {
 } from "../lib/contract.gen";
 import { addressOf, mergeHosts, oldestPoll, type HostRecord } from "../lib/hosts";
 import {
+  carriedToken,
   POLL_INTERVAL_MS,
   REQUEST_TIMEOUT_MS,
   TICK_MS,
   type PollDeps,
   type PollSchemas,
 } from "../lib/poll";
-import { forgetToken } from "../lib/token";
+import { forgetToken, tokenFor } from "../lib/token";
 
 /** The daemon's bodies as the generated contract types them. */
 export interface ContractBodies {
@@ -61,8 +62,19 @@ export function useFleet(origin: string, deps: PollDeps): PeersState<ContractBod
     queryFn: async (): Promise<Fleet> => {
       const previous = client.getQueryData<Fleet>(queryKey);
       const known = previous?.hosts ?? [];
-      const results = await pollPeers(origin, known, depsRef.current, REQUEST_TIMEOUT_MS, contractSchemas);
-      for (const result of results) if (!result.ok && result.status === 401) forgetToken(addressOf(result.base));
+      const rejected = new Map<string, string | null>();
+      const fetch: PollDeps["fetch"] = async (url, init) => {
+        const address = addressOf(url);
+        const token = tokenFor(address);
+        const response = await depsRef.current.fetch(url, init);
+        if (response.status === 401 && carriedToken(response)) rejected.set(address, token);
+        return response;
+      };
+      const results = await pollPeers(origin, known, { fetch }, REQUEST_TIMEOUT_MS, contractSchemas);
+      for (const result of results) {
+        const address = addressOf(result.base);
+        if (!result.ok && result.status === 401 && result.token_sent && tokenFor(address) === rejected.get(address)) forgetToken(address);
+      }
       return { hosts: mergeHosts(known, results, depsRef.current.now()), polls: (previous?.polls ?? 0) + 1 };
     },
     refetchInterval: POLL_INTERVAL_MS,
