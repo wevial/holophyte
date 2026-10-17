@@ -9,6 +9,12 @@ export const turnsSchema = z.object({ turns: z.array(z.object({
   route: z.enum(["primary", "fallback"]),
   seconds: z.number().nullable(),
   session_id: z.string().nullable(),
+  ended_ms: z.number().int(),
+  exit_status: z.number().int().nullable(),
+  timed_out: z.boolean(),
+  input_tokens: z.number().int().nullable(),
+  output_tokens: z.number().int().nullable(),
+  cost_usd: z.number().nullable(),
 }).strict()) }).strict();
 
 export type RunTurnsBody = z.infer<typeof turnsSchema>;
