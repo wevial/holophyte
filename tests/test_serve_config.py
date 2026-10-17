@@ -236,6 +236,77 @@ class ConfigEditTests(ServeTestCase):
         finally:
             conn.close()
 
+    def test_check_accepts_without_writes_records_locks_or_probes(self):
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        before = "[loop]\nworkers = 2\n"
+        (self.db.parent / "config.toml").write_text(before)
+        with closing(store.read.open_readonly(self.db)) as conn:
+            rows = conn.execute("SELECT * FROM interventions").fetchall()
+        with patch.object(holophyte.serve.serve_config, "CONFIG_LOCK") as lock, \
+                patch.object(holophyte.serve.serve_config,
+                             "probe_changed_implementer", return_value=None) as probe:
+            code, _, body = self.request(
+                "PUT", "/config", self.BEARER,
+                body={"text": "[loop]\nworkers = 3\n", "check": True})
+            self.assertEqual((code, body), (200, {"ok": True, "checked": True}))
+            code, _, body = self.request(
+                "PUT", "/config", self.BEARER,
+                body={"text": '[agents]\nimplementer = "x"\n', "check": True})
+            self.assertEqual((code, body), (200, {"ok": True, "checked": True}))
+            lock.__enter__.assert_not_called()
+            probe.assert_not_called()
+        self.assertEqual(self.on_disk(), before)
+        self.assertEqual(list(self.db.parent.glob("config.toml.*")), [])
+        with closing(store.read.open_readonly(self.db)) as conn:
+            self.assertEqual(
+                conn.execute("SELECT * FROM interventions").fetchall(), rows)
+
+    def test_text_refusals_name_parser_or_key_line_for_checks_and_saves(self):
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        before = "[loop]\nworkers = 2\n"
+        (self.db.parent / "config.toml").write_text(before)
+        for text, line, error in (
+            ('[agents]\nimplementer = "x"\n\n[loop]\nworkers = 0\n',
+             5, "[loop] workers"),
+            ("[loop]\nworkers = = 2\n", 2, "malformed TOML"),
+            ('[loop]\nworkers = "at line 99"\n', 2, "[loop] workers"),
+            ("# workers = 8\nloop.workers = 0\n", 2, "[loop] workers"),
+            ('[agents]\nimplementer = """\n[loop]\nworkers = 7\n"""\n'
+             '["loop"] # settings\n"workers" = 0\n', 7, "[loop] workers"),
+            ('[other]\ntoken = "[redacted]"\n', 2, "[other] token"),
+            ('loop = "invalid"\n', None, "[loop] must be a table"),
+        ):
+            for check in (True, False):
+                with self.subTest(text=text, check=check):
+                    code, _, body = self.request(
+                        "PUT", "/config", self.BEARER,
+                        body={"text": text, **({"check": True} if check else {})})
+                    self.assertEqual(code, 400, body)
+                    self.assertIn(error, body["error"])
+                    self.assertEqual(body["line"], line)
+                    self.assertEqual(self.on_disk(), before)
+
+    def test_check_rejects_patch_and_non_boolean_without_writing(self):
+        self.seed()
+        before = self.config("config_edit = true\n")
+        self.start(before)
+        for body, error in (
+            ({"patch": {"loop.workers": 3}, "check": True}, "check takes a text body"),
+            ({"patch": {"loop.workers": 3}, "check": False}, "check takes a text body"),
+            ({"text": "", "check": "yes"}, "check must be a boolean"),
+            ({"text": None, "check": True}, "text must be"),
+        ):
+            with self.subTest(body=body):
+                code, _, reply = self.request("PUT", "/config", self.BEARER, body=body)
+                self.assertEqual(code, 400, reply)
+                self.assertIn(error, reply["error"])
+                if "text" in body:
+                    self.assertIsNone(reply["line"])
+                self.assertEqual(self.on_disk(), before)
+        self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")), [])
+
     def test_a_valid_put_keeps_the_secret_backs_up_and_records(self):
         self.seed()
         before = self.config("config_edit = true\n")

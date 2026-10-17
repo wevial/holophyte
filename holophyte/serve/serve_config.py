@@ -4,6 +4,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 import stat
 import tempfile
 import threading
@@ -93,12 +94,21 @@ def validate_config(project, text):
 
 
 def write_config(project, body, now=None, if_match=None):
-    if "patch" in body:
-        return patch_config(project, body["patch"], now, if_match)
     text = body.get("text")
+    if not isinstance(body.get("check", False), bool):
+        return 400, text_refusal(text, "check must be a boolean")
+    if "patch" in body:
+        if "check" in body:
+            return 400, text_refusal(text, "check takes a text body")
+        return patch_config(project, body["patch"], now, if_match)
     if not isinstance(text, str):
-        return 400, {"ok": False, "error": "text must be the file's new"
-                                            " contents as a string"}
+        return 400, text_refusal(text, "text must be the file's new"
+                                " contents as a string")
+    if body.get("check", False):
+        _, refused = restored_config(project, text, config_text(project))
+        if refused is not None:
+            return 400, text_refusal(text, refused)
+        return 200, {"ok": True, "checked": True}
     with CONFIG_LOCK:
         current = config_text(project)
         conflict = config_conflict(project, current, if_match)
@@ -108,6 +118,59 @@ def write_config(project, body, now=None, if_match=None):
     if written is not None:
         reply["probe"] = probe_changed_implementer(project, current, written)
     return code, reply
+
+
+def text_refusal(text, error):
+    return {"ok": False, "error": error, "line": refusal_line(text, error)}
+
+
+def refusal_line(text, error):
+    if not isinstance(text, str):
+        return None
+    location = re.search(
+        r"^malformed TOML: .*\(at line (\d+), column \d+\)$", error)
+    if location:
+        return int(location[1])
+    named = re.search(r"\[([\w.-]+)\]\s+([\w-]+)\b", error)
+    if not named:
+        return None
+    table, key = named.groups()
+    section = ""
+    for number, line in enumerate(config_key_lines(text), 1):
+        header = re.fullmatch(r"\s*(\[\[?)\s*([^\[\]]+)\s*\]\]?\s*", line)
+        if header:
+            section = header[2].strip().strip("\"'")
+            if header[1] == "[[":
+                section += "[]"
+        name = key if section == table else f"{table}.{key}" if not section else None
+        if name and re.match(r"\s*" + dotted_key_pattern(name) + r"\s*=", line):
+            return number
+    return None
+
+
+def config_key_lines(text):
+    strings = (r'"""(?:\\[\s\S]|"(?!"")|[^"\\])*"""|\'\'\'[\s\S]*?\'\'\''
+               r'|"(?:\\.|[^"\\\n])*"|\'[^\'\n]*\'|#[^\n]*')
+    def mask(match):
+        value = match[0]
+        if value.startswith(("#", '\"\"\"', "'''")):
+            return re.sub(r"[^\n]", " ", value)
+        return value
+    return re.sub(strings, mask, text).splitlines()
+
+
+def dotted_key_pattern(name):
+    return r"\s*\.\s*".join(
+        rf"(?:{re.escape(part)}|\"{re.escape(part)}\"|'{re.escape(part)}')"
+        for part in name.split("."))
+
+
+def restored_config(project, text, current):
+    try:
+        restored = restore(text, current)
+    except ValueError as bad:
+        return None, str(bad)
+    return restored, validate_config(project, restored)
 
 
 class PatchError(ValueError):
@@ -231,13 +294,10 @@ def probe_changed_implementer(project, before, after):
 
 def _write_config(project, text, now, current,
                   how="replaced {path} from the console (PUT /config)"):
-    try:
-        text = restore(text, current)
-    except ValueError as bad:
-        return 400, {"ok": False, "error": str(bad)}, None
-    refused = validate_config(project, text)
+    restored, refused = restored_config(project, text, current)
     if refused is not None:
-        return 400, {"ok": False, "error": refused}, None
+        return 400, text_refusal(text, refused), None
+    text = restored
     path = project.config_path
     path.parent.mkdir(parents=True, exist_ok=True)
     backup = None

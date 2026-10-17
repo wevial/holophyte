@@ -68,7 +68,37 @@ const isValues = (candidate: unknown): candidate is ConfigValues =>
 export type ConfigVerdict =
   | { ok: true; backup: string | null; applies: string; revision: string }
   | { ok: false; conflict: true; current: string }
-  | { ok: false; error: string; refused: boolean };
+  | { ok: false; error: string; refused: true; line: number | null }
+  | { ok: false; error: string; refused: false };
+
+export type ConfigCheck =
+  | { ok: true }
+  | { ok: false; error: string; line: number | null }
+  | { ok: false; error: string };
+
+export async function checkConfig(base: string, text: string, fetchImpl: Fetch): Promise<ConfigCheck> {
+  const url = `${base}/config`;
+  try {
+    const response = await fetchImpl(url, {
+      method: "PUT",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ text, check: true }),
+    });
+    let answer: unknown = null;
+    try {
+      answer = await response.json();
+    } catch {
+      answer = null;
+    }
+    const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
+    const error = typeof record.error === "string" ? record.error : "";
+    if (response.status === 400) return { ok: false, error: error || `${url} answered 400`, line: typeof record.line === "number" ? record.line : null };
+    if (!response.ok) return { ok: false, error: `${url} answered ${response.status}${error ? `: ${error}` : ""}` };
+    return { ok: true };
+  } catch (failure) {
+    return { ok: false, error: failure instanceof Error ? failure.message : String(failure) };
+  }
+}
 
 /** What a `PUT /config` carries: the whole new file as `text`, or a
  *  `patch` of dotted `table.key` to the value each takes. */
@@ -98,7 +128,7 @@ export async function putConfig(base: string, write: ConfigWrite, fetchImpl: Fet
   const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
   const error = typeof record.error === "string" ? record.error : "";
   if (response.status === 409 && revision !== undefined) return { ok: false, conflict: true, current: typeof record.current === "string" ? record.current : "" };
-  if (response.status === 400) return { ok: false, error: error || `${url} answered 400`, refused: true };
+  if (response.status === 400) return { ok: false, error: error || `${url} answered 400`, refused: true, line: typeof record.line === "number" ? record.line : null };
   if (!response.ok) return { ok: false, error: `${url} answered ${response.status}${error ? `: ${error}` : ""}`, refused: false };
   return {
     ok: true,

@@ -339,7 +339,7 @@ which is the loop's question at its next start. A document the loader
 refuses is 400:
 
 ```json
-{"ok": false, "error": "[holo2] /home/.../config.toml: [loop] workers must be an integer >= 1, got 0"}
+{"ok": false, "error": "[holo2] /home/.../config.toml: [loop] workers must be an integer >= 1, got 0", "line": 2}
 ```
 
 and nothing is written. An accepted document is recorded first, a human
@@ -359,6 +359,21 @@ cannot overwrite an intervening save with a stale revision. The reply is
 
 `revision` names the written file. `backup` is null when there was no file
 to keep. Backups are not pruned.
+
+`PUT /config` with `{"text": "...", "check": true}` checks without saving.
+It restores redacted values from the current file and runs the same TOML
+parser and loader checks. Success is `200 {"ok": true, "checked": true}`;
+it takes no save lock, writes no file or backup, records no intervention,
+and probes no implementer. Checks ignore `If-Match` and do not need a run
+in the store. The `config_edit` opt-in and token gate still apply.
+`check` must be a boolean; any `patch` body containing `check` is 400
+(`check takes a text body`). With `check` false, a text body saves normally.
+
+Every 400 for a text body, whether a check or a save, includes `line`:
+the 1-based line from a malformed-TOML message, or the first assignment
+of the named `[table] key` under that header (including a top-level
+`table.key` assignment). It is null when the refusal cannot be located.
+Only the first refusal is returned.
 
 `PUT /config` also takes `{"patch": {...}}` in place of `text`: a flat
 object of dotted `table.key` to a string, an integer, a boolean or a list
