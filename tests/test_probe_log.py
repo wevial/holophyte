@@ -7,12 +7,34 @@ from unittest.mock import patch
 
 import review_runner
 from holophyte.agents.probe_log import last_probes, record_probe
-from holophyte.agents.probes import ProbeResult, probe_implementer, probe_seat
+from holophyte.agents.probes import (
+    ProbeResult,
+    probe_diagnostic,
+    probe_implementer,
+    probe_seat,
+)
 from holophyte.config.project import Project
 from tests.serve_fixture import ServeTestCase
 
 
 class ProbeLogTests(ServeTestCase):
+    def test_missing_codex_cause_survives_in_diagnostic_and_probe_log(self):
+        for args in (("init",), ("-c", "user.name=Test", "-c",
+                                "user.email=test@example.com", "commit",
+                                "--allow-empty", "-m", "initial")):
+            subprocess.run(["git", *args], cwd=self.target, check=True,
+                           capture_output=True)
+        (self.db.parent / "config.toml").write_text(
+            '[agents]\nreviewer_fallback = "backup-reviewer"\n')
+        project = Project.locate(self.target)
+        with patch("review_runner.shutil.which", return_value=None):
+            probe = probe_seat(project, "review")
+        self.assertFalse(probe.ok)
+        reason = "could not start: Codex CLI is not installed"
+        self.assertIn(reason, probe_diagnostic(project, probe))
+        self.assertEqual(last_probes(project)["reviewer"]["primary"]["why"],
+                         reason)
+
     def test_review_launch_error_does_not_record_embedded_subprocess_output(self):
         for args in (("init",), ("-c", "user.name=Test", "-c",
                                 "user.email=test@example.com", "commit",
@@ -22,18 +44,31 @@ class ProbeLogTests(ServeTestCase):
         (self.db.parent / "config.toml").write_text(
             '[agents]\nreviewer = "review-agent"\n')
         project = Project.locate(self.target)
-        failure = review_runner.ReviewBoundaryError(
-            "review preflight did not complete: private-stderr-tail-marker")
-        with patch("holophyte.agents.probes.probe_configured_review",
-                   side_effect=failure) as review:
-            probe = probe_seat(project, "review")
-        review.assert_called_once()
-        self.assertFalse(probe.ok)
-        entry = last_probes(project)["reviewer"]["primary"]
-        self.assertFalse(entry["ok"])
-        self.assertIn("could not start:", entry["why"])
-        self.assertNotIn("private-stderr-tail-marker",
-                         (project.holo_dir / "route-probes.json").read_text())
+        failures = (
+            (review_runner.ReviewBoundaryError(
+                "review preflight did not complete: private-stderr-tail-marker"),
+             "review preflight did not complete"),
+            (review_runner.ReviewBoundaryError(
+                "command failed (1): private-command\nprivate-stderr-tail-marker"),
+             "command failed (1)"),
+            (RuntimeError("`private-command` failed:\nprivate-stderr-tail-marker"),
+             "command failed"),
+            (RuntimeError("implementer credential variable TOKEN is not set"),
+             "implementer credential variable TOKEN is not set"),
+        )
+        for failure, cause in failures:
+            with self.subTest(cause=cause), patch(
+                    "holophyte.agents.probes.probe_configured_review",
+                    side_effect=failure) as review:
+                probe = probe_seat(project, "review")
+                review.assert_called_once()
+                self.assertFalse(probe.ok)
+                entry = last_probes(project)["reviewer"]["primary"]
+                self.assertFalse(entry["ok"])
+                self.assertEqual(entry["why"], f"could not start: {cause}")
+                raw = (project.holo_dir / "route-probes.json").read_text()
+                for private in ("private-stderr-tail-marker", "private-command"):
+                    self.assertNotIn(private, raw)
 
     def test_real_launch_failure_records_reason_without_executable_path(self):
         script = self.root / "private-agent-probe"

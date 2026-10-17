@@ -136,7 +136,10 @@ def probe_seat(project, role, *, fallback=False, timeout=None):
 def launch_failure_reason(error):
     if isinstance(error, OSError) and error.errno is not None:
         return os.strerror(error.errno)
-    return type(error).__name__
+    message = str(error)
+    if message.startswith("`") and "` failed:" in message:
+        return "command failed"
+    return message.partition(": ")[0].partition("\n")[0] or type(error).__name__
 
 
 def probe_route(project, role, fallback, timeout, entry):
