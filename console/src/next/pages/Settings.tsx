@@ -11,12 +11,13 @@ import { Btn } from "../components/Btn";
 import { storeScope, switcherRows, type SwitcherRow } from "../projects";
 import { useConfig } from "../queries";
 import { keepScope, useConsolePeers } from "../scope";
-import { hostsNeedingAttention, settingsHost, patchLines, SETTINGS_FIELDS, SETTINGS_TABS } from "../settings";
+import { hostsNeedingAttention, settingsHost, patchLines, lineDiff, SETTINGS_FIELDS, SETTINGS_TABS } from "../settings";
 import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
 import { AppearanceTab } from "../components/AppearanceTab";
 import { HostsTab } from "../components/HostsTab";
+import { TomlEditor, type TomlCheckState } from "../components/TomlEditor";
 import { NotFound } from "./Placeholder";
 
 type Tab = (typeof SETTINGS_TABS)[number];
@@ -74,9 +75,15 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
   const attention = hostsNeedingAttention(hosts);
   const draft = useSettingsDraft();
   const edits = draft.projects[project] ?? {};
+  const rawText = draft.raw[project] ?? (answer?.state === "ok" ? answer.config.text : "");
+  const rawChanged = answer?.state === "ok" && rawText !== answer.config.text;
+  const [checkRefused, setCheckRefused] = useState(false);
+  const [check, setCheck] = useState<TomlCheckState | null>(null);
+  const [rawRefusal, setRawRefusal] = useState<{ text: string; error: string; line: number | null } | null>(null);
+  const [confirm, setConfirm] = useState<"raw" | "fields" | null>(null);
+  const rawMode = confirm ? confirm === "raw" : tab.id === "toml";
   const save = useConfigSave();
   const restart = useAction();
-  const [confirm, setConfirm] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [serverErrors, setErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<{ revision: string; applies: string; probe?: ConfigProbe | null } | null>(null);
@@ -98,28 +105,35 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
     const value = edits[key]?.value;
     if (typeof value === "string" && !value.trim()) errors[key] = "A seat needs a command. Remove the key in Raw TOML to use the default.";
   }
-  const canSave = host?.status?.config_edit === true && answer?.state === "ok" && answer.config.values !== null && Object.keys(errors).length === 0;
+  const canSave = host?.status?.config_edit === true && answer?.state === "ok" && (rawMode ? rawChanged && check?.text === rawText && !check.pending && !check.error : !rawChanged && answer.config.values !== null && Object.keys(errors).length === 0);
   const restartLabel = host && underHost(host.base) ? RUN_SWEEP : RESTART_LABEL;
   const write = async () => {
     if (!canSave || !host || answer?.state !== "ok" || save.isPending) return;
     setRefusal(null);
-    const result = await save.mutateAsync({ base: host.base, revision: answer.config.revision, patch: Object.fromEntries(Object.entries(edits).map(([key, edit]) => [key, edit.value])) });
+    const result = await save.mutateAsync({ base: host.base, revision: answer.config.revision, ...(rawMode ? { text: rawText } : { patch: Object.fromEntries(Object.entries(edits).map(([key, edit]) => [key, edit.value])) }) });
     if (result.ok) {
-      draft.saved(project, edits);
-      setConfirm(false);
-      setBanner({ ...result, probe: edits["agents.implementer"] ? result.probe : undefined });
+      if (rawMode) draft.savedRaw(project, rawText);
+      else draft.saved(project, edits);
+      setConfirm(null);
+      setBanner({ ...result, probe: rawMode || edits["agents.implementer"] ? result.probe : undefined });
     } else if ("conflict" in result) {
       setRefusal(`config.toml changed on ${hostLabel} since this page read it. It has been read again: check the fields and save once more.`);
+    } else if (rawMode && result.refused) {
+      setCheckRefused(true);
+      setRawRefusal({ text: rawText, error: result.error, line: result.line });
+      setCheck({ text: rawText, pending: false, error: result.error, line: result.line });
+      setConfirm(null);
     } else {
       const key = result.refused ? namedKey(result.error) : null;
       const field = SETTINGS_FIELDS.find((field) => `${field.table}.${field.key}` === key);
       if (key && field) {
         setErrors((previous) => ({ ...previous, [key]: result.error }));
-        setConfirm(false);
+        setConfirm(null);
         void navigate({ to: "/settings/$tab", params: { tab: field.tab }, search: { project } });
       } else setRefusal(result.error);
     }
   };
+  const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   const count = (tab: string) => SETTINGS_FIELDS.filter((field) => field.tab === tab && `${field.table}.${field.key}` in edits).length;
   return (
     <section aria-labelledby="page-title" className="max-w-[1180px] px-5 py-7 min-[720px]:px-8">
@@ -156,6 +170,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
               >
                 {item.label}
                 {item.group === "Project" && count(item.id) > 0 && <span className="ml-auto font-mono text-[11px] text-act">{count(item.id)}</span>}
+                {item.id === "toml" && checkRefused && <span className="ml-auto font-mono text-[11px] text-bad">1</span>}
                 {item.id === "hold" && host?.status?.admission === "held" && <span className="font-mono text-[11px] text-wait">held</span>}
                 {item.id === "hosts" && attention > 0 && <span className="ml-auto font-mono text-[12px] text-need">{attention}</span>}
               </Link>
@@ -180,6 +195,8 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
           </header>
           {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
             <div className="mt-6">
+              {rawChanged && <p className="mb-4 font-mono text-[13px] text-ink-3">Save or revert the raw edit first.</p>}
+              <fieldset disabled={rawChanged || save.isPending}>
               {SETTINGS_FIELDS.filter((field) => field.tab === tab.id).map((field) => {
                 const key = `${field.table}.${field.key}`;
                 return <SettingRow key={key} field={field} values={answer.config.values} value={edits[key]?.value}
@@ -190,15 +207,24 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
                   }}
                   project={project} host={hostLabel} applies={answer.config.applies} />;
               })}
+              </fieldset>
             </div>
-          ) : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
+          ) : tab.id === "toml" && host && answer?.state === "ok" ? <TomlEditor
+            base={host.base} file={file} project={project} revision={answer.config.revision}
+            original={answer.config.text} text={rawText} fieldChanges={Object.keys(edits).length}
+            disabled={host.status?.config_edit !== true} busy={save.isPending} refusal={rawRefusal}
+            onChange={(text) => { setRawRefusal(null); draft.editRaw(project, text === answer.config.text ? null : text); }}
+            onRevert={() => { setRawRefusal(null); draft.editRaw(project, null); }}
+            onCheck={(state) => { setCheck(state); if (!state.pending) setCheckRefused(state.error !== null); }} onSave={() => { setRefusal(null); setConfirm("raw"); }}
+          /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
-        <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={!canSave || save.isPending} onSave={() => { setRefusal(null); setConfirm(true); }} />
-        {confirm && <ConfirmDialog label="Save · holophyte" heading="Save these changes?" confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(false); }} onConfirm={() => void write()}
+        <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
+        {confirm && <ConfirmDialog label="Save · holophyte" heading={rawMode ? `Save ${file}?` : "Save these changes?"} confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(null); }} onConfirm={() => void write()}
           refusal={refusal && <p role="alert" className="mt-4 font-mono text-[13px] text-bad">{refusal}</p>}>
           <p className="mt-4 font-read text-[15px] text-ink-2">These lines change in config.toml on {hostLabel}.</p>
-          <div className="my-5 border border-rule py-2 font-mono text-[13px]">
-            {patchLines(answer?.state === "ok" ? answer.config.values : null, edits).map((line, index) => <div key={index} className={`whitespace-pre-wrap break-words px-3 py-1 ${line.kind === "removed" ? "bg-bad-wash text-bad" : line.kind === "added" ? "text-live" : "text-ink-3"}`}>{line.kind === "removed" ? "− " : line.kind === "added" ? "+ " : ""}{line.text}</div>)}
+          <div className="my-5 max-h-[40vh] overflow-y-auto border border-rule py-2 font-mono text-[13px]">
+            {(rawMode ? diff.slice(0, 40).map((line) => ({ ...line, text: `${line.number} ${line.text}` })) : patchLines(answer?.state === "ok" ? answer.config.values : null, edits)).map((line, index) => <div key={index} className={`whitespace-pre-wrap break-words px-3 py-1 ${line.kind === "removed" ? "bg-bad-wash text-bad" : line.kind === "added" ? "text-live" : "text-ink-3"}`}>{line.kind === "removed" ? "− " : line.kind === "added" ? "+ " : ""}{line.text}</div>)}
+            {rawMode && diff.length > 40 && <p className="px-3 py-1 text-ink-3">and {diff.length - 40} more lines</p>}
           </div>
           <p className="font-read text-[14px] text-ink-2">Applies at the {answer?.state === "ok" ? answer.config.applies : "next loop start"}.</p>
           <p className="mt-2 font-read text-[14px] text-ink-3">Runs in flight keep the settings they started with.</p>
