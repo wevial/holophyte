@@ -36,6 +36,7 @@ function withoutComments(text: string): string {
 function visibleSource(text: string) {
   let visible = "";
   const offsets: number[] = [];
+  const comments: string[] = [];
   let start = 0;
   let fence = "";
   const markers = /^ {0,3}(`{3,}|~{3,})([^\r\n]*)/gm;
@@ -45,6 +46,7 @@ function visibleSource(text: string) {
     pattern.lastIndex = start;
     const match = pattern.exec(text);
     const comment = match && !match[1];
+    if (comment) comments.push(match[0]);
     const end = match ? match.index + (comment ? 0 : match[0].length) : text.length;
     visible += text.slice(start, end);
     for (let i = start; i < end; i++) offsets.push(i);
@@ -55,7 +57,7 @@ function visibleSource(text: string) {
     start = match ? match.index + match[0].length : text.length;
   }
   offsets.push(text.length);
-  return { visible, offsets };
+  return { visible, offsets, comments };
 }
 
 function lines(text: string): Line[] {
@@ -155,7 +157,7 @@ export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] 
   const text = field === "title" ? form.preamble : form.sections.find(section => section.name === sections[field as Exclude<Field, "title">])?.text ?? "";
   let value: Fields[Field];
   if (field === "title") value = matching(text, /^# /)[0]?.text.slice(2) ?? "";
-  else if (field === "summary" || field === "notes" || field === "openQuestions") value = withoutComments(text).trim();
+  else if (field === "summary" || field === "notes" || field === "openQuestions") value = visibleSource(text).visible.trim();
   else if (field === "what" || field === "why" || field === "how") value = paragraph(text, field)?.value ?? "";
   else if (field === "uiChange") value = (matching(text, /^\*\*UI change:\*\* (major|minor)[ \t]*$/)[0]?.text.match(/(major|minor)/)?.[1] as Fields["uiChange"]) ?? null;
   else if (field === "mockupLink") value = matching(text, mockupLinkPattern)[0]?.text.trim() ?? "";
@@ -174,7 +176,7 @@ export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] 
 
 function splice(text: string, start: number, end: number, value: string): string {
   const removed = text.slice(start, end);
-  const comments = (removed.match(commentPattern) ?? []).join("");
+  const comments = visibleSource(removed).comments.join("");
   const eol = comments ? /\r?\n$/.exec(value || removed)?.[0] ?? "" : "";
   const replacement = eol && value.endsWith(eol) ? value.slice(0, -eol.length) : value;
   return text.slice(0, start) + replacement + comments + eol + text.slice(end);
@@ -201,9 +203,11 @@ function replaceItems(text: string, field: keyof typeof itemPatterns, value: str
 
 function editText(text: string, field: Exclude<Field, "title">, value: Fields[Field], eol: string): string {
   if (field === "summary" || field === "notes" || field === "openQuestions") {
-    if (!text.trim()) return append(text, String(value), eol);
-    const start = text.length - text.trimStart().length;
-    return splice(text, start, text.trimEnd().length, String(value));
+    const { visible, offsets } = visibleSource(text);
+    if (!visible.trim()) return append(text, String(value), eol);
+    const start = offsets[visible.length - visible.trimStart().length];
+    const end = offsets[visible.trimEnd().length - 1] + 1;
+    return splice(text, start, end, String(value));
   }
   if (field === "what" || field === "why" || field === "how") {
     const span = paragraph(text, field);

@@ -281,3 +281,17 @@ Orchestration: subagents
 
 - None
 `;
+
+export const fencedProseBody = `## Summary
+
+Explain the example.
+
+\`\`\`html
+<!-- keep -->
+\`\`\`
+<!-- hidden note -->
+
+## Estimate & dependencies
+
+Estimate: 30 min · Depends on: none
+`;

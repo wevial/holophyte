@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
-import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, inlineHtmlBody, labeledCommentBody, literalVerifyBody, mockupBody, openMarkerVerifyBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
+import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, fencedProseBody, inlineHtmlBody, labeledCommentBody, literalVerifyBody, mockupBody, openMarkerVerifyBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
 
 function checkerFieldsWithoutComments(body: string) {
@@ -350,5 +350,29 @@ test("editing verify commands with a literal HTML opening marker preserves the c
     );
     expect(fieldOf(form, "verify")).toEqual(['printf "<!--"']);
     expect(fieldOf(form, "estimate")).toBe(30);
+  }
+});
+
+test("prose fields expose literal HTML comments inside fences and hide outside comments", () => {
+  for (const [field, section] of [["summary", "Summary"], ["notes", "Implementation notes"], ["openQuestions", "Open questions"]] as const) {
+    for (const marker of ["```", "~~~~"]) {
+      for (const eol of ["\n", "\r\n"]) {
+        const body = fencedProseBody.replace("## Summary", `## ${section}`).replaceAll("```", marker).replaceAll("\n", eol);
+        expect(fieldOf(parseBody(body), field)).toBe(
+          `Explain the example.${eol}${eol}${marker}html${eol}<!-- keep -->${eol}${marker}`,
+        );
+      }
+    }
+  }
+});
+
+test("editing prose around a fenced HTML comment preserves the example and hidden annotation", () => {
+  for (const [field, section] of [["summary", "Summary"], ["notes", "Implementation notes"], ["openQuestions", "Open questions"]] as const) {
+    for (const eol of ["\n", "\r\n"]) {
+      const body = fencedProseBody.replace("## Summary", `## ${section}`).replaceAll("\n", eol);
+      const form = parseBody(body);
+      const edited = withField(form, field, fieldOf(form, field).replace("Explain the example.", "Explain the updated example."));
+      expect(composeBody(edited)).toBe(body.replace("Explain the example.", "Explain the updated example."));
+    }
   }
 });
