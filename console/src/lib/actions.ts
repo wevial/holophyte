@@ -10,6 +10,7 @@ export const ROUTES: Record<string, string> = {
   // A host daemon's root route (holophyte/serve/serve_host.py `run_sweep()`):
   // posted at `rootOf()` the row's base, never under a project's prefix.
   "Run sweep": "/actions/run-sweep",
+  "Restart daemon": "/actions/restart-daemon",
   Requeue: "/actions/requeue",
   // Reason boxes (components/ReasonAction.tsx), not one-click posts.
   Abort: "/actions/abort",
@@ -21,7 +22,7 @@ export const ROUTES: Record<string, string> = {
 };
 
 /** The labels whose route is the daemon's own, not a project's. */
-export const ROOT_LABELS = new Set(["Run sweep"]);
+export const ROOT_LABELS = new Set(["Run sweep", "Restart daemon"]);
 
 /** Where `label` posts for a row whose project answers at `base`: the
  *  daemon's root for a root label, else `base` itself. */

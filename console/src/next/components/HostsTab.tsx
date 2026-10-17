@@ -5,6 +5,7 @@ import { formatClock } from "../../lib/format";
 import { useAction } from "../actions";
 import { OriginContext, PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
+import { RestartDaemon } from "./RestartDaemon";
 import { HostToken } from "./HostToken";
 import { useToast } from "./Toast";
 import { useHostsTab, type HostCard } from "../hosts";
@@ -43,23 +44,24 @@ function useRetry(daemons: HostCard[]) {
   });
 }
 
-function DaemonCard({ host }: { host: HostCard }) {
+function DaemonCard({ host, onRestart }: { host: HostCard; onRestart: (key: string, name: string, started: number) => void }) {
   const id = useId();
   const sweep = useAction();
   const retry = useRetry([host]);
   const root = host.record.host_status;
   return (
     <article aria-labelledby={id} className="min-w-0 border border-rule bg-paper">
-      {host.down && <LastReport host={host} />}
+      {host.down && !host.restarting && <LastReport host={host} />}
       <header className="p-4 min-[1100px]:p-5">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <h2 id={id} className="font-sans text-[19px] font-semibold text-ink">{host.name}</h2>
-          <p className={`font-mono text-[12px] ${tones[host.health.tone]}`}><span aria-hidden="true">{host.health.glyph} </span>{host.health.text}</p>
-          <div className="ml-auto flex gap-2">
-            {host.down && <Btn variant="primary" busy={retry.isPending} busyLabel="Retrying…" onClick={() => retry.mutate()}>Retry now</Btn>}
-            {root && <Btn busy={sweep.isPending} busyLabel="Sweeping…" disabled={host.down || !root.actions}
+          <p className={`font-mono text-[12px] ${host.restarting ? "text-wait" : tones[host.health.tone]}`}><span aria-hidden="true">{host.restarting ? "◷" : host.health.glyph} </span>{host.restarting ? "Restarting · back in about 20s" : host.health.text}</p>
+          <div className="ml-auto flex flex-wrap gap-2">
+            {host.down && !host.restarting && <Btn variant="primary" busy={retry.isPending} busyLabel="Retrying…" onClick={() => retry.mutate()}>Retry now</Btn>}
+            {root && <Btn busy={sweep.isPending} busyLabel="Sweeping…" disabled={host.down || host.restarting || !root.actions}
               title={!root.actions ? ACTIONS_OFF : undefined}
               onClick={() => sweep.mutate({ label: "Run sweep", base: host.record.base, route: ROUTES["Run sweep"]!, body: {}, said: `Asked ${host.name} to sweep.` })}>Run sweep</Btn>}
+            <RestartDaemon host={host} onRestart={onRestart} />
           </div>
         </div>
         {sweep.data && !sweep.data.ok && <p className="mt-3 font-mono text-[12px] text-bad">{sweep.data.detail}</p>}
@@ -69,6 +71,7 @@ function DaemonCard({ host }: { host: HostCard }) {
           {" · "}up {host.uptime} · last sweep {host.lastSweep}
         </p>
       </header>
+      {host.restarting && <div role="status" className="border-t border-rule bg-wait/10 px-4 py-3 font-mono text-[12px] leading-5 text-wait">Restarting the daemon. Runs keep going; this card comes back when it answers.</div>}
       <div className="grid grid-cols-1 border-t border-rule min-[1100px]:grid-cols-[1.25fr_1fr_1fr]">
         <section aria-label="Projects" className="min-w-0 p-4 min-[1100px]:p-5">
           <h3 className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Projects</h3>
@@ -100,19 +103,19 @@ function DaemonCard({ host }: { host: HostCard }) {
 }
 
 export function HostsTab() {
-  const { summary, daemons, allDown } = useHostsTab();
+  const { summary, daemons, allDown, onRestart } = useHostsTab();
   const retry = useRetry(daemons);
   return (
     <div className="mt-6 max-w-[1180px] space-y-4">
       <p className="font-mono text-[13px] text-ink-2">{summary}</p>
-      {allDown && <div role="status" className="border-l-2 border-need bg-need-wash p-4">
+      {allDown && !daemons.some((host) => host.restarting) && <div role="status" className="border-l-2 border-need bg-need-wash p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[14px] text-need">No host is answering this console.</p>
           <Btn variant="primary" busy={retry.isPending} busyLabel="Retrying…" onClick={() => retry.mutate()}>Try again</Btn>
         </div>
         <p className={`${mono} mt-1`}>last answer from {daemons.map((host) => `${host.name} ${host.seen ? `at ${host.seen}` : "never answered"}`).join(" · ")}</p>
       </div>}
-      {daemons.map((host) => <DaemonCard key={host.key} host={host} />)}
+      {daemons.map((host) => <DaemonCard key={host.key} host={host} onRestart={onRestart} />)}
       <footer className={`${mono} border-b border-rule pb-4 pt-2`}>the token stays in this browser</footer>
     </div>
   );
