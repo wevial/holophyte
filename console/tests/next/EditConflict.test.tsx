@@ -24,12 +24,10 @@ const BASE: EditFields = {
   others: [{ index: 6, name: "Evidence", text: "- 01-notes.png" }],
 };
 
-test("mergeEdit sorts each field by who changed it and puts mine on top of theirs", () => {
+test("mergeEdit lists the fields both sides changed and puts mine on top of theirs", () => {
   const theirs: EditFields = { ...BASE, summary: "Each steer note shows on the run page.", criteria: [BASE.criteria[0]!, "A note's author and time show.", BASE.criteria[2]!] };
   const mine: EditFields = { ...BASE, title: "Steer notes show under their run", criteria: [BASE.criteria[0]!, "A note's author shows in bold.", BASE.criteria[2]!] };
   const merge = mergeEdit(BASE, theirs, mine);
-  expect(merge.onlyTheirs).toEqual(["Summary"]);
-  expect(merge.onlyMine).toEqual(["Title"]);
   expect(merge.both).toEqual([{ name: "AC2", theirs: "A note's author and time show.", mine: "A note's author shows in bold." }]);
   expect(merge.onTop).toEqual({
     title: "Steer notes show under their run",

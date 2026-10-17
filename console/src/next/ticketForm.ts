@@ -360,8 +360,8 @@ export const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "c
 ];
 
 /** A field both sides changed differently, with each side's text. */
-export interface Clash { name: string; theirs: string; mine: string }
-export interface EditMerge { onlyTheirs: string[]; onlyMine: string[]; both: Clash[]; onTop: EditFields }
+interface Clash { name: string; theirs: string; mine: string }
+export interface EditMerge { both: Clash[]; onTop: EditFields }
 
 type Criterion = { text: string; detail: string } | undefined;
 const criterionAt = (form: EditFields, index: number): Criterion =>
@@ -385,13 +385,10 @@ function shown(value: unknown): string {
  *  its name. `onTop` is `theirs` with every field `mine` changed set to
  *  `mine`'s text. */
 export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields): EditMerge {
-  const merge: EditMerge = { onlyTheirs: [], onlyMine: [], both: [], onTop: { ...theirs } };
+  const merge: EditMerge = { both: [], onTop: { ...theirs } };
   const judge = (name: string, was: unknown, their: unknown, my: unknown): boolean => {
-    const theyChanged = !unchanged(was, their);
     const iChanged = !unchanged(was, my);
-    if (theyChanged && !iChanged) merge.onlyTheirs.push(name);
-    else if (iChanged && !theyChanged) merge.onlyMine.push(name);
-    else if (iChanged && !unchanged(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
+    if (iChanged && !unchanged(was, their) && !unchanged(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
     return iChanged;
   };
   for (const [field, name] of FIELD_NAMES) {
