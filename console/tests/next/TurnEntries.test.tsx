@@ -66,6 +66,7 @@ test("the transcript pairs calls in chronological speaker rows, opens failures a
   expect(rows[3]!.querySelector("details")!.open).toBe(true);
   expect(rows[0]!.querySelector("details")!.open).toBe(false);
   expect(rows[4]!.querySelector("details")!.open).toBe(false);
+  expect(rows[4]!.querySelector("summary")!.textContent).toContain("ok · 1.0s");
   expect(within(rows[5]!).getByText("Turn ended · exit 0")).toBeTruthy();
   expect(rows.map(row => row.classList.contains("bg-bad-wash"))).toEqual([false, false, true, true, false, false]);
   const edit = rows[4]!.querySelector("details")!;
@@ -75,6 +76,24 @@ test("the transcript pairs calls in chronological speaker rows, opens failures a
   expect(within(edit).getByText("Output")).toBeTruthy();
   expect(within(edit).getByText("Updated sweep.py")).toBeTruthy();
   expect(urls.filter(url => url.endsWith("/transcript"))).toHaveLength(1);
+});
+
+test("a command without a result has unknown status when the turn times out", async () => {
+  await mount(transcriptSchema.parse({ entries: [
+    { ...baseEntry, speaker: "command", tool: "Bash", call: "interrupted", text: "sleep 300", summary: "Wait for completion", at_ms: Date.parse("2026-10-16T23:46:32Z") },
+  ] }), true);
+  const row = within(screen.getByRole("list", { name: "Turn transcript" })).getAllByRole("listitem")[0]!;
+  const fold = row.querySelector("details")!;
+  const summary = within(fold.querySelector("summary")!);
+  expect(summary.getByText("unknown").classList.contains("text-ink-3")).toBe(true);
+  expect(summary.queryByText("ok")).toBeNull();
+  expect(summary.queryByText("failed")).toBeNull();
+  expect(fold.open).toBe(false);
+  expect(row.classList.contains("bg-bad-wash")).toBe(false);
+  await act(async () => { fold.open = true; fireEvent(fold, new Event("toggle")); });
+  expect(within(fold).getByText("sleep 300")).toBeTruthy();
+  expect(within(fold).queryByText("Output")).toBeNull();
+  expect(screen.getByText("Turn ended · timed out")).toBeTruthy();
 });
 
 test("an unmatched result keeps its output and truncation notice without inventing input", async () => {

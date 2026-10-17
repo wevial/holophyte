@@ -27,13 +27,13 @@ function Fold({ row }: { row: Extract<TranscriptRow, { kind: "tool" }> | Extract
       <span aria-hidden="true" className="text-ink-3 group-open:rotate-90">›</span>
       <strong className="shrink-0 font-semibold text-ink">{tool?.name ?? "Prompt"}</strong>
       <span className="min-w-0 flex-1 truncate text-ink-2">{tool?.summary ?? prompt?.text.split("\n")[0]}</span>
-      <span className={`shrink-0 ${tool ? tool.failed ? "text-bad" : "text-live" : "text-ink-3"}`}>
-        {tool ? tool.failed ? "failed" : "ok" : "sent"}{tool?.duration != null && ` · ${tool.duration.toFixed(1)}s`}
+      <span className={`shrink-0 ${tool?.failed == null ? "text-ink-3" : tool.failed ? "text-bad" : "text-live"}`}>
+        {tool ? tool.failed == null ? "unknown" : tool.failed ? "failed" : "ok" : "sent"}{tool?.duration != null && ` · ${tool.duration.toFixed(1)}s`}
       </span>
     </summary>
     {prompt && <TextBox label="Input" text={prompt.text} cut={prompt.cut} />}
     {tool?.input && <TextBox label="Input" text={tool.input.text} cut={tool.input.cut} />}
-    {tool?.output && <TextBox label="Output" text={tool.output.text} cut={tool.output.cut} failed={tool.failed} />}
+    {tool?.output && <TextBox label="Output" text={tool.output.text} cut={tool.output.cut} failed={tool.failed === true} />}
   </details>;
 }
 

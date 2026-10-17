@@ -49,7 +49,7 @@ export function useTurnPage(project: string, run: number | null, turn: number | 
 
 export type TranscriptRow =
   | { kind: "prompt" | "note" | "said" | "error"; offset: string; text: string; cut: boolean }
-  | { kind: "tool"; offset: string; name: string; summary: string; input?: TranscriptEntry; output?: TranscriptEntry; failed: boolean; duration: number | null }
+  | { kind: "tool"; offset: string; name: string; summary: string; input?: TranscriptEntry; output?: TranscriptEntry; failed: boolean | null; duration: number | null }
   | { kind: "end"; offset: string; text: string };
 
 function transcriptOffset(at: number | null, start: number | null): string {
@@ -65,7 +65,7 @@ function toolRow(input: TranscriptEntry | undefined, output: TranscriptEntry | u
     name: input?.tool ?? output?.tool ?? "Tool",
     summary: input?.summary ?? output?.summary ?? "",
     input, output,
-    failed: output?.failed ?? false,
+    failed: output?.failed ?? null,
     duration: input?.at_ms != null && output?.at_ms != null ? (output.at_ms - input.at_ms) / 1000 : null,
   };
 }
