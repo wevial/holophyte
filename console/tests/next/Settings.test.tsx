@@ -143,6 +143,21 @@ test("project panels distinguish pending, disabled and failed config reads while
   }
 });
 
+test("an unknown project's panels report no matching host and selecting a known project starts a config read", async () => {
+  await mount("#/settings/general?project=unknown", fleet(() => new Promise(() => {})));
+  for (const label of ["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]) {
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
+    await act(settle);
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(label);
+    expect(screen.getByText("No host is available for unknown.")).toBeTruthy();
+    expect(screen.queryByText(/^Reading config.toml/)).toBeNull();
+  }
+  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "demo" } });
+  await act(settle);
+  expect(screen.getByText("Reading config.toml for demo from writer-host…")).toBeTruthy();
+  expect(screen.queryByText("No host is available for unknown.")).toBeNull();
+});
+
 test("the head and project subtitles use the filename returned by config and factory and browser tabs have their own panels", async () => {
   await mount("#/settings/general?project=demo", fleet(async () => config("/srv/demo/custom.toml")));
   expect(screen.getByText("demo · custom.toml on writer-host")).toBeTruthy();

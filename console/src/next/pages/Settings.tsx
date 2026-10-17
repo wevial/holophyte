@@ -25,8 +25,9 @@ function subtitle(tab: Tab["id"], file: string, project: string): string {
   }[tab];
 }
 
-function panelLine(tab: Tab, answer: ConfigAnswer | undefined, file: string, project: string, host: string): string {
+function panelLine(tab: Tab, answer: ConfigAnswer | undefined, file: string, project: string, host: string | null): string {
   if (tab.group !== "Project") return "This tab comes here.";
+  if (host === null) return project ? `No host is available for ${project}.` : "No project host is available.";
   if (!answer) return `Reading ${file} for ${project} from ${host}…`;
   if (answer.state === "off") return CONFIG_EDIT_OFF;
   if (answer.state === "error") return `${host} did not answer /config: ${answer.error}`;
@@ -90,7 +91,7 @@ function SettingsPage({ tab }: { tab: Tab }) {
             <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
             <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
           </header>
-          <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, hostLabel)}</p>
+          <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>
         </section>
       </div>
       <footer className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
