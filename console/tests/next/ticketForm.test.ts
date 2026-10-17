@@ -1,0 +1,157 @@
+import { expect, test } from "bun:test";
+import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
+import { detailedBody, fencedBody, mockupBody, windowsBody } from "./ticketBodies";
+
+test("parsing and composing preserve template, extensions, CRLF, and fence contents byte for byte", () => {
+  for (const body of [TEMPLATE, detailedBody, windowsBody, fencedBody, "", "No headings or final newline", "## Summary"]) {
+    expect(composeBody(parseBody(body))).toBe(body);
+  }
+  expect(parseBody(fencedBody).sections.map((section) => section.name)).toEqual(["Summary"]);
+  expect(parseBody(windowsBody).sections.map((section) => section.name)).toEqual(["Summary", "Verify command(s)"]);
+});
+
+test("criteria edits replace only unchecked items and preserve reviewer rules and all other sections", () => {
+  const original = parseBody(detailedBody);
+  expect(fieldOf(original, "criteria")).toEqual([
+    "Saved notes appear.", "Empty notes stay hidden.", "Existing run actions still work.",
+  ]);
+  const edited = withField(original, "criteria", ["Notes appear on the card.", "No notes means no card."]);
+  expect(composeBody(edited)).toBe(detailedBody.replace(
+    "- [ ] Saved notes appear.\n- [ ] Empty notes stay hidden.\n- [ ] Existing run actions still work.",
+    "- [ ] Notes appear on the card.\n- [ ] No notes means no card.",
+  ));
+  expect(composeBody(original)).toBe(detailedBody);
+});
+
+test("UI metadata inserts after How and a missing mock-up uses template section order", () => {
+  const original = parseBody(detailedBody);
+  expect(fieldOf(original, "uiChange")).toBeNull();
+  const marked = withField(original, "uiChange", "major");
+  expect(composeBody(marked)).toContain("**How:** Read the stored notes.\n\n**UI change:** major\n");
+  const linked = withField(marked, "mockupLink", "https://claude.ai/artifact/abc");
+  expect(fieldOf(linked, "mockupLink")).toBe("https://claude.ai/artifact/abc");
+  expect(linked.sections.map((section) => section.name)).toEqual([
+    "Summary", "What / Why / How", "Reproduce", "Mock-up", "In scope", "Out of scope",
+    "Acceptance criteria", "Verify command(s)", "Contract checks", "Implementation notes",
+    "Estimate & dependencies", "Open questions",
+  ]);
+  expect(composeBody(withField(parseBody(mockupBody), "uiChange", null))).toBe(
+    mockupBody.replace("**UI change:** major\n", ""),
+  );
+  expect(composeBody(withField(linked, "uiChange", null))).not.toContain("**UI change:**");
+});
+
+test("estimate and dependency edits retain orchestration and serialize an empty dependency list as none", () => {
+  const original = parseBody(detailedBody);
+  expect(fieldOf(original, "estimate")).toBe(30);
+  expect(fieldOf(original, "dependsOn")).toEqual(["HOLO-100", "HOLO-101"]);
+  const edited = withField(withField(original, "estimate", 45), "dependsOn", ["HOLO-238"]);
+  expect(composeBody(edited)).toBe(detailedBody.replace(
+    "Estimate: 30 min · Depends on: HOLO-100, HOLO-101",
+    "Estimate: 45 min · Depends on: HOLO-238",
+  ));
+  expect(composeBody(withField(edited, "dependsOn", []))).toBe(detailedBody.replace(
+    "Estimate: 30 min · Depends on: HOLO-100, HOLO-101", "Estimate: 45 min · Depends on: none",
+  ));
+});
+
+test("a blank form keeps only required sections, clears guidance, and exposes the summary hint", () => {
+  const form = blankForm();
+  const body = composeBody(withField(form, "title", "Steer notes show on the run detail card"));
+  expect(body.startsWith("# Steer notes show on the run detail card\n")).toBe(true);
+  expect(form.sections.map((section) => section.name)).toEqual([
+    "Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria",
+    "Verify command(s)", "Implementation notes", "Estimate & dependencies", "Open questions",
+  ]);
+  expect(body).not.toContain("<!--");
+  expect(body).not.toMatch(/<[^>]*>/);
+  expect(body).not.toMatch(/^>/m);
+  expect(fieldOf(form, "verify")).toEqual([]);
+  expect(fieldOf(form, "openQuestions")).toBe("- None");
+  expect(form.hints.summary).toBe("Describe the outcome in one or two sentences.");
+  expect(form.hints.openQuestions ?? "").toBe("");
+});
+
+test("text field edits preserve neighboring paragraphs, labels, and section whitespace", () => {
+  const original = parseBody(detailedBody);
+  const cases = [
+    ["title", "Steer notes", "New title"],
+    ["summary", "Show the operator's notes.", "Show all notes."],
+    ["what", "Show notes on the run card.\nContinue the same paragraph.", "Show a notes panel."],
+    ["why", "Operators need context.", "Operators need history."],
+    ["how", "Read the stored notes.", "Read the run record."],
+    ["notes", "Use the existing store.", "Keep the existing renderer."],
+    ["openQuestions", "- None", "- Which renderer?"],
+  ] as const;
+  for (const [field, before, after] of cases) {
+    expect(fieldOf(original, field)).toBe(before);
+    expect(composeBody(withField(original, field, after))).toBe(detailedBody.replace(before, after));
+  }
+});
+
+test("scope lists replace only their items and retain annotations", () => {
+  const original = parseBody(detailedBody);
+  expect(fieldOf(original, "inScope")).toEqual(["Run card", "Stored notes"]);
+  expect(fieldOf(original, "outOfScope")).toEqual(["Notifications"]);
+  expect(composeBody(withField(original, "inScope", ["Notes panel"]))).toBe(
+    detailedBody.replace("- Run card\n- Stored notes", "- Notes panel"),
+  );
+  expect(composeBody(withField(original, "outOfScope", []))).toBe(
+    detailedBody.replace("- Notifications\n", ""),
+  );
+});
+
+test("verify reads and replaces only the first fence including command lines that look like headings", () => {
+  const original = parseBody(detailedBody);
+  expect(fieldOf(original, "verify")).toEqual([
+    "bun test", "## This is a command comment, not a section", "printf 'done'",
+  ]);
+  expect(composeBody(withField(original, "verify", ["bun run typecheck", "bun test"]))).toBe(
+    detailedBody.replace("bun test\n## This is a command comment, not a section\nprintf 'done'", "bun run typecheck\nbun test"),
+  );
+  expect(composeBody(withField(parseBody(windowsBody), "verify", ["bun run lint"]))).toBe(
+    windowsBody.replace("## Inside the fence\r\nbun test", "bun run lint"),
+  );
+});
+
+test("mock-up fields edit independently while preserving design notes and other media", () => {
+  const original = parseBody(mockupBody);
+  expect(fieldOf(original, "mockupLink")).toBe("https://claude.ai/artifact/original");
+  expect(fieldOf(original, "mockupApproval")).toBe("Approved 2026-10-10: card layout");
+  expect(fieldOf(original, "mockupImages")).toEqual([
+    "![Overview](https://assets.example/overview.png)", "![Detail](https://assets.example/detail.png)",
+  ]);
+  expect(composeBody(withField(original, "mockupLink", "https://claude.ai/artifact/revised"))).toBe(
+    mockupBody.replace("https://claude.ai/artifact/original", "https://claude.ai/artifact/revised"),
+  );
+  expect(composeBody(withField(original, "mockupApproval", "Approved 2026-10-17: revised card"))).toBe(
+    mockupBody.replace("Approved 2026-10-10: card layout", "Approved 2026-10-17: revised card"),
+  );
+  expect(composeBody(withField(original, "mockupImages", ["![New](https://assets.example/new.png)"]))).toBe(
+    mockupBody.replace("![Overview](https://assets.example/overview.png)\n![Detail](https://assets.example/detail.png)", "![New](https://assets.example/new.png)"),
+  );
+  expect(composeBody(withField(original, "uiChange", "minor"))).toBe(mockupBody.replace("**UI change:** major", "**UI change:** minor"));
+});
+
+test("editing a blank summary preserves the following section boundary", () => {
+  const edited = withField(blankForm(), "summary", "New summary");
+  const reparsed = parseBody(composeBody(edited));
+  expect(fieldOf(reparsed, "summary")).toBe("New summary");
+  expect(reparsed.sections.map((section) => section.name)).toEqual([
+    "Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria",
+    "Verify command(s)", "Implementation notes", "Estimate & dependencies", "Open questions",
+  ]);
+});
+
+test("setting an empty field inserts its absent section in template order", () => {
+  const original = parseBody(mockupBody);
+  const summary = withField(original, "summary", "");
+  expect(summary.sections.map((section) => section.name)).toEqual([
+    "Summary", "What / Why / How", "Mock-up", "In scope",
+  ]);
+  const criteria = withField(original, "criteria", []);
+  expect(criteria.sections.map((section) => section.name)).toEqual([
+    "What / Why / How", "Mock-up", "In scope", "Acceptance criteria",
+  ]);
+});
