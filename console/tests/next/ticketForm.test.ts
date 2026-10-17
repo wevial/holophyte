@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/next/ticketForm";
+import { adjacentHtmlBody, inlineHtmlBody } from "./ticketBodies";
 import { adjacentFencesBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, labeledCommentBody, mockupBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
 
@@ -16,6 +17,26 @@ print(json.dumps({"summary": ticket.summary, "criteria": ticket.acceptance,
   expect(result.exitCode).toBe(0);
   return JSON.parse(result.stdout.toString()) as { summary: string; criteria: string[]; how: string; estimate: number | null };
 }
+
+test("What/Why/How edits preserve adjacent HTML blocks byte for byte", () => {
+  for (const block of ["<div>Keep this warning.</div>", "   <SECTION class=\"warning\">Keep this warning.</SECTION>", "</table>", "<script>keepWarning()</script>", "<?keep warning?>", "<!DOCTYPE html>", "<![CDATA[Keep this warning.]]>"]) {
+    for (const eol of ["\n", "\r\n"]) {
+      const body = adjacentHtmlBody.replaceAll("<div>Keep this warning.</div>", block).replaceAll("\n", eol);
+      const form = parseBody(body);
+      for (const [field, prose] of [["what", "Show the record."], ["why", "Explain the record."], ["how", "Read the record."]] as const) {
+        expect(fieldOf(form, field)).toBe(prose);
+        expect(composeBody(withField(form, field, "Read once."))).toBe(body.replace(prose, "Read once."));
+      }
+    }
+  }
+});
+
+test("inline HTML and autolinks remain part of a prose paragraph", () => {
+  const form = parseBody(inlineHtmlBody);
+  const prose = "Read the record.\n<span>Keep reading.</span>\n<https://example.com/record>";
+  expect(fieldOf(form, "how")).toBe(prose);
+  expect(composeBody(withField(form, "how", "Read once."))).toBe(inlineHtmlBody.replace(prose, "Read once."));
+});
 
 test("What/Why/How edits preserve adjacent fenced blocks outside the prose paragraph", () => {
   const cases = [

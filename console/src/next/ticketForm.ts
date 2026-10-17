@@ -104,6 +104,7 @@ const itemPatterns = {
   mockupImages: /^(!\[[^\]]*\]\(.*\))$/,
 };
 type Span = { start: number; end: number; value: string; after?: number };
+const htmlParagraphBoundary = /^ {0,3}<(?:\?|![A-Z]|!\[CDATA\[|(?:script|pre|style|textarea)(?=[\t >]|$)|\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?=[\t >]|\/>|$))/i;
 
 function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const rows = lines(text);
@@ -113,6 +114,7 @@ function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(first.text)![0];
   let last = first;
   for (const line of rows.slice(index + 1)) {
+    if (htmlParagraphBoundary.test(line.text)) break;
     if (!line.text.trim() || /^(\*\*[^*\r\n]+:\*\*| {0,3}(?:>|#{1,6}(?:[ \t]|$)|[-+*][ \t]+|1[.)][ \t]+|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|`{3,}|~{3,}))/.test(line.text)) break;
     last = line;
   }

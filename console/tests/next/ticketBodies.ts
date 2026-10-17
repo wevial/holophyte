@@ -228,3 +228,22 @@ export const labeledCommentBody = `## What / Why / How
 
 **How:**<!-- keep explanation --> Read the record.
 `;
+
+export const adjacentHtmlBody = `## What / Why / How
+
+**What:** Show the record.
+<div>Keep this warning.</div>
+
+**Why:** Explain the record.
+<div>Keep this warning.</div>
+
+**How:** Read the record.
+<div>Keep this warning.</div>
+`;
+
+export const inlineHtmlBody = `## What / Why / How
+
+**How:** Read the record.
+<span>Keep reading.</span>
+<https://example.com/record>
+`;
