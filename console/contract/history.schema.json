@@ -88,6 +88,26 @@
         "elapsed_ms": {
           "type": "integer"
         },
+        "working_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimate_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "heartbeat_age_ms": {
           "anyOf": [
             {
@@ -139,6 +159,8 @@
         "started_ms",
         "ended_ms",
         "elapsed_ms",
+        "working_ms",
+        "estimate_ms",
         "heartbeat_age_ms",
         "rounds",
         "max_rounds",
@@ -159,11 +181,24 @@
         "since": {
           "type": "integer"
         },
+        "until": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "limit": {
           "type": "integer"
         },
         "truncated": {
           "type": "boolean"
+        },
+        "total": {
+          "type": "integer"
         },
         "now": {
           "type": "integer"
@@ -172,8 +207,10 @@
       "required": [
         "rows",
         "since",
+        "until",
         "limit",
         "truncated",
+        "total",
         "now"
       ],
       "additionalProperties": true

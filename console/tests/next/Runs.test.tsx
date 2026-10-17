@@ -32,7 +32,7 @@ const YESTERDAY = new Date(2026, 9, 14, 0, 0).getTime();
 const run = (row: Partial<HistoryRow> & Pick<HistoryRow, "id" | "ticket" | "title" | "started_ms">): HistoryRow => ({
   ticket_url: null, attempt: 1, phase: "reviewing", outcome: null, outcome_reason: null, failure_kind: null,
   park_kind: null, ended_ms: null, elapsed_ms: 16 * MINUTE, heartbeat_age_ms: 1_000, rounds: 0, max_rounds: 3,
-  pr_url: null, host: null, ...row,
+  working_ms: null, estimate_ms: null, pr_url: null, host: null, ...row,
 });
 
 const demo12 = run({ id: 12, ticket: "DEMO-12", title: "Count the rounds", started_ms: today(16, 36) });
@@ -60,7 +60,7 @@ function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: It
     if (merge) return Response.json({ ...ready, run: Number(merge[1]), ready: readyRuns.includes(Number(merge[1])) });
     for (const [base, rows] of [[DEMO, demo], [WRITER, writer]] as const) {
       if (url === `${base}/history?since=${YESTERDAY}` && rows) {
-        return Response.json({ rows, since: YESTERDAY, limit: 500, truncated: false, now: NOW });
+        return Response.json({ rows, since: YESTERDAY, until: null, limit: 500, truncated: false, total: 0, now: NOW });
       }
     }
     return polls(url);
