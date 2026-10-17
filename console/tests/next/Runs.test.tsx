@@ -175,7 +175,7 @@ test("a host whose daemon has no /history adds no rows and no error beside one t
 const pullRequestItem = (id: number, pr: object): Item => ({
   kind: "pr_open", level: "attention", run: id, ticket: `DEMO-${id}`, ticket_url: null, title: `Ticket ${id}`,
   park_kind: "pull_request", reason: "PR open", asked_ms: NOW - MINUTE, pr_url: `https://github.com/example/demo/pull/${id}`,
-  pr: { number: id, checks: "success", review: "approved", threads: 0, open_threads: 0, title: null, ...pr },
+  pr: { number: id, checks: "success", review: "approved", threads: 0, open_threads: 0, title: null, state: "ready", ...pr },
 } as Item);
 const parkedRun = (id: number, hour: number) => run({
   id, ticket: `DEMO-${id}`, title: `Park ${id}`, started_ms: today(hour, 0), phase: "awaiting_merge_approval", park_kind: "pull_request",

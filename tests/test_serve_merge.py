@@ -354,6 +354,27 @@ class BypassMergeTests(MergeCase):
         self.assertEqual(json.loads(json.dumps(body).replace(
             self.sha, "HEAD_SHA")), json.loads(BYPASSABLE.read_text()))
 
+    def test_an_exempt_required_review_reads_ready_with_its_ruleset_detail(self):
+        self.github.rulesets[24]["current_user_can_bypass"] = "exempt"
+        body = self.read_merge()
+        self.assertEqual((body["ready"], body["reason"]), (True, None), body)
+        review = next(f for f in body["facts"] if f["name"] == "review_approved")
+        self.assertTrue(review["ok"], review)
+        self.assertIn("exempt", review["detail"])
+        self.assertIn("human-review", review["detail"])
+        self.assertEqual(json.loads(json.dumps(body).replace(
+            self.sha, "HEAD_SHA")), json.loads(
+                FIXTURE.with_name("run-merge-exempt.json").read_text()))
+
+    def test_mixed_exempt_and_always_reviews_still_require_bypass(self):
+        self.github.rulesets[24]["current_user_can_bypass"] = "exempt"
+        self.github.rules.append(review_rule(25, 1))
+        self.github.rulesets[25] = {
+            "name": "additional-review", "current_user_can_bypass": "always"}
+        body = self.assert_refused("review_bypassable")
+        self.assertIn("human-review", body["detail"])
+        self.assertIn("additional-review", body["detail"])
+
     def test_a_bypassable_review_merges_only_with_the_flag_and_records_it(
             self):
         self.assert_refused("review_bypassable")
