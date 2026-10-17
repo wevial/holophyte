@@ -246,14 +246,11 @@ class ConfigEditTests(ServeTestCase):
         with patch.object(holophyte.serve.serve_config, "CONFIG_LOCK") as lock, \
                 patch.object(holophyte.serve.serve_config,
                              "probe_changed_implementer", return_value=None) as probe:
-            code, _, body = self.request(
-                "PUT", "/config", self.BEARER,
-                body={"text": "[loop]\nworkers = 3\n", "check": True})
-            self.assertEqual((code, body), (200, {"ok": True, "checked": True}))
-            code, _, body = self.request(
-                "PUT", "/config", self.BEARER,
-                body={"text": '[agents]\nimplementer = "x"\n', "check": True})
-            self.assertEqual((code, body), (200, {"ok": True, "checked": True}))
+            for text in ("[loop]\nworkers = 3\n", '[agents]\nimplementer = "x"\n'):
+                code, _, body = self.request(
+                    "PUT", "/config", self.BEARER,
+                    body={"text": text, "check": True})
+                self.assertEqual((code, body), (200, {"ok": True, "checked": True}))
             lock.__enter__.assert_not_called()
             probe.assert_not_called()
         self.assertEqual(self.on_disk(), before)
