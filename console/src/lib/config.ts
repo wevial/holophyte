@@ -13,6 +13,24 @@ export type PatchValue = string | number | boolean | string[];
  *  here and never parses TOML itself. */
 export type ConfigValues = Record<string, Record<string, unknown>>;
 
+export const UNBOUND_NOTE = "edit this one in Raw TOML";
+
+export type Bound = { state: "absent" } | { state: "bound"; value: PatchValue } | { state: "unbound"; value: unknown };
+
+export const isLines = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
+
+export function bind(field: { table: string; key: string; kind: string; numeric?: string; min?: number }, values: ConfigValues | null): Bound {
+  const table = values?.[field.table];
+  if (table == null || typeof table !== "object" || !(field.key in table)) return { state: "absent" };
+  const value: unknown = table[field.key];
+  if (typeof value === "number" && ((field.numeric === "integer" && !Number.isInteger(value)) || (field.min !== undefined && value < field.min))) return { state: "unbound", value };
+  const fits =
+    field.kind === "number" ? typeof value === "number" && Number.isFinite(value) : field.kind === "lines" ? isLines(value) : typeof value === "string";
+  return fits ? { state: "bound", value: value as PatchValue } : { state: "unbound", value };
+}
+
+export const same = (a: PatchValue, b: PatchValue) => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((item, at) => item === b[at]) : a === b);
+
 /** The daemon's `GET /config` body (`docs/reference/daemon.md`). */
 export interface ConfigBody {
   text: string;
