@@ -1,4 +1,5 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import type { EditFields } from "./ticketEdit";
 
 export interface Fields {
   title: string;
@@ -347,4 +348,71 @@ export function blankForm(): TicketForm {
   const form = parseBody(uncommented.replace(/^>.*(?:\r?\n|$)/gm, "").replace(/<[^>]*>/g, "").replace("{{TITLE}}", ""));
   form.sections = form.sections.filter(section => !optional.has(section.name));
   return { ...withField(withField(form, "verify", []), "openQuestions", "- None"), hints };
+}
+
+/** Each field's name as the form labels it, in the order the form draws it. */
+export const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "criteriaDetail">, string][] = [
+  ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
+  ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
+  ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
+  ["uiChange", "UI change"], ["mockupLink", "Mock-up link"], ["mockupApproval", "Approval"], ["mockupImages", "Boards"],
+  ["notes", "Implementation notes"],
+];
+
+/** A field both sides changed differently, with each side's text. */
+export interface Clash { name: string; theirs: string; mine: string }
+export interface EditMerge { onlyTheirs: string[]; onlyMine: string[]; both: Clash[]; onTop: EditFields }
+
+type Criterion = { text: string; detail: string } | undefined;
+const criterionAt = (form: EditFields, index: number): Criterion =>
+  index < form.criteria.length ? { text: form.criteria[index]!, detail: form.criteriaDetail[index] ?? "" } : undefined;
+const otherNamed = (form: EditFields, name: string) => form.others.find(other => other.name === name)?.text;
+const unchanged = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+function shown(value: unknown): string {
+  if (value === undefined) return "(removed)";
+  if (value === null) return "none";
+  if (Array.isArray(value)) return value.join("\n");
+  if (typeof value === "object") {
+    const { text, detail } = value as { text: string; detail: string };
+    return detail ? `${text}\n${detail}` : text;
+  }
+  return String(value);
+}
+
+/** `mine`, an edit of `base`, set against `theirs`, a newer revision of it,
+ *  field by field: each criterion by its position, each other section by
+ *  its name. `onTop` is `theirs` with every field `mine` changed set to
+ *  `mine`'s text. */
+export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields): EditMerge {
+  const merge: EditMerge = { onlyTheirs: [], onlyMine: [], both: [], onTop: { ...theirs } };
+  const judge = (name: string, was: unknown, their: unknown, my: unknown): boolean => {
+    const theyChanged = !unchanged(was, their);
+    const iChanged = !unchanged(was, my);
+    if (theyChanged && !iChanged) merge.onlyTheirs.push(name);
+    else if (iChanged && !theyChanged) merge.onlyMine.push(name);
+    else if (iChanged && !unchanged(their, my)) merge.both.push({ name, theirs: shown(their), mine: shown(my) });
+    return iChanged;
+  };
+  for (const [field, name] of FIELD_NAMES) {
+    if (field !== "criteria") {
+      if (judge(name, base[field], theirs[field], mine[field])) merge.onTop = { ...merge.onTop, [field]: mine[field] };
+      continue;
+    }
+    const criteria: { from: number | null; text: string; detail: string }[] = [];
+    const count = Math.max(base.criteria.length, theirs.criteria.length, mine.criteria.length);
+    for (let index = 0; index < count; index += 1) {
+      const kept = judge(`AC${index + 1}`, criterionAt(base, index), criterionAt(theirs, index), criterionAt(mine, index)) ? criterionAt(mine, index) : criterionAt(theirs, index);
+      if (kept) criteria.push({ from: theirs.criteriaFrom[index] ?? null, ...kept });
+    }
+    merge.onTop = { ...merge.onTop, criteria: criteria.map(each => each.text), criteriaFrom: criteria.map(each => each.from), criteriaDetail: criteria.map(each => each.detail) };
+  }
+  merge.onTop = {
+    ...merge.onTop,
+    others: theirs.others.map(other => {
+      const my = otherNamed(mine, other.name);
+      return judge(other.name, otherNamed(base, other.name), other.text, my) && my !== undefined ? { ...other, text: my } : other;
+    }),
+  };
+  return merge;
 }

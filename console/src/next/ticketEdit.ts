@@ -1,4 +1,4 @@
-import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { clampEstimate, composeBody, criterionDetails, FIELD_NAMES, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
 
 const TITLE = "Title";
 const nonblank = (text: string) => text.split("\n").map(line => line.replace(/\r$/, "")).filter(line => line.trim());
@@ -65,15 +65,6 @@ export type EditFields = Record<Prose, string> & {
   uiChange: "major" | "minor" | null;
   others: { index: number; name: string; text: string }[];
 };
-
-/** Each field's name as the form labels it, in the order the form draws it. */
-const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "criteriaDetail">, string][] = [
-  ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
-  ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
-  ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
-  ["uiChange", "UI change"], ["mockupLink", "Mock-up link"], ["mockupApproval", "Approval"], ["mockupImages", "Boards"],
-  ["notes", "Implementation notes"],
-];
 
 const PROSE_SECTION = "What / Why / How";
 const LABEL = /^\*\*(What|Why|How|UI change|Blast radius):\*\*[ \t]*/;

@@ -2,7 +2,7 @@ import { useContext, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { editTicket } from "../../lib/boardWrites";
-import { formatAge } from "../../lib/format";
+import { formatAge, formatClock } from "../../lib/format";
 import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
 import { CHANGED, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
@@ -11,7 +11,7 @@ import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { useTicketPage } from "../ticket";
 import { changedNames, composeEdit, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
-import { clampEstimate } from "../ticketForm";
+import { clampEstimate, mergeEdit, type EditMerge } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
 import { CRUMB_LINK } from "./runShared";
@@ -91,18 +91,74 @@ export function EditTicket() {
   return <EditForm key={`${project}/${key}`} project={project} ticketKey={key} base={page.host.base} loaded={loaded} cards={cards} now={page.now} />;
 }
 
+/** What the page read of revision `loaded`: its fields as the form draws them. */
+const readOf = (loaded: Loaded) => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), raw: rawParts(loaded.body) });
+
+function ConflictIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-bad">
+      <path d="M8 2 14.5 13.5h-13z" />
+      <path d="M8 6.3v3.2M8 11.6v.1" />
+    </svg>
+  );
+}
+
+/** The banner a newer revision raises over an edit: who saved it, each
+ *  field both sides changed side by side, and the two ways out. */
+function ConflictBanner({ ticketKey, started, newer, theirChanges, merge, onTop, takeTheirs }: { ticketKey: string; started: number; newer: Loaded; theirChanges: string[]; merge: EditMerge; onTop: () => void; takeTheirs: () => void }) {
+  const saved = `${newer.author ?? "someone"} saved revision ${newer.revision}${newer.at != null ? ` at ${formatClock(newer.at)}` : ""}`;
+  const changed = theirChanges.length ? `it changed ${theirChanges.join(", ")}${theirChanges.length === 1 ? " only" : ""}` : "it changed no field";
+  const side = (label: string, text: string) => (
+    <div className="min-w-0 border border-rule bg-paper-2 p-3">
+      <div className="font-mono text-[11px] font-medium uppercase tracking-[.08em] text-ink-2">{label}</div>
+      <p className="mt-2 whitespace-pre-wrap text-[14px] text-ink [overflow-wrap:anywhere]">{text}</p>
+    </div>
+  );
+  return (
+    <div role="alert" aria-label="Newer revision" className="mt-6 border border-rule bg-paper p-5 shadow-[inset_3px_0_0_var(--bad)]">
+      <div className="flex items-start gap-3">
+        <ConflictIcon />
+        <div className="min-w-0">
+          <p className="font-sans text-[16px] font-semibold text-ink">{ticketKey} changed while you were editing.</p>
+          <p className="mt-1 font-mono text-[12.5px] text-ink-2 [overflow-wrap:anywhere]">{[`you started from revision ${started}`, saved, changed, "nothing is saved yet"].join(" · ")}</p>
+        </div>
+      </div>
+      {merge.both.map(clash => (
+        <div key={clash.name} data-clash={clash.name} className="mt-4 grid gap-3 min-[720px]:grid-cols-2">
+          {side(`${clash.name} · REVISION ${newer.revision}, THEIRS`, clash.theirs)}
+          {side(`${clash.name} · YOURS`, clash.mine)}
+        </div>
+      ))}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Btn variant="primary" onClick={onTop}>Put mine on top of revision {newer.revision}</Btn>
+        <Btn onClick={takeTheirs}>Take revision {newer.revision}, drop mine</Btn>
+      </div>
+      <p className="mt-3 font-mono text-[12px] text-ink-3">Putting yours on top keeps their other edits and opens revision {newer.revision + 1} for your review before it saves.</p>
+    </div>
+  );
+}
+
 function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: string; ticketKey: string; base: string; loaded: Loaded; cards: ReturnType<typeof hostCards>; now: number }) {
   const deps = useContext(PollDepsContext);
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
-  const [read] = useState(() => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), raw: rawParts(loaded.body) }));
+  const [read, setRead] = useState(() => readOf(loaded));
+  const [rebased, setRebased] = useState(false);
   const drawn = (part: string) => !read.raw.has(part);
   const [fields, setFields] = useState<EditFields>(read.fields);
   const [dependency, setDependency] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string[]>([]);
   const changes = changedNames(read.fields, fields);
+  const newer = loaded.revision > read.revision ? loaded : null;
+  const theirs = newer && readOf(newer);
+  if (theirs && !changes.length) {
+    setRead(theirs);
+    setFields(theirs.fields);
+    setRebased(false);
+  }
+  const conflict = theirs && changes.length ? { theirs, merge: mergeEdit(read.fields, theirs.fields, fields), theirChanges: changedNames(read.fields, theirs.fields) } : null;
   const body = composeEdit(read.body, read.fields, fields);
   const check = useTicketCheck(base, body, deps, ticketKey);
   const checked = checkMarks(check);
@@ -120,19 +176,36 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
         <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };
+  const putOnTop = () => {
+    if (!conflict) return;
+    setRead(conflict.theirs);
+    setFields(conflict.merge.onTop);
+    setRebased(true);
+    setRefusal([]);
+    toast(`Revision ${conflict.theirs.revision} loaded with your edits on top. Review, then save as revision ${conflict.theirs.revision + 1}.`);
+  };
+  const takeTheirs = () => {
+    if (!conflict) return;
+    setRead(conflict.theirs);
+    setFields(conflict.theirs.fields);
+    setRebased(false);
+    setRefusal([]);
+    toast(`Took revision ${conflict.theirs.revision}. Your edits were dropped.`);
+  };
   const discard = () => {
     setFields(read.fields);
     setDependency("");
     setRefusal([]);
   };
   const save = async () => {
-    if (busy || !changes.length || blocks) return;
+    if (busy || !changes.length || blocks || conflict) return;
     setBusy(true);
     setRefusal([]);
     const result = await editTicket(base, ticketKey, read.revision, body, deps.fetch, fields.priority);
     setBusy(false);
     if (!result.ok) {
       setRefusal("conflict" in result ? [`${ticketKey} changed since this page read it. Your edit is kept.`] : "problems" in result ? result.problems : [result.error]);
+      if ("conflict" in result) void client.invalidateQueries({ queryKey: ["route", base] });
       return;
     }
     toast(`Saved ${ticketKey} as revision ${result.revision}.`);
@@ -140,11 +213,14 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
     void client.invalidateQueries({ queryKey: ["route", base] });
     void navigate({ to: "/tickets/$project/$key", params: { project, key: ticketKey }, search: {} });
   };
-  const line = [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
+  const line = conflict ? `revision ${read.revision} · newer revision ${conflict.theirs.revision} exists`
+    : rebased && changes.length ? `revision ${read.revision} + your edit`
+    : [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
 
   return (
     <Frame project={project} ticketKey={ticketKey}>
       <p className="mt-1.5 border-b border-rule pb-[18px] font-mono text-[13px] text-ink-2">{line}</p>
+      {conflict && <ConflictBanner ticketKey={ticketKey} started={read.revision} newer={conflict.theirs} theirChanges={conflict.theirChanges} merge={conflict.merge} onTop={putOnTop} takeTheirs={takeTheirs} />}
       <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
           <Field label="Project">
@@ -217,11 +293,11 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
           <CheckerPanel summary={checkSummary(check, true)} marks={checked} />
           <div className="border border-rule bg-paper p-5">
             <div className="flex flex-wrap gap-2">
-              <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!changes.length || blocks} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
+              <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!changes.length || blocks || conflict != null} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
               <Btn disabled={busy || !changes.length} onClick={discard}>Discard</Btn>
             </div>
-            <p className="mt-3 font-mono text-[12px] text-ink-2">{saveNote(changes, errors, blocks, ticketKey)}</p>
-            {refusal.length > 0 && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{refusal.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
+            <p className="mt-3 font-mono text-[12px] text-ink-2">{conflict ? "Resolve the newer revision first. Your edit is safe." : saveNote(changes, errors, blocks, ticketKey)}</p>
+            {refusal.length > 0 && !conflict && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{refusal.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
           </div>
           <p className="mt-4 font-mono text-[12px] text-ink-3">Saved as the next revision. Errors block a Ready ticket; a Backlog ticket saves as a draft.</p>
         </aside>
