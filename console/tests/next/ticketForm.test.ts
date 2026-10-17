@@ -196,6 +196,23 @@ test("editing a blank summary preserves the following section boundary", () => {
   ]);
 });
 
+test("filling a blank title replaces the empty H1 without adding a heading", () => {
+  const form = blankForm();
+  expect(composeBody(withField(form, "title", "A title"))).toBe(
+    "# A title\n\n" + form.sections.map(section => section.heading + section.text).join(""),
+  );
+});
+
+test("filling blank prose preserves the separator after each Markdown label", () => {
+  for (const [field, label] of [["what", "What"], ["why", "Why"], ["how", "How"]] as const) {
+    const form = blankForm();
+    expect(composeBody(withField(form, field, "Show notes."))).toBe(
+      composeBody(form).replace(`**${label}:** \n`, `**${label}:** Show notes.\n`),
+    );
+    expect(fieldOf(withField(form, field, "Show notes."), field)).toBe("Show notes.");
+  }
+});
+
 test("setting an empty field inserts its absent section in template order", () => {
   const original = parseBody(mockupBody);
   const summary = withField(original, "summary", "");

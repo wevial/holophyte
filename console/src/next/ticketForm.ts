@@ -111,16 +111,17 @@ function paragraph(text: string, field: keyof typeof labels): Span | undefined {
   const index = rows.findIndex(line => !line.fenced && line.text.startsWith(`**${labels[field]}:**`));
   if (index < 0) return;
   const first = rows[index];
-  const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(first.text)![0];
+  const source = visibleSource(text.slice(first.start, first.end - first.eol.length));
+  const prefix = new RegExp(`^\\*\\*${labels[field]}:\\*\\*[ \\t]*`).exec(source.visible)![0];
   let last = first;
   for (const line of rows.slice(index + 1)) {
     if (htmlParagraphBoundary.test(line.text)) break;
     if (!line.text.trim() || /^(\*\*[^*\r\n]+:\*\*| {0,3}(?:>|#{1,6}(?:[ \t]|$)|[-+*][ \t]+|1[.)][ \t]+|(?:-[ \t]*){3,}$|(?:\*[ \t]*){3,}$|(?:_[ \t]*){3,}$|`{3,}|~{3,}))/.test(line.text)) break;
     last = line;
   }
-  const source = visibleSource(text.slice(first.start, first.contentEnd));
   const start = first.start + source.offsets[prefix.length];
-  return { start, end: last.contentEnd, after: last.end - last.eol.length, value: withoutComments(text.slice(start, last.contentEnd)).trimEnd() };
+  const end = Math.max(start, last.contentEnd);
+  return { start, end, after: last.end - last.eol.length, value: withoutComments(text.slice(start, end)).trimEnd() };
 }
 
 function matching(text: string, pattern: RegExp): Line[] {
@@ -224,8 +225,9 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
   if (present && JSON.stringify(fieldOf(form, field)) === JSON.stringify(value)) return form;
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   if (field === "title") {
-    const row = matching(form.preamble, /^# /)[0];
-    const preamble = row ? splice(form.preamble, row.start + 2, row.contentEnd, String(value)) : `# ${value}${eol}${eol}` + form.preamble;
+    const row = matching(form.preamble, /^#(?: |$)/)[0];
+    const end = row ? Math.min(row.end - row.eol.length, Math.max(row.start + 2, row.contentEnd)) : 0;
+    const preamble = row ? splice(form.preamble, row.start, end, `# ${value}`) : `# ${value}${eol}${eol}` + form.preamble;
     return { ...form, preamble };
   }
   const name = sections[field as Exclude<Field, "title">];
