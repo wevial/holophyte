@@ -62,8 +62,7 @@ class FixOntoPushedTests(unittest.TestCase):
                 git("merge-base", "--is-ancestor", pushed, head,
                     check=False).returncode, 1)
 
-            if hasattr(branch_sync, "onto_pushed"):
-                branch_sync.onto_pushed(wt, "fix", pushed, head)
+            branch_sync.onto_pushed(wt, "fix", pushed, head)
 
             push = git("push", "origin", "fix", check=False)
             self.assertEqual(push.returncode, 0, push.stderr)
