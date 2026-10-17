@@ -57,3 +57,5 @@ shas `BASE_SHA` and `HEAD_SHA`.
 `mcp-tools-list.json` pins `holo mcp --http`'s reply to `tools/list` with
 `[serve] actions` true, reads and writes, as served on loopback; nothing in
 it depends on the host.
+
+`ticket-check.json` pins `POST /tickets/check` in `tests/test_serve_ticket_check.py`: three template problems and one missing-path advisory, without filing a ticket.

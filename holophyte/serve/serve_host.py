@@ -344,6 +344,10 @@ class HostHandler(StatusHandler):
         self.answer(*found)
 
     def dispatch(self, scope, path, query):
+        if path == "/tickets/check":
+            return self.answer(405, {"error": "method not allowed",
+                                     "method": self.command,
+                                     "path": scope.prefix + path}, allow="POST")
         if not is_json_route(path):
             return self.answer(404, {"error": "not found",
                                      "path": scope.prefix + path})

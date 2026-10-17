@@ -33,9 +33,12 @@ class FilingRefused(ValueError):
 
 
 def ticket_problems(text, repo):
+    return ticket_template.filing_refusals(_ticket_findings(text, repo))
+
+
+def _ticket_findings(text, repo):
     ticket = ticket_template.parse(text)
-    problems = ticket_template.filing_refusals(
-        ticket_template.validate(ticket, repo=repo))
+    problems = ticket_template.validate(ticket, repo=repo)
     if repo:
         # Deferred: holophyte imports this module.
         from holophyte.config.project import Project
@@ -48,10 +51,30 @@ def ticket_problems(text, repo):
         problems += project_problems(project, ticket)
         problems += mockup.filing_problems(project, ticket)
         problems += container_docker_problems(project, ticket)
-        problems += ticket_template.filing_refusals(
-            filing_problems(project, ticket))
+        problems += filing_problems(project, ticket)
         problems = private_problems(repo, text, problems)
     return problems
+
+
+def check_ticket(conn, project_id, text, identifier=None, column="ready"):
+    findings = _ticket_findings(text, _repo_path(conn, project_id))
+    problems = ticket_template.filing_refusals(findings)
+    advisories = [finding.removeprefix(ticket_template.ADVISORY_PREFIX)
+                  for finding in findings if finding not in problems]
+    self_id = None
+    if identifier is not None:
+        row = conn.execute(
+            "SELECT id, boardColumn FROM tickets WHERE projectId = ?"
+            " AND linearIdentifier = ?", (project_id, identifier)).fetchone()
+        if row is not None:
+            self_id, column = row
+    unknown = []
+    try:
+        _dependencies(conn, project_id, text, self_id)
+    except FilingRefused as refused:
+        unknown = refused.problems
+    return {"problems": problems + unknown, "advisories": advisories,
+            "blocks": bool(unknown) or _blocks_filing(problems, column)}
 
 
 def _blocks_filing(problems, column):

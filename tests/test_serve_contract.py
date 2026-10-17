@@ -41,7 +41,7 @@ ANSWERS = ("status", "attention", "host-status", "host-attention",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
            "shipped", "history", "ledger", "findings", "board", "ticket",
-           "story")
+           "story", "ticket-check")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -138,7 +138,7 @@ class GeneratedFilesTests(unittest.TestCase):
                              "host-attention", "host-status", "ledger",
                              "peers", "run-asks", "run-detail", "run-files",
                              "run-merge", "run-turns", "shipped", "status",
-                             "story", "ticket")])
+                             "story", "ticket-check", "ticket")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:
