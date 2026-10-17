@@ -174,7 +174,7 @@ export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }
           return (
             <Fragment key={step[0]!.ticket}>
               {index > 0 && <div aria-hidden="true" data-band className="relative h-[52px] before:absolute before:inset-x-0 before:top-1/2 before:border-t before:border-dashed before:border-rule-2" />}
-              <div role="group" aria-label={`Step ${index + 1}`} data-row={index + 1} className="flex">
+              <div role="group" aria-label={`Step ${index + 1}`} data-graph-step={index + 1} className="flex">
                 <div className="flex w-[128px] shrink-0 flex-col gap-1.5 pr-2 pt-2.5">
                   <span className="font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">{`Step ${index + 1}`}</span>
                   {note != null && <span data-step-note className="font-mono text-[11.5px] leading-[1.35] text-ink-3">{note}</span>}

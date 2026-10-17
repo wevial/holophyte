@@ -13,7 +13,7 @@ export function declarations(source: string): Declaration[] {
       path.pop();
       buffer = "";
     } else if (char === ";") {
-      const match = /^\s*(--[a-z0-9-]+)\s*:\s*([\s\S]*)$/.exec(buffer);
+      const match = /^\s*(--[a-z0-9-]+|[a-z][a-z0-9-]*)\s*:\s*([\s\S]*)$/.exec(buffer);
       if (match) out.push({ path: [...path], name: match[1]!, value: match[2]!.trim() });
       buffer = "";
     } else {
@@ -25,7 +25,7 @@ export function declarations(source: string): Declaration[] {
 
 export function tokensUnder(decls: Declaration[], selector: string, wrapper?: string): string[] {
   const names = decls
-    .filter((d) => d.path.at(-1) === selector && (wrapper ? d.path.at(-2) === wrapper : d.path.length === 1))
+    .filter((d) => d.name.startsWith("--") && d.path.at(-1) === selector && (wrapper ? d.path.at(-2) === wrapper : d.path.length === 1))
     .map((d) => d.name);
   if (names.length === 0) throw new Error(`theme.css has no ${wrapper ? `${wrapper} ` : ""}${selector} rule`);
   return [...new Set(names)].sort();

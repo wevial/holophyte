@@ -88,3 +88,7 @@ export function age(ms: number): string {
   const total = Math.max(0, Math.floor(ms));
   return total >= DAY ? formatDuration(total) : formatAge(total);
 }
+
+export function formatClockSeconds(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}

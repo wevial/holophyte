@@ -58,6 +58,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
   return (
     <li className="border-rule-2 [&+&]:border-t">
       <Link
+        data-row
         {...runPage(project, run.id)}
         aria-label={`${run.ticket} ${title}, ${stage}${spoken}`}
         className={`${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`}
@@ -92,7 +93,7 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
   const reason = entry.reason ?? "";
   const shown = [reason.split("\n")[0], held ? "· held" : ""].filter(Boolean).join(" ");
   return (
-    <li data-queued={entry.ticket} className={`${ROW_GRID} min-h-[54px] border-rule-2 [&+&]:border-t`}>
+    <li data-row data-queued={entry.ticket} className={`${ROW_GRID} min-h-[54px] border-rule-2 [&+&]:border-t`}>
       <span>
         <StateDot state="queued" />
       </span>

@@ -21,7 +21,7 @@ type Host = HostRecord<ContractBodies>;
 const ROW_GRID =
   "grid min-h-[66px] grid-cols-[70px_84px_minmax(0,1fr)_120px_128px] items-center gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 transition-colors duration-(--motion-colour) hover:bg-paper-2 max-[820px]:grid-cols-[minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[minmax(0,1fr)]";
 const ROW_BUTTON =
-  "col-span-3 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_minmax(0,1fr)]";
+  "min-h-11 col-span-3 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 text-left max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_minmax(0,1fr)]";
 const UNDER_TITLE = "max-[820px]:col-span-full @max-[720px]/ov-col:col-span-full";
 
 interface PrRow {
@@ -91,7 +91,7 @@ function PrLaneRow({
   const title = prTitle(item) ?? "";
   return (
     <li data-pr-row className="border-rule-2 [&+&]:border-t">
-      <div className={ROW_GRID}>
+      <div data-row className={ROW_GRID}>
         <div className="col-span-4 grid grid-cols-subgrid items-center gap-x-5 gap-y-1.5 max-[820px]:col-span-1 @max-[720px]/ov-col:col-span-1 max-[820px]:grid-cols-[auto_minmax(0,1fr)] @max-[720px]/ov-col:grid-cols-[auto_minmax(0,1fr)]">
           <a
             href={item.pr_url ?? undefined}
@@ -140,7 +140,7 @@ function PrLaneRow({
               type="button"
               aria-label={`Show ${ticket} in Needs you`}
               onClick={() => onShow(needIndex)}
-              className="font-semibold text-need hover:underline"
+              className="min-h-11 font-semibold text-need hover:underline"
             >
               needs you
             </button>
