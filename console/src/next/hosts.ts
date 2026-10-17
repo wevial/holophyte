@@ -5,7 +5,6 @@ import { useConsolePeers } from "./scope";
 
 type Record = HostRecord<ContractBodies>;
 type Tone = "live" | "need" | "bad" | "ink-3";
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const sweepWords = { fresh: "OK", running: "Running", stale: "Stale", killed: "Killed", none: "Never ran", unreadable: "Unreadable" };
 
 function projectsOf(records: Record[]) {
@@ -55,14 +54,13 @@ function daemonCard(records: Record[], now: number) {
   const seen = seenMs == null ? null : formatClock(seenMs);
   const sweep = root?.sweep;
   const sweepWord = sweep ? sweepWords[sweep.state] : "No host sweep on a project daemon";
-  const lastSweep = sweep?.ended == null ? "never" : down ? formatClock(sweep.ended) : `${age(body!.now - sweep.ended)} ago`;
   return {
     key: first.address, name: hostName(first), address: baseOf(first.address), down, seen,
     health: healthOf(first, down, now), projects,
     build: root?.build.daemon?.slice(0, 7) ?? "—",
     checkout: root && buildLine(root.build).differ ? root.build.head?.slice(0, 7) : null,
     uptime: !down && body?.daemon ? age(body.now - body.daemon.started_ms) : "unknown",
-    lastSweep,
+    lastSweep: sweep?.ended == null ? "never" : down ? formatClock(sweep.ended) : `${age(body!.now - sweep.ended)} ago`,
     supervisor: down ? "Unknown" : supervisor,
     supervisorTone: (down ? "ink-3" : supervisor === "Stale" ? "bad" : supervisor === "Running" ? "live" : "ink-3") as Tone,
     supervisorNote: down ? (seen ? `last report ${seen}: ${supervisor.toLowerCase()}, ${busy}` : "No last report") : `${busy}${beats.length ? ` · beat ${age(Math.max(...beats))} ago` : ""}`,
@@ -79,7 +77,7 @@ export function useHostsTab() {
   const answering = daemons.filter((daemon) => !daemon.down).length;
   return {
     daemons, allDown: daemons.length > 0 && answering === 0,
-    summary: polls === 0 ? "asking…" : `${plural(daemons.length, "daemon")} · ${answering || "none"} answering · polled ${age(polledAgo ?? 0)} ago`,
+    summary: polls === 0 ? "asking…" : `${daemons.length} daemon${daemons.length === 1 ? "" : "s"} · ${answering || "none"} answering · polled ${age(polledAgo ?? 0)} ago`,
   };
 }
 
