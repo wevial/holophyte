@@ -1,6 +1,8 @@
 import { useContext } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { formatSettled } from "../../lib/format";
+import { projectName } from "../../lib/derive";
+import { WarnIcon } from "../components/Notices";
+import { formatClock, formatSettled } from "../../lib/format";
 import { zoneName } from "./runShared";
 import { stateGroup } from "../history";
 import { DayRunTable } from "../components/DayRunTable";
@@ -45,6 +47,7 @@ function DayHead({ day }: { day: ReturnType<typeof dayGroups>[number] }) {
           {formatSettled(day.workMs)} of work against {formatSettled(day.estimateMs)} estimated
         </p>
       )}
+      {day.cut && <p className="font-mono text-[12px] text-need">newest {day.cut.limit} of {day.cut.total} shown</p>}
     </header>
   );
 }
@@ -57,9 +60,19 @@ export function RunsHistory() {
   const peers = useConsolePeers();
   const hosts = scopedHosts(peers.hosts, project);
   const days = pastDays(peers.now).slice((page - 1) * PAGE_DAYS, page * PAGE_DAYS);
-  const { answers } = useHistoryDays(hosts, days, deps);
+  const { answers, queries } = useHistoryDays(hosts, days, deps);
   const { total } = useHistoryTotal(hosts, peers.now, deps);
-  const groups = dayGroups(hosts, answers, days);
+  const states = days.map(day => {
+    const asked = queries.filter(query => query.day.since === day.since);
+    const loading = asked.some(query => query.isPending || query.isFetching);
+    const failed = asked.filter(query => query.status === "error");
+    return { loading, failed };
+  });
+  const completeAnswers = new Map([...answers].filter(([since]) => {
+    const state = states[days.findIndex(day => day.since === since)]!;
+    return !state.loading && state.failed.length === 0;
+  }));
+  const groups = dayGroups(hosts, completeAnswers, days).map((day, index) => ({ ...day, ...states[index]! }));
   const counts = { all: 0, merged: 0, failed: 0, abandoned: 0 };
   for (const day of groups) {
     counts.all += day.counts.runs;
@@ -69,6 +82,7 @@ export function RunsHistory() {
   }
   const shown = groups.map(day => ({ ...day, rows: outcome ? day.rows.filter(row => stateGroup(row.state) === outcome) : day.rows }));
   const hasRows = shown.some(day => day.rows.length > 0);
+  const incomplete = groups.some(day => day.loading || day.failed.length > 0);
   const runWords = `No ${outcome ? `${outcome} ` : ""}runs${project ? ` in ${project}` : ""}`;
   const range = `${rangeName.format(days[0]!.since)} to ${rangeName.format(days[PAGE_DAYS - 1]!.since)}`;
   const pickOutcome = (id: Outcome | "all") => void navigate({
@@ -102,12 +116,31 @@ export function RunsHistory() {
         <Btn disabled={page === PAGE_COUNT} onClick={() => pick(page + 1)}>Older days <ChevronIcon folded /></Btn>
       </nav>
       </div>
-      {!hasRows && <p className="border border-rule bg-paper px-4 py-4 font-mono text-[13px] text-ink-3 [overflow-wrap:anywhere]">{runWords} from {range}.{page < PAGE_COUNT ? " Try older days." : ""}</p>}
-      {hasRows && shown.map(day => (
-        <section key={day.since} aria-labelledby={`day-${day.since}`} className="min-w-0 border border-rule bg-paper">
-          <DayHead day={day} />
-          {day.rows.length > 0 && <DayRunTable day={day} label={dayName.format(day.since)} />}
-          {day.rows.length === 0 && <p className="px-4 py-4 font-mono text-[12.5px] text-ink-3 [overflow-wrap:anywhere]">{runWords} this day.</p>}
+      {!hasRows && !incomplete && <p className="border border-rule bg-paper px-4 py-4 font-mono text-[13px] text-ink-3 [overflow-wrap:anywhere]">{runWords} from {range}.{page < PAGE_COUNT ? " Try older days." : ""}</p>}
+      {(hasRows || incomplete) && shown.map(day => (
+        <section key={day.since} aria-busy={day.loading} aria-labelledby={`day-${day.since}`} className="min-w-0 border border-rule bg-paper">
+          {day.loading || day.failed.length > 0 ? (
+            <h2 id={`day-${day.since}`} className={`px-4 pt-3.5 pb-3 font-sans text-[16px] font-semibold ${day.loading ? "text-ink-3" : "text-ink"}`}>{dayName.format(day.since)}</h2>
+          ) : <DayHead day={day} />}
+          {day.loading ? (
+            <div aria-hidden="true" className="flex flex-col gap-[18px] px-4 pb-5">
+              {["80%", "65%", "72%"].map(width => <div key={width} className="h-2 bg-rule-2" style={{ width }} />)}
+            </div>
+          ) : day.failed.length > 0 ? (
+            <div role="status" className="flex flex-wrap items-start gap-3 bg-need-wash px-3.5 py-3 text-[14px] text-ink shadow-[inset_2px_0_0_var(--need)]">
+              <WarnIcon />
+              <div className="min-w-0 flex-1">
+                {day.failed.map(query => (
+                  <div key={query.host.key}>
+                    <p className="font-medium">The run store for {projectName(query.host.status!.project)} did not answer.</p>
+                    <p className="mt-0.5 font-mono text-[12px] leading-[1.5] text-ink-2">asked for {dayName.format(day.since)} at {formatClock(query.askedAt!)} · showing nothing rather than part of a day</p>
+                  </div>
+                ))}
+              </div>
+              <Btn onClick={() => { for (const query of day.failed) void query.refetch(); }}>Try again</Btn>
+            </div>
+          ) : day.rows.length > 0 ? <DayRunTable day={day} label={dayName.format(day.since)} />
+            : <p className="px-4 py-4 font-mono text-[12.5px] text-ink-3 [overflow-wrap:anywhere]">{runWords} this day.</p>}
         </section>
       ))}
       <footer className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-b border-rule pb-[18px] font-mono text-[12px] leading-[1.4] text-ink-3">

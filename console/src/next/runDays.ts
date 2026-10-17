@@ -26,6 +26,7 @@ export interface DayRun extends HistoryRow {
 export interface DayGroup extends DayWindow {
   rows: DayRun[];
   counts: { runs: number; merged: number; failed: number; abandoned: number };
+  cut: { limit: number; total: number } | null;
   workMs: number | null;
   estimateMs: number | null;
 }
@@ -42,9 +43,14 @@ export function pastDays(now: number): DayWindow[] {
 
 export function dayGroups(hosts: HostRecord<ContractBodies>[], answers: DayAnswers, days: DayWindow[]): DayGroup[] {
   return days.map((day) => {
+    const capped = { limit: 0, total: 0 };
     const rows = hosts.flatMap((host): DayRun[] => {
       const status = host.status;
       const answer = answers.get(day.since)?.get(host.key);
+      if (answer?.truncated) {
+        capped.limit += answer.limit;
+        capped.total += answer.total;
+      }
       if (!status || !answer) return [];
       return answer.rows.map((run) => ({
         ...run,
@@ -65,6 +71,6 @@ export function dayGroups(hosts: HostRecord<ContractBodies>[], answers: DayAnswe
         estimateMs = (estimateMs ?? 0) + row.estimate_ms;
       }
     }
-    return { ...day, rows, counts, workMs, estimateMs };
+    return { ...day, rows, counts, cut: capped.total > 0 ? capped : null, workMs, estimateMs };
   });
 }
