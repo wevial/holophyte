@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { projectName } from "../../lib/derive";
+import { Btn } from "../components/Btn";
 import { cardElementId } from "../components/BoardCard";
 import { BoardLane, GRID, LaneGrid } from "../components/BoardLane";
 import { GroupBy, readGroup, writeGroup } from "../components/GroupBy";
@@ -7,7 +9,7 @@ import { StateDot } from "../components/StateDot";
 import { TicketPeek } from "../components/TicketPeek";
 import { TicketTable } from "../components/TicketTable";
 import { readView, ViewToggle, writeView, type TicketView } from "../components/ViewToggle";
-import { storeScope } from "../projects";
+import { storeScope, switcherRows } from "../projects";
 import type { ScopeSearch } from "../scope";
 import {
   boardLanes,
@@ -42,6 +44,9 @@ export function Tickets() {
   const cards = shown(board.cards);
   const view = { ...board, columns, cards, total: cards.length };
   const navigate = useNavigate();
+  const projects = switcherRows(board.boards.map(each => each.host), board.now, new Map());
+  const newProject = projects.find(row => row.name != null && board.boards.some(({ host, board }) =>
+    board?.editable && host.project != null && projectName(host.project) === row.name))?.name;
   const [openId, setOpenId] = useState<string | null>(null);
   const [layout, setLayout] = useState<TicketView>(readView);
   const [group, setGroup] = useState<GroupMode>(readGroup);
@@ -86,7 +91,10 @@ export function Tickets() {
   return (
     <section aria-labelledby="page-title" className="flex flex-col px-8 py-7 min-[720px]:h-full">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
-        <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Tickets</h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Tickets</h1>
+          {newProject != null && <Btn variant="primary" onClick={() => void navigate({ to: "/tickets/$project/new", params: { project: newProject }, search: {} })}>New ticket</Btn>}
+        </div>
         {view.answered && (
           <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
             {view.project ?? "all projects"} · {view.total} {view.total === 1 ? "ticket" : "tickets"}
