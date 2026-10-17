@@ -165,6 +165,17 @@ test("an older body's answer landing during the next edit's wait is not shown", 
   expect(within(panel()).getByText("Ready. Nothing to fix.")).toBeTruthy();
 });
 
+test("an edit clears the previous body's judgement until the edited body is answered", async () => {
+  await mount(fakeFetch(pinned).fetchImpl);
+  await type("Title", "One");
+  await advance(600);
+  expect(fileButton().disabled).toBe(true);
+  await type("Title", "One two");
+  expect(within(panel()).getByText("Checking…")).toBeTruthy();
+  expect(inline()).toBe("");
+  expect(fileButton().disabled).toBe(false);
+});
+
 test("a list-level criteria error marks each criterion input invalid and describes it", async () => {
   const cap = "'Acceptance criteria' has 11 items; the cap is 10 — split the ticket";
   await mount(fakeFetch({ problems: [cap], advisories: [], blocks: true }).fetchImpl);

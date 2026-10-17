@@ -27,12 +27,12 @@ const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;
  *  runs at a time and an answer for an older body is never shown.
  *  `null` while the form is blank, `undefined` until first answered. */
 function useTicketCheck(base: string | undefined, body: string | null, deps: PollDeps): CheckResult | null | undefined {
-  const [answer, setAnswer] = useState<{ base: string; result: CheckResult } | null>(null);
+  const [answer, setAnswer] = useState<{ base: string; body: string; result: CheckResult } | null>(null);
   useEffect(() => {
     if (body === null || base == null) return setAnswer(null);
     const controller = new AbortController();
     const cancel = deps.timer(() => void checkTicket(base, body, deps.fetch, controller.signal).then(result => {
-      if (!controller.signal.aborted) setAnswer({ base, result });
+      if (!controller.signal.aborted) setAnswer({ base, body, result });
     }), CHECK_DELAY_MS);
     return () => {
       cancel();
@@ -40,7 +40,7 @@ function useTicketCheck(base: string | undefined, body: string | null, deps: Pol
     };
   }, [base, body, deps]);
   if (body === null) return null;
-  return answer && answer.base === base ? answer.result : undefined;
+  return answer && answer.base === base && answer.body === body ? answer.result : undefined;
 }
 
 function Messages({ id, messages }: { id: string; messages: Message[] }) {
