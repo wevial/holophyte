@@ -932,6 +932,11 @@ The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
 queries in `next/queries.ts` fetch only while the fold is open.
 
+The Turn page (`console/src/next/pages/Turn.tsx`) shows one recorded turn’s
+figures and links to its neighbours. `console/src/next/turn.ts` selects its
+host and run and shares turn titles with the Details fold. Run and Turn
+share page framing in `console/src/next/pages/runShared.tsx`.
+
 ### Desktop wrapper
 
 Some operators want the console in the dock with a menubar icon rather than
