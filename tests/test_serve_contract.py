@@ -32,6 +32,7 @@ from holophyte.serve.contract import (
     Status,
     StoryChildRow,
     StoryDetail,
+    Transcript,
     main,
 )
 from holophyte.serve.contract_emit import ContractError, json_schema
@@ -184,6 +185,24 @@ class EmitterTests(unittest.TestCase):
 
 
 class PinnedAnswerTests(unittest.TestCase):
+    def test_transcript_entries_require_declared_keys_and_boolean_cut(self):
+        walk(pinned("run-transcript"), Transcript, "run-transcript")
+        for change, error in (("missing", "cut: missing"),
+                              ("undeclared", "truncated: undeclared"),
+                              ("mistyped", "cut: not bool")):
+            with self.subTest(change=change):
+                body = pinned("run-transcript")
+                entry = body["entries"][0]
+                if change == "missing":
+                    del entry["cut"]
+                elif change == "undeclared":
+                    entry["truncated"] = False
+                else:
+                    entry["cut"] = "false"
+                with self.assertRaisesRegex(
+                        AssertionError, rf"^run-transcript\.entries\.0\.{error}"):
+                    walk(body, Transcript, "run-transcript")
+
     def test_each_pinned_answer_walks_clean_against_its_route_type(self):
         for stem in ANSWERS:
             with self.subTest(answer=stem):
