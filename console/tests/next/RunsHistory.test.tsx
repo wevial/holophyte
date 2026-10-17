@@ -466,3 +466,20 @@ test("an unknown project scope settles to the empty page sentence without busy d
   expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
   expect(document.querySelector('[aria-busy="true"]')).toBeNull();
 });
+
+test("an empty host daemon leaves the working project's days and Outcome counts visible", async () => {
+  const host = await Bun.file(new URL("../../../tests/fixtures/serve/host-status.json", import.meta.url)).json();
+  const server = fleet();
+  await mount("#/runs/history", async (url) => {
+    if (url === `${DEMO}/status`) return Response.json({ ...host, projects: [] });
+    return server.fetch(url);
+  });
+  for (const label of firstPage) {
+    expect(screen.getByRole("region", { name: label }).getAttribute("aria-busy")).toBe("false");
+  }
+  const day = within(screen.getByRole("region", { name: "Wed 14 Oct" }));
+  expect(day.getAllByRole("listitem")).toHaveLength(3);
+  expect(day.getByRole("link", { name: /^Run 3,/ })).toBeTruthy();
+  expect(outcomeButtons().getByRole("button", { name: "All 3" })).toBeTruthy();
+  expect(outcomeButtons().getByRole("button", { name: "Merged 1" })).toBeTruthy();
+});

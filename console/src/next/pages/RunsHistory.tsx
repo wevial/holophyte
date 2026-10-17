@@ -64,7 +64,7 @@ export function RunsHistory() {
   const { total } = useHistoryTotal(hosts, peers.now, deps);
   const states = days.map(day => {
     const asked = queries.filter(query => query.day.since === day.since);
-    const loading = asked.length < hosts.length || asked.some(query => query.isPending || query.isFetching);
+    const loading = asked.some(query => query.isPending || query.isFetching);
     const failed = asked.filter(query => query.status === "error");
     return { loading, failed };
   });
