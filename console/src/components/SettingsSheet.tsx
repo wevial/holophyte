@@ -2,14 +2,12 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ACTIONS_OFF, ROUTES, actionBase, postAction } from "../lib/actions";
 import { RUN_SWEEP } from "../lib/attention";
 import { underHost } from "../lib/hosts";
-import { fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigValues, type ConfigWrite, type PatchValue } from "../lib/config";
+import { CONFIG_EDIT_OFF, fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigValues, type ConfigWrite, type PatchValue } from "../lib/config";
 import { defaultPollDeps, type Fetch } from "../lib/poll";
 import type { Status } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { NEEDS_TOKEN } from "./TicketSheet";
 
-/** The line a read-only sheet shows: the key that would open it. */
-export const CONFIG_EDIT_OFF = "Read-only: this daemon has not opted into config edits ([serve] config_edit = true)";
 /** The banner over Save: the loop reads the file once, at startup. */
 export const APPLIES_LINE = "A saved change applies at the loop's next start.";
 /** The action beside the banner, the same wired label the rows post; a
