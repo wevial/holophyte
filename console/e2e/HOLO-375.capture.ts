@@ -34,7 +34,12 @@ test("Overview pull requests in Night and Dawn", async ({ page }) => {
   await lane.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(process.env.CAPTURE_OUT ?? "", "01-pull-requests-night.png") });
   await page.getByRole("button", { name: "Colour theme: night. Switch to dawn" }).click();
-  await expect(page.locator("html")).not.toHaveAttribute("data-theme", "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(lane.getByText("Draft", { exact: true })).toBeVisible();
+  await expect(lane.getByText("Ready", { exact: true })).toBeVisible();
+  await expect(lane.locator("[data-pr-state]")).toHaveText([
+    "draft · held for your review", "parked · review pending",
+  ]);
   await lane.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(process.env.CAPTURE_OUT ?? "", "02-pull-requests-dawn.png") });
 });
