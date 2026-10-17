@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { formatSettled, zoneName } from "../../lib/format";
+import { formatSettled } from "../../lib/format";
+import { zoneName } from "./runShared";
 import { stateGroup } from "../history";
 import { DayRunTable } from "../components/DayRunTable";
 import { Btn } from "../components/Btn";

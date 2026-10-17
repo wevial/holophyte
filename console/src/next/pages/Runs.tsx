@@ -1,4 +1,4 @@
-import { zoneName } from "../../lib/format";
+import { zoneName } from "./runShared";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { RunTable } from "../components/RunTable";
 import { stateGroup, useRunHistory, type RunFilter, type RunsSearch } from "../history";

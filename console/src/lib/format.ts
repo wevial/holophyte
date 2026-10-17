@@ -97,8 +97,3 @@ export function age(ms: number): string {
 export function formatClockSeconds(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
-
-export function zoneName(now: number): string {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(now);
-  return parts.find((part) => part.type === "timeZoneName")?.value ?? "";
-}
