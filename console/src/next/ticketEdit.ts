@@ -1,8 +1,51 @@
 import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
 
-/** The sections the edit form draws as fields; every other section of the
- *  body is edited as plain text under "Other sections". */
-const DRAWN = new Set(["Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria", "Verify command(s)", "Estimate & dependencies", "Implementation notes", "Mock-up"]);
+const TITLE = "Title";
+const nonblank = (text: string) => text.split("\n").map(line => line.replace(/\r$/, "")).filter(line => line.trim());
+const listed = (text: string) => nonblank(text).every(line => /^- /.test(line));
+const FENCE_OPEN = /^ {0,3}`{3,}[^`]*$/;
+const FENCE_CLOSE = /^ {0,3}`{3,}[ \t]*$/;
+
+/** The sections the edit form draws as fields, each with the shape its
+ *  fields hold whole; a section of another shape, or holding a comment, is
+ *  edited as plain text under "Other sections" like every undrawn one. */
+const SHAPES: Record<string, (text: string) => boolean> = {
+  "Summary": () => true,
+  "What / Why / How": () => true,
+  "In scope": listed,
+  "Out of scope": listed,
+  "Acceptance criteria": text => nonblank(text).every((line, index) => /^- \[ \] /.test(line) || (index > 0 && /^[ \t]/.test(line))),
+  "Verify command(s)": text => {
+    const rows = nonblank(text);
+    return !rows.length || (rows.length >= 2 && FENCE_OPEN.test(rows[0]!) && FENCE_CLOSE.test(rows[rows.length - 1]!) && !rows.slice(1, -1).some(row => FENCE_OPEN.test(row)));
+  },
+  "Estimate & dependencies": text => nonblank(text).length <= 1 && nonblank(text).every(line => /^Estimate: .*? min · Depends on: .*$/.test(line)),
+  "Implementation notes": () => true,
+  "Mock-up": text => nonblank(text).every(line => /^https?:\/\/\S+[ \t]*$|^Approved \d{4}-\d{2}-\d{2}:|^!\[[^\]]*\]\(.*\)$/.test(line)),
+};
+
+/** The parts of `body` drawn as plain text because their fields cannot hold
+ *  them whole: "Title" for a preamble with more than its title line, and
+ *  each drawn section's name, Mock-up with What / Why / How, whose switch
+ *  shows its fields. A drawn section's repeat is never drawn. */
+export function rawParts(body: string): Set<string> {
+  const form = parseBody(body);
+  const raw = new Set<string>();
+  const preamble = nonblank(form.preamble);
+  if (form.preamble.includes("<!--") || preamble.length > 1 || (preamble.length === 1 && !/^# /.test(preamble[0]!))) raw.add(TITLE);
+  for (const name of Object.keys(SHAPES)) {
+    const section = form.sections.find(each => each.name === name);
+    if (section && (section.text.includes("<!--") || !SHAPES[name]!(section.text))) raw.add(name);
+  }
+  if (raw.has("What / Why / How") && form.sections.some(section => section.name === "Mock-up")) raw.add("Mock-up");
+  return raw;
+}
+
+/** Whether the section at `index` of `form` is drawn as fields. */
+const drawn = (form: TicketForm, index: number, raw: Set<string>) => {
+  const { name } = form.sections[index]!;
+  return name in SHAPES && !raw.has(name) && form.sections.findIndex(section => section.name === name) === index;
+};
 
 const PROSE = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes", "mockupLink", "mockupApproval", "mockupImages"] as const;
 type Prose = typeof PROSE[number];
@@ -76,6 +119,7 @@ const imageUrl = (image: string) => image.replace(/^!\[[^\]]*\]\((.*)\)$/, "$1")
 
 export function loadEdit(body: string, priority: number | null): EditFields {
   const form = parseBody(body);
+  const raw = rawParts(body);
   const prose = Object.fromEntries(PROSE.map(field => {
     const value = field === "mockupImages" ? fieldOf(form, field).map(imageUrl) : fieldOf(form, field);
     return [field, Array.isArray(value) ? value.join("\n") : value];
@@ -97,8 +141,9 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     dependsOn: fieldOf(form, "dependsOn"),
     uiChange: fieldOf(form, "uiChange"),
     others: [
-      ...(rest ? [{ index: -1, name: PROSE_SECTION, text: rest }] : []),
-      ...form.sections.flatMap((section, index) => DRAWN.has(section.name) ? [] : [{ index, name: section.name, text: section.text.trim() }]),
+      ...(raw.has(TITLE) ? [{ index: -2, name: TITLE, text: form.preamble.trim() }] : []),
+      ...(rest && !raw.has(PROSE_SECTION) ? [{ index: -1, name: PROSE_SECTION, text: rest }] : []),
+      ...form.sections.flatMap((section, index) => drawn(form, index, raw) ? [] : [{ index, name: section.name, text: section.text.trim() }]),
     ],
   };
 }
@@ -156,10 +201,13 @@ function withProse(text: string, loaded: EditFields, edited: EditFields): string
  *  every line no edit touched is kept as it was served. */
 export function composeEdit(body: string, loaded: EditFields, edited: EditFields): string {
   let form: TicketForm = parseBody(body);
-  const prosed = form.sections.find(section => section.name === PROSE_SECTION);
+  const raw = rawParts(body);
+  const prosed = raw.has(PROSE_SECTION) ? undefined : form.sections.find(section => section.name === PROSE_SECTION);
   const drawnProse = new Set(prosed ? owners(segments(prosed.text)).values() : []);
+  const title = edited.others.findIndex(other => other.index === -2);
   form = {
     ...form,
+    preamble: title < 0 || edited.others[title]!.text === loaded.others[title]?.text ? form.preamble : withText(form.preamble, edited.others[title]!.text),
     sections: form.sections.map((section, index) => {
       if (section === prosed) return { ...section, text: withProse(section.text, loaded, edited) };
       const at = edited.others.findIndex(other => other.index === index);

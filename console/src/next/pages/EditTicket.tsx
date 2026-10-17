@@ -10,7 +10,7 @@ import { useToast } from "../components/Toast";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { useTicketPage } from "../ticket";
-import { changedNames, composeEdit, hasMockup, loadEdit, same, type EditFields } from "../ticketEdit";
+import { changedNames, composeEdit, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
 import { clampEstimate } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
@@ -94,7 +94,8 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
-  const [read] = useState(() => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body) }));
+  const [read] = useState(() => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), raw: rawParts(loaded.body) }));
+  const drawn = (part: string) => !read.raw.has(part);
   const [fields, setFields] = useState<EditFields>(read.fields);
   const [dependency, setDependency] = useState("");
   const [busy, setBusy] = useState(false);
@@ -147,15 +148,15 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
           <Field label="Project">
             <select id="new-Project" className={`${INPUT} font-sans`} value={project} disabled><option value={project}>{project}</option></select>
           </Field>
-          {input("title", "Title", "The outcome, as the board card says it.")}
-          {input("summary", "Summary", "One or two sentences. Shown under the title on the card and in peek.")}
-          <div className="grid gap-5 min-[720px]:grid-cols-2">
+          {drawn("Title") && input("title", "Title", "The outcome, as the board card says it.")}
+          {drawn("Summary") && input("summary", "Summary", "One or two sentences. Shown under the title on the card and in peek.")}
+          {drawn("What / Why / How") && <div className="grid gap-5 min-[720px]:grid-cols-2">
             {input("what", "What")}{input("why", "Why", undefined, true)}
-          </div>
-          {input("how", "How")}
-          {input("inScope", "In scope", "One a line.")}
-          {input("outOfScope", "Out of scope", "One a line.")}
-          <CriteriaField criteria={fields.criteria} marks={checked}
+          </div>}
+          {drawn("What / Why / How") && input("how", "How")}
+          {drawn("In scope") && input("inScope", "In scope", "One a line.")}
+          {drawn("Out of scope") && input("outOfScope", "Out of scope", "One a line.")}
+          {drawn("Acceptance criteria") && <CriteriaField criteria={fields.criteria} marks={checked}
             onChange={(next, from) => setFields(previous => ({
               ...previous,
               criteria: next,
@@ -171,19 +172,19 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
             detailChanged={index => {
               const from = fields.criteriaFrom[index];
               return fields.criteriaDetail[index] !== (from == null ? "" : read.fields.criteriaDetail[from]);
-            }} />
-          {input("verify", "Verify commands", "The implementer runs these before review; a red one fails the run.")}
+            }} />}
+          {drawn("Verify command(s)") && input("verify", "Verify commands", "The implementer runs these before review; a red one fails the run.")}
           <div className="flex flex-wrap gap-6">
-            <EstimateField draft={fields.estimate} onDraft={draft => set("estimate", draft)} estimate={estimate} marks={checked} changed={changed("estimate")} />
+            {drawn("Estimate & dependencies") && <EstimateField draft={fields.estimate} onDraft={draft => set("estimate", draft)} estimate={estimate} marks={checked} changed={changed("estimate")} />}
             <PriorityField priority={fields.priority} onChange={value => set("priority", value)} changed={changed("priority")} />
-            <DependsField dependsOn={fields.dependsOn} onChange={next => set("dependsOn", next)} dependency={dependency} onDependency={setDependency} cards={cards} marks={checked} changed={changed("dependsOn")} />
+            {drawn("Estimate & dependencies") && <DependsField dependsOn={fields.dependsOn} onChange={next => set("dependsOn", next)} dependency={dependency} onDependency={setDependency} cards={cards} marks={checked} changed={changed("dependsOn")} />}
           </div>
-          <div className="space-y-5">
+          {drawn("What / Why / How") && <div className="space-y-5">
             <label data-changed={changed("uiChange") || undefined} className={`flex items-center gap-3 text-[14px] font-semibold ${changed("uiChange") ? `${CHANGED} py-2 pl-2` : ""}`}>
               <input id="new-UI change" type="checkbox" role="switch" checked={fields.uiChange !== null} onChange={() => set("uiChange", fields.uiChange ? null : read.fields.uiChange ?? "major")} {...marks("UI change", "h-5 w-9 accent-act")} />This ticket changes the UI
             </label>
             <Messages id={messagesId("UI change")} messages={messagesOf("UI change")} />
-            {(fields.uiChange || read.mockup) && <>
+            {(fields.uiChange || read.mockup) && drawn("Mock-up") && <>
               <Field label="Mock-up link" extra=" for a UI change" messages={messagesOf("Mock-up link")} changed={changed("mockupLink")}>
                 <input id="new-Mock-up link" {...marks("Mock-up link", INPUT)} placeholder="https://…" value={fields.mockupLink} onChange={event => set("mockupLink", event.target.value)} />
               </Field>
@@ -194,10 +195,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
                 <textarea id="new-Boards" rows={3} className={`${INPUT} font-mono`} value={fields.mockupImages} onChange={event => set("mockupImages", event.target.value)} />
               </Field>
             </>}
-          </div>
-          {input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
+          </div>}
+          {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
           {fields.others.length > 0 && <div>
-            <details>
+            <details open={read.raw.size > 0}>
               <summary className="cursor-pointer font-mono text-[11px] font-medium uppercase tracking-[.12em] text-ink-2">
                 Other sections <span className="normal-case tracking-[.04em] text-ink-3">{fields.others.map(other => other.name).join(" · ")}</span>
               </summary>

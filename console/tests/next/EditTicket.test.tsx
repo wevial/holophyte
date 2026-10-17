@@ -290,3 +290,19 @@ test("How holds every paragraph up to the next label, and section text under no 
   const served = "Read the stored steers.\n\n1. Fetch them with the run.\n2. Render each under its turn.";
   expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(served, "Read the steers once.")]);
 });
+
+test("a section its fields cannot hold whole is edited as its own text, comments and all", async () => {
+  const commented = "<!--\n**What:** guidance\n-->\n\n**What:** List the notes under the run.";
+  const scope = "These stay in scope:\n\n- Alpha\n  with its detail";
+  const verify = "Run it from the repository root.\n\n```\nbun --cwd=console test\n```";
+  const body = BODY.replace("**What:** List the notes under the run.", commented).replace("- The run page", scope).replace("```\nbun --cwd=console test\n```", verify);
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }), save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(screen.queryByRole("textbox", { name: "What" })).toBeNull();
+  expect(box("What / Why / How").value).toStartWith(commented);
+  expect(box("In scope").value).toBe(scope);
+  expect(box("Verify command(s)").value).toBe(verify);
+  await type("What / Why / How", box("What / Why / How").value.replace("List the notes", "List every note"));
+  await type("In scope", scope.replace("Alpha", "Beta"));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([body.replace("List the notes", "List every note").replace("- Alpha", "- Beta")]);
+});
