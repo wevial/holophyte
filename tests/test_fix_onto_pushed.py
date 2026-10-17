@@ -7,6 +7,25 @@ from holophyte.loop import branch_sync
 
 
 class FixOntoPushedTests(unittest.TestCase):
+    def test_descendant_head_and_branch_ref_stay_unchanged(self):
+        with tempfile.TemporaryDirectory() as wt:
+            def git(*args):
+                return subprocess.run(
+                    ["git", *args], cwd=wt, capture_output=True,
+                    text=True, check=True).stdout.strip()
+
+            git("init", "-b", "fix")
+            git("config", "user.name", "Test Writer")
+            git("config", "user.email", "writer@example.test")
+            git("config", "commit.gpgsign", "false")
+            git("commit", "--allow-empty", "-m", "Pushed fix")
+            pushed = git("rev-parse", "HEAD")
+            git("commit", "--allow-empty", "-m", "Follow-up fix")
+            head = git("rev-parse", "HEAD")
+
+            self.assertEqual(branch_sync.onto_pushed(wt, "fix", pushed, head), head)
+            self.assertEqual(git("rev-parse", "refs/heads/fix"), head)
+
     def test_amended_pushed_fix_fast_forwards_preserving_tree_and_message(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

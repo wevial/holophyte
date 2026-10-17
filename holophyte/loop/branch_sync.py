@@ -52,6 +52,24 @@ def _sync_branch_from_origin(project, conn, run_id, provider, task_id,
     return sha
 
 
+def onto_pushed(wt, branch, pushed, head):
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", pushed, head], cwd=wt,
+        capture_output=True, text=True)
+    if ancestor.returncode == 0:
+        return head
+    if ancestor.returncode != 1:
+        ancestor.check_returncode()
+    message = subprocess.run(
+        ["git", "log", "-1", "--format=%B", head], cwd=wt,
+        capture_output=True, text=True, check=True).stdout
+    rebuilt = subprocess.run(
+        ["git", "commit-tree", f"{head}^{{tree}}", "-p", pushed], cwd=wt,
+        input=message, capture_output=True, text=True, check=True).stdout.strip()
+    sh(["git", "update-ref", f"refs/heads/{branch}", rebuilt, head], cwd=wt)
+    return rebuilt
+
+
 def _candidate_drift(wt, branch, approved):
     if approved is None:
         return ("the park recorded no candidate sha, so nothing vouches for"

@@ -879,7 +879,7 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
                  resume_step=None, no_commit_why=None, reviewed=None,
                  criteria=(), reviewed_by_caller=False, notes=()):
-    from holophyte.loop.branch_sync import _candidate_drift
+    from holophyte.loop.branch_sync import _candidate_drift, onto_pushed
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     if resume_step is None:
         record_step(conn, run_id, "fix")
@@ -921,6 +921,7 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
         raise RunFailure(f"fix round for {pull.url} left the worktree"
                          f" unclean ({unclean.splitlines()[0]}); branch"
                          f" {branch} preserved at {fixed[:12]}")
+    fixed = onto_pushed(wt, branch, sha, fixed)
     _review_spec_only_fix(
         project, conn, run_id, provider, task_id, branch, wt, sha, fixed,
         beat_s, pull, ticket, verify_cmd, contracts, criteria, budget_min,
