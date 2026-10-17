@@ -150,6 +150,7 @@ Each module, one line:
   fast-forward-only commit imports with environment-file exclusions.
 - `holophyte/agents/roles.py` — the agent routes and the `agent()` call, one turn
   of a role.
+- `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
