@@ -64,8 +64,7 @@ test("density defaults to Comfortable, persists Compact across a remount, and re
   expect(choice("Compact").getAttribute("aria-pressed")).toBe("false");
   expect(root.hasAttribute("data-density")).toBe(false);
   expect(localStorage.getItem("holophyte.next.density")).toBeNull();
-  const preview = screen.getByRole("region", { name: "Preview" });
-  expect(preview.querySelectorAll("[data-row]")).toHaveLength(2);
+  expect(screen.getByRole("region", { name: "Preview" }).querySelectorAll("[data-row]")).toHaveLength(2);
 });
 
 test("density still switches the document and pressed choice when every storage operation throws", async () => {
