@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_serve_config*' -v
 from __future__ import annotations
 
 import difflib
+import hashlib
 import io
 import os
 import stat
@@ -117,6 +118,76 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(body["text"].count("[redacted]"), 3)
         self.assertEqual(body["path"], str(self.db.parent / "config.toml"))
         self.assertEqual(body["applies"], "next loop start")
+
+    def test_get_names_disk_revision_mtime_and_latest_project_save(self):
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        path = self.db.parent / "config.toml"
+        text = "[loop]\nworkers = 2\n"
+        path.write_text(text)
+        code, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["revision"], hashlib.sha256(text.encode()).hexdigest())
+        self.assertEqual(body["modified_ms"], int(path.stat().st_mtime * 1000))
+        self.assertIsNone(body["saved"])
+        conn = store.open(self.db)
+        try:
+            store.record_intervention(conn, self.run, "config_edit", "saved",
+                                      now=1234, actor="maintainer")
+            store.record_intervention(conn, self.run, "config_edit", "older",
+                                      now=1000, actor="operator")
+            store.record_intervention(conn, self.run, "pause", "paused",
+                                      now=2000, actor="operator")
+            other = store.tickets.ensure_project(conn, "other", self.root / "other")
+            ticket = store.tickets.mirror_ticket(
+                conn, other, linear_issue_id="other-1",
+                linear_identifier="OTHER-1", title="Other project")
+            run = store.claim(conn, other, ticket, now=2000)
+            store.record_intervention(conn, run, "config_edit", "other save",
+                                      now=3000, actor="supervisor")
+        finally:
+            conn.close()
+        _, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(body["saved"], {"at_ms": 1234, "actor": "maintainer"})
+        path.unlink()
+        _, _, body = self.request("GET", "/config", self.BEARER)
+        self.assertEqual(body["revision"], hashlib.sha256(b"").hexdigest())
+        self.assertIsNone(body["modified_ms"])
+
+    def test_if_match_rejects_stale_patch_and_text_without_side_effects(self):
+        self.seed()
+        self.start(self.config("config_edit = true\n"))
+        _, _, shown = self.request("GET", "/config", self.BEARER)
+        revision = hashlib.sha256(self.on_disk().encode()).hexdigest()
+        self.assertEqual(shown["revision"], revision)
+        headers = {**self.BEARER, "If-Match": revision}
+        code, _, saved = self.request("PUT", "/config", headers,
+                                      body={"patch": {"loop.workers": 3}})
+        self.assertEqual(code, 200, saved)
+        current = self.on_disk()
+        self.assertEqual(saved["revision"],
+                         hashlib.sha256(current.encode()).hexdigest())
+        backups = list(self.db.parent.glob("config.toml.bak-*"))
+        conn = store.read.open_readonly(self.db)
+        try:
+            rows = conn.execute("SELECT * FROM interventions").fetchall()
+            for edit in ({"patch": {"loop.workers": 4}},
+                         {"text": "not valid TOML [redacted]"}):
+                code, _, refused = self.request("PUT", "/config", headers, body=edit)
+                self.assertEqual((code, refused), (409, {
+                    "ok": False,
+                    "error": "config.toml changed since this revision was read; "
+                             "read it again",
+                    "current": saved["revision"],
+                }))
+                self.assertEqual(self.on_disk(), current)
+                self.assertEqual(tomllib.loads(current)["loop"]["workers"], 3)
+                self.assertEqual(list(self.db.parent.glob("config.toml.bak-*")),
+                                 backups)
+                self.assertEqual(
+                    conn.execute("SELECT * FROM interventions").fetchall(), rows)
+        finally:
+            conn.close()
 
     def test_a_document_startup_refuses_for_its_carry_is_400(self):
         """`[worktree] carry = ["../outside"]` passes no startup; the

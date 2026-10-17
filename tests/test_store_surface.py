@@ -302,6 +302,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "finished_runs",
                                                     "last_independent_verdict",
                                                     "latest_human_intervention_at",
+                                                    # HOLO-396: config last save.
+                                                    "latest_intervention",
                                                     "live_runs", "merged_runs",
                                                     "newest_run_id",
                                                     # HOLO-155: the merge
