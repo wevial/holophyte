@@ -217,7 +217,10 @@ def _noted(conn, ticket_id, run_id, kind, note, author, now, write):
 
 def _insert(conn, ticket_id, run_id, kind, note, author, now, intervention_id,
             event_id, interrupt=False):
-    edits, _ = amendment_edits(note)
+    try:
+        edits, _ = amendment_edits(note)
+    except ValueError as exc:
+        raise SteerRefused(str(exc)) from exc
     if edits and kind == HINT:
         raise SteerRefused("criterion edits require an amendment, not a hint")
     note_id = conn.execute(

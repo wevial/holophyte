@@ -9,6 +9,8 @@ _EDIT = re.compile(
     r"^\s*(?:(REPLACE)\s+C([1-9][0-9]*)\s*:\s*(\S.*?)|"
     r"(DROP)\s+C([1-9][0-9]*)(?:\s*:\s*(.*?))?|"
     r"(ADD)\s*:\s*(\S.*?))\s*$", re.IGNORECASE)
+_EDIT_COMMAND = re.compile(
+    r"^\s*(?:(?:REPLACE|DROP)\s+C(?:\b|[0-9])|ADD\s*:)", re.IGNORECASE)
 
 
 def amendment_edits(note):
@@ -16,6 +18,8 @@ def amendment_edits(note):
     for line in note.splitlines():
         match = _EDIT.fullmatch(line)
         if match is None:
+            if _EDIT_COMMAND.match(line):
+                raise ValueError(f"malformed criterion edit: {line.strip()}")
             other.append(line)
         elif match[1]:
             edits.append(("REPLACE", int(match[2]), match[3]))

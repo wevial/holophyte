@@ -89,7 +89,9 @@ def current(conn, ticket_id):
     latest = {}
     for row in rows:
         latest.setdefault(row[1], dict(zip(columns, row)))
-    return sorted(latest.values(), key=lambda row: row["criterion"])
+    return sorted(latest.values(), key=lambda row: (
+        row["status"] == "retired", row["position"] is None,
+        row["position"] or 0, row["criterion"]))
 
 
 def amend(conn, ticket_id, edits, steer_note_id, now):

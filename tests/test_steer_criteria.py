@@ -86,6 +86,13 @@ class SteerCriteriaTests(unittest.TestCase):
                     self.amend(text, hint=hint)
                 self.assertEqual(list(self.conn.iterdump()), before)
 
+    def test_edit_verbs_in_ordinary_prose_are_carried_unchanged(self):
+        text = "Replace cache storage\nDrop caching for now\nAdd a count"
+        note = self.amend(text)
+        rendered = carry_amendments(self.conn, self.claim(), "Filed ticket body")
+        self.assertEqual(rendered, "Filed ticket body\n\n" + PREFIX
+                         + f"\nsteer note {note.id} by maintainer:\n" + text)
+
     def test_replacement_rederives_witness_and_add_accepts_verify_witness(self):
         note = self.amend(
             "replace c2: the list is sorted in `tests/test_store_board.py`\n"
@@ -95,6 +102,30 @@ class SteerCriteriaTests(unittest.TestCase):
             " WHERE steerNoteId = ? ORDER BY id", (note.id,)).fetchall(), [
                 (2, "test", "tests/test_store_board.py"),
                 (4, "verify", "ruff check .")])
+
+    def test_malformed_edit_commands_refuse_without_writing(self):
+        for line in ("REPLACE C0: new text", "REPLACE C2:", "replace c2:   ",
+                     "REPLACE C2 new text", "DROP C0", "DROP C2 extra", "ADD:"):
+            with self.subTest(line=line):
+                before = list(self.conn.iterdump())
+                with self.assertRaisesRegex(store.steer_notes.SteerRefused,
+                                            "malformed criterion edit"):
+                    self.amend("ADD: the list displays a count\n" + line)
+                self.assertEqual(list(self.conn.iterdump()), before)
+
+    def test_carry_keeps_filed_position_order_and_lists_drops_by_id(self):
+        revised = ["**C4** the list displays a count", "**C2** " + FILED[1],
+                   "**C3** " + FILED[2], "**C1** " + FILED[0]]
+        store.board.edit_ticket(self.conn, self.project_id, self.key,
+                                ticket_body(revised), expected_revision=1)
+        self.amend("REPLACE C2: the list is sorted by age\n"
+                   "DROP C3: covered by C2\nDROP C1: covered by C4")
+        rendered = carry_amendments(self.conn, self.claim(), "Filed ticket body")
+        self.assertEqual(rendered.split("Amended acceptance criteria:\n")[1],
+                         "- **C4** the list displays a count\n"
+                         "- **C2** the list is sorted by age\n"
+                         "- C1 dropped: covered by C4\n"
+                         "- C3 dropped: covered by C2")
 
     def test_carry_renders_one_amended_block_and_only_free_note_lines(self):
         note = self.amend("REPLACE C2: the list is sorted by age\n"
