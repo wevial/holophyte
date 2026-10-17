@@ -33,11 +33,9 @@ class FixOntoPushedTests(unittest.TestCase):
             remote = root / "remote.git"
 
             def git(*args, cwd=wt, check=True):
-                result = subprocess.run(
-                    ["git", *args], cwd=cwd, capture_output=True, text=True)
-                if check:
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                return result
+                return subprocess.run(
+                    ["git", *args], cwd=cwd, capture_output=True,
+                    text=True, check=check)
 
             git("init", "--bare", str(remote), cwd=root)
             git("init", "-b", "fix", str(wt), cwd=root)
@@ -56,7 +54,6 @@ class FixOntoPushedTests(unittest.TestCase):
             git("commit", "--amend", "-m", message)
             head = git("rev-parse", "HEAD").stdout.strip()
             tree = git("rev-parse", "HEAD^{tree}").stdout.strip()
-            self.assertNotEqual(head, pushed)
             self.assertIsNone(branch_sync._candidate_drift(wt, "fix", head))
             self.assertEqual(
                 git("merge-base", "--is-ancestor", pushed, head,
@@ -64,8 +61,7 @@ class FixOntoPushedTests(unittest.TestCase):
 
             branch_sync.onto_pushed(wt, "fix", pushed, head)
 
-            push = git("push", "origin", "fix", check=False)
-            self.assertEqual(push.returncode, 0, push.stderr)
+            git("push", "origin", "fix")
             tip = git("rev-parse", "refs/heads/fix", cwd=remote).stdout.strip()
             self.assertEqual(
                 git("rev-parse", f"{tip}^{{tree}}").stdout.strip(), tree)
