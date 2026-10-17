@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import stat
 import tempfile
 import threading
 import tomllib
+from contextlib import closing
 from datetime import datetime, timezone
 
+import store.read
+from holophyte.admission import project_of
 from holophyte.agents.probes import probe_implementer
 from holophyte.config.checks import check_document
 from holophyte.config.reader import KNOWN_KEYS
@@ -33,13 +37,33 @@ def config_text(project):
         return ""
 
 
+def config_revision(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def config_saved(project):
+    if not project.store_path.exists():
+        return None
+    with closing(store.read.open_readonly(project.store_path)) as conn:
+        row = store.read.latest_intervention(
+            conn, CONFIG_ACTION, project_of(conn, project))
+        return None if row is None else {"at_ms": row[0], "actor": row[1]}
+
+
 def read_config(project):
     """A text `redact()` cannot vouch for is served as no text at all."""
     try:
-        text = redact(config_text(project))
+        current = config_text(project)
+        text = redact(current)
     except RedactionError as bad:
         return 500, {"error": str(bad)}
+    try:
+        modified_ms = int(project.config_path.stat().st_mtime * 1000)
+    except FileNotFoundError:
+        modified_ms = None
     return 200, {"text": text, "values": config_values(text),
+                 "revision": config_revision(current), "modified_ms": modified_ms,
+                 "saved": config_saved(project),
                  "path": str(project.config_path), "applies": CONFIG_APPLIES}
 
 
@@ -68,15 +92,18 @@ def validate_config(project, text):
     return None
 
 
-def write_config(project, body, now=None):
+def write_config(project, body, now=None, if_match=None):
     if "patch" in body:
-        return patch_config(project, body["patch"], now)
+        return patch_config(project, body["patch"], now, if_match)
     text = body.get("text")
     if not isinstance(text, str):
         return 400, {"ok": False, "error": "text must be the file's new"
                                             " contents as a string"}
     with CONFIG_LOCK:
         current = config_text(project)
+        conflict = config_conflict(project, current, if_match)
+        if conflict is not None:
+            return conflict
         code, reply, written = _write_config(project, text, now, current)
     if written is not None:
         reply["probe"] = probe_changed_implementer(project, current, written)
@@ -87,12 +114,25 @@ class PatchError(ValueError):
     pass
 
 
-def patch_config(project, patch, now):
+def config_conflict(project, current, if_match):
+    revision = config_revision(current)
+    if if_match is not None and if_match.strip() != revision:
+        return 409, {"ok": False,
+                     "error": f"{project.config_path.name} changed since this revision"
+                              " was read; read it again",
+                     "current": revision}
+    return None
+
+
+def patch_config(project, patch, now, if_match=None):
     if not isinstance(patch, dict):
         return 400, {"ok": False, "error": "patch must be an object of"
                                             " dotted table.key to value"}
     with CONFIG_LOCK:
         current = config_text(project)
+        conflict = config_conflict(project, current, if_match)
+        if conflict is not None:
+            return conflict
         try:
             text = apply_patch(current, patch)
         except PatchError as bad:
@@ -228,6 +268,7 @@ def _write_config(project, text, now, current,
         os.chmod(staging, stat.S_IMODE(path.stat().st_mode))
     os.replace(staging, path)
     return 200, {"ok": True, "path": str(path),
+                 "revision": config_revision(config_text(project)),
                  "backup": None if backup is None else str(backup),
                  "applies": CONFIG_APPLIES, "recorded": recorded}, text
 

@@ -25,7 +25,7 @@ those writing routes. A project with no store answers 503.
 and `GET /attention`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
 `GET /runs/N/turns`, and of the list routes
-`GET /shipped`, `GET /history`, `GET /ledger`, `GET /board` and
+`GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board` and
 `GET /tickets/KEY`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
@@ -251,6 +251,39 @@ a git failure is null, never an error.
 null for a run that opened none, including every run merged locally.
 Nothing is read from GitHub: the URL is the one the factory itself
 opened, so its last path segment is the PR number.
+
+## `GET /holds?limit=N`
+
+```json
+{"admission": "held", "note": "schema bump", "rows": [
+  {"id": 3, "at": 1791568920000, "action": "hold",
+   "note": "schema bump", "actor": "maintainer"},
+  {"id": 2, "at": 1791568800000, "action": "release_hold",
+   "note": "Back to normal.", "actor": "operator"},
+  {"id": 1, "at": 1791553200000, "action": "hold",
+   "note": "Waiting for the migration.", "actor": null}
+], "limit": 20, "truncated": false}
+```
+
+The project's current `admission` (`enabled`, `held` or `disabled`) and
+`note`, as `/status` answers `admission` and `hold_note`, with its admission
+changes in `rows`. Each row carries its `id`, `at` in epoch milliseconds,
+`action` (`hold`, `release_hold` or `disable`), `note` as recorded (including
+any console prefix, or null), and `actor` (`maintainer`, `operator` or
+`supervisor`, or null for older records). Rows belong only to this project
+and are ordered by `at` descending, then `id` descending.
+
+`limit` defaults to 20 and is capped at 200. The body echoes the applied
+`limit`; `truncated` is true when more rows exist than it returns. There is
+no paging past `limit`. A non-positive or non-integer `limit` is 400 with
+an `error` naming `limit`. A store with no row for the project answers
+`admission: "enabled"`, `note: null` and empty `rows`; a project with no
+store answers 503. On a host daemon this route is
+`GET /projects/NAME/holds?limit=N`.
+
+Releasing a hold requires a reason, just like holding: `holo release` requires
+`note`, and `POST /actions/release-hold` rejects a blank `note`. The Release
+UI and its required-reason form are covered by HOLO-403.
 
 ## `GET /history?since=MS&limit=N`
 
@@ -1586,7 +1619,7 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened |
 | 405 | any method but GET and OPTIONS, `POST` outside `/actions/` and, on a host daemon, `/tickets`, `/tickets/ID/move` and `/tickets/ID/cancel`, and `PUT` outside `/config` and, on a host daemon, `/tickets/ID`; `Allow: GET` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
