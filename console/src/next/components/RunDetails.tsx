@@ -4,12 +4,10 @@ import { formatClock, formatDuration } from "../../lib/format";
 import { AnswerError } from "../../lib/poll";
 import { useRunFiles, useRunTurns } from "../queries";
 import { PollDepsContext } from "../scope";
+import { turnTitles } from "../turn";
 import { SECTION_LABEL } from "./Criteria";
 
 const ROW = "flex justify-between gap-3 border-b border-dashed border-rule-2 py-1 font-mono text-[12.5px] leading-[1.8]";
-const SEATS: Record<RunTurn["role"], string> = {
-  implement: "implementer", review: "reviewer", adjudicate: "adjudicator", write: "writer", trim: "trim",
-};
 
 function ReviewRound({ round, max }: { round: Round; max: number }) {
   const live = round.ended_ms == null;
@@ -29,16 +27,11 @@ function ReviewRound({ round, max }: { round: Round; max: number }) {
 }
 
 function Turns({ turns }: { turns: RunTurn[] }) {
-  let implement = 0;
-  let review = 0;
   return <ol className="m-0 list-none p-0">
-    {[...turns].sort((a, b) => a.id - b.id).map((turn) => {
-      const ordinal = turn.role === "implement" ? ` · turn ${++implement}` : turn.role === "review" ? ` · round ${++review}` : "";
-      return <li key={turn.id} className={ROW}>
-        <span>{SEATS[turn.role]} · {turn.label ?? "label unknown"}{ordinal}</span>
-        <span className="shrink-0">{turn.seconds == null ? "running" : formatDuration(turn.seconds * 1000)}</span>
-      </li>;
-    })}
+    {turnTitles(turns).map(({ turn, seat, ordinal }) => <li key={turn.id} className={ROW}>
+      <span>{seat} · {turn.label ?? "label unknown"}{ordinal && ` · ${ordinal}`}</span>
+      <span className="shrink-0">{turn.seconds == null ? "running" : formatDuration(turn.seconds * 1000)}</span>
+    </li>)}
   </ol>;
 }
 
