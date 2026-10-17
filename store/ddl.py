@@ -86,6 +86,21 @@ CREATE TABLE IF NOT EXISTS tickets (
     parentTicketId       INTEGER REFERENCES tickets (id)  -- the story it serves
 );
 
+CREATE TABLE IF NOT EXISTS ticketCriteria (
+    id            INTEGER PRIMARY KEY,
+    ticketId      INTEGER NOT NULL REFERENCES tickets (id),
+    criterion     INTEGER NOT NULL CHECK (criterion > 0),
+    position      INTEGER CHECK (position > 0),
+    text          TEXT NOT NULL,
+    witnessKind   TEXT NOT NULL
+        {_enums.check_clause('witnessKind', _enums.CriterionWitnessKind)},
+    witnessTarget TEXT,
+    status        TEXT NOT NULL
+        {_enums.check_clause('status', _enums.CriterionStatus)},
+    source        TEXT NOT NULL,
+    at            INTEGER NOT NULL
+);
+
 -- runs: one attempt at one ticket (state-model §2). Phase enum is §4.
 CREATE TABLE IF NOT EXISTS runs (
     id                INTEGER PRIMARY KEY,
@@ -527,6 +542,8 @@ CREATE TABLE IF NOT EXISTS interventions (
 
 
 INDEXES = """
+CREATE INDEX IF NOT EXISTS ticketCriteria_ticketId_criterion
+    ON ticketCriteria (ticketId, criterion, id);
 CREATE INDEX IF NOT EXISTS runs_ticketId ON runs (ticketId);
 CREATE INDEX IF NOT EXISTS reviewRounds_runId ON reviewRounds (runId);
 CREATE INDEX IF NOT EXISTS runEvents_runId ON runEvents (runId);

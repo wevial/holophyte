@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import _json_list
 from . import enums as _enums
+from .criteria import record_criteria
 from .enums import TicketStatus as _Status
 from .project_paths import canonical_projects
 from .revisions import record_board_fields
@@ -286,6 +287,8 @@ def mirror_ticket(
                     ticket_id,
                 ),
             )
+        record_criteria(conn, ticket_id, json.loads(criteria),
+                        json.loads(commands), now)
         record_board_fields(conn, ticket_id, author, now)
     return ticket_id
 

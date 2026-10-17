@@ -96,6 +96,34 @@ to `HOLOPHYTE_HOME/host-actions.jsonl` and synced, with `at`, `action`
 `ok` and `detail` are as on the unit actions below. The console's
 "Run sweep" on a stale sweep or supervisor row is this route.
 
+## `POST /actions/restart-daemon`
+
+At a host daemon's root, behind `host.toml`'s `[serve] actions` and the
+machine token. Body: optional, a JSON object with `note` and `author`.
+Before restarting, one JSON line is appended to
+`HOLOPHYTE_HOME/host-actions.jsonl` and synced, with `at`, `action`
+(`restart_daemon`), `via`, `pid`, `author` (default `maintainer`) and `note`.
+If the ledger cannot be written, the daemon keeps running and answers 200
+with `ok: false`, `recorded: null` and `detail` naming the ledger.
+
+```json
+{"action": "restart-daemon", "ok": true,
+ "detail": "the daemon drains its requests and restarts",
+ "recorded": "HOLOPHYTE_HOME/host-actions.jsonl"}
+```
+
+`recorded` is the ledger's resolved path. After writing the answer, the
+daemon stops accepting requests and drains active requests for at most
+`DRAIN_SEC`, logging `restart requested over HTTP`. With an adopted socket
+it exits 0; the service manager starts the next daemon when a request
+arrives on that socket. Otherwise it re-executes itself. It comes back on
+the checkout's code; a greater root `/status` `daemon.started_ms`
+identifies the new daemon. Requests while draining answer 503
+`daemon restarting`.
+
+This route does not restart the supervisor, sweep or loop. It is 404 on a
+project daemon and under `/projects/NAME/actions/` on a host daemon.
+
 ## `POST /actions/restart-supervisor`
 
 Runs `systemctl --user restart holophyte-supervise@NAME`, where `NAME` is
@@ -462,6 +490,6 @@ reading GitHub.
 | --- | --- |
 | 400 | the body is not a JSON object, or `requeue` has no `ticket`, a non-boolean `force`, or `"force": true` without a non-blank `note`, or `merge` has no positive integer `run`; `PUT /config` whose `text` is not a string, is not TOML, the loader refuses, or holds a `[redacted]` with no current value; a `patch` that is not an object, or with a key the daemon cannot apply |
 | 401 | no exact bearer value, on any bind; body `{}`, nothing run or written |
-| 404 | `[serve] actions` is not `true`, or the action is not one of this page's; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` |
+| 404 | `[serve] actions` is not `true`, or the action is not one of this page's; `/config` without `[serve] config_edit = true`; on a host daemon, `restart-supervisor`, a project name outside the registry, and any root action but `run-sweep` or `restart-daemon`; `restart-daemon` on a project daemon or under `/projects/NAME/actions/` |
 | 405 | `POST` on any path outside `/actions/`; `PUT` on any path but `/config` |
-| 503 | `requeue` or `merge` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |
+| 503 | any request while the daemon drains for restart (`daemon restarting`); `requeue` or `merge` against a project with no store yet; `PUT /config` with no store or no run to record against; on a host daemon, a project whose store is stamped newer than the build can read, or is locked or corrupt when the action reads or writes it |

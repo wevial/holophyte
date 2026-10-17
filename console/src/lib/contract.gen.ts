@@ -679,6 +679,24 @@ export const historySchema = z.looseObject({
 });
 export type History = z.infer<typeof historySchema>;
 
+export const holdRowSchema = z.looseObject({
+  id: z.int(),
+  at: z.int(),
+  action: z.enum(["hold", "release_hold", "disable"]),
+  note: z.string().nullable(),
+  actor: z.enum(["maintainer", "operator", "supervisor"]).nullable(),
+});
+export type HoldRow = z.infer<typeof holdRowSchema>;
+
+export const holdsSchema = z.looseObject({
+  admission: z.enum(["enabled", "held", "disabled"]),
+  note: z.string().nullable(),
+  rows: z.array(holdRowSchema),
+  limit: z.int(),
+  truncated: z.boolean(),
+});
+export type Holds = z.infer<typeof holdsSchema>;
+
 export const ledgerEntrySchema = z.looseObject({
   at: z.int(),
   kind: z.string(),

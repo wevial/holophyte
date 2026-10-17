@@ -260,7 +260,8 @@ Each module, one line:
   interventions row each records before it acts.
 - `holophyte/serve/serve_levers.py` — the daemon's `hold`, `release-hold`,
   `pause` and `resume` actions (KO-609): the CLI's store calls behind the
-  action token, each requiring a note, and the `paused` attention item.
+  action token, each requiring a note, the `paused` attention item, and
+  `GET /holds`, the project admission state and its change history.
 - `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
   `POST /actions/merge`: a run parked for a human's merge read for
   readiness, and released through the store's `approve` only when ready.
@@ -639,6 +640,8 @@ The store is its own package:
   re-exported from the package.
 - `store/repair.py` — `repair_references()`: a dry run, then a recorded
   rewrite of foreign keys that name a dropped table.
+- `store/criteria.py` — append-only criterion versions, stable ticket-local
+  numbers and open-ticket migration backfill.
 - `store/failure_kinds.py` — prefix-only backfill for historical run failures.
 - `store/enums.py` — canonical store vocabularies and generated SQL CHECK clauses.
 - `store/schema.py` — the schema, its migration ladder and the
@@ -699,6 +702,8 @@ At the root:
   set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `review_runner.py` — exact-SHA staging and the model-neutral local
   reviewer boundary (see [Reviewing](reviewing.md)).
+- `ticket_criteria.py` — explicit criterion ids, test and verify witnesses,
+  and blocking post-merge or operator witness checks for native filings.
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
