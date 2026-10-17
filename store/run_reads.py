@@ -414,6 +414,19 @@ def admission_changes(conn, project_id, limit):
             for row in rows]
 
 
+def latest_intervention(conn, action, project_id):
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(interventions)")}
+    if not columns:
+        return None
+    actor = "i.actor" if "actor" in columns else "NULL"
+    return conn.execute(
+        f"SELECT i.at, {actor} FROM interventions i"
+        " JOIN runs r ON r.id = i.runId"
+        " WHERE i.action = ? AND r.projectId = ?"
+        " ORDER BY i.at DESC, i.id DESC LIMIT 1",
+        (action, project_id)).fetchone()
+
+
 def latest_human_intervention_at(conn, ticket_id):
     (at,) = conn.execute(
         "SELECT COALESCE(MAX(i.at), 0) FROM interventions i"
