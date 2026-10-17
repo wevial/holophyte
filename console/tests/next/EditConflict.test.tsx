@@ -87,6 +87,15 @@ test("a section their revision only redraws as fields shows their commands, not 
   expect(merge.both).toEqual([{ name: "Verify command(s)", theirs: "ruff check .", mine: "<!-- each on its own line -->\n```\nbun --cwd=console test\n```" }]);
 });
 
+test("criteria their revision only redraws as fields show each criterion's detail under it", () => {
+  const base = "# Notes show\n\n## Acceptance criteria\n\n<!-- one per line -->\n- [ ] Each note shows.\n  Under the run.\n";
+  const theirs = "# Notes show\n\n## Acceptance criteria\n\n- [ ] Each note shows.\n  Under its run.\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: [{ ...read.others[0]!, text: "<!-- one per line -->\n- [ ] Every note shows.\n  Under the run." }] };
+  const merge = mergeEdit(read, loadEdit(theirs, null), mine);
+  expect(merge.both).toEqual([{ name: "Acceptance criteria", theirs: "Each note shows.\n  Under its run.", mine: "<!-- one per line -->\n- [ ] Every note shows.\n  Under the run." }]);
+});
+
 test("a section restored by one rebase survives the next", () => {
   const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
   const fourth = "# Notes show\n\n## Summary\n\nThe notes show.\n";

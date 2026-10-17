@@ -398,7 +398,7 @@ function shown(value: unknown): string {
  *  when several fields share it; undefined when none of them holds text. */
 function drawnText(form: EditFields, name: string): string | undefined {
   const fields = FIELD_NAMES.filter(([field]) => (field === "title" ? "Title" : (sections as Record<string, string>)[field]) === name);
-  const parts = fields.map(([field, label]) => [label, shown(form[field])]).filter(([, text]) => text && text !== "none");
+  const parts = fields.map(([field, label]) => [label, field === "criteria" ? form.criteria.map((_, index) => shown(criterionAt(form, index))).join("\n") : shown(form[field])]).filter(([, text]) => text && text !== "none");
   if (!parts.length) return undefined;
   return fields.length === 1 ? parts[0]![1] : parts.map(([label, text]) => `${label}: ${text}`).join("\n");
 }
