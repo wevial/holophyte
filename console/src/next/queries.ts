@@ -306,7 +306,8 @@ export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[
     byHost.set(host.key, data);
     answers.set(day.since, byHost);
   });
-  return { answers };
+  const queries = asked.map(({ host, day }, index) => ({ host, day, ...results[index] }));
+  return { answers, queries };
 }
 
 export function useHistoryTotal(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps) {
@@ -318,7 +319,8 @@ export function useHistoryTotal(hosts: HostRecord<PollBodies>[], now: number, de
   });
   const complete = asked.length > 0 && asked.length === hosts.length && results.every((result) => result.status === "success" && result.data != null);
   const total = complete ? results.reduce((sum, result) => sum + (result.data?.total ?? 0), 0) : undefined;
-  return { total };
+  const queries = asked.map((host, index) => ({ host, ...results[index] }));
+  return { total, queries };
 }
 
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first

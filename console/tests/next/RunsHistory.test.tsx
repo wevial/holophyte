@@ -3,12 +3,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:te
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import type { HistoryRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import { useHistoryDays, useHistoryTotal } from "../../src/next/queries";
 import { pastDays } from "../../src/next/runDays";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
@@ -179,4 +181,54 @@ test("history withholds the total until initial host discovery and totals have a
   release();
   await settlePage();
   expect(screen.getByText("all projects · 159 runs in the 30 days before yesterday · newest day first")).toBeTruthy();
+});
+
+test("history hooks retain each host and day's pending, error and success results", async () => {
+  const hosts = [DEMO, WRITER].map((base) => ({
+    key: base, address: base, base, label: base, project: working.project,
+    status: working, attention: null, polled_ms: NOW, seen_ms: NOW, error: null, needs_token: false,
+  }));
+  const days = pastDays(NOW).slice(0, 2);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const failure = new Error("history unavailable");
+  const server = fleet();
+  const fetch: Fetch = async (url) => {
+    await pending;
+    if (new URL(url).origin === DEMO) throw failure;
+    return server.fetch(url);
+  };
+  const client = consoleQueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const hook = renderHook(() => ({
+    days: useHistoryDays(hosts, days, { fetch }),
+    total: useHistoryTotal(hosts, NOW, { fetch }),
+  }), { wrapper });
+  try {
+    expect(hook.result.current.days.queries).toHaveLength(4);
+    expect(hook.result.current.total.queries).toHaveLength(2);
+    for (const query of [...hook.result.current.days.queries, ...hook.result.current.total.queries]) {
+      expect(query.status).toBe("pending");
+      expect(query.error).toBeNull();
+    }
+    release();
+    await settlePage();
+    for (const [index, query] of hook.result.current.days.queries.entries()) {
+      expect(query.host).toBe(hosts[Math.floor(index / days.length)]!);
+      expect(query.day).toBe(days[index % days.length]!);
+      expect(query.status).toBe(query.host.base === DEMO ? "error" : "success");
+      expect(query.error).toBe(query.host.base === DEMO ? failure : null);
+    }
+    for (const [index, query] of hook.result.current.total.queries.entries()) {
+      expect(query.host).toBe(hosts[index]!);
+      expect(query.status).toBe(query.host.base === DEMO ? "error" : "success");
+      expect(query.error).toBe(query.host.base === DEMO ? failure : null);
+    }
+    expect(hook.result.current.days.answers.get(days[0]!.since)?.get(hosts[1]!.key)?.rows).toHaveLength(3);
+    expect(hook.result.current.total.total).toBeUndefined();
+  } finally {
+    release();
+    hook.unmount();
+    client.clear();
+  }
 });
