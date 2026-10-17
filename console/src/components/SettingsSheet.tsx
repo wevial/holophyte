@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ACTIONS_OFF, ROUTES, actionBase, postAction } from "../lib/actions";
+import { ACTIONS_OFF, RESTART_LABEL, ROUTES, actionBase, postAction } from "../lib/actions";
 import { RUN_SWEEP } from "../lib/attention";
 import { underHost } from "../lib/hosts";
 import { CONFIG_EDIT_OFF, UNBOUND_NOTE, bind, isLines, same, fetchConfig, namedKey, putConfig, type ConfigAnswer, type ConfigWrite, type PatchValue } from "../lib/config";
@@ -10,10 +10,6 @@ import { NEEDS_TOKEN } from "./TicketSheet";
 
 /** The banner over Save: the loop reads the file once, at startup. */
 export const APPLIES_LINE = "A saved change applies at the loop's next start.";
-/** The action beside the banner, the same wired label the rows post; a
- *  project behind a host daemon has no supervisor of its own and gets
- *  the host sweep's `RUN_SWEEP` instead. */
-export const RESTART_LABEL = "Restart supervisor";
 export { UNBOUND_NOTE } from "../lib/config";
 /** The line over the fields when the daemon could not parse the file. */
 export const UNPARSED_LINE = "The file does not parse as TOML; the fields are empty until the raw tab fixes it.";

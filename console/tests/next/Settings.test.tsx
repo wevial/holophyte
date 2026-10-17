@@ -116,7 +116,7 @@ test("the project picker preserves the current tab, remembers the choice and nam
   expect(window.location.hash).toBe("#/settings/review?project=writer");
   expect(readStoredScope()).toBe("writer");
   expect(screen.getByText("writer · config.toml on writer-host")).toBeTruthy();
-  fireEvent.change(picker, { target: { value: "relos" } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "relos" } });
   await act(settle);
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   expect(within(nav).getByRole("link", { name: /Hold \/ release/ }).textContent).toContain("held");
