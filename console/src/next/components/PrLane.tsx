@@ -53,11 +53,10 @@ export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number)
   });
 }
 
-/** What follows the state word: CI checks, a parked draft's hold, or
+/** What follows the state word: CI checks or
  *  a plain park's first fact that is not `ok`. */
 function stateDetail(state: State, item: AttentionItem, facts: Fact[]): string | null {
   if (state === "on_ci") return waitingOnCi(item);
-  if (state === "parked" && item.pr != null && typeof item.pr === "object" && (item.pr as PullRequestFacts).state === "draft") return "held for your review";
   if (state === "parked") return facts.find((fact) => fact.tone !== "ok")?.label ?? null;
   return null;
 }
@@ -82,9 +81,9 @@ function PrLaneRow({
   const { item, facts } = row;
   const run = typeof item.run === "number" ? item.run : null;
   const state = stateOf({ attention: item, readiness: run == null ? undefined : readiness.get(runKey(host.key, run)) });
-  const detail = stateDetail(state, item, facts);
   const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PullRequestFacts) : null;
   const heldDraft = state === "parked" && pr?.state === "draft";
+  const detail = heldDraft ? "held for your review" : stateDetail(state, item, facts);
   const stateWord = heldDraft ? "draft" : STATES[state].word;
   const word = detail == null ? stateWord : `${stateWord} · ${detail}`;
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
