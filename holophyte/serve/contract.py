@@ -850,6 +850,12 @@ class TicketDetail(TypedDict):
     steers: list[TicketSteer]
 
 
+class TicketCheck(TypedDict):
+    problems: list[str]
+    advisories: list[str]
+    blocks: bool
+
+
 class StoryChildRow(TypedDict):
     ticket: str
     title: str
@@ -913,6 +919,7 @@ ROUTES = {
     "findings": (Findings, "GET /findings"),
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
+    "ticket-check": (TicketCheck, "POST /tickets/check"),
     "story": (StoryDetail, "GET /stories/KEY"),
 }
 

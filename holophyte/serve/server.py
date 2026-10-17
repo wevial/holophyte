@@ -480,6 +480,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 class StatusServer(InFlight, ThreadingHTTPServer):
     daemon_threads = True
     code_check = None
+    restart_reason = None
     action_names = ACTIONS
 
     def __init__(self, project, address, console_dir=CONSOLE_DIR, token=None,
@@ -509,8 +510,15 @@ class StatusServer(InFlight, ThreadingHTTPServer):
         self.self_address = f"{host}:{port}"
 
     def service_actions(self):
+        if self.restart_reason is not None:
+            raise Moved(self.restart_reason)
         if self.code_check is not None:
             self.code_check()
+
+    def request_restart(self):
+        with self.settled:
+            self.restart_reason = "restart requested over HTTP"
+            self.draining = True
 
 
 def make_server(project, host, port, console_dir=CONSOLE_DIR, token=None,
@@ -574,15 +582,16 @@ def run(server, description, out, interval, adopted=False, watch=None):
         for signum, handler in previous.items():
             signal.signal(signum, handler)
         server.server_close()
-    if watch.moved_to is None:
+    if watch.moved_to is None and server.restart_reason is None:
         return 0
     if not server.drain(DRAIN_SEC):
         print(f"[holo2] requests still in flight after {DRAIN_SEC}s;"
               " leaving them", file=out)
-    moved = f"factory code moved from {watch.started_from} to {watch.moved_to}"
+    reason = server.restart_reason or (
+        f"factory code moved from {watch.started_from} to {watch.moved_to}")
     if adopted:
-        print(f"[holo2] {moved}; serve exiting for the service manager to"
+        print(f"[holo2] {reason}; serve exiting for the service manager to"
               " start the new code", file=out, flush=True)
         return 0
-    reexec_self(f"{moved}; serve re-executing", EXEC, out)
+    reexec_self(f"{reason}; serve re-executing", EXEC, out)
     return 0

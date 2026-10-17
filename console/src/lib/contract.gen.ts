@@ -916,6 +916,13 @@ export const ticketDetailSchema = z.looseObject({
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
 
+export const ticketCheckSchema = z.looseObject({
+  problems: z.array(z.string()),
+  advisories: z.array(z.string()),
+  blocks: z.boolean(),
+});
+export type TicketCheck = z.infer<typeof ticketCheckSchema>;
+
 export const storyChildRowSchema = z.looseObject({
   ticket: z.string(),
   title: z.string(),
