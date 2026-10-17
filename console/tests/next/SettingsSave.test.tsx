@@ -17,7 +17,7 @@ const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.jso
 const conflict = "config.toml changed on writer-host since this page read it. It has been read again: check the fields and save once more.";
 const refusal = "[holo2] /x/config.toml: [loop] workers must be an integer >= 1, got 0";
 
-async function mount(options: { status?: number; error?: string; configEdit?: boolean; modified?: number; actor?: ConfigBody["saved"]; } = {}) {
+async function mount(options: { status?: number; error?: string; configEdit?: boolean; modified?: number; actor?: ConfigBody["saved"]; pending?: Promise<void>; } = {}) {
   let config: ConfigBody = {
     text: '[loop]\nworkers = 2\n', values: { loop: { workers: 2 } }, path: "/srv/demo/config.toml",
     applies: "next loop start", revision: R1, saved: options.actor === undefined ? { at_ms: SAVED, actor: "maintainer" } : options.actor,
@@ -36,6 +36,7 @@ async function mount(options: { status?: number; error?: string; configEdit?: bo
     if (!url.endsWith("/config")) return poll(url, init);
     if (init?.method !== "PUT") { reads++; return Response.json(config); }
     writes.push(init);
+    await options.pending;
     if (options.status === 409) {
       config = { ...config, revision: R2, values: { loop: { workers: 4 } } };
       return Response.json({ current: R2 }, { status: 409 });
@@ -101,6 +102,30 @@ test("save sends one revision-checked patch, re-reads config, clears the draft a
   expect(source.actions).toEqual([`${ORIGIN}/actions/restart-supervisor`]);
   fireEvent.click(within(banner!).getByRole("button", { name: "Later" }));
   expect(screen.queryByText(/Saved config.toml at revision/)).toBeNull();
+});
+
+test("a completed save preserves newer edits made after Back and Forward project navigation", async () => {
+  let complete!: () => void;
+  const pending = new Promise<void>((resolve) => { complete = resolve; });
+  const source = await mount({ pending });
+  await act(async () => { window.location.hash = "#/settings/general?project=other"; await settle(); });
+  await act(async () => { window.location.hash = "#/settings/general?project=demo"; await settle(); });
+  edit(); review(); await save();
+  expect(source.writes).toHaveLength(1);
+  await act(async () => { window.history.back(); await settle(); });
+  expect(screen.getByText("other · config.toml on its host")).toBeTruthy();
+  await act(async () => { window.history.forward(); await settle(); });
+  edit();
+  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("4");
+  await act(async () => { complete(); await settle(); });
+  await act(settle);
+  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("4");
+  expect(unsaved()?.textContent).toContain("workers 3 → 4");
+  review();
+  expect(dialog().textContent).toMatch(/− workers = 3.*\+ workers = 4/);
+  await save();
+  expect(new Headers(source.writes[1]!.headers).get("If-Match")).toBe(R2);
+  expect(JSON.parse(String(source.writes[1]!.body))).toEqual({ patch: { "loop.workers": 4 } });
 });
 
 test("a revision conflict re-reads the file, keeps edits and uses the refreshed revision for a deliberate retry", async () => {

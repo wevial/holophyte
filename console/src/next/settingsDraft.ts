@@ -7,6 +7,7 @@ type DraftContext = {
   projects: Record<string, ProjectEdits>;
   edit: (project: string, key: string, old: PatchValue, value: PatchValue) => void;
   discard: (project: string) => void;
+  saved: (project: string, submitted: ProjectEdits) => void;
 };
 const Context = createContext<DraftContext | null>(null);
 
@@ -19,7 +20,17 @@ export function SettingsDraftProvider({ children }: { children: ReactNode }) {
     return { ...previous, [project]: edits };
   });
   const discard = (project: string) => setProjects(({ [project]: _dropped, ...rest }) => rest);
-  return createElement(Context.Provider, { value: { projects, edit, discard } }, children);
+  const saved: DraftContext["saved"] = (project, submitted) => setProjects((previous) => {
+    const edits = { ...previous[project] };
+    for (const [key, sent] of Object.entries(submitted)) {
+      const current = edits[key];
+      if (!current) continue;
+      if (same(current.value, sent.value)) delete edits[key];
+      else edits[key] = { ...current, old: sent.value };
+    }
+    return { ...previous, [project]: edits };
+  });
+  return createElement(Context.Provider, { value: { projects, edit, discard, saved } }, children);
 }
 
 export function useSettingsDraft() {

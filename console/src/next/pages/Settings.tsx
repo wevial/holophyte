@@ -87,7 +87,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
     setRefusal(null);
     const result = await save.mutateAsync({ base: host.base, revision: answer.config.revision, patch: Object.fromEntries(Object.entries(edits).map(([key, edit]) => [key, edit.value])) });
     if (result.ok) {
-      draft.discard(project);
+      draft.saved(project, edits);
       setConfirm(false);
       setBanner(result);
     } else if ("conflict" in result) {
