@@ -149,7 +149,9 @@ def fix_brief(pull, addressed, ticket, notes=()):
         "defects. The ticket you are held to, acceptance criteria "
         f"included:\n\n{ticket}\n\nThreads to address:\n\n{listing}{context}\n\n"
         "Fix each one on this branch and commit; keep the ticket's verify "
-        "commands passing. Then end your reply with one line per thread, "
+        "commands passing. Never amend, rebase or squash commits already on "
+        "the branch: the factory only fast-forwards it. "
+        "Then end your reply with one line per thread, "
         "in this form:\nTHREAD n: one sentence saying what changed")
 
 

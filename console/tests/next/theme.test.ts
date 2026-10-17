@@ -84,7 +84,7 @@ test("the graph's edge tokens take the board's values in Dawn and in both dark b
 
 
 test("reading text uses Plex Sans with Avenir fallbacks while headings keep Archivo", () => {
-  const theme = new Map(decls.filter((d) => d.path.length === 1 && d.path[0] === "@theme inline")
+  const theme = new Map(decls.filter((d) => d.path.length === 1 && ["@theme", "@theme inline"].includes(d.path[0]!))
     .map((d) => [d.name, d.value]));
   expect(theme.get("--font-read")).toBe('"IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif');
   expect(theme.has("--font-plex")).toBe(false);

@@ -883,12 +883,13 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     if resume_step is None:
         record_step(conn, run_id, "fix")
-        maintainer_notes.start_fix(conn, run_id, addressed)
+        prompt = (goal + note_context(notes) if goal
+                  else babysitter.fix_brief(pull, addressed, ticket, notes))
+        maintainer_notes.start_fix(conn, run_id, addressed, prompt, pull.url)
         spec = _spec_digest(project, wt, task_id, ticket)
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
-            goal + note_context(notes) if goal
-            else babysitter.fix_brief(pull, addressed, ticket, notes))
+            prompt)
         saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
                                pass_no, review_follows), spec=spec)
     else:
