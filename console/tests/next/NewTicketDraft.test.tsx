@@ -105,11 +105,11 @@ test("Save draft restores every field, P1 and the saved time only in its project
   expect(screen.getByRole("button", { name: "Start over" })).toBeTruthy();
 });
 
-test("Save draft preserves paragraphs and Markdown in What, Why and How across repeated saves", async () => {
+test("Save draft preserves paragraphs and fenced field labels across repeated saves", async () => {
   const prose = {
     What: "Show the notes.\n\nPreserve their order.",
-    Why: "Keep the operator informed.\n\n- Show progress\n- Keep context",
-    How: "Read the notes.\n\n1. Fetch the record\n2. Render each note\n\n```text\nKeep this block.\n```",
+    Why: "Keep the operator informed.\n\n- Show progress\n- Keep context\n\n   ~~~~markdown\n**What:** example\n~~~\n**How:** still fenced\n   ~~~~\nAfter the example.",
+    How: "Read the notes.\n\n1. Fetch the record\n2. Render each note\n\n````markdown\n**Why:** example\n```\n**UI change:** still fenced\n## Example heading\n````\nAfter the example.",
   };
   await mount();
   for (const [name, value] of Object.entries(prose)) {

@@ -32,15 +32,35 @@ function readDraft(project: string) {
       values[field] = Array.isArray(value) ? value.join("\n") : field === "notes" ? value.replace(/^- /gm, "") : value;
     }
     const prose = form.sections.find(section => section.name === "What / Why / How")?.text ?? "";
-    for (const field of ["what", "why", "how"] as const) {
-      const label = field[0].toUpperCase() + field.slice(1);
-      const match = new RegExp(`^\\*\\*${label}:\\*\\*[ \\t]*([\\s\\S]*?)(?=^\\*\\*(?:What|Why|How|UI change|Blast radius):\\*\\*|$(?![\\s\\S]))`, "m").exec(prose);
-      if (match) values[field] = match[1].trimEnd();
-    }
+    restoreProse(prose, values);
     return { values, priority: draft.priority as number | null, savedAt: draft.savedAt as number };
   } catch {
     return null;
   }
+}
+
+function restoreProse(prose: string, values: Record<TextField, string>) {
+  let fence = "";
+  let field: "what" | "why" | "how" | null = null;
+  let start = 0;
+  const finish = (end: number) => {
+    if (field) values[field] = prose.slice(start, end).trimEnd();
+  };
+  for (const line of prose.matchAll(/[^\n]+|\n/g)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line[0]);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
+      continue;
+    }
+    if (fence) continue;
+    const label = /^\*\*(What|Why|How|UI change|Blast radius):\*\*[ \t]*/.exec(line[0]);
+    if (!label) continue;
+    finish(line.index);
+    field = label[1] === "What" ? "what" : label[1] === "Why" ? "why" : label[1] === "How" ? "how" : null;
+    start = line.index + label[0].length;
+  }
+  finish(prose.length);
 }
 
 function clearDraft(project: string) {
