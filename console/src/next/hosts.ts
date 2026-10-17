@@ -55,6 +55,7 @@ function daemonCard(records: Record[], now: number) {
   const sweep = root?.sweep;
   const sweepWord = sweep ? sweepWords[sweep.state] : "No host sweep on a project daemon";
   return {
+    record: first, now,
     key: first.address, name: hostName(first), address: baseOf(first.address), down, seen,
     health: healthOf(first, down, now), projects,
     build: root?.build.daemon?.slice(0, 7) ?? "—",

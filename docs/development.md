@@ -1043,3 +1043,5 @@ when no certificate is in the keychain; notarisation, auto-update and other
 platforms are not covered. The packaged app finds the console URL exactly as
 the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
 never from anything baked into the bundle.
+
+`console/src/next/components/HostToken.tsx` manages each Hosts card’s browser token, including saving, forgetting and undo.
