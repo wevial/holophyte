@@ -72,8 +72,7 @@ export function NewTicket() {
   };
   const toggleUI = () => setTemplate(previous => {
     if (fieldOf(previous, "uiChange")) {
-      const next = withField(previous, "uiChange", null);
-      return { ...next, sections: next.sections.filter(section => section.name !== "Mock-up") };
+      return withField(previous, "uiChange", null);
     }
     return withField(previous, "uiChange", "major");
   });
@@ -105,7 +104,6 @@ export function NewTicket() {
       else form = withField(form, field, values[field]);
     }
     if (uiChange) {
-      form = { ...form, sections: form.sections.filter(section => section.name !== "Mock-up") };
       form = withField(withField(withField(form, "mockupLink", mockupLink), "mockupApproval", approval), "mockupImages", mockupBoards.split("\n").filter(url => url.trim()).map(url => `![board](${url.trim()})`));
     }
     const result = await fileTicket(target.base, composeBody(form), priority, deps.fetch, "backlog");
