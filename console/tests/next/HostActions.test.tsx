@@ -62,7 +62,7 @@ async function mount(input = source()) {
   render(<QueryClientProvider client={client}><NextConsole base={ORIGIN} pollDeps={fake.deps} /></QueryClientProvider>);
   await flush();
   return {
-    ...input,
+    ...input, client,
     poll: async () => {
       await act(async () => { await client.refetchQueries({ queryKey: ["fleet", ORIGIN] }); });
       await flush();
@@ -233,4 +233,41 @@ test("a fleet poll rejecting a saved bearer shows the 401 refusal beside the rep
   rejected = false;
   await view.poll();
   expect(card().textContent).not.toContain("refused: the daemon answered 401");
+});
+
+
+test("a saved replacement survives an older authenticated poll answering 401", async () => {
+  storeToken(ADDRESS, "old-token");
+  const input = source();
+  let rejectOld = false;
+  let release = () => {};
+  const pending = new Promise<void>((done) => { release = done; });
+  const held: string[] = [];
+  const accepted: string[] = [];
+  const view = await mount({ ...input, fetch: tokenedFetch(async (url, init) => {
+    const bearer = new Headers(init?.headers).get("authorization");
+    if (url.startsWith(ORIGIN) && rejectOld && bearer === "Bearer old-token") {
+      held.push(url);
+      await pending;
+      return new Response("Unauthorized", { status: 401 });
+    }
+    if (url.startsWith(ORIGIN) && bearer === "Bearer replacement-token") accepted.push(url);
+    return input.fetch(url, init);
+  }) });
+  rejectOld = true;
+  await act(async () => { void view.client.refetchQueries({ queryKey: ["fleet", ORIGIN] }); });
+  await flush();
+  expect(held.sort()).toEqual([`${ORIGIN}/attention`, `${ORIGIN}/peers`, `${ORIGIN}/status`]);
+  await press("Forget");
+  const field = within(card()).getByLabelText("Serve token for writer-host", { selector: "input" });
+  await act(async () => void fireEvent.change(field, { target: { value: "replacement-token" } }));
+  await press("Save token");
+  expect(accepted.sort()).toEqual([`${ORIGIN}/attention`, `${ORIGIN}/peers`, `${ORIGIN}/status`]);
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("replacement-token");
+  expect(card().textContent).toContain("accepted");
+  await act(async () => release());
+  await flush();
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("replacement-token");
+  expect(card().textContent).toContain("saved in this browser");
+  expect(card().textContent).toContain("accepted");
 });
