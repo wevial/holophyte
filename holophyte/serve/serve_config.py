@@ -8,6 +8,7 @@ import stat
 import tempfile
 import threading
 import tomllib
+from contextlib import closing
 from datetime import datetime, timezone
 
 import store.read
@@ -43,13 +44,10 @@ def config_revision(text):
 def config_saved(project):
     if not project.store_path.exists():
         return None
-    conn = store.read.open_readonly(project.store_path)
-    try:
+    with closing(store.read.open_readonly(project.store_path)) as conn:
         row = store.read.latest_intervention(
             conn, CONFIG_ACTION, project_of(conn, project))
         return None if row is None else {"at_ms": row[0], "actor": row[1]}
-    finally:
-        conn.close()
 
 
 def read_config(project):

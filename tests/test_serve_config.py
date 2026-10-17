@@ -14,6 +14,7 @@ import stat
 import sys
 import tomllib
 import unittest
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -130,8 +131,7 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(body["revision"], hashlib.sha256(text.encode()).hexdigest())
         self.assertEqual(body["modified_ms"], int(path.stat().st_mtime * 1000))
         self.assertIsNone(body["saved"])
-        conn = store.open(self.db)
-        try:
+        with closing(store.open(self.db)) as conn:
             store.record_intervention(conn, self.run, "config_edit", "saved",
                                       now=1234, actor="maintainer")
             store.record_intervention(conn, self.run, "config_edit", "older",
@@ -145,8 +145,6 @@ class ConfigEditTests(ServeTestCase):
             run = store.claim(conn, other, ticket, now=2000)
             store.record_intervention(conn, run, "config_edit", "other save",
                                       now=3000, actor="supervisor")
-        finally:
-            conn.close()
         _, _, body = self.request("GET", "/config", self.BEARER)
         self.assertEqual(body["saved"], {"at_ms": 1234, "actor": "maintainer"})
         path.unlink()
@@ -168,8 +166,7 @@ class ConfigEditTests(ServeTestCase):
         self.assertEqual(saved["revision"],
                          hashlib.sha256(current.encode()).hexdigest())
         backups = list(self.db.parent.glob("config.toml.bak-*"))
-        conn = store.read.open_readonly(self.db)
-        try:
+        with closing(store.read.open_readonly(self.db)) as conn:
             rows = conn.execute("SELECT * FROM interventions").fetchall()
             for edit in ({"patch": {"loop.workers": 4}},
                          {"text": "not valid TOML [redacted]"}):
@@ -186,8 +183,6 @@ class ConfigEditTests(ServeTestCase):
                                  backups)
                 self.assertEqual(
                     conn.execute("SELECT * FROM interventions").fetchall(), rows)
-        finally:
-            conn.close()
 
     def test_a_document_startup_refuses_for_its_carry_is_400(self):
         """`[worktree] carry = ["../outside"]` passes no startup; the
