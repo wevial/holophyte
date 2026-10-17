@@ -10,6 +10,7 @@ import store
 import store.criteria
 import store.tickets
 from holophyte.agents import fix_session
+from holophyte.babysit.covering_fix import fix_note_of
 from holophyte.loop import adjudicate, contradiction, runs
 from holophyte.loop.gates import MergeParked, RunFailure
 from holophyte.review import criterion_ids, witness_precheck
@@ -102,6 +103,14 @@ class CriterionIdsTests(unittest.TestCase):
         self.assertEqual([finding["line"] for finding in findings], [2, 4])
         self.assertTrue(findings[1]["message"].startswith("CRITERION C4: not met"))
         self.assertIn(TEXTS[2], findings[1]["message"])
+
+    def test_automatic_babysit_fix_note_preserves_criterion_id(self):
+        findings = criteria_findings(
+            "CRITERION C4: not met — no test", self.pairs(), self.root)
+        self.assertIn(
+            "Meet acceptance criterion C4 and name the test that witnesses it: "
+            f"{TEXTS[2]}",
+            fix_note_of(findings))
 
     def test_review_event_carries_stable_number_and_id_for_each_text(self):
         self.record("CRITERION C4: not met — no test\nVERDICT: REQUEST_CHANGES")
