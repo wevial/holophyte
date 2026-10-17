@@ -17,6 +17,7 @@ import { validateRunsSearch } from "./history";
 import { NotFound } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
 import { Overview } from "./pages/Overview";
+import { TurnPage } from "./pages/Turn";
 import { RunPage } from "./pages/Run";
 import { Runs } from "./pages/Runs";
 import { Settings } from "./pages/Settings";
@@ -56,6 +57,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run", component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets", validateSearch: validateTicketsSearch, component: Tickets }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run/turns/$turn", component: TurnPage }),
   pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   pageRoute("/findings", Findings),

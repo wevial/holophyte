@@ -218,3 +218,11 @@ export function SettingsIcon() {
     </Stroke>
   );
 }
+
+export function TurnArrow({ next = false }: { next?: boolean }) {
+  return (
+    <Stroke className={next ? "rotate-180" : undefined}>
+      <path d="M13 8H3m5-5L3 8l5 5" />
+    </Stroke>
+  );
+}
