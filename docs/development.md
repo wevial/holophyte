@@ -260,7 +260,8 @@ Each module, one line:
   interventions row each records before it acts.
 - `holophyte/serve/serve_levers.py` — the daemon's `hold`, `release-hold`,
   `pause` and `resume` actions (KO-609): the CLI's store calls behind the
-  action token, each requiring a note, and the `paused` attention item.
+  action token, each requiring a note, the `paused` attention item, and
+  `GET /holds`, the project admission state and its change history.
 - `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
   `POST /actions/merge`: a run parked for a human's merge read for
   readiness, and released through the store's `approve` only when ready.

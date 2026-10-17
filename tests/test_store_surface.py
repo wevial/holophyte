@@ -294,7 +294,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                   "settle_work", "verify_work",
                                                   "working"]),
                                  # The run reads `store.read` re-exports.
-                                 (store.run_reads, ["approved_candidate",
+                                 (store.run_reads, ["admission_changes",  # HOLO-402
+                                                    "approved_candidate",
                                                     "babysit_note",
                                                     # HOLO-326: `/runs/N`'s
                                                     # criteria over a chain.

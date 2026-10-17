@@ -2,12 +2,29 @@ from __future__ import annotations
 
 import store
 import store.read
-from holophyte.admission import held_line, set_hold
+from holophyte.admission import held_line, project_of, set_hold, state
 from holophyte.loop.stop import abort_run, resume_paused
 from holophyte.serve.serve_actions import action_store, tickets_named, written_on
-from holophyte.serve.serve_runs import no_store
+from holophyte.serve.serve_runs import no_store, parse_limit
 
 DEFAULT_AUTHOR = "maintainer"
+
+
+def holds(project, query):
+    try:
+        limit = parse_limit(query, default=20, cap=200)
+    except ValueError as bad:
+        return 400, {"error": str(bad)}
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        admission, note = state(conn, project)
+        rows = store.read.admission_changes(conn, project_of(conn, project), limit)
+    finally:
+        conn.close()
+    return 200, {"admission": admission, "note": note, "rows": rows[:limit],
+                 "limit": limit, "truncated": len(rows) > limit}
 
 
 def recorded_reason(body):

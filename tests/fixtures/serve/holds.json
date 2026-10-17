@@ -1,0 +1,29 @@
+{
+  "admission": "held",
+  "note": "schema bump",
+  "rows": [
+    {
+      "id": 3,
+      "at": 1791568920000,
+      "action": "hold",
+      "note": "schema bump",
+      "actor": "maintainer"
+    },
+    {
+      "id": 2,
+      "at": 1791568800000,
+      "action": "release_hold",
+      "note": "Back to normal.",
+      "actor": "operator"
+    },
+    {
+      "id": 1,
+      "at": 1791553200000,
+      "action": "hold",
+      "note": "Waiting for the migration.",
+      "actor": null
+    }
+  ],
+  "limit": 20,
+  "truncated": false
+}
