@@ -4,7 +4,6 @@ import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 
 export type TomlCheckState = { text: string; pending: boolean; error: string | null; line: number | null };
-type Refusal = { text: string; error: string; line: number | null };
 
 export function TomlEditor({ base, file, project, revision, original, text, onChange, onRevert, onSave, fieldChanges, disabled = false, busy = false, refusal, onCheck }: {
   base: string;
@@ -19,7 +18,7 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
   fieldChanges: number;
   disabled?: boolean;
   busy?: boolean;
-  refusal?: Refusal | null;
+  refusal?: { text: string; error: string; line: number | null } | null;
   onCheck: (state: TomlCheckState) => void;
 }) {
   const { fetch } = useContext(PollDepsContext);
