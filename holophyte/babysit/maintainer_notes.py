@@ -61,11 +61,10 @@ def carry_amendments(conn, run_id, ticket):
 
 
 def _criteria_block(conn, run_id, parsed):
-    rows = criteria.current(conn, run_snapshot(conn, run_id).ticketId)
     reasons = {(note.id, number): text for note, edits, _ in parsed
                for verb, number, text in edits if verb == "DROP"}
     lines = []
-    for row in rows:
+    for row in criteria.current(conn, run_snapshot(conn, run_id).ticketId):
         number = row["criterion"]
         if row["status"] != "retired":
             lines.append(f"- **C{number}** {row['text']}")
