@@ -32,7 +32,7 @@ export function placeMessage(text: string): string {
   return WHOLE_TICKET;
 }
 
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+export const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** The panel's summary line and its tone for a check's state: `null` for a
  *  blank form, `undefined` while the first answer is awaited. `saving`

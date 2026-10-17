@@ -51,7 +51,7 @@ export function loadEdit(body: string, priority: number | null): EditFields {
 /** Whether `body` has a Mock-up section, whose fields the form draws even with no UI change. */
 export const hasMockup = (body: string) => parseBody(body).sections.some(section => section.name === "Mock-up");
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** The names of the fields `edited` holds differently from `loaded`. */
 export function changedNames(loaded: EditFields, edited: EditFields): string[] {

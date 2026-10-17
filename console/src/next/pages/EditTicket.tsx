@@ -3,21 +3,20 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { editTicket } from "../../lib/boardWrites";
 import { formatAge } from "../../lib/format";
-import { checkSummary } from "../checker";
+import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
 import { CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { useTicketPage } from "../ticket";
-import { changedNames, composeEdit, hasMockup, loadEdit, type EditFields } from "../ticketEdit";
+import { changedNames, composeEdit, hasMockup, loadEdit, same, type EditFields } from "../ticketEdit";
 import { clampEstimate } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
 import { CRUMB_LINK } from "./runShared";
 
 const COLUMN_WORDS: Record<string, string> = { ready: "Ready", backlog: "Backlog" };
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function Frame({ project, ticketKey, children }: { project: string; ticketKey: string; children?: ReactNode }) {
   return (
@@ -108,7 +107,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const errors = judged?.problems.length ?? 0;
   const blocks = judged?.blocks === true;
   const set = <K extends keyof EditFields>(field: K, value: EditFields[K]) => setFields(previous => ({ ...previous, [field]: value }));
-  const changed = (field: keyof EditFields) => JSON.stringify(read.fields[field]) !== JSON.stringify(fields[field]);
+  const changed = (field: keyof EditFields) => !same(read.fields[field], fields[field]);
   const estimate = clampEstimate(Number(fields.estimate) || 25);
 
   const input = (field: "title" | "summary" | "what" | "why" | "how" | "inScope" | "outOfScope" | "verify" | "notes", label: string, hint?: string, optional = false) => {
