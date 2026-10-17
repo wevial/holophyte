@@ -291,11 +291,13 @@ test("a scoped filter with no runs says so, and Show all projects drops the proj
   expect(sessionStorage.getItem("holophyte.next.project")).toBeNull();
 });
 
-test("the footer points to the Overview and names the time zone the times are in", async () => {
-  await mount("#/runs", sixRuns());
+test("the footer links to older days with project scope and names the time zone", async () => {
+  await mount("#/runs?project=demo", sixRuns());
   const footer = document.querySelector("section footer")!;
+  expect(within(footer as HTMLElement).getByRole("link", { name: "Older days" }).getAttribute("href")).toEndWith("#/runs/history?project=demo");
   expect(Array.from(footer.children, (line) => line.textContent)).toEqual([
     "Active runs also show on the Overview. Open a run for its stage, log and agent.",
+    "Older days",
     "times PDT",
   ]);
 });

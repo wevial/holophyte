@@ -55,7 +55,7 @@ function fleet(demo: HistoryRow[] | null = demoRows, writer: HistoryRow[] | null
     if (limit !== 500 || !allowed.includes(since) || until !== since + 86_400_000) {
       return new Response("wrong window", { status: 400 });
     }
-    const dayRows = since === midnight("2026-10-14") ? rows : [];
+    const dayRows = rows.filter((row) => row.started_ms! >= since && row.started_ms! < until);
     return Response.json({ rows: dayRows, since, until, limit, truncated: false, total: dayRows.length, now: NOW });
   };
   return { fetch, requests };
@@ -89,6 +89,10 @@ test("history asks each host for the five local days before yesterday and keeps 
   await mount("#/runs/history", server.fetch);
   expect(screen.getByRole("heading", { level: 1, name: "Runs history" })).toBeTruthy();
   expect(headings()).toEqual(firstPage);
+  expect(screen.getByText("the bar runs to 1.5× the estimate; the tick marks the estimate")).toBeTruthy();
+  expect(screen.getByText("five days a page · 30 days back")).toBeTruthy();
+  expect(screen.getByText("times PDT")).toBeTruthy();
+
   for (const base of [DEMO, WRITER]) {
     const requests = server.requests.filter((url) => url.startsWith(`${base}/history`) && url.includes("limit=500"));
     expect(requests).toHaveLength(5);
@@ -110,7 +114,8 @@ test("paging older days updates the link and newer days drops page one while pre
   await settlePage();
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("page")).toBe("2");
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("project")).toBe("demo");
-  expect(headings()).toEqual(["Fri 9 Oct", "Thu 8 Oct", "Wed 7 Oct", "Tue 6 Oct", "Mon 5 Oct"]);
+  expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+  expect(screen.getByText("No runs in demo from Oct 9 to Oct 5. Try older days.")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Newer days" }) as HTMLButtonElement).disabled).toBe(false);
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Newer days" })));
   await settlePage();
@@ -119,13 +124,14 @@ test("paging older days updates the link and newer days drops page one while pre
 });
 
 test.each([
-  ["6", "Sep 19 to Sep 15 · page 6 of 6", "Sat 19 Sept", true],
+  ["6", "Sep 19 to Sep 15 · page 6 of 6", undefined, true],
   ["9", "Oct 14 to Oct 10 · page 1 of 6", "Wed 14 Oct", false],
   ["x", "Oct 14 to Oct 10 · page 1 of 6", "Wed 14 Oct", false],
 ])("history page=%s respects the six-page boundary", async (page, range, first, disabled) => {
   await mount(`#/runs/history?page=${page}`, fleet().fetch);
   expect(screen.getByText(range as string)).toBeTruthy();
-  expect(headings()[0]).toBe(first);
+  if (first === undefined) expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+  else expect(headings()[0]).toBe(first);
   expect((screen.getByRole("button", { name: "Older days" }) as HTMLButtonElement).disabled).toBe(disabled);
 });
 
@@ -304,4 +310,66 @@ test("history omits unknown estimates and work from bars and accessible names an
   expect(dayCells(209)[6]!.textContent).toBe("–");
   expect(dayCells(209)[6]!.querySelector("[data-work-bar]")).toBeNull();
   expect(within(dayRun(209)).getByRole("link", { name: /^Run 209,/ }).getAttribute("aria-label")).not.toContain("took");
+});
+
+const onDay = (row: HistoryRow, date: string): HistoryRow => ({
+  ...row, started_ms: midnight(date) + row.id * MINUTE, ended_ms: midnight(date) + (row.id + 60) * MINUTE,
+});
+const outcomeDemo = [
+  ...Array.from({ length: 7 }, (_, index) => onDay(run(101 + index, "merged", 30, 40), "2026-10-14")),
+  ...Array.from({ length: 7 }, (_, index) => onDay(run(108 + index, "merged", 30, 40), "2026-10-13")),
+  ...Array.from({ length: 3 }, (_, index) => onDay(run(201 + index, "failed", 20, 20), "2026-10-12")),
+  ...Array.from({ length: 3 }, (_, index) => onDay(run(204 + index, "failed", 20, 20), "2026-10-11")),
+];
+const outcomeWriter = [onDay(run(301, "abandoned", 16, 20), "2026-10-10")];
+
+const outcomeButtons = () => within(screen.getByRole("group", { name: "Outcome" }));
+
+test("Outcome counts the whole page while filtering rows, preserving day heads and paging in the link", async () => {
+  await mount("#/runs/history", fleet(outcomeDemo, outcomeWriter).fetch);
+  for (const name of ["All 21", "Merged 14", "Failed 6", "Abandoned 1"]) {
+    expect(outcomeButtons().getByRole("button", { name }).getAttribute("aria-pressed")).toBe(String(name === "All 21"));
+  }
+  await act(async () => void fireEvent.click(outcomeButtons().getByRole("button", { name: "Failed 6" })));
+  await settlePage();
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("outcome")).toBe("failed");
+  expect(outcomeButtons().getByRole("button", { name: "Failed 6" }).getAttribute("aria-pressed")).toBe("true");
+  expect(outcomeButtons().getByRole("button", { name: "All 21" })).toBeTruthy();
+  const rows = screen.getAllByRole("list", { name: /^Runs on/ }).flatMap((list) => within(list).getAllByRole("listitem"));
+  expect(rows).toHaveLength(6);
+  expect(rows.map((row) => row.getAttribute("data-run")).sort()).toEqual(["201", "202", "203", "204", "205", "206"]);
+  const mergedDay = within(screen.getByRole("region", { name: "Wed 14 Oct" }));
+  expect(mergedDay.getByText("No failed runs this day.")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Wed 14 Oct" }).textContent).toContain("7 runs");
+  expect(mergedDay.getByText("3h 30m of work against 4h 40m estimated")).toBeTruthy();
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Older days" })));
+  await settlePage();
+  const search = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect(search.get("page")).toBe("2");
+  expect(search.get("outcome")).toBe("failed");
+});
+
+test("an invalid outcome selects All and choosing All removes the filter while keeping project", async () => {
+  await mount("#/runs/history?project=demo&outcome=bogus", fleet(outcomeDemo, outcomeWriter).fetch);
+  expect(outcomeButtons().getByRole("button", { name: "All 20" }).getAttribute("aria-pressed")).toBe("true");
+  expect(outcomeButtons().getByRole("button", { name: "Abandoned 0" })).toBeTruthy();
+  await act(async () => void fireEvent.click(outcomeButtons().getByRole("button", { name: "Failed 6" })));
+  await settlePage();
+  expect(within(screen.getByRole("region", { name: "Wed 14 Oct" })).getByText("No failed runs in demo this day.")).toBeTruthy();
+  await act(async () => void fireEvent.click(outcomeButtons().getByRole("button", { name: "All 20" })));
+  await settlePage();
+  const search = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect(search.has("outcome")).toBe(false);
+  expect(search.get("project")).toBe("demo");
+  expect(screen.getAllByRole("list", { name: /^Runs on/ }).flatMap((list) => within(list).getAllByRole("listitem"))).toHaveLength(20);
+});
+
+test.each([
+  [1, "No abandoned runs in demo from Oct 14 to Oct 10. Try older days."],
+  [6, "No abandoned runs in demo from Sep 19 to Sep 15."],
+])("an empty scoped outcome replaces every day on page %s with its range sentence", async (page, sentence) => {
+  await mount(`#/runs/history?project=demo&outcome=abandoned&page=${page}`, fleet(outcomeDemo, outcomeWriter).fetch);
+  expect(screen.getByText(sentence)).toBeTruthy();
+  expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+  expect(screen.queryAllByRole("list", { name: /^Runs on/ })).toHaveLength(0);
 });
