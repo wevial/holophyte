@@ -50,7 +50,9 @@ test("new ticket across themes, monospace commands, Tickets entry, refused filin
     const response = await refusal;
     expect(response.status()).toBe(422);
     const answer = await response.json();
-    expect(answer.problems.length).toBeGreaterThan(0);
+    expect(answer.problems).toContainEqual(expect.stringMatching(
+      /^section 'Implementation notes', line \d+, holds text the project does not publish \(\[merge\] private_patterns #0\)$/,
+    ));
     for (const problem of answer.problems) await expect(page.getByText(problem, { exact: true })).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
     await shot(page, "04-new-ticket-refused.png");
