@@ -19,6 +19,7 @@ import {
   shippedSchema,
   storyDetailSchema,
   ticketDetailSchema,
+  transcriptSchema,
   type Board,
   type BoardStory,
   type Findings,
@@ -136,6 +137,16 @@ export function useRunTurns(base: string, id: number, open: boolean, live: boole
     enabled: open,
     refetchInterval: live ? POLL_INTERVAL_MS : false,
     staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+export function useTurnTranscript(base: string, run: number, turn: number, deps: { fetch: Fetch }) {
+  const path = `/runs/${run}/turns/${turn}/transcript`;
+  return useQuery({
+    queryKey: routeKey(base, path),
+    queryFn: () => fetchRoute(deps.fetch, `${base}${path}`, transcriptSchema),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
   });
 }
 
