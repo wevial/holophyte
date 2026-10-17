@@ -2,10 +2,10 @@ import { useState } from "react";
 import { ACTIONS_OFF, ROUTES, postAction } from "../lib/actions";
 import { RUN_SWEEP } from "../lib/attention";
 import { age } from "../lib/format";
-import { SWEEP_OK, addressOf, hostName, rootOf, type HostRecord } from "../lib/hosts";
+import { SWEEP_OK, buildLine, addressOf, hostName, rootOf, type HostRecord } from "../lib/hosts";
 import type { Fetch } from "../lib/poll";
 import { forgetToken, tokenFor } from "../lib/token";
-import type { HostProject, HostStatus, Sweep } from "../lib/types";
+import type { HostProject, Sweep } from "../lib/types";
 import { ActionButton } from "./ActionButton";
 import { TOKEN_REJECTED } from "./HostRow";
 import { TokenField, beatPid } from "./HostPanel";
@@ -21,18 +21,6 @@ export function sweepLine(sweep: Sweep, now: number): string {
   const started = sweep.state === "running" && sweep.started != null ? `started ${age(now - sweep.started)} ago` : null;
   const exit = sweep.exit != null && sweep.exit !== 0 ? `exit ${sweep.exit}` : null;
   return [sweep.state, started ?? ended, exit].filter((part): part is string => part != null).join(" · ");
-}
-
-/** The Build cell's revisions, seven characters each, and whether the
- *  daemon's, the last sweep's and the checkout's differ (`/status`
- *  `build`); a revision nobody reported is left out of the comparison. */
-export function buildLine(build: HostStatus["build"]): { text: string; differ: boolean } {
-  const parts = (["daemon", "sweep", "head"] as const).map((key) => [key, build[key]] as const);
-  const known = new Set(parts.flatMap(([, revision]) => (revision == null ? [] : [revision])));
-  return {
-    text: parts.map(([key, revision]) => `${key} ${revision == null ? "—" : revision.slice(0, 7)}`).join(" · "),
-    differ: known.size > 1,
-  };
 }
 
 /** One project's Beat cell: the store's beat as the root judged it. */
