@@ -62,7 +62,7 @@ export function useFleet(origin: string, deps: PollDeps): PeersState<ContractBod
       const previous = client.getQueryData<Fleet>(queryKey);
       const known = previous?.hosts ?? [];
       const results = await pollPeers(origin, known, depsRef.current, REQUEST_TIMEOUT_MS, contractSchemas);
-      for (const result of results) if (!result.ok && result.status === 401) forgetToken(addressOf(result.base));
+      for (const result of results) if (!result.ok && result.status === 401 && result.token_sent) forgetToken(addressOf(result.base));
       return { hosts: mergeHosts(known, results, depsRef.current.now()), polls: (previous?.polls ?? 0) + 1 };
     },
     refetchInterval: POLL_INTERVAL_MS,

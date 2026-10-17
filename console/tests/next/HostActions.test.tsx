@@ -160,6 +160,39 @@ test("a saved token is masked and accepted, Forget removes it and Undo restores 
   expect(card().textContent).toContain("saved in this browser");
 });
 
+test("Undo preserves the restored token when Forget's unauthenticated poll answers 401 after the authenticated poll", async () => {
+  const secret = "restored-secret-8b21";
+  storeToken(ADDRESS, secret);
+  const input = source();
+  let release = () => {};
+  const pending = new Promise<void>((done) => { release = done; });
+  let unauthenticated = 0;
+  let authenticated = 0;
+  await mount({ ...input, fetch: tokenedFetch(async (url, init) => {
+    if (url.startsWith(ORIGIN)) {
+      if (!new Headers(init?.headers).has("authorization")) {
+        unauthenticated += 1;
+        await pending;
+        return new Response("Unauthorized", { status: 401 });
+      }
+      authenticated += 1;
+    }
+    return input.fetch(url, init);
+  }) });
+  await press("Forget");
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
+  expect(unauthenticated).toBe(3);
+  const before = authenticated;
+  await press("Undo", toast() as HTMLElement);
+  expect(authenticated).toBe(before + 3);
+  expect(card().textContent).toContain("accepted");
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe(secret);
+  await act(async () => release());
+  await flush();
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe(secret);
+  expect(card().textContent).toContain("saved in this browser");
+});
+
 test("Save token refuses header-unsafe input and saves a valid token with an empty field and a fresh poll", async () => {
   const view = await mount();
   const field = within(card()).getByLabelText("Serve token for writer-host", { selector: "input" }) as HTMLInputElement;
