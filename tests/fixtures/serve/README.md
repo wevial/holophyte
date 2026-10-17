@@ -32,6 +32,9 @@ steered before that run claimed it.
 `run-turns.json` pins its `/runs/N/turns` for the reviewed run once it
 has recorded an implement session and turn and a fallback review turn,
 recorded after the other answers are read; every turn `id` becomes 1.
+`run-transcript.json` pins the implement turn’s `/runs/N/turns/T/transcript`,
+read from a configured root containing the Claude session fixture; entry
+timestamps become NOW and each uncut entry carries `cut: false`.
 `story.json` pins its `/stories/KO-11`, seeded after the other answers are
 read: an approved story over KO-12 and KO-13, which depends on KO-12, its
 one witness recorded green and one decision answered `replan`.

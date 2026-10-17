@@ -559,6 +559,7 @@ def seat_route(fallback, table, seat):
             **({"fallback": fallback[seat]} if seat in fallback else {})}
 
 
+TRANSCRIPT_ENTRY_CHARS = 20_000
 RUN_TURNS_PATH = re.compile(r"^/runs/([^/]+)/turns$")
 RUN_TRANSCRIPT_PATH = re.compile(r"^/runs/([^/]+/turns/[^/]+)/transcript$")
 
@@ -600,7 +601,9 @@ def run_transcript(project, segment):
                 if path is not None:
                     entries = transcript_window(render(path), turn)
                     for entry in entries:
-                        entry['text'] = outbound(entry['text'], secrets)
+                        text = outbound(entry['text'], secrets)
+                        entry['text'] = text[:TRANSCRIPT_ENTRY_CHARS]
+                        entry['cut'] = len(text) > TRANSCRIPT_ENTRY_CHARS
                         if entry['summary'] is not None:
                             entry['summary'] = outbound(entry['summary'], secrets)
                     return 200, {"entries": entries}
