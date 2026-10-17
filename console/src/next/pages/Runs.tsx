@@ -1,12 +1,10 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { RunTable } from "../components/RunTable";
-import { stateGroup, useRunHistory, type RunGroup, type RunsSearch } from "../history";
+import { stateGroup, useRunHistory, type RunFilter, type RunsSearch } from "../history";
 import { storeScope } from "../projects";
 import type { ScopeSearch } from "../scope";
 
-type Filter = RunGroup | "all";
-
-const FILTERS: { id: Filter; label: string }[] = [
+const FILTERS: { id: RunFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "active", label: "Active" },
   { id: "merged", label: "Merged" },
@@ -27,13 +25,13 @@ export function Runs() {
   const { now, rows } = useRunHistory();
   const { project, state } = useSearch({ from: "/runs" });
   const navigate = useNavigate();
-  const filter: Filter = state ?? "all";
-  const counts: Record<Filter, number> = { all: rows.length, active: 0, merged: 0, failed: 0, abandoned: 0 };
+  const filter: RunFilter = state ?? "active";
+  const counts: Record<RunFilter, number> = { all: rows.length, active: 0, merged: 0, failed: 0, abandoned: 0 };
   for (const row of rows) counts[stateGroup(row.state)] += 1;
   const shown = filter === "all" ? rows : rows.filter((row) => stateGroup(row.state) === filter);
   const word = filter === "all" ? "" : `${filter} `;
-  const pick = (id: Filter) =>
-    void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch) => ({ ...previous, state: id === "all" ? undefined : id }) });
+  const pick = (id: RunFilter) =>
+    void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch) => ({ ...previous, state: id }) });
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 py-7 max-[720px]:px-2">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
