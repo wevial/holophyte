@@ -8,7 +8,7 @@ import { formatStamp } from "../../lib/format";
 import { useAction, useConfigSave } from "../actions";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Btn } from "../components/Btn";
-import { storeScope, switcherRows } from "../projects";
+import { storeScope, switcherRows, type SwitcherRow } from "../projects";
 import { useConfig } from "../queries";
 import { keepScope, useConsolePeers } from "../scope";
 import { hostsNeedingAttention, settingsHost, patchLines, SETTINGS_FIELDS, SETTINGS_TABS } from "../settings";
@@ -61,13 +61,12 @@ function SettingsPage({ tab }: { tab: Tab }) {
   const search = useSearch({ from: "__root__" });
   const rows = switcherRows(hosts, now, new Map()).filter((row) => row.name != null);
   const project = search.project ?? rows[0]?.name ?? "";
-  return <SettingsProjectPage key={project} project={project} tab={tab} />;
+  return <SettingsProjectPage key={project} project={project} tab={tab} rows={rows} />;
 }
 
-function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
-  const { hosts, now } = useConsolePeers();
+function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string; rows: SwitcherRow[] }) {
+  const { hosts } = useConsolePeers();
   const navigate = useNavigate();
-  const rows = switcherRows(hosts, now, new Map()).filter((row) => row.name != null);
   const host = settingsHost(hosts, project);
   const { data: answer } = useConfig(host?.base ?? null);
   const file = answer?.state === "ok" ? answer.config.path.split("/").pop() || "config.toml" : "config.toml";
