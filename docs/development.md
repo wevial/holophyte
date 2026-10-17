@@ -867,6 +867,9 @@ console page can link to the classic view behind it.
 `console/src/next/components/LimitedMarkdown.tsx` renders asks and latest events
 with a restricted Markdown vocabulary and expandable line clamps.
 
+Browser appearance choices live in `console/src/next/appearance.ts`;
+`console/src/next/components/AppearanceTab.tsx` renders theme and reading-font
+radio cards, sharing theme state with the sidebar.
 Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 
@@ -876,6 +879,9 @@ Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
 each in the shell its root renders. Settings lives at `#/settings` (General)
 and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
+`console/src/next/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
+`console/src/next/components/HostsTab.tsx` renders their health, projects and last reports.
+
 `console/src/next/settings.ts` defines the grouped tabs and host attention
 count; `console/src/next/pages/Settings.tsx` frames the project picker and
 placeholder panels. The sidebar footer links to Settings. Any other path
