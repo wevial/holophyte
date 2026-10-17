@@ -41,8 +41,7 @@ function lines(text: string): Line[] {
     const commented = inComment || (!fenced && content.includes("<!--"));
     if (!fenced) {
       for (const token of content.matchAll(/<!--|-->/g)) {
-        if (token[0] === "<!--") inComment = true;
-        else inComment = false;
+        inComment = token[0] === "<!--";
       }
     }
     if (marker && !commented) {
