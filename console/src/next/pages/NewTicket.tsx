@@ -31,7 +31,10 @@ function readDraft(project: string) {
       const value = fieldOf(form, field);
       values[field] = Array.isArray(value) ? value.join("\n") : field === "notes" ? value.replace(/^- /gm, "") : value;
     }
-    const prose = form.sections.find(section => section.name === "What / Why / How")?.text ?? "";
+    const proseStart = form.sections.findIndex(section => section.name === "What / Why / How");
+    const proseEnd = form.sections.map(section => section.name).lastIndexOf("In scope");
+    const proseSections = proseStart < 0 ? [] : form.sections.slice(proseStart, proseEnd < 0 ? undefined : proseEnd);
+    const prose = proseSections.map((section, index) => (index ? section.heading : "") + section.text).join("");
     restoreProse(prose, values);
     return { values, priority: draft.priority as number | null, savedAt: draft.savedAt as number };
   } catch {
