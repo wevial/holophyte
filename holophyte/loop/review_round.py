@@ -47,6 +47,7 @@ from holophyte.review.briefs import (
     trim_brief,
     verified_brief,
 )
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     _review_reply,
     cited_approval,
@@ -149,6 +150,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
             leaks=(), witness=""):
+    criteria = numbered(conn, run_id, criteria)
     round_started = int(time() * 1000)
     scope = scope_files(wt, ticket, base_sha, sha)
     _record_mode(conn, run_id, mode, rnd)

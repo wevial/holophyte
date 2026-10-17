@@ -680,9 +680,9 @@ class ReviewLoopTests(unittest.TestCase):
                       "VERDICT: APPROVE",
                       criteria=["Given a, then b", "Given c, then d"])
         with_criteria = next(g for role, g in self.goals if role == "review")
-        self.assertIn("1. Given a, then b", with_criteria)
-        self.assertIn("2. Given c, then d", with_criteria)
-        self.assertIn("CRITERION n: met", with_criteria)
+        self.assertIn("C1. Given a, then b", with_criteria)
+        self.assertIn("C2. Given c, then d", with_criteria)
+        self.assertIn("CRITERION C2: met", with_criteria)
         self.assertIn("Name tests as `tests/file.py::TestClass::test_name`; "
                       "the loop checks the test exists.", with_criteria)
 

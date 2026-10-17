@@ -17,6 +17,7 @@ from holophyte.review.briefs import (
     scope_files,
     tests_brief,
 )
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import _review_reply, criteria_findings
 from store.stories import advance_story, story
 
@@ -74,7 +75,7 @@ def review_refresh(project, conn, run_id, provider, task_id, branch, wt,
     from holophyte.loop.review_round import _verify_brief, agent
 
     snapshot = json.loads(store.run_contract(conn, run_id) or "{}")
-    criteria = snapshot.get("acceptanceCriteria") or []
+    criteria = numbered(conn, run_id, snapshot.get("acceptanceCriteria") or [])
     files = ", ".join(shared)
     base_sha = main_merge_base(wt, sha)
     rnd = _next_round(conn, run_id)

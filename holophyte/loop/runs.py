@@ -11,6 +11,7 @@ import store.read
 import store.steer_notes
 from holophyte.agents.roles import agent_route
 from holophyte.redact import safe_print as print
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     criteria_findings,
     criteria_statuses,
@@ -196,6 +197,7 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  scope=(), adversary=()):
     if conn is None:
         return
+    criteria = numbered(conn, run_id, criteria)
     verdicts = (review_runner.REVIEW_VERDICTS if role == "review"
                 else review_runner.ADJUDICATION_VERDICTS)
     verdict = round_verdict(reply, verdicts)
@@ -237,9 +239,11 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
 
 
 def _record_criteria(conn, run_id, rnd, reply, criteria, root, approved_range):
+    criteria = numbered(conn, run_id, criteria)
     statuses = criteria_statuses(reply, criteria, root,
                                  approved_range=approved_range)
-    entries = [dict(status, text=text) for status, text in zip(statuses, criteria)]
+    entries = [dict(status, id=f"C{n}", text=text)
+               for status, (n, text) in zip(statuses, criteria)]
     met = sum(entry["status"] == "met" for entry in entries)
     store.record_event(
         conn, run_id, "criteria",
