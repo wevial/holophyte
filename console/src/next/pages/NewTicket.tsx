@@ -6,6 +6,7 @@ import { projectName } from "../../lib/derive";
 import type { PollDeps } from "../../lib/poll";
 import { checkSummary, fileNote, placeMessage, WHOLE_TICKET } from "../checker";
 import { Btn } from "../components/Btn";
+import { TONE_TEXT } from "../components/StateDot";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
 import { useBoards, useReadiness } from "../queries";
@@ -19,7 +20,6 @@ const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope
 type TextField = typeof FIELDS[number];
 type Message = { text: string; error: boolean; field: string };
 const CHECK_DELAY_MS = 600;
-const TONES = { bad: "text-bad", live: "text-live", "ink-3": "text-ink-3" };
 const messagesId = (field: string) => `check-${field.replace(/\W+/g, "-")}`;
 
 /** The checker's judgement of `body` once it has stood unedited for
@@ -282,7 +282,7 @@ export function NewTicket() {
                   <h2 className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.08em] text-ink-2">Checker</h2>
                   <span className="font-mono text-[11px] text-ink-3">as you type</span>
                 </div>
-                <p aria-live="polite" className={`mt-3 font-mono text-[13px] [overflow-wrap:anywhere] ${TONES[summary.tone]}`}>{summary.text}</p>
+                <p aria-live="polite" className={`mt-3 font-mono text-[13px] [overflow-wrap:anywhere] ${TONE_TEXT[summary.tone]}`}>{summary.text}</p>
                 {messages.length > 0 && <ul aria-label="Checker messages" className="mt-3 space-y-1">{messages.map((message, index) => {
                   const row = <>
                     <span aria-hidden="true" className={`mr-1.5 ${message.error ? "text-bad" : "text-ask"}`}>{message.error ? "×" : "!"}</span>

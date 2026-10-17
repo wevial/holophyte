@@ -1,4 +1,5 @@
 import type { CheckResult } from "../lib/boardWrites";
+import type { Tone } from "./state";
 
 /** The ticket as a whole: a message no field owns. */
 export const WHOLE_TICKET = "Ticket";
@@ -30,8 +31,6 @@ export function placeMessage(text: string): string {
   }
   return WHOLE_TICKET;
 }
-
-export type Tone = "bad" | "live" | "ink-3";
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
