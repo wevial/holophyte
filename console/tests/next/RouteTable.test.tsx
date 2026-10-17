@@ -143,3 +143,16 @@ test("failed fallback probes and a seat without a fallback remain down without c
   expect(screen.queryByText("in use · recorded")).toBeNull();
   expect(screen.queryByText(/routes? on a fallback/)).toBeNull();
 });
+
+test.each(["passing", "absent"])("a disabled route with a %s primary probe makes card health down", async (probe) => {
+  const alpha = status("alpha");
+  alpha.active_routes.reviewer = { command: null, down: true };
+  alpha.route_labels.reviewer_fallback = null;
+  alpha.route_probes.reviewer = {
+    primary: probe === "passing" ? { ok: true, at_ms: NOW - 5_000, age_ms: 5_000, duration_ms: 1000, why: null } : null,
+    fallback: null,
+  };
+  await mount([alpha]);
+  expect(screen.getByText("1 route down · reviewer has no fallback")).toBeTruthy();
+  expect(screen.queryByText("Healthy")).toBeNull();
+});

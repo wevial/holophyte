@@ -67,7 +67,7 @@ function routesOf(records: Record[]): AgentRoute[] {
 }
 
 function routeHealth(routes: AgentRoute[]): string | null {
-  const failed = routes.filter((route) => route.probe?.ok === false);
+  const failed = routes.filter((route) => route.down || route.probe?.ok === false);
   if (!failed.length) return null;
   const notes = [...new Set(failed.flatMap((route) => route.fallbacks.some((fallback) => fallback.inUse)
     ? [`${route.seat} on its fallback`] : route.fallbacks.every((fallback) => fallback.label === "none")
