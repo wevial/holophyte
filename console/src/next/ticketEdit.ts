@@ -1,4 +1,4 @@
-import { ADDED_SECTION, clampEstimate, composeBody, criterionDetails, FIELD_NAMES, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { ADDED_SECTION, clampEstimate, composeBody, criterionDetails, FIELD_NAMES, fieldOf, keyed, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
 
 const TITLE = "Title";
 const nonblank = (text: string) => text.split("\n").map(line => line.replace(/\r$/, "")).filter(line => line.trim());
@@ -150,8 +150,10 @@ const differs = (loaded: EditFields, edited: EditFields, field: keyof Omit<EditF
 /** The names of the fields `edited` holds differently from `loaded`. */
 export function changedNames(loaded: EditFields, edited: EditFields): string[] {
   const fields = FIELD_NAMES.filter(([field]) => differs(loaded, edited, field)).map(([, name]) => name);
-  const others = edited.others.filter(other => other.text !== loaded.others.find(each => each.index === other.index && each.name === other.name)?.text).map(other => other.name);
-  return [...fields, ...others];
+  const [was, now] = [keyed(loaded), keyed(edited)];
+  const others = [...now].filter(([key, other]) => other.text !== was.get(key)?.text).map(([, other]) => other.name);
+  const removed = [...was].filter(([key]) => !now.has(key)).map(([, other]) => other.name);
+  return [...fields, ...others, ...removed];
 }
 
 const lines = (text: string) => (text ? text.split("\n") : []);
@@ -169,7 +171,7 @@ function withProse(text: string, loaded: EditFields, edited: EditFields): string
   const owned = owners(found);
   const restAt = edited.others.findIndex(other => other.index === -1);
   const rest = restAt < 0 ? null : edited.others[restAt]!.text;
-  const restChanged = rest !== null && rest !== loaded.others[restAt]?.text;
+  const restChanged = rest !== null && rest !== loaded.others.find(other => other.index === -1)?.text;
   let result = found.map(segment => {
     const piece = text.slice(segment.start, segment.end);
     const field = owned.get(segment);

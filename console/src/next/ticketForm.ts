@@ -372,12 +372,13 @@ const criterionAt = (form: EditFields, index: number): Criterion =>
   index < form.criteria.length ? { text: form.criteria[index]!, detail: form.criteriaDetail[index] ?? "" } : undefined;
 
 /** Each of `form`'s other sections by its key: the preamble, the unlabelled
- *  What / Why / How text, or a section's name with how many before it share it. */
-function keyed(form: EditFields): Map<string, EditFields["others"][number]> {
+ *  What / Why / How text, or a section's name with how many before it in
+ *  the body share it, the one drawn as fields among them. */
+export function keyed(form: EditFields): Map<string, EditFields["others"][number]> {
   const seen = new Map<string, number>();
   return new Map(form.others.map(other => {
     if (other.index < 0) return [`${other.index}`, other];
-    const count = seen.get(other.name) ?? 0;
+    const count = seen.get(other.name) ?? (other.repeated ? 1 : 0);
     seen.set(other.name, count + 1);
     return [`${other.name}#${count}`, other];
   }));
@@ -441,12 +442,22 @@ export function mergeEdit(base: EditFields, theirs: EditFields, mine: EditFields
   for (const [key, other] of was) {
     const text = my.get(key)?.text;
     if (their.has(key) || text === undefined) continue;
-    if (judge(other.name, other.text, other.index === -1 || other.repeated ? undefined : drawnText(theirs, other.name), text)) merge.onTop.others = [...merge.onTop.others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION, text }];
+    if (judge(other.name, other.text, other.index === -1 || other.repeated ? undefined : drawnText(theirs, other.name), text)) merge.onTop.others = restored(merge.onTop.others, { ...other, text }, theirs);
   }
   for (const [key, other] of my) {
     if (was.has(key) || their.has(key)) continue;
     merge.onlyMine.push(other.name);
-    merge.onTop.others = [...merge.onTop.others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
+    merge.onTop.others = restored(merge.onTop.others, other, theirs);
   }
   return merge;
+}
+
+/** `others` with `other`, a section `theirs` lacks, put back: unlabelled
+ *  What / Why / How text joins that section when `theirs` draws it as plain
+ *  text and becomes its own section when `theirs` has none. */
+function restored(others: EditFields["others"], other: EditFields["others"][number], theirs: EditFields): EditFields["others"] {
+  if (other.index !== -1) return [...others, { ...other, index: other.index < 0 ? other.index : ADDED_SECTION }];
+  const plain = others.findIndex(each => each.index >= 0 && each.name === other.name && !each.repeated);
+  if (plain >= 0) return others.map((each, index) => index === plain ? { ...each, text: `${each.text}\n\n${other.text}` } : each);
+  return [...others, theirs.what || theirs.why || theirs.how || theirs.uiChange ? other : { ...other, index: ADDED_SECTION }];
 }

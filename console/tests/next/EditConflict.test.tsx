@@ -6,7 +6,7 @@ import { addressOf } from "../../src/lib/hosts";
 import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
-import { composeEdit, loadEdit, type EditFields } from "../../src/next/ticketEdit";
+import { changedNames, composeEdit, loadEdit, type EditFields } from "../../src/next/ticketEdit";
 import { mergeEdit } from "../../src/next/ticketForm";
 import { fakeDeps, settle } from "../harness";
 import { DEMO, fleet, MINUTE, NOW, SERVE } from "./needsFleet";
@@ -119,6 +119,35 @@ test("a section restored by one rebase survives the next", () => {
   const merge = mergeEdit(fourthFields, fifthFields, loadEdit(onFourth, null));
   expect([merge.onlyTheirs, merge.onlyMine, merge.both]).toEqual([["Title"], ["Evidence"], []]);
   expect(composeEdit(fifth, fifthFields, merge.onTop)).toBe(`${fifth}\n## Evidence\n\n- 02-notes.png\n`);
+});
+
+test("an edit to the second of two sections sharing a heading stays on it when their revision makes the first one plain text", () => {
+  const base = "# Notes show\n\n## Verify command(s)\n\n```\nruff check .\n```\n\n## Verify command(s)\n\n```\nbun --cwd=console test\n```\n";
+  const theirs = base.replace("## Verify command(s)\n\n```\nruff", "## Verify command(s)\n\n<!-- each on its own line -->\n```\nruff");
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: [{ ...read.others[0]!, text: "```\nbun --cwd=console run build\n```" }] };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(merge.both).toEqual([]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe(theirs.replace("bun --cwd=console test", "bun --cwd=console run build"));
+});
+
+test("my unlabelled What / Why / How text survives on top of a revision that removed the section", () => {
+  const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## What / Why / How\n\nThey sit under the run.\n\n**What:** List the notes.\n";
+  const theirs = "# Notes show\n\n## Summary\n\nEvery note shows.\n";
+  const read = loadEdit(base, null);
+  const mine: EditFields = { ...read, others: read.others.map(other => other.index === -1 ? { ...other, text: "They sit under each run." } : other) };
+  const theirFields = loadEdit(theirs, null);
+  const merge = mergeEdit(read, theirFields, mine);
+  expect(merge.both).toEqual([{ name: "What / Why / How", theirs: "(removed)", mine: "They sit under each run." }]);
+  expect(composeEdit(theirs, theirFields, merge.onTop)).toBe("# Notes show\n\n## Summary\n\nEvery note shows.\n\n## What / Why / How\n\nThey sit under each run.\n");
+});
+
+test("the changed-field names count a removed section and skip one that only moved", () => {
+  const base = "# Notes show\n\n## Summary\n\nThe notes show.\n\n## Evidence\n\n- 01-notes.png\n";
+  const read = loadEdit(base, null);
+  expect(changedNames(read, loadEdit("# Notes show\n\n## Summary\n\nThe notes show.\n", null))).toEqual(["Evidence"]);
+  expect(changedNames(read, loadEdit(base.replace("## Evidence", "## Extra\n\nMore.\n\n## Evidence"), null))).toEqual(["Extra"]);
 });
 
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
