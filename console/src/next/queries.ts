@@ -299,16 +299,15 @@ export function useHistoryDays(hosts: HostRecord<PollBodies>[], days: DayWindow[
     queries: asked.map(({ host, day }) => historyDayQuery(host.base, day, 500, deps.fetch)),
   });
   const answers: DayAnswers = new Map();
-  const queries = asked.map(({ host, day }, index) => {
+  asked.forEach(({ host, day }, index) => {
     const query = results[index];
     if (query?.data) {
       const byHost = answers.get(day.since) ?? new Map<string, History>();
       byHost.set(host.key, query.data);
       answers.set(day.since, byHost);
     }
-    return { host, day, ...query };
   });
-  return { answers, queries };
+  return { answers };
 }
 
 export function useHistoryTotal(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps) {
@@ -318,10 +317,9 @@ export function useHistoryTotal(hosts: HostRecord<PollBodies>[], now: number, de
   const results = useQueries({
     queries: asked.map((host) => historyDayQuery(host.base, window, 1, deps.fetch)),
   });
-  const queries = asked.map((host, index) => ({ host, ...results[index] }));
   const complete = asked.length > 0 && asked.length === hosts.length && results.every((result) => result.status === "success" && result.data != null);
   const total = complete ? results.reduce((sum, result) => sum + (result.data?.total ?? 0), 0) : undefined;
-  return { total, queries };
+  return { total };
 }
 
 /** `/peers` at `origin`, read once while `enabled`: the hosts the first
