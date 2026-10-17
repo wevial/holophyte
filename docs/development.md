@@ -887,6 +887,7 @@ and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `console/src/next/components/UnsavedBar.tsx` lists and discards pending changes.
 `console/src/next/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
 `console/src/next/components/HostsTab.tsx` renders their health, projects and last reports.
+`console/src/next/components/RouteTable.tsx` lists their agent routes, probes and recorded fallback use.
 
 `console/src/next/settings.ts` defines the grouped tabs and host attention
 count; `console/src/next/pages/Settings.tsx` frames the project picker and
