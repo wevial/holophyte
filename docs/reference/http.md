@@ -26,7 +26,7 @@ and `GET /attention`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files` and
 `GET /runs/N/turns`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board` and
-`GET /tickets/KEY`: one
+`GET /tickets/KEY`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -1394,6 +1394,41 @@ to `ready` fails the template or `Depends on:` names a ticket the project
 does not hold. A body filed to `backlog` with problems is saved as a
 draft.
 
+## `POST /tickets/check`
+
+A host daemon checks a native ticket body without filing or editing it, at
+`/projects/NAME/tickets/check`. It passes the gate of
+[`POST /tickets`](#post-tickets): the machine token on every bind, host
+`[serve] actions` on and a native board, with no `If-Match`.
+
+```
+POST /projects/holophyte/tickets/check
+Authorization: Bearer MACHINE_TOKEN
+Content-Type: application/json
+
+{"body": "# …\n\n## Summary\n…", "ticket": "NAT-1", "column": "ready"}
+```
+
+```json
+{"problems": [], "advisories": [], "blocks": false}
+```
+
+`body` is the full ticket text; a missing or blank body is 400. `column`
+is optional, `ready` by default or `backlog`; any other value is 400.
+GET on this route answers 405 with `Allow: POST`.
+When optional `ticket` names an existing ticket, its own column determines
+whether the problems block an edit. A project with no store answers 503.
+
+The 200 answer lists `problems` and `advisories` in checker order, with the
+`advisory: ` prefix removed from advisories. It applies the template and
+repository checks used by filing, without the freshness advisories.
+Unknown `Depends on` entries are problems, including the ticket itself
+when checking an edit. `blocks` is true for unknown dependencies or any
+problem that blocks filing in the selected column; ordinary template
+problems do not block `backlog`, but private-data problems block every
+column. The store is opened read-only: no ticket, revision or sequence
+is written.
+
 ## `POST /tickets/ID/move`
 
 A host daemon's move of a native ticket between Ready and Backlog, at
@@ -1610,6 +1645,7 @@ included on every path but the `/actions/` routes and `PUT` on every path
 but `/config`, both in [The daemon's actions](daemon.md), and a host
 daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)); a host
 daemon also takes `POST` on `/tickets` ([`POST /tickets`](#post-tickets)),
+`/tickets/check` ([`POST /tickets/check`](#post-ticketscheck)),
 `/tickets/ID/move` ([`POST /tickets/ID/move`](#post-ticketsidmove)) and
 `/tickets/ID/cancel` ([`POST /tickets/ID/cancel`](#post-ticketsidcancel)),
 each behind the machine token alone.
@@ -1622,7 +1658,7 @@ each behind the machine token alone.
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
 | 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since` or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off |
-| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET` |
+| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | any request while the daemon drains for restart (`daemon restarting`); the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
 | 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
