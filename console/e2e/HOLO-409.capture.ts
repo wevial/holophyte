@@ -19,14 +19,14 @@ test("save a new ticket and reopen its browser draft", async ({ browser, baseURL
   await page.goto("/next.html#/tickets/demo/new");
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Steer notes show on the run detail card");
   await page.getByRole("textbox", { name: "Summary", exact: true }).fill("The run page lists each steer note.");
-  await page.getByRole("combobox", { name: "Priority" }).selectOption("1");
+  await page.getByRole("group", { name: "Priority", exact: true }).getByRole("button", { name: "P1", exact: true }).click();
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.locator("[data-toast]")).toHaveText("Draft kept in this browser.");
   await page.goto("/next.html#/tickets?project=demo");
   await page.getByRole("button", { name: "New ticket", exact: true }).click();
   await page.reload();
   await expect(page.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Steer notes show on the run detail card");
-  await expect(page.getByRole("combobox", { name: "Priority" })).toHaveValue("1");
+  await expect(page.getByRole("group", { name: "Priority", exact: true }).getByRole("button", { name: "P1", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Draft from 14:05 restored.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start over" })).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
