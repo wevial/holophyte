@@ -826,7 +826,7 @@ class AttentionTests(ServeTestCase):
             "asked_ms": self.now - 2 * MIN,
             "pr": {"number": 2170, "checks": None, "review": None,
                    "threads": None, "open_threads": None, "title": None, "state": None},
-            "level": "attention"})
+            "level": "attention", "round": 0, "waits_on": []})
         self.assertEqual(body["level"], "attention")
 
     def test_an_approved_pull_request_waiting_for_a_claim_is_queued(self):
