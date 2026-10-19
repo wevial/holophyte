@@ -131,9 +131,10 @@ are null when none is pending.
 null when it has none; `pr` is that pull request's `number`, `checks`,
 `review`, `threads`, `open_threads`, `title` and `state` exactly as on a
 `pr_open` item of `GET /attention`, read from the run's `prSeen*`
-columns, and null when `pr_url` is. `woke_ms` is when the run left
-`awaiting_merge_approval` (the `at` of its newest `phase_change` event
-from that phase, epoch milliseconds), null for a run that never parked.
+columns, and null when `pr_url` is. `woke_ms` is when the factory woke
+the pull request to fix it: the run's `startedAt` (epoch milliseconds)
+when an earlier run on its ticket carried the same pull request, and null
+otherwise.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
 serving process: its pid and when it started. `project` is the
 repository the daemon serves, as a path. `schema_version` is the

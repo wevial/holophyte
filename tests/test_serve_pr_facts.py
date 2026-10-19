@@ -46,7 +46,7 @@ class PullRequestFactsTests(ServeTestCase):
         park_run(self.conn, run, "awaiting_merge_approval", "PR open",
                  pr_url=PULL.format(n), park_kind="pull_request",
                  now=NOW - 30_000)
-        return run
+        return ticket
 
     def pr_open(self):
         code, body = holophyte.serve.views.attention(
@@ -78,14 +78,20 @@ class PullRequestFactsTests(ServeTestCase):
         self.assertEqual(items["KO-5"]["waits_on"],
                          [{"ticket": "KO-6", "pr_url": None}])
 
-    def test_a_live_run_names_its_pull_request_and_one_without_has_nulls(self):
-        with_pull = self.claim(self.ticket(8))
-        store.set_phase(self.conn, with_pull, "working", now=NOW - 50_000)
+    def test_a_run_woken_on_its_pull_request_names_it_and_others_have_no_wake(self):
+        parked = self.park_on_pull_request(8)
+        store.tickets.walk_ticket(self.conn, parked, "in_flight")
+        with_pull = store.claim(self.conn, self.project_id, parked,
+                                now=NOW - 20_000)
+        store.set_phase(self.conn, with_pull, "working", now=NOW - 10_000)
         store.set_pull_request(self.conn, with_pull, PULL.format(8))
         store.record_pr_seen(self.conn, with_pull,
                              (NOW, 5, 3, None, "failure", None, None, "ready"))
         without = self.claim(self.ticket(9))
         store.set_phase(self.conn, without, "working", now=NOW - 50_000)
+        opened = self.claim(self.ticket(10))
+        store.set_phase(self.conn, opened, "working", now=NOW - 50_000)
+        store.set_pull_request(self.conn, opened, PULL.format(10))
         code, body = holophyte.serve.views.status(
             Project.locate(self.target), now=NOW)
         self.assertEqual(code, 200)
@@ -95,8 +101,10 @@ class PullRequestFactsTests(ServeTestCase):
                           runs[with_pull]["pr"]["checks"],
                           runs[with_pull]["pr"]["open_threads"]),
                          (8, "failure", 3))
+        self.assertEqual(runs[with_pull]["woke_ms"], NOW - 20_000)
         self.assertEqual([runs[without][key] for key
                           in ("pr_url", "pr", "woke_ms")], [None, None, None])
+        self.assertIsNone(runs[opened]["woke_ms"])
 
 
 if __name__ == "__main__":
