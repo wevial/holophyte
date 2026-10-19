@@ -60,6 +60,15 @@ asks for a design-match check: a visible difference between the candidate's
 UI and the approved design is a finding unless the ticket text asks for it,
 and a board no screenshot shows is compared with its `.dc.html` source.
 
+Every UI capture's copies in `.holophyte/captured/` are listed for the
+reviewer beside the Evidence section, whether or not the ticket has a
+mock-up. The factory fetches each Evidence image under the media bucket's
+`public_base` before the review, as the user agent `holophyte`, and names
+any it cannot fetch as an infrastructure problem, not the candidate's. A
+state marked not captured, or a failed capture, is a finding; an image the
+reviewer cannot fetch is not: it reads the local copy, or tries `curl`, and
+otherwise writes `could not fetch URL: REASON` before its CRITERION lines.
+
 How many review rounds a run gets is decided per run, before its first
 review, from the size of the candidate's diff and the `[loop]` review keys
 (`review_rounds`, `review_rounds_per_lines`, `review_rounds_max`; see

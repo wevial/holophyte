@@ -415,10 +415,8 @@ def _publish_bucket(project, output, files, task_id, config):
         for file in files}
     days = config.get("retention_days")
     if not days:
-        return ('Media lives in an object bucket and is kept until the '
-                'operator removes it.'), urls
-    return (f'Media lives in an object bucket. Retention: {days} days; '
-            'evidence expires under the bucket lifecycle set by the operator.'), urls
+        return 'Media lives in an object bucket.', urls
+    return f'Media lives in an object bucket and expires after {days} days.', urls
 
 
 def _cap_files(output, files, cfg):

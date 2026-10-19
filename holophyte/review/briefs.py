@@ -300,16 +300,37 @@ def tests_brief(root):
             f"the candidate's tests to them:\n{quoted}\n\n")
 
 
+EVIDENCE_RULE = (
+    "A state marked not captured, or a capture that failed, counts against "
+    "the candidate; report it as a review finding.")
+UNFETCHABLE_RULE = (
+    " An image that was captured but that you cannot fetch does not: read its "
+    "local copy, or fetch it with `curl`, and if neither works write `could "
+    "not fetch URL: REASON` before the CRITERION lines, never as a finding.")
+
+
 def evidence_brief(target, wt, task_id, evidence_states=()):
     from holophyte.config.config_tables import merge_config
-    from holophyte.pr import mockup, pr_media
+    from holophyte.pr import evidence_fetch, mockup, pr_media
 
+    cfg = merge_config(target)
     section = (pr_media.prepare(target, wt, task_id, evidence_states=evidence_states)
-               if merge_config(target).mode == "pr" else "")
-    evidence = ("\n\n" + section + "\n\nMissing or failed visual evidence counts "
-                "against the candidate; report it as a review finding.\n\n"
-                if section else "")
-    return evidence + mockup.reviewer_brief(wt)
+               if cfg.mode == "pr" else "")
+    if not section:
+        return mockup.reviewer_brief(wt)
+    copies = [f"- `{mockup.CAPTURED}/{name}`" for name in mockup._captured(wt)]
+    listed = ("The factory's local copies of this capture:\n"
+              + "\n".join(copies) + "\n\n" if copies else "")
+    base = mockup._public_base(cfg)
+    failed = "".join(
+        f"The factory could not fetch {url} ({reason}). That is an "
+        "infrastructure problem, not the candidate's: judge this state from "
+        "its local copy.\n"
+        for url, reason in evidence_fetch.unfetched(
+            section, base, cfg.media_max_file_mb).items())
+    rule = EVIDENCE_RULE + (UNFETCHABLE_RULE if base else "")
+    return ("\n\n" + section + "\n\n" + listed + failed + (
+        "\n" if failed else "") + rule + "\n\n" + mockup.reviewer_brief(wt))
 
 
 def pr_description_brief(target, pull, evidence):

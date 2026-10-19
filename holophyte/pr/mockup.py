@@ -35,6 +35,7 @@ MOCKUP_BUNDLE_MAX_MB = 25
 BUNDLE_MAX_MEMBERS = 200
 BUNDLE_MAX_UNPACKED_MB = 50
 TIMEOUT_S = 30
+USER_AGENT = "holophyte"
 MB = 1024 * 1024
 CHUNK = 64 * 1024
 MEMBER_SUFFIXES = (".png", ".html", ".json")
@@ -249,15 +250,17 @@ class _StayUnder(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _download(link, base):
-    content_type, signature, cap_mb = KINDS[link.kind]
+def _download(link, base, cap_mb=None):
+    content_type, signature, kind_cap_mb = KINDS[link.kind]
+    cap_mb = cap_mb or kind_cap_mb
     watch = _Watch()
     timer = threading.Timer(TIMEOUT_S, watch.expire)
     timer.start()
     try:
         with build_opener(_StayUnder(base), _HTTP(watch), _HTTPS(watch)).open(
-                Request(link.url), timeout=TIMEOUT_S) as response:
-            data, length = _receive(response, link, cap_mb * MB, watch.expired)
+                Request(link.url, headers={"User-Agent": USER_AGENT}),
+                timeout=TIMEOUT_S) as response:
+            data, length = _receive(response, link, cap_mb, watch.expired)
     except HTTPError as error:
         raise Refused(f"HTTP {error.code}") from None
     except (URLError, OSError, ValueError, http.client.HTTPException) as error:
@@ -329,8 +332,8 @@ class _HTTPS(HTTPSHandler):
                             req, context=self._context)
 
 
-def _receive(response, link, cap, expired):
-    content_type, _, cap_mb = KINDS[link.kind]
+def _receive(response, link, cap_mb, expired):
+    content_type, cap = KINDS[link.kind][0], cap_mb * MB
     served = response.headers.get_content_type()
     if served != content_type:
         raise Refused(f"served as {served}, not {content_type}")
