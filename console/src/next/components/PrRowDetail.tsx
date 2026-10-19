@@ -10,9 +10,6 @@ import { fieldOf, parseBody } from "../ticketForm";
 import { Btn } from "./Btn";
 import { LimitedMarkdown } from "./LimitedMarkdown";
 
-/** The note box under an opened row: a note posted to `/actions/send-back`
- *  for `run`. A taken note calls `onClose`; a refusal keeps the note and
- *  shows the daemon's detail. */
 function SendBackBox({ base, run, label, onClose }: { base: string; run: number; label: string; onClose: () => void }) {
   const action = useAction();
   const [note, setNote] = useState("");
@@ -50,8 +47,6 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
   );
 }
 
-/** An opened pull request row: its ticket's What line, then the actions
- *  that move it; Send back only where the daemon takes actions. */
 export function PrRowDetail({ base, project, run, item, actions }: { base: string; project: string; run: number; item: AttentionItem; actions: boolean }) {
   const deps = useContext(PollDepsContext);
   const ticket = typeof item.ticket === "string" ? item.ticket : "";

@@ -35,8 +35,6 @@ interface PrLaneGroup {
   rows: PrRow[];
 }
 
-/** One lane per host that answered `/status` and sent a `pr_open` item,
- *  holding those items, longest waiting first. */
 export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number): PrLaneGroup[] {
   return hosts.flatMap((host) => {
     const status = host.status;

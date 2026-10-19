@@ -7,11 +7,9 @@ import type { State, Tone } from "./state";
 interface PrWait {
   status: string;
   tone: Tone;
-  /** The qualifier and the age, " · " joined; empty when neither is known. */
   line: string;
 }
 
-/** Who a parked pull request waits on and since when. */
 export function prWait(state: State, item: AttentionItem, ageMs: number | null): PrWait {
   const draft = item.pr != null && typeof item.pr === "object" && (item.pr as Partial<PullRequestFacts>).state === "draft";
   const qualifier = state === "on_ci" ? waitingOnCi(item) : draft ? "draft" : state === "ready_to_merge" ? "ready to merge" : null;
@@ -32,8 +30,6 @@ function threadsFact(open: unknown): Fact {
   return { label: "threads unknown", tone: "neutral" };
 }
 
-/** A row's facts line: its checks and open threads, and a change request
- *  only when one stands. */
 export function rowFacts(pr: Pick<PullRequestFacts, "checks" | "review" | "open_threads"> | null): Fact[] {
   const facts = [
     (pr?.checks != null ? CHECKS[pr.checks] : undefined) ?? { label: "checks unknown", tone: "neutral" as const },
