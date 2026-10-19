@@ -485,6 +485,10 @@ Each module, one line:
   babysit fix, writing the capture at the fix head into the pull request's
   Evidence section, or marking its earlier images stale when that capture
   failed, and the ledger note recording which.
+- `holophyte/pr/evidence_fetch.py` — before a review, fetching each
+  Evidence section image under `[merge.media_bucket] public_base` with the
+  mock-up download and naming each the factory could not fetch, with why,
+  for the reviewer's brief.
 - `holophyte/pr/image_fetch.py` — after a pull request body write that
   embeds an image, comparing each image GitHub's image proxy serves with
   the image at its own URL, and linking a short one again with a `?v=N`

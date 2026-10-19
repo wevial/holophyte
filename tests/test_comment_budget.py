@@ -194,6 +194,7 @@ PINNED = {
     "holophyte/media_store.py": 1,
 
     "holophyte/pr/__init__.py": 0,
+    "holophyte/pr/evidence_fetch.py": 0,
     "holophyte/pr/evidence_refresh.py": 0,
     "holophyte/pr/github.py": 18,
     "holophyte/pr/image_fetch.py": 2,
