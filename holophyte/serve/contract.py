@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
 from holophyte.serve.contract_emit import check, render, write
+from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = "python3 -m holophyte.serve.contract"
@@ -95,6 +96,9 @@ class StatusRun(TypedDict):
     max_rounds: int
     strikes: int
     host: str | None
+    pr_url: NotRequired[str | None]
+    pr: NotRequired[PullRequestFacts | None]
+    woke_ms: NotRequired[int | None]
 
 
 class QueuedTicket(TypedDict):
@@ -126,16 +130,6 @@ class Status(TypedDict):
     config_edit: bool
     runs: list[StatusRun]
     queued: list[QueuedTicket]
-
-
-class PullRequestFacts(TypedDict):
-    number: int | None
-    checks: str | None
-    review: str | None
-    threads: int | None
-    open_threads: int | str | None
-    title: str | None
-    state: Literal["draft", "ready", "closed", "merged"] | None
 
 
 class Triage(TypedDict):
@@ -171,6 +165,8 @@ class PrOpenItem(TypedDict):
     reason: str
     asked_ms: int | None
     pr: PullRequestFacts
+    round: NotRequired[int]
+    waits_on: NotRequired[list[WaitsOn]]
     level: Literal["attention"]
     project: NotRequired[str]
 

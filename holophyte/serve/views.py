@@ -95,7 +95,10 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                   "max_rounds": run.reviewRoundCap or MAX_ROUNDS,
                   "strikes": (strikes[run.id].strikes
                               if strikes[run.id] is not None else 0),
-                  "host": json_host(project, run.host)}
+                  "host": json_host(project, run.host),
+                  "pr_url": run.prUrl,
+                  "pr": _pull_request_facts(run) if run.prUrl else None,
+                  "woke_ms": run.wokeAt}
                  for run in runs],
         "queued": [{"ticket": ticket.linearIdentifier,
                     "ticket_url": ticket.ticketUrl, "title": ticket.title,
@@ -140,6 +143,9 @@ def parked_item(ticket):
                 "park_kind": ticket.parkKind, "reason": reason,
                 "asked_ms": ticket.askedMs,
                 "pr": _pull_request_facts(ticket),
+                "round": ticket.reviewRoundCount,
+                "waits_on": [{"ticket": identifier, "pr_url": pr_url}
+                             for identifier, pr_url in ticket.waitsOn],
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
             "ticket_url": ticket.ticketUrl,
