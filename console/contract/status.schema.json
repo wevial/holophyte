@@ -308,6 +308,99 @@
       ],
       "additionalProperties": true
     },
+    "PullRequestFacts": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checks": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_threads": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "enum": [
+                "draft",
+                "ready",
+                "closed",
+                "merged"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "checks",
+        "review",
+        "threads",
+        "open_threads",
+        "title",
+        "state"
+      ],
+      "additionalProperties": true
+    },
     "StatusRun": {
       "type": "object",
       "properties": {
@@ -442,6 +535,36 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PullRequestFacts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "woke_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
             },
             {
               "type": "null"

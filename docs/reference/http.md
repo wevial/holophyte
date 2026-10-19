@@ -81,7 +81,8 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
      "verify_started_ms": null,
      "time_box_ms": 1500000, "round": 0, "max_rounds": 2, "strikes": 0,
      "host": "writer-1",
-     "stop_requested": null, "stop_action": null}
+     "stop_requested": null, "stop_action": null,
+     "pr_url": null, "pr": null, "woke_ms": null}
   ],
   "queued": [
     {"ticket": "KO-220", "ticket_url": null, "title": "Name the held project",
@@ -126,6 +127,14 @@ the note of a pause or abort the operator has asked of the run and the
 loop has not yet acted on, and `stop_action` that request's action
 (`pause`, `abort` or `abort_close`); both
 are null when none is pending.
+`pr_url` is the pull request the run opened or carries (`runs.prUrl`),
+null when it has none; `pr` is that pull request's `number`, `checks`,
+`review`, `threads`, `open_threads`, `title` and `state` exactly as on a
+`pr_open` item of `GET /attention`, read from the run's `prSeen*`
+columns, and null when `pr_url` is. `woke_ms` is when the factory woke
+the pull request to fix it: the run's `startedAt` (epoch milliseconds)
+when an earlier run on its ticket carried the same pull request and
+parked in `awaiting_merge_approval`, and null otherwise.
 `supervisor.state` is `live`, `stale` or `none`. `daemon` describes the
 serving process: its pid and when it started. `project` is the
 repository the daemon serves, as a path. `schema_version` is the
@@ -997,6 +1006,7 @@ What needs the operator, computed where the store is:
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
    "pr_url": "https://github.com/example/repo/pull/2170", "park_kind": "pull_request", "reason": "…", "asked_ms": 1788449000000,
    "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…", "state": "ready"},
+   "round": 2, "waits_on": [{"ticket": "KO-m", "pr_url": "https://github.com/example/repo/pull/2168"}],
    "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
@@ -1043,7 +1053,13 @@ request's title (`runs.prSeenChecks`, `prSeenReview`, `prSeenThreads`,
 `draft`, `ready` (open and ready for review), `closed` (closed without
 merging), or `merged`. State is null when the read could not determine it.
 All six facts are null for a run never polled, and `open_threads` for one
-polled before it was recorded. The
+polled before it was recorded. A `pr_open` item's `round` is the review
+rounds its run recorded whose verdict is not `error`, the count a
+`GET /status` run serves as `round`. Its `waits_on` lists, in the
+ticket's `dependsOn` order, each dependency whose store status is not
+`merged`, as `{"ticket": "KO-m", "pr_url": …}`, `pr_url` being that
+ticket's newest run's `runs.prUrl` (null when it has none or never ran);
+it is `[]` when the ticket has no dependency or every one merged. The
 item's own `title` is the ticket's title, which the console shows when
 `pr.title` is null. A `failed` item's `attempt` is the run's 1-based
 attempt number. Its `triage` is the run's cause question under
