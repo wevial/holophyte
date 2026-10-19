@@ -125,6 +125,15 @@ test("a section mine kept against theirs' removal follows theirs' sections", () 
   expect(pickedBody(theirs, mine, parts, { Evidence: "theirs" })).toBe(theirs);
 });
 
+test("a section headed Title is a part apart from the preamble", () => {
+  const base = "# Notes\n\nIntro.\n\n## Title\n\nA\n";
+  const theirs = "# Every note\n\nIntro.\n\n## Title\n\nA\n";
+  const mine = "# Notes\n\nIntro.\n\n## Title\n\nB\n";
+  const parts = sectionParts(base, theirs, mine);
+  expect(parts.map(part => [part.key, part.side])).toEqual([["Title", "theirs"], ["Title#2", "mine"]]);
+  expect(pickedBody(theirs, mine, parts, {})).toBe("# Every note\n\nIntro.\n\n## Title\n\nB\n");
+});
+
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;

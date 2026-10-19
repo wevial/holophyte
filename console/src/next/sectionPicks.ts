@@ -16,11 +16,12 @@ export interface Part {
 }
 
 const TITLE = "Title";
+const PRIORITY = "Priority";
 
 function partsOf(body: string): Map<string, { name: string; text: string }> {
   const form = parseBody(body);
   const parts = new Map([[TITLE, { name: TITLE, text: form.preamble }]]);
-  const seen = new Map<string, number>();
+  const seen = new Map([[TITLE, 1], [PRIORITY, 1]]);
   for (const section of form.sections) {
     const count = (seen.get(section.name) ?? 0) + 1;
     seen.set(section.name, count);
@@ -70,5 +71,5 @@ const priorityText = (priority: number | null) => (priority == null ? "none" : `
 /** Priority, which the body does not hold, as one more part. */
 export function priorityPart(base: number | null, theirs: number | null, mine: number | null): Part {
   const [b, t, m] = [priorityText(base), priorityText(theirs), priorityText(mine)];
-  return { key: "Priority", name: "Priority", base: b, theirs: t, mine: m, side: sideOf(b, t, m) };
+  return { key: PRIORITY, name: PRIORITY, base: b, theirs: t, mine: m, side: sideOf(b, t, m) };
 }
