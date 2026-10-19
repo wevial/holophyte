@@ -4,7 +4,7 @@ import { formatAge } from "../lib/format";
 import type { AttentionItem } from "../lib/types";
 import type { State, Tone } from "./state";
 
-export interface PrWait {
+interface PrWait {
   status: string;
   tone: Tone;
   /** The qualifier and the age, " · " joined; empty when neither is known. */
