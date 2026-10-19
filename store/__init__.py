@@ -12,6 +12,7 @@ from holophyte.redact import redact_document as _redact_document
 from holophyte.redact import redact_values as _redact_values
 
 from . import enums as _enums
+from .run_reads import PR_SEEN_MEDIA as _PR_SEEN_COLUMNS
 from .schema import (  # noqa: F401
     SCHEMA_VERSION,
     SchemaNewer,
@@ -364,9 +365,7 @@ def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
                       review, title, state, *media, run_id))
 
 
-_PR_SEEN_MEDIA = ("prSeenAdditions = ?, prSeenDeletions = ?,"
-                  " prSeenChangedFiles = ?, prSeenPreviewUrl = ?,"
-                  " prSeenScreenshots = ?")
+_PR_SEEN_MEDIA = ", ".join(f"{name} = ?" for name in _PR_SEEN_COLUMNS)
 
 
 def _json_list(field, values):
