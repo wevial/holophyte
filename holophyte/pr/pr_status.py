@@ -214,8 +214,7 @@ def _preview_url(node):
             if isinstance(deployment, dict) else None
         url = status.get("environmentUrl") if isinstance(status, dict) \
             else None
-        if status and status.get("state") == "SUCCESS" \
-                and isinstance(url, str) and url:
+        if isinstance(url, str) and url and status.get("state") == "SUCCESS":
             return url
     return None
 
