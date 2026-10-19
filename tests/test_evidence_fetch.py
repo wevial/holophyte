@@ -56,6 +56,8 @@ class _ServedCase(unittest.TestCase):
 class EvidenceFetchTests(_ServedCase):
     def test_download_passes_a_host_that_refuses_urllibs_default_agent(self):
         section = self.section("01-board")
+        link = mockup.media_links(section)[0]
+        self.assertEqual(mockup._download(link, self.base), PNG)
         self.assertEqual(evidence_fetch.unfetched(section, self.base), {})
         self.server.missing.add("/01-board.png")
         self.assertEqual(evidence_fetch.unfetched(section, self.base),
@@ -104,7 +106,9 @@ class EvidenceBriefTests(_ServedCase):
         brief = self.brief(self.section("01-board"))
         self.assertEqual(self.server.requests, [])
         self.assertIn(f"{self.base}/01-board.png", brief)
-        self.assertNotIn("The factory could not fetch", brief)
+        self.assertNotIn("could not fetch", brief)
+        self.assertIn("A state marked not captured, or a capture that failed, "
+                      "counts against the candidate", brief)
 
 
 if __name__ == "__main__":

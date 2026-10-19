@@ -302,10 +302,11 @@ def tests_brief(root):
 
 EVIDENCE_RULE = (
     "A state marked not captured, or a capture that failed, counts against "
-    "the candidate; report it as a review finding. An image that was captured "
-    "but that you cannot fetch does not: read its local copy, or fetch it with "
-    "`curl`, and if neither works write `could not fetch URL: REASON` before "
-    "the CRITERION lines, never as a finding.\n\n")
+    "the candidate; report it as a review finding.")
+UNFETCHABLE_RULE = (
+    " An image that was captured but that you cannot fetch does not: read its "
+    "local copy, or fetch it with `curl`, and if neither works write `could "
+    "not fetch URL: REASON` before the CRITERION lines, never as a finding.")
 
 
 def evidence_brief(target, wt, task_id, evidence_states=()):
@@ -320,14 +321,15 @@ def evidence_brief(target, wt, task_id, evidence_states=()):
     copies = [f"- `{mockup.CAPTURED}/{name}`" for name in mockup._captured(wt)]
     listed = ("The factory's local copies of this capture:\n"
               + "\n".join(copies) + "\n\n" if copies else "")
+    base = mockup._public_base(cfg)
     failed = "".join(
         f"The factory could not fetch {url} ({reason}). That is an "
         "infrastructure problem, not the candidate's: judge this state from "
         "its local copy.\n"
-        for url, reason in evidence_fetch.unfetched(
-            section, mockup._public_base(cfg)).items())
+        for url, reason in evidence_fetch.unfetched(section, base).items())
+    rule = EVIDENCE_RULE + (UNFETCHABLE_RULE if base else "")
     return ("\n\n" + section + "\n\n" + listed + failed + (
-        "\n" if failed else "") + EVIDENCE_RULE + mockup.reviewer_brief(wt))
+        "\n" if failed else "") + rule + "\n\n" + mockup.reviewer_brief(wt))
 
 
 def pr_description_brief(target, pull, evidence):
