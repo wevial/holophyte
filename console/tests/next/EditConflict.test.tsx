@@ -168,7 +168,7 @@ Estimate: 30 min · Depends on: none
 const THEIR_SUMMARY = "The run page lists each steer note and when the agent read it.";
 const MY_TITLE = "Steer notes show beside their run";
 
-const demo2 = (revision: number, body: string, author: string): TicketDetail => ({
+const demo2 = (revision: number, body: string, author: string, priority: number | null = 2): TicketDetail => ({
   ...servedTicket,
   ticket: "DEMO-2",
   title: "Steer notes show on the run page",
@@ -177,7 +177,7 @@ const demo2 = (revision: number, body: string, author: string): TicketDetail => 
   runs: [],
   steers: [],
   body,
-  current: { ...servedTicket.current!, revision, at: NOW - 30 * MINUTE, author, body, priority: 2, column: "ready" },
+  current: { ...servedTicket.current!, revision, at: NOW - 30 * MINUTE, author, body, priority, column: "ready" },
 });
 const REVISION_3 = demo2(3, BODY, "console");
 const REVISION_4 = demo2(4, BODY.replace(AC2, THEIR_AC2), "cli");
@@ -186,7 +186,7 @@ const board: Board = {
   ...pinned,
   editable: true,
   stories: [],
-  columns: [{ state: "ready", tickets: [{ ...template, ticket: "DEMO-2", title: "Steer notes show on the run page", column: "ready", revision: 3, run: null } as BoardTicket]}],
+  columns: [{ state: "ready", tickets: [{ ...template, ticket: "DEMO-2", title: "Steer notes show on the run page", column: "ready", revision: 3, priority: 2, run: null } as BoardTicket]}],
 };
 
 let served: TicketDetail;
@@ -399,4 +399,13 @@ test("a picked section the form reads the same as revision 4's still saves", asy
 test("a section named constructor shows in the edit form as plain text", async () => {
   await mount(() => new Response("unexpected", { status: 500 }), demo2(3, `${BODY}\n## constructor\n\nThe old way.\n`, "console"));
   expect((document.getElementById("new-constructor") as HTMLTextAreaElement).value).toBe("The old way.");
+});
+
+test("a priority revision 3 left unset still asks for a pick when revision 4 set one and mine set another", async () => {
+  await mount(() => new Response("unexpected", { status: 500 }), demo2(3, BODY, "console", null));
+  await press("P1");
+  await poll(demo2(4, BODY, "cli", 2));
+  const part = within(banner()!).getByRole("region", { name: "Priority" });
+  expect([within(part).getByText("REVISION 4, THEIRS").nextSibling?.textContent, within(part).getByText("YOURS").nextSibling?.textContent]).toEqual(["P2", "P1"]);
+  expect((screen.getByRole("button", { name: "Load revision 4 with these picks" }) as HTMLButtonElement).disabled).toBe(true);
 });

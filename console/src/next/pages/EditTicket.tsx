@@ -83,7 +83,7 @@ export function EditTicket() {
   const loaded: Loaded = {
     revision,
     body: ticket.current?.body ?? ticket.body,
-    priority: ticket.current?.priority ?? card?.priority ?? null,
+    priority: ticket.current ? ticket.current.priority : card?.priority ?? null,
     at: ticket.current?.at ?? null,
     author: ticket.current?.author ?? null,
     column: ticket.current?.column ?? card?.column ?? null,
