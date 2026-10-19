@@ -140,10 +140,10 @@ test("folded or not, Classic console reaches the classic view when storage refus
 test("the sidebar sits on its own ground with a rule beside the main area, which keeps the page's ground", async () => {
   await mount("#/");
   const sidebar = screen.getByRole("complementary", { name: "Console" }).classList;
-  expect(sidebar.contains("bg-paper-2")).toBe(true);
+  expect(sidebar.contains("bg-side")).toBe(true);
   expect(sidebar.contains("border-r")).toBe(true);
   expect(sidebar.contains("border-rule")).toBe(true);
-  expect(screen.getByRole("main").classList.contains("bg-paper-2")).toBe(false);
+  expect(screen.getByRole("main").classList.contains("bg-side")).toBe(false);
 });
 
 test("Classic console is a bordered button-sized link to the root, labelled unfolded and named folded", async () => {
