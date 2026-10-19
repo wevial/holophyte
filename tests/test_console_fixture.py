@@ -132,7 +132,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         self.assertEqual(list(columns["backlog"]), ["DEMO-1", "DEMO-12"])
         self.assertEqual(list(columns["ready"]), ["DEMO-2"])
         self.assertEqual(sorted(columns["in_flight"]),
-                         ["DEMO-11", "DEMO-3", "DEMO-7"])
+                         ["DEMO-11", "DEMO-13", "DEMO-3", "DEMO-7"])
         self.assertIsNotNone(columns["in_flight"]["DEMO-3"]["run"])
         self.assertEqual(sorted(columns["blocked_on_operator"]),
                          ["DEMO-4", "DEMO-8", "DEMO-9"])
@@ -156,7 +156,8 @@ class ConsoleFixtureTests(unittest.TestCase):
         stale_ms = status["thresholds"]["heartbeat_stale_ms"]
         runs = {run["ticket"]: run for run in status["runs"]}
         self.assertEqual({ticket: run["phase"] for ticket, run in runs.items()},
-                         {"DEMO-3": "working", "DEMO-7": "reviewing"})
+                         {"DEMO-3": "working", "DEMO-7": "reviewing",
+                          "DEMO-13": "working"})
         for run in runs.values():
             self.assertLess(run["heartbeat_age_ms"], stale_ms, run["ticket"])
         (review,) = seen["DEMO-7"]["rounds"]
@@ -235,7 +236,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         (bare, _), (status, answer) = seen
         self.assertEqual(bare, 401)
         self.assertEqual(status, 201)
-        self.assertEqual(answer["ticket"], "DEMO-13")
+        self.assertEqual(answer["ticket"], "DEMO-14")
 
     def test_the_command_s_code_is_kept_and_everything_torn_down(self):
         result, (url, home) = self.script(RECORD)

@@ -1,5 +1,6 @@
 import { useContext, useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import type { PullRequestFacts, Screenshot } from "../../lib/contract.gen";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
 import { useAction } from "../actions";
@@ -47,6 +48,24 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
   );
 }
 
+function sizeLine(pr: Partial<PullRequestFacts>): string | null {
+  const { changed_files: files, additions, deletions } = pr;
+  if (typeof files !== "number" || typeof additions !== "number" || typeof deletions !== "number") return null;
+  return `${files} ${files === 1 ? "file" : "files"}, +${additions} −${deletions}`;
+}
+
+function ScreenshotTile({ shot }: { shot: Screenshot }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <a data-screenshot href={shot.url} target="_blank" rel="noreferrer" className="flex w-[132px] flex-col gap-1 no-underline">
+      {!failed && (
+        <img src={shot.url} alt={shot.caption} loading="lazy" onError={() => setFailed(true)} className="block h-[80px] w-[132px] border border-rule object-cover" />
+      )}
+      <span className="break-words font-mono text-[11px] leading-[1.3] text-ink-3">{shot.caption}</span>
+    </a>
+  );
+}
+
 export function PrRowDetail({ base, project, run, item, actions }: { base: string; project: string; run: number; item: AttentionItem; actions: boolean }) {
   const deps = useContext(PollDepsContext);
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
@@ -54,13 +73,30 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
   const what = data ? fieldOf(parseBody(data.body), "what") : "";
   const [sending, setSending] = useState(false);
   const prUrl = typeof item.pr_url === "string" ? item.pr_url : null;
+  const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as Partial<PullRequestFacts>) : {};
+  const size = sizeLine(pr);
+  const shots = Array.isArray(pr.screenshots) ? pr.screenshots : [];
+  const preview = typeof pr.preview_url === "string" ? pr.preview_url : null;
   return (
     <div data-pr-detail className="flex flex-col gap-3 font-read text-[14px] leading-[1.5] text-ink-2">
       {what !== "" && <LimitedMarkdown lines={2}>{what}</LimitedMarkdown>}
+      {size != null && <p data-pr-size className="m-0 font-mono text-[12px] text-ink-3">{size}</p>}
+      {shots.length > 0 && (
+        <div data-screenshots className="flex flex-wrap gap-2.5">
+          {shots.map((shot, index) => (
+            <ScreenshotTile key={`${index}-${shot.url}`} shot={shot} />
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {prUrl != null && (
           <a href={prUrl} target="_blank" rel="noreferrer" className="btn" data-variant="primary">
             Open PR to review
+          </a>
+        )}
+        {preview != null && (
+          <a href={preview} target="_blank" rel="noreferrer" className="btn" data-variant="quiet">
+            Open preview
           </a>
         )}
         {actions && (

@@ -108,6 +108,7 @@ export function Overview() {
   const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
+  const openPrs = prLanes.reduce((sum, group) => sum + group.rows.length, 0);
   const card = useRef<HTMLElement>(null);
   const [needMount, setNeedMount] = useState(0);
   const [needOpen, setNeedOpen] = useState(() => readOpen("need"));
@@ -143,7 +144,7 @@ export function Overview() {
               {(
                 [
                   [view.running, "running"],
-                  [view.pullRequests.length, view.pullRequests.length === 1 ? "open PR" : "open PRs"],
+                  [openPrs, openPrs === 1 ? "open PR" : "open PRs"],
                   [queued, "queued"],
                   [view.mergedToday.length, "merged today"],
                 ] as const
@@ -196,10 +197,10 @@ export function Overview() {
             loading={firstLoad}
             id="pr"
             label="Pull requests"
-            count={view.pullRequests.length}
+            count={openPrs}
             summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
             empty="No pull requests open."
-            isEmpty={!prLanes.some((group) => group.rows.length > 0)}
+            isEmpty={openPrs === 0}
           >
             <PullRequestLanes groups={prLanes} readiness={view.readiness} needs={view.needs} onShow={showNeed} />
           </FoldingSection>
