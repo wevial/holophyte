@@ -6,6 +6,8 @@
   --canvas: #eceaf3;
   --paper: #fbfafd;
   --paper-2: #f3f1f8;
+  --side: #ffffff;
+  --side-hover: #eceaf3;
   --ink: #171a2c;
   --ink-2: #454b66;
   --ink-3: #5f6580;
@@ -43,6 +45,8 @@
   --canvas: #05070f;
   --paper: #0b1020;
   --paper-2: #11182c;
+  --side: #1a2442;
+  --side-hover: #0f1428;
   --ink: #e9ecf6;
   --ink-2: #b7bdd3;
   --ink-3: #8a92ad;
@@ -81,6 +85,8 @@
     --canvas: #05070f;
     --paper: #0b1020;
     --paper-2: #11182c;
+    --side: #1a2442;
+    --side-hover: #0f1428;
     --ink: #e9ecf6;
     --ink-2: #b7bdd3;
     --ink-3: #8a92ad;
@@ -132,6 +138,8 @@
   --color-canvas: var(--canvas);
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
+  --color-side: var(--side);
+  --color-side-hover: var(--side-hover);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
