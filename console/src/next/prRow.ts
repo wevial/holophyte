@@ -12,14 +12,12 @@ interface PrWait {
 }
 
 export function prWait(state: State, item: AttentionItem, ageMs: number | null): PrWait {
-  const age = ageMs == null ? null : formatAge(ageMs);
+  const withAge = (qualifier: string | null) => [qualifier, ageMs == null ? null : formatAge(ageMs)].filter((part) => part != null).join(" · ");
   if (state === "running" || state === "stale") {
-    const round = typeof item.round === "number" ? `round ${item.round}` : null;
-    return { status: "Factory fixing", tone: "wait", line: [round, age].filter((part) => part != null).join(" · ") };
+    return { status: "Factory fixing", tone: "wait", line: withAge(typeof item.round === "number" ? `round ${item.round}` : null) };
   }
   const draft = item.pr != null && typeof item.pr === "object" && (item.pr as Partial<PullRequestFacts>).state === "draft";
-  const qualifier = state === "on_ci" ? waitingOnCi(item) : draft ? "draft" : state === "ready_to_merge" ? "ready to merge" : null;
-  const line = [qualifier, age].filter((part) => part != null).join(" · ");
+  const line = withAge(state === "on_ci" ? waitingOnCi(item) : draft ? "draft" : state === "ready_to_merge" ? "ready to merge" : null);
   return state === "on_ci" ? { status: "On CI", tone: "ink-2", line } : { status: "Your review", tone: "need", line };
 }
 
