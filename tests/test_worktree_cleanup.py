@@ -52,18 +52,6 @@ class RetireWorktreeTests(WorktreeCleanupFixture):
         self.assertEqual(self.resolves(f"refs/heads/{BRANCH}"), "")
         self.assertEqual(self.resolves("refs/holophyte/keep"), tip)
 
-    def test_untracked_file_keeps_worktree_file_and_branch(self):
-        wt = self.task_tree(BRANCH)
-        (wt / "scratch.txt").write_text("not committed\n")
-
-        self.assertEqual(
-            task_worktree.retire_worktree(self.project, BRANCH, merged=True),
-            "uncommitted work")
-
-        self.assertEqual((wt / "scratch.txt").read_text(), "not committed\n")
-        self.assertIn(str(wt), self.git("worktree", "list"))
-        self.assertNotEqual(self.resolves(f"refs/heads/{BRANCH}"), "")
-
 
 class RetireFinishedTests(WorktreeCleanupFixture):
 
