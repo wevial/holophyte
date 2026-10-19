@@ -339,25 +339,34 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
 
 
 def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
-    updated_at, threads, open_threads, floor, checks, review, title, state = seen
+    updated_at, threads, open_threads, floor, checks, review, title, state = \
+        seen[:8]
+    additions, deletions, changed, preview, shots = (*seen[8:], *[None] * 5)[:5]
     floor = None if floor is None else int(floor)
+    shots = None if shots is None else json.dumps(
+        [{"caption": caption, "url": url} for caption, url in shots])
+    media = (additions, deletions, changed, preview, shots)
     guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
     with _transaction(conn):
         if facts_only:
             conn.execute("UPDATE runs SET prSeenOpenThreads = ?,"
                          " prSeenOpenThreadsFloor = ?, prSeenChecks = ?,"
-                         " prSeenReview = ?, prSeenTitle = ?, prSeenState = ?"
-                         f" WHERE id = ?{guard}",
+                         " prSeenReview = ?, prSeenTitle = ?, prSeenState = ?,"
+                         f" {_PR_SEEN_MEDIA} WHERE id = ?{guard}",
                          (open_threads, floor, checks, review, title, state,
-                          run_id))
+                          *media, run_id))
             return
         conn.execute("UPDATE runs SET prSeenAt = ?, prSeenThreads = ?,"
                      " prSeenOpenThreads = ?, prSeenOpenThreadsFloor = ?,"
                      " prSeenChecks = ?, prSeenReview = ?, prSeenTitle = ?,"
-                     " prSeenState = ?"
-                     f" WHERE id = ?{guard}",
+                     f" prSeenState = ?, {_PR_SEEN_MEDIA} WHERE id = ?{guard}",
                      (updated_at, threads, open_threads, floor, checks,
-                      review, title, state, run_id))
+                      review, title, state, *media, run_id))
+
+
+_PR_SEEN_MEDIA = ("prSeenAdditions = ?, prSeenDeletions = ?,"
+                  " prSeenChangedFiles = ?, prSeenPreviewUrl = ?,"
+                  " prSeenScreenshots = ?")
 
 
 def _json_list(field, values):

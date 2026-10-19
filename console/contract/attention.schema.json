@@ -4,6 +4,22 @@
   "description": "GET /attention",
   "$ref": "#/$defs/Attention",
   "$defs": {
+    "Screenshot": {
+      "type": "object",
+      "properties": {
+        "caption": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "caption",
+        "url"
+      ],
+      "additionalProperties": true
+    },
     "PullRequestFacts": {
       "type": "object",
       "properties": {
@@ -84,6 +100,52 @@
               "type": "null"
             }
           ]
+        },
+        "additions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "changed_files": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preview_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "screenshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Screenshot"
+          }
         }
       },
       "required": [

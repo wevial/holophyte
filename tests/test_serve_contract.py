@@ -26,6 +26,7 @@ from holophyte.serve.contract import (
     Findings,
     FollowUpRow,
     PrOpenItem,
+    PullRequestFacts,
     Round,
     RunDetail,
     RunTurn,
@@ -290,7 +291,10 @@ class PinnedAnswerTests(unittest.TestCase):
                 (item, PrOpenItem, "pr_open", "waits_on"),
                 (run, StatusRun, "run", "pr_url"),
                 (run, StatusRun, "run", "pr"),
-                (run, StatusRun, "run", "woke_ms")):
+                (run, StatusRun, "run", "woke_ms"),
+                *((item["pr"], PullRequestFacts, "pr", key) for key in (
+                    "additions", "deletions", "changed_files", "preview_url",
+                    "screenshots"))):
             with self.subTest(key=key):
                 walk(body, annotation, where)
                 hints = typing.get_type_hints(annotation, include_extras=True)

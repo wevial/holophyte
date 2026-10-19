@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 53) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 54) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -58,9 +58,13 @@ witness run on main and the questions it put to the operator.
 
 The last pull request read is stored on `runs` in `prSeenAt`,
 `prSeenChecks`, `prSeenReview`, `prSeenThreads`, `prSeenOpenThreads`,
-`prSeenOpenThreadsFloor`, `prSeenTitle` and `prSeenState`. The nullable
-`prSeenState` is `draft`, `ready`, `closed` or `merged`, and is served as
-`pr.state` on an attention `pr_open` item.
+`prSeenOpenThreadsFloor`, `prSeenTitle`, `prSeenState`, `prSeenAdditions`,
+`prSeenDeletions`, `prSeenChangedFiles`, `prSeenPreviewUrl` and
+`prSeenScreenshots`. The nullable `prSeenState` is `draft`, `ready`,
+`closed` or `merged`, and is served as `pr.state` on an attention `pr_open`
+item. `prSeenPreviewUrl` is the newest successful deployment's URL on the
+head commit, and `prSeenScreenshots` a JSON list of `{"caption", "url"}`
+objects, the Evidence section's images.
 
 ## The two state machines
 

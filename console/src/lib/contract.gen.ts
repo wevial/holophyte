@@ -72,6 +72,12 @@ export const thresholdsSchema = z.looseObject({
 });
 export type Thresholds = z.infer<typeof thresholdsSchema>;
 
+export const screenshotSchema = z.looseObject({
+  caption: z.string(),
+  url: z.string(),
+});
+export type Screenshot = z.infer<typeof screenshotSchema>;
+
 export const pullRequestFactsSchema = z.looseObject({
   number: z.int().nullable(),
   checks: z.string().nullable(),
@@ -80,6 +86,11 @@ export const pullRequestFactsSchema = z.looseObject({
   open_threads: z.union([z.int(), z.string()]).nullable(),
   title: z.string().nullable(),
   state: z.enum(["draft", "ready", "closed", "merged"]).nullable(),
+  additions: z.int().nullable().optional(),
+  deletions: z.int().nullable().optional(),
+  changed_files: z.int().nullable().optional(),
+  preview_url: z.string().nullable().optional(),
+  screenshots: z.array(screenshotSchema).optional(),
 });
 export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
 

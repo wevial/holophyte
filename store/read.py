@@ -23,6 +23,8 @@ from store.run_reads import (  # noqa: F401
     RecentRun,
     RunSnapshot,
     Toil,
+    _pr_seen_media,
+    _pr_seen_media_sql,
     admission_changes,
     approved_candidate,
     babysit_note,
@@ -111,6 +113,11 @@ class BlockedTicket:
     prSeenOpenThreadsFloor: int | None = None
     prSeenTitle: str | None = None
     prSeenState: str | None = None
+    prSeenAdditions: int | None = None
+    prSeenDeletions: int | None = None
+    prSeenChangedFiles: int | None = None
+    prSeenPreviewUrl: str | None = None
+    prSeenScreenshots: str | None = None
     title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
@@ -136,7 +143,8 @@ def blocked_tickets(conn, project_id=None):
         f" {pr_state},"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id"
         " AND rr.verdict != 'error'),"
-        " t.projectId, t.dependsOn"
+        " t.projectId, t.dependsOn,"
+        f" {_pr_seen_media_sql(columns)}"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
     deps = _dependency_rows(conn) if any(
@@ -151,7 +159,8 @@ def blocked_tickets(conn, project_id=None):
                           prSeenOpenThreads=row[16],
                           prSeenOpenThreadsFloor=row[17], prSeenState=row[18],
                           reviewRoundCount=row[19],
-                          waitsOn=_unmerged(deps, row[20], json.loads(row[21])))
+                          waitsOn=_unmerged(deps, row[20], json.loads(row[21])),
+                          **_pr_seen_media(row[22:27]))
             for row in rows]
 
 

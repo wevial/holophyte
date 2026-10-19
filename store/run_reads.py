@@ -67,6 +67,11 @@ class LiveRun:
     prSeenOpenThreadsFloor: int | None = None
     prSeenTitle: str | None = None
     prSeenState: str | None = None
+    prSeenAdditions: int | None = None
+    prSeenDeletions: int | None = None
+    prSeenChangedFiles: int | None = None
+    prSeenPreviewUrl: str | None = None
+    prSeenScreenshots: str | None = None
     wokeAt: int | None = None
 
 
@@ -145,6 +150,19 @@ def babysit_note(conn, run_id):
     return row[0].partition(" babysit: ")[2] if row else ""
 
 
+PR_SEEN_MEDIA = ("prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",
+                 "prSeenPreviewUrl", "prSeenScreenshots")
+
+
+def _pr_seen_media_sql(columns):
+    return ", ".join(f"r.{name}" if name in columns else "NULL"
+                     for name in PR_SEEN_MEDIA)
+
+
+def _pr_seen_media(row):
+    return dict(zip(PR_SEEN_MEDIA, row, strict=True))
+
+
 def live_runs(conn, phases):
     phases = tuple(phases)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
@@ -157,7 +175,7 @@ def live_runs(conn, phases):
         " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState,"
         " r.verifyMs, r.verifyStartedAt, r.prSeenChecks, r.prSeenReview,"
         " r.prSeenThreads, r.prSeenOpenThreads, r.prSeenOpenThreadsFloor,"
-        f" r.prSeenTitle, {pr_state},"
+        f" r.prSeenTitle, {pr_state}, {_pr_seen_media_sql(columns)},"
         " CASE WHEN EXISTS (SELECT 1 FROM runs earlier"
         " WHERE earlier.ticketId = r.ticketId AND earlier.id < r.id"
         " AND earlier.prUrl = r.prUrl AND EXISTS (SELECT 1 FROM runEvents e"
@@ -178,7 +196,8 @@ def live_runs(conn, phases):
                     verifyStartedAt=row[16], prSeenChecks=row[17],
                     prSeenReview=row[18], prSeenThreads=row[19],
                     prSeenOpenThreads=row[20], prSeenOpenThreadsFloor=row[21],
-                    prSeenTitle=row[22], prSeenState=row[23], wokeAt=row[24])
+                    prSeenTitle=row[22], prSeenState=row[23],
+                    **_pr_seen_media(row[24:29]), wokeAt=row[29])
             for row in rows]
 
 

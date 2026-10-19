@@ -227,6 +227,11 @@ CREATE TABLE IF NOT EXISTS runs (
     -- (KO-622). NULL until a read recorded one.
     prSeenTitle       TEXT,
     prSeenState       TEXT,
+    prSeenAdditions   INTEGER,
+    prSeenDeletions   INTEGER,
+    prSeenChangedFiles INTEGER,
+    prSeenPreviewUrl  TEXT,
+    prSeenScreenshots TEXT,
     UNIQUE (ticketId, attempt)
 );
 

@@ -25,6 +25,7 @@ from holophyte.pr.github import (
     acknowledged,
     graphql,
     rest,
+    split_pr_body,
 )
 from holophyte.pr.pr_activity import ACTIVITY_FIELDS, HEADER, activities
 from holophyte.pr.pr_contexts import CONTEXTS_FIELDS, status_contexts_of
@@ -42,6 +43,8 @@ WORKFLOW_RUN_RE = re.compile(r"/actions/runs/(\d+)/job/\d+")
 CHECK_RUNS_PAGE = 100
 # Refused on a plan that cannot have rules (private, GitHub Free): no rules.
 PLAN_GATED = "Upgrade to GitHub Pro or make this repository public"
+IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\s]+)\)")
+SCREENSHOTS_KEPT = 6
 
 THREADS_PAGE = 100
 COMMENTS_PAGE = 50
@@ -102,7 +105,10 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes { ... on ClosedEvent { actor { login } } }
       }
       state merged mergeable headRefOid mergeCommit { oid } mergedBy { login }
-      updatedAt title isDraft
+      updatedAt title isDraft additions deletions changedFiles body
+      head: commits(last: 1) { nodes { commit {
+        deployments(last: 5) { nodes { latestStatus { state environmentUrl } } }
+      } } }
       threadCount: reviewThreads(first: %d) { totalCount nodes { isResolved } }
       reviewDecision
       %s
@@ -133,6 +139,11 @@ class PullStatus:
     activity: tuple = ()
     title: str | None = None
     draft: bool | None = None
+    additions: int | None = None
+    deletions: int | None = None
+    changed_files: int | None = None
+    preview_url: str | None = None
+    screenshots: tuple = ()
 
 
 def pull_status(target, pull):
@@ -154,6 +165,11 @@ def pull_status(target, pull):
     draft = node.get("isDraft")
     return PullStatus(title=title if isinstance(title, str) else None,
                       draft=draft if isinstance(draft, bool) else None,
+                      additions=_count(node.get("additions")),
+                      deletions=_count(node.get("deletions")),
+                      changed_files=_count(node.get("changedFiles")),
+                      preview_url=_preview_url(node),
+                      screenshots=_screenshots(node.get("body")),
                       activity=activities(target, pull, node,
                       (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),
@@ -183,6 +199,33 @@ def pull_status(target, pull):
                       rate_reset=rate.get("resetAt")
                       if isinstance(rate, dict)
                       and isinstance(rate.get("resetAt"), str) else None)
+
+
+def _preview_url(node):
+    head = node.get("head")
+    commits = head.get("nodes") if isinstance(head, dict) else None
+    commit = commits[-1].get("commit") if isinstance(commits, list) \
+        and commits and isinstance(commits[-1], dict) else None
+    deployments = commit.get("deployments") if isinstance(commit, dict) \
+        else None
+    nodes = deployments.get("nodes") if isinstance(deployments, dict) else None
+    for deployment in reversed(nodes if isinstance(nodes, list) else []):
+        status = deployment.get("latestStatus") \
+            if isinstance(deployment, dict) else None
+        url = status.get("environmentUrl") if isinstance(status, dict) \
+            else None
+        if status and status.get("state") == "SUCCESS" \
+                and isinstance(url, str) and url:
+            return url
+    return None
+
+
+def _screenshots(body):
+    if not isinstance(body, str):
+        return ()
+    evidence = split_pr_body(body)[2]
+    return tuple((m[1].strip(), m[2]) for m in
+                 IMAGE_RE.finditer(evidence))[:SCREENSHOTS_KEPT]
 
 
 def _open_count(threads):
