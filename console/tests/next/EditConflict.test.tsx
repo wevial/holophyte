@@ -382,3 +382,21 @@ test("a section named constructor still waits for a pick before the picks load",
   expect(within(part).getByRole("button", { name: "Keep mine" }).getAttribute("aria-pressed")).toBe("false");
   expect((screen.getByRole("button", { name: "Load revision 4 with these picks" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+test("a picked section the form reads the same as revision 4's still saves", async () => {
+  const body = `${BODY}\n## Implementation notes\n\nOld\n`;
+  await mount(() => Response.json({ ticket: "DEMO-2", revision: 5 }), demo2(3, body, "console"));
+  await type("Implementation notes", "");
+  await poll(demo2(4, BODY, "cli"));
+  await act(async () => void fireEvent.click(within(within(banner()!).getByRole("region", { name: "Implementation notes" })).getByRole("button", { name: "Keep mine" })));
+  await press("Load revision 4 with these picks");
+  expect(saveButton().disabled).toBe(false);
+  await act(async () => void fireEvent.click(saveButton()));
+  await flush();
+  expect(puts).toEqual([{ ifMatch: "4", body: `${BODY}## Implementation notes\n\n\n` }]);
+});
+
+test("a section named constructor shows in the edit form as plain text", async () => {
+  await mount(() => new Response("unexpected", { status: 500 }), demo2(3, `${BODY}\n## constructor\n\nThe old way.\n`, "console"));
+  expect((document.getElementById("new-constructor") as HTMLTextAreaElement).value).toBe("The old way.");
+});

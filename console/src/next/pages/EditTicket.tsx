@@ -176,8 +176,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const [dependency, setDependency] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string[]>([]);
-  const changes = changedNames(origin.fields, fields);
   const body = composeEdit(read.body, read.fields, fields);
+  const named = changedNames(origin.fields, fields);
+  const changes = named.length || body === origin.body ? named
+    : sectionParts(origin.body, origin.body, body).filter(part => part.side === "mine").map(part => part.name);
   const newer = loaded.revision > origin.revision;
   const loadRevision = (next: Read, form: Read = next) => {
     setEdit({ origin: next, read: form });

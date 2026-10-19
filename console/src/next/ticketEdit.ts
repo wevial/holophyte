@@ -44,7 +44,7 @@ export function rawParts(body: string): Set<string> {
 /** Whether the section at `index` of `form` is drawn as fields. */
 const drawn = (form: TicketForm, index: number, raw: Set<string>) => {
   const { name } = form.sections[index]!;
-  return name in SHAPES && !raw.has(name) && form.sections.findIndex(section => section.name === name) === index;
+  return Object.hasOwn(SHAPES, name) && !raw.has(name) && form.sections.findIndex(section => section.name === name) === index;
 };
 
 const PROSE = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes", "mockupLink", "mockupApproval", "mockupImages"] as const;
