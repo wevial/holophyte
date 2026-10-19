@@ -59,6 +59,8 @@ QUESTION = ("merge? The reviewer passed round 1 and the pre-merge verify is"
 FINDINGS = [{"path": "holophyte/serve/server.py", "line": 12, "severity": "p1",
              "criterion": "AC1", "message": "the route is unmatched"}]
 PULL = "https://github.com/example/demo/pull/"
+MEDIA = "https://media.example/demo/pull-42/"
+SCREENSHOTS = ("01 split view", "02 custom slot", "03 saved document")
 DEPENDS = "\n## Estimate & dependencies\n\nEstimate: 15 min · Depends on: {}\n"
 W1 = dict(key="W1", criterion="A run that fails its verify is retried once",
           file="tests/test_recovery.py",
@@ -120,8 +122,8 @@ def _seed_store(path):
     ledger, DEMO-6 failed, DEMO-7 in review after changes requested with a
     feature follow-up pending, DEMO-8 parked on pending checks, DEMO-9
     parked ready for its merge, DEMO-10 merged today, DEMO-11 failed and
-    still in flight, DEMO-12 a story over six of them; and a supervisor
-    beating now."""
+    still in flight, DEMO-12 a story over six of them, DEMO-13 woken from
+    its park to fix its pull request; and a supervisor beating now."""
     import store
     import store.board
     import store.tickets
@@ -141,18 +143,24 @@ def _seed_store(path):
 
         def claimed(text, at):
             ticket = filed(text)
-            store.tickets.transition(conn, ticket, "in_flight")
+            store.tickets.walk_ticket(conn, ticket, "in_flight")
             run = store.claim(conn, project, ticket, now=at)
             store.set_phase(conn, run, "working", now=at + MIN)
             return ticket, run
 
-        def parked_on_pr(text, number, kind, question, checks, at):
-            ticket, run = claimed(body(text), at)
+        def parked_on_pr(text, number, kind, question, checks, at,
+                         depends="none", rounds=0, media=()):
+            ticket, run = claimed(body(text, depends=depends), at)
+            for round_ in range(1, rounds + 1):
+                store.record_review_round(
+                    conn, run, round_, "pass", "reviewer-model",
+                    started_at=at + round_ * MIN,
+                    ended_at=at + round_ * MIN + 30 * SEC)
             advance_phase(conn, run, "merge_gate", now=at + 30 * MIN)
             store.park(conn, run, "awaiting_merge_approval",
                        pr_url=f"{PULL}{number}", park_kind=kind,
                        pr_seen=(now - 5 * MIN, 0, 0, None, checks,
-                                "approved", text, "ready"),
+                                "approved", text, "ready", *media),
                        now=at + 31 * MIN)
             store.tickets.transition(conn, ticket, "blocked_on_operator")
             store.set_question(conn, ticket, f"PR open\n{question}")
@@ -214,7 +222,10 @@ def _seed_store(path):
                      "pending checks: unit", "pending", now - 2 * HOUR)
         parked_on_pr("Link each run to its pull request", 42, "pull_request",
                      "Waiting for a maintainer's merge", "success",
-                     now - 3 * HOUR)
+                     now - 3 * HOUR, depends="DEMO-8", rounds=6,
+                     media=(412, 88, 9, "https://preview.example/demo/42",
+                            [(caption, f"{MEDIA}{caption.replace(' ', '-')}.png")
+                             for caption in SCREENSHOTS]))
 
         midnight = datetime.fromtimestamp(now / SEC).replace(
             hour=0, minute=0, second=0, microsecond=0)
@@ -237,6 +248,23 @@ def _seed_store(path):
         _seed_story(conn, project, filed(
             body("Unattended runs recover themselves"), column="backlog"),
             now)
+
+        ticket, run = claimed(body("Prompt for a different contract PDF"),
+                              now - 2 * HOUR)
+        advance_phase(conn, run, "merge_gate", now=now - HOUR)
+        store.park(conn, run, "awaiting_merge_approval", pr_url=f"{PULL}44",
+                   park_kind="pull_request", now=now - HOUR)
+        store.tickets.walk_ticket(conn, ticket, "in_flight")
+        run = store.claim(conn, project, ticket, now=now - 12 * MIN)
+        store.set_phase(conn, run, "working", now=now - 11 * MIN)
+        store.set_pull_request(conn, run, f"{PULL}44")
+        for round_ in range(1, 5):
+            store.record_review_round(
+                conn, run, round_, "changes_requested", "reviewer-model",
+                started_at=now - 11 * MIN, ended_at=now - 10 * MIN)
+        store.record_pr_seen(conn, run, (now - 2 * MIN, 3, 3, None, "failure",
+                                         None, None, "ready"))
+        store.heartbeat(conn, run, now=now)
 
         store.record_supervisor_heartbeat(conn, os.getpid(), now - HOUR,
                                           now=now)
