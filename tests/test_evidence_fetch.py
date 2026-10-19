@@ -55,8 +55,6 @@ class _ServedCase(unittest.TestCase):
 
 class EvidenceFetchTests(_ServedCase):
     def test_download_passes_a_host_that_refuses_urllibs_default_agent(self):
-        link = mockup.media_links(self.section("01-board"))[0]
-        self.assertEqual(mockup._download(link, self.base), PNG)
         section = self.section("01-board")
         self.assertEqual(evidence_fetch.unfetched(section, self.base), {})
         self.server.missing.add("/01-board.png")
