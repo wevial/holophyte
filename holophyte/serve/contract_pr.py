@@ -1,4 +1,9 @@
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
+
+
+class Screenshot(TypedDict):
+    caption: str
+    url: str
 
 
 class PullRequestFacts(TypedDict):
@@ -9,6 +14,11 @@ class PullRequestFacts(TypedDict):
     open_threads: int | str | None
     title: str | None
     state: Literal["draft", "ready", "closed", "merged"] | None
+    additions: NotRequired[int | None]
+    deletions: NotRequired[int | None]
+    changed_files: NotRequired[int | None]
+    preview_url: NotRequired[str | None]
+    screenshots: NotRequired[list[Screenshot]]
 
 
 class WaitsOn(TypedDict):
