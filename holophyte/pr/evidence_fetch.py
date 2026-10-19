@@ -1,4 +1,3 @@
-"""The Evidence section's bucket images the factory cannot fetch, and why."""
 from holophyte.pr import mockup
 
 
