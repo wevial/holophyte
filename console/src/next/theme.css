@@ -348,6 +348,11 @@ body {
   --btn-wipe: var(--ink-3); --btn-wipe-ink: var(--paper);
 }
 
+.btn[data-variant="quiet"][aria-pressed="true"] {
+  --btn-edge: var(--ink); --btn-face: var(--ink); --btn-ink: var(--paper);
+  --btn-wipe: var(--ink); --btn-wipe-ink: var(--paper);
+}
+
 .btn[data-variant="danger"] {
   --btn-edge: var(--bad); --btn-face: transparent; --btn-ink: var(--bad);
   --btn-wipe: var(--bad); --btn-wipe-ink: var(--bad-ink);

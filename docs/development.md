@@ -946,6 +946,9 @@ refusal and narrow layout, and checks the commands’ rendered monospace font.
 revision into the same fields (`console/src/next/components/TicketFields.tsx`),
 marks each changed one and saves it as the next revision with `If-Match`;
 `console/src/next/ticketEdit.ts` rewrites only the fields that changed.
+When a newer revision lands during an edit, `console/src/next/sectionPicks.ts`
+sorts each body section by which side changed it and builds the body from
+the section the maintainer picks for each one both sides changed.
 
 `console/src/next/runDays.ts` defines thirty local-day windows and aggregates
 each day’s runs. `console/src/next/pages/RunsHistory.tsx` renders their counts,

@@ -2,13 +2,14 @@ import { useContext, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { editTicket } from "../../lib/boardWrites";
-import { formatAge } from "../../lib/format";
+import { formatAge, formatClock } from "../../lib/format";
 import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
 import { CHANGED, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
+import { pickedBody, pickedSide, priorityPart, sectionParts, type Part, type Pick } from "../sectionPicks";
 import { useTicketPage } from "../ticket";
 import { changedNames, composeEdit, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
 import { clampEstimate } from "../ticketForm";
@@ -82,7 +83,7 @@ export function EditTicket() {
   const loaded: Loaded = {
     revision,
     body: ticket.current?.body ?? ticket.body,
-    priority: ticket.current?.priority ?? card?.priority ?? null,
+    priority: ticket.current ? ticket.current.priority : card?.priority ?? null,
     at: ticket.current?.at ?? null,
     author: ticket.current?.author ?? null,
     column: ticket.current?.column ?? card?.column ?? null,
@@ -91,26 +92,110 @@ export function EditTicket() {
   return <EditForm key={`${project}/${key}`} project={project} ticketKey={key} base={page.host.base} loaded={loaded} cards={cards} now={page.now} />;
 }
 
+/** What the page read of revision `loaded`: its fields as the form draws them. */
+const readOf = (loaded: Loaded) => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), raw: rawParts(loaded.body) });
+type Read = ReturnType<typeof readOf>;
+
+function ConflictIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-1 size-4 shrink-0 text-bad">
+      <path d="M8 2 14.5 13.5h-13z" />
+      <path d="M8 6.3v3.2M8 11.6v.1" />
+    </svg>
+  );
+}
+
+/** A part's text as its box shows it: without its heading line. */
+const shown = (text: string | null) => (text === null ? "(removed)" : text.replace(/^## [^\n]*\n/, "").trim() || "(empty)");
+
+/** The banner a newer revision raises over an edit: who saved it, each part
+ *  both sides changed side by side with its pick, and the two ways out. */
+function ConflictBanner({ ticketKey, started, newer, parts, picks, onPick, onLoad, onTake }: {
+  ticketKey: string; started: number; newer: Loaded; parts: Part[]; picks: Record<string, Pick>;
+  onPick: (key: string, pick: Pick) => void; onLoad: () => void; onTake: () => void;
+}) {
+  const theirChanges = parts.filter(part => part.theirs !== part.base).map(part => part.name);
+  const clashes = parts.filter(part => part.side === "both");
+  const unpicked = clashes.some(part => !Object.hasOwn(picks, part.key));
+  const line = [
+    `you started from revision ${started}`,
+    `${newer.author ?? "someone"} saved revision ${newer.revision}${newer.at != null ? ` at ${formatClock(newer.at)}` : ""}`,
+    theirChanges.length ? `it changed ${[...new Set(theirChanges)].join(", ")}` : "it changed no section",
+    "nothing is saved yet",
+  ].join(" · ");
+  const box = (label: string, text: string | null) => (
+    <div className="min-w-0 border border-rule bg-paper-2 p-3">
+      <div className="font-mono text-[11px] font-medium uppercase tracking-[.08em] text-ink-2">{label}</div>
+      <p className="mt-2 whitespace-pre-wrap text-[14px] text-ink [overflow-wrap:anywhere]">{shown(text)}</p>
+    </div>
+  );
+  return (
+    <div role="alert" aria-label="Newer revision" className="border border-rule bg-paper p-5 shadow-[inset_3px_0_0_var(--bad)]">
+      <div className="flex items-start gap-3">
+        <ConflictIcon />
+        <div className="min-w-0">
+          <p className="font-sans text-[16px] font-semibold text-ink">{ticketKey} changed while you were editing.</p>
+          <p className="mt-1 font-mono text-[12.5px] text-ink-2 [overflow-wrap:anywhere]">{line}</p>
+        </div>
+      </div>
+      {clashes.map(part => (
+        <section key={part.key} aria-label={part.name} data-part={part.key} className="mt-5">
+          <h2 className="text-[14px] font-semibold text-ink">{part.name}</h2>
+          <div className="mt-2 grid gap-3 min-[720px]:grid-cols-2">
+            {box(`REVISION ${newer.revision}, THEIRS`, part.theirs)}
+            {box("YOURS", part.mine)}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Btn aria-pressed={picks[part.key] === "mine"} onClick={() => onPick(part.key, "mine")}>Keep mine</Btn>
+            <Btn aria-pressed={picks[part.key] === "theirs"} onClick={() => onPick(part.key, "theirs")}>Take theirs</Btn>
+          </div>
+        </section>
+      ))}
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Btn variant="primary" disabled={unpicked} onClick={onLoad}>Load revision {newer.revision} with these picks</Btn>
+        <Btn onClick={onTake}>Take revision {newer.revision}, drop mine</Btn>
+      </div>
+      {unpicked && <p className="mt-3 font-mono text-[12px] text-ink-2">Pick a side for each section.</p>}
+    </div>
+  );
+}
+
 function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: string; ticketKey: string; base: string; loaded: Loaded; cards: ReturnType<typeof hostCards>; now: number }) {
   const deps = useContext(PollDepsContext);
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
-  const [read] = useState(() => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), raw: rawParts(loaded.body) }));
+  const [edit, setEdit] = useState<{ origin: Read; read: Read }>(() => {
+    const origin = readOf(loaded);
+    return { origin, read: origin };
+  });
+  const { origin, read } = edit;
   const drawn = (part: string) => !read.raw.has(part);
   const [fields, setFields] = useState<EditFields>(read.fields);
+  const [picks, setPicks] = useState<Record<string, Pick>>({});
   const [dependency, setDependency] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string[]>([]);
-  const changes = changedNames(read.fields, fields);
   const body = composeEdit(read.body, read.fields, fields);
+  const named = changedNames(origin.fields, fields);
+  const changes = named.length || body === origin.body ? named
+    : sectionParts(origin.body, origin.body, body).filter(part => part.side === "mine").map(part => part.name);
+  const newer = loaded.revision > origin.revision;
+  const loadRevision = (next: Read, form: Read = next) => {
+    setEdit({ origin: next, read: form });
+    setFields(form.fields);
+    setPicks({});
+    setRefusal([]);
+  };
+  if (newer && !changes.length) loadRevision(readOf(loaded));
+  const parts = newer && changes.length ? [...sectionParts(origin.body, loaded.body, body), priorityPart(origin.priority, loaded.priority, fields.priority)] : null;
   const check = useTicketCheck(base, body, deps, ticketKey);
   const checked = checkMarks(check);
   const { judged, messagesOf, marks } = checked;
   const errors = judged?.problems.length ?? 0;
   const blocks = judged?.blocks === true;
   const set = <K extends keyof EditFields>(field: K, value: EditFields[K]) => setFields(previous => ({ ...previous, [field]: value }));
-  const changed = (field: keyof EditFields) => !same(read.fields[field], fields[field]);
+  const changed = (field: keyof EditFields) => !same(origin.fields[field], fields[field]);
   const estimate = clampEstimate(Number(fields.estimate) || 25);
 
   const input = (field: "title" | "summary" | "what" | "why" | "how" | "inScope" | "outOfScope" | "verify" | "notes", label: string, hint?: string, optional = false) => {
@@ -120,19 +205,28 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
         <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };
+  const loadPicks = (parts: Part[]) => {
+    const priority = pickedSide(parts.at(-1)!, picks) === "mine" ? fields.priority : loaded.priority;
+    loadRevision(readOf(loaded), readOf({ ...loaded, body: pickedBody(loaded.body, body, parts, picks), priority }));
+    toast(`Revision ${loaded.revision} loaded with your picks. Review, then save as revision ${loaded.revision + 1}.`);
+  };
+  const takeTheirs = () => {
+    loadRevision(readOf(loaded));
+    toast(`Took revision ${loaded.revision}. Your edits were dropped.`);
+  };
   const discard = () => {
-    setFields(read.fields);
+    loadRevision(origin);
     setDependency("");
-    setRefusal([]);
   };
   const save = async () => {
-    if (busy || !changes.length || blocks) return;
+    if (busy || !changes.length || blocks || parts) return;
     setBusy(true);
     setRefusal([]);
     const result = await editTicket(base, ticketKey, read.revision, body, deps.fetch, fields.priority);
     setBusy(false);
     if (!result.ok) {
       setRefusal("conflict" in result ? [`${ticketKey} changed since this page read it. Your edit is kept.`] : "problems" in result ? result.problems : [result.error]);
+      if ("conflict" in result) void client.invalidateQueries({ queryKey: ["route", base] });
       return;
     }
     toast(`Saved ${ticketKey} as revision ${result.revision}.`);
@@ -140,12 +234,17 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
     void client.invalidateQueries({ queryKey: ["route", base] });
     void navigate({ to: "/tickets/$project/$key", params: { project, key: ticketKey }, search: {} });
   };
-  const line = [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
+  const line = parts ? `revision ${origin.revision} · newer revision ${loaded.revision} exists`
+    : read !== origin ? `revision ${origin.revision} + your picks`
+    : [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
 
   return (
     <Frame project={project} ticketKey={ticketKey}>
       <p className="mt-1.5 border-b border-rule pb-[18px] font-mono text-[13px] text-ink-2">{line}</p>
       <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-6">
+        {parts && <ConflictBanner ticketKey={ticketKey} started={origin.revision} newer={loaded} parts={parts} picks={picks}
+          onPick={(key, pick) => setPicks(previous => ({ ...previous, [key]: pick }))} onLoad={() => loadPicks(parts)} onTake={takeTheirs} />}
         <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
           <Field label="Project">
             <select id="new-Project" className={`${INPUT} font-sans`} value={project} disabled><option value={project}>{project}</option></select>
@@ -170,10 +269,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
               return detail || (from != null && read.fields.criteriaDetail[from]) ? detail : null;
             })}
             onDetail={(index, detail) => set("criteriaDetail", fields.criteriaDetail.map((each, at) => at === index ? detail : each))}
-            changed={index => fields.criteriaFrom[index] !== index || fields.criteria[index] !== read.fields.criteria[index]}
+            changed={index => fields.criteriaFrom[index] !== index || fields.criteria[index] !== origin.fields.criteria[index]}
             detailChanged={index => {
               const from = fields.criteriaFrom[index];
-              return fields.criteriaDetail[index] !== (from == null ? "" : read.fields.criteriaDetail[from]);
+              return fields.criteriaDetail[index] !== (from == null ? "" : origin.fields.criteriaDetail[from]);
             }} />}
           {drawn("Verify command(s)") && input("verify", "Verify commands", "The implementer runs these before review; a red one fails the run.")}
           <div className="flex flex-wrap gap-6">
@@ -205,7 +304,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
                 Other sections <span className="normal-case tracking-[.04em] text-ink-3">{fields.others.map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">
-                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== read.fields.others[at]?.text}>
+                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== origin.fields.others[at]?.text}>
                   <textarea id={`new-${other.name}`} rows={3} className={`${INPUT} resize-y font-sans`} value={other.text}
                     onChange={event => set("others", fields.others.map((each, index) => index === at ? { ...each, text: event.target.value } : each))} />
                 </Field>)}
@@ -213,15 +312,16 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
             </details>
           </div>}
         </div>
+        </div>
         <aside aria-label="Save revision" className="min-w-0">
           <CheckerPanel summary={checkSummary(check, true)} marks={checked} />
           <div className="border border-rule bg-paper p-5">
             <div className="flex flex-wrap gap-2">
-              <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!changes.length || blocks} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
+              <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!changes.length || blocks || parts != null} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
               <Btn disabled={busy || !changes.length} onClick={discard}>Discard</Btn>
             </div>
-            <p className="mt-3 font-mono text-[12px] text-ink-2">{saveNote(changes, errors, blocks, ticketKey)}</p>
-            {refusal.length > 0 && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{refusal.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
+            <p className="mt-3 font-mono text-[12px] text-ink-2">{parts ? "Resolve the newer revision first. Your edit is safe." : saveNote(changes, errors, blocks, ticketKey)}</p>
+            {refusal.length > 0 && !parts && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{refusal.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
           </div>
           <p className="mt-4 font-mono text-[12px] text-ink-3">Saved as the next revision. Errors block a Ready ticket; a Backlog ticket saves as a draft.</p>
         </aside>
