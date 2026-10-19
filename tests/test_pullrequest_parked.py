@@ -120,6 +120,22 @@ class ParkedPullRequestTests(MergeModeFixture):
         self.assertIn("KO-131", (self.target / "FINDINGS.md").read_text())
         self.assertEqual(self.subjects(), ["base"])  # local main not moved
 
+    def test_a_github_merge_ledger_says_a_dirty_worktree_kept_its_branch(self):
+        self.parked_on_pr()
+        wt = holophyte.config.project.worktree_path(self.project, BRANCH)
+        (wt / "scratch.txt").write_text("not committed\n")
+        self.fake_client(self.MERGED_PULL)
+
+        self.main_output(provider=StubProvider())
+
+        (merge_line,) = [text for (text,) in self.read(
+            "SELECT text FROM ledger WHERE kind = 'merge'")]
+        self.assertIn(f"branch {BRANCH} kept locally: uncommitted work",
+                      merge_line)
+        self.assertNotIn("deleted locally", merge_line)
+        self.assertIn(BRANCH, self.branches())
+        self.assertEqual((wt / "scratch.txt").read_text(), "not committed\n")
+
     def test_a_merged_pull_request_ships_when_linear_already_says_done(self):
         """Review of KO-359: the person who merged the pull request on
         GitHub also moved the ticket to Done on the board. At startup the

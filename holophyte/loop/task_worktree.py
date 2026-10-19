@@ -201,3 +201,4 @@ def retire_merged_worktree(project, conn, run_id, task_id, branch):
                 f" {worktree_path(project, branch)}: {reason}")
         print(line)
         store.record_event(conn, run_id, "worktree_retirement_refused", line)
+    return reason

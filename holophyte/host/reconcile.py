@@ -544,12 +544,15 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
         store.set_question(conn, ticket.id, None)
         store.tickets.walk_ticket(conn, ticket.id, "merged")
     mirror_push(conn, ticket.id, provider)
-    ledger(conn, run_id, identifier, "merge",
-           f"MERGED through {pull.url} as {sha} by {who} on GitHub (branch"
-           f" {branch} deleted locally; local main not moved).", provider)
+    cleanup = "no local branch recorded"
     if branch:
         from holophyte.loop.task_worktree import retire_merged_worktree
-        retire_merged_worktree(target, conn, run_id, identifier, branch)
+        kept = retire_merged_worktree(target, conn, run_id, identifier, branch)
+        cleanup = (f"branch {branch} kept locally: {kept}" if kept
+                   else f"branch {branch} deleted locally")
+    ledger(conn, run_id, identifier, "merge",
+           f"MERGED through {pull.url} as {sha} by {who} on GitHub ({cleanup};"
+           " local main not moved).", provider)
     refresh_findings(target, conn)
     print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
           f" as {short}; run {run_id} closed out as merged")
