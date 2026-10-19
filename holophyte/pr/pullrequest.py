@@ -16,6 +16,7 @@ from holophyte.loop import run as run_state
 from holophyte.loop.gates import InfraFailure, MergeParked, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while, set_phase
 from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
+from holophyte.loop.task_worktree import retire_merged_worktree
 from holophyte.pr import (
     github,
     image_fetch,
@@ -437,11 +438,7 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
                     reviewed=reviewed)
     print(f"[holo2] merged {pull.url} as {merge_sha[:12]}")
     # Local main is not moved: the factory never pushes it.
-    try:
-        sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
-        sh(["git", "branch", "-D", branch], project.path)
-    except RuntimeError as e:
-        print(f"[holo2] post-merge cleanup left debris: {e}")
+    retire_merged_worktree(project, conn, run_id, task_id, branch)
     return merge_sha
 
 

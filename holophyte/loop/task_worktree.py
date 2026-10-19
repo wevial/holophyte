@@ -4,6 +4,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import store
 from holophyte.config.config_tables import merge_config
 from holophyte.config.worktree_settings import (
     setup_commands,
@@ -155,7 +156,7 @@ def _retirement_remote_tip(project, branch):
     return tip
 
 
-def retire_worktree(project, branch):
+def retire_worktree(project, branch, merged=False):
     """Stale remote-tracking refs are not evidence the work is backed up."""
     from holophyte.config.project import worktree_path
 
@@ -177,13 +178,26 @@ def retire_worktree(project, branch):
             return subprocess.run(
                 ["git", "merge-base", "--is-ancestor", head, ref],
                 cwd=project.path, capture_output=True).returncode == 0
-        backed_up = reachable("refs/heads/main")
+        backed_up = merged or reachable("refs/heads/main")
         if not backed_up:
             tip = _retirement_remote_tip(project, branch)
             backed_up = tip is not None and reachable(tip)
         if not backed_up:
             return "commits exist nowhere else (not confirmed on remote branch or main)"
         sh(["git", "worktree", "remove", str(wt)], project.path)
+        sh(["git", "branch", "-D", "--", branch], project.path)
+        sh(["git", "worktree", "prune"], project.path)
     except (RuntimeError, OSError, subprocess.SubprocessError) as error:
         return f"worktree retirement refused: {error}"
     return None
+
+
+def retire_merged_worktree(project, conn, run_id, task_id, branch):
+    from holophyte.config.project import worktree_path
+
+    reason = retire_worktree(project, branch, merged=True)
+    if reason:
+        line = (f"[holo2] {task_id}: kept worktree"
+                f" {worktree_path(project, branch)}: {reason}")
+        print(line)
+        store.record_event(conn, run_id, "worktree_retirement_refused", line)

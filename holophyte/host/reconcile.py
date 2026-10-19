@@ -16,7 +16,6 @@ from holophyte.board.projection import (
 from holophyte.config.config_tables import merge_config
 from holophyte.config.project import worktree_path
 from holophyte.host import ci_wake
-from holophyte.loop.gates import sh
 from holophyte.pr import pr_activity, pr_status
 from holophyte.review.findings import refresh_findings
 from holophyte.story import story_claim
@@ -547,12 +546,8 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
            f"MERGED through {pull.url} as {sha} by {who} on GitHub (branch"
            f" {branch} deleted locally; local main not moved).", provider)
     if branch:
-        try:
-            sh(["git", "worktree", "remove", "--force",
-                str(worktree_path(target, branch))], target.path)
-            sh(["git", "branch", "-D", branch], target.path)
-        except RuntimeError as e:
-            print(f"[holo2] post-merge cleanup left debris: {e}")
+        from holophyte.loop.task_worktree import retire_merged_worktree
+        retire_merged_worktree(target, conn, run_id, identifier, branch)
     refresh_findings(target, conn)
     print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
           f" as {short}; run {run_id} closed out as merged")

@@ -20,6 +20,7 @@ from holophyte.loop.gates import (
 )
 from holophyte.loop.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.loop.stop import end_aborted, stop_if_requested
+from holophyte.loop.task_worktree import retire_merged_worktree
 from holophyte.pr.pullrequest import (
     _opens_draft,
     _prepare_pr,
@@ -369,11 +370,7 @@ def _merge(project, conn, run_id, provider, task_id, task, branch, wt, sha):
     # Merged: a cleanup refusal below must not make this a failed run.
     merge_sha = sh(["git", "rev-parse", "HEAD"], project.path)
     advance_generation(conn, run_id)
-    try:
-        sh(["git", "worktree", "remove", "--force", str(wt)], project.path)
-        sh(["git", "branch", "-d", branch], project.path)
-    except RuntimeError as e:
-        print(f"[holo2] post-merge cleanup left debris: {e}")
+    retire_merged_worktree(project, conn, run_id, task_id, branch)
     return merge_sha
 
 
