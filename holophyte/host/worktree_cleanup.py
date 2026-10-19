@@ -5,9 +5,9 @@ from holophyte.loop.task_worktree import retire_worktree
 
 def retire_finished(target, conn):
     lines = []
-    for identifier, status, branch, _path, run_id in finished_worktrees(
+    for identifier, _status, branch, _path, run_id in finished_worktrees(
             target, conn, ended=True):
-        reason = retire_worktree(target, branch, merged=status == "merged")
+        reason = retire_worktree(target, branch)
         if reason is None:
             lines.append(f"retired {identifier}'s worktree and branch {branch}")
             continue

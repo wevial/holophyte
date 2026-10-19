@@ -73,8 +73,11 @@ class RetireFinishedTests(WorktreeCleanupFixture):
         self.addCleanup(self.conn.close)
         self.project_id = tickets.ensure_project(
             self.conn, StubProvider.TEAM, str(self.target))
+        origin = self.target.parent / "origin.git"
+        self.git("init", "-q", "--bare", "-b", "main", str(origin))
+        self.git("remote", "add", "origin", str(origin))
 
-    def ticket(self, n, status, ended=True, on_main=False):
+    def ticket(self, n, status, ended=True, on_main=False, board=False):
         branch = f"task/holo-{n}-x"
         ticket = tickets.mirror_ticket(
             self.conn, self.project_id, linear_issue_id=f"iss-{n}",
@@ -83,7 +86,7 @@ class RetireFinishedTests(WorktreeCleanupFixture):
         run_id = store.claim(self.conn, self.project_id, ticket)
         tickets.transition(self.conn, ticket, "in_flight")
         store.set_branch(self.conn, run_id, branch)
-        if ended and status == "merged":
+        if ended and status == "merged" and not board:
             for phase in ("merge_gate", "merging"):
                 store.set_phase(self.conn, run_id, phase)
             store.release(self.conn, run_id, "merged")
@@ -95,6 +98,7 @@ class RetireFinishedTests(WorktreeCleanupFixture):
 
     def test_only_finished_tickets_with_ended_runs_are_retired(self):
         merged_wt, merged_branch, _ = self.ticket(1, "merged")
+        self.git("push", "-q", "origin", merged_branch)
         abandoned_wt, abandoned_branch, _ = self.ticket(2, "abandoned",
                                                         on_main=True)
         open_wt, open_branch, _ = self.ticket(3, "abandoned", ended=False)
@@ -125,5 +129,22 @@ class RetireFinishedTests(WorktreeCleanupFixture):
                          "edited, not committed\n")
         self.assertIn(
             (run_id, "kept HOLO-4's worktree: uncommitted work"),
+            self.read("SELECT runId, summary FROM runEvents"
+                      " WHERE kind = 'worktree_retirement_refused'"))
+
+    def test_board_completed_ticket_with_unpushed_commit_keeps_branch(self):
+        wt, branch, run_id = self.ticket(10, "merged", board=True)
+        tip = self.resolves(f"refs/heads/{branch}")
+        self.assertNotEqual(tip, self.base)
+
+        lines = worktree_cleanup.retire_finished(self.project, self.conn)
+
+        kept = ("kept HOLO-10's worktree: commits exist nowhere else"
+                " (not confirmed on remote branch or main)")
+        self.assertEqual(lines, [kept])
+        self.assertEqual((wt / "work.txt").read_text(), f"{branch}\n")
+        self.assertEqual(self.resolves(f"refs/heads/{branch}"), tip)
+        self.assertIn(
+            (run_id, kept),
             self.read("SELECT runId, summary FROM runEvents"
                       " WHERE kind = 'worktree_retirement_refused'"))
