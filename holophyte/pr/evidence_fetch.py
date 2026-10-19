@@ -1,7 +1,7 @@
 from holophyte.pr import mockup
 
 
-def unfetched(section, base):
+def unfetched(section, base, cap_mb):
     if base is None:
         return {}
     failed = {}
@@ -10,7 +10,7 @@ def unfetched(section, base):
                 link.url, base):
             continue
         try:
-            mockup._download(link, base)
+            mockup._download(link, base, cap_mb)
         except mockup.Refused as why:
             failed[link.url] = str(why)
     return failed

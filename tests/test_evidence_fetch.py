@@ -26,11 +26,13 @@ class _Host(BaseHTTPRequestHandler):
         elif self.path in self.server.forbidden or agent.startswith("Python-urllib"):
             self.send_error(403)
         else:
+            large = self.path in self.server.large
+            body = PNG + bytes(11 * 1024 * 1024) if large else PNG
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(PNG)))
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(PNG)
+            self.wfile.write(body)
 
     def log_message(self, *args):
         pass
@@ -41,6 +43,7 @@ class _ServedCase(unittest.TestCase):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _Host)
         self.server.requests = []
         self.server.missing, self.server.forbidden = set(), set()
+        self.server.large = set()
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -58,9 +61,9 @@ class EvidenceFetchTests(_ServedCase):
         section = self.section("01-board")
         link = mockup.media_links(section)[0]
         self.assertEqual(mockup._download(link, self.base), PNG)
-        self.assertEqual(evidence_fetch.unfetched(section, self.base), {})
+        self.assertEqual(evidence_fetch.unfetched(section, self.base, 10), {})
         self.server.missing.add("/01-board.png")
-        self.assertEqual(evidence_fetch.unfetched(section, self.base),
+        self.assertEqual(evidence_fetch.unfetched(section, self.base, 10),
                          {f"{self.base}/01-board.png": "HTTP 404"})
 
 
@@ -100,6 +103,15 @@ class EvidenceBriefTests(_ServedCase):
                       "lines, never as a finding", brief)
         self.assertNotIn("Missing or failed visual evidence counts against the "
                          "candidate", brief)
+
+    def test_brief_fetches_a_screenshot_up_to_the_projects_file_cap(self):
+        self.config["merge"].update(media_max_file_mb=15, media_bucket={
+            "endpoint": "https://objects.example.invalid", "bucket": "evidence",
+            "public_base": self.base})
+        self.server.large.add("/01-board.png")
+        brief = self.brief(self.section("01-board"))
+        self.assertEqual([path for path, _ in self.server.requests], ["/01-board.png"])
+        self.assertNotIn("The factory could not fetch", brief)
 
     def test_brief_fetches_nothing_without_a_media_bucket(self):
         self.server.forbidden.add("/01-board.png")

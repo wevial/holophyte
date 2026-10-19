@@ -326,7 +326,8 @@ def evidence_brief(target, wt, task_id, evidence_states=()):
         f"The factory could not fetch {url} ({reason}). That is an "
         "infrastructure problem, not the candidate's: judge this state from "
         "its local copy.\n"
-        for url, reason in evidence_fetch.unfetched(section, base).items())
+        for url, reason in evidence_fetch.unfetched(
+            section, base, cfg.media_max_file_mb).items())
     rule = EVIDENCE_RULE + (UNFETCHABLE_RULE if base else "")
     return ("\n\n" + section + "\n\n" + listed + failed + (
         "\n" if failed else "") + rule + "\n\n" + mockup.reviewer_brief(wt))
