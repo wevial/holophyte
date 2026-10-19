@@ -60,6 +60,8 @@ DOCUMENTED_COLUMNS = {
         "prSeenReview",
         # Store-owned: the pull request's title the same read saw (KO-622).
         "prSeenTitle", "prSeenState",
+        "prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",
+        "prSeenPreviewUrl", "prSeenScreenshots",
         # Store-owned, not a documented field: §5 requires a resume to
         # "re-enter the phase it left" and leaves the mechanism to us, so
         # `resume()` reads the parked phase from this column.

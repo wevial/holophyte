@@ -816,16 +816,16 @@ class AttentionTests(ServeTestCase):
         by_ticket = {item["ticket"]: item for item in body["items"]
                      if item["kind"] in ("blocked", "pr_open")}
         self.assertEqual(by_ticket["KO-8"]["kind"], "blocked")
-        self.assertEqual(by_ticket["KO-8"]["question"],
-                         "Which branch is canonical?")
+        self.assertEqual(by_ticket["KO-8"]["question"], "Which branch is canonical?")
         self.assertEqual(by_ticket["KO-10"], {
             "kind": "pr_open", "ticket": "KO-10", "ticket_url": None, "run": run,
             "title": "ticket KO-10", "pr_url": url, "park_kind": "pull_request",
-            "reason": "review requested from a coworker"
-                      "\n1. src/x.py:3 by @coworker",
+            "reason": "review requested from a coworker\n1. src/x.py:3 by @coworker",
             "asked_ms": self.now - 2 * MIN,
-            "pr": {"number": 2170, "checks": None, "review": None,
-                   "threads": None, "open_threads": None, "title": None, "state": None},
+            "pr": {"number": 2170, "checks": None, "review": None, "threads": None,
+                   "open_threads": None, "title": None, "state": None,
+                   "additions": None, "deletions": None, "changed_files": None,
+                   "preview_url": None, "screenshots": []},
             "level": "attention", "round": 0, "waits_on": []})
         self.assertEqual(body["level"], "attention")
 
@@ -874,15 +874,15 @@ class AttentionTests(ServeTestCase):
         self.park_on_pr(url, pr_seen=("2026-09-10T10:00:00Z", 3, None, None, "failure",
                                       "changes_requested", None, "ready"))
         self.start()
-
         _, _, body = self.request("GET", "/attention")
 
         item = next(item for item in body["items"]
                     if item["kind"] == "pr_open")
-        self.assertEqual(item["pr"], {"number": 2170, "checks": "failure",
-                                      "review": "changes_requested",
-                                      "threads": 3, "open_threads": None,
-                                      "title": None, "state": "ready"})
+        self.assertEqual(item["pr"], {
+            "number": 2170, "checks": "failure", "review": "changes_requested",
+            "threads": 3, "open_threads": None, "title": None, "state": "ready",
+            "additions": None, "deletions": None, "changed_files": None,
+            "preview_url": None, "screenshots": []})
 
     def test_the_body_names_the_project_as_status_does(self):
         self.seed_attention()

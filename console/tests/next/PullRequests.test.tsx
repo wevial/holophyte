@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import type { Attention, Status } from "../../src/lib/contract.gen";
+import type { Attention, Status, StatusRun } from "../../src/lib/contract.gen";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import ready from "../../../tests/fixtures/serve/run-merge-ready.json";
@@ -36,6 +36,7 @@ const WHAT = "## What / Why / How\n\n**What:** Adds a slot that takes pages.\n\n
 
 interface Daemon {
   items: Item[];
+  runs?: StatusRun[];
   actions?: boolean;
   readyRuns?: number[];
   projects?: [string, string];
@@ -45,12 +46,12 @@ interface Daemon {
 
 let client: QueryClient | null = null;
 
-async function mount({ items, actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" } }: Daemon) {
-  const statusOf = (project: string): Status => ({ ...served, project, now: NOW, runs: [], queued: [], actions });
+async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" } }: Daemon) {
+  const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
   const fleet = peersFetch(DEMO, {
-    [DEMO]: { status: statusOf(first), attention: attention(first, items) },
+    [DEMO]: { status: statusOf(first, runs), attention: attention(first, items) },
     [WRITER]: { status: statusOf(second), attention: attention(second, []) },
   });
   const { seen, fetchImpl } = fakeFetch({});
@@ -261,4 +262,47 @@ test("with storage refusing, the tag reopens a folded Needs you and focuses its 
   } finally {
     Object.defineProperty(globalThis, "localStorage", real);
   }
+});
+
+test("an opened row shows its size, a tile per screenshot in order and Open preview, and none of them when unsent", async () => {
+  const shots = ["01 split view", "02 custom slot", "03 saved document"].map((caption, index) => ({ caption, url: `https://media.example/${index + 1}.png` }));
+  await mount({ items: [park(9, "pull_request", 2 * HOUR, {
+    number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0,
+    changed_files: 9, additions: 412, deletions: 88, preview_url: "https://preview.example", screenshots: shots,
+  })], readyRuns: [] });
+  await openRow(42);
+  const row = rows()[0]!;
+  expect(within(row).getByText("9 files, +412 −88")).toBeTruthy();
+  const tiles = [...row.querySelectorAll<HTMLAnchorElement>("[data-screenshot]")];
+  expect(tiles.map((tile) => tile.getAttribute("href"))).toEqual(shots.map((shot) => shot.url));
+  expect(tiles.map((tile) => tile.querySelector("img")?.getAttribute("alt"))).toEqual(["01 split view", "02 custom slot", "03 saved document"]);
+  expect(within(row).getByRole("link", { name: "Open preview" }).getAttribute("href")).toBe("https://preview.example");
+  unmount();
+
+  await mount({ items: [park(9, "pull_request", 2 * HOUR, {
+    number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, preview_url: null, screenshots: [],
+  })], readyRuns: [] });
+  await openRow(42);
+  expect(within(rows()[0]!).queryByRole("link", { name: "Open preview" })).toBeNull();
+  expect(rows()[0]!.querySelectorAll("[data-screenshot]").length).toBe(0);
+});
+
+test("a run the factory woke to fix its pull request stays in the lane as Factory fixing, counted once with its park", async () => {
+  const [base] = served.runs as [StatusRun];
+  const pr = { title: "Old PR title", state: "ready" as const, number: null, review: null, threads: 3 };
+  const fixing = { ...base, id: 12, ticket: "DEMO-12", title: "Fix the slot", phase: "working", heartbeat_age_ms: 1000, round: 4,
+    pr_url: "https://github.com/example/demo/pull/50", woke_ms: NOW - 12 * MINUTE, pr: { ...pr, checks: "failure", open_threads: 3 } };
+  const fresh = { ...base, id: 13, ticket: "DEMO-13", title: "Fresh run", pr_url: null, pr: null };
+  const parkedRun = { ...base, id: 14, phase: "awaiting_merge_approval", ticket: "DEMO-14", pr_url: "https://github.com/example/demo/pull/47" };
+  await mount({ items: [park(14, "pull_request", HOUR, { checks: "success", review: null, threads: 0, open_threads: 0 })], runs: [fixing, fresh, parkedRun], actions: true, readyRuns: [] });
+  expect(lane("demo").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
+  expect(rows().map((row) => within(row).getByRole("link", { name: /^PR #/ }).textContent)).toEqual(["PR #47", "PR #50"]);
+  expect(waits()[1]).toEqual(["Factory fixing", "round 4 · 12m"]);
+  expect(facts(rows()[1]!)).toBe("checks failing · 3 open threads · 4 rounds");
+  expect(within(rows()[1]!).getByText("Fix the slot")).toBeTruthy();
+  expect(rows()[1]!.textContent).not.toContain("Old PR title");
+  expect(section().textContent).not.toContain("DEMO-13");
+  await openRow(50);
+  expect(within(rows()[1]!).getByRole("link", { name: "Open run" })).toBeTruthy();
+  expect(within(rows()[1]!).queryByRole("button", { name: "Send back with a note" })).toBeNull();
 });
