@@ -19,8 +19,7 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
   const noteId = useId();
   const refused = action.data != null && !action.data.ok ? action.data.detail : null;
   const send = async () => {
-    const said = `Sent ${label} back with your note.`;
-    const result = await action.mutateAsync({ label: "Send back", base, route: "/actions/send-back", body: { run, note }, said });
+    const result = await action.mutateAsync({ label: "Send back", base, route: "/actions/send-back", body: { run, note }, said: `Sent ${label} back with your note.` });
     if (result.ok) onClose();
   };
   return (
