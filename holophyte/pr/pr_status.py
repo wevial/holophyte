@@ -43,7 +43,9 @@ WORKFLOW_RUN_RE = re.compile(r"/actions/runs/(\d+)/job/\d+")
 CHECK_RUNS_PAGE = 100
 # Refused on a plan that cannot have rules (private, GitHub Free): no rules.
 PLAN_GATED = "Upgrade to GitHub Pro or make this repository public"
-IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\s]+)\)")
+IMAGE_RE = re.compile(r"!\[((?:\\.|[^\\\]\n])*)\]"
+                      r"\(((?:[^()\s]|\([^()\s]*\))+)\)")
+MARKDOWN_ESCAPE_RE = re.compile(r"\\([!-/:-@\[-`{-~])")
 SCREENSHOTS_KEPT = 6
 
 THREADS_PAGE = 100
@@ -223,7 +225,7 @@ def _screenshots(body):
     if not isinstance(body, str):
         return ()
     evidence = split_pr_body(body)[2]
-    return tuple((m[1].strip(), m[2]) for m in
+    return tuple((MARKDOWN_ESCAPE_RE.sub(r"\1", m[1]).strip(), m[2]) for m in
                  IMAGE_RE.finditer(evidence))[:SCREENSHOTS_KEPT]
 
 

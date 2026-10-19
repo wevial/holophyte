@@ -1,6 +1,7 @@
 """A pull request's diff size, preview link and Evidence screenshots, from
 the reconcile's GraphQL read to the `pr` facts `/attention` serves."""
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import store
@@ -8,7 +9,7 @@ import store.read
 import store.schema
 import store.tickets
 from holophyte.host import reconcile
-from holophyte.pr import pr_status
+from holophyte.pr import pr_media, pr_status
 from tests.phase_fixture import park_run
 from tests.serve_fixture import MIN, ServeTestCase
 
@@ -62,6 +63,14 @@ class PullStatusMediaTests(unittest.TestCase):
         self.assertEqual(status.screenshots, ())
         self.assertEqual((status.additions, status.deletions,
                           status.changed_files), (None, None, None))
+
+    def test_escaped_captions_and_parenthesized_urls_survive_the_parse(self):
+        urls = {Path("01-panel.png"): "https://media.example/panel_(2).png"}
+        lines, _ = pr_media._state_media(["Panel [open]"], urls)
+        body = "Ticket: KO-7\n\n## Evidence\n\n" + "\n".join(lines)
+        status = self.read({**BARE, "body": body})
+        self.assertEqual(status.screenshots, (
+            ("Panel [open]", "https://media.example/panel_(2).png"),))
 
 
 class AttentionMediaTests(ServeTestCase):
