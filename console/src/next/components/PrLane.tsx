@@ -85,7 +85,7 @@ function PrLaneRow({
   const word = wait.line === "" ? wait.status : `${wait.status}, ${wait.line}`;
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
   const label = typeof item.pr_url === "string" ? prLabel(item.pr_url) : "PR";
-  const title = prTitle(item) ?? "";
+  const title = row.fixing ? row.fixing.title : (prTitle(item) ?? "");
   return (
     <li data-pr-row className="border-rule-2 [&+&]:border-t">
       <div data-row className={ROW_GRID}>

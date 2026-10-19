@@ -289,7 +289,7 @@ test("an opened row shows its size, a tile per screenshot in order and Open prev
 
 test("a run the factory woke to fix its pull request stays in the lane as Factory fixing, counted once with its park", async () => {
   const [base] = served.runs as [StatusRun];
-  const pr = { title: null, state: "ready" as const, number: null, review: null, threads: 3 };
+  const pr = { title: "Old PR title", state: "ready" as const, number: null, review: null, threads: 3 };
   const fixing = { ...base, id: 12, ticket: "DEMO-12", title: "Fix the slot", phase: "working", heartbeat_age_ms: 1000, round: 4,
     pr_url: "https://github.com/example/demo/pull/50", woke_ms: NOW - 12 * MINUTE, pr: { ...pr, checks: "failure", open_threads: 3 } };
   const fresh = { ...base, id: 13, ticket: "DEMO-13", title: "Fresh run", pr_url: null, pr: null };
@@ -299,6 +299,8 @@ test("a run the factory woke to fix its pull request stays in the lane as Factor
   expect(rows().map((row) => within(row).getByRole("link", { name: /^PR #/ }).textContent)).toEqual(["PR #47", "PR #50"]);
   expect(waits()[1]).toEqual(["Factory fixing", "round 4 · 12m"]);
   expect(facts(rows()[1]!)).toBe("checks failing · 3 open threads · 4 rounds");
+  expect(within(rows()[1]!).getByText("Fix the slot")).toBeTruthy();
+  expect(rows()[1]!.textContent).not.toContain("Old PR title");
   expect(section().textContent).not.toContain("DEMO-13");
   await openRow(50);
   expect(within(rows()[1]!).getByRole("link", { name: "Open run" })).toBeTruthy();
