@@ -408,7 +408,9 @@ def _seen(status):
     at = max([status.updated_at or "", *(item[1] for item in status.activity)])
     return (at or None, status.threads, status.open_threads,
             status.open_threads_floor, status.checks, status.review,
-            status.title, _pr_state(status))
+            status.title, _pr_state(status), status.additions,
+            status.deletions, status.changed_files, status.preview_url,
+            status.screenshots)
 
 
 def _wake_reason(target, conn, ticket, pull, status):

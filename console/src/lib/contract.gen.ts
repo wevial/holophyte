@@ -72,6 +72,28 @@ export const thresholdsSchema = z.looseObject({
 });
 export type Thresholds = z.infer<typeof thresholdsSchema>;
 
+export const screenshotSchema = z.looseObject({
+  caption: z.string(),
+  url: z.string(),
+});
+export type Screenshot = z.infer<typeof screenshotSchema>;
+
+export const pullRequestFactsSchema = z.looseObject({
+  number: z.int().nullable(),
+  checks: z.string().nullable(),
+  review: z.string().nullable(),
+  threads: z.int().nullable(),
+  open_threads: z.union([z.int(), z.string()]).nullable(),
+  title: z.string().nullable(),
+  state: z.enum(["draft", "ready", "closed", "merged"]).nullable(),
+  additions: z.int().nullable().optional(),
+  deletions: z.int().nullable().optional(),
+  changed_files: z.int().nullable().optional(),
+  preview_url: z.string().nullable().optional(),
+  screenshots: z.array(screenshotSchema).optional(),
+});
+export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
+
 export const statusRunSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),
@@ -94,6 +116,9 @@ export const statusRunSchema = z.looseObject({
   max_rounds: z.int(),
   strikes: z.int(),
   host: z.string().nullable(),
+  pr_url: z.string().nullable().optional(),
+  pr: pullRequestFactsSchema.nullable().optional(),
+  woke_ms: z.int().nullable().optional(),
 });
 export type StatusRun = z.infer<typeof statusRunSchema>;
 
@@ -130,17 +155,6 @@ export const statusSchema = z.looseObject({
 });
 export type Status = z.infer<typeof statusSchema>;
 
-export const pullRequestFactsSchema = z.looseObject({
-  number: z.int().nullable(),
-  checks: z.string().nullable(),
-  review: z.string().nullable(),
-  threads: z.int().nullable(),
-  open_threads: z.union([z.int(), z.string()]).nullable(),
-  title: z.string().nullable(),
-  state: z.enum(["draft", "ready", "closed", "merged"]).nullable(),
-});
-export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
-
 export const blockedItemSchema = z.looseObject({
   kind: z.literal("blocked"),
   ticket: z.string(),
@@ -156,6 +170,12 @@ export const blockedItemSchema = z.looseObject({
 });
 export type BlockedItem = z.infer<typeof blockedItemSchema>;
 
+export const waitsOnSchema = z.looseObject({
+  ticket: z.string(),
+  pr_url: z.string().nullable(),
+});
+export type WaitsOn = z.infer<typeof waitsOnSchema>;
+
 export const prOpenItemSchema = z.looseObject({
   kind: z.literal("pr_open"),
   ticket: z.string(),
@@ -167,6 +187,8 @@ export const prOpenItemSchema = z.looseObject({
   reason: z.string(),
   asked_ms: z.int().nullable(),
   pr: pullRequestFactsSchema,
+  round: z.int().optional(),
+  waits_on: z.array(waitsOnSchema).optional(),
   level: z.literal("attention"),
   project: z.string().optional(),
 });

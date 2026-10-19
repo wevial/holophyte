@@ -18,8 +18,15 @@
         "threads": null,
         "open_threads": null,
         "title": null,
-        "state": null
+        "state": null,
+        "additions": null,
+        "deletions": null,
+        "changed_files": null,
+        "preview_url": null,
+        "screenshots": []
       },
+      "round": 0,
+      "waits_on": [],
       "level": "attention"
     }
   ],

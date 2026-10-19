@@ -1,6 +1,6 @@
 {
   "project": "/repo",
-  "schema_version": 53,
+  "schema_version": 54,
   "admission": "enabled",
   "hold_note": null,
   "workers": 1,
@@ -106,7 +106,10 @@
       "strikes": 0,
       "host": "writer",
       "stop_requested": null,
-      "stop_action": null
+      "stop_action": null,
+      "pr_url": null,
+      "pr": null,
+      "woke_ms": null
     },
     {
       "id": 1,
@@ -129,7 +132,10 @@
       "strikes": 0,
       "host": null,
       "stop_requested": null,
-      "stop_action": null
+      "stop_action": null,
+      "pr_url": null,
+      "pr": null,
+      "woke_ms": null
     }
   ],
   "queued": [

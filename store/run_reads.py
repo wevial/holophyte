@@ -60,6 +60,19 @@ class LiveRun:
     verifyStartedAt: int | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
+    prSeenChecks: str | None = None
+    prSeenReview: str | None = None
+    prSeenThreads: int | None = None
+    prSeenOpenThreads: int | None = None
+    prSeenOpenThreadsFloor: int | None = None
+    prSeenTitle: str | None = None
+    prSeenState: str | None = None
+    prSeenAdditions: int | None = None
+    prSeenDeletions: int | None = None
+    prSeenChangedFiles: int | None = None
+    prSeenPreviewUrl: str | None = None
+    prSeenScreenshots: str | None = None
+    wokeAt: int | None = None
 
 
 @dataclass(frozen=True)
@@ -137,15 +150,39 @@ def babysit_note(conn, run_id):
     return row[0].partition(" babysit: ")[2] if row else ""
 
 
+PR_SEEN_MEDIA = ("prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",
+                 "prSeenPreviewUrl", "prSeenScreenshots")
+
+
+def _pr_seen_media_sql(columns):
+    return ", ".join(f"r.{name}" if name in columns else "NULL"
+                     for name in PR_SEEN_MEDIA)
+
+
+def _pr_seen_media(row):
+    return dict(zip(PR_SEEN_MEDIA, row, strict=True))
+
+
 def live_runs(conn, phases):
     phases = tuple(phases)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    pr_state = "r.prSeenState" if "prSeenState" in columns else "NULL"
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.lastHeartbeat,"
         " r.startedAt, r.timeBoxMs, r.host,"
         " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id"
         " AND rr.verdict != 'error'),"
         " r.reviewRoundCap, r.prUrl, r.workingMs, r.workStartedAt, t.url, t.boardState,"
-        " r.verifyMs, r.verifyStartedAt"
+        " r.verifyMs, r.verifyStartedAt, r.prSeenChecks, r.prSeenReview,"
+        " r.prSeenThreads, r.prSeenOpenThreads, r.prSeenOpenThreadsFloor,"
+        f" r.prSeenTitle, {pr_state}, {_pr_seen_media_sql(columns)},"
+        " CASE WHEN EXISTS (SELECT 1 FROM runs earlier"
+        " WHERE earlier.ticketId = r.ticketId AND earlier.id < r.id"
+        " AND earlier.prUrl = r.prUrl AND EXISTS (SELECT 1 FROM runEvents e"
+        " WHERE e.runId = earlier.id AND e.kind = 'phase_change'"
+        " AND (e.summary GLOB '* -> awaiting_merge_approval'"
+        " OR e.summary GLOB '* -> awaiting_merge_approval:*')))"
+        " THEN r.startedAt END"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.endedAt IS NULL"
         f"   AND r.phase IN ({', '.join('?' * len(phases))})"
@@ -156,7 +193,11 @@ def live_runs(conn, phases):
                     reviewRoundCap=row[9], prUrl=row[10],
                     workingMs=row[11], workStartedAt=row[12], ticketUrl=row[13],
                     boardState=row[14], verifyMs=row[15],
-                    verifyStartedAt=row[16])
+                    verifyStartedAt=row[16], prSeenChecks=row[17],
+                    prSeenReview=row[18], prSeenThreads=row[19],
+                    prSeenOpenThreads=row[20], prSeenOpenThreadsFloor=row[21],
+                    prSeenTitle=row[22], prSeenState=row[23],
+                    **_pr_seen_media(row[24:29]), wokeAt=row[29])
             for row in rows]
 
 

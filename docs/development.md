@@ -304,6 +304,9 @@ Each module, one line:
   project's and a host root's, and `/runs/N`, `/runs/N/merge` and
   `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
   writes their JSON Schema and zod or `--check`s them.
+- `holophyte/serve/contract_pr.py` — the pull request facts and the
+  unmerged dependency a parked pull request waits on, as the contract
+  declares them on `/attention` and `/status`.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.
@@ -486,6 +489,10 @@ Each module, one line:
   babysit fix, writing the capture at the fix head into the pull request's
   Evidence section, or marking its earlier images stale when that capture
   failed, and the ledger note recording which.
+- `holophyte/pr/evidence_fetch.py` — before a review, fetching each
+  Evidence section image under `[merge.media_bucket] public_base` with the
+  mock-up download and naming each the factory could not fetch, with why,
+  for the reviewer's brief.
 - `holophyte/pr/image_fetch.py` — after a pull request body write that
   embeds an image, comparing each image GitHub's image proxy serves with
   the image at its own URL, and linking a short one again with a `?v=N`

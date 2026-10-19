@@ -25,11 +25,14 @@ from holophyte.serve.contract import (
     BoardTicket,
     Findings,
     FollowUpRow,
+    PrOpenItem,
+    PullRequestFacts,
     Round,
     RunDetail,
     RunTurn,
     RunTurns,
     Status,
+    StatusRun,
     StoryChildRow,
     StoryDetail,
     Transcript,
@@ -278,6 +281,28 @@ class PinnedAnswerTests(unittest.TestCase):
                 AssertionError, r"^story\.children\.0\.depends_on: undeclared$"):
             walk(pinned("story"), typing.TypedDict("StoryDetail", detail),
                  "story")
+
+    def test_pinned_pull_request_facts_are_declared_on_pr_open_and_status_runs(self):
+        (item,) = [item for item in pinned("attention")["items"]
+                   if item["kind"] == "pr_open"]
+        run = pinned("status")["runs"][0]
+        for body, annotation, where, key in (
+                (item, PrOpenItem, "pr_open", "round"),
+                (item, PrOpenItem, "pr_open", "waits_on"),
+                (run, StatusRun, "run", "pr_url"),
+                (run, StatusRun, "run", "pr"),
+                (run, StatusRun, "run", "woke_ms"),
+                *((item["pr"], PullRequestFacts, "pr", key) for key in (
+                    "additions", "deletions", "changed_files", "preview_url",
+                    "screenshots"))):
+            with self.subTest(key=key):
+                walk(body, annotation, where)
+                hints = typing.get_type_hints(annotation, include_extras=True)
+                narrower = typing.TypedDict(annotation.__name__, {
+                    name: hint for name, hint in hints.items() if name != key})
+                with self.assertRaisesRegex(
+                        AssertionError, rf"^{where}\.{key}: undeclared$"):
+                    walk(body, narrower, where)
 
 
 if __name__ == "__main__":
