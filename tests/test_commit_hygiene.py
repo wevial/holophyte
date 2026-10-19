@@ -30,7 +30,8 @@ class CommitHygieneTests(unittest.TestCase):
         self.git('checkout', '-b', 'task')
         self.config = {}
         self.target = SimpleNamespace(path=self.repo, config=lambda: self.config,
-                                      config_path=self.root / 'config.toml')
+                                      config_path=self.root / 'config.toml',
+                                      worktrees=self.root / 'worktrees')
 
     def git(self, *args, cwd=None):
         return subprocess.check_output(['git', *args], cwd=cwd or self.repo,
