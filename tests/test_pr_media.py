@@ -434,11 +434,11 @@ class MediaTests(unittest.TestCase):
             self.assertIn("image/png" if path.endswith(".png") else "video/webm",
                           headers["Content-Type"])
         self.visibility.assert_not_called()
-        self.assertIn("Retention: 30 days", body)
+        self.assertIn("expires after 30 days", body)
         for value in CREDS.values():
             self.assertNotIn(value, body + str(self.ledger.call_args_list))
 
-    def test_bucket_gives_each_file_its_own_path_and_no_retention_keeps_it(self):
+    def test_bucket_gives_each_file_a_path_and_names_no_expiry_unset(self):
         self.candidate(script="import sys\nfrom pathlib import Path\n"
                        'for name in ("01-landing.png", "02-home.png"):\n'
                        ' Path(sys.argv[1], name).write_bytes(b"evidence")\n')
@@ -460,7 +460,8 @@ class MediaTests(unittest.TestCase):
         self.assertNotEqual(first.split("/")[2], second.split("/")[2])
         self.assertFalse(second.startswith(first + "/") or second == first)
         self.assertFalse(first.startswith(second + "/"))
-        self.assertIn("kept until the operator removes it", body)
+        self.assertIn("Media lives in an object bucket.", body)
+        self.assertNotIn("operator", body)
         self.assertNotIn("expires", body)
 
     def test_missing_bucket_credentials_reach_evidence_and_review_without_http(self):
