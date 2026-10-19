@@ -20,6 +20,8 @@
         "title": null,
         "state": null
       },
+      "round": 0,
+      "waits_on": [],
       "level": "attention"
     }
   ],

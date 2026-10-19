@@ -115,6 +115,8 @@ class BlockedTicket:
     ticketUrl: str | None = None
     boardState: str | None = None
     outcome: str | None = None
+    reviewRoundCount: int = 0
+    waitsOn: tuple[tuple[str, str | None], ...] = ()
 
 
 def blocked_tickets(conn, project_id=None):
@@ -131,9 +133,14 @@ def blocked_tickets(conn, project_id=None):
         " r.lastHeartbeat, r.prUrl, r.prSeenChecks, r.prSeenReview,"
         " r.prSeenThreads, t.url, t.boardState, r.parkKind, r.prSeenTitle,"
         " t.title, r.outcome, r.prSeenOpenThreads, r.prSeenOpenThreadsFloor,"
-        f" {pr_state}"
+        f" {pr_state},"
+        " (SELECT COUNT(*) FROM reviewRounds rr WHERE rr.runId = r.id"
+        " AND rr.verdict != 'error'),"
+        " t.projectId, t.dependsOn"
         " FROM tickets t LEFT JOIN runs r ON r.id = t.lastRunId"
         f" WHERE {where} ORDER BY t.id", params).fetchall()
+    deps = _dependency_rows(conn) if any(
+        json.loads(row[21]) for row in rows) else {}
     return [BlockedTicket(id=row[0], linearIdentifier=row[1],
                           blockedQuestion=row[2], runId=row[3],
                           askedMs=row[4] if row[4] is not None else row[5],
@@ -142,8 +149,27 @@ def blocked_tickets(conn, project_id=None):
                           boardState=row[11], parkKind=row[12],
                           prSeenTitle=row[13], title=row[14], outcome=row[15],
                           prSeenOpenThreads=row[16],
-                          prSeenOpenThreadsFloor=row[17], prSeenState=row[18])
+                          prSeenOpenThreadsFloor=row[17], prSeenState=row[18],
+                          reviewRoundCount=row[19],
+                          waitsOn=_unmerged(deps, row[20], json.loads(row[21])))
             for row in rows]
+
+
+def _dependency_rows(conn):
+    return {(row[0], row[1]): row[2:] for row in conn.execute(
+        "SELECT t.projectId, t.linearIssueId, t.linearIdentifier, t.status,"
+        " r.prUrl FROM tickets t"
+        " LEFT JOIN runs r ON r.id = COALESCE(t.activeRunId, t.lastRunId)")}
+
+
+def _unmerged(deps, project_id, depends_on):
+    waits = []
+    for issue in depends_on:
+        identifier, status, pr_url = deps.get((project_id, issue),
+                                              (issue, None, None))
+        if status != "merged":
+            waits.append((identifier, pr_url))
+    return tuple(waits)
 
 
 @dataclass(frozen=True)

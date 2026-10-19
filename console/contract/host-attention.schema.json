@@ -341,6 +341,29 @@
       ],
       "additionalProperties": true
     },
+    "WaitsOn": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ticket",
+        "pr_url"
+      ],
+      "additionalProperties": true
+    },
     "PrOpenItem": {
       "type": "object",
       "properties": {
@@ -401,6 +424,15 @@
         },
         "pr": {
           "$ref": "#/$defs/PullRequestFacts"
+        },
+        "round": {
+          "type": "integer"
+        },
+        "waits_on": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WaitsOn"
+          }
         },
         "level": {
           "const": "attention"

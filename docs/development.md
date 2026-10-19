@@ -300,6 +300,9 @@ Each module, one line:
   project's and a host root's, and `/runs/N`, `/runs/N/merge` and
   `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
   writes their JSON Schema and zod or `--check`s them.
+- `holophyte/serve/contract_pr.py` — the pull request facts and the
+  unmerged dependency a parked pull request waits on, as the contract
+  declares them on `/attention` and `/status`.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.
