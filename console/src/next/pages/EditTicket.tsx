@@ -114,9 +114,9 @@ function ConflictBanner({ ticketKey, started, newer, parts, picks, onPick, onLoa
   ticketKey: string; started: number; newer: Loaded; parts: Part[]; picks: Record<string, Pick>;
   onPick: (key: string, pick: Pick) => void; onLoad: () => void; onTake: () => void;
 }) {
-  const theirChanges = parts.filter(part => part.side === "theirs" || part.side === "both").map(part => part.name);
+  const theirChanges = parts.filter(part => part.theirs !== part.base).map(part => part.name);
   const clashes = parts.filter(part => part.side === "both");
-  const unpicked = clashes.some(part => !picks[part.key]);
+  const unpicked = clashes.some(part => !Object.hasOwn(picks, part.key));
   const line = [
     `you started from revision ${started}`,
     `${newer.author ?? "someone"} saved revision ${newer.revision}${newer.at != null ? ` at ${formatClock(newer.at)}` : ""}`,
@@ -130,7 +130,7 @@ function ConflictBanner({ ticketKey, started, newer, parts, picks, onPick, onLoa
     </div>
   );
   return (
-    <div role="alert" aria-label="Newer revision" className="mt-6 border border-rule bg-paper p-5 shadow-[inset_3px_0_0_var(--bad)]">
+    <div role="alert" aria-label="Newer revision" className="border border-rule bg-paper p-5 shadow-[inset_3px_0_0_var(--bad)]">
       <div className="flex items-start gap-3">
         <ConflictIcon />
         <div className="min-w-0">
@@ -239,9 +239,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   return (
     <Frame project={project} ticketKey={ticketKey}>
       <p className="mt-1.5 border-b border-rule pb-[18px] font-mono text-[13px] text-ink-2">{line}</p>
-      {parts && <ConflictBanner ticketKey={ticketKey} started={origin.revision} newer={loaded} parts={parts} picks={picks}
-        onPick={(key, pick) => setPicks(previous => ({ ...previous, [key]: pick }))} onLoad={() => loadPicks(parts)} onTake={takeTheirs} />}
       <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-6">
+        {parts && <ConflictBanner ticketKey={ticketKey} started={origin.revision} newer={loaded} parts={parts} picks={picks}
+          onPick={(key, pick) => setPicks(previous => ({ ...previous, [key]: pick }))} onLoad={() => loadPicks(parts)} onTake={takeTheirs} />}
         <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
           <Field label="Project">
             <select id="new-Project" className={`${INPUT} font-sans`} value={project} disabled><option value={project}>{project}</option></select>
@@ -308,6 +309,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
               </div>
             </details>
           </div>}
+        </div>
         </div>
         <aside aria-label="Save revision" className="min-w-0">
           <CheckerPanel summary={checkSummary(check, true)} marks={checked} />

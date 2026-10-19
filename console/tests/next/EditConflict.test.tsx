@@ -134,6 +134,14 @@ test("a section headed Title is a part apart from the preamble", () => {
   expect(pickedBody(theirs, mine, parts, {})).toBe("# Every note\n\nIntro.\n\n## Title\n\nB\n");
 });
 
+test("a section headed with a part key of its own name stays apart from that name's repeat", () => {
+  const base = "# Notes\n\n## Notes\n\nOne.\n\n## Notes\n\nTwo.\n\n## Notes#2\n\nThree.\n";
+  const mine = base.replace("Three.", "Three, edited.");
+  const parts = sectionParts(base, base, mine);
+  expect(parts.map(part => [part.key, part.side])).toEqual([["Title", "same"], ["Notes", "same"], ["Notes#2", "same"], ["Notes\\#2", "mine"]]);
+  expect(pickedBody(base, mine, parts, {})).toBe(mine);
+});
+
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
@@ -192,10 +200,10 @@ async function flush() {
 
 /** DEMO serving `served` as DEMO-2 behind an editable board; each
  *  `PUT /tickets/DEMO-2` is answered by `save`. */
-async function mount(save: () => Response) {
+async function mount(save: () => Response, first = REVISION_3) {
   window.location.hash = "#/tickets/demo/DEMO-2/edit";
   const polls = fleet({ items: [] }, { items: [] });
-  served = REVISION_3;
+  served = first;
   reads = 0;
   puts = [];
   const fake = fakeDeps(async (url, init) => {
@@ -355,4 +363,22 @@ test("a newer revision polled with no edit reloads the form without a banner", a
   expect([box("Summary").value, box("AC2").value]).toEqual([THEIR_SUMMARY, THEIR_AC2]);
   expect(header()).toStartWith("revision 4 · ");
   expect(saveButton().textContent).toBe("Save revision 5");
+});
+
+test("the banner names a section their revision changed the same way mine did", async () => {
+  await mount(() => new Response("unexpected", { status: 500 }));
+  await type("Title", MY_TITLE);
+  await type("Summary", THEIR_SUMMARY);
+  await poll(demo2(4, BODY.replace("The run page lists each steer note the operator left.", THEIR_SUMMARY), "cli"));
+  expect(banner()!.textContent).toMatch(/cli saved revision 4 at \d\d:\d\d · it changed Summary · nothing is saved yet/);
+});
+
+test("a section named constructor still waits for a pick before the picks load", async () => {
+  const body = `${BODY}\n## Evidence\n\n- 01-notes.png\n`;
+  await mount(() => new Response("unexpected", { status: 500 }), demo2(3, body, "console"));
+  await act(async () => void fireEvent.change(document.getElementById("new-Evidence")!, { target: { value: "- 01-notes.png\n\n## constructor\n\nMy way." } }));
+  await poll(demo2(4, `${body}\n## constructor\n\nTheir way.\n`, "cli"));
+  const part = within(banner()!).getByRole("region", { name: "constructor" });
+  expect(within(part).getByRole("button", { name: "Keep mine" }).getAttribute("aria-pressed")).toBe("false");
+  expect((screen.getByRole("button", { name: "Load revision 4 with these picks" }) as HTMLButtonElement).disabled).toBe(true);
 });

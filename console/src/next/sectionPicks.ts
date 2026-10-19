@@ -9,6 +9,7 @@ export type Pick = "mine" | "theirs";
 export interface Part {
   key: string;
   name: string;
+  base: string | null;
   theirs: string | null;
   mine: string | null;
   side: PartSide;
@@ -24,7 +25,8 @@ function partsOf(body: string): Map<string, { name: string; text: string }> {
   for (const section of form.sections) {
     const count = (seen.get(section.name) ?? 0) + 1;
     seen.set(section.name, count);
-    parts.set(count === 1 ? section.name : `${section.name}#${count}`, { name: section.name, text: section.heading + section.text });
+    const name = section.name.replace(/[\\#]/g, "\\$&");
+    parts.set(count === 1 ? name : `${name}#${count}`, { name: section.name, text: section.heading + section.text });
   }
   return parts;
 }
@@ -43,7 +45,7 @@ export function sectionParts(base: string, theirs: string, mine: string): Part[]
   return [...keys].map(key => {
     const [b, t, m] = [was.get(key)?.text ?? null, their.get(key)?.text ?? null, my.get(key)?.text ?? null];
     const name = (their.get(key) ?? my.get(key) ?? was.get(key))!.name;
-    return { key, name, theirs: t, mine: m, side: sideOf(b, t, m) };
+    return { key, name, base: b, theirs: t, mine: m, side: sideOf(b, t, m) };
   });
 }
 
@@ -70,5 +72,5 @@ const priorityText = (priority: number | null) => (priority == null ? "none" : `
 /** Priority, which the body does not hold, as one more part. */
 export function priorityPart(base: number | null, theirs: number | null, mine: number | null): Part {
   const [b, t, m] = [priorityText(base), priorityText(theirs), priorityText(mine)];
-  return { key: PRIORITY, name: PRIORITY, theirs: t, mine: m, side: sideOf(b, t, m) };
+  return { key: PRIORITY, name: PRIORITY, base: b, theirs: t, mine: m, side: sideOf(b, t, m) };
 }
