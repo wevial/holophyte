@@ -91,7 +91,7 @@ test("reading text uses Plex Sans with Avenir fallbacks while headings keep Arch
   expect(theme.get("--font-sans")).toStartWith('"Archivo"');
 });
 
-test("the sidebar ground stands apart from the page canvas in Dawn and in both dark blocks", () => {
+test("the sidebar ground and its hover stand apart from the page and keep ink-3 readable, in Dawn and both dark blocks", () => {
   const value = (path: string[], name: string) =>
     decls.find((d) => d.name === name && d.path.join(" ") === path.join(" "))?.value ?? "";
   const luminance = (hex: string) => {
@@ -106,5 +106,8 @@ test("the sidebar ground stands apart from the page canvas in Dawn and in both d
   for (const path of [[dawnSelector], [nightSelector], [media, systemSelector]]) {
     expect(contrast(value(path, "--side"), value(path, "--canvas"))).toBeGreaterThanOrEqual(1.15);
     expect(contrast(value(path, "--side-hover"), value(path, "--side"))).toBeGreaterThanOrEqual(1.15);
+    for (const ground of ["--side", "--side-hover"]) {
+      expect(contrast(value(path, "--ink-3"), value(path, ground))).toBeGreaterThanOrEqual(4.5);
+    }
   }
 });
