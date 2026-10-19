@@ -438,7 +438,7 @@ class MediaTests(unittest.TestCase):
         for value in CREDS.values():
             self.assertNotIn(value, body + str(self.ledger.call_args_list))
 
-    def test_bucket_gives_each_file_its_own_path_and_no_retention_keeps_it(self):
+    def test_bucket_gives_each_file_a_path_and_names_no_expiry_unset(self):
         self.candidate(script="import sys\nfrom pathlib import Path\n"
                        'for name in ("01-landing.png", "02-home.png"):\n'
                        ' Path(sys.argv[1], name).write_bytes(b"evidence")\n')
