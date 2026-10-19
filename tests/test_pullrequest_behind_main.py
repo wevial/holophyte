@@ -61,7 +61,8 @@ class BehindMainMergeTests(unittest.TestCase):
     def merge(self, merge_table):
         project = SimpleNamespace(
             path=self.wt, config_path=self.root / "config.toml",
-            config=lambda: {"merge": merge_table})
+            config=lambda: {"merge": merge_table},
+            worktrees=self.root / "worktrees")
         pull = holophyte.pr.pr_status.parse_pr_url(URL)
 
         def merge_pull_request(project, pull, pinned):

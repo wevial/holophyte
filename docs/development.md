@@ -227,6 +227,10 @@ Each module, one line:
   `SWEEP_HEADERS` table, the per-run and restart lines, `sweep_report()`
   as `--sweep`'s whole body, and the review-container and merge-lock
   sections.
+- `holophyte/host/worktree_cleanup.py` — `retire_finished()`: each host
+  sweep pass, and `--sweep --act`, retires the worktree and local branch
+  of every merged or abandoned ticket whose runs have all ended, through
+  the guarded `retire_worktree()`; a refusal is kept and recorded.
 - `holophyte/board/board_diff.py` — `--board-diff` (KO-738): the board's ready
   listing against the store's rows for it, read-only on both, one line per
   difference and a summary.

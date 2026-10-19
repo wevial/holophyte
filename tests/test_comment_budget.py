@@ -148,6 +148,7 @@ PINNED = {
     "holophyte/host/supervisor_lock.py": 9,
     "holophyte/host/sweep_host.py": 10,
     "holophyte/host/sweep_report.py": 3,
+    "holophyte/host/worktree_cleanup.py": 0,
 
     "holophyte/isolation/__init__.py": 0,
     "holophyte/isolation/isolation_clone.py": 5,

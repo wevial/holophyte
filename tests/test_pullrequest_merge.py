@@ -203,8 +203,10 @@ class MergeAgainstMainTipTests(unittest.TestCase):
                              merge_pull_request), \
                 patch("sys.stdout", io.StringIO()):
             return sha, holophyte.pr.pullrequest._merge_pr(
-                SimpleNamespace(path=self.wt, config=dict), None, None, None, "KO-1",
-                BRANCH, self.wt, sha, 1, pull, retry_conflicts=True)
+                SimpleNamespace(path=self.wt, config=dict,
+                                worktrees=self.wt.parent / "worktrees"),
+                None, None, None, "KO-1", BRANCH, self.wt, sha, 1, pull,
+                retry_conflicts=True)
 
     def test_a_candidate_behind_origin_main_is_refused_before_github(self):
         self.advance_origin_main()

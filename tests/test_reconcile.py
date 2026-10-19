@@ -198,13 +198,16 @@ class ReconcileTests(LoopFixture):
         provider.closed = {"KO-2": "canceled"}
         return self.main_output(provider=provider)
 
-    def test_abandoned_pushed_tree_is_removed_but_branch_remains(self):
+    def assert_no_branch(self, branch):
+        self.assertEqual(self.git("branch", "--list", branch), "")
+
+    def test_abandoned_pushed_tree_and_its_local_branch_are_removed(self):
         wt, branch, _ = self.abandoned_tree()
         self.cancel_tree()
         self.assertEqual(self.statuses()["KO-2"], "abandoned")
         self.assertFalse(wt.exists())
         self.assertNotIn(str(wt), self.git("worktree", "list"))
-        self.git("show-ref", "--verify", f"refs/heads/{branch}")
+        self.assert_no_branch(branch)
 
     def test_abandoned_tree_reachable_from_main_needs_no_remote(self):
         wt, branch, _ = self.abandoned_tree(pushed=False)
@@ -212,7 +215,7 @@ class ReconcileTests(LoopFixture):
         self.git("remote", "remove", "origin")
         self.cancel_tree()
         self.assertFalse(wt.exists())
-        self.git("show-ref", "--verify", f"refs/heads/{branch}")
+        self.assert_no_branch(branch)
 
     def test_stale_remote_tracking_ref_does_not_allow_retirement(self):
         wt, branch, _ = self.abandoned_tree()

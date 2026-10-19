@@ -33,6 +33,7 @@ from holophyte.host.supervisor_lock import (
     supervisor_lock_path,
 )
 from holophyte.host.sweep_report import merge_lock_lines, restart_lines, sweep_lines
+from holophyte.host.worktree_cleanup import retire_finished
 from holophyte.loop.runs import open_store
 from store import launch_backoff
 
@@ -167,6 +168,8 @@ def sweep_store(entry, state, now, out):
         seen = sweep(target, conn, now)
         # Printed now: a cut or failed reconcile would lose these for good.
         for line in restart_lines(seen):
+            print(f"[{entry_key(entry)}] {line}", file=out)
+        for line in retire_finished(target, conn):
             print(f"[{entry_key(entry)}] {line}", file=out)
         beat(conn, state, now)
         outcome = backoff_outcome(conn, project, now) or "ok"

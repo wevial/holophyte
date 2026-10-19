@@ -117,6 +117,10 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
             print(line, file=out)
         for line in debris_lines(target, conn):
             print(line, file=out)
+        if act:
+            from holophyte.host.worktree_cleanup import retire_finished
+            for line in retire_finished(target, conn):
+                print(line, file=out)
         if now is None:
             now = int(time() * 1000)
         result = sweep(target, conn, now, act, provider)
@@ -130,23 +134,31 @@ def sweep_report(target, conn=None, now=None, out=None, act=False, provider=None
 
 
 def debris_lines(target, conn):
+    return [f"debris: {identifier} ({status}): {path}"
+            for identifier, status, _branch, path, _run in
+            finished_worktrees(target, conn)]
+
+
+def finished_worktrees(target, conn, ended=False):
     from holophyte.config.project import worktree_path
 
+    guard = (" AND r.id = t.lastRunId AND NOT EXISTS (SELECT 1 FROM runs o"
+             " WHERE o.ticketId = t.id AND o.endedAt IS NULL)" if ended else "")
     rows = conn.execute(
-        "SELECT DISTINCT t.linearIdentifier, t.status, r.branch, p.repoPath"
-        " FROM tickets t"
+        "SELECT DISTINCT t.linearIdentifier, t.status, r.branch, p.repoPath,"
+        " t.lastRunId FROM tickets t"
         " JOIN runs r ON r.ticketId = t.id JOIN projects p ON p.id = t.projectId"
         " WHERE t.status IN ('merged', 'abandoned') AND r.branch IS NOT NULL"
-        " ORDER BY t.linearIdentifier, r.branch")
-    lines = []
-    for identifier, status, branch, repo_path in rows:
+        + guard + " ORDER BY t.linearIdentifier, r.branch")
+    found = []
+    for identifier, status, branch, repo_path, run_id in rows:
         if Path(repo_path).resolve() != target.path.resolve():
             continue
         path = worktree_path(target, branch)
         if (path.is_dir() and not path.is_symlink()
                 and path.resolve().is_relative_to(target.worktrees.resolve())):
-            lines.append(f"debris: {identifier} ({status}): {path}")
-    return lines
+            found.append((identifier, status, branch, path, run_id))
+    return found
 
 
 def review_container_lines(act=False):
