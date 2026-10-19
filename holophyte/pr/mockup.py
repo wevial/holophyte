@@ -35,6 +35,7 @@ MOCKUP_BUNDLE_MAX_MB = 25
 BUNDLE_MAX_MEMBERS = 200
 BUNDLE_MAX_UNPACKED_MB = 50
 TIMEOUT_S = 30
+USER_AGENT = "holophyte"
 MB = 1024 * 1024
 CHUNK = 64 * 1024
 MEMBER_SUFFIXES = (".png", ".html", ".json")
@@ -256,7 +257,8 @@ def _download(link, base):
     timer.start()
     try:
         with build_opener(_StayUnder(base), _HTTP(watch), _HTTPS(watch)).open(
-                Request(link.url), timeout=TIMEOUT_S) as response:
+                Request(link.url, headers={"User-Agent": USER_AGENT}),
+                timeout=TIMEOUT_S) as response:
             data, length = _receive(response, link, cap_mb * MB, watch.expired)
     except HTTPError as error:
         raise Refused(f"HTTP {error.code}") from None

@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github
+from holophyte.pr.mockup import USER_AGENT
 
 PROXY_HOST = "camo.githubusercontent.com"
 RELINKS = 2
@@ -37,7 +38,7 @@ def proxied_pairs(body_html):
 
 
 def _fetch(url, limit):
-    request = urllib.request.Request(url, headers={"User-Agent": "holophyte"})
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT) as response:
         return response.read(limit + 1)
 
