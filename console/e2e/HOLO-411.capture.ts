@@ -25,7 +25,7 @@ async function saveThroughDaemon(request: APIRequestContext, edit: (body: string
   expect(saved.status(), await saved.text()).toBe(200);
 }
 
-test("DEMO-2 saved elsewhere during an edit opens the conflict banner, and mine goes on top of revision 4", async ({ browser, baseURL }) => {
+test("DEMO-2 saved elsewhere during an edit opens the conflict banner, and Keep mine loads onto revision 4", async ({ browser, baseURL }) => {
   const context = await browser.newContext({
     baseURL,
     viewport: { width: 1440, height: 900 },
@@ -49,9 +49,12 @@ test("DEMO-2 saved elsewhere during an edit opens the conflict banner, and mine 
 
   const banner = page.getByRole("alert", { name: "Newer revision" });
   await expect(banner.getByText("DEMO-2 changed while you were editing.", { exact: true })).toBeVisible({ timeout: 20_000 });
-  await expect(banner.getByText("AC2 · REVISION 4, THEIRS", { exact: true })).toBeVisible();
-  await expect(banner.getByText(THEIR_AC2, { exact: true })).toBeVisible();
-  await expect(banner.getByText(MY_AC2, { exact: true })).toBeVisible();
+  const criteria = banner.getByRole("region", { name: "Acceptance criteria" });
+  await expect(criteria.getByText("REVISION 4, THEIRS", { exact: true })).toBeVisible();
+  await expect(criteria.getByText(THEIR_AC2)).toBeVisible();
+  await expect(criteria.getByText(MY_AC2)).toBeVisible();
+  await expect(criteria.getByRole("button", { name: "Keep mine" })).toBeVisible();
+  await expect(criteria.getByRole("button", { name: "Take theirs" })).toBeVisible();
   await expect(page.getByText("revision 3 · newer revision 4 exists", { exact: true })).toBeVisible();
   await expect(page.getByText("Resolve the newer revision first. Your edit is safe.", { exact: true })).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -66,14 +69,15 @@ test("DEMO-2 saved elsewhere during an edit opens the conflict banner, and mine 
   await shot(page, "04-conflict-390.png");
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await banner.getByRole("button", { name: "Put mine on top of revision 4", exact: true }).click();
+  await criteria.getByRole("button", { name: "Keep mine" }).click();
+  await banner.getByRole("button", { name: "Load revision 4 with these picks", exact: true }).click();
   await expect(banner).toHaveCount(0);
-  await expect(page.getByText("Revision 4 loaded with your edits on top. Review, then save as revision 5.", { exact: true })).toBeVisible();
-  await expect(page.getByText("revision 4 + your edit", { exact: true })).toBeVisible();
+  await expect(page.getByText("Revision 4 loaded with your picks. Review, then save as revision 5.", { exact: true })).toBeVisible();
+  await expect(page.getByText("revision 4 + your picks", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save revision 5", exact: true })).toBeEnabled();
   await expect(page.getByRole("textbox", { name: "AC2", exact: true })).toHaveValue(MY_AC2);
   await page.evaluate(() => window.scrollTo(0, 0));
-  await shot(page, "03-conflict-on-top.png");
+  await shot(page, "03-conflict-picked.png");
 
   const video = page.video();
   await context.close();
