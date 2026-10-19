@@ -89,9 +89,16 @@ class PullRequestFactsTests(ServeTestCase):
                              (NOW, 5, 3, None, "failure", None, None, "ready"))
         without = self.claim(self.ticket(9))
         store.set_phase(self.conn, without, "working", now=NOW - 50_000)
-        opened = self.claim(self.ticket(10))
-        store.set_phase(self.conn, opened, "working", now=NOW - 50_000)
-        store.set_pull_request(self.conn, opened, PULL.format(10))
+        never_parked = self.ticket(10)
+        failed = self.claim(never_parked)
+        store.set_phase(self.conn, failed, "working", now=NOW - 50_000)
+        store.set_pull_request(self.conn, failed, PULL.format(10))
+        store.release(self.conn, failed, "failed", "verify failed",
+                      now=NOW - 40_000)
+        retried = store.claim(self.conn, self.project_id, never_parked,
+                              now=NOW - 30_000)
+        store.set_phase(self.conn, retried, "working", now=NOW - 20_000)
+        store.set_pull_request(self.conn, retried, PULL.format(10))
         code, body = holophyte.serve.views.status(
             Project.locate(self.target), now=NOW)
         self.assertEqual(code, 200)
@@ -104,7 +111,8 @@ class PullRequestFactsTests(ServeTestCase):
         self.assertEqual(runs[with_pull]["woke_ms"], NOW - 20_000)
         self.assertEqual([runs[without][key] for key
                           in ("pr_url", "pr", "woke_ms")], [None, None, None])
-        self.assertIsNone(runs[opened]["woke_ms"])
+        self.assertEqual((runs[retried]["pr_url"], runs[retried]["woke_ms"]),
+                         (PULL.format(10), None))
 
 
 if __name__ == "__main__":
