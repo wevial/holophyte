@@ -344,12 +344,13 @@ function useSortedPage(hosts: Host[], now: number, project: string | undefined):
   return page;
 }
 
-/** `items` split by project, the project with most first, then by name. */
 export function byProject<T>(items: T[], projectOf: (item: T) => string): { project: string; items: T[] }[] {
   const split = new Map<string, T[]>();
   for (const item of items) {
     const project = projectOf(item);
-    split.set(project, [...(split.get(project) ?? []), item]);
+    const bucket = split.get(project);
+    if (bucket) bucket.push(item);
+    else split.set(project, [item]);
   }
   return [...split].map(([project, items]) => ({ project, items })).sort((a, b) => b.items.length - a.items.length || a.project.localeCompare(b.project));
 }

@@ -8,7 +8,6 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(out, name) });
 }
 
-/** The seeded host daemon with a second project, `relos`, answering as a copy of `demo` with its own findings. */
 async function addRelos(page: Page) {
   const host = await (await page.request.get("/status")).json();
   const demo = host.projects.find((project: { name: string | null }) => project.name === "demo");
