@@ -1317,7 +1317,8 @@ to `maintainer` and is named in the event.
 
 `recorded` is null: the action writes the `pr_ready` event, not an
 interventions row. A run that is not the ticket's latest attempt parked on a
-pull request whose last seen state is `draft` is refused, nothing written
+pull request whose last seen state is `draft` and held for review (a
+`pr_draft_held` event, the hold the factory wakes from) is refused, nothing written
 and nothing sent: `{"ok": false, "detail": "run N is not a draft held for
 review"}`. A GitHub read or mutation that fails is also `ok: false`, naming
 the pull request, with no event. A `run` that is not a positive integer is

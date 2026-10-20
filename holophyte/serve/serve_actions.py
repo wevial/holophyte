@@ -196,7 +196,8 @@ def held_draft_url(conn, run_id):
     row = conn.execute(
         "SELECT r.prUrl FROM runs r JOIN tickets t ON t.lastRunId = r.id"
         " WHERE r.id = ? AND r.phase = 'awaiting_merge_approval'"
-        " AND r.prSeenState = 'draft'",
+        " AND r.prSeenState = 'draft' AND EXISTS (SELECT 1 FROM runEvents e"
+        " WHERE e.runId = r.id AND e.kind = 'pr_draft_held')",
         (run_id,)).fetchone()
     return None if row is None else row[0]
 

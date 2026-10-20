@@ -20,7 +20,8 @@ from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.pr import github  # noqa: E402 - after the sys.path insert above
+from holophyte.pr import github, pr_ready  # noqa: E402 - after the insert
+from holophyte.pr.pr_status import parse_pr_url  # noqa: E402 - after the insert
 
 PR_URL = "https://github.com/example/repo/pull/31"
 NODE_ID = "PR_kwDOnode31"
@@ -58,7 +59,7 @@ class MarkReadyTests(ServeTestCase):
         calls.start()
         self.addCleanup(calls.stop)
 
-    def park(self, state):
+    def park(self, state, held=True):
         with store.open(str(self.db)) as conn:
             for phase in ("verifying", "reviewing", "merge_gate"):
                 store.set_phase(conn, self.run, phase)
@@ -68,6 +69,9 @@ class MarkReadyTests(ServeTestCase):
                                 None, "the title", state))
             ticket = store.read.ticket_by_identifier(conn, "KO-7").id
             store.tickets.transition(conn, ticket, "blocked_on_operator")
+            if held:
+                pr_ready.record_hold(conn, self.run, parse_pr_url(PR_URL),
+                                     "abc123")
 
     def mark_ready(self):
         return self.request("POST", "/actions/mark-ready", self.BEARER,
@@ -103,6 +107,15 @@ class MarkReadyTests(ServeTestCase):
                 self.assertEqual(
                     reply["detail"],
                     f"run {self.run} is not a draft held for review")
+        self.assertEqual(self.github.graphql, [])
+        self.assertEqual(self.ready_events(), [])
+
+    def test_a_draft_parked_without_a_hold_is_refused_without_a_mutation(self):
+        self.park("draft", held=False)
+        code, _, reply = self.mark_ready()
+        self.assertEqual(code, 200, reply)
+        self.assertEqual(reply["detail"],
+                         f"run {self.run} is not a draft held for review")
         self.assertEqual(self.github.graphql, [])
         self.assertEqual(self.ready_events(), [])
 
