@@ -93,10 +93,11 @@ class MarkReadyTests(ServeTestCase):
              " maintainer",)])
 
     def test_a_ready_or_unparked_run_is_refused_without_a_mutation(self):
-        code, _, unparked = self.mark_ready()
+        unparked = self.mark_ready()
         self.park("ready")
-        _, _, ready = self.mark_ready()
-        for name, reply in (("not parked", unparked), ("ready", ready)):
+        ready = self.mark_ready()
+        for name, (code, _, reply) in (("not parked", unparked),
+                                       ("ready", ready)):
             with self.subTest(name):
                 self.assertEqual(code, 200, reply)
                 self.assertIs(reply["ok"], False, reply)
