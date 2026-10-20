@@ -1,12 +1,9 @@
 """Find and rewrite a ticket body's `Depends on:` estimate line or `depends_on`."""
 import json
-import re
 import tomllib
 
 import ticket_header
 import ticket_template
-
-KEY_RE = re.compile(r"""\s*(?:"([^"\\]*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*=""")
 
 ESTIMATE_SECTION = "Estimate & dependencies"
 
@@ -42,24 +39,22 @@ def _header(lines):
 def _top_level_keys(lines, opening, closing):
     keys, index = [], opening + 1
     while index < closing and not lines[index].lstrip().startswith("["):
-        key = KEY_RE.match(lines[index])
-        if not key:
+        if not lines[index].strip() or lines[index].lstrip().startswith("#"):
             index += 1
             continue
-        last = next((end for end in range(index, closing)
-                     if _parses(lines[index:end + 1])), closing - 1)
-        keys.append((next(name for name in key.groups() if name is not None),
-                     index, last))
+        last, parsed = next(((end, table) for end in range(index, closing)
+                             if (table := _parsed(lines[index:end + 1]))),
+                            (closing - 1, {}))
+        keys.extend((name, index, last) for name in parsed)
         index = last + 1
     return keys
 
 
-def _parses(lines):
+def _parsed(lines):
     try:
-        tomllib.loads("".join(lines))
+        return tomllib.loads("".join(lines))
     except tomllib.TOMLDecodeError:
-        return False
-    return True
+        return None
 
 
 def _rewrite_header(body, lines, bounds, rewrite):

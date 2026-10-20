@@ -141,7 +141,7 @@ class RewriteDependsTests(unittest.TestCase):
             DEPENDS_LINE, 'depends_on = ["HOLO-3"]\n'))
 
     def test_a_quoted_depends_on_key_is_rewritten_in_place(self):
-        for key in ('"depends_on"', "'depends_on'"):
+        for key in ('"depends_on"', "'depends_on'", '"\\u0064epends_on"'):
             with self.subTest(key=key):
                 body = DEPENDS_BODY.replace(DEPENDS_LINE,
                                             f'{key} = ["HOLO-1", "HOLO-2"]\n')
