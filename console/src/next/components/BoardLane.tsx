@@ -2,6 +2,7 @@ import { useId, type ReactNode } from "react";
 import { COLUMN_HEADS, COLUMN_IDS, type Lane, type TicketCard } from "../tickets";
 import { BoardCard } from "./BoardCard";
 import { FoldChevron, FolderIcon, StoryIcon } from "./icons";
+import { plainTitle, TitleText } from "./TitleText";
 
 export const GRID = "grid grid-cols-5 gap-[18px]";
 
@@ -44,7 +45,7 @@ export function BoardLane({ lane, open, onToggle, children }: { lane: Lane; open
   if (lane.glyph == null) return children({ hidden: false, flat: true });
   const glyphTone = lane.glyph === "folder" ? (lane.held ? "text-wait" : "text-live") : "text-ink-2";
   return (
-    <section aria-label={lane.name} className="border border-rule-2 bg-paper">
+    <section aria-label={lane.glyph === "story" ? plainTitle(lane.name) : lane.name} className="border border-rule-2 bg-paper">
       <h2 className={`px-2 py-1 ${open ? "border-b border-rule-2" : ""}`}>
         <button
           type="button"
@@ -55,7 +56,7 @@ export function BoardLane({ lane, open, onToggle, children }: { lane: Lane; open
         >
           <FoldChevron open={open} />
           {lane.glyph === "folder" ? <FolderIcon className={glyphTone} /> : <StoryIcon className={glyphTone} />}
-          <span className="min-w-0 [overflow-wrap:anywhere]">{lane.name}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{lane.glyph === "story" ? <TitleText>{lane.name}</TitleText> : lane.name}</span>
           <span data-lane-meta className="shrink-0 font-normal text-ink-3">{lane.meta}</span>
           {lane.needText !== "" && <span data-lane-need className="ml-auto shrink-0 text-need">{lane.needText}</span>}
         </button>

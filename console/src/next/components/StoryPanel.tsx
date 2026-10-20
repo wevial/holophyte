@@ -3,6 +3,7 @@ import type { BoardStory, StoryChildRow, StoryDetail } from "../../lib/contract.
 import { stateOf, type State } from "../state";
 import { SECTION_LABEL } from "./Criteria";
 import { StateDot } from "./StateDot";
+import { TitleText } from "./TitleText";
 
 const SUB = "m-0 font-sans text-[12px] leading-[1.4] text-ink-3";
 const KEY = "mr-1 font-mono text-[11px] font-medium leading-[1.4] tabular-nums text-ink-3";
@@ -28,7 +29,7 @@ function ChildRow({ child, project, current }: { child: StoryChildRow; project: 
             {child.ticket}
           </Link>
         )}{" "}
-        {child.title}{" "}
+        <TitleText>{child.title}</TitleText>{" "}
         <span className="ml-1 font-mono text-[11.5px] font-normal leading-[1.4] text-ink-3">
           {word}
           {current && " · this ticket"}
@@ -55,7 +56,7 @@ export function StoryPanel({ ticketKey, project, entry, detail }: { ticketKey: s
             params={{ project, key: entry.ticket }}
             className="mt-1 inline-block font-sans text-[14px] font-semibold leading-[1.35] text-ink no-underline hover:underline"
           >
-            <span className={KEY}>{entry.ticket}</span> {entry.title}
+            <span className={KEY}>{entry.ticket}</span> <TitleText>{entry.title}</TitleText>
           </Link>
           <p className="m-0 mt-1.5 font-mono text-[12px] leading-[1.4] text-ink-3">
             {entry.merged} of {entry.total} merged

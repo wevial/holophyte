@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { StateDot } from "../components/StateDot";
 import { StoryGraph } from "../components/StoryGraph";
 import { StoryNotes } from "../components/StoryNotes";
+import { TitleText } from "../components/TitleText";
 import { storeScope } from "../projects";
 import { useBoardStories, useReadiness, useStory } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
@@ -42,7 +43,7 @@ function Header({ project, storyKey, title, nodes }: { project: string; storyKey
         {" / Stories / "}
         {storyKey}
       </nav>
-      <h1 id="page-title" className="mt-2 font-sans text-[20px] font-semibold leading-[1.25] [overflow-wrap:anywhere] text-ink">{title}</h1>
+      <h1 id="page-title" className="mt-2 font-sans text-[20px] font-semibold leading-[1.25] [overflow-wrap:anywhere] text-ink"><TitleText>{title}</TitleText></h1>
       <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <span data-story-chip className="inline-flex min-h-[30px] items-center gap-2 whitespace-nowrap border border-rule bg-paper-2 px-2.5 font-mono text-[12px] font-medium text-ink">
           <StateDot state={chip.state} hideWord />

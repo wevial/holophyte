@@ -186,3 +186,11 @@ test("a picked project offers no Project grouping, None draws no lane heading or
 test("a board with no card has no lane in any grouping", () => {
   expect([boardLanes([], "project", []), boardLanes([], "story", []), boardLanes([], "none", [])]).toEqual([[], [], []]);
 });
+
+test("a story lane draws a backticked span in its title as inline code, and its accessible name drops the backticks", async () => {
+  const story = { ticket: "DEMO-20", title: "Use the `+++` header", children: ["DEMO-22"], merged: 0, total: 1 };
+  await mount("#/tickets?project=demo", fleet({ board: boardOf({ ready: ["DEMO-22"] }, [story]) }, { board: boardOf({}) }));
+  await press("Story");
+  const storyLane = laneNamed("DEMO-20 · Use the +++ header");
+  expect([...storyLane.querySelectorAll("h2 code")].map((code) => code.textContent)).toEqual(["+++"]);
+});
