@@ -282,6 +282,7 @@ test("a tile opens its item in a lightbox that Left and Right step through scree
   await openMedia("02 custom slot");
   const shown = () => screen.getByRole("dialog", { name: "Screenshot 2 of 4" });
   expect(within(shown()).getByText("2 / 4")).toBeTruthy();
+  expect(within(shown()).getByText("2.png")).toBeTruthy();
   const image = within(shown()).getByRole("img");
   expect(image.getAttribute("src")).toBe(SHOTS[1]!.url);
   expect(image.getAttribute("alt")).toBe("02 custom slot");
@@ -296,6 +297,8 @@ test("a tile opens its item in a lightbox that Left and Right step through scree
   expect(video.hasAttribute("controls")).toBe(true);
   expect(video.hasAttribute("autoplay")).toBe(false);
   expect(video.muted).toBe(false);
+  video.focus();
+  expect(fireEvent.keyDown(video, { key: "Tab" })).toBe(true);
   expect((within(last).getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
   await press("ArrowRight");
   expect(dialog()!.getAttribute("aria-label")).toBe("Video 4 of 4");

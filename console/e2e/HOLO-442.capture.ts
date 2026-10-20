@@ -60,6 +60,7 @@ async function openSecond(page: Page) {
 }
 
 test("a pull request row's media tiles and their lightbox", async ({ page, browser, baseURL }, testInfo) => {
+  test.setTimeout(120_000);
   const clip = await makeMedia(browser, baseURL!);
   await serveMedia(page, clip);
   const demo9 = await openDemo9(page);
@@ -104,6 +105,21 @@ test("a pull request row's media tiles and their lightbox", async ({ page, brows
   await video.hover();
   await page.waitForTimeout(400);
   await shot(page, "04-pr-lightbox-video.png");
+
+  const focused = () => page.evaluate(() => {
+    const active = document.activeElement;
+    return active instanceof HTMLVideoElement ? "video" : (active?.getAttribute("aria-label") ?? active?.tagName ?? "");
+  });
+  await last.getByRole("button", { name: "Close" }).focus();
+  const walk: string[] = [];
+  for (let press = 0; press < 12; press += 1) {
+    await page.keyboard.press("Tab");
+    walk.push(await focused());
+  }
+  expect(walk.some((stop, index) => stop === "video" && walk[index + 1] === "video")).toBe(true);
+  expect(walk).toContain("Previous");
+  expect(walk).toContain("Close");
+  expect(walk.every((stop) => ["video", "Previous", "Close"].includes(stop))).toBe(true);
 
   const recording = page.video();
   await page.close();

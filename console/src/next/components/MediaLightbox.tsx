@@ -6,6 +6,16 @@ import { trap } from "./trap";
 
 export type MediaItem = Pick<Screenshot, "caption" | "url"> & { kind: "image" | "video" };
 
+function fileName(url: string) {
+  const path = url.split(/[?#]/)[0]!;
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
 /** A modal over the console showing `items[start]`; Left and Right (or
  *  Previous and Next) step without wrapping, and Esc or Close calls
  *  `onClose` with the index shown last. */
@@ -44,7 +54,10 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
       >
         <div className="col-start-2 row-start-1 border border-rule bg-paper text-ink shadow-[0_24px_60px_rgba(0,0,0,.45)]">
           <div className="flex items-center gap-3 border-b border-rule py-2 pl-3.5 pr-2">
-            <span className="flex-1 font-mono text-[12px] text-ink-2">{`${shown + 1} / ${total}`}</span>
+            <span className="flex min-w-0 flex-1 gap-3 font-mono text-[12px] text-ink-2">
+              <span className="shrink-0">{`${shown + 1} / ${total}`}</span>
+              <span className="truncate">{fileName(item.url)}</span>
+            </span>
             <Btn ref={close} aria-label="Close" onClick={() => onClose(shown)} className="!h-9 !px-3">
               <span aria-hidden="true">✕</span>
             </Btn>
