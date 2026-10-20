@@ -17,9 +17,9 @@ SLUG = r"[a-z0-9][a-z0-9-]*"
 MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
 MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
 BESIDE = (
-    (lambda t: t.ui_change is not None,
+    (lambda t: _field_line(t, "UI change"),
      "'**UI change:**' line beside a header: give ui_change in the header only"),
-    (lambda t: t.blast_radius is not None,
+    (lambda t: _field_line(t, "Blast radius"),
      "'**Blast radius:**' line beside a header: give blast_radius in the header only"),
     (lambda t: "Estimate & dependencies" in t.order,
      "'## Estimate & dependencies' beside a header: give estimate and depends_on "
@@ -72,6 +72,18 @@ def apply(t, header):
     t.evidence_files = [entry["file"] for entry in entries]
     if "mockup" in values:
         _set_mockup(t, values["mockup"])
+
+
+def _field_line(t, key):
+    import ticket_template as tt
+    for body in t.sections.values():
+        in_fence = False
+        for line in body.splitlines():
+            in_fence ^= bool(tt.FENCE_RE.match(line.strip()))
+            found = not in_fence and tt.BOLD_KEY_RE.match(line.strip())
+            if found and found.group(1) == key:
+                return True
+    return False
 
 
 def mockup_media_kind(url):

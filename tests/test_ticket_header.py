@@ -189,6 +189,20 @@ class HeaderProblemTests(unittest.TestCase):
                 self.assertEqual(problems(changed(old, new)), [expected])
 
 
+    def test_a_field_line_under_another_section_beside_a_header_is_refused(self):
+        summary = "## Summary\n\nRows show defaults.\n\n"
+        cases = [
+            ("**UI change:** none", "'**UI change:**' line beside a header: give "
+             "ui_change in the header only"),
+            ("**Blast radius:** medium", "'**Blast radius:**' line beside a "
+             "header: give blast_radius in the header only"),
+        ]
+        for line, expected in cases:
+            with self.subTest(line=line):
+                self.assertEqual(problems(changed(summary, f"{summary}{line}\n\n")),
+                                 [expected])
+
+
 class HeaderCheckerCliTests(unittest.TestCase):
     def test_the_checker_passes_a_header_and_refuses_a_ui_change_line_beside_it(self):
         with tempfile.TemporaryDirectory() as tmp:
