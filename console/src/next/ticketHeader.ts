@@ -34,7 +34,7 @@ export function headerSpan(text: string): { open: number; start: number; end: nu
   return null;
 }
 
-interface Item { kind: "key" | "table" | "array"; path: string; key: string; value?: Scalar | string[]; first: number; last: number }
+interface Item { kind: "key" | "table" | "array"; path: string; key: string; value?: Scalar | string[]; first: number; last: number; comment?: string }
 
 class Cursor {
   at = 0;
@@ -115,7 +115,8 @@ function scan(source: string): Item[] {
         items.push({ kind: "key", path, key: key[1]!, value: value(cursor), first, last: cursor.line() });
       }
       cursor.skip();
-      if (!cursor.take(/(?:#[^\n]*)?\r?(?:\n|$)/)) cursor.fail("text after a value");
+      const end = cursor.take(/(#[^\r\n]*)?\r?(?:\n|$)/) ?? cursor.fail("text after a value");
+      if (end[1] && items.at(-1)!.kind === "key") items.at(-1)!.comment = end[1];
     } catch {
       cursor.take(/[^\n]*\n?/);
     }
@@ -198,7 +199,7 @@ export function withKey(source: string, path: string, key: string, value: Scalar
   if (found && value !== undefined && JSON.stringify(found.value) === JSON.stringify(value) && (found.value instanceof HeaderDate) === (value instanceof HeaderDate)) return source;
   const line = `${key} = ${value === undefined ? "" : formatValue(value)}`;
   if (found) {
-    rows.splice(found.first, found.last - found.first + 1, ...(value === undefined ? [] : [line]));
+    rows.splice(found.first, found.last - found.first + 1, ...(value === undefined ? [] : [found.comment ? `${line} ${found.comment}` : line]));
     return join(rows, eol);
   }
   if (value === undefined) return source;

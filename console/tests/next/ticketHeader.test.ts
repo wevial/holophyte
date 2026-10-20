@@ -49,3 +49,7 @@ test("a note read back is written as the same line, after approved when the tabl
   expect(`note = ${formatValue(note)}`).toBe(NOTE_LINE);
   expect(withKey(SOURCE.replace(`${NOTE_LINE}\n`, ""), "mockup", "note", note)).toBe(SOURCE);
 });
+
+test("rewriting a key keeps the comment at the end of its line and every other line", () => {
+  expect(withKey(SOURCE, "", "ui_change", "minor")).toBe(SOURCE.replace('ui_change = "major" # the preview pane', 'ui_change = "minor" # the preview pane'));
+});
