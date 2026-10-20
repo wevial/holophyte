@@ -40,7 +40,7 @@ export interface LaneGroup extends ProjectGroup {
 
 function onCiRows(items: AttentionItem[], key: string, clockNow: number): OnCiRow[] {
   return items.flatMap((item) => {
-    if (item.daemon !== key || item.kind !== "pr_open") return [];
+    if (item.daemon !== key) return [];
     const ageMs = ageOf(item, clockNow);
     const wait = prWait(stateOf({ attention: item }), item, ageMs);
     return wait.status === "On CI" ? [{ item, ageMs, line: wait.line }] : [];
