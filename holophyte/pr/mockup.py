@@ -24,6 +24,7 @@ from urllib.request import (
 )
 
 import store
+import ticket_header
 import ticket_template
 from holophyte.config.config_tables import merge_config
 
@@ -78,7 +79,7 @@ def media_links(source):
     links = []
     for line in source.splitlines():
         for url in ticket_template._mockup_urls(line):
-            kind = ticket_template.mockup_media_kind(url)
+            kind = ticket_header.mockup_media_kind(url)
             if kind:
                 links.append(Link(kind, url, _caption(line, url)))
     return links
