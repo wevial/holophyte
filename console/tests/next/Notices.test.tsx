@@ -179,7 +179,7 @@ test("before any host /peers lists answers the sections show bare labels under a
     expect(section(name).querySelector("p")).toBeNull();
   }
   expect(screen.queryByText("The factory has it from here.")).toBeNull();
-  expect(screen.queryByText("No pull requests open.")).toBeNull();
+  expect(screen.queryByText("No pull request waits on you.")).toBeNull();
 
   daemons[DEMO] = projectDaemon("/srv/dev/demo", NOW);
   daemons[SAME_HOST] = projectDaemon("/srv/dev/writer", NOW);

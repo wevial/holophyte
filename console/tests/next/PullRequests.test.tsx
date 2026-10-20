@@ -108,7 +108,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a lane per project counts the pull requests waiting on you, longest waiting first, and a project with none draws no lane", async () => {
+test("a lane per project counts the pull requests waiting on you, longest waiting first, and with only a ci park left the section says none waits on you", async () => {
   await mount({ items: [threadPark, readyPark], projects: ["alpha", "beta"] });
   expect(lane("alpha").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
   expect(within(section()).queryByRole("group", { name: "beta" })).toBeNull();
@@ -116,9 +116,9 @@ test("a lane per project counts the pull requests waiting on you, longest waitin
   expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#42", "#43"]);
   unmount();
 
-  await mount({ items: [], projects: ["alpha", "beta"] });
+  await mount({ items: [onCi], projects: ["alpha", "beta"] });
   expect(within(section()).queryAllByRole("group")).toEqual([]);
-  expect(section().textContent).toContain("No pull requests open.");
+  expect(section().textContent).toContain("No pull request waits on you.");
 });
 
 test("only rows waiting on you stay: a draft and a ready park, not a ci park or a run fixing another pull request", async () => {

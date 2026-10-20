@@ -184,7 +184,7 @@ export function Overview() {
             label="Pull requests"
             count={openPrs}
             summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
-            empty="No pull requests open."
+            empty="No pull request waits on you."
             isEmpty={openPrs === 0}
           >
             <PullRequestLanes groups={prLanes} readiness={view.readiness} />

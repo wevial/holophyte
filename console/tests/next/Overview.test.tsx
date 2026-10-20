@@ -137,7 +137,7 @@ test("empty sections say what the factory is doing, naming the picked project", 
   await mount("#/", quiet);
   expect(within(section("Running")).getByText("Nothing running and nothing queued.")).toBeTruthy();
   expect(within(section("Needs you")).getByText("The factory has it from here.")).toBeTruthy();
-  expect(within(section("Pull requests")).getByText("No pull requests open.")).toBeTruthy();
+  expect(within(section("Pull requests")).getByText("No pull request waits on you.")).toBeTruthy();
   expect(within(section("Merged today")).getByText("Nothing merged yet today.")).toBeTruthy();
   cleanup();
 
