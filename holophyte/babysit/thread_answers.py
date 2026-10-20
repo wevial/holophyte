@@ -34,7 +34,8 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
                  and t.classification == "MENTIONED"
                  and t.intent == "ask")
     related = (store.read.related_tickets(conn, run_id)
-               if conn is not None and run_id is not None else ((), ()))
+               if asks and conn is not None and run_id is not None
+               else ((), ()))
     for thread in asks:
         prompt = ask_prompt(pull, ticket, thread, related)
         with heartbeat_while(conn, run_id, beat_s):
