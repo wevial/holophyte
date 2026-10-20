@@ -78,6 +78,12 @@ export const screenshotSchema = z.looseObject({
 });
 export type Screenshot = z.infer<typeof screenshotSchema>;
 
+export const videoSchema = z.looseObject({
+  caption: z.string(),
+  url: z.string(),
+});
+export type Video = z.infer<typeof videoSchema>;
+
 export const pullRequestFactsSchema = z.looseObject({
   number: z.int().nullable(),
   checks: z.string().nullable(),
@@ -91,6 +97,7 @@ export const pullRequestFactsSchema = z.looseObject({
   changed_files: z.int().nullable().optional(),
   preview_url: z.string().nullable().optional(),
   screenshots: z.array(screenshotSchema).optional(),
+  videos: z.array(videoSchema).optional(),
 });
 export type PullRequestFacts = z.infer<typeof pullRequestFactsSchema>;
 

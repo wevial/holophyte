@@ -39,12 +39,18 @@ function statusOf(project: string, runs: Run[], fields: Partial<Status> = {}): S
 
 /** Both daemons answer their polls; DEMO answers `/runs/N` from `details`. */
 async function mount(hash: string, demo: Status, writer: Status, details: Record<number, RunDetail> = {}) {
+  await mountAll(hash, [demo, writer], details);
+}
+
+/** The first status is DEMO's, the second WRITER's, each later one a further daemon's. */
+async function mountAll(hash: string, statuses: Status[], details: Record<number, RunDetail> = {}) {
   const attention = (project: string) => ({ level: "none", now: NOW, project, items: [] });
   window.location.hash = hash;
-  const polls = peersFetch(DEMO, {
-    [DEMO]: { status: demo, attention: attention(demo.project) },
-    [WRITER]: { status: writer, attention: attention(writer.project) },
-  });
+  const bases = [DEMO, WRITER, ...statuses.slice(2).map((_, index) => `http://writer-host:${7712 + index}`)];
+  const polls = peersFetch(
+    DEMO,
+    Object.fromEntries(statuses.map((status, index) => [bases[index]!, { status, attention: attention(status.project) }])),
+  );
   const fetchImpl: Fetch = async (url) => {
     const detail = details[Number(/^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1])];
     return url.startsWith(`${DEMO}/runs/`) && detail ? Response.json(detail) : polls(url);
@@ -182,8 +188,33 @@ test("a held project's head carries its hold note and each queued reason ends he
   expect(reasons).toEqual(["approved · held", "ready · held"]);
 });
 
-test("with no run live or quiet anywhere, Running draws no lane and keeps its empty sentence", async () => {
+test("with no run anywhere, a project with a queued ticket keeps its lane and an idle one draws none", async () => {
   await mount("#/", statusOf("/srv/dev/demo", [], { queued: [queuedOf("DEMO-2")] }), statusOf("/srv/dev/writer", []));
+  expect(lanes()).toEqual(["demo"]);
+  expect(queueButton("demo").textContent).toBe("1 queued");
+});
+
+test("a lane is drawn only for a project with a run or a queued ticket, while the summary still counts every worker", async () => {
+  const alpha = statusOf("/srv/dev/alpha", [demoRun], { workers: 2 });
+  const beta = statusOf("/srv/dev/beta", [], { workers: 2 });
+  const gamma = statusOf("/srv/dev/gamma", [], { workers: 2, queued: [queuedOf("GAMMA-1")] });
+  await mountAll("#/", [alpha, beta, gamma]);
+  expect(lanes()).toEqual(["alpha", "gamma"]);
+  expect(queueButton("gamma").textContent).toBe("1 queued");
+  expect(running().textContent).not.toContain("beta");
+  expect(running().querySelector("header")!.textContent).toContain("1 of 6 workers busy · 1 queued");
+});
+
+test("a held project with nothing running or queued keeps its lane and held tag when no project is running", async () => {
+  const beta = statusOf("/srv/dev/beta", []);
+  const delta = statusOf("/srv/dev/delta", [], { admission: "held", hold_note: "deploy freeze" });
+  await mountAll("#/", [beta, delta]);
+  expect(lanes()).toEqual(["delta"]);
+  expect(head("delta")).toContain("held · deploy freeze");
+});
+
+test("with every project idle and not held, Running draws no lane and says nothing is running or queued", async () => {
+  await mountAll("#/", [statusOf("/srv/dev/alpha", []), statusOf("/srv/dev/beta", []), statusOf("/srv/dev/gamma", [])]);
   expect(lanes()).toEqual([]);
-  expect(running().textContent).toContain("Nothing running. DEMO-2 is queued.");
+  expect(running().textContent).toContain("Nothing running and nothing queued.");
 });

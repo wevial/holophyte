@@ -1145,10 +1145,12 @@ directory ignores itself (in the worktree and in a container turn's clone),
 and the brief names the spec `<ui_capture_dir>/<ticket key>.capture.ts`, which
 stays in the worktree and is never committed. A change to the local spec the
 capture would run reruns the capture at the same commit and counts as
-fix-round progress. Numbered images receive state captions; missing images
-are marked "not captured" in the PR and reviewer prompt. A capture fails when
+fix-round progress. A state that names image files in backticks
+(`` `03-panel.png` ``) captions each published one it names; a state naming
+none captions the `NN-` image at its position. A state with no image is
+marked "not captured" in the PR and reviewer prompt. A capture fails when
 its command exits nonzero or times out, when it writes no media, or, for a
-ticket that lists states, when it exits 0 without an `NN-` image for every
+ticket that lists states, when it exits 0 without an image for every
 state; its section then opens with "The UI capture saved N of M views; not
 captured: …", and its media is published beside the ticket's earlier media
 (`pr-media/<ticket>-<head>`, or `<ticket>-<head>/` under `media_repo`) rather

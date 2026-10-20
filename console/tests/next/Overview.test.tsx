@@ -131,11 +131,11 @@ test("opening Merged today is remembered across a remount, and so is folding it 
   expect(done().getAttribute("aria-expanded")).toBe("false");
 });
 
-test("empty sections say what the factory is doing, naming the queue and the picked project", async () => {
-  const quiet = fleet({ items: [], queued: queuedOf("DEMO-2", "DEMO-12") }, { items: [] });
+test("empty sections say what the factory is doing, naming the picked project", async () => {
+  const quiet = fleet({ items: [] }, { items: [] });
   localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", quiet);
-  expect(within(section("Running")).getByText("Nothing running. DEMO-2 and DEMO-12 are queued.")).toBeTruthy();
+  expect(within(section("Running")).getByText("Nothing running and nothing queued.")).toBeTruthy();
   expect(within(section("Needs you")).getByText("The factory has it from here.")).toBeTruthy();
   expect(within(section("Pull requests")).getByText("No pull requests open.")).toBeTruthy();
   expect(within(section("Merged today")).getByText("Nothing merged yet today.")).toBeTruthy();
@@ -143,16 +143,6 @@ test("empty sections say what the factory is doing, naming the queue and the pic
 
   await mount("#/?project=demo", quiet);
   expect(within(section("Needs you")).getByText("Nothing in demo is waiting on you.")).toBeTruthy();
-});
-
-test("the queue sentence names one key, or three and how many more", async () => {
-  await mount("#/?project=demo", fleet({ items: [], queued: queuedOf("DEMO-2") }, { items: [] }));
-  expect(within(section("Running")).getByText("Nothing running. DEMO-2 is queued.")).toBeTruthy();
-  cleanup();
-
-  const five = queuedOf("DEMO-2", "DEMO-3", "DEMO-4", "DEMO-5", "DEMO-6");
-  await mount("#/?project=demo", fleet({ items: [], queued: five }, { items: [] }));
-  expect(within(section("Running")).getByText("Nothing running. DEMO-2, DEMO-3, DEMO-4 and 2 more are queued.")).toBeTruthy();
 });
 
 test("before any scoped host answers there is no heading and no count line", async () => {
@@ -309,19 +299,16 @@ test("every grid, track and span class is behind 1600 px, so below it the Overvi
   }
 });
 
-test("from 1600 px each column is the ov-col container; a Running row narrows under 640 px of it and a Pull request row under 720 px", async () => {
+test("from 1600 px each column is the ov-col container and a Running row narrows under 640 px of it", async () => {
   await mount("#/", busy);
   for (const column of columns()) expect(classes(column)).toContain(WIDE + "@container/ov-col");
   const runRow = section("Running").querySelector("li a")!;
   expect(classes(runRow)).toEqual(
     expect.arrayContaining(["max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]", "@max-[640px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]"]),
   );
-  const prRow = section("Pull requests").querySelector("[data-pr-row] > div")!;
-  expect(classes(prRow)).toEqual(expect.arrayContaining(["max-[820px]:grid-cols-[minmax(0,1fr)]", "@max-[720px]/ov-col:grid-cols-[minmax(0,1fr)]"]));
   const narrowed = (row: Element, rule: string) =>
     [row, ...row.querySelectorAll("*")].flatMap((element) => classes(element)).filter((name) => name.startsWith(rule)).map((name) => name.slice(rule.length)).sort();
   expect(narrowed(runRow, "@max-[640px]/ov-col:")).toEqual(narrowed(runRow, "max-[820px]:"));
-  expect(narrowed(prRow, "@max-[720px]/ov-col:")).toEqual(narrowed(prRow, "max-[820px]:"));
 });
 
 test("the wide log fills its pinned grid wrapper with a thin hover scrollbar and no competing height cap", async () => {

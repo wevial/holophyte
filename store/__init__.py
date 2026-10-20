@@ -342,11 +342,11 @@ def park(conn, run_id, phase, note=None, candidate_sha=None, pr_url=None,
 def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
     updated_at, threads, open_threads, floor, checks, review, title, state = \
         seen[:8]
-    additions, deletions, changed, preview, shots = (*seen[8:], *[None] * 5)[:5]
+    additions, deletions, changed, preview, shots, videos = \
+        (*seen[8:], *[None] * 6)[:6]
     floor = None if floor is None else int(floor)
-    shots = None if shots is None else json.dumps(
-        [{"caption": caption, "url": url} for caption, url in shots])
-    media = (additions, deletions, changed, preview, shots)
+    media = (additions, deletions, changed, preview, _captioned(shots),
+             _captioned(videos))
     guard = " AND phase = 'awaiting_merge_approval'" if parked_only else ""
     with _transaction(conn):
         if facts_only:
@@ -366,6 +366,11 @@ def record_pr_seen(conn, run_id, seen, parked_only=False, facts_only=False):
 
 
 _PR_SEEN_MEDIA = ", ".join(f"{name} = ?" for name in _PR_SEEN_COLUMNS)
+
+
+def _captioned(links):
+    return None if links is None else json.dumps(
+        [{"caption": caption, "url": url} for caption, url in links])
 
 
 def _json_list(field, values):
