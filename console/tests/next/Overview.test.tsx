@@ -43,14 +43,14 @@ afterEach(() => {
 test("unscoped, the heading counts every host's Needs you entries and the count line every host's work", async () => {
   await mount("#/", busy);
   expect(heading()).toBe("3 need you.");
-  expect(countLine()).toBe("2 running · 2 open PRs · 1 queued · 1 merged today");
+  expect(countLine()).toBe("2 running · 1 open PR · 1 queued · 1 merged today");
 });
 
 test("a picked project scopes the heading, the count line and the Pull requests count", async () => {
   await mount("#/?project=demo", busy);
   expect(heading()).toBe("2 need you.");
-  expect(countLine()).toBe("2 running · 1 open PR · 1 queued · 1 merged today");
-  expect(sectionHeader("Pull requests")).toBe("Pull requests1none wait on you");
+  expect(countLine()).toBe("2 running · 0 open PRs · 1 queued · 1 merged today");
+  expect(sectionHeader("Pull requests")).toBe("Pull requests0none wait on you");
   cleanup();
 
   await mount("#/?project=demo", fleet({ items: [blocked] }, { items: [prPark] }));
@@ -67,7 +67,7 @@ test("the four sections stand in order with their counts and summaries", async (
   expect(labels).toEqual(["Needs you", "Running", "Pull requests", "Merged today"]);
   expect(sectionHeader("Needs you")).toBe("Needs you3oldest waiting 8h 02m");
   expect(sectionHeader("Running")).toBe("Running22 of 2 workers busy · 1 queued");
-  expect(sectionHeader("Pull requests")).toBe("Pull requests21 waits on you");
+  expect(sectionHeader("Pull requests")).toBe("Pull requests11 waits on you");
   expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
 });
 
@@ -193,10 +193,10 @@ test("at zero the heading draws Nothing in --live and leaves needs you. in the h
 test("the count line sets each number in --ink at weight 600 and its words in --ink-2", async () => {
   await mount("#/", busy);
   const line = document.querySelector("[data-count-line]")!;
-  expect(line.textContent).toBe("2 running · 2 open PRs · 1 queued · 1 merged today");
+  expect(line.textContent).toBe("2 running · 1 open PR · 1 queued · 1 merged today");
   expect(classes(line)).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "text-ink-2"]));
   const numbers = [...line.children].filter((child) => /^\d+$/.test(child.textContent ?? ""));
-  expect(numbers.map((child) => child.textContent)).toEqual(["2", "2", "1", "1"]);
+  expect(numbers.map((child) => child.textContent)).toEqual(["2", "1", "1", "1"]);
   for (const number of numbers) expect(classes(number)).toEqual(expect.arrayContaining(["text-ink", "font-semibold"]));
   const separators = [...line.children].filter((child) => child.textContent === " · ");
   expect(separators).toHaveLength(3);
@@ -264,7 +264,7 @@ test("from 1600 px the Overview is the board's three-track grid, the header acro
   expect(classes(head)).toEqual(expect.arrayContaining([WIDE + "col-start-1", WIDE + "col-span-2", WIDE + "row-start-1"]));
   const log = dayLog().parentElement!;
   expect(classes(log)).toEqual(
-    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", WIDE + "sticky", WIDE + "top-0", WIDE + "self-start", WIDE + "h-screen"]),
+    expect.arrayContaining([WIDE + "col-start-3", WIDE + "row-start-1", WIDE + "row-span-2", WIDE + "w-[330px]", WIDE + "sticky", WIDE + "top-7", WIDE + "self-start", WIDE + "h-[calc(100vh-3.5rem)]"]),
   );
 });
 
