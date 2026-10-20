@@ -207,7 +207,8 @@ function insertTable(rows: string[], at: number, lines: string[]) {
   rows.splice(at, 0, ...added);
 }
 
-interface ArrayRow { items: { value: string; end: number; comma: boolean }[]; comment?: string }
+interface ArrayItem { value: string; end: number; row: number; comma?: { row: number; at: number } }
+interface ArrayRow { items: ArrayItem[]; comment?: string }
 
 /** Each row of the multi-line array value written in `span`, or null when
  *  it holds other than strings and comments. */
@@ -215,7 +216,7 @@ function arrayRows(span: string[]): ArrayRow[] | null {
   const cursor = new Cursor(span.join("\n"));
   const starts = span.map((_, index) => span.slice(0, index).reduce((sum, row) => sum + row.length + 1, 0));
   const rows: ArrayRow[] = span.map(() => ({ items: [] }));
-  let last: ArrayRow["items"][number] | undefined;
+  let last: ArrayItem | undefined;
   if (!cursor.take(/[ \t]*[A-Za-z0-9_-]+[ \t]*=[ \t]*\[/)) return null;
   try {
     for (;;) {
@@ -224,11 +225,11 @@ function arrayRows(span: string[]): ArrayRow[] | null {
       const comment = cursor.take(/#[^\n]*/);
       if (comment) rows[at]!.comment = comment[0].replace(/\r$/, "");
       else if (cursor.take(/\]/)) return rows;
-      else if (cursor.take(/,/) && last) last.comma = true;
+      else if (cursor.take(/,/) && last) last.comma = { row: at, at: cursor.at - 1 - starts[at]! };
       else if (!cursor.take(/\r?\n/)) {
         const item = scalar(cursor);
         if (typeof item !== "string") return null;
-        rows[at]!.items.push(last = { value: item, end: cursor.at - starts[at]!, comma: false });
+        rows[at]!.items.push(last = { value: item, end: cursor.at - starts[at]!, row: at });
       }
     }
   } catch {
@@ -236,10 +237,10 @@ function arrayRows(span: string[]): ArrayRow[] | null {
   }
 }
 
-/** The lines of the multi-line array `span` set to `value`: rows of comments
- *  and rows whose items all stay are kept as written, other kept items and
- *  new ones are written one a row, and an item's trailing comment goes with
- *  it. Null when the kept items are reordered or the array cannot be read. */
+/** The lines of the multi-line array `span` set to `value`: comment rows and
+ *  rows whose items all stay are kept as written, other kept items and new
+ *  ones are written one a row, and an item's trailing comment and comma go
+ *  with it. Null when the kept items are reordered or the array is unread. */
 function arrayLines(span: string[], key: string, value: string[], comment?: string): string[] | null {
   const rows = arrayRows(span);
   if (!rows) return null;
@@ -252,32 +253,39 @@ function arrayLines(span: string[], key: string, value: string[], comment?: stri
   if (JSON.stringify([...kept, ...added]) !== JSON.stringify(value)) return null;
   const indent = span.slice(1, -1).find(row => /^\s*["']/.test(row))?.match(/^\s*/)![0] ?? "  ";
   const head = rows[0]!;
+  const last = rows.length - 1;
+  const asWritten = (r: number) => keep[r]!.every(Boolean) && !(r === last && rows[r]!.items.length);
+  const items = rows.flatMap(row => row.items);
+  const strayCommas = (r: number) => items.filter(item => item.comma?.row === r && !asWritten(item.row)).map(item => item.comma!.at);
+  const unseparated = (r: number) => {
+    const text = strayCommas(r).sort((a, b) => b - a).reduce((row, at) => row.slice(0, at) + row.slice(at + 1), span[r]!);
+    return text.trim() || !span[r]!.trim() ? text : null;
+  };
   const lines: string[] = [];
   let open: { line: number; end: number } | null = null;
+  const pushValues = (values: string[]) => {
+    if (open && values.length) lines[open.line] = `${lines[open.line]!.slice(0, open.end)},${lines[open.line]!.slice(open.end)}`;
+    if (values.length) open = null;
+    lines.push(...values);
+  };
   rows.slice(0, -1).forEach((row, r) => {
-    if (keep[r]!.every(Boolean)) {
-      lines.push(span[r]!);
+    if (asWritten(r)) {
+      const text = unseparated(r);
+      if (text === null) return;
+      lines.push(text);
       const item = row.items.at(-1);
-      if (item) open = item.comma ? null : { line: lines.length - 1, end: item.end };
+      if (item) open = item.comma && asWritten(item.comma.row) ? null : { line: lines.length - 1, end: item.end };
       return;
     }
     if (!r) lines.push(`${span[0]!.match(/^\s*/)![0]}${key} = [${head.comment ? ` ${head.comment}` : ""}`);
     const values = row.items.filter((_, i) => keep[r]![i]).map(item => `${indent}${quoted(item.value)},`);
     if (values.length && r > 0 && row.comment) values[values.length - 1] += ` ${row.comment}`;
-    if (values.length) open = null;
-    lines.push(...values);
+    pushValues(values);
   });
   const close = rows.at(-1)!;
-  if (close.items.length) {
-    lines.push(...close.items.filter((_, i) => keep[rows.length - 1]![i]).map(item => `${indent}${quoted(item.value)},`));
-    open = null;
-  }
-  if (open && added.length) {
-    const { line, end } = open as { line: number; end: number };
-    lines[line] = `${lines[line]!.slice(0, end)},${lines[line]!.slice(end)}`;
-  }
-  lines.push(...added.map(item => `${indent}${quoted(item)},`));
-  lines.push(close.items.length ? `${span.at(-1)!.match(/^\s*/)![0]}]${comment ? ` ${comment}` : ""}` : span.at(-1)!);
+  pushValues(close.items.filter((_, i) => keep[last]![i]).map(item => `${indent}${quoted(item.value)},`));
+  pushValues(added.map(item => `${indent}${quoted(item)},`));
+  lines.push(close.items.length ? `${span.at(-1)!.match(/^\s*/)![0]}]${comment ? ` ${comment}` : ""}` : unseparated(last)!);
   return lines;
 }
 

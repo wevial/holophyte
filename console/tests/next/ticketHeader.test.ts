@@ -74,3 +74,14 @@ test("editing a multi-line array keeps its comment rows and the rows of items th
   expect(withKey(source, "", "depends_on", ["HOLO-2"])).toBe(
     'depends_on = [ # blockers\n  # HOLO-3 lands after review\n  "HOLO-2" # the board\n]\nestimate = 30\n');
 });
+
+test("removing an item whose comma sits on a later row drops that comma and keeps the comment rows", () => {
+  const source = '\tdepends_on = [\n\t\t"HOLO-1"\n\t\t# comment\n\t\t,\n\t]\n';
+  const removed = withKey(source, "", "depends_on", []);
+  expect(removed).toBe('\tdepends_on = [\n\t\t# comment\n\t]\n');
+  expect(Bun.TOML.parse(removed)).toEqual({ depends_on: [] });
+  const leading = 'depends_on = [\n  "HOLO-1"\n  , "HOLO-2" # the board\n]\n';
+  const swapped = withKey(leading, "", "depends_on", ["HOLO-1", "HOLO-9"]);
+  expect(Bun.TOML.parse(swapped)).toEqual({ depends_on: ["HOLO-1", "HOLO-9"] });
+  expect(Bun.TOML.parse(withKey(leading, "", "depends_on", ["HOLO-2"]))).toEqual({ depends_on: ["HOLO-2"] });
+});
