@@ -580,7 +580,7 @@ class BlockedParkFactsTests(ServeTestCase):
             "number": 644, "checks": "failure", "review": "changes_requested",
             "threads": 3, "open_threads": None, "title": None, "state": "ready",
             "additions": None, "deletions": None, "changed_files": None,
-            "preview_url": None, "screenshots": []})
+            "preview_url": None, "screenshots": [], "videos": []})
 
     def test_plain_question_has_its_park_kind_and_no_pull_request(self):
         item = self.park_question("Which API should this use?", "question")

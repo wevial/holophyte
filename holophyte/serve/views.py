@@ -168,7 +168,8 @@ def _pull_request_facts(ticket):
             "deletions": ticket.prSeenDeletions,
             "changed_files": ticket.prSeenChangedFiles,
             "preview_url": ticket.prSeenPreviewUrl,
-            "screenshots": json.loads(ticket.prSeenScreenshots or "[]")}
+            "screenshots": json.loads(ticket.prSeenScreenshots or "[]"),
+            "videos": json.loads(ticket.prSeenVideos or "[]")}
 
 
 def _open_threads(ticket):

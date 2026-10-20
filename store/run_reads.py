@@ -72,6 +72,7 @@ class LiveRun:
     prSeenChangedFiles: int | None = None
     prSeenPreviewUrl: str | None = None
     prSeenScreenshots: str | None = None
+    prSeenVideos: str | None = None
     wokeAt: int | None = None
 
 
@@ -151,7 +152,7 @@ def babysit_note(conn, run_id):
 
 
 PR_SEEN_MEDIA = ("prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",
-                 "prSeenPreviewUrl", "prSeenScreenshots")
+                 "prSeenPreviewUrl", "prSeenScreenshots", "prSeenVideos")
 
 
 def _pr_seen_media_sql(columns):
@@ -197,7 +198,7 @@ def live_runs(conn, phases):
                     prSeenReview=row[18], prSeenThreads=row[19],
                     prSeenOpenThreads=row[20], prSeenOpenThreadsFloor=row[21],
                     prSeenTitle=row[22], prSeenState=row[23],
-                    **_pr_seen_media(row[24:29]), wokeAt=row[29])
+                    **_pr_seen_media(row[24:30]), wokeAt=row[30])
             for row in rows]
 
 

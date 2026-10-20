@@ -825,7 +825,7 @@ class AttentionTests(ServeTestCase):
             "pr": {"number": 2170, "checks": None, "review": None, "threads": None,
                    "open_threads": None, "title": None, "state": None,
                    "additions": None, "deletions": None, "changed_files": None,
-                   "preview_url": None, "screenshots": []},
+                   "preview_url": None, "screenshots": [], "videos": []},
             "level": "attention", "round": 0, "waits_on": []})
         self.assertEqual(body["level"], "attention")
 
@@ -882,7 +882,7 @@ class AttentionTests(ServeTestCase):
             "number": 2170, "checks": "failure", "review": "changes_requested",
             "threads": 3, "open_threads": None, "title": None, "state": "ready",
             "additions": None, "deletions": None, "changed_files": None,
-            "preview_url": None, "screenshots": []})
+            "preview_url": None, "screenshots": [], "videos": []})
 
     def test_the_body_names_the_project_as_status_does(self):
         self.seed_attention()

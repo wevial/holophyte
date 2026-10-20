@@ -1026,3 +1026,84 @@ class MediaTests(unittest.TestCase):
                   self.assertRaisesRegex(SystemExit, "ui_capture_local")):
                 self.config = {"merge": config}
                 merge_config(self.target)
+
+
+class StateCaptionTests(unittest.TestCase):
+    def test_each_image_takes_the_caption_of_the_state_naming_its_file(self):
+        states = ["`01-conflict-dawn.png` and `02-conflict-night.png`: "
+                  "the banner in Dawn and Night",
+                  "`03-conflict-picked.png`: the page after Keep mine",
+                  "`04-conflict-390.png`: the banner at 390 px"]
+        names = ["01-conflict-dawn.png", "02-conflict-night.png",
+                 "03-conflict-picked.png", "04-conflict-390.png",
+                 "conflict-flow.webm"]
+        urls = {Path(name): f"https://media.example/{name}" for name in names}
+        lines, matched = pr_media._state_media(states, urls)
+        self.assertEqual(lines, [
+            f"- {states[0]} — captured",
+            f"![{states[0]}](https://media.example/01-conflict-dawn.png)",
+            f"![{states[0]}](https://media.example/02-conflict-night.png)",
+            f"- {states[1]} — captured",
+            f"![{states[1]}](https://media.example/03-conflict-picked.png)",
+            f"- {states[2]} — captured",
+            f"![{states[2]}](https://media.example/04-conflict-390.png)"])
+        self.assertEqual(set(urls) - matched, {Path("conflict-flow.webm")})
+
+    def test_states_naming_no_file_pair_with_images_by_position(self):
+        urls = {Path(name): f"https://media.example/{name}"
+                for name in ("01-panel.png", "02-panel.png")}
+        lines, matched = pr_media._state_media(["Panel open", "Panel closed"],
+                                               urls)
+        self.assertEqual(lines, [
+            "- Panel open — captured",
+            "![Panel open](https://media.example/01-panel.png)",
+            "- Panel closed — captured",
+            "![Panel closed](https://media.example/02-panel.png)"])
+        self.assertEqual(matched, set(urls))
+
+    def test_a_state_naming_an_unpublished_file_is_not_captured(self):
+        states = ["`01-panel.png`: the panel open",
+                  "`05-missing.png`: the panel closed"]
+        files = [Path("01-panel.png"), Path("02-panel.png")]
+        lines, _ = pr_media._state_media(
+            states, {file: f"https://media.example/{file}" for file in files})
+        self.assertEqual(lines[2], f"- {states[1]} — not captured")
+        self.assertEqual(pr_media._partial(files, states), [
+            "The UI capture saved 1 of 2 views; not captured:"
+            f" 02 {states[1]}"])
+
+    def test_a_state_missing_one_of_its_named_files_captions_the_other(self):
+        states = ["Compare `before.png` and `after.png`"]
+        files = [Path("before.png")]
+        lines, matched = pr_media._state_media(
+            states, {file: f"https://media.example/{file}" for file in files})
+        self.assertEqual(lines, [
+            f"- {states[0]} — not captured",
+            f"![{states[0]}](https://media.example/before.png)"])
+        self.assertEqual(matched, set(files))
+        self.assertEqual(pr_media._partial(files, states), [
+            "The UI capture saved 0 of 1 views; not captured:"
+            f" 01 {states[0]}"])
+
+    def test_named_files_with_spaces_take_their_state_caption(self):
+        states = ["`01-panel open.png` and `02-panel closed.png`: the panel"]
+        files = [Path("01-panel open.png"), Path("02-panel closed.png")]
+        urls = {file: f"https://media.example/{file.stem}" for file in files}
+        lines, matched = pr_media._state_media(states, urls)
+        self.assertEqual(lines, [
+            f"- {states[0]} — captured",
+            f"![{states[0]}](https://media.example/01-panel open)",
+            f"![{states[0]}](https://media.example/02-panel closed)"])
+        self.assertEqual(matched, set(files))
+
+    def test_an_unnamed_state_keeps_its_position_image_named_elsewhere(self):
+        states = ["Panel open", "`01-panel.png`: the panel detail"]
+        files = [Path("01-panel.png")]
+        lines, _ = pr_media._state_media(
+            states, {file: f"https://media.example/{file}" for file in files})
+        self.assertEqual(lines, [
+            "- Panel open — captured",
+            "![Panel open](https://media.example/01-panel.png)",
+            f"- {states[1]} — captured",
+            f"![{states[1]}](https://media.example/01-panel.png)"])
+        self.assertEqual(pr_media._partial(files, states), [])

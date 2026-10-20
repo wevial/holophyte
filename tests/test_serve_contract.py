@@ -294,7 +294,7 @@ class PinnedAnswerTests(unittest.TestCase):
                 (run, StatusRun, "run", "woke_ms"),
                 *((item["pr"], PullRequestFacts, "pr", key) for key in (
                     "additions", "deletions", "changed_files", "preview_url",
-                    "screenshots"))):
+                    "screenshots", "videos"))):
             with self.subTest(key=key):
                 walk(body, annotation, where)
                 hints = typing.get_type_hints(annotation, include_extras=True)

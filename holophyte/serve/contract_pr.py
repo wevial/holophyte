@@ -6,6 +6,11 @@ class Screenshot(TypedDict):
     url: str
 
 
+class Video(TypedDict):
+    caption: str
+    url: str
+
+
 class PullRequestFacts(TypedDict):
     number: int | None
     checks: str | None
@@ -19,6 +24,7 @@ class PullRequestFacts(TypedDict):
     changed_files: NotRequired[int | None]
     preview_url: NotRequired[str | None]
     screenshots: NotRequired[list[Screenshot]]
+    videos: NotRequired[list[Video]]
 
 
 class WaitsOn(TypedDict):
