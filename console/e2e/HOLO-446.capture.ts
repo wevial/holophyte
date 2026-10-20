@@ -8,7 +8,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(out, name), fullPage: true });
 }
 
-test("Raw TOML colours the file by kind and keeps gutter numbers level with their scrolled lines while PageDown moves the selection", async ({ page, baseURL }) => {
+test("Raw TOML colours the file by kind and keeps gutter numbers level with their scrolled lines while PageDown and Ctrl+Home keep the caret in view", async ({ page, baseURL }) => {
   const home = process.env.HOLOPHYTE_HOME!;
   const config = readdirSync(home, { recursive: true }).map(String).find(file => file.endsWith("config.toml") && readFileSync(path.join(home, file), "utf8").includes('name = "demo"'))!;
   const configPath = path.join(home, config);
@@ -27,8 +27,20 @@ test("Raw TOML colours the file by kind and keeps gutter numbers level with thei
   await page.getByRole("button", { name: "Colour theme: dawn. Switch to night" }).click();
   await shot(page, "02-toml-night.png");
   await page.getByRole("button", { name: "Colour theme: night. Switch to dawn" }).click();
-  await editor.fill(text.replace("workers = 2", "workers = 0"));
+  const refused = text.replace("workers = 2", "workers = 0");
+  await page.route("**/config", async route => {
+    const body = route.request().postDataJSON() as { text?: string; check?: boolean } | null;
+    if (body?.check && body.text === refused) await route.fulfill({ json: { ok: true, checked: true } });
+    else await route.fallback();
+  });
+  await editor.fill(refused);
+  await expect(page.getByText("no errors · ready to save")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("dialog", { name: "Save config.toml?" }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("1 error blocks saving")).toBeVisible();
+  await expect(page.getByText("line 17")).toBeVisible();
+  await page.unroute("**/config");
   await expect(page.locator('[data-refused="true"]')).toHaveCount(1);
   await expect(page.locator("[data-refused-band]")).toHaveCount(1);
   await shot(page, "03-toml-refused.png");
@@ -52,4 +64,15 @@ test("Raw TOML colours the file by kind and keeps gutter numbers level with thei
   expect(paged[0]).toBe(0);
   expect(paged[1]).toBe(long.split("\n").slice(0, 16).join("\n").length + 1);
   expect(paged[2]).toBeGreaterThan(0);
+  await editor.fill(`${long}\n# ${"wide ".repeat(80)}`);
+  await editor.press("Control+Home");
+  await editor.press("Control+End");
+  await expect.poll(() => page.locator("[data-toml-scroller]").evaluate(scroller => scroller.scrollLeft)).toBeGreaterThan(0);
+  await editor.press("Control+Home");
+  await expect.poll(() => page.locator("[data-toml-scroller]").evaluate(scroller => {
+    const box = scroller.getBoundingClientRect();
+    const gutter = scroller.querySelector('[data-line="1"]')!.getBoundingClientRect();
+    const line = scroller.querySelector('pre [data-text-line="1"]')!.getBoundingClientRect();
+    return scroller.scrollLeft === 0 && line.left >= gutter.right && line.top >= box.top;
+  })).toBe(true);
 });
