@@ -344,6 +344,16 @@ function useSortedPage(hosts: Host[], now: number, project: string | undefined):
   return page;
 }
 
+/** `items` split by project, the project with most first, then by name. */
+export function byProject<T>(items: T[], projectOf: (item: T) => string): { project: string; items: T[] }[] {
+  const split = new Map<string, T[]>();
+  for (const item of items) {
+    const project = projectOf(item);
+    split.set(project, [...(split.get(project) ?? []), item]);
+  }
+  return [...split].map(([project, items]) => ({ project, items })).sort((a, b) => b.items.length - a.items.length || a.project.localeCompare(b.project));
+}
+
 /** The scoped fleet's week of findings, sorted into the page's four groups. */
 export function useFindingsPage(): FindingsPage {
   const peers = useConsolePeers();
