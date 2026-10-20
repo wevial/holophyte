@@ -388,3 +388,10 @@ test("a run the factory woke to fix its pull request stays in the lane as Factor
   expect(within(rows()[1]!).getByRole("link", { name: "Open run" })).toBeTruthy();
   expect(within(rows()[1]!).queryByRole("button", { name: "Send back with a note" })).toBeNull();
 });
+
+test("a backticked span in a row's title shows as inline code, and its accessible name drops the backticks", async () => {
+  await mount({ items: [{ ...readyPark, title: "Read a `+++` TOML header" }] });
+  const button = rowButton(42);
+  expect(button.getAttribute("aria-label")).toStartWith("PR #42, DEMO-9 Read a +++ TOML header, ");
+  expect([...button.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+});

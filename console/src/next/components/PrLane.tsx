@@ -13,6 +13,7 @@ import { stateOf } from "../state";
 import { LaneHead } from "./LaneHead";
 import { PrRowDetail } from "./PrRowDetail";
 import { TONE_TEXT } from "./StateDot";
+import { plainTitle, TitleText } from "./TitleText";
 
 type Host = HostRecord<ContractBodies>;
 
@@ -93,13 +94,13 @@ function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness
           aria-expanded={run == null ? undefined : open}
           aria-controls={run == null ? undefined : detailId}
           disabled={run == null}
-          aria-label={`${label}, ${ticket} ${title}, ${facts.map((fact) => fact.label).join(" · ")}, ${word}`}
+          aria-label={`${label}, ${ticket} ${plainTitle(title)}, ${facts.map((fact) => fact.label).join(" · ")}, ${word}`}
           onClick={() => setOpen(!open)}
           className="flex min-h-11 min-w-0 flex-col gap-1 text-left"
         >
           <span data-pr-title className="font-read text-[15px] font-medium leading-[1.35] text-ink">
             <span className="mr-2 font-mono text-[12px] font-normal text-ink-3">{ticket}</span>
-            {title}
+            <TitleText>{title}</TitleText>
           </span>
           <PrFacts facts={facts} form="plain" />
         </button>

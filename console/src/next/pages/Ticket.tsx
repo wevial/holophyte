@@ -16,6 +16,7 @@ import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
+import { TitleText } from "../components/TitleText";
 
 const CRUMB_LINK = "border-b border-rule text-ink-3 no-underline hover:border-ink hover:text-ink";
 
@@ -93,7 +94,7 @@ export function TicketPage() {
       <div className="border-b border-rule pb-3">
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-6 gap-y-2.5">
           <h1 className="m-0 flex-[1_1_420px] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">
-            {ticket.title}
+            <TitleText>{ticket.title}</TitleText>
           </h1>
           <div data-ticket-actions className="flex flex-wrap gap-2">
             {!SETTLED.has(ticket.status) && (

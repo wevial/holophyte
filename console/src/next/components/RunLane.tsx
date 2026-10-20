@@ -13,6 +13,7 @@ import { runPage } from "../run";
 import { LaneHead } from "./LaneHead";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
+import { plainTitle, TitleText } from "./TitleText";
 
 const MINUTE = 60_000;
 const HOT_PERCENT = 90;
@@ -60,7 +61,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
       <Link
         data-row
         {...runPage(project, run.id)}
-        aria-label={`${run.ticket} ${title}, ${stage}${spoken}`}
+        aria-label={`${run.ticket} ${plainTitle(title)}, ${stage}${spoken}`}
         className={`${ROW_GRID} min-h-[66px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2`}
       >
         <span className="min-w-0">
@@ -68,7 +69,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
         </span>
         <span className="whitespace-nowrap text-ink-2">{run.ticket}</span>
         <span className={TITLE_CELL}>
-          <span className="mb-0.5 block text-ink">{title}</span>
+          <span className="mb-0.5 block text-ink"><TitleText>{title}</TitleText></span>
           {stop && <span className="block truncate font-sans text-[13px] font-normal leading-[1.45] text-ink-3">{stop}</span>}
         </span>
         <span className={TIME_CELL}>
@@ -101,7 +102,7 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
         <TicketLink ticket={entry.ticket} ticket_url={entry.ticket_url} />
       </span>
       <span className={TITLE_CELL}>
-        <span className="mb-0.5 block text-ink">{entry.title ?? ""}</span>
+        <span className="mb-0.5 block text-ink"><TitleText>{entry.title ?? ""}</TitleText></span>
         {shown && (
           <span title={reason || undefined} className="block truncate font-sans text-[13px] font-normal leading-[1.45] text-ink-3">
             {shown}
