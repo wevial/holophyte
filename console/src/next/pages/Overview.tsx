@@ -1,5 +1,4 @@
-import { Fragment, useContext, useRef, useState, type ReactNode } from "react";
-import { flushSync } from "react-dom";
+import { Fragment, useContext, useState, type ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
 import { DayLog } from "../components/DayLog";
@@ -109,20 +108,7 @@ export function Overview() {
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
   const openPrs = prLanes.reduce((sum, group) => sum + group.rows.length, 0);
-  const card = useRef<HTMLElement>(null);
-  const [needMount, setNeedMount] = useState(0);
   const [needOpen, setNeedOpen] = useState(() => readOpen("need"));
-  const showNeed = (index: number) => {
-    flushSync(() => {
-      if (!needOpen) {
-        writeOpen("need", true);
-        setNeedOpen(true);
-        setNeedMount((count) => count + 1);
-      }
-      held.hold(index);
-    });
-    card.current?.focus();
-  };
   return (
     <div className="flex flex-col gap-8 px-8 py-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:grid min-[1600px]:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px] min-[1600px]:grid-rows-[auto_1fr] min-[1600px]:gap-x-[36px] min-[1600px]:gap-y-[32px]">
       <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-8 min-[1600px]:contents">
@@ -168,7 +154,6 @@ export function Overview() {
           <div data-overview-column className={`${COLUMN} min-[1600px]:col-start-1`}>
           <FoldingSection
             loading={firstLoad}
-            key={needMount}
             id="need"
             open={needOpen}
             onFold={setNeedOpen}
@@ -178,7 +163,7 @@ export function Overview() {
             summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
             empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
           >
-            <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} cardRef={card} />
+            <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} />
           </FoldingSection>
           <FoldingSection
             loading={firstLoad}
@@ -202,7 +187,7 @@ export function Overview() {
             empty="No pull requests open."
             isEmpty={openPrs === 0}
           >
-            <PullRequestLanes groups={prLanes} readiness={view.readiness} needs={view.needs} onShow={showNeed} />
+            <PullRequestLanes groups={prLanes} readiness={view.readiness} />
           </FoldingSection>
           <FoldingSection
             loading={firstLoad}
