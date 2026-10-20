@@ -207,6 +207,73 @@ function insertTable(rows: string[], at: number, lines: string[]) {
   rows.splice(at, 0, ...added);
 }
 
+interface ArrayRow { items: { value: string; end: number; comma: boolean }[]; comment?: string }
+
+/** Each row of the multi-line array value written in `span`, or null when
+ *  it holds other than strings and comments. */
+function arrayRows(span: string[]): ArrayRow[] | null {
+  const cursor = new Cursor(span.join("\n"));
+  const starts = span.map((_, index) => span.slice(0, index).reduce((sum, row) => sum + row.length + 1, 0));
+  const rows: ArrayRow[] = span.map(() => ({ items: [] }));
+  let last: ArrayRow["items"][number] | undefined;
+  if (!cursor.take(/[A-Za-z0-9_-]+[ \t]*=[ \t]*\[/)) return null;
+  try {
+    for (;;) {
+      cursor.skip();
+      const at = cursor.line();
+      const comment = cursor.take(/#[^\n]*/);
+      if (comment) rows[at]!.comment = comment[0].replace(/\r$/, "");
+      else if (cursor.take(/\]/)) return rows;
+      else if (cursor.take(/,/) && last) last.comma = true;
+      else if (!cursor.take(/\r?\n/)) {
+        const item = scalar(cursor);
+        if (typeof item !== "string") return null;
+        rows[at]!.items.push(last = { value: item, end: cursor.at - starts[at]!, comma: false });
+      }
+    }
+  } catch {
+    return null;
+  }
+}
+
+/** The lines of the multi-line array `span` set to `value`: rows of comments
+ *  and rows whose items all stay are kept as written, other kept items and
+ *  new ones are written one a row, and an item's trailing comment goes with
+ *  it. Null when the kept items are reordered or the array cannot be read. */
+function arrayLines(span: string[], key: string, value: string[], comment?: string): string[] | null {
+  const rows = arrayRows(span);
+  if (!rows) return null;
+  const added = [...value];
+  const keep = rows.map(row => row.items.map(item => {
+    const at = added.indexOf(item.value);
+    return at >= 0 && added.splice(at, 1).length > 0;
+  }));
+  const kept = rows.flatMap((row, r) => row.items.filter((_, i) => keep[r]![i]).map(item => item.value));
+  if (JSON.stringify([...kept, ...added]) !== JSON.stringify(value)) return null;
+  const indent = span.slice(1, -1).find(row => /^\s*["']/.test(row))?.match(/^\s*/)![0] ?? "  ";
+  const lines = [`${key} = [${rows[0]!.comment ? ` ${rows[0]!.comment}` : ""}`];
+  let open: { line: number; end: number } | null = null;
+  rows.forEach((row, r) => {
+    const inner = r > 0 && r < rows.length - 1;
+    if (inner && (!row.items.length || keep[r]!.every(Boolean))) {
+      lines.push(span[r]!);
+      const item = row.items.at(-1);
+      if (item) open = item.comma ? null : { line: lines.length - 1, end: item.end };
+      return;
+    }
+    const values = row.items.filter((_, i) => keep[r]![i]).map(item => `${indent}${quoted(item.value)},`);
+    if (values.length && r > 0 && row.comment) values[values.length - 1] += ` ${row.comment}`;
+    if (values.length) open = null;
+    lines.push(...values);
+  });
+  if (open && added.length) {
+    const { line, end } = open as { line: number; end: number };
+    lines[line] = `${lines[line]!.slice(0, end)},${lines[line]!.slice(end)}`;
+  }
+  lines.push(...added.map(item => `${indent}${quoted(item)},`), `${span.at(-1)!.match(/^\s*/)![0]}]${comment ? ` ${comment}` : ""}`);
+  return lines;
+}
+
 /** `source` with `key` of table `path`, "" for the top level, set to
  *  `value`, or removed when it is undefined; a key already holding `value`
  *  keeps its lines as written, and every other line stays. */
@@ -217,7 +284,8 @@ export function withKey(source: string, path: string, key: string, value: Scalar
   if (found && value !== undefined && JSON.stringify(found.value) === JSON.stringify(value) && (found.value instanceof HeaderDate) === (value instanceof HeaderDate)) return source;
   const line = `${key} = ${value === undefined ? "" : formatValue(value)}`;
   if (found) {
-    rows.splice(found.first, found.last - found.first + 1, ...(value === undefined ? [] : [found.comment ? `${line} ${found.comment}` : line]));
+    const kept = Array.isArray(value) && found.last > found.first ? arrayLines(rows.slice(found.first, found.last + 1), key, value, found.comment) : null;
+    rows.splice(found.first, found.last - found.first + 1, ...(kept ?? (value === undefined ? [] : [found.comment ? `${line} ${found.comment}` : line])));
     return join(rows, eol);
   }
   if (value === undefined) return source;

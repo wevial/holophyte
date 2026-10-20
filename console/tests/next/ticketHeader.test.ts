@@ -66,3 +66,11 @@ test("setting a key whose value the reader cannot read replaces its line, keepin
   expect(withKey(source, "", "estimate", 30)).toBe('ui_change = "none"\nestimate = 30 # rounded\ndepends_on = []\n');
   expect(withKey('note = "a # b\', c\n', "", "note", "d")).toBe('note = "d"\n');
 });
+
+test("editing a multi-line array keeps its comment rows and the rows of items that stay", () => {
+  const source = 'depends_on = [ # blockers\n  "HOLO-1", # the store\n  # HOLO-3 lands after review\n  "HOLO-2" # the board\n]\nestimate = 30\n';
+  expect(withKey(source, "", "depends_on", ["HOLO-1", "HOLO-2", "HOLO-9"])).toBe(
+    'depends_on = [ # blockers\n  "HOLO-1", # the store\n  # HOLO-3 lands after review\n  "HOLO-2", # the board\n  "HOLO-9",\n]\nestimate = 30\n');
+  expect(withKey(source, "", "depends_on", ["HOLO-2"])).toBe(
+    'depends_on = [ # blockers\n  # HOLO-3 lands after review\n  "HOLO-2" # the board\n]\nestimate = 30\n');
+});
