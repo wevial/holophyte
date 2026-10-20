@@ -165,7 +165,7 @@ type HeaderField = typeof HEADER_FIELDS[number];
 const inHeader = (field: Field): field is HeaderField => (HEADER_FIELDS as readonly Field[]).includes(field);
 const headerApproval = /^Approved (\d{4}-\d{2}-\d{2}):[ \t]*(.*)$/;
 const isTable = (value: Value | undefined): value is Table => !!value && typeof value === "object" && !Array.isArray(value) && !(value instanceof HeaderDate);
-const boardsOf = (mockup: Table) => (Array.isArray(mockup.boards) ? mockup.boards : []).filter(isTable).filter(board => typeof board.url === "string");
+const boardsOf = (mockup: Value | undefined) => (isTable(mockup) && Array.isArray(mockup.boards) ? mockup.boards : []).filter(isTable).filter(board => typeof board.url === "string");
 const isDate = (iso: string) => !Number.isNaN(Date.parse(iso)) && new Date(iso).toISOString().slice(0, 10) === iso;
 
 function headerField(source: string, field: HeaderField): Fields[HeaderField] {
@@ -193,8 +193,7 @@ function withHeaderField(source: string, field: HeaderField, value: Fields[Heade
     if (approval && isDate(approval[1]!)) return withKey(withKey(source, "mockup", "approved", new HeaderDate(approval[1]!)), "mockup", "note", approval[2]!);
     return withKey(withKey(source, "mockup", "approved", (value as string) || undefined), "mockup", "note", undefined);
   }
-  const header = readHeader(source);
-  const boards = boardsOf(isTable(header.mockup) ? header.mockup : {});
+  const boards = boardsOf(readHeader(source).mockup);
   const urls = (value as string[]).map(image => /^!\[[^\]]*\]\((.*)\)$/.exec(image)?.[1] ?? image);
   if (JSON.stringify(urls) === JSON.stringify(boards.map(board => board.url))) return source;
   return withEntries(source, "mockup.boards", urls.map((url): Table => {
