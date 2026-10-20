@@ -16,6 +16,22 @@ function fileName(url: string) {
   }
 }
 
+function StepButton({ label, disabled, onClick, className }: { label: "Previous" | "Next"; disabled: boolean; onClick: () => void; className: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`${className} row-start-1 flex h-9 w-9 cursor-pointer items-center justify-center border border-rule bg-paper text-ink shadow-[0_2px_8px_rgba(0,0,0,.12)] hover:bg-paper-2 disabled:cursor-default disabled:text-ink-3 disabled:opacity-60 disabled:hover:bg-paper`}
+    >
+      <svg aria-hidden="true" viewBox="0 0 10 10" className="h-2.5 w-2.5 fill-none stroke-current stroke-[1.5]">
+        <path d={label === "Previous" ? "M6.5 1.5 3 5l3.5 3.5" : "M3.5 1.5 7 5 3.5 8.5"} />
+      </svg>
+    </button>
+  );
+}
+
 /** A modal over the console showing `items[start]`; Left and Right (or
  *  Previous and Next) step without wrapping, and Esc or Close calls
  *  `onClose` with the index shown last. */
@@ -73,12 +89,8 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
             {item.caption}
           </p>
         </div>
-        <Btn aria-label="Previous" disabled={shown === 0} onClick={() => setIndex(shown - 1)} className="col-start-1 row-start-1 !px-3 sm:!px-4">
-          <span aria-hidden="true" className="text-[20px]">‹</span>
-        </Btn>
-        <Btn aria-label="Next" disabled={shown === total - 1} onClick={() => setIndex(shown + 1)} className="col-start-3 row-start-1 !px-3 sm:!px-4">
-          <span aria-hidden="true" className="text-[20px]">›</span>
-        </Btn>
+        <StepButton label="Previous" disabled={shown === 0} onClick={() => setIndex(shown - 1)} className="col-start-1" />
+        <StepButton label="Next" disabled={shown === total - 1} onClick={() => setIndex(shown + 1)} className="col-start-3" />
       </section>
     </div>,
     document.body,
