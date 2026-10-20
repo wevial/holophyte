@@ -168,10 +168,14 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
   );
 }
 
+function hasWork(group: LaneGroup): boolean {
+  return group.runs.length > 0 || (group.queued ?? []).length > 0 || group.status.admission === "held";
+}
+
 export function RunningLanes({ groups, now }: { groups: LaneGroup[]; now: number }) {
   return (
     <div className="flex flex-col gap-[22px]">
-      {groups.map((group) => (
+      {groups.filter(hasWork).map((group) => (
         <RunLane key={`${group.base} ${group.path}`} group={group} now={now} />
       ))}
     </div>
