@@ -284,7 +284,7 @@ def parse(text):
     t.depends_on = _deps(est.group(2)) if est else None
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))
     t.open_questions_none = _clean(oq) in OPEN_QUESTIONS_NONE
-    ticket_header.apply(t, header)
+    ticket_header.apply(t, header, text)
     return t
 
 

@@ -17,16 +17,16 @@ SLUG = r"[a-z0-9][a-z0-9-]*"
 MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
 MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
 BESIDE = (
-    (lambda t: _field_line(t, "UI change"),
+    (lambda t, body: _field_line(body, "UI change"),
      "'**UI change:**' line beside a header: give ui_change in the header only"),
-    (lambda t: _field_line(t, "Blast radius"),
+    (lambda t, body: _field_line(body, "Blast radius"),
      "'**Blast radius:**' line beside a header: give blast_radius in the header only"),
-    (lambda t: "Estimate & dependencies" in t.order,
+    (lambda t, body: "Estimate & dependencies" in t.order,
      "'## Estimate & dependencies' beside a header: give estimate and depends_on "
      "in the header only"),
-    (lambda t: "Mock-up" in t.order,
+    (lambda t, body: "Mock-up" in t.order,
      "'## Mock-up' beside a header: give [mockup] in the header only"),
-    (lambda t: "Evidence" in t.order,
+    (lambda t, body: "Evidence" in t.order,
      "'## Evidence' beside a header: give [[evidence]] entries in the header only"),
 )
 
@@ -51,11 +51,11 @@ def split(text):
         return rest, (None, f"header is not valid TOML: {error}")
 
 
-def apply(t, header):
+def apply(t, header, body):
     if header is None:
         return
     fields, problem = header
-    t.header_problems = [message for present, message in BESIDE if present(t)]
+    t.header_problems = [message for present, message in BESIDE if present(t, body)]
     if problem:
         t.header_problems.append(problem)
         return
@@ -74,15 +74,14 @@ def apply(t, header):
         _set_mockup(t, values["mockup"])
 
 
-def _field_line(t, key):
+def _field_line(body, key):
     import ticket_template as tt
-    for body in t.sections.values():
-        in_fence = False
-        for line in body.splitlines():
-            in_fence ^= bool(tt.FENCE_RE.match(line.strip()))
-            found = not in_fence and tt.BOLD_KEY_RE.match(line.strip())
-            if found and found.group(1) == key:
-                return True
+    in_fence = False
+    for line in body.splitlines():
+        in_fence ^= bool(tt.FENCE_RE.match(line.strip()))
+        found = not in_fence and tt.BOLD_KEY_RE.match(line.strip())
+        if found and found.group(1) == key:
+            return True
     return False
 
 
