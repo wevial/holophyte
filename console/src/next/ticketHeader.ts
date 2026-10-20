@@ -92,7 +92,8 @@ function value(cursor: Cursor): Scalar | string[] {
 }
 
 /** Each statement of `source` with the lines it spans; a line it cannot
- *  read is left out, so one bad line keeps the rest readable. */
+ *  read is left out, so one bad line keeps the rest readable, but a key
+ *  whose value it cannot read keeps its line, with no value. */
 function scan(source: string): Item[] {
   const items: Item[] = [];
   const cursor = new Cursor(source);
@@ -109,7 +110,10 @@ function scan(source: string): Item[] {
         items.push({ kind: table[1] === "[[" ? "array" : "table", path, key: "", first, last: first });
       } else {
         const key = cursor.take(/([A-Za-z0-9_-]+)[ \t]*=[ \t]*/) ?? cursor.fail("a line that is not a key, a table or a comment");
-        items.push({ kind: "key", path, key: key[1]!, value: value(cursor), first, last: cursor.line() });
+        const item: Item = { kind: "key", path, key: key[1]!, first, last: first };
+        items.push(item);
+        item.value = value(cursor);
+        item.last = cursor.line();
       }
       cursor.skip();
       const end = cursor.take(/(#[^\r\n]*)?\r?(?:\n|$)/) ?? cursor.fail("text after a value");
@@ -146,7 +150,7 @@ export function readHeader(source: string): Table {
       const name = item.path.slice(at + 1);
       const entries = Object.hasOwn(parent, name) && Array.isArray(parent[name]) ? parent[name] as Table[] : (parent[name] = []);
       entries.push(empty());
-    } else (item.path ? table(root, item.path) : root)[item.key] = item.value!;
+    } else if (item.value !== undefined) (item.path ? table(root, item.path) : root)[item.key] = item.value;
   }
   return root;
 }

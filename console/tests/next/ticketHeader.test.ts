@@ -59,3 +59,9 @@ test("a [__proto__] table is read as the header's own table and leaves other hea
   expect(readHeader('ui_change = "none"\n').estimate).toBeUndefined();
   expect(({} as Record<string, unknown>).estimate).toBeUndefined();
 });
+
+test("setting a key whose value the reader cannot read replaces its line instead of adding a second key", () => {
+  const source = 'ui_change = "none"\nestimate = 25.0 # rounded\ndepends_on = []\n';
+  expect(readHeader(source).estimate).toBeUndefined();
+  expect(withKey(source, "", "estimate", 30)).toBe('ui_change = "none"\nestimate = 30\ndepends_on = []\n');
+});
