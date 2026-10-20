@@ -29,7 +29,7 @@ CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
 TAIL_LINES = 20
 LOG_LINES = 400
-RECEIPT_VERSION = 8
+RECEIPT_VERSION = 9
 CAPTURED = re.compile(r"^Captured at ([0-9a-f]{7,40})[ \t]*\r?$", re.MULTILINE)
 STALE = re.compile(r"^This Evidence shows .*\n+", re.MULTILINE)
 QUOTED = re.compile(r"^Captured with `.*`\.[ \t\r]*\n+"
@@ -437,22 +437,30 @@ def _cap_files(output, files, cfg):
 
 
 def _state_media(states, urls):
-    """Map published PNGs by their NN- prefix; videos never satisfy a state."""
-    images = {}
-    for file, url in urls.items():
+    lines, matched = [], set()
+    for state, (files, complete) in zip(states, _state_images(states, urls),
+                                        strict=True):
+        label = state.replace("[", r"\[").replace("]", r"\]")
+        lines.append(f"- {label} — {'captured' if complete else 'not captured'}")
+        matched.update(files)
+        lines.extend(f"![{label}]({urls[file]})" for file in files)
+    return lines, matched
+
+
+def _state_images(states, files):
+    """Files and completeness: the PNGs a state names in backticks, else NN-."""
+    pngs = [file for file in files if file.name.endswith(".png")]
+    named = [{name for name in re.findall(r"`([^`]+)`", state)
+              if name.endswith(".png")} for state in states]
+    numbered = {}
+    for file in pngs:
         match = re.match(r"^(\d{2})-.+\.png$", file.name)
         if match:
-            images.setdefault(int(match[1]), (file, url))
-    lines, matched = [], set()
-    for number, state in enumerate(states, 1):
-        label = state.replace("[", r"\[").replace("]", r"\]")
-        image = images.get(number)
-        lines.append(f"- {label} — {'captured' if image else 'not captured'}")
-        if image:
-            file, url = image
-            matched.add(file)
-            lines.append(f"![{label}]({url})")
-    return lines, matched
+            numbered.setdefault(int(match[1]), file)
+    published = {file.name for file in pngs}
+    return [([file for file in pngs if file.name in names], names <= published)
+            if names else ([numbered[number]], True) if number in numbered
+            else ([], False) for number, names in enumerate(named, 1)]
 
 
 def _missing(section, states):
@@ -533,10 +541,9 @@ def _images(output):
 
 
 def _unsaved(files, states):
-    saved = {int(file.name[:2]) for file in files
-             if re.match(r'^\d{2}-.+\.png$', file.name)}
-    return [f'{number:02d} {state}' for number, state in enumerate(states, 1)
-            if number not in saved]
+    return [f'{number:02d} {state}' for number, (state, (_, complete))
+            in enumerate(zip(states, _state_images(states, files), strict=True), 1)
+            if not complete]
 
 
 def _record_kind(note, kind, missing):

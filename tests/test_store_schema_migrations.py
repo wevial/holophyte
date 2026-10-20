@@ -551,7 +551,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
                  'storyGeneration',
                  'prSeenOpenThreads', 'prSeenOpenThreadsFloor',
                  'prSeenAdditions', 'prSeenDeletions', 'prSeenChangedFiles',
-                 'prSeenPreviewUrl', 'prSeenScreenshots'}
+                 'prSeenPreviewUrl', 'prSeenScreenshots', 'prSeenVideos'}
         after['runs'] = [tuple(value for column, value in zip(columns, row)
                                if column not in added) for row in after['runs']]
         self.assertEqual(after, self.before)
@@ -946,9 +946,9 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 54)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 55)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (54,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (55,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)

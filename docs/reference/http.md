@@ -130,7 +130,8 @@ are null when none is pending.
 `pr_url` is the pull request the run opened or carries (`runs.prUrl`),
 null when it has none; `pr` is that pull request's `number`, `checks`,
 `review`, `threads`, `open_threads`, `title`, `state`, `additions`,
-`deletions`, `changed_files`, `preview_url` and `screenshots` exactly as on a
+`deletions`, `changed_files`, `preview_url`, `screenshots` and `videos`
+exactly as on a
 `pr_open` item of `GET /attention`, read from the run's `prSeen*`
 columns, and null when `pr_url` is. `woke_ms` is when the factory woke
 the pull request to fix it: the run's `startedAt` (epoch milliseconds)
@@ -1057,11 +1058,15 @@ The same read gives the diff size, `additions`, `deletions` and
 `changed_files` (`runs.prSeenAdditions`, `prSeenDeletions`,
 `prSeenChangedFiles`); `preview_url` (`runs.prSeenPreviewUrl`), the URL of
 the newest GitHub deployment on the head commit whose latest status is
-`SUCCESS`, null when there is none; and `screenshots`
+`SUCCESS`, null when there is none; `screenshots`
 (`runs.prSeenScreenshots`), up to six `{"caption": …, "url": …}` objects,
 one per markdown image in the body's Evidence section in body order, `[]`
-when there are none. These five are null (`screenshots` `[]`) for a run
-never polled since they were recorded.
+when there are none; and `videos` (`runs.prSeenVideos`), up to four
+`{"caption": …, "url": …}` objects, one per markdown link in the Evidence
+section that is not an image and whose URL path, before any `?`, ends
+`.webm` or `.mp4`, in body order, `[]` when there are none. These six are
+null (`screenshots` and `videos` `[]`) for a run never polled since they
+were recorded.
 All six facts are null for a run never polled, and `open_threads` for one
 polled before it was recorded. A `pr_open` item's `round` is the review
 rounds its run recorded whose verdict is not `error`, the count a

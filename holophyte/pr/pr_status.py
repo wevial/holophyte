@@ -45,8 +45,11 @@ CHECK_RUNS_PAGE = 100
 PLAN_GATED = "Upgrade to GitHub Pro or make this repository public"
 IMAGE_RE = re.compile(r"!\[((?:\\.|[^\\\]\n])*)\]"
                       r"\(((?:[^()\s]|\([^()\s]*\))+)\)")
+LINK_RE = re.compile(r"(?<!!)" + IMAGE_RE.pattern[1:])
 MARKDOWN_ESCAPE_RE = re.compile(r"\\([!-/:-@\[-`{-~])")
 SCREENSHOTS_KEPT = 6
+VIDEOS_KEPT = 4
+VIDEO_SUFFIXES = (".webm", ".mp4")
 
 THREADS_PAGE = 100
 COMMENTS_PAGE = 50
@@ -146,6 +149,7 @@ class PullStatus:
     changed_files: int | None = None
     preview_url: str | None = None
     screenshots: tuple = ()
+    videos: tuple = ()
 
 
 def pull_status(target, pull):
@@ -172,6 +176,7 @@ def pull_status(target, pull):
                       changed_files=_count(node.get("changedFiles")),
                       preview_url=_preview_url(node),
                       screenshots=_screenshots(node.get("body")),
+                      videos=_videos(node.get("body")),
                       activity=activities(target, pull, node,
                       (data.get("viewer") or {}).get("login"), graphql, rate),
                       merged=bool(node.get("merged")),
@@ -222,11 +227,22 @@ def _preview_url(node):
 
 
 def _screenshots(body):
+    return _evidence_links(body, IMAGE_RE)[:SCREENSHOTS_KEPT]
+
+
+def _videos(body):
+    return tuple(link for link in _evidence_links(body, LINK_RE)
+                 if re.split(r"[?#]", link[1], maxsplit=1)[0]
+                 .endswith(VIDEO_SUFFIXES)
+                 )[:VIDEOS_KEPT]
+
+
+def _evidence_links(body, pattern):
     if not isinstance(body, str):
         return ()
     evidence = split_pr_body(body)[2]
     return tuple((MARKDOWN_ESCAPE_RE.sub(r"\1", m[1]).strip(), m[2]) for m in
-                 IMAGE_RE.finditer(evidence))[:SCREENSHOTS_KEPT]
+                 pattern.finditer(evidence))
 
 
 def _open_count(threads):
