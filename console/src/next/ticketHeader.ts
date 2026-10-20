@@ -152,7 +152,6 @@ const quoted = (text: string) => '"' + text.replace(/[\\"\u0000-\u001f\u007f]/g,
   ({ "\\": "\\\\", '"': '\\"', "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r" })[char] ??
   `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`) + '"';
 
-/** `value` as the header writes it. */
 function formatValue(value: Scalar | string[]): string {
   if (Array.isArray(value)) return `[${value.map(quoted).join(", ")}]`;
   if (value instanceof HeaderDate) return value.iso;
