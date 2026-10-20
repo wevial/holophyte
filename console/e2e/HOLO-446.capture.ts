@@ -8,7 +8,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: path.join(out, name), fullPage: true });
 }
 
-test("Raw TOML colours the file by kind and keeps gutter numbers level with their scrolled lines", async ({ page, baseURL }) => {
+test("Raw TOML colours the file by kind and keeps gutter numbers level with their scrolled lines while PageDown moves the selection", async ({ page, baseURL }) => {
   const home = process.env.HOLOPHYTE_HOME!;
   const config = readdirSync(home, { recursive: true }).map(String).find(file => file.endsWith("config.toml") && readFileSync(path.join(home, file), "utf8").includes('name = "demo"'))!;
   const configPath = path.join(home, config);
@@ -46,4 +46,10 @@ test("Raw TOML colours the file by kind and keeps gutter numbers level with thei
   expect(tops.scrolled).toBe(1000);
   expect(Math.abs(tops.gutter - tops.line)).toBeLessThanOrEqual(1);
   await shot(page, "04-toml-scrolled.png");
+  await editor.press("Control+Home");
+  await editor.press("Shift+PageDown");
+  const paged = await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd, node.closest("[data-toml-scroller]")!.scrollTop]);
+  expect(paged[0]).toBe(0);
+  expect(paged[1]).toBe(long.split("\n").slice(0, 16).join("\n").length + 1);
+  expect(paged[2]).toBeGreaterThan(0);
 });

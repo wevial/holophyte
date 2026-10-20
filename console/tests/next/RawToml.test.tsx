@@ -18,7 +18,7 @@ const SENTENCE = "[loop] workers must be an integer >= 1, got 0";
 const REFUSAL = { error: `[holo2] /x/config.toml: ${SENTENCE}`, line: 2 };
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 
-async function mount(options: { text?: string; tab?: string; check?: (text: string) => Promise<Response>; saveRefused?: boolean; pending?: Promise<void> } = {}) {
+async function mount(options: { text?: string; refusal?: { error: string; line: number }; tab?: string; check?: (text: string) => Promise<Response>; saveRefused?: boolean; pending?: Promise<void> } = {}) {
   let config: ConfigBody = { text: options.text ?? ORIGINAL, values: { loop: { workers: 2 } }, path: "/srv/demo/config.toml", applies: "next loop start", revision: REVISION, saved: null, modified_ms: null };
   const status: Status = { ...working, project: "/srv/demo", host: "writer-host", runs: [], config_edit: true, actions: true };
   const poll = peersFetch(ORIGIN, { [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
@@ -33,7 +33,7 @@ async function mount(options: { text?: string; tab?: string; check?: (text: stri
       return options.check ? options.check(body.text) : body.text === INVALID ? Response.json(REFUSAL, { status: 400 }) : Response.json({ ok: true });
     }
     writes.push(init);
-    if (options.saveRefused) return Response.json(REFUSAL, { status: 400 });
+    if (options.saveRefused) return Response.json(options.refusal ?? REFUSAL, { status: 400 });
     await options.pending;
     config = { ...config, text: body.text, revision: "92b73d4" + "b".repeat(57), values: { loop: { workers: 3 } } };
     return Response.json({ revision: config.revision, applies: config.applies, backup: "/srv/demo/config.toml.bak" });
@@ -210,11 +210,14 @@ test("the overlay colours the seeded file by kind and follows typing in the text
   expect(overlay().querySelector('[data-text-line="4"] [data-kind="number"]')!.textContent).toBe("3");
 });
 
-test("a refusal naming line 3 marks that gutter line and draws its band on the third text line", async () => {
-  const refused = "[loop]\nworkers = 2\nbogus = \n";
-  await mount({ check: async () => Response.json({ error: "[holo2] /x/config.toml: Invalid value (at line 3, column 9)", line: 3 }, { status: 400 }) });
-  change(refused);
+test("a save refused at line 3 marks that gutter line and draws its band on the third text line", async () => {
+  await mount({ saveRefused: true, refusal: { error: "[holo2] /x/config.toml: Invalid value (at line 3, column 9)", line: 3 } });
+  change("[loop]\nworkers = 3\nkeep = true\n");
   await checked();
+  fireEvent.click(saveButton());
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
+  await act(settle);
+  await act(settle);
   expect(screen.getByText("line 3")).toBeTruthy();
   const marked = scroller().querySelectorAll('[data-refused="true"]');
   expect([...marked].map(line => line.getAttribute("data-line"))).toEqual(["3"]);
@@ -222,6 +225,18 @@ test("a refusal naming line 3 marks that gutter line and draws its band on the t
   const band = scroller().querySelector("[data-refused-band]") as HTMLElement;
   expect(band.style.top).toBe("52px");
   expect(band.parentElement!.contains(editor())).toBe(true);
+});
+
+test("PageDown and PageUp move the caret a page of lines in its column and Shift extends the selection", async () => {
+  await mount({ text: "[loop]\nworkers = 2\nkeep = true\n" });
+  editor().setSelectionRange(2, 2);
+  fireEvent.keyDown(editor(), { key: "PageDown" });
+  expect([editor().selectionStart, editor().selectionEnd]).toEqual([9, 9]);
+  fireEvent.keyDown(editor(), { key: "PageDown", shiftKey: true });
+  expect([editor().selectionStart, editor().selectionEnd]).toEqual([9, 21]);
+  fireEvent.keyDown(editor(), { key: "PageUp", shiftKey: true });
+  fireEvent.keyDown(editor(), { key: "PageUp", shiftKey: true });
+  expect([editor().selectionStart, editor().selectionEnd, editor().selectionDirection]).toEqual([2, 9, "backward"]);
 });
 
 test("line diff keeps shared lines and numbers removals in the old file and insertions in the new file", () => {

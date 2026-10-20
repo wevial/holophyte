@@ -8,6 +8,20 @@ const KIND_CLASS: Record<TomlKind, string> = {
   table: "text-act", key: "text-ink", string: "text-live", number: "text-wait", bool: "text-wait", date: "text-wait", comment: "text-ink-3", punct: "text-ink-2", text: "text-ink",
 };
 
+function pageCaret(textarea: HTMLTextAreaElement, scroller: HTMLElement, step: 1 | -1, extend: boolean) {
+  const { value, selectionStart, selectionEnd, selectionDirection } = textarea;
+  const [anchor, focus] = selectionDirection === "backward" ? [selectionEnd, selectionStart] : [selectionStart, selectionEnd];
+  const rows = Math.max(1, Math.floor(scroller.clientHeight / 20) - 1);
+  const starts = [0, ...[...value.matchAll(/\n/g)].map(match => match.index + 1)];
+  const line = starts.findLastIndex(start => start <= focus);
+  const target = line + step * rows;
+  const next = target < 0 ? 0 : target >= starts.length ? value.length
+    : Math.min(starts[target]! + focus - starts[line]!, (starts[target + 1] ?? value.length + 1) - 1);
+  if (extend) textarea.setSelectionRange(Math.min(anchor, next), Math.max(anchor, next), next < anchor ? "backward" : "forward");
+  else textarea.setSelectionRange(next, next);
+  scroller.scrollTop += step * rows * 20;
+}
+
 export type TomlCheckState = { text: string; pending: boolean; error: string | null; line: number | null };
 
 export function TomlEditor({ base, file, project, revision, original, text, onChange, onRevert, onSave, fieldChanges, disabled = false, busy = false, refusal, onCheck }: {
@@ -80,6 +94,11 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
             wrap="off"
             spellCheck={false}
             onChange={(event) => { setChecked(null); onChange(event.target.value); }}
+            onKeyDown={(event) => {
+              if ((event.key !== "PageDown" && event.key !== "PageUp") || event.altKey || event.ctrlKey || event.metaKey) return;
+              event.preventDefault();
+              pageCaret(event.currentTarget, event.currentTarget.closest<HTMLElement>("[data-toml-scroller]")!, event.key === "PageDown" ? 1 : -1, event.shiftKey);
+            }}
             className="absolute inset-0 block h-full w-full resize-none overflow-hidden border-0 bg-transparent px-3 py-3 font-mono text-[13px] leading-5 whitespace-pre text-transparent caret-ink outline-none selection:bg-act/25"
           />
         </div>
