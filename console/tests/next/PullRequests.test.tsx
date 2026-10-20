@@ -220,11 +220,30 @@ test("the PR number links to GitHub without toggling or fetching the row detail"
   expect(button.getAttribute("aria-expanded")).toBe("true");
 });
 
-test("a row reads its bare number and its key before its title, and opening it marks only its row and shows its media and Open Vercel preview", async () => {
-  const shots = ["01 split view", "02 custom slot", "03 saved document"].map((caption, index) => ({ caption, url: `https://media.example/${index + 1}.png` }));
+const SHOTS = ["01 split view", "02 custom slot", "03 saved document"].map((caption, index) => ({ caption, url: `https://media.example/${index + 1}.png` }));
+const VIDEOS = [{ caption: "video-01.webm", url: "https://media.example/video-01.webm" }];
+const TILE_NAMES = ["01 split view", "02 custom slot", "03 saved document", "Video: video-01.webm"];
+const mediaPark = (media: object) => park(9, "pull_request", 2 * HOUR, {
+  number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, preview_url: null, ...media,
+});
+const tileNames = (row: HTMLElement) => [...row.querySelectorAll<HTMLElement>("[data-media-tile]")].map((tile) => tile.getAttribute("aria-label"));
+const tile = (name: string) => within(rows()[0]!).getByRole("button", { name });
+const dialog = () => screen.queryByRole("dialog");
+const press = (key: string, shiftKey = false) => act(() => void fireEvent.keyDown(document.activeElement ?? document.body, { key, shiftKey }));
+
+async function openMedia(name: string) {
+  await mount({ items: [mediaPark({ screenshots: SHOTS, videos: VIDEOS })], readyRuns: [] });
+  await openRow(42);
+  await act(async () => {
+    fireEvent.click(tile(name));
+    await settle();
+  });
+}
+
+test("a row reads its bare number and its key before its title, and opening it marks only its row and shows Open Vercel preview", async () => {
   await mount({ items: [onCi, park(9, "pull_request", 2 * HOUR, {
     number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0,
-    changed_files: 13, additions: 718, deletions: 85, preview_url: "https://preview.example", screenshots: shots,
+    changed_files: 13, additions: 718, deletions: 85, preview_url: "https://preview.example", screenshots: SHOTS,
   }), threadPark], readyRuns: [] });
   const demo9 = () => rows().find((row) => row.textContent!.includes("DEMO-9"))!;
   expect(within(demo9()).getByRole("link", { name: "#42" }).getAttribute("href")).toBe(PR_42);
@@ -237,17 +256,85 @@ test("a row reads its bare number and its key before its title, and opening it m
   expect(within(demo9()).getByRole("link", { name: "Open Vercel preview" }).getAttribute("href")).toBe("https://preview.example");
   expect(within(demo9()).queryByRole("link", { name: "Open preview" })).toBeNull();
   expect(detail.textContent).not.toContain("13 files");
-  const tiles = [...demo9().querySelectorAll<HTMLAnchorElement>("[data-screenshot]")];
-  expect(tiles.map((tile) => tile.getAttribute("href"))).toEqual(shots.map((shot) => shot.url));
-  expect(tiles.map((tile) => tile.querySelector("img")?.getAttribute("alt"))).toEqual(["01 split view", "02 custom slot", "03 saved document"]);
   unmount();
 
-  await mount({ items: [park(9, "pull_request", 2 * HOUR, {
-    number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, preview_url: null, screenshots: [],
-  })], readyRuns: [] });
+  await mount({ items: [mediaPark({ screenshots: [] })], readyRuns: [] });
   await openRow(42);
   expect(within(rows()[0]!).queryByRole("link", { name: "Open Vercel preview" })).toBeNull();
-  expect(rows()[0]!.querySelectorAll("[data-screenshot]").length).toBe(0);
+});
+
+test("an opened row draws a tile button per screenshot, then per video, and none when it has no media", async () => {
+  await mount({ items: [mediaPark({ screenshots: SHOTS, videos: VIDEOS })], readyRuns: [] });
+  await openRow(42);
+  expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES);
+  for (const name of TILE_NAMES) expect(tile(name).tagName).toBe("BUTTON");
+  expect(within(rows()[0]!.querySelector("[data-media]")!).queryAllByRole("link")).toEqual([]);
+  expect(within(tile("02 custom slot")).getByRole("img").getAttribute("alt")).toBe("02 custom slot");
+  unmount();
+
+  await mount({ items: [mediaPark({ screenshots: SHOTS })], readyRuns: [] });
+  await openRow(42);
+  expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES.slice(0, 3));
+  unmount();
+
+  await mount({ items: [mediaPark({ screenshots: [] })], readyRuns: [] });
+  await openRow(42);
+  expect(tileNames(rows()[0]!)).toEqual([]);
+});
+
+test("a tile opens its item in a lightbox that Left and Right step through screenshots then videos, stopping at the ends", async () => {
+  await openMedia("02 custom slot");
+  const shown = () => screen.getByRole("dialog", { name: "Screenshot 2 of 4" });
+  expect(within(shown()).getByText("2 / 4")).toBeTruthy();
+  const image = within(shown()).getByRole("img");
+  expect(image.getAttribute("src")).toBe(SHOTS[1]!.url);
+  expect(image.getAttribute("alt")).toBe("02 custom slot");
+  expect(shown().querySelector("[data-media-caption]")!.textContent).toBe("02 custom slot");
+  expect(image.compareDocumentPosition(shown().querySelector("[data-media-caption]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  await press("ArrowRight");
+  await press("ArrowRight");
+  const last = screen.getByRole("dialog", { name: "Video 4 of 4" });
+  const video = last.querySelector("video")!;
+  expect(video.getAttribute("src")).toBe(VIDEOS[0]!.url);
+  expect(video.hasAttribute("controls")).toBe(true);
+  expect(video.hasAttribute("autoplay")).toBe(false);
+  expect(video.hasAttribute("muted")).toBe(false);
+  expect(video.muted).toBe(false);
+  expect((within(last).getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  await press("ArrowRight");
+  expect(dialog()!.getAttribute("aria-label")).toBe("Video 4 of 4");
+
+  await press("ArrowLeft");
+  expect(dialog()!.getAttribute("aria-label")).toBe("Screenshot 3 of 4");
+});
+
+test("the lightbox keeps focus inside, and Esc or Close returns it to the tile of the item shown last", async () => {
+  await openMedia("02 custom slot");
+  await press("ArrowRight");
+  expect(dialog()!.getAttribute("aria-label")).toBe("Screenshot 3 of 4");
+  await press("Escape");
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(tile("03 saved document"));
+
+  await act(async () => {
+    fireEvent.click(tile("01 split view"));
+    await settle();
+  });
+  const close = within(dialog()!).getByRole("button", { name: "Close" });
+  expect(document.activeElement).toBe(close);
+  const enabled = [...dialog()!.querySelectorAll<HTMLElement>("button:not(:disabled)")];
+  await press("Tab", true);
+  expect(document.activeElement).toBe(enabled.at(-1)!);
+  expect(enabled.at(-1)).not.toBe(close);
+  await press("Tab");
+  expect(document.activeElement).toBe(close);
+  await act(async () => {
+    fireEvent.click(close);
+    await settle();
+  });
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(tile("01 split view"));
 });
 
 test("a run the factory woke to fix its pull request stays in the lane as Factory fixing, counted once with its park", async () => {

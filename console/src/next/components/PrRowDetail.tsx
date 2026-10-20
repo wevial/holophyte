@@ -1,6 +1,6 @@
-import { useContext, useId, useState } from "react";
+import { useContext, useId, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { PullRequestFacts, Screenshot } from "../../lib/contract.gen";
+import type { PullRequestFacts } from "../../lib/contract.gen";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
 import { useAction } from "../actions";
@@ -10,6 +10,7 @@ import { PollDepsContext } from "../scope";
 import { fieldOf, parseBody } from "../ticketForm";
 import { Btn } from "./Btn";
 import { LimitedMarkdown } from "./LimitedMarkdown";
+import { MediaLightbox, type MediaItem } from "./MediaLightbox";
 
 function SendBackBox({ base, run, label, onClose }: { base: string; run: number; label: string; onClose: () => void }) {
   const action = useAction();
@@ -48,15 +49,30 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
   );
 }
 
-function ScreenshotTile({ shot }: { shot: Screenshot }) {
+function MediaTile({ item, ref, onOpen }: { item: MediaItem; ref: (node: HTMLButtonElement | null) => void; onOpen: () => void }) {
   const [failed, setFailed] = useState(false);
   return (
-    <a data-screenshot href={shot.url} target="_blank" rel="noreferrer" className="flex w-[132px] flex-col gap-1 no-underline">
-      {!failed && (
-        <img src={shot.url} alt={shot.caption} loading="lazy" onError={() => setFailed(true)} className="block h-[80px] w-[132px] border border-rule object-cover" />
+    <button
+      ref={ref}
+      type="button"
+      data-media-tile={item.kind}
+      aria-label={item.kind === "video" ? `Video: ${item.caption}` : item.caption}
+      onClick={onOpen}
+      className="flex w-[132px] cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-left"
+    >
+      {item.kind === "video" ? (
+        <span className="flex h-[80px] w-[132px] items-center justify-center border border-rule bg-paper-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-paper shadow-[0_1px_3px_rgba(0,0,0,.3)]">
+            <svg aria-hidden="true" viewBox="0 0 10 10" className="ml-px h-2.5 w-2.5 fill-ink">
+              <path d="M2 1 9 5 2 9Z" />
+            </svg>
+          </span>
+        </span>
+      ) : (
+        !failed && <img src={item.url} alt={item.caption} loading="lazy" onError={() => setFailed(true)} className="block h-[80px] w-[132px] border border-rule object-cover" />
       )}
-      <span className="break-words font-mono text-[11px] leading-[1.3] text-ink-3">{shot.caption}</span>
-    </a>
+      <span className="break-words font-mono text-[11px] leading-[1.3] text-ink-3">{item.caption}</span>
+    </button>
   );
 }
 
@@ -68,17 +84,32 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
   const [sending, setSending] = useState(false);
   const prUrl = typeof item.pr_url === "string" ? item.pr_url : null;
   const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as Partial<PullRequestFacts>) : {};
-  const shots = Array.isArray(pr.screenshots) ? pr.screenshots : [];
+  const media: MediaItem[] = [
+    ...(Array.isArray(pr.screenshots) ? pr.screenshots : []).map(({ caption, url }) => ({ kind: "image" as const, caption, url })),
+    ...(Array.isArray(pr.videos) ? pr.videos : []).map(({ caption, url }) => ({ kind: "video" as const, caption, url })),
+  ];
+  const [showing, setShowing] = useState<number | null>(null);
+  const tiles = useRef<(HTMLButtonElement | null)[]>([]);
   const preview = typeof pr.preview_url === "string" ? pr.preview_url : null;
   return (
     <div data-pr-detail className="flex flex-col gap-3 font-read text-[14px] leading-[1.5] text-ink-2">
       {what !== "" && <LimitedMarkdown lines={2}>{what}</LimitedMarkdown>}
-      {shots.length > 0 && (
-        <div data-screenshots className="flex flex-wrap gap-2.5">
-          {shots.map((shot, index) => (
-            <ScreenshotTile key={`${index}-${shot.url}`} shot={shot} />
+      {media.length > 0 && (
+        <div data-media className="flex flex-wrap gap-2.5">
+          {media.map((entry, index) => (
+            <MediaTile key={`${index}-${entry.url}`} item={entry} ref={(node) => void (tiles.current[index] = node)} onOpen={() => setShowing(index)} />
           ))}
         </div>
+      )}
+      {showing != null && (
+        <MediaLightbox
+          items={media}
+          start={showing}
+          onClose={(index) => {
+            setShowing(null);
+            tiles.current[index]?.focus();
+          }}
+        />
       )}
       <div className="flex flex-wrap items-center gap-2">
         {prUrl != null && (
