@@ -140,6 +140,17 @@ class RewriteDependsTests(unittest.TestCase):
         self.assertEqual(result, DEPENDS_BODY.replace(
             DEPENDS_LINE, 'depends_on = ["HOLO-3"]\n'))
 
+    def test_a_quoted_depends_on_key_is_rewritten_in_place(self):
+        for key in ('"depends_on"', "'depends_on'"):
+            with self.subTest(key=key):
+                body = DEPENDS_BODY.replace(DEPENDS_LINE,
+                                            f'{key} = ["HOLO-1", "HOLO-2"]\n')
+
+                result = ticket_depends.rewrite_depends(body, lambda deps: [])
+
+                self.assertEqual(result, DEPENDS_BODY.replace(
+                    DEPENDS_LINE, "depends_on = []\n"))
+
     def test_a_missing_depends_on_is_added_above_the_first_table(self):
         body = DEPENDS_BODY.replace(DEPENDS_LINE, "")
 
@@ -215,6 +226,14 @@ class CaptureBriefTests(unittest.TestCase):
         lines = brief.split("\n")
         self.assertIn("01-row-dawn.png: the lane in Dawn", lines)
         self.assertIn("02-row-night.png: the same lane in Night", lines)
+
+
+    def test_a_magic_line_brief_keeps_its_numbered_states(self):
+        ticket = "# Edit name\n\n## Evidence\n\nDialog open\n"
+
+        brief = pr_media.implementer_brief(self.target, ticket, "KO-9")
+
+        self.assertIn("01: Dialog open", brief.split("\n"))
 
 
 class RecordingEvidenceTests(unittest.TestCase):

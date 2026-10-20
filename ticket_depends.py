@@ -6,7 +6,7 @@ import tomllib
 import ticket_header
 import ticket_template
 
-KEY_RE = re.compile(r"\s*([A-Za-z0-9_-]+)\s*=")
+KEY_RE = re.compile(r"""\s*(?:"([^"\\]*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*=""")
 
 ESTIMATE_SECTION = "Estimate & dependencies"
 
@@ -48,7 +48,8 @@ def _top_level_keys(lines, opening, closing):
             continue
         last = next((end for end in range(index, closing)
                      if _parses(lines[index:end + 1])), closing - 1)
-        keys.append((key.group(1), index, last))
+        keys.append((next(name for name in key.groups() if name is not None),
+                     index, last))
         index = last + 1
     return keys
 
