@@ -1,7 +1,7 @@
-export type TitleSpan = { text: string; code: boolean };
+type TitleSpan = { text: string; code: boolean };
 
 /** Splits a title on paired backticks; an unpaired backtick stays text. */
-export function splitTitle(title: string): TitleSpan[] {
+function splitTitle(title: string): TitleSpan[] {
   const spans: TitleSpan[] = [];
   let rest = title;
   for (;;) {
