@@ -38,11 +38,12 @@ interface Daemon {
   projects?: [string, string];
   ticketBody?: string;
   sendBack?: { ok: boolean; detail: string };
+  markReady?: { ok: boolean; detail: string };
 }
 
 let client: QueryClient | null = null;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" } }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" } }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
@@ -62,6 +63,10 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
     if (url.endsWith("/actions/send-back")) {
       await fetchImpl(url, init);
       return Response.json(sendBack);
+    }
+    if (url.endsWith("/actions/mark-ready")) {
+      await fetchImpl(url, init);
+      return Response.json(markReady);
     }
     return fleet(url, init);
   };
@@ -191,6 +196,49 @@ test("Send back posts the typed note for the run, keeps it on a refusal, and is 
   await openRow(42);
   expect(within(row()).getByRole("link", { name: "Open run" })).toBeTruthy();
   expect(within(row()).queryByRole("button", { name: "Send back with a note" })).toBeNull();
+});
+
+test("Mark ready for review confirms, posts the run and toasts on a draft with actions; a refusal shows its detail", async () => {
+  const draft = park(12, "pull_request", HOUR, { number: 45, state: "draft", checks: "success", review: null, threads: 0, open_threads: 0 });
+  const row = () => rows()[0]!;
+  const markReady = async () => {
+    await act(async () => {
+      fireEvent.click(within(row()).getByRole("button", { name: "Mark ready for review" }));
+      await settle();
+    });
+    const confirm = within(screen.getByRole("dialog", { name: "Mark #45 ready for review?" }));
+    expect(confirm.getByText("Review bots and the full checks start on GitHub.")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(confirm.getByRole("button", { name: "Mark ready for review" }));
+      await settle();
+    });
+  };
+  const seen = await mount({ items: [draft], actions: true, readyRuns: [] });
+  await openRow(45);
+  const buttons = [...row().querySelectorAll("[data-pr-detail] a, [data-pr-detail] button")].map((node) => node.textContent);
+  expect(buttons.slice(0, 2)).toEqual(["Open PR to review", "Mark ready for review"]);
+  await markReady();
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/mark-ready`, body: { run: 12 } }]);
+  expect(document.querySelector("[data-toast]")?.textContent).toBe("Marked #45 ready for review.");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  unmount();
+
+  await mount({ items: [draft], actions: true, readyRuns: [], markReady: { ok: false, detail: "run 12 is not a draft held for review" } });
+  await openRow(45);
+  await markReady();
+  expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
+});
+
+test("Mark ready for review is absent on a ready pull request and on a daemon without actions", async () => {
+  const draft = park(12, "pull_request", HOUR, { number: 45, state: "draft", checks: "success", review: null, threads: 0, open_threads: 0 });
+  for (const [item, actions, pr] of [[readyPark, true, 42], [draft, false, 45]] as const) {
+    await mount({ items: [item], actions, readyRuns: [] });
+    await openRow(pr);
+    expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" })).toBeTruthy();
+    expect(within(rows()[0]!).queryByRole("button", { name: "Mark ready for review" })).toBeNull();
+    unmount();
+  }
 });
 
 test("the PR number links to GitHub without toggling or fetching the row detail", async () => {

@@ -1293,6 +1293,36 @@ and the reason in `detail`, and nothing is written. A missing `ticket`,
 or a `hint` or `now` that is not a boolean, is 400; a project with no
 store is 503.
 
+## `POST /actions/mark-ready`
+
+Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
+behind its token. It marks a run's draft pull request ready for review with
+the factory's own GitHub access, sending the `markPullRequestReadyForReview`
+mutation the babysitter sends, and records a `pr_ready` event on the run.
+The console's opened pull request row posts it for a draft held for review;
+the factory's wake on a pull request marked ready for review then picks the
+run up, so the action neither requeues nor babysits it.
+
+```json
+{"run": 52, "author": "maintainer"}
+```
+
+`run` (required) is the run parked on its pull request; `author` defaults
+to `maintainer` and is named in the event.
+
+```json
+{"action": "mark-ready", "ok": true, "run": 52, "recorded": null,
+ "detail": "https://github.com/org/repo/pull/7 marked ready for review"}
+```
+
+`recorded` is null: the action writes the `pr_ready` event, not an
+interventions row. A run that is not the ticket's latest attempt parked on a
+pull request whose last seen state is `draft` is refused, nothing written
+and nothing sent: `{"ok": false, "detail": "run N is not a draft held for
+review"}`. A GitHub read or mutation that fails is also `ok: false`, naming
+the pull request, with no event. A `run` that is not a positive integer is
+400; a project with no store is 503.
+
 ## `GET /peers`
 
 Where the other daemons are, so the page can fan out from whichever
