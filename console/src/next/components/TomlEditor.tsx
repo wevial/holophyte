@@ -1,7 +1,12 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { checkConfig } from "../../lib/config";
+import { tomlTokenLines, type TomlKind } from "../tomlTokens";
 import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
+
+const KIND_CLASS: Record<TomlKind, string> = {
+  table: "text-act", key: "text-ink", string: "text-live", number: "text-wait", bool: "text-wait", date: "text-wait", comment: "text-ink-3", punct: "text-ink-2", text: "text-ink",
+};
 
 export type TomlCheckState = { text: string; pending: boolean; error: string | null; line: number | null };
 
@@ -23,7 +28,7 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
 }) {
   const { fetch } = useContext(PollDepsContext);
   const [checked, setChecked] = useState<TomlCheckState | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const lines = useMemo(() => tomlTokenLines(text), [text]);
   const report = useRef(onCheck);
   report.current = onCheck;
   const changed = text !== original;
@@ -50,29 +55,35 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
 
   const readOnly = disabled || busy || fieldChanges > 0;
   const error = current.error?.replace(/^\[holo2\]\s+.*?:\s*/, "");
-  const markTop = current.line == null ? null : 12 + (current.line - 1) * 20 - scrollTop;
   return <div className="mt-6 min-w-0">
     {fieldChanges > 0 && <p className="mb-4 font-mono text-[12px] text-ink-3">Save or discard the {fieldChanges} field {fieldChanges === 1 ? "change" : "changes"} before editing the raw file.</p>}
-    <div className="flex min-w-0 overflow-hidden border border-rule bg-paper-2">
-      <div aria-hidden="true" className="max-h-[360px] shrink-0 overflow-hidden border-r border-rule py-3 text-right font-mono text-[13px] leading-5 text-ink-3">
-        <div style={{ transform: `translateY(-${scrollTop}px)` }}>
-        {text.split("\n").map((_, index) => <div key={index} data-line={index + 1} data-refused={current.line === index + 1 ? "true" : undefined} className={`h-5 min-w-12 px-3 ${current.line === index + 1 ? "bg-bad-wash text-bad" : ""}`}>
-          <span className="mr-1 inline-block w-1.5">{current.line === index + 1 ? "▪" : ""}</span>{index + 1}
-        </div>)}
+    <div data-toml-scroller="" className="h-[360px] min-w-0 overflow-auto border border-rule bg-paper-2 focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-act">
+      <div className="flex min-h-full w-max min-w-full">
+        <div aria-hidden="true" className="sticky left-0 z-10 shrink-0 border-r border-rule bg-paper-2 py-3 text-right font-mono text-[13px] leading-5 text-ink-3">
+          {lines.map((_, index) => <div key={index} data-line={index + 1} data-refused={current.line === index + 1 ? "true" : undefined} className={`h-5 min-w-12 px-3 ${current.line === index + 1 ? "bg-bad-wash text-bad" : ""}`}>
+            <span className="mr-1 inline-block w-1.5">{current.line === index + 1 ? "▪" : ""}</span>{index + 1}
+          </div>)}
+        </div>
+        <div className="relative flex-1">
+          {current.line != null && <div data-refused-band="" className="absolute inset-x-0 h-5 bg-bad-wash" style={{ top: 12 + (current.line - 1) * 20 }} />}
+          <pre aria-hidden="true" className="relative m-0 py-3 pl-3 pr-8 font-mono text-[13px] leading-5 whitespace-pre">
+            {lines.map((spans, index) => <span key={index} data-text-line={index + 1} className="block h-5">
+              {spans.map((span, at) => <span key={at} data-kind={span.kind} className={KIND_CLASS[span.kind]}>{span.text}</span>)}
+            </span>)}
+          </pre>
+          <textarea
+            aria-label={`${file} for ${project}`}
+            aria-invalid={current.error != null}
+            value={text}
+            readOnly={readOnly}
+            rows={lines.length}
+            wrap="off"
+            spellCheck={false}
+            onChange={(event) => { setChecked(null); onChange(event.target.value); }}
+            className="absolute inset-0 block h-full w-full resize-none overflow-hidden border-0 bg-transparent px-3 py-3 font-mono text-[13px] leading-5 whitespace-pre text-transparent caret-ink outline-none selection:bg-act/25"
+          />
         </div>
       </div>
-      <textarea
-        aria-label={`${file} for ${project}`}
-        aria-invalid={current.error != null}
-        value={text}
-        readOnly={readOnly}
-        wrap="off"
-        spellCheck={false}
-        onChange={(event) => { setChecked(null); onChange(event.target.value); }}
-        onScroll={(event) => { setScrollTop(event.currentTarget.scrollTop); }}
-        className="block h-[360px] min-w-0 flex-1 resize-none overflow-auto border-0 bg-transparent px-3 py-3 font-mono text-[13px] leading-5 text-ink outline-offset-[-2px] focus:outline-act"
-        style={markTop == null ? undefined : { backgroundImage: `linear-gradient(to bottom, transparent ${markTop}px, var(--bad-wash) ${markTop}px, var(--bad-wash) ${markTop + 20}px, transparent ${markTop + 20}px)` }}
-      />
     </div>
     <div aria-live="polite" className="mt-5">
       <h3 className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Checker</h3>

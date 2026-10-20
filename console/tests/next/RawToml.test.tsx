@@ -18,8 +18,8 @@ const SENTENCE = "[loop] workers must be an integer >= 1, got 0";
 const REFUSAL = { error: `[holo2] /x/config.toml: ${SENTENCE}`, line: 2 };
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 
-async function mount(options: { tab?: string; check?: (text: string) => Promise<Response>; saveRefused?: boolean; pending?: Promise<void> } = {}) {
-  let config: ConfigBody = { text: ORIGINAL, values: { loop: { workers: 2 } }, path: "/srv/demo/config.toml", applies: "next loop start", revision: REVISION, saved: null, modified_ms: null };
+async function mount(options: { text?: string; tab?: string; check?: (text: string) => Promise<Response>; saveRefused?: boolean; pending?: Promise<void> } = {}) {
+  let config: ConfigBody = { text: options.text ?? ORIGINAL, values: { loop: { workers: 2 } }, path: "/srv/demo/config.toml", applies: "next loop start", revision: REVISION, saved: null, modified_ms: null };
   const status: Status = { ...working, project: "/srv/demo", host: "writer-host", runs: [], config_edit: true, actions: true };
   const poll = peersFetch(ORIGIN, { [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
   const checks: RequestInit[] = [];
@@ -45,6 +45,8 @@ async function mount(options: { tab?: string; check?: (text: string) => Promise<
   return { checks, writes };
 }
 const editor = () => screen.getByRole("textbox", { name: "config.toml for demo" }) as HTMLTextAreaElement;
+const scroller = () => editor().closest("[data-toml-scroller]")!;
+const overlay = () => scroller().querySelector("pre")!;
 const saveButton = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
 const change = (text: string) => fireEvent.change(editor(), { target: { value: text } });
 const checked = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 550)); await settle(); });
@@ -58,7 +60,7 @@ afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); se
 test("Raw TOML opens the whole file with a numbered gutter and revision revert, and an unchanged file cannot save", async () => {
   const source = await mount();
   expect(editor().value).toBe(ORIGINAL);
-  const gutter = editor().parentElement!.querySelector('[aria-hidden="true"]')!;
+  const gutter = scroller().querySelector('[aria-hidden="true"]')!;
   expect(gutter).toBeTruthy();
   expect(gutter.textContent?.replace(/\s/g, "")).toBe("123");
   expect(screen.getByRole("button", { name: "Revert to revision 3f9a2c1" })).toBeTruthy();
@@ -78,7 +80,7 @@ test("typing is debounced into one check and a refused line blocks Save until a 
   expect(screen.getByText("1 error blocks saving")).toBeTruthy();
   expect(screen.getByText("line 2")).toBeTruthy();
   expect(screen.getByText(SENTENCE)).toBeTruthy();
-  expect(editor().parentElement!.querySelector('[data-line="2"]')!.className).toContain("text-bad");
+  expect(scroller().querySelector('[data-line="2"]')!.className).toContain("text-bad");
   expect(screen.getByRole("link", { name: /Raw TOML/ }).textContent).toBe("Raw TOML1");
   expect(saveButton().disabled).toBe(true);
   change(CLEAN);
@@ -192,10 +194,36 @@ test("a save-time refusal closes the confirm and marks the line while preserving
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(editor().value).toBe(CLEAN);
   expect(screen.getByText("line 2")).toBeTruthy();
-  expect(editor().parentElement!.querySelector('[data-line="2"]')!.className).toContain("text-bad");
+  expect(scroller().querySelector('[data-line="2"]')!.className).toContain("text-bad");
   expect(saveButton().disabled).toBe(true);
 });
 
+test("the overlay colours the seeded file by kind and follows typing in the textarea", async () => {
+  const seeded = '[merge]\nmode = "pr"\n';
+  await mount({ text: seeded });
+  expect(editor().value).toBe(seeded);
+  const table = overlay().querySelector('[data-kind="table"]')!;
+  expect(table.textContent).toBe("[merge]");
+  expect(overlay().getAttribute("aria-hidden")).toBe("true");
+  change(seeded + "[loop]\nworkers = 3\n");
+  expect(editor().value).toBe(seeded + "[loop]\nworkers = 3\n");
+  expect([...overlay().querySelectorAll('[data-kind="table"]')].map(span => span.textContent)).toEqual(["[merge]", "[loop]"]);
+  expect(overlay().querySelector('[data-text-line="4"] [data-kind="number"]')!.textContent).toBe("3");
+});
+
+test("a refusal naming line 3 marks that gutter line and draws its band on the third text line", async () => {
+  const refused = "[loop]\nworkers = 2\nbogus = \n";
+  await mount({ check: async () => Response.json({ error: "[holo2] /x/config.toml: Invalid value (at line 3, column 9)", line: 3 }, { status: 400 }) });
+  change(refused);
+  await checked();
+  expect(screen.getByText("line 3")).toBeTruthy();
+  const marked = scroller().querySelectorAll('[data-refused="true"]');
+  expect([...marked].map(line => line.getAttribute("data-line"))).toEqual(["3"]);
+  expect(marked[0]!.textContent).toContain("▪");
+  const band = scroller().querySelector("[data-refused-band]") as HTMLElement;
+  expect(band.style.top).toBe("52px");
+  expect(band.parentElement!.contains(editor())).toBe(true);
+});
 
 test("line diff keeps shared lines and numbers removals in the old file and insertions in the new file", () => {
   expect(lineDiff("[loop]\nworkers = 2\nkeep = true\nobsolete = true\n", "# settings\n[loop]\nworkers = 3\nkeep = true\n")).toEqual([
