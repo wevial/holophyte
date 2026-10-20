@@ -145,6 +145,11 @@ class HeaderProblemTests(unittest.TestCase):
              'bundle: "https://media.example/row.gif"'),
             ('blast_radius = "high"\n', 'blast_radius = "high"\nblast = "high"\n',
              'header field "blast" is not a ticket field'),
+            ('depends_on = ["HOLO-7"]', 'depends_on = ["HOLO-7\\n"]',
+             'header depends_on must be a list of ticket keys, not ["HOLO-7\\n"]'),
+            ('state = "the same lane in Night"', 'state = "   "',
+             'header evidence[2].state must name the UI state to capture, '
+             'not "   "'),
         ]
         for old, new, expected in cases:
             with self.subTest(new=new):
