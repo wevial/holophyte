@@ -3,8 +3,9 @@ export type TomlSpan = { kind: TomlKind; text: string };
 type Open = '"""' | "'''" | null;
 
 const KEY_PART = String.raw`(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')`;
-const KEY = new RegExp(String.raw`^${KEY_PART}(?:[ \t]*\.[ \t]*${KEY_PART})*[ \t]*(?==)`);
-const TABLE = new RegExp(String.raw`^\[\[?[ \t]*${KEY_PART}(?:[ \t]*\.[ \t]*${KEY_PART})*[ \t]*\]\]?`);
+const DOTTED_KEY = String.raw`${KEY_PART}(?:[ \t]*\.[ \t]*${KEY_PART})*[ \t]*`;
+const KEY = new RegExp(String.raw`^${DOTTED_KEY}(?==)`);
+const TABLE = new RegExp(String.raw`^\[\[?[ \t]*${DOTTED_KEY}\]\]?`);
 const DATE = /^(?:\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})?)?|\d{2}:\d{2}:\d{2}(?:\.\d+)?)/;
 const NUMBER = /^(?:[+-]?(?:inf|nan)|0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+|[+-]?\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?[\d_]+)?)/;
 const BOOL = /^(?:true|false)/;
