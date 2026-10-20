@@ -721,6 +721,8 @@ At the root:
 - `ticket_template.py` — parser/validator for the ticket shape;
   `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
   pickable-ready.
+- `ticket_header.py` — finds, parses and checks the `+++` TOML header a
+  ticket can open with, setting the same `Ticket` fields as the magic lines.
 - `ticket_depends.py` — finds a ticket body's estimate line and rewrites its
   `Depends on:` list, for story filing and a cancel's rewire.
 - `story_template.py` — validator for a story directory's body, witness

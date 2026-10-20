@@ -296,6 +296,7 @@ PINNED = {
 
     "story_template.py": 1,
     "ticket_depends.py": 3,
+    "ticket_header.py": 4,
     "ticket_template.py": 24,
     "ticket_criteria.py": 0,
 }

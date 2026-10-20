@@ -533,7 +533,8 @@ class LinearImportTests(unittest.TestCase):
     def test_the_module_imports_with_no_configuration_at_all(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        for name in ("linear_provider.py", "ticket_template.py"):
+        for name in ("linear_provider.py", "ticket_template.py",
+                     "ticket_header.py"):
             shutil.copy(ROOT / name, tmp.name)
         env = {k: v for k, v in os.environ.items()
                if k not in ("HOLO2_PROJECT_ID", "HOLO2_TEAM")}
