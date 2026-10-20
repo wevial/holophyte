@@ -36,14 +36,9 @@ BESIDE = (
 def split(text):
     """`text` without its header, and None or the header's (fields, problem)."""
     lines = text.splitlines(keepends=True)
-    opening = None
-    for index, line in enumerate(lines):
-        if tt.H1_RE.match(line):
-            return text, None
-        if line.rstrip("\r\n") == FENCE:
-            opening = index
-            break
-    if opening is None:
+    opening = next((index for index, line in enumerate(lines)
+                    if line.rstrip("\r\n") == FENCE or tt.H1_RE.match(line)), None)
+    if opening is None or lines[opening].rstrip("\r\n") != FENCE:
         return text, None
     closing = next((index for index in range(opening + 1, len(lines))
                     if lines[index].rstrip("\r\n") == FENCE), None)
