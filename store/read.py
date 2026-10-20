@@ -118,6 +118,7 @@ class BlockedTicket:
     prSeenChangedFiles: int | None = None
     prSeenPreviewUrl: str | None = None
     prSeenScreenshots: str | None = None
+    prSeenVideos: str | None = None
     title: str | None = None
     ticketUrl: str | None = None
     boardState: str | None = None
@@ -160,7 +161,7 @@ def blocked_tickets(conn, project_id=None):
                           prSeenOpenThreadsFloor=row[17], prSeenState=row[18],
                           reviewRoundCount=row[19],
                           waitsOn=_unmerged(deps, row[20], json.loads(row[21])),
-                          **_pr_seen_media(row[22:27]))
+                          **_pr_seen_media(row[22:28]))
             for row in rows]
 
 

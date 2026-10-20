@@ -410,7 +410,7 @@ def _seen(status):
             status.open_threads_floor, status.checks, status.review,
             status.title, _pr_state(status), status.additions,
             status.deletions, status.changed_files, status.preview_url,
-            status.screenshots)
+            status.screenshots, status.videos)
 
 
 def _wake_reason(target, conn, ticket, pull, status):

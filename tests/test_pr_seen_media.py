@@ -34,6 +34,15 @@ SIZED = {"state": "OPEN", "merged": False, "mergeCommit": None,
          "head": {"nodes": [{"commit": {"deployments": {"nodes": [
              deployment("SUCCESS", "https://preview.example"),
              deployment("FAILURE", "https://broken.example")]}}}]}}
+VIDEOS = (("video-01.webm", "https://media.example/a/video-01.webm"),
+          ("clip.webm",
+           "https://github.com/o/r/blob/pr-media/clip.webm?raw=true"))
+LINKED = {**SIZED, "body": (
+    "Splits the editor; see [demo](https://media.example/demo.webm)."
+    "\n\nTicket: KO-7\n\n## Evidence\n\n"
+    + "".join(f"![{caption}]({url})\n" for caption, url in SHOTS[:2])
+    + "".join(f"[{caption}]({url})\n" for caption, url in VIDEOS)
+    + "[notes](https://media.example/notes.html)\n")}
 BARE = {"state": "OPEN", "merged": False, "mergeCommit": None,
         "mergedBy": None, "updatedAt": "2026-10-19T10:00:00Z",
         "title": "Split the editor", "isDraft": False,
@@ -61,6 +70,7 @@ class PullStatusMediaTests(unittest.TestCase):
         status = self.read(BARE)
         self.assertIsNone(status.preview_url)
         self.assertEqual(status.screenshots, ())
+        self.assertEqual(status.videos, ())
         self.assertEqual((status.additions, status.deletions,
                           status.changed_files), (None, None, None))
 
@@ -72,17 +82,10 @@ class PullStatusMediaTests(unittest.TestCase):
         self.assertEqual(status.screenshots, (
             ("Panel [open]", "https://media.example/panel_(2).png"),))
 
-
     def test_evidence_video_links_are_read_beside_its_images(self):
-        body = ("Splits the editor; see [demo](https://media.example/demo.webm)."
-                "\n\nTicket: KO-7\n\n## Evidence\n\n"
-                + "".join(f"![{caption}]({url})\n" for caption, url in SHOTS[:2])
-                + "[video-01.webm](https://media.example/a/video-01.webm)\n"
-                "[clip.webm](https://github.com/o/r/blob/pr-media/clip.webm"
-                "?raw=true)\n[notes](https://media.example/notes.html)\n")
-        status = self.read({**BARE, "body": body})
+        status = self.read(LINKED)
         self.assertEqual(status.screenshots, SHOTS[:2])
-        self.assertEqual(getattr(status, "videos", None), (
+        self.assertEqual(status.videos, (
             ("video-01.webm", "https://media.example/a/video-01.webm"),
             ("clip.webm",
              "https://github.com/o/r/blob/pr-media/clip.webm?raw=true")))
@@ -108,13 +111,31 @@ class AttentionMediaTests(ServeTestCase):
         (item,) = [item for item in body["items"] if item["kind"] == "pr_open"]
         return item["pr"]
 
-    def test_a_reconciled_read_serves_size_preview_and_screenshots(self):
-        self.start(config='[merge]\npr_poll_sec = 3600\n')
+    def woken_run_pull_request_facts(self, node=None):
+        ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
+        store.tickets.walk_ticket(self.conn, ticket.id, "in_flight")
         project = store.tickets.ensure_project(self.conn, "team-1", self.target)
-        with patch.object(pr_status, "graphql", return_value=answer(SIZED)), \
+        woken = store.claim(self.conn, project, ticket.id, now=self.now)
+        store.set_phase(self.conn, woken, "working", now=self.now)
+        store.set_pull_request(self.conn, woken, URL)
+        if node is not None:
+            with patch.object(pr_status, "graphql", return_value=answer(node)):
+                status = pr_status.pull_status(None, pr_status.parse_pr_url(URL))
+            store.record_pr_seen(self.conn, woken, reconcile._seen(status))
+        _, _, body = self.request("GET", "/status")
+        (run,) = [run for run in body["runs"] if run["id"] == woken]
+        return run["pr"]
+
+    def reconcile(self, node):
+        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        with patch.object(pr_status, "graphql", return_value=answer(node)), \
                 patch.object(reconcile, "time", return_value=self.now / 1000):
             reconcile._reconcile_pull_requests(self.project, self.conn, project,
                                                None, failed_asked={})
+
+    def test_a_reconciled_read_serves_size_preview_and_screenshots(self):
+        self.start(config='[merge]\npr_poll_sec = 3600\n')
+        self.reconcile(SIZED)
         facts = self.pull_request_facts()
         self.assertEqual(
             {key: facts[key] for key in ("additions", "deletions",
@@ -125,13 +146,33 @@ class AttentionMediaTests(ServeTestCase):
                          [{"caption": caption, "url": url}
                           for caption, url in SHOTS])
 
-    def test_a_store_at_the_previous_version_migrates_and_serves_none(self):
+    def test_a_reconciled_read_serves_evidence_videos_on_attention_and_status(self):
+        self.start(config='[merge]\npr_poll_sec = 3600\n')
+        self.reconcile(LINKED)
+        videos = [{"caption": caption, "url": url} for caption, url in VIDEOS]
+        self.assertEqual(self.pull_request_facts()["videos"], videos)
+        self.assertEqual(self.woken_run_pull_request_facts(LINKED)["videos"],
+                         videos)
+
+    def test_a_store_before_videos_migrates_and_serves_no_videos(self):
+        self.conn.execute("ALTER TABLE runs DROP COLUMN prSeenVideos")
+        self.conn.execute(
+            f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1}")
+        self.conn.commit()
+        store.open(str(self.db)).close()
+        self.assertIn("prSeenVideos", {row[1] for row in self.conn.execute(
+            "PRAGMA table_info(runs)")})
+        self.start()
+        self.assertEqual(self.pull_request_facts()["videos"], [])
+        self.assertEqual(self.woken_run_pull_request_facts()["videos"], [])
+
+    def test_a_store_before_media_migrates_and_serves_none(self):
         added = ("prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",
-                 "prSeenPreviewUrl", "prSeenScreenshots")
+                 "prSeenPreviewUrl", "prSeenScreenshots", "prSeenVideos")
         for column in added:
             self.conn.execute(f"ALTER TABLE runs DROP COLUMN {column}")
         self.conn.execute(
-            f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1}")
+            f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 2}")
         self.conn.commit()
         store.open(str(self.db)).close()
         columns = {row[1] for row in

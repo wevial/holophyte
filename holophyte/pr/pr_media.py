@@ -437,22 +437,28 @@ def _cap_files(output, files, cfg):
 
 
 def _state_media(states, urls):
-    """Map published PNGs by their NN- prefix; videos never satisfy a state."""
-    images = {}
-    for file, url in urls.items():
-        match = re.match(r"^(\d{2})-.+\.png$", file.name)
-        if match:
-            images.setdefault(int(match[1]), (file, url))
     lines, matched = [], set()
-    for number, state in enumerate(states, 1):
+    for state, files in zip(states, _state_images(states, urls), strict=True):
         label = state.replace("[", r"\[").replace("]", r"\]")
-        image = images.get(number)
-        lines.append(f"- {label} — {'captured' if image else 'not captured'}")
-        if image:
-            file, url = image
-            matched.add(file)
-            lines.append(f"![{label}]({url})")
+        lines.append(f"- {label} — {'captured' if files else 'not captured'}")
+        matched.update(files)
+        lines.extend(f"![{label}]({urls[file]})" for file in files)
     return lines, matched
+
+
+def _state_images(states, files):
+    """A state naming PNGs in backticks takes those, else its NN- PNG."""
+    pngs = [file for file in files if file.name.endswith(".png")]
+    named = [set(re.findall(r"`([^`\s]+\.png)`", state)) for state in states]
+    claimed = set().union(*named)
+    numbered = {}
+    for file in pngs:
+        match = re.match(r"^(\d{2})-.+\.png$", file.name)
+        if match and file.name not in claimed:
+            numbered.setdefault(int(match[1]), file)
+    return [[file for file in pngs if file.name in names] if names
+            else [numbered[number]] if number in numbered else []
+            for number, names in enumerate(named, 1)]
 
 
 def _missing(section, states):
@@ -533,10 +539,9 @@ def _images(output):
 
 
 def _unsaved(files, states):
-    saved = {int(file.name[:2]) for file in files
-             if re.match(r'^\d{2}-.+\.png$', file.name)}
-    return [f'{number:02d} {state}' for number, state in enumerate(states, 1)
-            if number not in saved]
+    return [f'{number:02d} {state}' for number, (state, saved)
+            in enumerate(zip(states, _state_images(states, files), strict=True), 1)
+            if not saved]
 
 
 def _record_kind(note, kind, missing):

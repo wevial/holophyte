@@ -324,6 +324,22 @@
       ],
       "additionalProperties": true
     },
+    "Video": {
+      "type": "object",
+      "properties": {
+        "caption": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "caption",
+        "url"
+      ],
+      "additionalProperties": true
+    },
     "PullRequestFacts": {
       "type": "object",
       "properties": {
@@ -449,6 +465,12 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Screenshot"
+          }
+        },
+        "videos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Video"
           }
         }
       },

@@ -1048,3 +1048,26 @@ class StateCaptionTests(unittest.TestCase):
             f"- {states[2]} — captured",
             f"![{states[2]}](https://media.example/04-conflict-390.png)"])
         self.assertEqual(set(urls) - matched, {Path("conflict-flow.webm")})
+
+    def test_states_naming_no_file_pair_with_images_by_position(self):
+        urls = {Path(name): f"https://media.example/{name}"
+                for name in ("01-panel.png", "02-panel.png")}
+        lines, matched = pr_media._state_media(["Panel open", "Panel closed"],
+                                               urls)
+        self.assertEqual(lines, [
+            "- Panel open — captured",
+            "![Panel open](https://media.example/01-panel.png)",
+            "- Panel closed — captured",
+            "![Panel closed](https://media.example/02-panel.png)"])
+        self.assertEqual(matched, set(urls))
+
+    def test_a_state_naming_an_unpublished_file_is_not_captured(self):
+        states = ["`01-panel.png`: the panel open",
+                  "`05-missing.png`: the panel closed"]
+        files = [Path("01-panel.png"), Path("02-panel.png")]
+        lines, _ = pr_media._state_media(
+            states, {file: f"https://media.example/{file}" for file in files})
+        self.assertEqual(lines[2], f"- {states[1]} — not captured")
+        self.assertEqual(pr_media._partial(files, states), [
+            "The UI capture saved 1 of 2 views; not captured:"
+            f" 02 {states[1]}"])

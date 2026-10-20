@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS runs (
     prSeenChangedFiles INTEGER,
     prSeenPreviewUrl  TEXT,
     prSeenScreenshots TEXT,
+    prSeenVideos      TEXT,
     UNIQUE (ticketId, attempt)
 );
 
