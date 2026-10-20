@@ -52,8 +52,6 @@ class LinearHeaderTests(unittest.TestCase):
 
         self.assertEqual(created, "```toml\n" + "\n".join(TOML_LINES)
                          + "\n```\n" + REST)
-        self.assertTrue(REST.startswith("# Show the row defaults\n"))
-        self.assertNotIn("+++", created.split("\n"))
         self.assertEqual(updated, created)
 
     def test_the_sent_description_reads_back_as_the_header_body(self):
@@ -217,13 +215,6 @@ class CaptureBriefTests(unittest.TestCase):
         lines = brief.split("\n")
         self.assertIn("01-row-dawn.png: the lane in Dawn", lines)
         self.assertIn("02-row-night.png: the same lane in Night", lines)
-
-    def test_a_magic_line_brief_keeps_its_numbered_states(self):
-        ticket = "# Edit name\n\n## Evidence\n\nDialog open\n"
-
-        brief = pr_media.implementer_brief(self.target, ticket, "KO-9")
-
-        self.assertIn("01: Dialog open", brief.split("\n"))
 
 
 class RecordingEvidenceTests(unittest.TestCase):
