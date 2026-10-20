@@ -4,6 +4,8 @@ import json
 import re
 import tomllib
 
+import ticket_template as tt
+
 FENCE = "+++"
 FIELDS = ("ui_change", "blast_radius", "estimate", "depends_on", "orchestration",
           "implementer", "mockup", "evidence")
@@ -21,7 +23,7 @@ BESIDE = (
      "'**UI change:**' line beside a header: give ui_change in the header only"),
     (lambda t: t.blast_radius is not None,
      "'**Blast radius:**' line beside a header: give blast_radius in the header only"),
-    (lambda t: "Estimate & dependencies" in t.order,
+    (lambda t: tt.ESTIMATE in t.order,
      "'## Estimate & dependencies' beside a header: give estimate and depends_on "
      "in the header only"),
     (lambda t: "Mock-up" in t.order,
@@ -33,11 +35,10 @@ BESIDE = (
 
 def split(text):
     """`text` without its header, and None or the header's (fields, problem)."""
-    import ticket_template
     lines = text.splitlines(keepends=True)
     opening = None
     for index, line in enumerate(lines):
-        if ticket_template.H1_RE.match(line):
+        if tt.H1_RE.match(line):
             return text, None
         if line.rstrip("\r\n") == FENCE:
             opening = index
@@ -86,7 +87,6 @@ def mockup_media_kind(url):
 
 def _checked(fields):
     """The fields that pass their checks, and a problem for each that does not."""
-    import ticket_template as tt
     checks = {
         "ui_change": lambda v: _choice("ui_change", v, tt.UI_CHANGE_VALUES[::-1]),
         "blast_radius": lambda v: _choice("blast_radius", v,
@@ -130,25 +130,22 @@ def _choice(name, value, choices):
 
 
 def _estimate_problems(value):
-    import ticket_template
-    if type(value) is int and 1 <= value <= ticket_template.MAX_ESTIMATE_MIN:
+    if type(value) is int and 1 <= value <= tt.MAX_ESTIMATE_MIN:
         return []
     return [f"header estimate must be whole minutes from 1 to "
-            f"{ticket_template.MAX_ESTIMATE_MIN}, not {_show(value)}"]
+            f"{tt.MAX_ESTIMATE_MIN}, not {_show(value)}"]
 
 
 def _depends_problems(value):
-    import ticket_template
     if isinstance(value, list) and all(
-            isinstance(key, str) and ticket_template.LINEAR_ID_RE.match(key)
+            isinstance(key, str) and tt.LINEAR_ID_RE.match(key)
             for key in value):
         return []
     return [f"header depends_on must be a list of ticket keys, not {_show(value)}"]
 
 
 def _implementer_problems(value):
-    import ticket_template
-    if isinstance(value, str) and ticket_template.IMPLEMENTER_NAME_RE.fullmatch(value):
+    if isinstance(value, str) and tt.IMPLEMENTER_NAME_RE.fullmatch(value):
         return []
     return ["header implementer must name one profile of letters, digits, _ "
             f"and -, not {_show(value)}"]
@@ -166,14 +163,13 @@ def _approved(value):
 
 
 def _mockup_problems(value):
-    import ticket_template
     if not isinstance(value, dict):
         return [f"header mockup must be a [mockup] table, not {_show(value)}"]
     problems = _unknown("mockup.", value, MOCKUP_FIELDS)
     url, note = value.get("url"), value.get("note")
     if url is None:
         problems.append("header mockup.url is missing: link the approved mock-up")
-    elif not (isinstance(url, str) and ticket_template.MOCKUP_URL_RE.fullmatch(url)):
+    elif not (isinstance(url, str) and tt.MOCKUP_URL_RE.fullmatch(url)):
         problems.append("header mockup.url is not a claude.ai artifact or a "
                         f"Lotuspod page: {_show(url)}")
     if "approved" not in value:
@@ -229,7 +225,6 @@ def _evidence_problems(value):
 
 def _set_mockup(t, mockup):
     """The `## Mock-up` section a magic-line ticket would give for `mockup`."""
-    import ticket_template as tt
     note = " ".join(mockup["note"].split())
     t.mockup_source = "\n".join(
         [mockup["url"], f"Approved {_approved(mockup['approved'])}: {note}"]
