@@ -16,25 +16,26 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
   const [index, setIndex] = useState(start);
   const box = useRef<HTMLElement>(null);
   const close = useRef<HTMLButtonElement>(null);
-  const live = useRef({ index, onClose });
-  live.current = { index, onClose };
+  const total = items.length;
+  const shown = Math.min(index, total - 1);
+  const live = useRef({ shown, onClose });
+  live.current = { shown, onClose };
+  useEffect(() => close.current?.focus(), []);
   useEffect(() => {
-    close.current?.focus();
     const keep = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         const step = event.key === "ArrowLeft" ? -1 : 1;
-        setIndex((at) => Math.min(items.length - 1, Math.max(0, at + step)));
+        setIndex((at) => Math.min(total - 1, Math.max(0, Math.min(at, total - 1) + step)));
         return;
       }
-      trap(event, box.current, () => live.current.onClose(live.current.index));
+      trap(event, box.current, () => live.current.onClose(live.current.shown));
     };
     document.addEventListener("keydown", keep, true);
     return () => document.removeEventListener("keydown", keep, true);
-  }, [items.length]);
-  const item = items[index]!;
-  const total = items.length;
-  const name = `${item.kind === "video" ? "Video" : "Screenshot"} ${index + 1} of ${total}`;
+  }, [total]);
+  const item = items[shown]!;
+  const name = `${item.kind === "video" ? "Video" : "Screenshot"} ${shown + 1} of ${total}`;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-2 sm:p-4">
       <section
@@ -46,8 +47,8 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
       >
         <div className="col-start-2 row-start-1 border border-rule bg-paper text-ink shadow-[0_24px_60px_rgba(0,0,0,.45)]">
           <div className="flex items-center gap-3 border-b border-rule py-2 pl-3.5 pr-2">
-            <span data-media-counter className="flex-1 font-mono text-[12px] text-ink-2">{`${index + 1} / ${total}`}</span>
-            <Btn ref={close} aria-label="Close" onClick={() => onClose(index)} className="!h-9 !px-3">
+            <span data-media-counter className="flex-1 font-mono text-[12px] text-ink-2">{`${shown + 1} / ${total}`}</span>
+            <Btn ref={close} aria-label="Close" onClick={() => onClose(shown)} className="!h-9 !px-3">
               <span aria-hidden="true">✕</span>
             </Btn>
           </div>
@@ -62,10 +63,10 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
             {item.caption}
           </p>
         </div>
-        <Btn aria-label="Previous" disabled={index === 0} onClick={() => setIndex(index - 1)} className="col-start-1 row-start-1 !px-3 sm:!px-4">
+        <Btn aria-label="Previous" disabled={shown === 0} onClick={() => setIndex(shown - 1)} className="col-start-1 row-start-1 !px-3 sm:!px-4">
           <span aria-hidden="true" className="text-[20px]">‹</span>
         </Btn>
-        <Btn aria-label="Next" disabled={index === total - 1} onClick={() => setIndex(index + 1)} className="col-start-3 row-start-1 !px-3 sm:!px-4">
+        <Btn aria-label="Next" disabled={shown === total - 1} onClick={() => setIndex(shown + 1)} className="col-start-3 row-start-1 !px-3 sm:!px-4">
           <span aria-hidden="true" className="text-[20px]">›</span>
         </Btn>
       </section>

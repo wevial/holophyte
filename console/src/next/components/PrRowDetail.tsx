@@ -101,7 +101,7 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
           ))}
         </div>
       )}
-      {showing != null && (
+      {showing != null && media.length > 0 && (
         <MediaLightbox
           items={media}
           start={showing}

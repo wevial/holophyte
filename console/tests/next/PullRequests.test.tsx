@@ -307,6 +307,11 @@ test("a tile opens its item in a lightbox that Left and Right step through scree
 
   await press("ArrowLeft");
   expect(dialog()!.getAttribute("aria-label")).toBe("Screenshot 3 of 4");
+  await press("ArrowLeft");
+  await press("ArrowLeft");
+  await press("ArrowLeft");
+  expect(dialog()!.getAttribute("aria-label")).toBe("Screenshot 1 of 4");
+  expect((within(dialog()!).getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 test("the lightbox keeps focus inside, and Esc or Close returns it to the tile of the item shown last", async () => {
@@ -323,10 +328,8 @@ test("the lightbox keeps focus inside, and Esc or Close returns it to the tile o
   });
   const close = within(dialog()!).getByRole("button", { name: "Close" });
   expect(document.activeElement).toBe(close);
-  const enabled = [...dialog()!.querySelectorAll<HTMLElement>("button:not(:disabled)")];
   await press("Tab", true);
-  expect(document.activeElement).toBe(enabled.at(-1)!);
-  expect(enabled.at(-1)).not.toBe(close);
+  expect(document.activeElement).toBe(within(dialog()!).getByRole("button", { name: "Next" }));
   await press("Tab");
   expect(document.activeElement).toBe(close);
   await act(async () => {
