@@ -256,7 +256,9 @@ function arrayLines(span: string[], key: string, value: string[], comment?: stri
   const last = rows.length - 1;
   const asWritten = (r: number) => keep[r]!.every(Boolean) && !(r === last && rows[r]!.items.length);
   const items = rows.flatMap(row => row.items);
-  const strayCommas = (r: number) => items.filter(item => item.comma?.row === r && !asWritten(item.row)).map(item => item.comma!.at);
+  const closeGains = added.length > 0 || keep[last]!.some(Boolean);
+  const commaKept = (comma: { row: number }) => asWritten(comma.row) && !(comma.row === last && closeGains);
+  const strayCommas = (r: number) => items.filter(item => item.comma?.row === r && !(asWritten(item.row) && commaKept(item.comma))).map(item => item.comma!.at);
   const unseparated = (r: number) => {
     const text = strayCommas(r).sort((a, b) => b - a).reduce((row, at) => row.slice(0, at) + row.slice(at + 1), span[r]!);
     return text.trim() || !span[r]!.trim() ? text : null;
@@ -274,7 +276,7 @@ function arrayLines(span: string[], key: string, value: string[], comment?: stri
       if (text === null) return;
       lines.push(text);
       const item = row.items.at(-1);
-      if (item) open = item.comma && asWritten(item.comma.row) ? null : { line: lines.length - 1, end: item.end };
+      if (item) open = item.comma && commaKept(item.comma) ? null : { line: lines.length - 1, end: item.end };
       return;
     }
     if (!r) lines.push(`${span[0]!.match(/^\s*/)![0]}${key} = [${head.comment ? ` ${head.comment}` : ""}`);
