@@ -14,6 +14,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.host.worktree_cleanup as worktree_cleanup  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.task_worktree as task_worktree  # noqa: E402 - after the sys.path insert above
+import holophyte.redact as redact  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 
@@ -160,6 +161,19 @@ class RetireFinishedTests(WorktreeCleanupFixture):
         for n, run_id in zip((6, 7), kept):
             self.assertEqual(self.refusals(run_id),
                              [f"kept HOLO-{n}'s worktree: uncommitted work"])
+
+    def test_refusal_naming_a_secret_is_recorded_once_redacted(self):
+        wt, _, run_id = self.ticket(8, "merged")
+        (wt / "work.txt").write_text("edited, not committed\n")
+
+        with redact.values_held({"uncommitted"}):
+            for _ in range(3):
+                self.assertEqual(
+                    worktree_cleanup.retire_finished(self.project, self.conn),
+                    ["kept HOLO-8's worktree: uncommitted work"])
+
+        self.assertEqual(self.refusals(run_id),
+                         [f"kept HOLO-8's worktree: {redact.REDACTED} work"])
 
     def test_board_completed_ticket_with_unpushed_commit_keeps_branch(self):
         wt, branch, run_id = self.ticket(10, "merged", board=True)
