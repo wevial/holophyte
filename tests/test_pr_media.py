@@ -1095,3 +1095,15 @@ class StateCaptionTests(unittest.TestCase):
             f"![{states[0]}](https://media.example/01-panel open)",
             f"![{states[0]}](https://media.example/02-panel closed)"])
         self.assertEqual(matched, set(files))
+
+    def test_an_unnamed_state_keeps_its_position_image_named_elsewhere(self):
+        states = ["Panel open", "`01-panel.png`: the panel detail"]
+        files = [Path("01-panel.png")]
+        lines, _ = pr_media._state_media(
+            states, {file: f"https://media.example/{file}" for file in files})
+        self.assertEqual(lines, [
+            "- Panel open — captured",
+            "![Panel open](https://media.example/01-panel.png)",
+            f"- {states[1]} — captured",
+            f"![{states[1]}](https://media.example/01-panel.png)"])
+        self.assertEqual(pr_media._partial(files, states), [])

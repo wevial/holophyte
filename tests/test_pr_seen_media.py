@@ -87,6 +87,13 @@ class PullStatusMediaTests(unittest.TestCase):
         self.assertEqual(status.screenshots, SHOTS[:2])
         self.assertEqual(status.videos, VIDEOS)
 
+    def test_a_video_link_with_a_fragment_keeps_its_full_url(self):
+        body = ("Ticket: KO-7\n\n## Evidence\n\n"
+                "[clip](https://media.example/a/clip.mp4#t=1)\n")
+        status = self.read({**BARE, "body": body})
+        self.assertEqual(status.videos,
+                         (("clip", "https://media.example/a/clip.mp4#t=1"),))
+
 
 class AttentionMediaTests(ServeTestCase):
     def setUp(self):

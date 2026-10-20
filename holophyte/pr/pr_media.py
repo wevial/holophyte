@@ -452,11 +452,10 @@ def _state_images(states, files):
     pngs = [file for file in files if file.name.endswith(".png")]
     named = [{name for name in re.findall(r"`([^`]+)`", state)
               if name.endswith(".png")} for state in states]
-    claimed = set().union(*named)
     numbered = {}
     for file in pngs:
         match = re.match(r"^(\d{2})-.+\.png$", file.name)
-        if match and file.name not in claimed:
+        if match:
             numbered.setdefault(int(match[1]), file)
     published = {file.name for file in pngs}
     return [([file for file in pngs if file.name in names], names <= published)
