@@ -85,10 +85,7 @@ class PullStatusMediaTests(unittest.TestCase):
     def test_evidence_video_links_are_read_beside_its_images(self):
         status = self.read(LINKED)
         self.assertEqual(status.screenshots, SHOTS[:2])
-        self.assertEqual(status.videos, (
-            ("video-01.webm", "https://media.example/a/video-01.webm"),
-            ("clip.webm",
-             "https://github.com/o/r/blob/pr-media/clip.webm?raw=true")))
+        self.assertEqual(status.videos, VIDEOS)
 
 
 class AttentionMediaTests(ServeTestCase):
