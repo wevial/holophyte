@@ -504,6 +504,13 @@ def narrative_events(conn, run_id, detail_kinds=()):
             for row in rows]
 
 
+def latest_event_summary(conn, run_id, kind):
+    row = conn.execute(
+        "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?"
+        " ORDER BY seq DESC LIMIT 1", (run_id, kind)).fetchone()
+    return row[0] if row else None
+
+
 @dataclass(frozen=True)
 class RunEvent:
     id: int
