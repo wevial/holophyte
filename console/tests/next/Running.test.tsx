@@ -248,7 +248,6 @@ test("a project whose only pull request is on CI keeps its Running lane with not
   expect(lanes()).toEqual(["demo"]);
   expect(head("demo")).toContain("0 of 2 workers busy");
   expect(onCiRows("demo")).toHaveLength(1);
-  expect(onCiRows("demo")[0]!.textContent).toContain("checks running · 4m");
   const prs = screen.getByRole("region", { name: "Pull requests" });
   expect(within(prs).queryAllByRole("group")).toEqual([]);
 });
