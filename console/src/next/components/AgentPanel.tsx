@@ -53,7 +53,7 @@ export function AgentPanel({ label, state, notes, asks, children }: {
                 <span>{message.head} · {formatClock(message.at)}</span>
                 {message.url && <a href={message.url} target="_blank" rel="noreferrer noopener" className="text-ink-3 underline underline-offset-2 hover:text-ink">Open on GitHub <span aria-hidden="true">↗</span></a>}
               </div>
-              <div className="[&_:is(p,ul,ol,pre,blockquote)+*]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li+li]:mt-0.5 [&_code]:font-mono [&_code]:text-[12.5px] [&_pre]:whitespace-pre-wrap [&_pre]:border [&_pre]:border-rule [&_pre]:px-2.5 [&_pre]:py-2 [&_blockquote]:border-l-2 [&_blockquote]:border-rule [&_blockquote]:pl-3 [&_a]:underline">
+              <div className="[&_:is(p,ul,ol,pre,blockquote)+*]:mt-2 [&_p]:whitespace-pre-line [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li+li]:mt-0.5 [&_code]:font-mono [&_code]:text-[12.5px] [&_pre]:whitespace-pre-wrap [&_pre]:border [&_pre]:border-rule [&_pre]:px-2.5 [&_pre]:py-2 [&_blockquote]:border-l-2 [&_blockquote]:border-rule [&_blockquote]:pl-3 [&_a]:underline">
                 <Markdown>{message.text}</Markdown>
               </div>
               {message.effect && <div className="mt-1.5 font-mono text-[12px] text-ink-3">{message.effect}</div>}

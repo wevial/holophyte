@@ -28,7 +28,7 @@ test("the Run page's agent chat renders a markdown answer with room to read", as
   const run = rows[0]!;
   await page.route(new RegExp(`/runs/${run.id}/asks$`), async route => {
     await route.fulfill({ json: runAsksSchema.parse({ run: run.id, ticket: run.ticket, pr_url: null, asks: [{
-      id: 1, author: "maintainer", question: "When does the prompt show, and why did it wait?",
+      id: 1, author: "maintainer", question: "When does the prompt show?\nWhy did it wait?",
       asked_ms: Date.parse("2026-10-16T23:40:00Z"), answered_ms: Date.parse("2026-10-16T23:43:00Z"),
       answer, url: "https://github.com/example/project/pull/12#issuecomment-42",
     }] }) });
@@ -37,6 +37,9 @@ test("the Run page's agent chat renders a markdown answer with room to read", as
   const panel = page.getByRole("complementary", { name: "Agent" });
   await expect(panel.locator("strong", { hasText: "When the prompt shows." })).toBeVisible();
   await expect(panel.getByRole("link", { name: "Open on GitHub" })).toBeVisible();
+  const ask = panel.locator("p", { hasText: "When does the prompt show?" });
+  const lines = await ask.evaluate(p => p.getBoundingClientRect().height / parseFloat(getComputedStyle(p).lineHeight));
+  expect(Math.round(lines)).toBe(2);
   const box = await panel.boundingBox();
   expect(box!.width).toBeGreaterThanOrEqual(380);
   await shot(page, "01-agent-chat-dawn.png");
