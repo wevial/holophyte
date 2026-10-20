@@ -167,6 +167,9 @@ EXPECTED_READ = [
     "blocked_tickets",
     # Phase 3 stage 3: the store's ready queue.
     "claimable",
+    # HOLO-439: the host sweep's read of a run's last refusal, so a kept
+    # worktree's unchanged reason is not recorded again.
+    "latest_event_summary",
     # KO-250: a run's ledger entries, oldest first.
     "ledger",
     # HOLO-145: `holo follow`'s ledger entries across runs after an id.
@@ -198,6 +201,9 @@ EXPECTED_READ = [
     # KO-409: the supervisor's read of the ready tickets owed a loop,
     # however they became ready.
     "ready_tickets",
+    # HOLO-443: a pull request question's ticket's dependencies and
+    # dependents, for the ask prompt.
+    "related_tickets",
     "review_rounds",
     "rounds_of",
     "run_detail",

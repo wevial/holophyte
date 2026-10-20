@@ -24,9 +24,20 @@ const GLYPH_PATH: Record<Tone, string> = {
   neutral: "M3 6h6",
 };
 
-/** `chips` as washed pills; `line` as one mono line, each fact a glyph in its tone and its word. */
-export function PrFacts({ facts, form = "chips" }: { facts?: Fact[]; form?: "chips" | "line" }) {
+/** `chips` as washed pills; `line` as one mono line, each fact a glyph in its tone and its word; `plain` as bare words, coloured only when off. */
+export function PrFacts({ facts, form = "chips" }: { facts?: Fact[]; form?: "chips" | "line" | "plain" }) {
   if (!facts?.length) return null;
+  if (form === "plain") {
+    return (
+      <span data-facts className="flex flex-wrap gap-x-3.5 gap-y-1 font-mono text-[12px] leading-[1.4] text-ink-3">
+        {facts.map((fact) => (
+          <span key={fact.label} data-fact data-tone={fact.tone} className={fact.tone === "neutral" ? "whitespace-nowrap" : `whitespace-nowrap ${GLYPH_CLASS[fact.tone]}`}>
+            {fact.label}
+          </span>
+        ))}
+      </span>
+    );
+  }
   if (form === "line") {
     return (
       <span data-facts className="block font-mono text-[12px] leading-[1.4] text-ink-3">
