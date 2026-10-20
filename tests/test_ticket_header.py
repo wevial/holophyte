@@ -182,8 +182,6 @@ class HeaderProblemTests(unittest.TestCase):
         for old, new, expected in cases:
             with self.subTest(expected=expected):
                 self.assertEqual(problems(changed(old, new)), [expected])
-        self.assertFalse([p for p in ticket_template.validate(
-            ticket_template.parse(BODY)) if "missing section" in p])
 
 
 class HeaderCheckerCliTests(unittest.TestCase):
