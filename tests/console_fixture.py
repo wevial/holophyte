@@ -225,7 +225,8 @@ def _seed_store(path):
                      now - 3 * HOUR, depends="DEMO-8", rounds=6,
                      media=(412, 88, 9, "https://preview.example/demo/42",
                             [(caption, f"{MEDIA}{caption.replace(' ', '-')}.png")
-                             for caption in SCREENSHOTS]))
+                             for caption in SCREENSHOTS],
+                            [("video-01.webm", f"{MEDIA}video-01.webm")]))
 
         midnight = datetime.fromtimestamp(now / SEC).replace(
             hour=0, minute=0, second=0, microsecond=0)
