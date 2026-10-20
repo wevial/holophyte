@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { RunDetail, Status } from "../../src/lib/contract.gen";
+import type { Attention, RunDetail, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
@@ -19,6 +19,7 @@ const STALE_MS = served.thresholds.heartbeat_stale_ms;
 
 type Run = Status["runs"][number];
 type Queued = Status["queued"][number];
+type Item = Attention["items"][number];
 
 const runOf = (id: number, ticket: string, title: string, fields: Partial<Run>): Run => ({
   ...served.runs[0]!, id, ticket, title, heartbeat_age_ms: 30_000, work_started_ms: null, ...fields,
@@ -33,6 +34,15 @@ const queuedOf = (ticket: string, fields: Partial<Queued> = {}): Queued => ({
   ticket, ticket_url: null, title: `Ticket ${ticket}`, reason: "ready", pr_url: null, waiting_ms: MINUTE, ...fields,
 });
 
+const prPark = (run: number, parkKind: string, ageMs: number, pr: object): Item => ({
+  kind: "pr_open", level: "attention", run, ticket: `DEMO-${run}`, ticket_url: null, title: `Ticket ${run}`,
+  park_kind: parkKind, reason: "PR open", asked_ms: NOW - ageMs,
+  pr_url: `https://github.com/example/demo/pull/${run + 33}`, pr: { title: null, state: "ready", number: run + 33, threads: 0, open_threads: 0, ...pr },
+} as Item);
+const draftPark = prPark(12, "pull_request", 3 * MINUTE, { state: "draft", checks: "success", review: "review_required" });
+const readyPark = prPark(9, "pull_request", 2 * MINUTE, { checks: "success", review: "approved" });
+const ciPark = prPark(8, "ci", 4 * MINUTE, { checks: "pending", review: null });
+
 function statusOf(project: string, runs: Run[], fields: Partial<Status> = {}): Status {
   return { ...served, project, now: NOW, runs, queued: [], ...fields };
 }
@@ -42,14 +52,15 @@ async function mount(hash: string, demo: Status, writer: Status, details: Record
   await mountAll(hash, [demo, writer], details);
 }
 
-/** The first status is DEMO's, the second WRITER's, each later one a further daemon's. */
-async function mountAll(hash: string, statuses: Status[], details: Record<number, RunDetail> = {}) {
-  const attention = (project: string) => ({ level: "none", now: NOW, project, items: [] });
+/** The first status is DEMO's, the second WRITER's, each later one a further
+ *  daemon's; `items` are DEMO's attention items. */
+async function mountAll(hash: string, statuses: Status[], details: Record<number, RunDetail> = {}, items: Item[] = []) {
+  const attention = (project: string, own: Item[]) => ({ level: own.length ? "attention" : "none", now: NOW, project, items: own });
   window.location.hash = hash;
   const bases = [DEMO, WRITER, ...statuses.slice(2).map((_, index) => `http://writer-host:${7712 + index}`)];
   const polls = peersFetch(
     DEMO,
-    Object.fromEntries(statuses.map((status, index) => [bases[index]!, { status, attention: attention(status.project) }])),
+    Object.fromEntries(statuses.map((status, index) => [bases[index]!, { status, attention: attention(status.project, index === 0 ? items : []) }])),
   );
   const fetchImpl: Fetch = async (url) => {
     const detail = details[Number(/^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1])];
@@ -217,4 +228,38 @@ test("with every project idle and not held, Running draws no lane and says nothi
   await mountAll("#/", [statusOf("/srv/dev/alpha", []), statusOf("/srv/dev/beta", []), statusOf("/srv/dev/gamma", [])]);
   expect(lanes()).toEqual([]);
   expect(running().textContent).toContain("Nothing running and nothing queued.");
+});
+
+const onCiRows = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-on-ci]")];
+
+test("a run fixing a pull request names it under its title, and the lane lists its pull requests on CI without counting them busy", async () => {
+  const fixing = runOf(20, "DEMO-20", "Fix the slot", { phase: "working", round: 1, max_rounds: 3, pr_url: "https://github.com/example/demo/pull/77" });
+  await mountAll("#/", [statusOf("/srv/dev/demo", [fixing], { workers: 2 }), statusOf("/srv/dev/writer", [])], {}, [draftPark, readyPark, ciPark]);
+  const row = within(lane("demo")).getByRole("link", { name: /^DEMO-20 / }).closest("li")!;
+  expect(row.querySelector("[data-fixing]")!.textContent).toBe("fixing #77 · round 1 of 3");
+  expect(within(lane("demo")).getByRole("list", { name: "demo on CI" }).parentElement!.textContent).toStartWith("On CI");
+  expect(onCiRows("demo").map((ci) => [...ci.children].map((cell) => cell.textContent))).toEqual([["#41", "DEMO-8", "Ticket 8", "checks running · 4m"]]);
+  expect(head("demo")).toContain("1 of 2 workers busy");
+  expect(running().querySelector("header")!.textContent).toContain("1 of 3 workers busy");
+});
+
+test("a project whose only pull request is on CI keeps its Running lane with nothing busy and draws no Pull requests lane", async () => {
+  await mountAll("#/", [statusOf("/srv/dev/demo", [], { workers: 2 }), statusOf("/srv/dev/writer", [])], {}, [ciPark]);
+  expect(lanes()).toEqual(["demo"]);
+  expect(head("demo")).toContain("0 of 2 workers busy");
+  expect(onCiRows("demo")).toHaveLength(1);
+  const prs = screen.getByRole("region", { name: "Pull requests" });
+  expect(within(prs).queryAllByRole("group")).toEqual([]);
+});
+
+test("a live run's fixing line reads its pull request's number as a link and its round of the cap, and a run without a pull request has none", async () => {
+  const url = "https://github.com/example/demo/pull/2374";
+  const fixing = runOf(20, "DEMO-20", "Fix the slot", { phase: "working", round: 4, max_rounds: 6, pr_url: url });
+  const fresh = runOf(21, "DEMO-21", "Fresh run", { phase: "working", round: 0, pr_url: null });
+  await mount("#/", statusOf("/srv/dev/demo", [fixing, fresh], { workers: 2 }), statusOf("/srv/dev/writer", []));
+  const rowOf = (ticket: string) => within(lane("demo")).getByRole("link", { name: new RegExp(`^${ticket} `) }).closest("li")!;
+  expect(rowOf("DEMO-20").querySelector("[data-fixing]")!.textContent).toBe("fixing #2374 · round 4 of 6");
+  expect(within(rowOf("DEMO-20")).getByRole("link", { name: "#2374" }).getAttribute("href")).toBe(url);
+  expect(rowOf("DEMO-21").querySelector("[data-fixing]")).toBeNull();
+  expect(rowOf("DEMO-21").textContent).not.toContain("fixing");
 });
