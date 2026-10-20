@@ -27,6 +27,7 @@ const park = (run: number, parkKind: string, ageMs: number, pr: object): Item =>
 const onCi = park(8, "ci", 3 * HOUR, { number: 41, checks: "pending", review: null, threads: 0, open_threads: 0 });
 const readyPark = park(9, "pull_request", 2 * HOUR, { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0 });
 const threadPark = park(10, "pull_request", HOUR, { number: 99, checks: "success", review: "approved", threads: 1, open_threads: 1 });
+const draftPark = park(12, "pull_request", HOUR, { number: 45, state: "draft", checks: "success", review: null, threads: 0, open_threads: 0 });
 const PR_42 = "https://github.com/example/demo/pull/42";
 const WHAT = "## What / Why / How\n\n**What:** Adds a slot that takes pages.\n\n**Why:** Paging.\n";
 
@@ -199,7 +200,6 @@ test("Send back posts the typed note for the run, keeps it on a refusal, and is 
 });
 
 test("Mark ready for review confirms, posts the run and toasts on a draft with actions; a refusal shows its detail", async () => {
-  const draft = park(12, "pull_request", HOUR, { number: 45, state: "draft", checks: "success", review: null, threads: 0, open_threads: 0 });
   const row = () => rows()[0]!;
   const markReady = async () => {
     await act(async () => {
@@ -213,7 +213,7 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
       await settle();
     });
   };
-  const seen = await mount({ items: [draft], actions: true, readyRuns: [] });
+  const seen = await mount({ items: [draftPark], actions: true, readyRuns: [] });
   await openRow(45);
   const buttons = [...row().querySelectorAll("[data-pr-detail] a, [data-pr-detail] button")].map((node) => node.textContent);
   expect(buttons.slice(0, 2)).toEqual(["Open PR to review", "Mark ready for review"]);
@@ -224,15 +224,14 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
   expect(screen.queryByRole("dialog")).toBeNull();
   unmount();
 
-  await mount({ items: [draft], actions: true, readyRuns: [], markReady: { ok: false, detail: "run 12 is not a draft held for review" } });
+  await mount({ items: [draftPark], actions: true, readyRuns: [], markReady: { ok: false, detail: "run 12 is not a draft held for review" } });
   await openRow(45);
   await markReady();
   expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
 });
 
 test("Mark ready for review is absent on a ready pull request and on a daemon without actions", async () => {
-  const draft = park(12, "pull_request", HOUR, { number: 45, state: "draft", checks: "success", review: null, threads: 0, open_threads: 0 });
-  for (const [item, actions, pr] of [[readyPark, true, 42], [draft, false, 45]] as const) {
+  for (const [item, actions, pr] of [[readyPark, true, 42], [draftPark, false, 45]] as const) {
     await mount({ items: [item], actions, readyRuns: [] });
     await openRow(pr);
     expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" })).toBeTruthy();
