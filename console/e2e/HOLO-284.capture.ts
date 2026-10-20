@@ -72,7 +72,7 @@ test("the new console's Overview: header, count line, four folding sections and 
   await expect(heading(empty)).toHaveText("Nothing needs you.");
   await expect(empty.getByText("The factory has it from here.")).toBeVisible();
   await expect(empty.getByText(/^Nothing running\. \S+ and \S+ are queued\.$/)).toBeVisible();
-  await expect(empty.getByText("No pull requests open.")).toBeVisible();
+  await expect(empty.getByText("No pull request waits on you.")).toBeVisible();
   await expect(empty.getByText("Nothing merged yet today.")).toBeVisible();
   await empty.evaluate(() => document.fonts.ready);
   await empty.screenshot({ path: path.join(out, "04-overview-empty.png") });

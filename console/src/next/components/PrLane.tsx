@@ -5,7 +5,7 @@ import { projectName } from "../../lib/derive";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
-import type { PullRequestFacts, StatusRun } from "../../lib/contract.gen";
+import type { PullRequestFacts } from "../../lib/contract.gen";
 import type { AttentionItem } from "../../lib/types";
 import type { ContractBodies } from "../fleet";
 import { prWait, rowFacts } from "../prRow";
@@ -22,7 +22,6 @@ const DETAIL = "border-t border-dashed border-rule-2 py-4 pl-[calc(20px+64px+20p
 
 interface PrRow {
   item: AttentionItem;
-  fixing: StatusRun | null;
   ageMs: number | null;
   facts: Fact[];
 }
@@ -33,26 +32,20 @@ interface PrLaneGroup {
   rows: PrRow[];
 }
 
+const waitsOnYou = (item: AttentionItem) =>
+  item.park_kind === "question" || prWait(stateOf({ attention: item }), item, null).status === "Your review";
+
 export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number): PrLaneGroup[] {
   return hosts.flatMap((host) => {
     const status = host.status;
     if (!status) return [];
     const clock = { now: status.now + sinceSeen(host.seen_ms, now) };
-    const own = items.filter((item) => item.daemon === host.key);
-    const parked: PrRow[] = own.map((item) => {
-      const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PullRequestFacts) : null;
-      return { item, fixing: null, ageMs: describe(item, status.thresholds, clock).ageMs, facts: rowFacts(pr, { round: item.round, waits_on: item.waits_on }) };
-    });
-    const parkedUrls = new Set(own.map((item) => item.pr_url));
-    const fixing: PrRow[] = status.runs
-      .filter((run) => run.pr_url != null && !parkedUrls.has(run.pr_url))
-      .map((run) => ({
-        item: { kind: "pr_open", level: "attention", daemon: host.key, run: run.id, ticket: run.ticket, title: run.title, pr_url: run.pr_url, pr: run.pr, round: run.round },
-        fixing: run,
-        ageMs: run.woke_ms == null ? null : clock.now - run.woke_ms,
-        facts: rowFacts(run.pr ?? null, { round: run.round }),
-      }));
-    const rows = [...parked, ...fixing];
+    const rows: PrRow[] = items
+      .filter((item) => item.daemon === host.key && waitsOnYou(item))
+      .map((item) => {
+        const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PullRequestFacts) : null;
+        return { item, ageMs: describe(item, status.thresholds, clock).ageMs, facts: rowFacts(pr, { round: item.round, waits_on: item.waits_on }) };
+      });
     if (rows.length === 0) return [];
     return [{ host, name: projectName(status.project), rows: orderByAge(rows, (row) => row.ageMs) }];
   });
@@ -63,14 +56,12 @@ function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness
   const detailId = useId();
   const { item, facts } = row;
   const run = typeof item.run === "number" ? item.run : null;
-  const state = row.fixing
-    ? stateOf({ run: row.fixing, staleMs: host.status?.thresholds.heartbeat_stale_ms ?? Infinity })
-    : stateOf({ attention: item, readiness: run == null ? undefined : readiness.get(runKey(host.key, run)) });
+  const state = stateOf({ attention: item, readiness: run == null ? undefined : readiness.get(runKey(host.key, run)) });
   const wait = prWait(state, item, row.ageMs);
   const word = wait.line === "" ? wait.status : `${wait.status}, ${wait.line}`;
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
   const label = typeof item.pr_url === "string" ? prLabel(item.pr_url) : "PR";
-  const title = row.fixing ? row.fixing.title : (prTitle(item) ?? "");
+  const title = prTitle(item) ?? "";
   const shown = open && run != null;
   return (
     <li
@@ -110,15 +101,15 @@ function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness
       </div>
       {shown && (
         <div id={detailId} className={DETAIL}>
-          <PrRowDetail base={host.base} project={host.status?.project ?? ""} run={run} item={item} actions={host.status?.actions === true && row.fixing == null} />
+          <PrRowDetail base={host.base} project={host.status?.project ?? ""} run={run} item={item} actions={host.status?.actions === true} />
         </div>
       )}
     </li>
   );
 }
 
-/** One project's parked pull requests and those the factory is fixing, a
- *  row each that opens onto its detail. */
+/** One project's pull requests waiting on the maintainer, a row each that
+ *  opens onto its detail. */
 function PrLane({ group, readiness }: { group: PrLaneGroup; readiness: ReadinessMap }) {
   const status = group.host.status!;
   return (
