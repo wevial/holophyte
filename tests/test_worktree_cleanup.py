@@ -118,19 +118,48 @@ class RetireFinishedTests(WorktreeCleanupFixture):
             self.assertEqual((wt / "work.txt").read_text(), f"{branch}\n")
             self.assertNotEqual(self.resolves(f"refs/heads/{branch}"), "")
 
-    def test_uncommitted_change_keeps_worktree_and_records_refusal(self):
+    def refusals(self, run_id):
+        return [row[0] for row in self.read(
+            f"SELECT summary FROM runEvents WHERE runId = {int(run_id)}"
+            " AND kind = 'worktree_retirement_refused' ORDER BY seq")]
+
+    def test_kept_worktree_records_its_refusal_once_per_reason(self):
         wt, _, run_id = self.ticket(4, "merged")
         (wt / "work.txt").write_text("edited, not committed\n")
+        uncommitted = "kept HOLO-4's worktree: uncommitted work"
 
-        lines = worktree_cleanup.retire_finished(self.project, self.conn)
+        for _ in range(3):
+            self.assertEqual(
+                worktree_cleanup.retire_finished(self.project, self.conn),
+                [uncommitted])
 
-        self.assertEqual(lines, ["kept HOLO-4's worktree: uncommitted work"])
         self.assertEqual((wt / "work.txt").read_text(),
                          "edited, not committed\n")
-        self.assertIn(
-            (run_id, "kept HOLO-4's worktree: uncommitted work"),
-            self.read("SELECT runId, summary FROM runEvents"
-                      " WHERE kind = 'worktree_retirement_refused'"))
+        self.assertEqual(self.refusals(run_id), [uncommitted])
+
+        self.git("commit", "-q", "-am", "commit the edit", cwd=wt)
+        unpushed = ("kept HOLO-4's worktree: commits exist nowhere else"
+                    " (not confirmed on remote branch or main)")
+        for _ in range(2):
+            self.assertEqual(
+                worktree_cleanup.retire_finished(self.project, self.conn),
+                [unpushed])
+
+        self.assertEqual(self.refusals(run_id), [uncommitted, unpushed])
+
+    def test_same_reason_on_two_runs_records_one_refusal_each(self):
+        kept = []
+        for n in (6, 7):
+            wt, _, run_id = self.ticket(n, "abandoned")
+            (wt / "work.txt").write_text("edited, not committed\n")
+            kept.append(run_id)
+
+        for _ in range(2):
+            worktree_cleanup.retire_finished(self.project, self.conn)
+
+        for n, run_id in zip((6, 7), kept):
+            self.assertEqual(self.refusals(run_id),
+                             [f"kept HOLO-{n}'s worktree: uncommitted work"])
 
     def test_board_completed_ticket_with_unpushed_commit_keeps_branch(self):
         wt, branch, run_id = self.ticket(10, "merged", board=True)
