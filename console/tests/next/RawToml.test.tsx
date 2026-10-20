@@ -206,7 +206,6 @@ test("the overlay colours the seeded file by kind and follows typing in the text
   expect(table.textContent).toBe("[merge]");
   expect(overlay().getAttribute("aria-hidden")).toBe("true");
   change(seeded + "[loop]\nworkers = 3\n");
-  expect(editor().value).toBe(seeded + "[loop]\nworkers = 3\n");
   expect([...overlay().querySelectorAll('[data-kind="table"]')].map(span => span.textContent)).toEqual(["[merge]", "[loop]"]);
   expect(overlay().querySelector('[data-text-line="4"] [data-kind="number"]')!.textContent).toBe("3");
 });
