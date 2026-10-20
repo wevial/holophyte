@@ -60,9 +60,9 @@ The last pull request read is stored on `runs` in `prSeenAt`,
 `prSeenChecks`, `prSeenReview`, `prSeenThreads`, `prSeenOpenThreads`,
 `prSeenOpenThreadsFloor`, `prSeenTitle`, `prSeenState`, `prSeenAdditions`,
 `prSeenDeletions`, `prSeenChangedFiles`, `prSeenPreviewUrl`,
-`prSeenScreenshots` and `prSeenVideos`. The nullable `prSeenState` is `draft`, `ready`,
-`closed` or `merged`, and is served as `pr.state` on an attention `pr_open`
-item. `prSeenPreviewUrl` is the newest successful deployment's URL on the
+`prSeenScreenshots` and `prSeenVideos`. The nullable `prSeenState` is
+`draft`, `ready`, `closed` or `merged`, and is served as `pr.state` on an
+attention `pr_open` item. `prSeenPreviewUrl` is the newest successful deployment's URL on the
 head commit, and `prSeenScreenshots` and `prSeenVideos` JSON lists of
 `{"caption", "url"}` objects, the Evidence section's images and video
 links.
