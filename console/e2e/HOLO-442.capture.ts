@@ -140,3 +140,18 @@ test("the lightbox at 390 px fits the image to the width", async ({ browser, bas
   await shot(page, "05-pr-lightbox-390.png");
   await context.close();
 });
+
+test("the lightbox on a short window keeps Close, the arrows, the image and the caption on screen", async ({ browser, baseURL }) => {
+  const clip = await makeMedia(browser, baseURL!);
+  const context = await browser.newContext({ baseURL, viewport: { width: 1024, height: 480 }, colorScheme: "light" });
+  const page = await context.newPage();
+  await serveMedia(page, clip);
+  await openDemo9(page);
+  const dialog = await openSecond(page);
+  for (const part of [dialog.getByRole("button", { name: "Close" }), dialog.getByRole("button", { name: "Previous" }), dialog.getByRole("button", { name: "Next" }), dialog.locator("img"), dialog.locator("[data-media-caption]")]) {
+    const box = await part.boundingBox();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(480);
+  }
+  await context.close();
+});

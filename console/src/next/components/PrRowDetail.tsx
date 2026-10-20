@@ -1,4 +1,4 @@
-import { useContext, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { PullRequestFacts } from "../../lib/contract.gen";
 import { prLabel } from "../../lib/shipped";
@@ -56,6 +56,7 @@ function MediaTile({ item, ref, onOpen }: { item: MediaItem; ref: (node: HTMLBut
       ref={ref}
       type="button"
       data-media-tile={item.kind}
+      data-screenshot={item.kind === "image" ? "" : undefined}
       aria-label={item.kind === "video" ? `Video: ${item.caption}` : item.caption}
       onClick={onOpen}
       className="flex w-[132px] cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-left"
@@ -90,6 +91,13 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
   ];
   const [showing, setShowing] = useState<number | null>(null);
   const tiles = useRef<(HTMLButtonElement | null)[]>([]);
+  const runLink = useRef<HTMLAnchorElement>(null);
+  const emptied = showing != null && media.length === 0;
+  useEffect(() => {
+    if (!emptied) return;
+    setShowing(null);
+    runLink.current?.focus();
+  }, [emptied]);
   const preview = typeof pr.preview_url === "string" ? pr.preview_url : null;
   return (
     <div data-pr-detail className="flex flex-col gap-3 font-read text-[14px] leading-[1.5] text-ink-2">
@@ -107,7 +115,7 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
           start={showing}
           onClose={(index) => {
             setShowing(null);
-            tiles.current[index]?.focus();
+            (tiles.current[index] ?? runLink.current)?.focus();
           }}
         />
       )}
@@ -127,7 +135,7 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
             Send back with a note
           </Btn>
         )}
-        <Link {...runPage(project, run)} className="btn" data-variant="quiet">
+        <Link ref={runLink} {...runPage(project, run)} className="btn" data-variant="quiet">
           Open run
         </Link>
         {actions && sending && <SendBackBox base={base} run={run} label={prUrl != null ? prLabel(prUrl) : `run ${run}`} onClose={() => setSending(false)} />}

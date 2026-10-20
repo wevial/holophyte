@@ -338,6 +338,37 @@ test("the lightbox keeps focus inside, and Esc or Close returns it to the tile o
   expect(document.activeElement).toBe(tile("01 split view"));
 });
 
+test("a poll that leaves the row no media closes the lightbox onto Open run, and returning media does not reopen it", async () => {
+  const item = mediaPark({ screenshots: SHOTS, videos: VIDEOS });
+  await mount({ items: [item], readyRuns: [] });
+  await openRow(42);
+  await act(async () => {
+    fireEvent.click(tile("02 custom slot"));
+    await settle();
+  });
+  expect(dialog()).not.toBeNull();
+  const pr = item.pr as { screenshots: unknown[]; videos: unknown[] };
+  const repoll = async () => {
+    await act(async () => {
+      await client!.refetchQueries({ queryKey: ["fleet"] });
+      await settle();
+    });
+    for (let round = 0; round < 3; round += 1) await act(settle);
+  };
+  pr.screenshots = [];
+  pr.videos = [];
+  await repoll();
+  expect(dialog()).toBeNull();
+  expect(tileNames(rows()[0]!)).toEqual([]);
+  expect(document.activeElement).toBe(within(rows()[0]!).getByRole("link", { name: "Open run" }));
+
+  pr.screenshots = SHOTS;
+  pr.videos = VIDEOS;
+  await repoll();
+  expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES);
+  expect(dialog()).toBeNull();
+});
+
 test("a run the factory woke to fix its pull request stays in the lane as Factory fixing, counted once with its park", async () => {
   const [base] = served.runs as [StatusRun];
   const pr = { title: "Old PR title", state: "ready" as const, number: null, review: null, threads: 3 };

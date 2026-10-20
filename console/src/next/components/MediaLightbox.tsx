@@ -60,13 +60,13 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
   const item = items[shown]!;
   const name = `${item.kind === "video" ? "Video" : "Screenshot"} ${shown + 1} of ${total}`;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-2 sm:p-4">
+    <div className="fixed inset-0 z-50 flex overflow-y-auto bg-scrim p-2 sm:p-4">
       <section
         ref={box}
         role="dialog"
         aria-modal="true"
         aria-label={name}
-        className="grid w-full max-w-[1000px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4"
+        className="m-auto grid w-full max-w-[1000px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4"
       >
         <div className="col-start-2 row-start-1 border border-rule bg-paper text-ink shadow-[0_24px_60px_rgba(0,0,0,.45)]">
           <div className="flex items-center gap-3 border-b border-rule py-2 pl-3.5 pr-2">
@@ -80,9 +80,9 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
           </div>
           <div className={`flex justify-center ${item.kind === "video" ? "bg-black" : "bg-paper-2"}`}>
             {item.kind === "video" ? (
-              <video key={item.url} src={item.url} controls preload="metadata" className="block max-h-[70vh] w-full" />
+              <video key={item.url} src={item.url} controls preload="metadata" className="block max-h-[min(70vh,calc(100dvh-10rem))] w-full" />
             ) : (
-              <img key={item.url} src={item.url} alt={item.caption} className="block max-h-[70vh] max-w-full object-contain" />
+              <img key={item.url} src={item.url} alt={item.caption} className="block max-h-[min(70vh,calc(100dvh-10rem))] max-w-full object-contain" />
             )}
           </div>
           <p data-media-caption className="m-0 break-words px-3.5 py-3 font-read text-[14px] leading-[1.5] text-ink">
