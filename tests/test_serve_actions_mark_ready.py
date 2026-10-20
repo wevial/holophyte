@@ -84,7 +84,6 @@ class MarkReadyTests(ServeTestCase):
         code, _, reply = self.mark_ready()
         self.assertEqual(code, 200, reply)
         self.assertIs(reply["ok"], True, reply)
-        self.assertEqual(len(self.github.graphql), 1)
         (sent,) = self.github.graphql
         self.assertIn("markPullRequestReadyForReview", sent["query"])
         self.assertEqual(sent["variables"], {"pull": NODE_ID})
