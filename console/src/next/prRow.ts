@@ -22,7 +22,7 @@ export function prWait(state: State, item: AttentionItem, ageMs: number | null):
 }
 
 const CHECKS: Record<string, Fact> = {
-  success: { label: "checks green", tone: "ok" },
+  success: { label: "checks ✓", tone: "ok" },
   failure: { label: "checks failing", tone: "bad" },
   pending: { label: "checks running", tone: "neutral" },
 };
@@ -42,8 +42,14 @@ function waitsOnFacts(waitsOn: unknown): Fact[] {
   });
 }
 
+function sizeFact(pr: Pick<PullRequestFacts, "changed_files" | "additions" | "deletions"> | null): Fact[] {
+  const { changed_files: files, additions, deletions } = pr ?? {};
+  if (typeof files !== "number" || typeof additions !== "number" || typeof deletions !== "number") return [];
+  return [{ label: `${files} ${files === 1 ? "file" : "files"} +${additions} −${deletions}`, tone: "neutral" }];
+}
+
 export function rowFacts(
-  pr: Pick<PullRequestFacts, "checks" | "review" | "open_threads"> | null,
+  pr: Pick<PullRequestFacts, "checks" | "review" | "open_threads" | "changed_files" | "additions" | "deletions"> | null,
   { round, waits_on }: { round?: unknown; waits_on?: unknown } = {},
 ): Fact[] {
   const facts: Fact[] = [
@@ -52,5 +58,5 @@ export function rowFacts(
   ];
   if (pr?.review === "changes_requested") facts.push({ label: "changes requested", tone: "bad" });
   if (typeof round === "number") facts.push({ label: `${round} ${round === 1 ? "round" : "rounds"}`, tone: "neutral" });
-  return [...facts, ...waitsOnFacts(waits_on)];
+  return [...facts, ...waitsOnFacts(waits_on), ...sizeFact(pr)];
 }

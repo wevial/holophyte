@@ -27,10 +27,6 @@ const park = (run: number, parkKind: string, ageMs: number, pr: object): Item =>
 const onCi = park(8, "ci", 3 * HOUR, { number: 41, checks: "pending", review: null, threads: 0, open_threads: 0 });
 const readyPark = park(9, "pull_request", 2 * HOUR, { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0 });
 const threadPark = park(10, "pull_request", HOUR, { number: 99, checks: "success", review: "approved", threads: 1, open_threads: 1 });
-const blocked = {
-  kind: "blocked", level: "attention", ticket: "DEMO-4", ticket_url: null, question: "Which way?", run: 4,
-  asked_ms: NOW - 5 * HOUR, pr_url: null, park_kind: null, pr: null,
-} as Item;
 const PR_42 = "https://github.com/example/demo/pull/42";
 const WHAT = "## What / Why / How\n\n**What:** Adds a slot that takes pages.\n\n**Why:** Paging.\n";
 
@@ -94,7 +90,7 @@ const waits = () => rows().map((row) => [
   row.querySelector("[data-pr-wait]")!.textContent,
   row.querySelector("[data-pr-since]")?.textContent ?? "",
 ]);
-const facts = (row: Element) => row.querySelector("[data-facts]")!.textContent;
+const facts = (row: Element) => [...row.querySelectorAll("[data-fact]")].map((fact) => fact.textContent);
 const rowButton = (pr: number) => within(section()).getByRole("button", { name: new RegExp(`^PR #${pr}, `) });
 
 async function openRow(pr: number) {
@@ -117,7 +113,7 @@ test("a lane per project counts its open pull requests, longest waiting first, a
   expect(lane("alpha").querySelector("[data-lane-head]")!.textContent).toContain("3 open");
   expect(within(section()).queryByRole("group", { name: "beta" })).toBeNull();
   expect(section().textContent).not.toContain("0 open");
-  expect(rows().map((row) => within(row).getByRole("link", { name: /^PR #/ }).textContent)).toEqual(["PR #41", "PR #42", "PR #43"]);
+  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#41", "#42", "#43"]);
   unmount();
 
   await mount({ items: [], projects: ["alpha", "beta"] });
@@ -142,25 +138,11 @@ test("a draft held for review reads Your review over draft and its age, with no 
   expect(row.textContent).not.toContain("review pending");
 });
 
-test("a row names its pull request from its URL and draws its facts line", async () => {
+test("a row names its pull request by its bare number from its URL and draws its facts line", async () => {
   await mount({ items: [onCi, readyPark, threadPark] });
   const third = rows()[2]!;
-  expect(within(third).getByText("PR #43")).toBeTruthy();
-  expect(facts(third)).toBe("checks green · 1 open thread");
-});
-
-test("only the ready park points back to Needs you, and pressing it makes it the focused card", async () => {
-  await mount({ items: [blocked, onCi, readyPark, threadPark] });
-  const card = () => screen.getByRole("article", { name: "Focus" });
-  expect(card().getAttribute("data-focus")).toBe("DEMO-4");
-  const tags = within(section()).getAllByRole("button", { name: /in Needs you$/ });
-  expect(tags.map((tag) => tag.getAttribute("aria-label"))).toEqual(["Show DEMO-9 in Needs you"]);
-  await act(async () => {
-    fireEvent.click(tags[0]!);
-    await settle();
-  });
-  expect(card().getAttribute("data-focus")).toBe("DEMO-9");
-  expect(document.activeElement).toBe(card());
+  expect(within(third).getByRole("link", { name: "#43" })).toBeTruthy();
+  expect(facts(third)).toEqual(["checks ✓", "1 open thread"]);
 });
 
 test("an opened row shows its ticket's What line and the links that move it, not the classic detail", async () => {
@@ -213,7 +195,7 @@ test("Send back posts the typed note for the run, keeps it on a refusal, and is 
 
 test("the PR number links to GitHub without toggling or fetching the row detail", async () => {
   const seen = await mount({ items: [readyPark], readyRuns: [] });
-  const link = within(rows()[0]!).getByRole("link", { name: "PR #42" });
+  const link = within(rows()[0]!).getByRole("link", { name: "#42" });
   const button = rowButton(42);
   expect(link.getAttribute("href")).toBe(PR_42);
   expect(link.getAttribute("target")).toBe("_blank");
@@ -238,52 +220,33 @@ test("the PR number links to GitHub without toggling or fetching the row detail"
   expect(button.getAttribute("aria-expanded")).toBe("true");
 });
 
-test("with storage refusing, the tag reopens a folded Needs you and focuses its card", async () => {
-  await mount({ items: [blocked, onCi, readyPark, threadPark] });
-  const real = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
-  const refuse = () => {
-    throw new DOMException("storage disabled", "SecurityError");
-  };
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, get: refuse });
-  try {
-    const needs = screen.getByRole("region", { name: "Needs you" });
-    await act(async () => {
-      fireEvent.click(within(needs).getByRole("button", { name: "Needs you" }));
-      await settle();
-    });
-    expect(screen.queryByRole("article", { name: "Focus" })).toBeNull();
-    await act(async () => {
-      fireEvent.click(within(section()).getByRole("button", { name: "Show DEMO-9 in Needs you" }));
-      await settle();
-    });
-    const card = screen.getByRole("article", { name: "Focus" });
-    expect(card.getAttribute("data-focus")).toBe("DEMO-9");
-    expect(document.activeElement).toBe(card);
-  } finally {
-    Object.defineProperty(globalThis, "localStorage", real);
-  }
-});
-
-test("an opened row shows its size, a tile per screenshot in order and Open preview, and none of them when unsent", async () => {
+test("a row reads its bare number and its key before its title, and opening it marks only its row and shows its media and Open Vercel preview", async () => {
   const shots = ["01 split view", "02 custom slot", "03 saved document"].map((caption, index) => ({ caption, url: `https://media.example/${index + 1}.png` }));
-  await mount({ items: [park(9, "pull_request", 2 * HOUR, {
+  await mount({ items: [onCi, park(9, "pull_request", 2 * HOUR, {
     number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0,
-    changed_files: 9, additions: 412, deletions: 88, preview_url: "https://preview.example", screenshots: shots,
-  })], readyRuns: [] });
+    changed_files: 13, additions: 718, deletions: 85, preview_url: "https://preview.example", screenshots: shots,
+  }), threadPark], readyRuns: [] });
+  const demo9 = () => rows().find((row) => row.textContent!.includes("DEMO-9"))!;
+  expect(within(demo9()).getByRole("link", { name: "#42" }).getAttribute("href")).toBe(PR_42);
+  expect(rowButton(42).textContent).toStartWith("DEMO-9Ticket 9");
+  expect(within(demo9()).queryByRole("button", { name: /needs you/i })).toBeNull();
+  expect(rows().filter((row) => row.hasAttribute("data-open"))).toEqual([]);
   await openRow(42);
-  const row = rows()[0]!;
-  expect(within(row).getByText("9 files, +412 −88")).toBeTruthy();
-  const tiles = [...row.querySelectorAll<HTMLAnchorElement>("[data-screenshot]")];
+  expect(rows().filter((row) => row.hasAttribute("data-open"))).toEqual([demo9()]);
+  const detail = demo9().querySelector("[data-pr-detail]")!;
+  expect(within(demo9()).getByRole("link", { name: "Open Vercel preview" }).getAttribute("href")).toBe("https://preview.example");
+  expect(within(demo9()).queryByRole("link", { name: "Open preview" })).toBeNull();
+  expect(detail.textContent).not.toContain("13 files");
+  const tiles = [...demo9().querySelectorAll<HTMLAnchorElement>("[data-screenshot]")];
   expect(tiles.map((tile) => tile.getAttribute("href"))).toEqual(shots.map((shot) => shot.url));
   expect(tiles.map((tile) => tile.querySelector("img")?.getAttribute("alt"))).toEqual(["01 split view", "02 custom slot", "03 saved document"]);
-  expect(within(row).getByRole("link", { name: "Open preview" }).getAttribute("href")).toBe("https://preview.example");
   unmount();
 
   await mount({ items: [park(9, "pull_request", 2 * HOUR, {
     number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, preview_url: null, screenshots: [],
   })], readyRuns: [] });
   await openRow(42);
-  expect(within(rows()[0]!).queryByRole("link", { name: "Open preview" })).toBeNull();
+  expect(within(rows()[0]!).queryByRole("link", { name: "Open Vercel preview" })).toBeNull();
   expect(rows()[0]!.querySelectorAll("[data-screenshot]").length).toBe(0);
 });
 
@@ -296,9 +259,9 @@ test("a run the factory woke to fix its pull request stays in the lane as Factor
   const parkedRun = { ...base, id: 14, phase: "awaiting_merge_approval", ticket: "DEMO-14", pr_url: "https://github.com/example/demo/pull/47" };
   await mount({ items: [park(14, "pull_request", HOUR, { checks: "success", review: null, threads: 0, open_threads: 0 })], runs: [fixing, fresh, parkedRun], actions: true, readyRuns: [] });
   expect(lane("demo").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
-  expect(rows().map((row) => within(row).getByRole("link", { name: /^PR #/ }).textContent)).toEqual(["PR #47", "PR #50"]);
+  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#47", "#50"]);
   expect(waits()[1]).toEqual(["Factory fixing", "round 4 · 12m"]);
-  expect(facts(rows()[1]!)).toBe("checks failing · 3 open threads · 4 rounds");
+  expect(facts(rows()[1]!)).toEqual(["checks failing", "3 open threads", "4 rounds"]);
   expect(within(rows()[1]!).getByText("Fix the slot")).toBeTruthy();
   expect(rows()[1]!.textContent).not.toContain("Old PR title");
   expect(section().textContent).not.toContain("DEMO-13");

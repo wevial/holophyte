@@ -48,12 +48,6 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
   );
 }
 
-function sizeLine(pr: Partial<PullRequestFacts>): string | null {
-  const { changed_files: files, additions, deletions } = pr;
-  if (typeof files !== "number" || typeof additions !== "number" || typeof deletions !== "number") return null;
-  return `${files} ${files === 1 ? "file" : "files"}, +${additions} −${deletions}`;
-}
-
 function ScreenshotTile({ shot }: { shot: Screenshot }) {
   const [failed, setFailed] = useState(false);
   return (
@@ -74,13 +68,11 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
   const [sending, setSending] = useState(false);
   const prUrl = typeof item.pr_url === "string" ? item.pr_url : null;
   const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as Partial<PullRequestFacts>) : {};
-  const size = sizeLine(pr);
   const shots = Array.isArray(pr.screenshots) ? pr.screenshots : [];
   const preview = typeof pr.preview_url === "string" ? pr.preview_url : null;
   return (
     <div data-pr-detail className="flex flex-col gap-3 font-read text-[14px] leading-[1.5] text-ink-2">
       {what !== "" && <LimitedMarkdown lines={2}>{what}</LimitedMarkdown>}
-      {size != null && <p data-pr-size className="m-0 font-mono text-[12px] text-ink-3">{size}</p>}
       {shots.length > 0 && (
         <div data-screenshots className="flex flex-wrap gap-2.5">
           {shots.map((shot, index) => (
@@ -96,7 +88,7 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
         )}
         {preview != null && (
           <a href={preview} target="_blank" rel="noreferrer" className="btn" data-variant="quiet">
-            Open preview
+            Open Vercel preview<span aria-hidden="true"> ↗</span>
           </a>
         )}
         {actions && (

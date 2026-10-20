@@ -309,19 +309,16 @@ test("every grid, track and span class is behind 1600 px, so below it the Overvi
   }
 });
 
-test("from 1600 px each column is the ov-col container; a Running row narrows under 640 px of it and a Pull request row under 720 px", async () => {
+test("from 1600 px each column is the ov-col container and a Running row narrows under 640 px of it", async () => {
   await mount("#/", busy);
   for (const column of columns()) expect(classes(column)).toContain(WIDE + "@container/ov-col");
   const runRow = section("Running").querySelector("li a")!;
   expect(classes(runRow)).toEqual(
     expect.arrayContaining(["max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]", "@max-[640px]/ov-col:grid-cols-[auto_auto_minmax(0,1fr)]"]),
   );
-  const prRow = section("Pull requests").querySelector("[data-pr-row] > div")!;
-  expect(classes(prRow)).toEqual(expect.arrayContaining(["max-[820px]:grid-cols-[minmax(0,1fr)]", "@max-[720px]/ov-col:grid-cols-[minmax(0,1fr)]"]));
   const narrowed = (row: Element, rule: string) =>
     [row, ...row.querySelectorAll("*")].flatMap((element) => classes(element)).filter((name) => name.startsWith(rule)).map((name) => name.slice(rule.length)).sort();
   expect(narrowed(runRow, "@max-[640px]/ov-col:")).toEqual(narrowed(runRow, "max-[820px]:"));
-  expect(narrowed(prRow, "@max-[720px]/ov-col:")).toEqual(narrowed(prRow, "max-[820px]:"));
 });
 
 test("the wide log fills its pinned grid wrapper with a thin hover scrollbar and no competing height cap", async () => {
