@@ -216,7 +216,7 @@ function Row({ entry, hosts, now, onPick }: { entry: NeedsYouEntry; hosts: Host[
       >
         <StateDot state={state} hideWord />
         <span className="truncate text-ink-2">{name}</span>
-        <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title}</span>
+        <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
         <span>
           {STATES[state].word}
           {age != null && ` · ${formatAge(age)}`}

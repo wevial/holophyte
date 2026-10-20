@@ -14,11 +14,11 @@ import { RunDetails } from "../components/RunDetails";
 import { RunPullRequest } from "../components/RunPullRequest";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
+import { TitleText } from "../components/TitleText";
 import { useTicket } from "../queries";
 import { useRunPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { CRUMB_LINK, Notice, Page, zoneName } from "./runShared";
-import { TitleText } from "../components/TitleText";
 
 const STRONG = "font-medium text-ink-2";
 

@@ -14,9 +14,9 @@ import { StoryPanel } from "../components/StoryPanel";
 import { Chip, Fact, NUMBER } from "../components/TicketPeek";
 import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
+import { TitleText } from "../components/TitleText";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
-import { TitleText } from "../components/TitleText";
 
 const CRUMB_LINK = "border-b border-rule text-ink-3 no-underline hover:border-ink hover:text-ink";
 

@@ -9,7 +9,7 @@ export function splitTitle(title: string): TitleSpan[] {
     const close = open < 0 ? -1 : rest.indexOf("`", open + 1);
     if (close < 0) break;
     if (open > 0) spans.push({ text: rest.slice(0, open), code: false });
-    spans.push({ text: rest.slice(open + 1, close), code: true });
+    if (close > open + 1) spans.push({ text: rest.slice(open + 1, close), code: true });
     rest = rest.slice(close + 1);
   }
   if (rest !== "") spans.push({ text: rest, code: false });
