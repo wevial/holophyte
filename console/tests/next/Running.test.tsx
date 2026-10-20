@@ -205,11 +205,11 @@ test("a lane is drawn only for a project with a run or a queued ticket, while th
   expect(running().querySelector("header")!.textContent).toContain("1 of 6 workers busy · 1 queued");
 });
 
-test("a held project with nothing running or queued keeps its lane and held tag", async () => {
-  const alpha = statusOf("/srv/dev/alpha", [demoRun]);
+test("a held project with nothing running or queued keeps its lane and held tag when no project is running", async () => {
+  const beta = statusOf("/srv/dev/beta", []);
   const delta = statusOf("/srv/dev/delta", [], { admission: "held", hold_note: "deploy freeze" });
-  await mountAll("#/", [alpha, delta]);
-  expect(lanes()).toEqual(["alpha", "delta"]);
+  await mountAll("#/", [beta, delta]);
+  expect(lanes()).toEqual(["delta"]);
   expect(head("delta")).toContain("held · deploy freeze");
 });
 

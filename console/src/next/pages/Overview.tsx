@@ -187,7 +187,7 @@ export function Overview() {
             count={view.running}
             summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
             empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-            isEmpty={!lanes.some((group) => group.runs.length > 0)}
+            isEmpty={!lanes.some((group) => group.runs.length > 0 || group.status.admission === "held")}
           >
             <RunningLanes groups={lanes} now={view.now} />
           </FoldingSection>
