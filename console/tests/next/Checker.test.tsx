@@ -97,7 +97,7 @@ test("the pinned judgement lists in the panel, shows each message under its fiel
   const request = check.seen[0]!;
   expect([request.url, request.method]).toEqual([`${DEMO}/tickets/check`, "POST"]);
   expect(request.body).toMatchObject({ column: "backlog" });
-  expect((request.body as { body: string }).body).toStartWith("# Steer notes show on the run detail card\n");
+  expect((request.body as { body: string }).body).toMatch(/^\+\+\+\n[^]*?\n\+\+\+\n# Steer notes show on the run detail card\n/);
 
   expect(within(panel()).getByText("3 errors block filing · 1 advisory")).toBeTruthy();
   const summary = screen.getByRole("textbox", { name: "Summary" });
@@ -132,7 +132,7 @@ test("edits 200 ms apart send one check 600 ms after the last, and a late answer
   await advance(599);
   expect(older.seen).toHaveLength(0);
   await advance(1);
-  expect(older.seen.map(request => (request.body as { body: string }).body.split("\n")[0])).toEqual(["# One two three"]);
+  expect(older.seen.map(request => (request.body as { body: string }).body.match(/^# .*$/m)?.[0])).toEqual(["# One two three"]);
 
   await type("Title", "One two three four");
   expect(signals[0]?.aborted).toBe(true);

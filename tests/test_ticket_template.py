@@ -369,7 +369,14 @@ class TemplateFileTests(unittest.TestCase):
         self.t = tt.parse(self.text)
 
     def test_all_sections_recognized_in_order(self):
-        self.assertEqual([n for n in self.t.order], tt.TEMPLATE_ORDER)
+        header_held = ("Mock-up", "Evidence", "Estimate & dependencies")
+        self.assertEqual(self.t.order,
+                         [n for n in tt.TEMPLATE_ORDER if n not in header_held])
+
+    def test_header_values_are_read(self):
+        self.assertEqual(self.t.ui_change, "none")
+        self.assertEqual(self.t.estimate_min, 30)
+        self.assertEqual(self.t.depends_on, [])
 
     def test_rules_block_inside_fence_not_treated_as_commands(self):
         self.assertEqual(
@@ -380,10 +387,12 @@ class TemplateFileTests(unittest.TestCase):
         problems = tt.validate(self.t)
         self.assertTrue(problems)
         self.assertTrue(any("placeholder" in p for p in problems), problems)
+        self.assertEqual([p for p in problems if p.startswith("header")], [])
 
     def test_implementer_comment_requests_no_profile(self):
-        self.assertIn("Implementer:",
-                      self.t.sections["Estimate & dependencies"])
+        header = self.text.split("+++\n")[1]
+        self.assertTrue(any(line.startswith("#") and "implementer" in line
+                            for line in header.splitlines()), header)
         self.assertIsNone(self.t.implementer)
 
     def test_criteria_comment_names_the_five_reviewer_rules(self):

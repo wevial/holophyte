@@ -1,3 +1,55 @@
++++
+# The ticket's typed fields, in TOML. Leave an optional field out, or
+# uncomment and fill it.
+#
+# ui_change: "none" when the ticket changes no UI, "minor" for copy, a
+# button style or spacing, "major" for a new or reworked layout, which
+# needs an approved [mockup] on a project that sets [merge] ui_paths.
+ui_change = "none"
+# blast_radius: "high" or "medium" when the change is riskier than its
+# diff shows. The factory sets each review round's tier from the diff;
+# this field can raise the tier and never lower it.
+# blast_radius = "medium"
+# estimate: whole minutes, at most 90; split anything larger.
+estimate = 30
+# depends_on: the ticket keys this one waits on, like ["HOLO-7"]. The loop
+# enforces only Linear blocks relations; anything outside Linear (DNS,
+# human review, hardware) gates via triage: the ticket stays in Backlog
+# until resolved, then moves to Todo. Keep it in sync with the relations.
+depends_on = []
+# orchestration: "off", "subagents" or "workflow" overrides the project's
+# [agents.implementer] orchestration for this ticket's implement turn.
+# orchestration = "subagents"
+# implementer: a NAME runs the ticket on the
+# [agents.implementer_profiles.NAME] profile; filing refuses a NAME the
+# project does not configure.
+# implementer = "NAME"
+#
+# [mockup]: only with ui_change = "major". url is the approved mock-up
+# (https://claude.ai/artifact/ID, https://claude.ai/code/artifact/ID or a
+# Lotuspod page, https://lotuspod.DOMAIN/NAME.html), approved the date it
+# was approved and note what was approved.
+# [mockup]
+# url = "https://claude.ai/artifact/ID"
+# approved = 2026-10-19
+# note = "what was approved"
+# [[mockup.boards]]: one entry per exported board. url is a .png snapshot,
+# or the boards' .dc.html sources, canvas.json and PNGs as one .zip
+# bundle, uploaded under the project's [merge.media_bucket] public_base;
+# on a project with ui_paths and a bucket a major change needs at least
+# one. The factory downloads them for the implementer. caption is optional.
+# [[mockup.boards]]
+# url = "https://media.example/board.png"
+# caption = "board name"
+# [[evidence]]: only when the ticket needs specific visual evidence; at
+# most six entries, in capture order. file is NN-slug.png for a state or
+# NN-slug.webm for a recorded flow, numbered from 01, which the implementer
+# writes under [merge] ui_capture_dir (default e2e/capture); state is the
+# page, state and interaction the capture shows.
+# [[evidence]]
+# file = "01-slug.png"
+# state = "the page, state and interaction it shows"
++++
 # {{TITLE}}
 
 ## Summary
@@ -12,16 +64,6 @@
 
 **How:** <Intended technical direction, important constraints, and existing patterns to reuse — without over-specifying incidental implementation details.>
 
-<!-- OPTIONAL: `**UI change:** major` for a new or reworked layout, which
-     needs an approved mock-up under "Mock-up" below on a project that sets
-     [merge] ui_paths; `**UI change:** minor` for copy, a button style or
-     spacing. Leave the line out when the ticket changes no UI. -->
-
-<!-- OPTIONAL: `**Blast radius:** high` or `**Blast radius:** medium` when
-     the change is riskier than its diff shows. The factory sets each review
-     round's tier from the diff; this field can raise the tier and never
-     lower it. Leave the line out otherwise. -->
-
 ## Reproduce
 
 <!-- OPTIONAL: keep only for a bug report; its presence makes this a bug
@@ -29,25 +71,6 @@
      Delete the whole section otherwise. -->
 
 <Steps that show the reported behaviour, and where it was seen: the deployment, URL or commit.>
-
-## Mock-up
-
-<!-- OPTIONAL: keep only when What / Why / How declares
-     `**UI change:** major`. Give the approved mock-up as one bare URL
-     (https://claude.ai/artifact/ID, https://claude.ai/code/artifact/ID or
-     a Lotuspod page, https://lotuspod.DOMAIN/NAME.html) and one approval
-     line. Below it, link each exported board as a .png snapshot, or the
-     boards' .dc.html sources, canvas.json and PNGs as one .zip bundle,
-     uploaded under the project's [merge.media_bucket] public_base; on a
-     project with ui_paths and a bucket a major change needs at least one.
-     The factory downloads them for the implementer. Delete the whole
-     section otherwise. -->
-
-<https://claude.ai/artifact/ID>
-
-Approved <YYYY-MM-DD>: <what was approved>
-
-![<board name>](<public_base>/<board>.png)
 
 ## In scope
 
@@ -119,16 +142,6 @@ Rules:
   shell. The gate fails naming the path and the literal when it is absent.
 ```
 
-## Evidence
-
-<!-- OPTIONAL: keep only when this ticket needs specific visual evidence.
-     List at most six short states, one per line, in capture order.
-     The implementer writes a capture under [merge] ui_capture_dir (default
-     e2e/capture): one NN-slug.png per state, plus a recording for a flow.
-     Delete the whole section otherwise. -->
-
-<Page, state, and interaction the image must show.>
-
 ## Implementation notes
 
 - <Known constraints, dependencies, risks, rollout concerns, or useful code landmarks.>
@@ -140,22 +153,6 @@ Rules:
      or `Role: scaffolding`. Delete the whole section otherwise. -->
 
 <Role: completes W2>
-
-## Estimate & dependencies
-
-Estimate: N min · Depends on: <ticket IDs or "none">
-
-> Machine-checkable dependencies are Linear **blocks** relations — the loop
-> enforces only those. Anything outside Linear (DNS, human review, hardware)
-> gates via triage: the ticket stays in Backlog until resolved, then moves to
-> Todo. Keep this line in sync with the relations for human readers.
-
-<!-- Optional, beside the estimate: `Orchestration: off`, `Orchestration:
-subagents` or `Orchestration: workflow` overrides the project's
-`[agents.implementer] orchestration` for this ticket's implement turn. Leave
-the line out to use the project's setting. A line reading `Implementer:
-NAME` runs the ticket on the `[agents.implementer_profiles.NAME]` profile;
-filing refuses a NAME the project does not configure. -->
 
 ## Open questions
 

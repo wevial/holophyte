@@ -108,7 +108,7 @@ test("File ticket sends one Backlog POST with the composed markdown then toasts 
   expect([request.url, request.method]).toEqual([`${DEMO}/tickets`, "POST"]);
   const payload = request.body as { body: string; column: string };
   expect(payload.column).toBe("backlog");
-  expect(payload.body).toStartWith("# Steer notes show on the run detail card\n");
+  expect(payload.body).toStartWith('+++\nui_change = "none"\nestimate = 25\ndepends_on = []\n+++\n# Steer notes show on the run detail card\n');
   expect(payload.body).toContain("## Summary\n\nThe run page lists each steer note.");
   expect(payload.body).toContain("## In scope\n\n- The run card\n- Its styles");
   expect(payload.body).toContain("## Implementation notes\n\n- Use the existing notes query.\n- Keep the existing ordering.");
@@ -218,10 +218,10 @@ test("estimate, priority and unique uppercase dependency chips serialize and rem
   expect(answer.seen).toHaveLength(0);
   await press("File ticket");
   expect(posted(answer).priority).toBe(1);
-  expect(posted(answer).body.match(/^Estimate:.*$/gm)?.map(line => line.trim())).toEqual(["Estimate: 45 min · Depends on: HOLO-238"]);
+  expect(posted(answer).body.match(/^(?:estimate|depends_on) = .*$/gm)).toEqual(["estimate = 45", 'depends_on = ["HOLO-238"]']);
   await press("Remove HOLO-238");
   await press("File ticket");
-  expect(posted(answer, 1).body).toContain("Estimate: 45 min · Depends on: none");
+  expect(posted(answer, 1).body.match(/^(?:estimate|depends_on) = .*$/gm)).toEqual(["estimate = 45", "depends_on = []"]);
 });
 
 test("a dependency listed in the board's Ready column shows that column label", async () => {
@@ -257,31 +257,50 @@ test.each([[true, "Needs you"], [false, "In flight"]] as const)("a pull-request 
   expect(screen.getByText(`DEMO-9 · ${label}`, { exact: true })).toBeTruthy();
 });
 
-test("UI change serializes its major declaration, mock-up and approval and switching off removes them", async () => {
+test("UI change files its header fields: ui_change, estimate, depends_on, then [mockup] and its boards, and switching off leaves ui_change none", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
   await type("Title", "Steer notes show on the run detail card");
+  await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "45" } }));
+  await type("Depends on", "HOLO-7");
+  await press("Add");
   const toggle = screen.getByRole("switch", { name: "This ticket changes the UI" });
   expect(screen.queryByRole("textbox", { name: "Mock-up link" })).toBeNull();
   await act(async () => void fireEvent.click(toggle));
-  await type("Mock-up link", "https://claude.ai/artifact/abc");
-  await type("Boards", "https://example.test/board.png");
-  const approval = (screen.getByRole("textbox", { name: "Approval" }) as HTMLInputElement).value;
-  expect(approval).toMatch(/^Approved \d{4}-\d{2}-\d{2}:/);
+  await type("Mock-up link", "https://claude.ai/artifact/abc123");
+  await type("Approval", "Approved 2026-10-19: the defaults");
+  await type("Boards", "https://media.example/b.png");
   await press("File ticket");
   const body = posted(answer).body;
-  expect(body).toContain("**UI change:** major");
-  const mockup = body.split("## Mock-up\n")[1]?.split("\n## ")[0];
-  expect(mockup).toMatch(/^https:\/\/claude\.ai\/artifact\/abc\s*$/m);
-  expect(body.match(/^Approved .+$/gm)).toHaveLength(1);
-  expect(body).toContain("![board](https://example.test/board.png)");
+  expect(body.split("\n").slice(0, 15)).toEqual([
+    "+++",
+    'ui_change = "major"',
+    "estimate = 45",
+    'depends_on = ["HOLO-7"]',
+    "",
+    "[mockup]",
+    'url = "https://claude.ai/artifact/abc123"',
+    "approved = 2026-10-19",
+    'note = "the defaults"',
+    "",
+    "[[mockup.boards]]",
+    'url = "https://media.example/b.png"',
+    "+++",
+    "# Steer notes show on the run detail card",
+    "",
+  ]);
+  expect(body).not.toMatch(/^\*\*UI change:\*\*/m);
+  expect(body).not.toMatch(/^## (?:Mock-up|Estimate & dependencies)$/m);
   await act(async () => void fireEvent.click(toggle));
   await press("File ticket");
-  const without = posted(answer, 1).body;
-  expect(without).not.toContain("**UI change:**");
-  expect(without).not.toContain("## Mock-up");
-  expect(without).not.toContain("https://claude.ai/artifact/abc");
-  expect(without).not.toContain("https://example.test/board.png");
+  expect(posted(answer, 1).body.split("\n").slice(0, 6)).toEqual([
+    "+++",
+    'ui_change = "none"',
+    "estimate = 45",
+    'depends_on = ["HOLO-7"]',
+    "+++",
+    "# Steer notes show on the run detail card",
+  ]);
 });
 
 test("estimate stepping stops at 5 and 120 minutes and files those boundary values", async () => {
@@ -291,13 +310,13 @@ test("estimate stepping stops at 5 and 120 minutes and files those boundary valu
   for (let index = 0; index < 5; index += 1) await press("Decrease estimate");
   expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("5");
   await press("File ticket");
-  expect(posted(answer).body).toContain("Estimate: 5 min · Depends on: none");
+  expect(posted(answer).body.match(/^estimate = .*$/gm)).toEqual(["estimate = 5"]);
   await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "115" } }));
   await press("Increase estimate");
   await press("Increase estimate");
   expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("120");
   await press("File ticket");
-  expect(posted(answer, 1).body).toContain("Estimate: 120 min · Depends on: none");
+  expect(posted(answer, 1).body.match(/^estimate = .*$/gm)).toEqual(["estimate = 120"]);
 });
 
 
@@ -314,5 +333,5 @@ test("typing an estimate digit by digit preserves the intended number when filin
   expect((estimate as HTMLInputElement).value).toBe("45");
   await act(async () => void await user.click(screen.getByRole("button", { name: "File ticket" })));
   await flush();
-  expect(posted(answer).body.match(/^Estimate:.*$/gm)?.map(line => line.trim())).toEqual(["Estimate: 45 min · Depends on: none"]);
+  expect(posted(answer).body.match(/^estimate = .*$/gm)).toEqual(["estimate = 45"]);
 });

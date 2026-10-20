@@ -1161,11 +1161,13 @@ that passed verify and touched `ui_paths` since the section's "Captured at"
 commit, whatever that review then decides. When the capture at the new head
 fails, the earlier images stay under a notice that they show an older commit.
 Tickets without the section keep the default capture.
-On a project that sets `ui_paths`, a ticket declaring `**UI change:** major`
-under What / Why / How must carry a `## Mock-up` section linking the approved
-mock-up; `--file-ticket` refuses it and the claim leaves it unclaimed until it
-does. A project without `ui_paths` never needs the section, and a ticket
-declaring `minor`, or nothing, is unaffected.
+On a project that sets `ui_paths`, a ticket whose `+++` header declares
+`ui_change = "major"` must carry a `[mockup]` table linking the approved
+mock-up (in the magic-line form still accepted, a `**UI change:** major` line
+under What / Why / How needs a `## Mock-up` section); `--file-ticket` refuses
+it and the claim leaves it unclaimed until it does. A project without
+`ui_paths` never needs the mock-up, and a ticket declaring `minor`, or
+nothing, is unaffected.
 
 A Playwright project can name the factory's own runner as `ui_capture`
 instead of shipping a capture script: `python3 HOLOPHYTE/holophyte/capture_playwright.py`

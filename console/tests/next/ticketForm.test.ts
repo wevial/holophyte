@@ -107,13 +107,15 @@ test("estimate and dependency edits retain orchestration and serialize an empty 
   ));
 });
 
+const blankHeader = '+++\nui_change = "none"\nestimate = 30\ndepends_on = []\n+++\n';
+
 test("a blank form keeps only required sections, clears guidance, and exposes the summary hint", () => {
   const form = blankForm();
   const body = composeBody(withField(form, "title", "Steer notes show on the run detail card"));
-  expect(body.startsWith("# Steer notes show on the run detail card\n")).toBe(true);
+  expect(body.startsWith(`${blankHeader}# Steer notes show on the run detail card\n`)).toBe(true);
   expect(form.sections.map((section) => section.name)).toEqual([
     "Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria",
-    "Verify command(s)", "Implementation notes", "Estimate & dependencies", "Open questions",
+    "Verify command(s)", "Implementation notes", "Open questions",
   ]);
   expect(body).not.toContain("<!--");
   expect(body).not.toMatch(/<[^>]*>/);
@@ -191,14 +193,14 @@ test("editing a blank summary preserves the following section boundary", () => {
   expect(fieldOf(reparsed, "summary")).toBe("New summary");
   expect(reparsed.sections.map((section) => section.name)).toEqual([
     "Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria",
-    "Verify command(s)", "Implementation notes", "Estimate & dependencies", "Open questions",
+    "Verify command(s)", "Implementation notes", "Open questions",
   ]);
 });
 
-test("filling a blank title replaces the empty H1 without adding a heading", () => {
+test("filling a blank title replaces the empty H1 under the header without adding a heading", () => {
   const form = blankForm();
   expect(composeBody(withField(form, "title", "A title"))).toBe(
-    "# A title\n\n" + form.sections.map(section => section.heading + section.text).join(""),
+    blankHeader + "# A title\n\n" + form.sections.map(section => section.heading + section.text).join(""),
   );
 });
 

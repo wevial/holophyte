@@ -728,7 +728,10 @@ At the root:
 - `story_template.py` — validator for a story directory's body, witness
   files and children; `python3 ticket_template.py --repo PATH --story DIR` exits
   0 iff the story is valid.
-- `ticketTemplate.md` — the ticket shape. Verify commands go in the
+- `ticketTemplate.md` — the ticket shape. Its typed fields (`ui_change`,
+  `estimate`, `depends_on`, `[mockup]`, `[[evidence]]` and the rest) sit in
+  the `+++` TOML header above the H1; a body without one keeps the magic-line
+  form. Verify commands go in the
   "Verify command(s)" section (exit 0 = pass, relative paths only);
   estimate is the budget in minutes. The optional "Contract checks" section
   declares `relative/path: exact literal` lines the gate asserts verbatim, so

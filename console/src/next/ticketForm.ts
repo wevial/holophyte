@@ -1,4 +1,5 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import { HeaderDate, headerSpan, readHeader, withEntries, withKey, type Table, type Value } from "./ticketHeader";
 
 export interface Fields {
   title: string;
@@ -85,7 +86,8 @@ function lines(text: string): Line[] {
 }
 
 export function parseBody(text: string): TicketForm {
-  const headings = matching(text, /^## /);
+  const close = headerSpan(text)?.close ?? 0;
+  const headings = matching(text.slice(close), /^## /).map(line => ({ ...line, start: line.start + close, end: line.end + close }));
   return {
     preamble: text.slice(0, headings[0]?.start ?? text.length),
     sections: headings.map((line, i) => ({
@@ -108,7 +110,12 @@ const sections: Record<Exclude<Field, "title">, string> = {
   inScope: "In scope", outOfScope: "Out of scope", criteria: "Acceptance criteria",
   verify: "Verify command(s)", estimate: "Estimate & dependencies", dependsOn: "Estimate & dependencies",
 };
-const order = parseBody(TEMPLATE).sections.map(section => section.name);
+/** The checker's TEMPLATE_ORDER: the template's sections and the ones a
+ *  magic-line body still holds where the header form keeps its fields. */
+const order = [
+  "Summary", "What / Why / How", "Reproduce", "Mock-up", "In scope", "Out of scope", "Acceptance criteria",
+  "Verify command(s)", "Contract checks", "Evidence", "Implementation notes", "Story", "Estimate & dependencies", "Open questions",
+];
 const labels = { what: "What", why: "Why", how: "How" };
 const scopePattern = /^- (.*)$/;
 const mockupLinkPattern = /^https?:\/\/\S+[ \t]*$/;
@@ -153,8 +160,53 @@ function verifySpan(text: string): Span | undefined {
 }
 const estimatePattern = /^Estimate: (.*?) min · Depends on: (.*)$/;
 
+const HEADER_FIELDS = ["uiChange", "estimate", "dependsOn", "mockupLink", "mockupApproval", "mockupImages"] as const;
+type HeaderField = typeof HEADER_FIELDS[number];
+const inHeader = (field: Field): field is HeaderField => (HEADER_FIELDS as readonly Field[]).includes(field);
+const headerApproval = /^Approved (\d{4}-\d{2}-\d{2}):[ \t]*(.*)$/;
+const isTable = (value: Value | undefined): value is Table => !!value && typeof value === "object" && !Array.isArray(value) && !(value instanceof HeaderDate);
+const boardsOf = (mockup: Table) => (Array.isArray(mockup.boards) ? mockup.boards : []).filter(isTable).filter(board => typeof board.url === "string");
+const isDate = (iso: string) => !Number.isNaN(Date.parse(iso)) && new Date(iso).toISOString().slice(0, 10) === iso;
+
+function headerField(source: string, field: HeaderField): Fields[HeaderField] {
+  const header = readHeader(source);
+  const mockup = isTable(header.mockup) ? header.mockup : {};
+  if (field === "uiChange") return header.ui_change === "major" || header.ui_change === "minor" ? header.ui_change : null;
+  if (field === "estimate") return Number.isInteger(header.estimate) ? header.estimate as number : null;
+  if (field === "dependsOn") return Array.isArray(header.depends_on) ? header.depends_on.filter(key => typeof key === "string") : [];
+  if (field === "mockupLink") return typeof mockup.url === "string" ? mockup.url : "";
+  if (field === "mockupImages") return boardsOf(mockup).map(board => `![${typeof board.caption === "string" ? board.caption : ""}](${board.url})`);
+  if (mockup.approved instanceof HeaderDate) return `Approved ${mockup.approved.iso}: ${typeof mockup.note === "string" ? mockup.note : ""}`;
+  return typeof mockup.approved === "string" ? mockup.approved : "";
+}
+
+/** The header TOML `source` with only the keys `field` reads set to `value`:
+ *  an approval that does not read "Approved YYYY-MM-DD: note" is kept
+ *  whole as a quoted `approved`, and a board whose URL stays keeps its caption. */
+function withHeaderField(source: string, field: HeaderField, value: Fields[HeaderField]): string {
+  if (field === "uiChange") return withKey(source, "", "ui_change", (value as Fields["uiChange"]) ?? "none");
+  if (field === "estimate") return withKey(source, "", "estimate", (value as Fields["estimate"]) ?? undefined);
+  if (field === "dependsOn") return withKey(source, "", "depends_on", value as string[]);
+  if (field === "mockupLink") return withKey(source, "mockup", "url", (value as string) || undefined);
+  if (field === "mockupApproval") {
+    const approval = headerApproval.exec((value as string).trimEnd());
+    if (approval && isDate(approval[1]!)) return withKey(withKey(source, "mockup", "approved", new HeaderDate(approval[1]!)), "mockup", "note", approval[2]!);
+    return withKey(withKey(source, "mockup", "approved", (value as string) || undefined), "mockup", "note", undefined);
+  }
+  const header = readHeader(source);
+  const boards = boardsOf(isTable(header.mockup) ? header.mockup : {});
+  const urls = (value as string[]).map(image => /^!\[[^\]]*\]\((.*)\)$/.exec(image)?.[1] ?? image);
+  if (JSON.stringify(urls) === JSON.stringify(boards.map(board => board.url))) return source;
+  return withEntries(source, "mockup.boards", urls.map((url): Table => {
+    const caption = boards.find(board => board.url === url)?.caption;
+    return typeof caption === "string" ? { url, caption } : { url };
+  }));
+}
+
 export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] {
-  const text = field === "title" ? form.preamble : form.sections.find(section => section.name === sections[field as Exclude<Field, "title">])?.text ?? "";
+  const span = headerSpan(form.preamble);
+  if (span && inHeader(field)) return headerField(form.preamble.slice(span.start, span.end), field) as Fields[K];
+  const text = field === "title" ? form.preamble.slice(span?.close ?? 0) : form.sections.find(section => section.name === sections[field as Exclude<Field, "title">])?.text ?? "";
   let value: Fields[Field];
   if (field === "title") value = matching(text, /^# /)[0]?.text.slice(2) ?? "";
   else if (field === "summary" || field === "notes" || field === "openQuestions") value = visibleSource(text).visible.trim();
@@ -299,14 +351,20 @@ export function withCriteria(form: TicketForm, rows: { origin: number | null; te
 }
 
 export function withField<K extends Field>(form: TicketForm, field: K, value: Fields[K]): TicketForm {
-  const present = field === "title" || form.sections.some(section => section.name === sections[field as Exclude<Field, "title">]);
+  const span = headerSpan(form.preamble);
+  const present = field === "title" || (span && inHeader(field)) || form.sections.some(section => section.name === sections[field as Exclude<Field, "title">]);
   if (present && JSON.stringify(fieldOf(form, field)) === JSON.stringify(value)) return form;
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
+  if (span && inHeader(field)) {
+    const source = withHeaderField(form.preamble.slice(span.start, span.end), field, value as Fields[HeaderField]);
+    return { ...form, preamble: form.preamble.slice(0, span.start) + source + form.preamble.slice(span.end) };
+  }
   if (field === "title") {
-    const row = matching(form.preamble, /^#(?: |$)/)[0];
+    const head = form.preamble.slice(0, span?.close ?? 0);
+    const rest = form.preamble.slice(head.length);
+    const row = matching(rest, /^#(?: |$)/)[0];
     const end = row ? Math.min(row.end - row.eol.length, Math.max(row.start + 2, row.contentEnd)) : 0;
-    const preamble = row ? splice(form.preamble, row.start, end, `# ${value}`) : `# ${value}${eol}${eol}` + form.preamble;
-    return { ...form, preamble };
+    return { ...form, preamble: head + (row ? splice(rest, row.start, end, `# ${value}`) : `# ${value}${eol}${eol}` + rest) };
   }
   const name = sections[field as Exclude<Field, "title">];
   const updated = form.sections.slice();
@@ -328,17 +386,36 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
 /** The estimate in minutes, 5 to 120 in steps of 5: the run's time box. */
 export const clampEstimate = (value: number) => Math.min(120, Math.max(5, Math.round(value / 5) * 5));
 
+/** Each header field's guidance in the template header's comment lines: the
+ *  group opening `# NAME:`, up to a blank comment, an example or the next group. */
+function headerHints(source: string): Partial<Record<HeaderField, string>> {
+  const names: Record<HeaderField, string> = {
+    uiChange: "ui_change", estimate: "estimate", dependsOn: "depends_on",
+    mockupLink: "[mockup]", mockupApproval: "[mockup]", mockupImages: "[[mockup.boards]]",
+  };
+  const rows = source.split(/\r?\n/);
+  const stop = /^#\s*$|^#\s*\[\[?[\w.]+\]\]?\s*$|^#\s*[\w-]+ = |^#\s*(?:\[\[?[\w.]+\]\]?|[\w-]+):\s/;
+  return Object.fromEntries(HEADER_FIELDS.flatMap(field => {
+    const at = rows.findIndex(row => row.startsWith(`# ${names[field]}: `));
+    if (at < 0) return [];
+    const end = rows.findIndex((row, index) => index > at && (!row.startsWith("#") || stop.test(row)));
+    const group = rows.slice(at, end < 0 ? undefined : end).map(row => row.replace(/^#\s*/, "")).join(" ");
+    return [[field, group.slice(names[field].length + 2)]];
+  }));
+}
+
 export function blankForm(): TicketForm {
-  const optional = new Set(["Reproduce", "Mock-up", "Contract checks", "Evidence", "Story"]);
-  const hints: TicketForm["hints"] = {};
-  const uncommented = withoutComments(TEMPLATE);
+  const optional = new Set(["Reproduce", "Contract checks", "Story"]);
+  const commented = withoutComments(TEMPLATE);
+  const span = headerSpan(commented)!;
+  const header = commented.slice(span.start, span.end);
+  const hints: TicketForm["hints"] = headerHints(header);
+  const uncommented = commented.slice(0, span.start) + header.replace(/^[ \t]*#.*(?:\r?\n|$)/gm, "") + commented.slice(span.end);
   const hintTemplate = parseBody(uncommented);
   for (const field of Object.keys(sections) as Exclude<Field, "title">[]) {
+    if (inHeader(field)) continue;
     const section = hintTemplate.sections.find(section => section.name === sections[field])!.text;
     let raw: Fields[Field] = fieldOf(hintTemplate, field);
-    if (field === "mockupLink") raw = /^<https?:.*>$/m.exec(section)?.[0] ?? "";
-    if (field === "mockupApproval") raw = /^Approved .*$/m.exec(section)?.[0] ?? "";
-    if (field === "dependsOn") raw = estimatePattern.exec(matching(section, estimatePattern)[0]?.text ?? "")?.[2] ?? "";
     if (field === "verify") raw = verifySpan(section)?.value ?? "";
     const hint = (value: string) => [...value.matchAll(/<([^>]+)>/g)].map(match => match[1].replace(/\s+/g, " ")).join(" ");
     if (Array.isArray(raw)) hints[field] = raw.map(hint);
