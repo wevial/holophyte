@@ -1,6 +1,8 @@
 export type TomlKind = "table" | "key" | "string" | "number" | "bool" | "date" | "comment" | "punct" | "text";
 export type TomlSpan = { kind: TomlKind; text: string };
 type Open = '"""' | "'''" | null;
+type LineState = { open: Open; stack: string[] };
+const START: LineState = { open: null, stack: [] };
 
 const KEY_PART = String.raw`(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')`;
 const DOTTED_KEY = String.raw`${KEY_PART}(?:[ \t]*\.[ \t]*${KEY_PART})*[ \t]*`;
@@ -32,7 +34,9 @@ function quotedEnd(line: string, from: number): number {
   return line.length;
 }
 
-function scanLine(line: string, open: Open): { spans: TomlSpan[]; open: Open } {
+function scanLine(line: string, state: LineState): { spans: TomlSpan[]; state: LineState } {
+  let open = state.open;
+  const stack = [...state.stack];
   const spans: TomlSpan[] = [];
   const push = (kind: TomlKind, text: string) => {
     const last = spans[spans.length - 1];
@@ -40,10 +44,10 @@ function scanLine(line: string, open: Open): { spans: TomlSpan[]; open: Open } {
     else spans.push({ kind, text });
   };
   let at = 0;
-  const fresh = !open;
+  const fresh = !open && stack.length === 0;
   if (open) {
     const end = closeAt(line, 0, open);
-    if (end < 0) return { spans: line ? [{ kind: "string", text: line }] : [], open };
+    if (end < 0) return { spans: line ? [{ kind: "string", text: line }] : [], state };
     push("string", line.slice(0, end));
     at = end;
     open = null;
@@ -53,7 +57,6 @@ function scanLine(line: string, open: Open): { spans: TomlSpan[]; open: Open } {
   at += lead.length;
   const table = fresh ? TABLE.exec(line.slice(at)) : null;
   if (table) { push("table", table[0]); at += table[0].length; }
-  const stack: string[] = [];
   let expectKey = fresh && !table;
   while (at < line.length) {
     const rest = line.slice(at);
@@ -67,7 +70,7 @@ function scanLine(line: string, open: Open): { spans: TomlSpan[]; open: Open } {
     const multi = rest.startsWith('"""') ? '"""' : rest.startsWith("'''") ? "'''" : null;
     if (multi) {
       const end = closeAt(line, at + 3, multi);
-      if (end < 0) { push("string", rest); return { spans, open: multi }; }
+      if (end < 0) { push("string", rest); return { spans, state: { open: multi, stack } }; }
       push("string", line.slice(at, end)); at = end; continue;
     }
     if (char === '"' || char === "'") { const end = quotedEnd(line, at); push("string", line.slice(at, end)); at = end; continue; }
@@ -86,18 +89,18 @@ function scanLine(line: string, open: Open): { spans: TomlSpan[]; open: Open } {
     push("text", word);
     at += word.length;
   }
-  return { spans, open };
+  return { spans, state: { open: null, stack: stack.includes("{") ? [] : stack } };
 }
 
 export function tomlTokens(line: string): TomlSpan[] {
-  return scanLine(line, null).spans;
+  return scanLine(line, START).spans;
 }
 
 export function tomlTokenLines(text: string): TomlSpan[][] {
-  let open: Open = null;
+  let state = START;
   return text.split("\n").map((line) => {
-    const scanned = scanLine(line, open);
-    open = scanned.open;
+    const scanned = scanLine(line, state);
+    state = scanned.state;
     return scanned.spans;
   });
 }

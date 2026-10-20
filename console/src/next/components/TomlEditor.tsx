@@ -19,7 +19,9 @@ function pageCaret(textarea: HTMLTextAreaElement, scroller: HTMLElement, step: 1
     : Math.min(starts[target]! + focus - starts[line]!, (starts[target + 1] ?? value.length + 1) - 1);
   if (extend) textarea.setSelectionRange(Math.min(anchor, next), Math.max(anchor, next), next < anchor ? "backward" : "forward");
   else textarea.setSelectionRange(next, next);
-  scroller.scrollTop += step * rows * 20;
+  const caretTop = 12 + Math.min(Math.max(target, 0), starts.length - 1) * 20;
+  const paged = scroller.scrollTop + step * rows * 20;
+  scroller.scrollTop = Math.min(Math.max(paged, caretTop + 32 - scroller.clientHeight), caretTop - 12);
 }
 
 export type TomlCheckState = { text: string; pending: boolean; error: string | null; line: number | null };

@@ -64,6 +64,16 @@ test("Raw TOML colours the file by kind and keeps gutter numbers level with thei
   expect(paged[0]).toBe(0);
   expect(paged[1]).toBe(long.split("\n").slice(0, 16).join("\n").length + 1);
   expect(paged[2]).toBeGreaterThan(0);
+  await editor.press("Control+Home");
+  await page.locator("[data-toml-scroller]").evaluate(scroller => { scroller.scrollTop = 1000; });
+  await editor.press("PageDown");
+  const revealed = await page.locator("[data-toml-scroller]").evaluate(scroller => {
+    const caret = (scroller.querySelector("textarea") as HTMLTextAreaElement).selectionStart;
+    const line = scroller.querySelector('pre [data-text-line="17"]')!.getBoundingClientRect();
+    const box = scroller.getBoundingClientRect();
+    return { caret, visible: line.top >= box.top && line.bottom <= box.bottom };
+  });
+  expect(revealed).toEqual({ caret: long.split("\n").slice(0, 16).join("\n").length + 1, visible: true });
   await editor.fill(`${long}\n# ${"wide ".repeat(80)}`);
   await editor.press("Control+Home");
   await editor.press("Control+End");

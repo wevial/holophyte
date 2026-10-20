@@ -26,3 +26,17 @@ test("a multi-line basic string keeps its middle line a string, never a comment 
   expect(lines[1]).toEqual([{ kind: "string", text: "first # not a comment = x" }]);
   expect(lines[2]).toEqual([{ kind: "string", text: 'last"""' }]);
 });
+
+test("an inline table split by a multi-line string keeps the keys after the string as keys", () => {
+  const lines = tomlTokenLines('agent = { command = """first\nlast""", "enabled" = true }');
+  expect(lines[1]!.map(span => [span.kind, span.text.trim()])).toEqual([
+    ["string", 'last"""'], ["punct", ","], ["key", '"enabled"'], ["punct", "="], ["bool", "true"], ["punct", "}"],
+  ]);
+});
+
+test("a multi-line array's element lines are values, and the table after it is a table", () => {
+  const lines = tomlTokenLines('ports = [\n  [1],\n  { name = "x" },\n]\n[next]');
+  expect(lines[1]!.map(span => span.kind)).toEqual(["text", "punct", "number", "punct", "punct"]);
+  expect(lines[2]!.map(span => span.kind)).toEqual(["text", "punct", "key", "punct", "string", "punct", "punct"]);
+  expect(lines[4]).toEqual([{ kind: "table", text: "[next]" }]);
+});
