@@ -2,6 +2,7 @@ import { PrLink, Sha } from "../../components/ShippedTable";
 import { formatClock } from "../../lib/format";
 import type { ShippedRow } from "../../lib/types";
 import { StateDot } from "./StateDot";
+import { TitleText } from "./TitleText";
 
 const roundsOf = (rounds: number) => `${rounds} ${rounds === 1 ? "round" : "rounds"}`;
 
@@ -19,7 +20,7 @@ export function MergedToday({ rows }: { rows: ShippedRow[] }) {
           <span className="text-ink-2">{row.ticket}</span>
           <span className="flex min-w-0 flex-col gap-1">
             <b className="font-read text-[15px] font-medium leading-[1.35] break-words text-ink sm:truncate">
-              {row.title ?? row.ticket}
+              <TitleText>{row.title ?? row.ticket}</TitleText>
             </b>
             <span>
               {row.pr_url ? <PrLink url={row.pr_url} title={row.merge_sha} /> : <Sha row={row} />} · {roundsOf(row.rounds)}

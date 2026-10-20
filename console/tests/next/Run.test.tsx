@@ -24,6 +24,7 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>, ro
 
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { title: "Count the rounds", phase: "reviewing", agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE }, [changes]),
+  14: detail(14, "DEMO-14", { title: "Read a `+++` TOML header" }),
   40: detail(40, "DEMO-40", {
     phase: "failed",
     outcome: "failed",
@@ -153,4 +154,11 @@ test("a run page under another project's scope shows its own project's run and k
   await mount("#/runs/demo/12?project=other");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Count the rounds");
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("project")).toBe("other");
+});
+
+test("a backticked span in the run's title shows as inline code in its heading", async () => {
+  await mount("#/runs/demo/14");
+  const heading = screen.getByRole("heading", { level: 1 });
+  expect([...heading.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+  expect(heading.textContent).toBe("Read a +++ TOML header");
 });

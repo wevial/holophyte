@@ -7,6 +7,7 @@ import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
 import { STATES, type State } from "../state";
 import { StateDot, TONE_TEXT } from "./StateDot";
+import { plainTitle, TitleText } from "./TitleText";
 
 const GRID = "grid grid-cols-[84px_100px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_80px] items-start gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
@@ -46,7 +47,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       data-need={need ? "" : undefined}
       className={`${GRID} relative border-b border-rule-2 p-3 text-[14px] transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
-      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${row.title}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`}>
+      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`}>
         {row.id}
       </RunRowLink>
       <span className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3 [overflow-wrap:anywhere]">
@@ -59,7 +60,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
           {row.ticket}
         </Link>
       </span>
-      <span className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] ${quiet ? "text-ink-2" : "text-ink"}`}>{row.title}</span>
+      <span className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] ${quiet ? "text-ink-2" : "text-ink"}`}><TitleText>{row.title}</TitleText></span>
       <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
       <span className="inline-flex items-start gap-1.5">
         <StateDot state={row.state} hideWord />

@@ -5,6 +5,7 @@ import { STATES, type Tone } from "../state";
 import { cardState, cardWord, type ColumnId, type TicketCard } from "../tickets";
 import { keepScope } from "../scope";
 import { StateDot, TONE_TEXT } from "./StateDot";
+import { TitleText } from "./TitleText";
 
 type Look = "need" | "done" | "backlog" | "plain";
 
@@ -70,7 +71,7 @@ export function BoardCard({
             </span>
           )}
         </div>
-        <h3 className={`mt-[9px] break-words font-read text-[15px] leading-[1.35] ${LOOKS[look].title}`}>{card.title}</h3>
+        <h3 className={`mt-[9px] break-words font-read text-[15px] leading-[1.35] ${LOOKS[look].title}`}><TitleText>{card.title}</TitleText></h3>
         <p data-state-line className="mt-3 flex min-w-0 items-center gap-[7px] font-mono text-[12px] leading-[1.3]">
           <StateDot state={state} hideWord tone={tone} />
           <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[wordTone]}`}>{cardWord(card, now)}</span>

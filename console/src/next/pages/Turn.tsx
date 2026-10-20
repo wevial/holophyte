@@ -2,6 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { TicketLink } from "../../components/TicketLink";
 import type { RunTurn } from "../../lib/contract.gen";
 import { formatClockSeconds, formatSpan } from "../../lib/format";
+import { TitleText } from "../components/TitleText";
 import { TurnEntries } from "../components/TurnEntries";
 import { TurnArrow } from "../components/icons";
 import { runPage } from "../run";
@@ -68,7 +69,7 @@ export function TurnPage() {
         <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="m-0 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">{title}</h1>
-            <p className="m-0 mt-2 font-read text-[15px] leading-[1.5] text-ink-2">{run.title}{previous?.turn.role === "review" && ` · back from review ${previous.ordinal}`}</p>
+            <p className="m-0 mt-2 font-read text-[15px] leading-[1.5] text-ink-2"><TitleText>{run.title}</TitleText>{previous?.turn.role === "review" && ` · back from review ${previous.ordinal}`}</p>
           </div>
           <div className="flex items-center gap-2">
             <TurnLink project={project} run={run.id} turn={previous?.turn} />

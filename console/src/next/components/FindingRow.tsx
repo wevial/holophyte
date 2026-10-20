@@ -8,6 +8,7 @@ import { Btn } from "./Btn";
 import { FactIcon, FoldChevron, FolderIcon } from "./icons";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { useToast } from "./Toast";
+import { TitleText } from "./TitleText";
 
 const PILL: Record<Severity, { text: string; className: string }> = {
   must: { text: "P1", className: "bg-p1 text-[#171a2c]" },
@@ -105,7 +106,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
             </span>
           )}
         </span>
-        <span data-title className="min-w-0 flex-[1_1_260px] font-read text-[15px] font-medium [overflow-wrap:anywhere] text-ink">{row.title}</span>
+        <span data-title className="min-w-0 flex-[1_1_260px] font-read text-[15px] font-medium [overflow-wrap:anywhere] text-ink"><TitleText>{row.title}</TitleText></span>
         {showProject && (
           <span data-project className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink-2">
             <FolderIcon />

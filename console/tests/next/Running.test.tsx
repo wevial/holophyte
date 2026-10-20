@@ -230,6 +230,13 @@ test("with every project idle and not held, Running draws no lane and says nothi
   expect(running().textContent).toContain("Nothing running and nothing queued.");
 });
 
+test("a backticked span in a running row's title shows as inline code, and its accessible name drops the backticks", async () => {
+  const live = runOf(7, "DEMO-7", "Read a `+++` TOML header", { phase: "reviewing", round: 1, agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE });
+  await mount("#/", statusOf("/srv/dev/demo", [live]), statusOf("/srv/dev/writer", []));
+  const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Read a +++ TOML header, reviewing, 16 of 25 minutes" });
+  expect([...row.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+});
+
 const onCiRows = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-on-ci]")];
 
 test("a run fixing a pull request names it under its title, and the lane lists its pull requests on CI without counting them busy", async () => {

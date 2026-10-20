@@ -16,6 +16,7 @@ import { Btn } from "./Btn";
 import { CardActions } from "./CardActions";
 import { ChevronIcon } from "./icons";
 import { StateDot } from "./StateDot";
+import { TitleText } from "./TitleText";
 
 type Host = HostRecord<ContractBodies>;
 
@@ -171,7 +172,7 @@ function Card({
         {age != null && <span>waiting {formatSettled(age)}</span>}
         <Pager index={index} count={count} hold={hold} />
       </div>
-      {title != null && <h3 className="mt-3.5 break-words font-sans text-[20px] font-semibold leading-tight text-ink">{title}</h3>}
+      {title != null && <h3 className="mt-3.5 break-words font-sans text-[20px] font-semibold leading-tight text-ink">{unreachable ? title : <TitleText>{title}</TitleText>}</h3>}
       {unreachable ? (
         <p className="mt-1.5 font-mono text-[12px] text-ink-3">{seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`}</p>
       ) : (
@@ -215,7 +216,7 @@ function Row({ entry, hosts, now, onPick }: { entry: NeedsYouEntry; hosts: Host[
       >
         <StateDot state={state} hideWord />
         <span className="truncate text-ink-2">{name}</span>
-        <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title}</span>
+        <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
         <span>
           {STATES[state].word}
           {age != null && ` · ${formatAge(age)}`}
