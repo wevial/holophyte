@@ -103,7 +103,7 @@ export function Overview() {
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
-  const lanes = laneGroups(view.hosts);
+  const lanes = laneGroups(view.hosts, view.pullRequests, view.now);
   const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
@@ -184,7 +184,7 @@ export function Overview() {
             label="Pull requests"
             count={openPrs}
             summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
-            empty="No pull requests open."
+            empty="No pull request waits on you."
             isEmpty={openPrs === 0}
           >
             <PullRequestLanes groups={prLanes} readiness={view.readiness} />
@@ -202,7 +202,7 @@ export function Overview() {
           </div>
         </div>
       </div>
-      <div className="min-w-0 max-w-[880px] min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-0 min-[1600px]:self-start min-[1600px]:h-screen min-[1600px]:-mb-7 min-[1600px]:col-start-3 min-[1600px]:row-span-2 min-[1600px]:row-start-1 min-[1600px]:w-[330px]">
+      <div className="min-w-0 max-w-[880px] min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:self-start min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:col-start-3 min-[1600px]:row-span-2 min-[1600px]:row-start-1 min-[1600px]:w-[330px]">
         <DayLog entries={log.entries} />
       </div>
     </div>
