@@ -7,8 +7,12 @@ import traceback
 
 import store.read
 from holophyte.admission import project_of
+from holophyte.loop.gates import InfraFailure
 from holophyte.loop.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.loop.runs import open_store
+from holophyte.pr import github
+from holophyte.pr.pr_ready import READY_MUTATION
+from holophyte.pr.pr_status import parse_pr_url
 from holophyte.redact import known_secrets, outbound
 from holophyte.serve.serve_runs import no_store
 from store.operator_notes import send_back
@@ -23,7 +27,7 @@ RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
            "merge": ("approve",), "ask": ("babysit",), "hold": ("hold",),
            "release-hold": ("release_hold",), "pause": ("pause",),
            "resume": ("resume",), "abort": ("abort", "abort_close"),
-           "steer": ("steer", "operator_note")}
+           "steer": ("steer", "operator_note"), "mark-ready": ()}
 ACTIONS = frozenset(RECORDS)
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
@@ -186,6 +190,48 @@ def send_back_action(project, run_id, note, author):
     return 200, {"ok": True, "run": run_id, "event_id": event_id,
                  "recorded": recorded,
                  "detail": f"Sent back with operator_note event {event_id}"}
+
+
+def held_draft_url(conn, run_id):
+    row = conn.execute(
+        "SELECT r.prUrl FROM runs r JOIN tickets t ON t.lastRunId = r.id"
+        " WHERE r.id = ? AND r.phase = 'awaiting_merge_approval'"
+        " AND r.prSeenState = 'draft' AND EXISTS (SELECT 1 FROM runEvents e"
+        " WHERE e.runId = r.id AND e.kind = 'pr_draft_held')",
+        (run_id,)).fetchone()
+    return None if row is None else row[0]
+
+
+def mark_ready_action(project, body):
+    run_id = body.get("run")
+    if type(run_id) is not int or not 0 < run_id < 2**63:
+        return 400, {"error": "run must be a positive integer"}
+    author = body.get("author")
+    if not isinstance(author, str) or not author.strip():
+        author = "maintainer"
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = open_store(project)
+    try:
+        pull = parse_pr_url(held_draft_url(conn, run_id))
+        if pull is None:
+            return 200, {"ok": False, "run": run_id, "detail":
+                         f"run {run_id} is not a draft held for review"}
+        try:
+            node = github.rest(project, pull, "GET",
+                               f"repos/{pull.repo}/pulls/{pull.number}")
+            github.graphql(project, pull, READY_MUTATION,
+                           {"pull": node["node_id"]})
+        except (InfraFailure, KeyError, TypeError) as failed:
+            return 200, {"ok": False, "run": run_id,
+                         "detail": f"{pull.url} was not marked ready: {failed}"}
+        store.record_event(conn, run_id, "pr_ready",
+                           f"{pull.url} marked ready for review from the"
+                           f" console by {author.strip()}")
+    finally:
+        conn.close()
+    return 200, {"ok": True, "run": run_id,
+                 "detail": f"{pull.url} marked ready for review"}
 
 
 def steer_action(project, body):

@@ -26,6 +26,7 @@ from holophyte.serve.serve_actions import (
     MAX_BODY,
     REQUEUE_ACTION,
     action_failure,
+    mark_ready_action,
     parse_action_body,
     requeue_action,
     send_back_action,
@@ -387,6 +388,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                 body.get("author", "maintainer"))
         if action == "steer":
             return steer_action(project, body)
+        if action == "mark-ready":
+            return mark_ready_action(project, body)
         if action == REQUEUE_ACTION:
             return requeue_action(project, body)
         if action == MERGE_ACTION:
