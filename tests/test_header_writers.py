@@ -103,6 +103,7 @@ class FileHeaderTicketCliTests(unittest.TestCase):
         self.assertNotIn("as stored by Linear", printed)
         self.assertEqual(linear.created()["estimate"], 40)
 
+
 DEPENDS_HEADER = '''+++
 # typed fields
 ui_change = "minor"

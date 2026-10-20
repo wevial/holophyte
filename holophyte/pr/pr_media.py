@@ -458,7 +458,7 @@ def _state_media(states, urls, evidence_files=()):
 
 
 def _state_images(states, files, evidence_files=()):
-    """Files and completeness: the PNGs a state names in backticks, else NN-."""
+    """Files and completeness: its .webm entry, PNGs named in backticks, else NN-."""
     pngs = [file for file in files if file.name.endswith(".png")]
     named = [{name for name in re.findall(r"`([^`]+)`", state)
               if name.endswith(".png")} for state in states]
