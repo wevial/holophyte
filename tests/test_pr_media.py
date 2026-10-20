@@ -1026,3 +1026,25 @@ class MediaTests(unittest.TestCase):
                   self.assertRaisesRegex(SystemExit, "ui_capture_local")):
                 self.config = {"merge": config}
                 merge_config(self.target)
+
+
+class StateCaptionTests(unittest.TestCase):
+    def test_each_image_takes_the_caption_of_the_state_naming_its_file(self):
+        states = ["`01-conflict-dawn.png` and `02-conflict-night.png`: "
+                  "the banner in Dawn and Night",
+                  "`03-conflict-picked.png`: the page after Keep mine",
+                  "`04-conflict-390.png`: the banner at 390 px"]
+        names = ["01-conflict-dawn.png", "02-conflict-night.png",
+                 "03-conflict-picked.png", "04-conflict-390.png",
+                 "conflict-flow.webm"]
+        urls = {Path(name): f"https://media.example/{name}" for name in names}
+        lines, matched = pr_media._state_media(states, urls)
+        self.assertEqual(lines, [
+            f"- {states[0]} — captured",
+            f"![{states[0]}](https://media.example/01-conflict-dawn.png)",
+            f"![{states[0]}](https://media.example/02-conflict-night.png)",
+            f"- {states[1]} — captured",
+            f"![{states[1]}](https://media.example/03-conflict-picked.png)",
+            f"- {states[2]} — captured",
+            f"![{states[2]}](https://media.example/04-conflict-390.png)"])
+        self.assertEqual(set(urls) - matched, {Path("conflict-flow.webm")})

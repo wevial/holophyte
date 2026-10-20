@@ -73,6 +73,21 @@ class PullStatusMediaTests(unittest.TestCase):
             ("Panel [open]", "https://media.example/panel_(2).png"),))
 
 
+    def test_evidence_video_links_are_read_beside_its_images(self):
+        body = ("Splits the editor; see [demo](https://media.example/demo.webm)."
+                "\n\nTicket: KO-7\n\n## Evidence\n\n"
+                + "".join(f"![{caption}]({url})\n" for caption, url in SHOTS[:2])
+                + "[video-01.webm](https://media.example/a/video-01.webm)\n"
+                "[clip.webm](https://github.com/o/r/blob/pr-media/clip.webm"
+                "?raw=true)\n[notes](https://media.example/notes.html)\n")
+        status = self.read({**BARE, "body": body})
+        self.assertEqual(status.screenshots, SHOTS[:2])
+        self.assertEqual(getattr(status, "videos", None), (
+            ("video-01.webm", "https://media.example/a/video-01.webm"),
+            ("clip.webm",
+             "https://github.com/o/r/blob/pr-media/clip.webm?raw=true")))
+
+
 class AttentionMediaTests(ServeTestCase):
     def setUp(self):
         super().setUp()
