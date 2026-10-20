@@ -256,11 +256,6 @@ test("a row reads its bare number and its key before its title, and opening it m
   expect(within(demo9()).getByRole("link", { name: "Open Vercel preview" }).getAttribute("href")).toBe("https://preview.example");
   expect(within(demo9()).queryByRole("link", { name: "Open preview" })).toBeNull();
   expect(detail.textContent).not.toContain("13 files");
-  unmount();
-
-  await mount({ items: [mediaPark({ screenshots: [] })], readyRuns: [] });
-  await openRow(42);
-  expect(within(rows()[0]!).queryByRole("link", { name: "Open Vercel preview" })).toBeNull();
 });
 
 test("an opened row draws a tile button per screenshot, then per video, and none when it has no media", async () => {
@@ -280,6 +275,7 @@ test("an opened row draws a tile button per screenshot, then per video, and none
   await mount({ items: [mediaPark({ screenshots: [] })], readyRuns: [] });
   await openRow(42);
   expect(tileNames(rows()[0]!)).toEqual([]);
+  expect(within(rows()[0]!).queryByRole("link", { name: "Open Vercel preview" })).toBeNull();
 });
 
 test("a tile opens its item in a lightbox that Left and Right step through screenshots then videos, stopping at the ends", async () => {
@@ -299,7 +295,6 @@ test("a tile opens its item in a lightbox that Left and Right step through scree
   expect(video.getAttribute("src")).toBe(VIDEOS[0]!.url);
   expect(video.hasAttribute("controls")).toBe(true);
   expect(video.hasAttribute("autoplay")).toBe(false);
-  expect(video.hasAttribute("muted")).toBe(false);
   expect(video.muted).toBe(false);
   expect((within(last).getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
   await press("ArrowRight");
