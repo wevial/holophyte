@@ -50,14 +50,14 @@ interface Daemon {
   missing?: boolean;
 }
 
-/** `demo` on DEMO and `writer` on WRITER; every url asked is kept. */
-function fleet(demo: Daemon, writer: Daemon) {
+/** `demo` on DEMO and `writer` on WRITER, or the projects `names`; every url asked is kept. */
+function fleet(demo: Daemon, writer: Daemon, names = ["demo", "writer"]) {
   const asked: string[] = [];
   const daemon = (project: string, body: Daemon) => ({
     status: { ...working, project, runs: body.live ?? [], queued: [], now: NOW },
     attention: { level: "none", now: NOW, project, items: [] },
   });
-  const polls = peersFetch(DEMO, { [DEMO]: daemon("/srv/dev/demo", demo), [WRITER]: daemon("/srv/dev/writer", writer) });
+  const polls = peersFetch(DEMO, { [DEMO]: daemon(`/srv/dev/${names[0]}`, demo), [WRITER]: daemon(`/srv/dev/${names[1]}`, writer) });
   const fetch: Fetch = async (url) => {
     asked.push(url);
     for (const [base, body] of [[DEMO, demo], [WRITER, writer]] as const) {
@@ -170,4 +170,42 @@ test("each host is asked for its findings since local midnight six days before t
   await mount("#/findings", fetch);
   const since = new Date(2026, 9, 9).getTime();
   for (const base of [DEMO, WRITER]) expect(asked).toContain(`${base}/findings?since=${since}`);
+});
+
+const subheadings = (label: string) => [...group(label).querySelectorAll("h3")].map((heading) => heading.textContent);
+const rowsUnder = (label: string) =>
+  [...group(label).querySelectorAll("[data-project-group]")].map((part) =>
+    [...part.querySelectorAll("li")].map((row) => row.querySelector("[data-title], [data-sentence]")!.textContent),
+  );
+
+const alpha = { runs: [runOf(1, "ALPHA-1", [round(1, [finding("a.py", "p1")])]), runOf(2, "ALPHA-2", [round(1, [finding("b.py", "p2")])])] };
+const beta = { runs: [runOf(3, "BETA-3", [round(1, [finding("c.py", "p1")])])] };
+
+test("with every project shown, Open lists its rows under a sub-heading per project, the one with most rows first", async () => {
+  await mount("#/findings", fleet(beta, alpha, ["beta", "alpha"]).fetch);
+  expect(subheadings("Open")).toEqual(["alpha 2", "beta 1"]);
+  expect(rowsUnder("Open")).toEqual([["a.py needs care", "b.py needs care"], ["c.py needs care"]]);
+  expect(group("Open").querySelector("[data-project]")).toBeNull();
+  expect(emptyOf("Follow-ups")).toBe("No follow-ups.");
+  cleanup();
+
+  await mount("#/findings", fleet(alpha, beta, ["beta", "alpha"]).fetch);
+  expect(subheadings("Open")).toEqual(["beta 2", "alpha 1"]);
+});
+
+test("with a project chosen, the Open group lists its rows with no project sub-heading", async () => {
+  sessionStorage.setItem("holophyte.next.project", "alpha");
+  await mount("#/findings?project=alpha", fleet(beta, alpha, ["beta", "alpha"]).fetch);
+  expect(group("Open").querySelectorAll("[data-finding-row]")).toHaveLength(2);
+  expect(subheadings("Open")).toEqual([]);
+});
+
+test("clean reviews group under the same per-project sub-headings", async () => {
+  const clean = (id: number, ticket: string) => runOf(id, ticket, [round(1)]);
+  await mount("#/findings", fleet({ runs: [clean(1, "ALPHA-1"), clean(2, "ALPHA-2")] }, { runs: [clean(3, "BETA-3")] }, ["alpha", "beta"]).fetch);
+  expect(subheadings("Clean reviews")).toEqual(["alpha 2", "beta 1"]);
+  expect(rowsUnder("Clean reviews")).toEqual([
+    ["ALPHA-1 passed round 1 with no findings.", "ALPHA-2 passed round 1 with no findings."],
+    ["BETA-3 passed round 1 with no findings."],
+  ]);
 });
