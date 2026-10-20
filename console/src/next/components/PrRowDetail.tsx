@@ -9,6 +9,7 @@ import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { fieldOf, parseBody } from "../ticketForm";
 import { Btn } from "./Btn";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { LimitedMarkdown } from "./LimitedMarkdown";
 import { MediaLightbox, type MediaItem } from "./MediaLightbox";
 
@@ -46,6 +47,38 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
         </p>
       )}
     </div>
+  );
+}
+
+function MarkReady({ base, run, label }: { base: string; run: number; label: string }) {
+  const action = useAction();
+  const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  const confirm = async () => {
+    if (action.isPending) return;
+    const result = await action.mutateAsync({ label: "Mark ready for review", base, route: "/actions/mark-ready", body: { run }, said: `Marked ${label} ready for review.` });
+    if (result.ok) setOpen(false);
+  };
+  return (
+    <>
+      <Btn ref={opener} onClick={() => { action.reset(); setOpen(true); }}>
+        Mark ready for review
+      </Btn>
+      {open && (
+        <ConfirmDialog
+          label="Mark ready for review"
+          heading={`Mark ${label} ready for review?`}
+          confirm="Mark ready for review"
+          busyLabel="Marking…"
+          busy={action.isPending}
+          onCancel={() => { setOpen(false); opener.current?.focus(); }}
+          onConfirm={() => void confirm()}
+          refusal={action.data && !action.data.ok && <p role="alert" data-action-detail className="mt-3 break-words font-mono text-[12px] text-bad">{action.data.detail}</p>}
+        >
+          <p className="mt-4 font-read text-[15px] leading-6 text-ink-2">Review bots and the full checks start on GitHub.</p>
+        </ConfirmDialog>
+      )}
+    </>
   );
 }
 
@@ -125,6 +158,7 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
             Open PR to review
           </a>
         )}
+        {actions && prUrl != null && pr.state === "draft" && <MarkReady base={base} run={run} label={prLabel(prUrl).replace(/^PR /, "")} />}
         {preview != null && (
           <a href={preview} target="_blank" rel="noreferrer" className="btn" data-variant="quiet">
             Open Vercel preview<span aria-hidden="true"> ↗</span>

@@ -27,6 +27,7 @@ const park = (run: number, parkKind: string, ageMs: number, pr: object): Item =>
 const onCi = park(8, "ci", 3 * HOUR, { number: 41, checks: "pending", review: null, threads: 0, open_threads: 0 });
 const readyPark = park(9, "pull_request", 2 * HOUR, { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0 });
 const threadPark = park(10, "pull_request", HOUR, { number: 99, checks: "success", review: "approved", threads: 1, open_threads: 1 });
+const draftPark = park(12, "pull_request", HOUR, { number: 45, state: "draft", checks: "success", review: null, threads: 0, open_threads: 0 });
 const PR_42 = "https://github.com/example/demo/pull/42";
 const WHAT = "## What / Why / How\n\n**What:** Adds a slot that takes pages.\n\n**Why:** Paging.\n";
 
@@ -38,11 +39,12 @@ interface Daemon {
   projects?: [string, string];
   ticketBody?: string;
   sendBack?: { ok: boolean; detail: string };
+  markReady?: { ok: boolean; detail: string };
 }
 
 let client: QueryClient | null = null;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" } }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" } }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
@@ -62,6 +64,10 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
     if (url.endsWith("/actions/send-back")) {
       await fetchImpl(url, init);
       return Response.json(sendBack);
+    }
+    if (url.endsWith("/actions/mark-ready")) {
+      await fetchImpl(url, init);
+      return Response.json(markReady);
     }
     return fleet(url, init);
   };
@@ -108,23 +114,29 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a lane per project counts its open pull requests, longest waiting first, and a project with none draws no lane", async () => {
-  await mount({ items: [threadPark, readyPark, onCi], projects: ["alpha", "beta"] });
-  expect(lane("alpha").querySelector("[data-lane-head]")!.textContent).toContain("3 open");
+test("a lane per project counts the pull requests waiting on you, longest waiting first, and with only a ci park left the section says none waits on you", async () => {
+  await mount({ items: [threadPark, readyPark], projects: ["alpha", "beta"] });
+  expect(lane("alpha").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
   expect(within(section()).queryByRole("group", { name: "beta" })).toBeNull();
   expect(section().textContent).not.toContain("0 open");
-  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#41", "#42", "#43"]);
+  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#42", "#43"]);
   unmount();
 
-  await mount({ items: [], projects: ["alpha", "beta"] });
+  await mount({ items: [onCi], projects: ["alpha", "beta"] });
   expect(within(section()).queryAllByRole("group")).toEqual([]);
-  expect(section().textContent).toContain("No pull requests open.");
+  expect(section().textContent).toContain("No pull request waits on you.");
 });
 
-test("a row says who it waits on and since when: On CI with its checks, Your review when ready to merge", async () => {
-  const shortCi = park(8, "ci", 4 * MINUTE, { number: 41, checks: "pending", review: null, threads: 0, open_threads: 0 });
-  await mount({ items: [shortCi, readyPark] });
-  expect(waits()).toEqual([["Your review", "ready to merge · 2h"], ["On CI", "checks running · 4m"]]);
+test("only rows waiting on you stay: a draft and a ready park, not a ci park or a run fixing another pull request", async () => {
+  const draft = park(12, "pull_request", 3 * HOUR, { state: "draft", checks: "success", review: "review_required", threads: 0, open_threads: 0 });
+  const [base] = served.runs as [StatusRun];
+  const fixing = { ...base, id: 20, ticket: "DEMO-20", title: "Fix the slot", phase: "working", heartbeat_age_ms: 1000, round: 2,
+    pr_url: "https://github.com/example/demo/pull/2374" };
+  await mount({ items: [draft, readyPark, onCi], runs: [fixing] });
+  expect(lane("demo").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
+  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#45", "#42"]);
+  expect(waits()).toEqual([["Your review", "draft · 3h"], ["Your review", "ready to merge · 2h"]]);
+  expect(section().textContent).not.toMatch(/waiting on the factory|On CI|Factory fixing|#41|#2374/);
 });
 
 test("a draft held for review reads Your review over draft and its age, with no chip or repeated state", async () => {
@@ -139,10 +151,10 @@ test("a draft held for review reads Your review over draft and its age, with no 
 });
 
 test("a row names its pull request by its bare number from its URL and draws its facts line", async () => {
-  await mount({ items: [onCi, readyPark, threadPark] });
-  const third = rows()[2]!;
-  expect(within(third).getByRole("link", { name: "#43" })).toBeTruthy();
-  expect(facts(third)).toEqual(["checks ✓", "1 open thread"]);
+  await mount({ items: [readyPark, threadPark] });
+  const second = rows()[1]!;
+  expect(within(second).getByRole("link", { name: "#43" })).toBeTruthy();
+  expect(facts(second)).toEqual(["checks ✓", "1 open thread"]);
 });
 
 test("an opened row shows its ticket's What line and the links that move it, not the classic detail", async () => {
@@ -191,6 +203,47 @@ test("Send back posts the typed note for the run, keeps it on a refusal, and is 
   await openRow(42);
   expect(within(row()).getByRole("link", { name: "Open run" })).toBeTruthy();
   expect(within(row()).queryByRole("button", { name: "Send back with a note" })).toBeNull();
+});
+
+test("Mark ready for review confirms, posts the run and toasts on a draft with actions; a refusal shows its detail", async () => {
+  const row = () => rows()[0]!;
+  const markReady = async () => {
+    await act(async () => {
+      fireEvent.click(within(row()).getByRole("button", { name: "Mark ready for review" }));
+      await settle();
+    });
+    const confirm = within(screen.getByRole("dialog", { name: "Mark #45 ready for review?" }));
+    expect(confirm.getByText("Review bots and the full checks start on GitHub.")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(confirm.getByRole("button", { name: "Mark ready for review" }));
+      await settle();
+    });
+  };
+  const seen = await mount({ items: [draftPark], actions: true, readyRuns: [] });
+  await openRow(45);
+  const buttons = [...row().querySelectorAll("[data-pr-detail] a, [data-pr-detail] button")].map((node) => node.textContent);
+  expect(buttons.slice(0, 2)).toEqual(["Open PR to review", "Mark ready for review"]);
+  await markReady();
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/mark-ready`, body: { run: 12 } }]);
+  expect(document.querySelector("[data-toast]")?.textContent).toBe("Marked #45 ready for review.");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  unmount();
+
+  await mount({ items: [draftPark], actions: true, readyRuns: [], markReady: { ok: false, detail: "run 12 is not a draft held for review" } });
+  await openRow(45);
+  await markReady();
+  expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
+});
+
+test("Mark ready for review is absent on a ready pull request and on a daemon without actions", async () => {
+  for (const [item, actions, pr] of [[readyPark, true, 42], [draftPark, false, 45]] as const) {
+    await mount({ items: [item], actions, readyRuns: [] });
+    await openRow(pr);
+    expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" })).toBeTruthy();
+    expect(within(rows()[0]!).queryByRole("button", { name: "Mark ready for review" })).toBeNull();
+    unmount();
+  }
 });
 
 test("the PR number links to GitHub without toggling or fetching the row detail", async () => {
@@ -367,24 +420,4 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
   await repoll();
   expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES);
   expect(dialog()).toBeNull();
-});
-
-test("a run the factory woke to fix its pull request stays in the lane as Factory fixing, counted once with its park", async () => {
-  const [base] = served.runs as [StatusRun];
-  const pr = { title: "Old PR title", state: "ready" as const, number: null, review: null, threads: 3 };
-  const fixing = { ...base, id: 12, ticket: "DEMO-12", title: "Fix the slot", phase: "working", heartbeat_age_ms: 1000, round: 4,
-    pr_url: "https://github.com/example/demo/pull/50", woke_ms: NOW - 12 * MINUTE, pr: { ...pr, checks: "failure", open_threads: 3 } };
-  const fresh = { ...base, id: 13, ticket: "DEMO-13", title: "Fresh run", pr_url: null, pr: null };
-  const parkedRun = { ...base, id: 14, phase: "awaiting_merge_approval", ticket: "DEMO-14", pr_url: "https://github.com/example/demo/pull/47" };
-  await mount({ items: [park(14, "pull_request", HOUR, { checks: "success", review: null, threads: 0, open_threads: 0 })], runs: [fixing, fresh, parkedRun], actions: true, readyRuns: [] });
-  expect(lane("demo").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
-  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#47", "#50"]);
-  expect(waits()[1]).toEqual(["Factory fixing", "round 4 · 12m"]);
-  expect(facts(rows()[1]!)).toEqual(["checks failing", "3 open threads", "4 rounds"]);
-  expect(within(rows()[1]!).getByText("Fix the slot")).toBeTruthy();
-  expect(rows()[1]!.textContent).not.toContain("Old PR title");
-  expect(section().textContent).not.toContain("DEMO-13");
-  await openRow(50);
-  expect(within(rows()[1]!).getByRole("link", { name: "Open run" })).toBeTruthy();
-  expect(within(rows()[1]!).queryByRole("button", { name: "Send back with a note" })).toBeNull();
 });
