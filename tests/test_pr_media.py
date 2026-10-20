@@ -1071,3 +1071,27 @@ class StateCaptionTests(unittest.TestCase):
         self.assertEqual(pr_media._partial(files, states), [
             "The UI capture saved 1 of 2 views; not captured:"
             f" 02 {states[1]}"])
+
+    def test_a_state_missing_one_of_its_named_files_captions_the_other(self):
+        states = ["Compare `before.png` and `after.png`"]
+        files = [Path("before.png")]
+        lines, matched = pr_media._state_media(
+            states, {file: f"https://media.example/{file}" for file in files})
+        self.assertEqual(lines, [
+            f"- {states[0]} — not captured",
+            f"![{states[0]}](https://media.example/before.png)"])
+        self.assertEqual(matched, set(files))
+        self.assertEqual(pr_media._partial(files, states), [
+            "The UI capture saved 0 of 1 views; not captured:"
+            f" 01 {states[0]}"])
+
+    def test_named_files_with_spaces_take_their_state_caption(self):
+        states = ["`01-panel open.png` and `02-panel closed.png`: the panel"]
+        files = [Path("01-panel open.png"), Path("02-panel closed.png")]
+        urls = {file: f"https://media.example/{file.stem}" for file in files}
+        lines, matched = pr_media._state_media(states, urls)
+        self.assertEqual(lines, [
+            f"- {states[0]} — captured",
+            f"![{states[0]}](https://media.example/01-panel open)",
+            f"![{states[0]}](https://media.example/02-panel closed)"])
+        self.assertEqual(matched, set(files))
