@@ -26,6 +26,8 @@ const TITLE_CELL = "min-w-0 font-read text-[15px] font-medium leading-[1.35] max
 const FIXING_LINE = "-mt-2.5 pb-3.5 pl-[254px] pr-5 font-mono text-[12px] text-ink-3 max-[820px]:pl-5 @max-[640px]/ov-col:pl-5";
 const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 @max-[640px]/ov-col:col-start-3 max-[820px]:row-start-1 @max-[640px]/ov-col:row-start-1";
 
+const bareNumber = (url: string) => prLabel(url).replace(/^PR (?=#)/, "");
+
 interface OnCiRow {
   item: AttentionItem;
   ageMs: number | null;
@@ -110,7 +112,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
         <p data-fixing className={FIXING_LINE}>
           fixing{" "}
           <a className="border-b border-rule text-ink-2 hover:border-ink hover:text-ink" href={run.pr_url} target="_blank" rel="noreferrer">
-            {prLabel(run.pr_url).replace(/^PR (?=#)/, "")}
+            {bareNumber(run.pr_url)}
           </a>{" "}
           · round {run.round} of {run.max_rounds}
         </p>
@@ -126,7 +128,7 @@ function OnCiLaneRow({ row }: { row: OnCiRow }) {
       <span>
         {item.pr_url && (
           <a className="border-b border-rule text-ink hover:border-ink" href={item.pr_url} target="_blank" rel="noreferrer">
-            {prLabel(item.pr_url).replace(/^PR (?=#)/, "")}
+            {bareNumber(item.pr_url)}
           </a>
         )}
       </span>
