@@ -30,7 +30,7 @@ test("line facts identify all four tones with distinct hidden SVG paths instead 
   expect(paths.size).toBe(4);
 });
 
-test("plain facts are bare labels with no glyph or separator, and the line form keeps a glyph per fact", () => {
+test("plain facts are bare labels with no glyph or separator", () => {
   const facts: Fact[] = [
     { label: "checks ✓", tone: "ok" },
     { label: "waits on KO-3", tone: "warn" },
@@ -42,7 +42,4 @@ test("plain facts are bare labels with no glyph or separator, and the line form 
   expect([...line.querySelectorAll("[data-fact]")].map((fact) => fact.innerHTML)).toEqual(["checks ✓", "waits on KO-3", "checks failing", "13 files +718 −85"]);
   expect(line.querySelectorAll("svg").length).toBe(0);
   expect(line.textContent).not.toContain("·");
-  cleanup();
-  const glyphed = render(<PrFacts facts={facts} form="line" />).container;
-  expect([...glyphed.querySelectorAll("[data-fact]")].map((fact) => fact.querySelectorAll("svg").length)).toEqual([1, 1, 1, 1]);
 });
