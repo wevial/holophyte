@@ -79,9 +79,10 @@ def fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
                          goal=capture_fix_brief(project, pull, ticket, task_id,
                                                 sha, failure),
                          reviewed_by_caller=True, notes=notes)
-    states = ticket_template.parse(ticket).evidence_states
+    parsed = ticket_template.parse(ticket)
     with heartbeat_while(conn, run_id, beat_s):
-        pr_media.prepare(project, wt, task_id, evidence_states=states)
+        pr_media.prepare(project, wt, task_id, evidence_states=parsed.evidence_states,
+                         evidence_files=parsed.evidence_files)
     again = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
                              fixed, beat_s)
     if again is not None and again.kind != "infra":

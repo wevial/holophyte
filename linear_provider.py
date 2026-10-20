@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from time import localtime, sleep, strftime, time
 
+import ticket_header
 import ticket_template
 
 HERE = Path(__file__).parent
@@ -290,8 +291,50 @@ def _open_blockers(project_id):
     return blockers
 
 
+TOML_FENCE_RE = re.compile(r"(`{3,})toml")
+
+
+def _fenced_header(lines, closing_fence):
+    opening = next((index for index, line in enumerate(lines)
+                    if closing_fence(line.rstrip("\r\n"))
+                    or ticket_template.H1_RE.match(line)), None)
+    closing = opening is not None and closing_fence(lines[opening].rstrip("\r\n"))
+    if not closing:
+        return None
+    last = next((index for index in range(opening + 1, len(lines))
+                 if lines[index].rstrip("\r\n") == closing), None)
+    return None if last is None else (opening, last)
+
+
+def _refenced(lines, bounds, opening, closing):
+    for index, fence in zip(bounds, (opening, closing)):
+        lines[index] = fence + lines[index][len(lines[index].rstrip("\r\n")):]
+    return "".join(lines)
+
+
+def _to_linear(body):
+    lines = body.splitlines(keepends=True)
+    bounds = _fenced_header(
+        lines, lambda line: line if line == ticket_header.FENCE else None)
+    if bounds is None:
+        return body
+    longest = max((len(run) for line in lines[bounds[0] + 1:bounds[1]]
+                   for run in re.findall(r"^\s*(`{3,})", line)), default=2)
+    backticks = "`" * (longest + 1)
+    return _refenced(lines, bounds, backticks + "toml", backticks)
+
+
+def _from_linear(description):
+    lines = description.splitlines(keepends=True)
+    bounds = _fenced_header(lines, lambda line: (
+        TOML_FENCE_RE.fullmatch(line) or [None, None])[1])
+    if bounds is None:
+        return description
+    return _refenced(lines, bounds, ticket_header.FENCE, ticket_header.FENCE)
+
+
 def parse_task(issue):
-    desc = issue.get("description", "") or ""
+    desc = _from_linear(issue.get("description", "") or "")
     m = re.search(r"## Verify command\(s\)\s*```[^\n]*\n(.*?)```", desc, re.S)
     verify = m.group(1).strip() if m else None
     parsed = ticket_template.parse(desc)
@@ -586,8 +629,8 @@ def _issue_id(identifier):
 def create_issue(project_id, team, title, body, estimate, state_name,
                  priority=None, parent=None):
     fields = {"teamId": _team_id(team), "projectId": project_id,
-              "title": title, "description": body, "estimate": estimate,
-              "stateId": _state_id(state_name, team)}
+              "title": title, "description": _to_linear(body),
+              "estimate": estimate, "stateId": _state_id(state_name, team)}
     if priority is not None:
         fields["priority"] = priority
     if parent is not None:
@@ -633,7 +676,7 @@ def update_issue(identifier, title, body, estimate):
         'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate('
         'id: $id, input: $input) { success } }',
         {"id": issue_id,
-         "input": {"title": title, "description": body,
+         "input": {"title": title, "description": _to_linear(body),
                    "estimate": estimate}})
     if not data["issueUpdate"]["success"]:
         raise RuntimeError(f"Linear refused to update issue {identifier}")
@@ -645,5 +688,5 @@ def fetch_description(identifier):
                 {"id": identifier})
     if not data.get("issue"):
         raise RuntimeError(f"Linear has no issue {identifier!r}")
-    return data["issue"]["description"] or ""
+    return _from_linear(data["issue"]["description"] or "")
 
