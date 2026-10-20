@@ -166,7 +166,10 @@ const inHeader = (field: Field): field is HeaderField => (HEADER_FIELDS as reado
 const headerApproval = /^Approved (\d{4}-\d{2}-\d{2}):[ \t]*(.*)$/;
 const isTable = (value: Value | undefined): value is Table => !!value && typeof value === "object" && !Array.isArray(value) && !(value instanceof HeaderDate);
 const boardsOf = (mockup: Value | undefined) => (isTable(mockup) && Array.isArray(mockup.boards) ? mockup.boards : []).filter(isTable).filter(board => typeof board.url === "string");
-const isDate = (iso: string) => !Number.isNaN(Date.parse(iso)) && new Date(iso).toISOString().slice(0, 10) === iso;
+const isDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) && !Number.isNaN(Date.parse(iso)) && new Date(iso).toISOString().slice(0, 10) === iso;
+/** The approval date `mockup` holds, bare or as a quoted date the checker also accepts. */
+const approvedOn = (mockup: Table) => mockup.approved instanceof HeaderDate ? mockup.approved.iso
+  : typeof mockup.approved === "string" && isDate(mockup.approved) ? mockup.approved : null;
 
 function headerField(source: string, field: HeaderField): Fields[HeaderField] {
   const header = readHeader(source);
@@ -176,7 +179,8 @@ function headerField(source: string, field: HeaderField): Fields[HeaderField] {
   if (field === "dependsOn") return Array.isArray(header.depends_on) ? header.depends_on.filter(key => typeof key === "string") : [];
   if (field === "mockupLink") return typeof mockup.url === "string" ? mockup.url : "";
   if (field === "mockupImages") return boardsOf(mockup).map(board => `![${typeof board.caption === "string" ? board.caption : ""}](${board.url})`);
-  if (mockup.approved instanceof HeaderDate) return `Approved ${mockup.approved.iso}: ${typeof mockup.note === "string" ? mockup.note : ""}`;
+  const approved = approvedOn(mockup);
+  if (approved) return `Approved ${approved}: ${typeof mockup.note === "string" ? mockup.note : ""}`;
   return typeof mockup.approved === "string" ? mockup.approved : "";
 }
 
@@ -190,15 +194,23 @@ function withHeaderField(source: string, field: HeaderField, value: Fields[Heade
   if (field === "mockupLink") return withKey(source, "mockup", "url", (value as string) || undefined);
   if (field === "mockupApproval") {
     const approval = headerApproval.exec((value as string).trimEnd());
-    if (approval && isDate(approval[1]!)) return withKey(withKey(source, "mockup", "approved", new HeaderDate(approval[1]!)), "mockup", "note", approval[2]!);
+    if (approval && isDate(approval[1]!)) {
+      const mockup = readHeader(source).mockup;
+      const quoted = isTable(mockup) && mockup.approved === approval[1];
+      return withKey(withKey(source, "mockup", "approved", quoted ? approval[1]! : new HeaderDate(approval[1]!)), "mockup", "note", approval[2]!);
+    }
     return withKey(withKey(source, "mockup", "approved", (value as string) || undefined), "mockup", "note", undefined);
   }
-  const boards = boardsOf(readHeader(source).mockup);
+  const mockup = readHeader(source).mockup;
+  const entries = (isTable(mockup) && Array.isArray(mockup.boards) ? mockup.boards : []) as Value[];
   const urls = (value as string[]).map(image => /^!\[[^\]]*\]\((.*)\)$/.exec(image)?.[1] ?? image);
-  if (JSON.stringify(urls) === JSON.stringify(boards.map(board => board.url))) return source;
-  return withEntries(source, "mockup.boards", urls.map((url): Table => {
-    const caption = boards.find(board => board.url === url)?.caption;
-    return typeof caption === "string" ? { url, caption } : { url };
+  if (JSON.stringify(urls) === JSON.stringify(boardsOf(mockup).map(board => board.url))) return source;
+  const kept = new Set<number>();
+  return withEntries(source, "mockup.boards", urls.map(url => {
+    const old = entries.findIndex((entry, index) => !kept.has(index) && isTable(entry) && entry.url === url);
+    if (old < 0) return { url };
+    kept.add(old);
+    return old;
   }));
 }
 

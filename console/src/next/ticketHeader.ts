@@ -121,28 +121,31 @@ function scan(source: string): Item[] {
   return items;
 }
 
+/** A table with no prototype, so a key like `__proto__` is only its own. */
+const empty = (): Table => Object.create(null) as Table;
+
 function table(root: Table, path: string): Table {
   let at = root;
   for (const name of path.split(".")) {
-    const next = at[name];
+    const next = Object.hasOwn(at, name) ? at[name] : undefined;
     if (Array.isArray(next) && next.length && typeof next[0] === "object") at = next[next.length - 1] as Table;
     else if (next && typeof next === "object" && !Array.isArray(next) && !(next instanceof HeaderDate)) at = next;
-    else at = at[name] = {};
+    else at = at[name] = empty();
   }
   return at;
 }
 
 /** The keys, tables and table arrays of the header TOML `source`. */
 export function readHeader(source: string): Table {
-  const root: Table = {};
+  const root = empty();
   for (const item of scan(source)) {
     if (item.kind === "table") table(root, item.path);
     else if (item.kind === "array") {
       const at = item.path.lastIndexOf(".");
       const parent = at < 0 ? root : table(root, item.path.slice(0, at));
       const name = item.path.slice(at + 1);
-      const entries = Array.isArray(parent[name]) ? parent[name] as Table[] : (parent[name] = []);
-      entries.push({});
+      const entries = Object.hasOwn(parent, name) && Array.isArray(parent[name]) ? parent[name] as Table[] : (parent[name] = []);
+      entries.push(empty());
     } else (item.path ? table(root, item.path) : root)[item.key] = item.value!;
   }
   return root;
@@ -214,12 +217,21 @@ export function withKey(source: string, path: string, key: string, value: Scalar
   return join(rows, eol);
 }
 
-/** `source` with its `[[path]]` entries replaced by `entries`, each entry's
- *  keys in their header order. */
-export function withEntries(source: string, path: string, entries: Table[]): string {
+/** `source` with its `[[path]]` entries replaced by `entries`: a number
+ *  keeps that old entry's lines as written, comments and all, and a table
+ *  is written fresh, its keys in their header order. Comment lines after an
+ *  old entry's keys go with the entry after it, or after the last one. */
+export function withEntries(source: string, path: string, entries: (Table | number)[]): string {
   const { eol, rows } = split(source);
   const items = scan(source);
   const old = segments(items, rows.length).filter(each => each.head?.kind === "array" && each.head.path === path);
+  const ends = old.map(segment => 1 + Math.max(segment.start, ...items.filter(item => item.kind === "key" && item.first >= segment.start && item.first < segment.end).map(item => item.last)));
+  const blocks = old.map((segment, index) => [
+    ...(index ? rows.slice(ends[index - 1], old[index - 1]!.end).filter(row => !blank(row)) : []),
+    ...rows.slice(segment.start, ends[index]),
+  ]);
+  const trailing = old.length ? rows.slice(ends.at(-1), old.at(-1)!.end) : [];
+  const tail = trailing.some(row => !blank(row)) ? trailing : [];
   let at = old[0]?.start ?? tableSlot(items, rows.length, path);
   for (const segment of old.slice().reverse()) {
     rows.splice(segment.start, segment.end - segment.start);
@@ -228,9 +240,13 @@ export function withEntries(source: string, path: string, entries: Table[]): str
   while (at === rows.length && at > 0 && blank(rows[at - 1])) rows.splice(--at, 1);
   const order = KEY_ORDER[path] ?? [];
   const lines = entries.flatMap((entry, index) => {
+    const separator = index ? [""] : [];
+    if (typeof entry === "number") return [...separator, ...blocks[entry]!];
     const keys = Object.keys(entry).sort((a, b) => rank(order, a) - rank(order, b));
-    return [...(index ? [""] : []), `[[${path}]]`, ...keys.map(key => `${key} = ${formatValue(entry[key] as Scalar)}`)];
+    return [...separator, `[[${path}]]`, ...keys.map(key => `${key} = ${formatValue(entry[key] as Scalar)}`)];
   });
-  if (lines.length) insertTable(rows, at, lines);
+  if (!tail.length) {
+    if (lines.length) insertTable(rows, at, lines);
+  } else rows.splice(at, 0, ...(lines.length && at > 0 && !blank(rows[at - 1]) ? [""] : []), ...lines, ...tail);
   return join(rows, eol);
 }

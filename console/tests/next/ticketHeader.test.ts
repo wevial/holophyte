@@ -52,3 +52,10 @@ test("a note read back is written as the same line, after approved when the tabl
 test("rewriting a key keeps the comment at the end of its line and every other line", () => {
   expect(withKey(SOURCE, "", "ui_change", "minor")).toBe(SOURCE.replace('ui_change = "major" # the preview pane', 'ui_change = "minor" # the preview pane'));
 });
+
+test("a [__proto__] table is read as the header's own table and leaves other headers without its keys", () => {
+  const header = readHeader("[__proto__]\nestimate = 65\n");
+  expect(Object.keys(header)).toEqual(["__proto__"]);
+  expect(readHeader('ui_change = "none"\n').estimate).toBeUndefined();
+  expect(({} as Record<string, unknown>).estimate).toBeUndefined();
+});
