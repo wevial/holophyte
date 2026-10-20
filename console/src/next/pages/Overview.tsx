@@ -7,7 +7,7 @@ import { FocusCard, useHeldEntry } from "../components/FocusCard";
 import { MergedToday } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
 import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
-import { laneGroups, RunningLanes } from "../components/RunLane";
+import { hasWork, laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
@@ -187,7 +187,7 @@ export function Overview() {
             count={view.running}
             summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
             empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
-            isEmpty={!lanes.some((group) => group.runs.length > 0 || group.status.admission === "held")}
+            isEmpty={!lanes.some(hasWork)}
           >
             <RunningLanes groups={lanes} now={view.now} />
           </FoldingSection>

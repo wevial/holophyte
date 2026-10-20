@@ -168,7 +168,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
   );
 }
 
-function hasWork(group: LaneGroup): boolean {
+export function hasWork(group: LaneGroup): boolean {
   return group.runs.length > 0 || (group.queued ?? []).length > 0 || group.status.admission === "held";
 }
 

@@ -188,10 +188,10 @@ test("a held project's head carries its hold note and each queued reason ends he
   expect(reasons).toEqual(["approved · held", "ready · held"]);
 });
 
-test("with no run live or quiet anywhere, Running draws no lane and keeps its empty sentence", async () => {
+test("with no run anywhere, a project with a queued ticket keeps its lane and an idle one draws none", async () => {
   await mount("#/", statusOf("/srv/dev/demo", [], { queued: [queuedOf("DEMO-2")] }), statusOf("/srv/dev/writer", []));
-  expect(lanes()).toEqual([]);
-  expect(running().textContent).toContain("Nothing running. DEMO-2 is queued.");
+  expect(lanes()).toEqual(["demo"]);
+  expect(queueButton("demo").textContent).toBe("1 queued");
 });
 
 test("a lane is drawn only for a project with a run or a queued ticket, while the summary still counts every worker", async () => {
