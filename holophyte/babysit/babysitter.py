@@ -443,8 +443,9 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
     covered = reviewed or base_sha
     scope = scope_files(wt, ticket, covered, sha, candidate_only=True)
     with heartbeat_while(conn, run_id, beat_s):
-        evidence = evidence_brief(project, wt, task_id,
-                                  ticket_template.parse(ticket).evidence_states)
+        parsed = ticket_template.parse(ticket)
+        evidence = evidence_brief(project, wt, task_id, parsed.evidence_states,
+                                  parsed.evidence_files)
         described = pr_description_brief(project, pull, bool(evidence))
         verdict, decision, first_reply = _review_reply(project,
             f"You are a READ-ONLY code reviewer. Review commit {sha} using "

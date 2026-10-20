@@ -260,10 +260,12 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
     with heartbeat_while(conn, run_id, beat_s):
         current = github.rest(project, pull, "GET", endpoint)["body"] or ""
     own, _, evidence, _ = github.split_pr_body(current)
+    parsed = ticket_template.parse(ticket)
     with heartbeat_while(conn, run_id, beat_s):
         section = pr_media.refresh(
             project, wt, task_id, evidence,
-            evidence_states=ticket_template.parse(ticket).evidence_states,
+            evidence_states=parsed.evidence_states,
+            evidence_files=parsed.evidence_files,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     text = None if written else _refreshed_prose(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
@@ -310,10 +312,12 @@ def _refreshed_prose(project, conn, run_id, task_id, task, branch, ticket,
 
 def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
                 wt, started, budget_min, issue_url=None, lead=None):
+    parsed = ticket_template.parse(body)
     with heartbeat_while(conn, run_id, beat_s):
         evidence = pr_media.prepare(
             project, wt, task_id,
-            evidence_states=ticket_template.parse(body).evidence_states,
+            evidence_states=parsed.evidence_states,
+            evidence_files=parsed.evidence_files,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     title, text = _written_pr_text(project, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,

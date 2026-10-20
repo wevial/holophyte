@@ -119,6 +119,12 @@ def _record_mode(conn, run_id, mode, rnd):
                            payload=json.dumps({"mode": mode, "round": rnd}))
 
 
+def _evidence_brief(project, wt, task_id, ticket):
+    parsed = ticket_template.parse(ticket)
+    return evidence_brief(project, wt, task_id, parsed.evidence_states,
+                          parsed.evidence_files)
+
+
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
                  witness=""):
@@ -138,9 +144,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + tests_brief(wt)
         + scope_brief(wt, ticket, base_sha, sha)
         + trim_brief(wt, base_sha, sha)
-        + (evidence_brief(project, wt, task_id,
-                          ticket_template.parse(ticket).evidence_states)
-           if evidence else "")
+        + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
         + "Do not modify anything. End your reply with exactly one "
         "line:\n"
         "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"

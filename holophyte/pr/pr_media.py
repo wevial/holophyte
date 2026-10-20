@@ -52,7 +52,8 @@ CaptureFailure = collections.namedtuple("CaptureFailure", "kind sentence missing
 
 
 def implementer_brief(project, ticket, task_id):
-    states = ticket_template.parse(ticket).evidence_states
+    parsed = ticket_template.parse(ticket)
+    states, files = parsed.evidence_states, parsed.evidence_files
     cfg = merge_config(project)
     if not states or not cfg.ui_capture:
         return ""
@@ -68,16 +69,24 @@ def implementer_brief(project, ticket, task_id):
                  f"`{cfg.ui_capture}`.")
     if cfg.ui_capture_video:
         where += VIDEO_BRIEF
-    return (where + " Produce one image "
-            "per state, named NN-slug.png in state order (01, 02, ...), plus "
-            "a recording when the states describe a flow. Capture only UI "
+    if files:
+        produce = (" Produce each state's image or recording under the file "
+                   "name listed beside it.")
+        listed = [f"{file}: {state}" for file, state in zip(files, states)]
+        opened = "each image"
+    else:
+        produce = (" Produce one image per state, named NN-slug.png in state "
+                   "order (01, 02, ...), plus a recording when the states "
+                   "describe a flow.")
+        listed = [f"{i:02d}: {state}" for i, state in enumerate(states, 1)]
+        opened = "each NN-slug.png"
+    return (where + produce + " Capture only UI "
             "states as images: test or terminal output never becomes an image. "
             "The harness receives "
             "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES. "
             f"Run `{cfg.ui_capture}` in the foreground until it exits, never "
-            "in the background, and open each NN-slug.png before ending the "
-            "turn.\n"
-            + "\n".join(f"{i:02d}: {state}" for i, state in enumerate(states, 1)))
+            f"in the background, and open {opened} before ending the "
+            "turn.\n" + "\n".join(listed))
 
 
 def _local_spec(cfg, task_id):
@@ -436,19 +445,20 @@ def _cap_files(output, files, cfg):
     return kept, dropped
 
 
-def _state_media(states, urls):
+def _state_media(states, urls, evidence_files=()):
     lines, matched = [], set()
-    for state, (files, complete) in zip(states, _state_images(states, urls),
-                                        strict=True):
+    for state, (files, complete) in zip(
+            states, _state_images(states, urls, evidence_files), strict=True):
         label = state.replace("[", r"\[").replace("]", r"\]")
         lines.append(f"- {label} — {'captured' if complete else 'not captured'}")
         matched.update(files)
-        lines.extend(f"![{label}]({urls[file]})" for file in files)
+        lines.extend(f"{'!' if file.suffix == '.png' else ''}[{label}]({urls[file]})"
+                     for file in files)
     return lines, matched
 
 
-def _state_images(states, files):
-    """Files and completeness: the PNGs a state names in backticks, else NN-."""
+def _state_images(states, files, evidence_files=()):
+    """Files and completeness: its .webm entry, PNGs named in backticks, else NN-."""
     pngs = [file for file in files if file.name.endswith(".png")]
     named = [{name for name in re.findall(r"`([^`]+)`", state)
               if name.endswith(".png")} for state in states]
@@ -458,17 +468,22 @@ def _state_images(states, files):
         if match:
             numbered.setdefault(int(match[1]), file)
     published = {file.name for file in pngs}
-    return [([file for file in pngs if file.name in names], names <= published)
+    recordings = {number: [file for file in files if file.name == name]
+                  for number, name in enumerate(evidence_files, 1)
+                  if name.endswith(".webm")}
+    return [(recordings[number], bool(recordings[number]))
+            if number in recordings
+            else ([file for file in pngs if file.name in names], names <= published)
             if names else ([numbered[number]], True) if number in numbered
             else ([], False) for number, names in enumerate(named, 1)]
 
 
-def _missing(section, states):
-    lines, _ = _state_media(states, {})
+def _missing(section, states, evidence_files=()):
+    lines, _ = _state_media(states, {}, evidence_files)
     return "\n\n".join([section, *lines])
 
 
-def _produce(project, wt, task_id, command, note, cfg, states):
+def _produce(project, wt, task_id, command, note, cfg, states, evidence_files=()):
     isolated = launcher.route_for(project).backend == 'container'
     directory = ({'dir': Path(wt).resolve(), 'prefix': '.holophyte-capture-'}
                  if isolated else {'prefix': 'pr-media-'})
@@ -480,10 +495,11 @@ def _produce(project, wt, task_id, command, note, cfg, states):
         error = _capture(command, wt, output, task_id, states, project=project,
                          log_path=note.with_suffix('.log'))
         if error:
-            _record_kind(note, 'capture', _unsaved(_images(output), states))
+            _record_kind(note, 'capture',
+                         _unsaved(_images(output), states, evidence_files))
             note.write_text(f'Ran `{command}`.\n\n{error}')
             # `refresh()` folds the failure onto one line: the sentence only.
-            return (_missing('## Evidence\n\n' + error, states),
+            return (_missing('## Evidence\n\n' + error, states, evidence_files),
                     error.partition('\n')[0])
         files = sorted(file for file in output.rglob('*')
                        if file.suffix in ('.png', '.webm', '.mp4')
@@ -491,22 +507,22 @@ def _produce(project, wt, task_id, command, note, cfg, states):
                        and file.resolve().is_relative_to(output))
         if not files:
             error = 'The UI capture produced no media files.'
-            _record_kind(note, 'capture', _unsaved((), states))
+            _record_kind(note, 'capture', _unsaved((), states, evidence_files))
             note.write_text(f'Ran `{command}`.\n\n{error}')
-            return _missing('## Evidence\n\n' + error, states), error
+            return _missing('## Evidence\n\n' + error, states, evidence_files), error
         files, dropped = _cap_files(output, files, cfg)
-        partial = _partial(files, states)
+        partial = _partial(files, states, evidence_files)
         if partial:
-            _record_kind(note, 'capture', _unsaved(files, states))
+            _record_kind(note, 'capture', _unsaved(files, states, evidence_files))
         if cleared:
             mockup.keep_captured(wt, output, files)
         lines = ['## Evidence', *partial[:1]]
         lines.extend(dropped)
         if not files:
             error = 'No media remains within the evidence size limits.'
-            _record_kind(note, 'limits', _unsaved(files, states))
+            _record_kind(note, 'limits', _unsaved(files, states, evidence_files))
             lines.append(error)
-            return _missing('\n\n'.join(lines), states), error
+            return _missing('\n\n'.join(lines), states, evidence_files), error
         if cfg.media_bucket:
             description, urls = _publish_bucket(
                 project, output, files, task_id, cfg.media_bucket)
@@ -516,7 +532,7 @@ def _produce(project, wt, task_id, command, note, cfg, states):
                 _media_slot(wt, task_id, cfg) if partial else task_id,
                 note, cfg.media_repo)
         lines.append(description)
-        state_lines, matched = _state_media(states, urls)
+        state_lines, matched = _state_media(states, urls, evidence_files)
         lines.extend(state_lines)
         for file, url in urls.items():
             if file in matched:
@@ -540,9 +556,10 @@ def _images(output):
             if file.is_file() and not file.is_symlink()]
 
 
-def _unsaved(files, states):
+def _unsaved(files, states, evidence_files=()):
+    images = _state_images(states, files, evidence_files)
     return [f'{number:02d} {state}' for number, (state, (_, complete))
-            in enumerate(zip(states, _state_images(states, files), strict=True), 1)
+            in enumerate(zip(states, images, strict=True), 1)
             if not complete]
 
 
@@ -550,8 +567,8 @@ def _record_kind(note, kind, missing):
     note.with_suffix('.kind').write_text(json.dumps({'kind': kind, 'missing': missing}))
 
 
-def _partial(files, states):
-    missing = _unsaved(files, states)
+def _partial(files, states, evidence_files=()):
+    missing = _unsaved(files, states, evidence_files)
     if not missing:
         return []
     return [f'The UI capture saved {len(states) - len(missing)} of {len(states)}'
@@ -578,9 +595,11 @@ def _execution_fingerprint(project):
     return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
 
 
-def prepare(project, wt, task_id, record_note=None, evidence_states=()):
+def prepare(project, wt, task_id, record_note=None, evidence_states=(),
+            evidence_files=()):
     """Keep the receipt in the worktree's git directory, outside candidate files."""
-    return _prepare(project, wt, task_id, record_note, evidence_states)[0]
+    return _prepare(project, wt, task_id, record_note, evidence_states,
+                    evidence_files)[0]
 
 
 def _stamp(section, sha):
@@ -588,7 +607,7 @@ def _stamp(section, sha):
                            f'## Evidence\n\nCaptured at {sha[:12]}\n\n', 1)
 
 
-def _receipt(project, wt, task_id, evidence_states):
+def _receipt(project, wt, task_id, evidence_states, evidence_files=()):
     cfg = merge_config(project)
     revisions = sh(['git', 'rev-parse', 'HEAD', 'main'], cwd=wt)
     identity = [RECEIPT_VERSION, revisions,
@@ -598,16 +617,18 @@ def _receipt(project, wt, task_id, evidence_states):
                 cfg.media_max_total_mb, list(evidence_states),
                 _execution_fingerprint(project),
                 capture_spec_digest(project, wt, task_id, evidence_states)]
+    if evidence_files:
+        identity.append(list(evidence_files))
     key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
     git_dir = Path(sh(['git', 'rev-parse', '--absolute-git-dir'], cwd=wt))
     return git_dir / f'pr-media-{key}.txt', revisions.split()[0]
 
 
-def _prepare(project, wt, task_id, record_note, evidence_states):
+def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files):
     cfg = merge_config(project)
     if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
         return '', ''
-    receipt, head = _receipt(project, wt, task_id, evidence_states)
+    receipt, head = _receipt(project, wt, task_id, evidence_states, evidence_files)
     note = receipt.with_suffix('.note')
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
@@ -615,7 +636,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
             receipt.with_suffix(kept).unlink(missing_ok=True)
         try:
             section, failure = _produce(project, wt, task_id, cfg.ui_capture, note,
-                                        cfg, evidence_states)
+                                        cfg, evidence_states, evidence_files)
         except (InfraFailure, OSError, RuntimeError, ValueError,
                 subprocess.TimeoutExpired) as error:
             destination = (" to media bucket" if cfg.media_bucket else
@@ -624,8 +645,10 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
                       else "")
             failure = (f'The UI capture failed to publish evidence{destination}'
                        f' ({type(error).__name__}{detail}).')
-            section = _missing('## Evidence\n\n' + failure, evidence_states)
-            _record_kind(note, 'infra', _unsaved((), evidence_states))
+            section = _missing('## Evidence\n\n' + failure, evidence_states,
+                               evidence_files)
+            _record_kind(note, 'infra',
+                         _unsaved((), evidence_states, evidence_files))
         failed.unlink(missing_ok=True)
         if failure:
             failed.write_text(failure)
@@ -635,8 +658,8 @@ def _prepare(project, wt, task_id, record_note, evidence_states):
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
 
 
-def capture_failure(project, wt, task_id, evidence_states):
-    receipt = _receipt(project, wt, task_id, evidence_states)[0]
+def capture_failure(project, wt, task_id, evidence_states, evidence_files=()):
+    receipt = _receipt(project, wt, task_id, evidence_states, evidence_files)[0]
     failed, kind, log = (receipt.with_suffix(suffix)
                          for suffix in ('.failed', '.kind', '.log'))
     if not failed.exists():
@@ -657,24 +680,27 @@ def _touched(wt, captured, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def _seen(project, wt, task_id, evidence, evidence_states):
-    receipt, _ = _receipt(project, wt, task_id, evidence_states)
+def _seen(project, wt, task_id, evidence, evidence_states, evidence_files):
+    receipt, _ = _receipt(project, wt, task_id, evidence_states, evidence_files)
     if not receipt.exists() or receipt.with_suffix('.failed').exists():
         return None
     section = receipt.read_text()
     return section if section.rstrip() != evidence.rstrip() else None
 
 
-def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()):
+def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=(),
+            evidence_files=()):
     cfg = merge_config(project)
     if not cfg.ui_paths:
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
-        seen = _seen(project, wt, task_id, evidence, evidence_states)
+        seen = _seen(project, wt, task_id, evidence, evidence_states,
+                     evidence_files)
         unquoted = QUOTED.sub('', evidence)
         return seen or (unquoted if unquoted != evidence else None)
-    section, failure = _prepare(project, wt, task_id, record_note, evidence_states)
+    section, failure = _prepare(project, wt, task_id, record_note, evidence_states,
+                                evidence_files)
     if not section:
         return None
     if not failure or not evidence:
