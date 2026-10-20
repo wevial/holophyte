@@ -91,6 +91,18 @@ function value(cursor: Cursor): Scalar | string[] {
   }
 }
 
+function trailingComment(line: string): string | undefined {
+  let quote = "";
+  for (let at = 0; at < line.length; at += 1) {
+    const char = line[at]!;
+    if (quote === '"' && char === "\\") at += 1;
+    else if (quote) quote = char === quote ? "" : quote;
+    else if (char === '"' || char === "'") quote = char;
+    else if (char === "#") return line.slice(at).replace(/\r$/, "");
+  }
+  return undefined;
+}
+
 /** Each statement of `source` with the lines it spans; a line it cannot
  *  read is left out, so one bad line keeps the rest readable, but a key
  *  whose value it cannot read keeps its line, with no value. */
@@ -102,6 +114,7 @@ function scan(source: string): Item[] {
     cursor.skip(true);
     if (cursor.at >= source.length) break;
     const first = cursor.line();
+    let start = -1;
     try {
       const table = cursor.take(/(\[\[?)[ \t]*([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)[ \t]*(\]\]?)/);
       if (table) {
@@ -112,6 +125,7 @@ function scan(source: string): Item[] {
         const key = cursor.take(/([A-Za-z0-9_-]+)[ \t]*=[ \t]*/) ?? cursor.fail("a line that is not a key, a table or a comment");
         const item: Item = { kind: "key", path, key: key[1]!, first, last: first };
         items.push(item);
+        start = cursor.at;
         item.value = value(cursor);
         item.last = cursor.line();
       }
@@ -119,6 +133,7 @@ function scan(source: string): Item[] {
       const end = cursor.take(/(#[^\r\n]*)?\r?(?:\n|$)/) ?? cursor.fail("text after a value");
       if (end[1] && items.at(-1)!.kind === "key") items.at(-1)!.comment = end[1];
     } catch {
+      if (start >= 0) items.at(-1)!.comment = trailingComment(source.slice(start).split("\n", 1)[0]!);
       cursor.take(/[^\n]*\n?/);
     }
   }
