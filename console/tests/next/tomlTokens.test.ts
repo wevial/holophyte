@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { tomlTokenLines, tomlTokens, type TomlKind } from "../../src/next/tomlTokens";
+import { tomlTokenLines, type TomlKind } from "../../src/next/tomlTokens";
 
 test("each line's spans carry the TOML kinds in order and concatenate back to the line", () => {
   const cases: [string, TomlKind[]][] = [
@@ -12,7 +12,7 @@ test("each line's spans carry the TOML kinds in order and concatenate back to th
     ["name = 'literal # not a comment'", ["key", "punct", "string"]],
   ];
   for (const [line, kinds] of cases) {
-    const spans = tomlTokens(line);
+    const spans = tomlTokenLines(line)[0]!;
     expect({ line, kinds: spans.map(span => span.kind) }).toEqual({ line, kinds });
     expect(spans.map(span => span.text).join("")).toBe(line);
   }

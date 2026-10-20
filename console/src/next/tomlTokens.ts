@@ -88,10 +88,6 @@ function scanLine(line: string, open: Open): { spans: TomlSpan[]; open: Open } {
   return { spans, open };
 }
 
-export function tomlTokens(line: string): TomlSpan[] {
-  return scanLine(line, null).spans;
-}
-
 export function tomlTokenLines(text: string): TomlSpan[][] {
   let open: Open = null;
   return text.split("\n").map((line) => {
