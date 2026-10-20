@@ -86,6 +86,13 @@ test("removing an item whose comma sits on a later row drops that comma and keep
   expect(Bun.TOML.parse(withKey(leading, "", "depends_on", ["HOLO-2"]))).toEqual({ depends_on: ["HOLO-2"] });
 });
 
+test("removing the item whose comma opens the next row and adding another puts the new separator before that row's comment", () => {
+  const source = 'depends_on = [\n  "HOLO-1"\n  , "HOLO-2"# board\n]\n';
+  const swapped = withKey(source, "", "depends_on", ["HOLO-2", "HOLO-9"]);
+  expect(swapped).toBe('depends_on = [\n   "HOLO-2",# board\n  "HOLO-9",\n]\n');
+  expect(Bun.TOML.parse(swapped)).toEqual({ depends_on: ["HOLO-2", "HOLO-9"] });
+});
+
 test("adding an item to an array whose trailing comma shares the closing row moves that comma onto the item before it", () => {
   const source = '  depends_on = [\n    "HOLO-1"\n    # comment\n  , ]\n';
   const added = withKey(source, "", "depends_on", ["HOLO-1", "HOLO-9"]);

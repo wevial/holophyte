@@ -276,7 +276,8 @@ function arrayLines(span: string[], key: string, value: string[], comment?: stri
       if (text === null) return;
       lines.push(text);
       const item = row.items.at(-1);
-      if (item) open = item.comma && commaKept(item.comma) ? null : { line: lines.length - 1, end: item.end };
+      const end = item ? item.end - strayCommas(r).filter(at => at < item.end).length : 0;
+      if (item) open = item.comma && commaKept(item.comma) ? null : { line: lines.length - 1, end };
       return;
     }
     if (!r) lines.push(`${span[0]!.match(/^\s*/)![0]}${key} = [${head.comment ? ` ${head.comment}` : ""}`);
