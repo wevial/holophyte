@@ -138,7 +138,7 @@ export function RunPage() {
         </div>
       </header>
       <div data-run-body className="@container mt-3.5 flex min-h-40 flex-wrap border border-rule bg-paper">
-        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[880px]:border-r @[880px]:border-rule max-[720px]:px-4">
+        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[1000px]:border-r @[1000px]:border-rule max-[720px]:px-4">
           {run.pr_url != null && (
             <RunPullRequest
               url={run.pr_url}
