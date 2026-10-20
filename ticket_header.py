@@ -206,6 +206,9 @@ def _boards_problems(boards):
         if not (isinstance(url, str) and mockup_media_kind(url)):
             problems.append(f"header {name}.url is not a .png snapshot or a "
                             f".zip bundle: {_show(url)}")
+        elif set("()") & set(url):
+            problems.append(f"header {name}.url must not hold a parenthesis, "
+                            f"which ends its markdown link: {_show(url)}")
         if not (isinstance(caption, str) and CAPTION_RE.fullmatch(caption)):
             problems.append(f"header {name}.caption must be one line without "
                             f"brackets, not {_show(caption)}")

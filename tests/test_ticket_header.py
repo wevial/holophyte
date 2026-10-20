@@ -143,6 +143,10 @@ class HeaderProblemTests(unittest.TestCase):
              'url = "https://media.example/row.gif"',
              'header mockup.boards[1].url is not a .png snapshot or a .zip '
              'bundle: "https://media.example/row.gif"'),
+            ('url = "https://media.example/holophyte/row-dawn.png"',
+             'url = "https://media.example/board(1).png"',
+             'header mockup.boards[1].url must not hold a parenthesis, which '
+             'ends its markdown link: "https://media.example/board(1).png"'),
             ('blast_radius = "high"\n', 'blast_radius = "high"\nblast = "high"\n',
              'header field "blast" is not a ticket field'),
             ('depends_on = ["HOLO-7"]', 'depends_on = ["HOLO-7\\n"]',
