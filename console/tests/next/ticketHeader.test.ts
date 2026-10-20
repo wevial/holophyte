@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { formatValue, HeaderDate, readHeader, withKey, type Table } from "../../src/next/ticketHeader";
+import { HeaderDate, readHeader, withKey, type Table } from "../../src/next/ticketHeader";
 
 const NOTE_LINE = String.raw`note = "the \"Open preview\" link \\ kept"`;
 const SOURCE = `ui_change = "major" # the preview pane
@@ -46,7 +46,6 @@ test("the reader gives escaped and literal strings, a multi-line array with a tr
 
 test("a note read back is written as the same line, after approved when the table lacks it", () => {
   const note = (readHeader(SOURCE).mockup as Table).note as string;
-  expect(`note = ${formatValue(note)}`).toBe(NOTE_LINE);
   expect(withKey(SOURCE.replace(`${NOTE_LINE}\n`, ""), "mockup", "note", note)).toBe(SOURCE);
 });
 

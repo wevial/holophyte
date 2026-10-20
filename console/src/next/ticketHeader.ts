@@ -2,11 +2,11 @@
 export class HeaderDate {
   constructor(readonly iso: string) {}
 }
-export type Scalar = string | number | HeaderDate;
+type Scalar = string | number | HeaderDate;
 export type Value = Scalar | string[] | Table | Table[];
 export interface Table { [key: string]: Value }
 
-export const FENCE = "+++";
+const FENCE = "+++";
 const KEY_ORDER: Record<string, string[]> = {
   "": ["ui_change", "blast_radius", "estimate", "depends_on", "orchestration", "implementer"],
   "mockup": ["url", "approved", "note"],
@@ -16,20 +16,17 @@ const KEY_ORDER: Record<string, string[]> = {
 const TABLE_ORDER = ["mockup", "mockup.boards", "evidence"];
 
 /** Where `text`'s header sits: `start` to `end` is its TOML, between the
- *  opening `+++` line at `open` and the end of the closing one at `close`.
+ *  opening `+++` line and the end of the closing one at `close`.
  *  A header opens only before the H1 and must close. */
-export function headerSpan(text: string): { open: number; start: number; end: number; close: number } | null {
-  let open = -1;
-  let start = 0;
+export function headerSpan(text: string): { start: number; end: number; close: number } | null {
+  let start = -1;
   for (const line of text.matchAll(/[^\n]*(?:\n|$)/g)) {
     if (!line[0]) break;
     const content = line[0].replace(/\r?\n$/, "");
-    if (open < 0) {
+    if (start < 0) {
       if (/^#(?:\s|$)/.test(content)) return null;
-      if (content !== FENCE) continue;
-      open = line.index;
-      start = line.index + line[0].length;
-    } else if (content === FENCE) return { open, start, end: line.index, close: line.index + line[0].length };
+      if (content === FENCE) start = line.index + line[0].length;
+    } else if (content === FENCE) return { start, end: line.index, close: line.index + line[0].length };
   }
   return null;
 }
@@ -156,7 +153,7 @@ const quoted = (text: string) => '"' + text.replace(/[\\"\u0000-\u001f\u007f]/g,
   `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`) + '"';
 
 /** `value` as the header writes it. */
-export function formatValue(value: Scalar | string[]): string {
+function formatValue(value: Scalar | string[]): string {
   if (Array.isArray(value)) return `[${value.map(quoted).join(", ")}]`;
   if (value instanceof HeaderDate) return value.iso;
   return typeof value === "number" ? String(value) : quoted(value);
