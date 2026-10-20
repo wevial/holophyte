@@ -79,6 +79,13 @@ class HttpReferenceTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "destructiveHint"):
             assert_covers(self, dropped, "mcp-tools-list.json")
 
+    def test_mark_ready_section_names_its_body_and_refusal(self):
+        text = " ".join(section(self.document,
+                                "`POST /actions/mark-ready`").split())
+        self.assertIn('{"run": 52', text)
+        self.assertIn('{"ok": false, "detail": "run N is not a draft held for'
+                      ' review"}', text)
+
     def test_dropping_a_documented_key_names_it(self):
         text = section(self.document, "`GET /status`")
         dropped = text.replace("`stop_requested`", "").replace(
