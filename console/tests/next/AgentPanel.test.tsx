@@ -80,7 +80,7 @@ test("the reviewing run names its implementer and next round and orders read and
   expect(requests.filter((url) => url === `${DEMO}/runs/12/asks`)).toHaveLength(1);
 });
 
-test("the thread merges named authors and asks in time order and links the agent's separate answer to its posted comment", async () => {
+test("the thread merges named authors and asks in time order and links the agent's answer to its posted comment from its head line", async () => {
   await mount({ ...detail, steer_notes: [
     { ...note, id: 3, kind: "amendment", author: "alex", note: "Use the existing lease fixture.", at: at(52), withdrawn: true, consumed_ms: at(53), consumed_by: 12 },
   ] }, { ...emptyAsks, asks: [
@@ -97,7 +97,43 @@ test("the thread merges named authors and asks in time order and links the agent
   expect(agent.queryByText("→ the agent read it at 16:53")).toBeNull();
   expect(agent.getByText("Can we reuse the fixture?")).toBeTruthy();
   expect(agent.getByText("What does the dry run print?")).toBeTruthy();
-  expect(agent.getByRole("link", { name: "One line per lease." }).getAttribute("href")).toBe("https://github.com/example/project/pull/12#issuecomment-42");
+  expect(agent.getByText("One line per lease.").closest("a")).toBeNull();
+  expect(agent.getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://github.com/example/project/pull/12#issuecomment-42");
+});
+
+const answered = (question: string, answer: string, url: string | null = null): RunAsks => ({ ...emptyAsks, asks: [
+  { id: 6, author: "maintainer", question, asked_ms: at(51), answered_ms: at(54), answer, url },
+] });
+
+test("an answer renders its markdown as bold and code, and only its head line links to the thread", async () => {
+  const url = "https://github.com/example/project/pull/12#issuecomment-77";
+  await mount({ ...detail, steer_notes: [] }, answered("When does the prompt show?",
+    "**When the prompt shows.** In `components/x.tsx:104`, the modal opens once the lease is held.", url));
+  const answer = within(panel()).getByText("Agent · 16:54").closest("li")!;
+  expect(within(answer).getByText("When the prompt shows.").tagName).toBe("STRONG");
+  expect(within(answer).getByText("components/x.tsx:104").tagName).toBe("CODE");
+  const links = within(answer).getAllByRole("link");
+  expect(links).toHaveLength(1);
+  expect(links[0]!.textContent).toContain("Open on GitHub");
+  expect(links[0]!.getAttribute("href")).toBe(url);
+  expect(links[0]!.getAttribute("target")).toBe("_blank");
+  expect(links[0]!.parentElement).toBe(within(answer).getByText("Agent · 16:54").parentElement);
+  expect(within(answer).getByText("When the prompt shows.").closest("a")).toBeNull();
+});
+
+test("a maintainer ask written as a markdown list renders its items as a list", async () => {
+  await mount({ ...detail, steer_notes: [] }, { ...emptyAsks, asks: [
+    { id: 7, author: "maintainer", question: "Check these:\n\n- the lease sweep\n- the dry run", asked_ms: at(51), answered_ms: null, answer: null, url: null },
+  ] });
+  const ask = within(panel()).getByText("You · ask · 16:51").closest("li")!;
+  expect(within(ask).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["the lease sweep", "the dry run"]);
+});
+
+test("a raw script tag in an answer adds no script element to the document", async () => {
+  const before = document.querySelectorAll("script").length;
+  await mount({ ...detail, steer_notes: [] }, answered("Is it safe?", "Safe.\n\n<script>window.injected = true</script>"));
+  expect(within(panel()).getByText("Safe.")).toBeTruthy();
+  expect(document.querySelectorAll("script")).toHaveLength(before);
 });
 
 test("an ended run with no messages has a labelled Agent aside and explains that the agent stopped", async () => {
