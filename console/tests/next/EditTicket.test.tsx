@@ -333,8 +333,8 @@ implementer = "fast"
 `;
 const HEADER_BODY = HEADER + BODY.replace("**Blast radius:** medium\n\n", "").replace("## Estimate & dependencies\n\nEstimate: 30 min · Depends on: none\n\n", "");
 
-async function saveHeaderEdit(edit: () => Promise<void>) {
-  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body: HEADER_BODY, current: { ...demo2().current!, body: HEADER_BODY } }), save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+async function saveHeaderEdit(edit: () => Promise<void>, body = HEADER_BODY) {
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }), save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
   expect(box("Title").value).toBe(SERVED.Title);
   await edit();
   await pressSave();
@@ -352,6 +352,15 @@ test("an edit to a header ticket rewrites only the header line of the field it c
     await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Add" })));
   });
   expect(depends).toBe(HEADER_BODY.replace("depends_on = []", 'depends_on = ["HOLO-9"]'));
+});
+
+test("adding a dependency to an indented multi-line array adds one row in its indentation and keeps its comment rows", async () => {
+  const body = HEADER_BODY.replace("depends_on = []", '\tdepends_on = [\n\t\t"HOLO-1",\n\t\t# comment\n\t]');
+  const saved = await saveHeaderEdit(async () => {
+    await type("Depends on", "HOLO-9");
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Add" })));
+  }, body);
+  expect(saved).toBe(body.replace("\t\t# comment\n", '\t\t# comment\n\t\t"HOLO-9",\n'));
 });
 
 test("an edit to a magic-line ticket keeps its estimate line and adds no header", async () => {

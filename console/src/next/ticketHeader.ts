@@ -216,7 +216,7 @@ function arrayRows(span: string[]): ArrayRow[] | null {
   const starts = span.map((_, index) => span.slice(0, index).reduce((sum, row) => sum + row.length + 1, 0));
   const rows: ArrayRow[] = span.map(() => ({ items: [] }));
   let last: ArrayRow["items"][number] | undefined;
-  if (!cursor.take(/[A-Za-z0-9_-]+[ \t]*=[ \t]*\[/)) return null;
+  if (!cursor.take(/[ \t]*[A-Za-z0-9_-]+[ \t]*=[ \t]*\[/)) return null;
   try {
     for (;;) {
       cursor.skip();
@@ -251,26 +251,33 @@ function arrayLines(span: string[], key: string, value: string[], comment?: stri
   const kept = rows.flatMap((row, r) => row.items.filter((_, i) => keep[r]![i]).map(item => item.value));
   if (JSON.stringify([...kept, ...added]) !== JSON.stringify(value)) return null;
   const indent = span.slice(1, -1).find(row => /^\s*["']/.test(row))?.match(/^\s*/)![0] ?? "  ";
-  const lines = [`${key} = [${rows[0]!.comment ? ` ${rows[0]!.comment}` : ""}`];
+  const head = rows[0]!;
+  const lines: string[] = [];
   let open: { line: number; end: number } | null = null;
-  rows.forEach((row, r) => {
-    const inner = r > 0 && r < rows.length - 1;
-    if (inner && (!row.items.length || keep[r]!.every(Boolean))) {
+  rows.slice(0, -1).forEach((row, r) => {
+    if (keep[r]!.every(Boolean)) {
       lines.push(span[r]!);
       const item = row.items.at(-1);
       if (item) open = item.comma ? null : { line: lines.length - 1, end: item.end };
       return;
     }
+    if (!r) lines.push(`${span[0]!.match(/^\s*/)![0]}${key} = [${head.comment ? ` ${head.comment}` : ""}`);
     const values = row.items.filter((_, i) => keep[r]![i]).map(item => `${indent}${quoted(item.value)},`);
     if (values.length && r > 0 && row.comment) values[values.length - 1] += ` ${row.comment}`;
     if (values.length) open = null;
     lines.push(...values);
   });
+  const close = rows.at(-1)!;
+  if (close.items.length) {
+    lines.push(...close.items.filter((_, i) => keep[rows.length - 1]![i]).map(item => `${indent}${quoted(item.value)},`));
+    open = null;
+  }
   if (open && added.length) {
     const { line, end } = open as { line: number; end: number };
     lines[line] = `${lines[line]!.slice(0, end)},${lines[line]!.slice(end)}`;
   }
-  lines.push(...added.map(item => `${indent}${quoted(item)},`), `${span.at(-1)!.match(/^\s*/)![0]}]${comment ? ` ${comment}` : ""}`);
+  lines.push(...added.map(item => `${indent}${quoted(item)},`));
+  lines.push(close.items.length ? `${span.at(-1)!.match(/^\s*/)![0]}]${comment ? ` ${comment}` : ""}` : span.at(-1)!);
   return lines;
 }
 
