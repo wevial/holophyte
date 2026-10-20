@@ -70,10 +70,11 @@ class AskPromptRelatedTicketsTests(unittest.TestCase):
             acceptance_criteria=list(criteria), verification_commands=["true"],
             depends_on=[f"issue-{n}" for n in depends_on])
 
-    def prompt_for(self, ticket_id, author="asker"):
+    def prompt_for(self, ticket_id, author="asker", replies=()):
         run = store.claim(self.conn, self.project_id, ticket_id)
         thread = github.Thread("1", "app.py", 1, author,
-                               "@holophyte ask: Is the rest filed?", "url")
+                               "@holophyte ask: Is the rest filed?", "url",
+                               replies=replies)
         return thread_answers.ask_prompt(
             PULL, "Ticket body", thread,
             store.read.related_tickets(self.conn, run))
@@ -98,3 +99,10 @@ class AskPromptRelatedTicketsTests(unittest.TestCase):
         self.assertIn("Your answer is the reply to @asker", prompt)
         self.assertNotIn("End with whether a change seems warranted, as advice"
                          " only.", prompt)
+
+    def test_prompt_replies_to_the_asker_of_a_question_in_a_reply(self):
+        prompt = self.prompt_for(
+            self.mirror(4, "Alone"), author="reviewer",
+            replies=(github.Comment("asker", "@holophyte ask: Is it filed?"),))
+        self.assertIn("Your answer is the reply to @asker", prompt)
+        self.assertNotIn("reply to @reviewer", prompt)
