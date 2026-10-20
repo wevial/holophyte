@@ -68,6 +68,7 @@ const stories: Record<string, StoryDetail> = {
 const tickets: Record<string, TicketDetail> = {
   "DEMO-3": detail("DEMO-3", { run: 9, time_box_ms: 25 * MINUTE, acceptance_criteria: CRITERIA, criteria: CRITERIA.map((text, index) => ({ id: `C${index + 1}`, text })), verification_commands: COMMANDS, runs: DEMO_3_RUNS }),
   "DEMO-2": detail("DEMO-2", { run: null, status: "ready" }),
+  "DEMO-7": detail("DEMO-7", { run: null, status: "ready", title: "Read a `+++` TOML header" }),
   "DEMO-20": detail("DEMO-20", { run: null, status: "ready" }),
   "DEMO-22": detail("DEMO-22", { run: null, status: "ready" }),
   "DEMO-30": detail("DEMO-30", { run: null, status: "ready" }),
@@ -266,4 +267,11 @@ test("a story's own page heads its children, an empty story says it has none, an
   expect(within(facts()).queryByRole("region", { name: "Story" })).toBeNull();
   expect(requested.some((url) => url.includes("/stories/"))).toBe(false);
   expect(requested).toContain(`${DEMO}/board`);
+});
+
+test("a backticked span in the ticket's title shows as inline code in its heading", async () => {
+  await mount("#/tickets/demo/DEMO-7");
+  const heading = screen.getByRole("heading", { level: 1 });
+  expect([...heading.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+  expect(heading.textContent).toBe("Read a +++ TOML header");
 });

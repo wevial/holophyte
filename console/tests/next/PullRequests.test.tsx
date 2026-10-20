@@ -421,3 +421,10 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
   expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES);
   expect(dialog()).toBeNull();
 });
+
+test("a backticked span in a row's title shows as inline code, and its accessible name drops the backticks", async () => {
+  await mount({ items: [{ ...readyPark, title: "Read a `+++` TOML header" }] });
+  const button = rowButton(42);
+  expect(button.getAttribute("aria-label")).toStartWith("PR #42, DEMO-9 Read a +++ TOML header, ");
+  expect([...button.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+});

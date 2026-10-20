@@ -18,6 +18,7 @@ import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FactIcon } from "./icons";
+import { TitleText } from "./TitleText";
 
 type Host = HostRecord<ContractBodies>;
 
@@ -83,7 +84,7 @@ function MergeFacts({ base, run, title, ticket, refused }: { base: string; run: 
     <>
       {(title != null || ticket != null) && (
         <p className="mt-2.5 text-ink-2">
-          {title}
+          {title != null && <TitleText>{title}</TitleText>}
           {title != null && ticket != null && " · "}
           {ticket != null && <span className="font-mono text-[13px]">{ticket}</span>}
         </p>
