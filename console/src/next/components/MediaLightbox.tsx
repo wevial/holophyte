@@ -47,7 +47,7 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
       >
         <div className="col-start-2 row-start-1 border border-rule bg-paper text-ink shadow-[0_24px_60px_rgba(0,0,0,.45)]">
           <div className="flex items-center gap-3 border-b border-rule py-2 pl-3.5 pr-2">
-            <span data-media-counter className="flex-1 font-mono text-[12px] text-ink-2">{`${shown + 1} / ${total}`}</span>
+            <span className="flex-1 font-mono text-[12px] text-ink-2">{`${shown + 1} / ${total}`}</span>
             <Btn ref={close} aria-label="Close" onClick={() => onClose(shown)} className="!h-9 !px-3">
               <span aria-hidden="true">✕</span>
             </Btn>
