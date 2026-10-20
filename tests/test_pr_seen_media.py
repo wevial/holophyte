@@ -87,6 +87,15 @@ class PullStatusMediaTests(unittest.TestCase):
         self.assertEqual(status.screenshots, SHOTS[:2])
         self.assertEqual(status.videos, VIDEOS)
 
+    def test_a_malformed_evidence_link_leaves_the_read_and_its_videos(self):
+        body = ("Ticket: KO-7\n\n## Evidence\n\n"
+                "[notes](https://[broken/notes.html)\n"
+                "[clip.webm](https://media.example/a/clip.webm)\n")
+        status = self.read({**BARE, "merged": True, "body": body})
+        self.assertTrue(status.merged)
+        self.assertEqual(status.videos,
+                         (("clip.webm", "https://media.example/a/clip.webm"),))
+
     def test_a_video_link_with_a_fragment_keeps_its_full_url(self):
         body = ("Ticket: KO-7\n\n## Evidence\n\n"
                 "[clip](https://media.example/a/clip.mp4#t=1)\n")
@@ -115,19 +124,11 @@ class AttentionMediaTests(ServeTestCase):
         (item,) = [item for item in body["items"] if item["kind"] == "pr_open"]
         return item["pr"]
 
-    def woken_run_pull_request_facts(self, node=None):
-        ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
-        store.tickets.walk_ticket(self.conn, ticket.id, "in_flight")
-        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
-        woken = store.claim(self.conn, project, ticket.id, now=self.now)
-        store.set_phase(self.conn, woken, "working", now=self.now)
-        store.set_pull_request(self.conn, woken, URL)
-        if node is not None:
-            with patch.object(pr_status, "graphql", return_value=answer(node)):
-                status = pr_status.pull_status(None, pr_status.parse_pr_url(URL))
-            store.record_pr_seen(self.conn, woken, reconcile._seen(status))
+    def resumed_run_pull_request_facts(self):
+        store.set_phase(self.conn, self.run, "paused", now=self.now)
+        store.set_phase(self.conn, self.run, "working", now=self.now)
         _, _, body = self.request("GET", "/status")
-        (run,) = [run for run in body["runs"] if run["id"] == woken]
+        (run,) = [run for run in body["runs"] if run["id"] == self.run]
         return run["pr"]
 
     def reconcile(self, node):
@@ -155,7 +156,7 @@ class AttentionMediaTests(ServeTestCase):
         self.reconcile(LINKED)
         videos = [{"caption": caption, "url": url} for caption, url in VIDEOS]
         self.assertEqual(self.pull_request_facts()["videos"], videos)
-        self.assertEqual(self.woken_run_pull_request_facts(LINKED)["videos"],
+        self.assertEqual(self.resumed_run_pull_request_facts()["videos"],
                          videos)
 
     def test_a_store_before_videos_migrates_and_serves_no_videos(self):
@@ -168,7 +169,7 @@ class AttentionMediaTests(ServeTestCase):
             "PRAGMA table_info(runs)")})
         self.start()
         self.assertEqual(self.pull_request_facts()["videos"], [])
-        self.assertEqual(self.woken_run_pull_request_facts()["videos"], [])
+        self.assertEqual(self.resumed_run_pull_request_facts()["videos"], [])
 
     def test_a_store_before_media_migrates_and_serves_none(self):
         added = ("prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",

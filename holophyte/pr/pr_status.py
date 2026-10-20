@@ -2,7 +2,6 @@ import contextlib
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
 
 from holophyte.babysit import devin_notes
 from holophyte.babysit.conversation_comments import (
@@ -233,7 +232,8 @@ def _screenshots(body):
 
 def _videos(body):
     return tuple(link for link in _evidence_links(body, LINK_RE)
-                 if urlsplit(link[1]).path.endswith(VIDEO_SUFFIXES)
+                 if re.split(r"[?#]", link[1], maxsplit=1)[0]
+                 .endswith(VIDEO_SUFFIXES)
                  )[:VIDEOS_KEPT]
 
 
