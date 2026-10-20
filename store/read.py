@@ -819,8 +819,8 @@ def _queued_behind(ticket, waiting):
     return len(seen)
 
 
-def stuck_waits(conn):
-    rows = [_WaitRow(*row[:9], tuple(json.loads(row[9])), *row[10:])
+def _wait_rows(conn):
+    return [_WaitRow(*row[:9], tuple(json.loads(row[9])), *row[10:])
             for row in conn.execute(
                 "SELECT t.id, t.projectId, t.linearIssueId, t.linearIdentifier,"
                 " t.url, t.title, t.boardState, t.boardColumn, t.status,"
@@ -829,6 +829,27 @@ def stuck_waits(conn):
                 " r.outcome, r.outcomeReason FROM tickets t"
                 " LEFT JOIN runs r ON r.id = t.lastRunId"
                 " ORDER BY t.linearIdentifier")]
+
+
+def related_tickets(conn, run_id):
+    rows = _wait_rows(conn)
+    ticket_id = conn.execute("SELECT ticketId FROM runs WHERE id = ?",
+                             (run_id,)).fetchone()
+    ticket = next((row for row in rows
+                   if ticket_id and row.id == ticket_id[0]), None)
+    if ticket is None:
+        return (), ()
+    by_issue = {(row.projectId, row.issueId): row for row in rows}
+    depends_on = tuple(by_issue[(ticket.projectId, issue)]
+                       for issue in ticket.dependsOn
+                       if (ticket.projectId, issue) in by_issue)
+    followed_by = tuple(row for row in rows if row.projectId == ticket.projectId
+                        and ticket.issueId in row.dependsOn)
+    return depends_on, followed_by
+
+
+def stuck_waits(conn):
+    rows = _wait_rows(conn)
     by_issue = {(row.projectId, row.issueId): row for row in rows}
     waits = []
     for ticket in rows:

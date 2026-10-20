@@ -198,6 +198,9 @@ EXPECTED_READ = [
     # KO-409: the supervisor's read of the ready tickets owed a loop,
     # however they became ready.
     "ready_tickets",
+    # HOLO-443: a pull request question's ticket's dependencies and
+    # dependents, for the ask prompt.
+    "related_tickets",
     "review_rounds",
     "rounds_of",
     "run_detail",

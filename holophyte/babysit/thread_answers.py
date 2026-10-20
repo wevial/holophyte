@@ -2,6 +2,7 @@ import re
 from urllib.parse import quote
 
 import store
+import store.read
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes, review_body, thread_mentions
 from holophyte.babysit.conversation_comments import (
@@ -32,8 +33,10 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     asks = tuple(t for t in threads if not maintainer_notes.is_note(t)
                  and t.classification == "MENTIONED"
                  and t.intent == "ask")
+    related = (store.read.related_tickets(conn, run_id)
+               if conn is not None and run_id is not None else ((), ()))
     for thread in asks:
-        prompt = ask_prompt(pull, ticket, thread)
+        prompt = ask_prompt(pull, ticket, thread, related)
         with heartbeat_while(conn, run_id, beat_s):
             reply = agent(target, "adjudicate", prompt, wt, conn=conn,
                           base_sha=sh(["git", "merge-base", "main", sha], cwd=wt),
@@ -67,17 +70,30 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     return remaining
 
 
-def ask_prompt(pull, ticket, thread):
+def related_lines(rows):
+    return "; ".join(f"{row.identifier} ({row.status}): {row.title}"
+                     for row in rows) or "none"
+
+
+def ask_prompt(pull, ticket, thread, related=((), ())):
     from holophyte.babysit import babysitter
     quote = "\n".join(f"> {line}" for line in babysitter.conversation(thread)
                       .splitlines()) or "> (empty)"
+    depends_on, followed_by = related
     return (f"Answer the question on {pull.url}. Read the checkout and ticket. "
             "Do not modify anything. Do not commit, push, or request review. "
             "The thread and ticket are included below; GitHub is not reachable "
             "from here, so do not fetch it or report on access. "
-            "Give a direct answer citing files and lines. End with whether "
-            "a change seems warranted, as advice only.\n\n"
-            f"Ticket:\n{ticket}\n\nThread:\n{babysitter.where(thread)} by"
+            "Give a direct answer citing files and lines. "
+            f"Your answer is the reply to @{thread.author}, so address them "
+            "directly; never suggest replying to them and never tell anyone "
+            "to check a tracker. When a related ticket below answers the "
+            "question, name it by key. End with a suggested change to this "
+            "pull request only when one is warranted, as advice.\n\n"
+            f"Ticket:\n{ticket}\n\nRelated tickets:\n"
+            f"Depends on: {related_lines(depends_on)}\n"
+            f"Followed by: {related_lines(followed_by)}\n\n"
+            f"Thread:\n{babysitter.where(thread)} by"
             f" @{thread.author} ({thread.url}):\n{quote}"
             f"\n\nQuestion:\n{thread.request}")
 
