@@ -8,15 +8,17 @@ from holophyte.pr import github, image_fetch, pr_media
 def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat_s):
     if not merge_config(project).ui_paths:
         return None
-    states = ticket_template.parse(ticket).evidence_states
+    parsed = ticket_template.parse(ticket)
+    states, files = parsed.evidence_states, parsed.evidence_files
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
         evidence = github.split_pr_body(body)[2]
         section = pr_media.refresh(
             project, wt, task_id, evidence, evidence_states=states,
+            evidence_files=files,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
-        failure = pr_media.capture_failure(project, wt, task_id, states)
+        failure = pr_media.capture_failure(project, wt, task_id, states, files)
         if section is None or section.rstrip() == evidence.rstrip():
             return failure
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""

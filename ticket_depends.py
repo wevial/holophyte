@@ -1,5 +1,12 @@
-"""Find and rewrite the `Depends on:` list of a ticket body's estimate line."""
+"""Find and rewrite a ticket body's `Depends on:` estimate line or `depends_on`."""
+import json
+import re
+import tomllib
+
+import ticket_header
 import ticket_template
+
+KEY_RE = re.compile(r"\s*([A-Za-z0-9_-]+)\s*=")
 
 ESTIMATE_SECTION = "Estimate & dependencies"
 
@@ -22,8 +29,62 @@ def estimate_line(lines):
     return None
 
 
+def _header(lines):
+    opening = next((index for index, line in enumerate(lines)
+                    if line.rstrip("\r\n") == ticket_header.FENCE
+                    or ticket_template.H1_RE.match(line)), None)
+    if opening is None or lines[opening].rstrip("\r\n") != ticket_header.FENCE:
+        return None
+    return next(((opening, index) for index in range(opening + 1, len(lines))
+                 if lines[index].rstrip("\r\n") == ticket_header.FENCE), None)
+
+
+def _top_level_keys(lines, opening, closing):
+    keys, index = [], opening + 1
+    while index < closing and not lines[index].lstrip().startswith("["):
+        key = KEY_RE.match(lines[index])
+        if not key:
+            index += 1
+            continue
+        last = next((end for end in range(index, closing)
+                     if _parses(lines[index:end + 1])), closing - 1)
+        keys.append((key.group(1), index, last))
+        index = last + 1
+    return keys
+
+
+def _parses(lines):
+    try:
+        tomllib.loads("".join(lines))
+    except tomllib.TOMLDecodeError:
+        return False
+    return True
+
+
+def _rewrite_header(body, lines, bounds, rewrite):
+    fields = ticket_header.split(body)[1][0]
+    if fields is None:
+        return body
+    deps = fields.get("depends_on", [])
+    rewritten = rewrite(deps)
+    if not deps and not rewritten:
+        return body
+    opening = lines[bounds[0]]
+    ending = opening[len(opening.rstrip("\r\n")):]
+    keys = _top_level_keys(lines, *bounds)
+    found = [(first, last + 1) for name, first, last in keys if name == "depends_on"]
+    end = max((last + 1 for _, _, last in keys), default=bounds[0] + 1)
+    first, after = found[0] if found else (end, end)
+    lines[first:after] = [f"depends_on = {json.dumps(rewritten)}{ending}"]
+    return "".join(lines)
+
+
 def rewrite_depends(body, rewrite):
     """`body` with its estimate line's list `deps` made `rewrite(deps)`."""
+    header = body.splitlines(keepends=True)
+    bounds = _header(header)
+    if bounds:
+        return _rewrite_header(body, header, bounds, rewrite)
     lines = body.split("\n")
     plain = ticket_template.MD_LINK_RE.sub(r"\1", body).split("\n")
     index = estimate_line(plain)
