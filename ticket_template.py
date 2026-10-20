@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import ticket_header
+
 TEMPLATE_ORDER = [
     "Summary", "What / Why / How", "Reproduce", "Mock-up", "In scope",
     "Out of scope",
@@ -16,6 +18,7 @@ OPTIONAL_SECTIONS = {"Reproduce", "Mock-up", "Contract checks", "Evidence",
                      "Story"}
 SECTION_ORDER = [s for s in TEMPLATE_ORDER if s not in OPTIONAL_SECTIONS]
 MAX_ESTIMATE_MIN = 90
+ESTIMATE = "Estimate & dependencies"
 MAX_CRITERIA = 10
 MAX_IN_SCOPE = 6
 ADVISORY_PREFIX = "advisory: "
@@ -61,8 +64,6 @@ MOCKUP_URL_RE = re.compile(
     r"https://claude\.ai/(?:code/)?artifact/[\w-]+"
     r"|https://lotuspod(?:\.[A-Za-z0-9-]+)+/[\w.-]+\.html")
 URL_TOKEN_RE = re.compile(r"(?<![\w+.-])[A-Za-z][\w+.-]*:[^\s*`>)\]\"']\S*")
-MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
-MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
 APPROVED_RE = re.compile(r"^(?:[-*+]\s+)?Approved \d{4}-\d{2}-\d{2}:\s*\S")
 EVIDENCE_OUTPUT_RE = re.compile(
     r"\b(?:(?:tests?|command)\s+(?:file['’]s\s+)?output|output\s+of|terminal|"
@@ -222,10 +223,12 @@ class Ticket:
         self.orchestration = None
         self.implementer = None
         self.open_questions_none = False
+        self.header_problems, self.evidence_files = None, []
 
 
 def parse(text):
     t = Ticket()
+    text, header = ticket_header.split(text)
     lines = MD_LINK_RE.sub(r"\1", text).splitlines()
     first_h1 = next((i for i, ln in enumerate(lines) if H1_RE.match(ln)), None)
     if first_h1 is None:
@@ -281,6 +284,7 @@ def parse(text):
     t.depends_on = _deps(est.group(2)) if est else None
     oq = COMMENT_RE.sub("", t.sections.get("Open questions", ""))
     t.open_questions_none = _clean(oq) in OPEN_QUESTIONS_NONE
+    ticket_header.apply(t, header)
     return t
 
 
@@ -600,11 +604,6 @@ def _mockup_urls(text):
     return urls
 
 
-def mockup_media_kind(url):
-    media = MOCKUP_MEDIA_RE.fullmatch(url)
-    return MOCKUP_MEDIA_KINDS[media.group(1)] if media else None
-
-
 def _mockup_problems(t):
     if "Mock-up" not in t.order:
         return []
@@ -614,7 +613,8 @@ def _mockup_problems(t):
     problems = [f"'## Mock-up' link is not a claude.ai artifact, a Lotuspod "
                 f"page, a .png snapshot or a .zip mock-up bundle: {url}"
                 for url in _mockup_urls(t.mockup_source)
-                if not MOCKUP_URL_RE.fullmatch(url) and not mockup_media_kind(url)]
+                if not MOCKUP_URL_RE.fullmatch(url)
+                and not ticket_header.mockup_media_kind(url)]
     if not urls:
         problems.append("'## Mock-up' has no link to the approved mock-up; write "
                         "the URL bare, since a markdown link keeps only its text")
@@ -784,7 +784,7 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
             )
     for name in TEMPLATE_ORDER:
         n = t.order.count(name)
-        if n == 0 and name not in OPTIONAL_SECTIONS:
+        if n == 0 and name not in OPTIONAL_SECTIONS and name != ESTIMATE:
             p.append(f"missing section '## {name}'")
         elif n > 1:
             p.append(f"duplicate section '## {name}' ({n}x)")
@@ -860,7 +860,9 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
         elif not literal:
             p.append(f"contract check has an empty expected literal: {path}")
 
-    if t.estimate_min is None:
+    if t.header_problems is not None:
+        p.extend(t.header_problems)
+    elif t.estimate_min is None:
         p.append("'Estimate & dependencies' must read "
                  "'Estimate: N min · Depends on: <ticket IDs or \"none\">'")
     else:
