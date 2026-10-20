@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { Screenshot } from "../../lib/contract.gen";
 import { Btn } from "./Btn";
 import { trap } from "./trap";
 
-export interface MediaItem {
-  kind: "image" | "video";
-  caption: string;
-  url: string;
-}
+export type MediaItem = Pick<Screenshot, "caption" | "url"> & { kind: "image" | "video" };
 
 /** A modal over the console showing `items[start]`; Left and Right (or
  *  Previous and Next) step without wrapping, and Esc or Close calls
