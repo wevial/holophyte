@@ -70,15 +70,15 @@ test("a scoped hash opens its page, marks its link current and keeps the scope o
   }
 });
 
-test("the Overview badge counts the scope's Needs you entries, as the heading does, and hides at zero", async () => {
+test("the Overview badge counts the scope's Waiting on you entries, as the heading does, and hides at zero", async () => {
   await mount("#/", needsDaemons());
-  expect(screen.getByRole("link", { name: "Overview, 3 need you" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Overview, 3 waiting on you" })).toBeTruthy();
   expect(badge()!.textContent).toBe("3");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("3 need you.");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("3 waiting on you.");
   cleanup();
 
   await mount("#/?project=demo", needsDaemons());
-  expect(screen.getByRole("link", { name: "Overview, 2 need you" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Overview, 2 waiting on you" })).toBeTruthy();
   expect(badge()!.textContent).toBe("2");
   cleanup();
 

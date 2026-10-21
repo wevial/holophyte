@@ -28,7 +28,7 @@ const RAIL_KEY = "holophyte.next.rail";
 const STORIES_KEY = "holophyte.next.stories";
 
 const PAGES = [
-  { to: "/", label: "Overview", icon: <OverviewIcon />, noun: "need you" },
+  { to: "/", label: "Overview", icon: <OverviewIcon />, noun: "waiting on you" },
   { to: "/runs", label: "Runs", icon: <RunsIcon />, noun: "" },
   { to: "/tickets", label: "Tickets", icon: <TicketsIcon />, noun: "" },
   { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
