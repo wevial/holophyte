@@ -3,6 +3,7 @@ triggering commit cancels a running child, at most twice before a pass
 completes, so its set restarts on the newest tip."""
 from __future__ import annotations
 
+import contextlib
 import io
 import os
 import shlex
@@ -29,6 +30,7 @@ from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.host.supervisor_lock import pid_alive  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.witness import witness_step  # noqa: E402
+from holophyte.story.witness_running import add_restart, restarts  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
@@ -226,6 +228,10 @@ class WitnessDebounceTests(_DebounceFixture):
                              lambda: self.now)
         clock.start()
         self.addCleanup(clock.stop)
+        command = patch.object(holophyte.story.witness, "COMMAND",
+                               holophyte.story.witness._Command())
+        command.start()
+        self.addCleanup(command.stop)
         self.w2_log = self.target.parent / "w2.log"
         self.when = int(self.now)
 
@@ -526,3 +532,36 @@ class WitnessDebounceTests(_DebounceFixture):
         self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
         self.assertTrue(flag.exists())
         self.assertEqual(self.real_rows(), [])
+
+    def test_a_cancel_after_the_verdicts_commit_still_clears_the_restarts(self):
+        self.approved_story()
+        sha = self.land("a witness", write=[("tests/test_w1.py", LANDED)])
+        (story_id,) = self.conn.execute(
+            "SELECT ticketId FROM stories").fetchone()
+        for _ in range(2):
+            add_restart(self.project, story_id)
+        record, transaction, recorded = (
+            holophyte.story.witness.record_witness_result, store.transaction,
+            [])
+
+        def recording(*args, **kwargs):
+            recorded.append(args)
+            return record(*args, **kwargs)
+
+        @contextlib.contextmanager
+        def cancelled_on_commit(conn):
+            with transaction(conn):
+                yield
+            if recorded:
+                os.kill(os.getpid(), signal.SIGTERM)
+
+        with patch.object(holophyte.story.witness, "record_witness_result",
+                          recording), \
+                patch.object(store, "transaction", cancelled_on_commit), \
+                patch.object(sys, "stdout", io.StringIO()), \
+                self.assertRaises(SystemExit) as raised:
+            holophyte.loop.pool.witness_child(self.project, self.board)
+
+        self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+        self.assertEqual(self.real_rows(), [("W1", sha, "green")])
+        self.assertEqual(restarts(self.project, story_id), 0)

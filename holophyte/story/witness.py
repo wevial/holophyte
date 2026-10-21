@@ -157,7 +157,7 @@ def _pytest_message(rest):
 
 
 def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
-                  again=None):
+                  again=None, recorded=None):
     witnesses = story(conn, story_id).witnesses
     identifier = _identifier(conn, story_id)
     logs = Path(target.holo_dir) / "witness" / identifier / sha
@@ -179,12 +179,15 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
                                   logs / witness.key / f"{stamp}-again.log")
                      for witness in witnesses
                      if witness.key in rerun and time.monotonic() < deadline]
-    with store.transaction(conn):
-        ids = [record_witness_result(
-            conn, story_id, verdict.witnessKey, sha, verdict.verdict, verifier,
-            red_kind=verdict.redKind, file_hash=verdict.fileHash,
-            evidence_path=verdict.evidencePath, seconds=verdict.seconds)
-            for verdict in verdicts]
+    with COMMAND.hold():
+        with store.transaction(conn):
+            ids = [record_witness_result(
+                conn, story_id, verdict.witnessKey, sha, verdict.verdict,
+                verifier, red_kind=verdict.redKind, file_hash=verdict.fileHash,
+                evidence_path=verdict.evidencePath, seconds=verdict.seconds)
+                for verdict in verdicts]
+        if recorded:
+            recorded()
     return _rows(conn, story_id, ids)
 
 
@@ -241,7 +244,7 @@ class _Judge:
                        str(log) if log.exists() else None, seconds)
 
 
-def witness_pass(target, conn, story_id, verifier, sha=None):
+def witness_pass(target, conn, story_id, verifier, sha=None, recorded=None):
     if pass_refusal(conn, story_id) is not None:
         return []
     if sha is None:
@@ -263,7 +266,8 @@ def witness_pass(target, conn, story_id, verifier, sha=None):
                 if row.verdict == "red" and row.witnessKey in greens}
 
     if due:
-        rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
+        rows = run_witnesses(target, conn, story_id, sha, verifier, again=again,
+                             recorded=recorded)
     else:
         rows = _rows(conn, story_id, carry(conn, story_id, sha, verifier))
     _note_changes(conn, story_id, sha, before, rows)
@@ -307,7 +311,9 @@ def witness_step(target, conn, project_id, step=False):
                              [witness.key
                               for witness in story(conn, story_id).witnesses],
                              story_id, sha, step)
-                rows = witness_pass(target, conn, story_id, "loop", sha=sha)
+                rows = witness_pass(
+                    target, conn, story_id, "loop", sha=sha,
+                    recorded=lambda: clear_restarts(target, story_id))
                 clear_running(target)
                 clear_restarts(target, story_id)
                 if rows:
