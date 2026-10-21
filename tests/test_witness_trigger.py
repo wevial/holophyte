@@ -45,7 +45,7 @@ from tests.test_witness_runner import (  # noqa: E402
 
 HOUR_MS = 3600 * 1000
 LANDED = PASSES + "\n# landed on main\n"
-FIXTURE_DIR = "lib/reader/"
+FIXTURE_DIR = "lib/my reader/"
 
 
 class WitnessPathsFilingTests(ConfigTestCase):

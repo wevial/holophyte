@@ -68,8 +68,7 @@ def _items(story, section):
 
 
 def _is_witness_path(line):
-    return (len(line.split()) == 1 and not posixpath.isabs(line)
-            and ".." not in line.split("/"))
+    return not posixpath.isabs(line) and ".." not in line.split("/")
 
 
 def witness_paths(story):
@@ -127,7 +126,7 @@ def _body_problems(story):
             problems.append(f"witnesses {owners[file]} and "
                             f"{witness.key} name one file: {witness.file}")
         owners.setdefault(file, witness.key)
-    problems.extend(f"witness path is not one repository-relative path: "
+    problems.extend(f"witness path is not repository-relative: "
                     f"{line}" for line in story.path_lines
                     if not _is_witness_path(line))
     if len(story.path_lines) > MAX_WITNESS_PATHS:
