@@ -188,9 +188,22 @@ SCOPE_LINE_RE = re.compile(
     r"[ \t]*(?:[-\u2013\u2014:]+[ \t]*)?(?P<note>.*?)[ \t]*$", re.I | re.M)
 
 
+def fenced_spans(reply):
+    spans, offset = [], 0
+    for line, fenced in review_runner.fence_flags(
+            reply.splitlines(keepends=True)):
+        if fenced:
+            spans.append((offset, offset + len(line)))
+        offset += len(line)
+    return spans
+
+
 def criteria_block(reply):
-    block = {}
+    block, fenced = {}, fenced_spans(reply)
     for match in CRITERION_LINE_RE.finditer(reply):
+        bare = match[0].lstrip()[:9].upper() == "CRITERION"
+        if not bare and any(a <= match.start("n") < b for a, b in fenced):
+            continue
         block[parse(match["n"])] = (match["status"].lower(),
                                      match["note"])
     return block

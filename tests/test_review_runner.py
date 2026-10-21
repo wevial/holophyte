@@ -275,6 +275,11 @@ class ReviewerBoundaryTests(unittest.TestCase):
         self.assertEqual(review_runner.terminal_verdict(
             reply, review_runner.ADJUDICATION_VERDICTS), "PASS")
 
+    def test_wrapped_verdict_quoted_in_a_code_fence_is_not_a_verdict(self):
+        reply = "Last round:\n```\n`VERDICT: FAIL`\n```\nVERDICT: PASS"
+        self.assertEqual(review_runner.terminal_verdict(
+            reply, review_runner.ADJUDICATION_VERDICTS), "PASS")
+
     def test_verdict_wrapped_with_trailing_prose_or_twice_is_malformed(self):
         for reply in ("Checked.\n**VERDICT: PASS.** It is mergeable.",
                       "`VERDICT: FAIL`\nVERDICT: PASS"):
