@@ -114,9 +114,12 @@ class AdjudicationCriteriaTests(LoopFixture):
                                  " WHERE outcome = 'failed'")
         self.assertIn("criterion C1 unwitnessed", reason)
 
-    def test_a_pass_with_no_criterion_line_fails(self):
+    def test_a_pass_with_no_criterion_line_is_an_infra_failure(self):
         self.adjudicate("Mergeable as it stands.\nVERDICT: PASS")
-        self.assert_failed_naming_criterion_1("unwitnessed")
+        ((klass, reason),) = self.read("SELECT outcomeClass, outcomeReason FROM runs")
+        self.assertEqual(klass, "infra")
+        self.assertFalse(reason.startswith("terminal adjudication: FAIL"), reason)
+        self.assertIn(BRANCH, self.branches())
 
     def test_a_pass_reading_criterion_not_met_fails(self):
         self.adjudicate("Mergeable.\nCRITERION 1: not met — no measurement"
