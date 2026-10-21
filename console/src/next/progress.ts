@@ -1,7 +1,7 @@
 import type { ConsoleAsk, RunDetail } from "../lib/contract.gen";
 import { findingPath, severityOf } from "../lib/findings";
 import { formatClock } from "../lib/format";
-import { summarize } from "../lib/log";
+import { isFinalCheck, summarize } from "../lib/log";
 import { shortSha } from "../lib/shipped";
 import { failureWord } from "./history";
 
@@ -38,19 +38,21 @@ function eventLines(detail: RunDetail): ProgressLine[] {
 function roundLines(detail: RunDetail): ProgressLine[] {
   return detail.rounds.flatMap((round) => {
     if (round.ended_ms == null) return [];
+    const final = isFinalCheck(round, detail.events);
     const must = round.findings.filter((finding) => severityOf(finding) === "must").length;
-    const outcome =
-      round.verdict === "changes_requested"
-        ? `changes requested, ${must} must-fix`
-        : PASSED.has(round.verdict)
-          ? "passed"
+    const outcome = PASSED.has(round.verdict)
+      ? "passed"
+      : final
+        ? "failed"
+        : round.verdict === "changes_requested"
+          ? `changes requested, ${must} must-fix`
           : round.verdict.replaceAll("_", " ");
     const sub = round.findings.map((finding) => {
       const path = finding.path ? findingPath(finding) : "";
       const where = path && finding.line != null ? `${path}:${finding.line}` : path;
       return [finding.severity.toUpperCase(), firstLine(finding.message), where].filter(Boolean).join(" · ");
     });
-    return [{ at: round.ended_ms, kind: "round", text: `Review round ${round.round}: ${outcome}`, sub }];
+    return [{ at: round.ended_ms, kind: "round", text: `${final ? "Final check" : `Review round ${round.round}`}: ${outcome}`, sub }];
   });
 }
 

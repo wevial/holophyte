@@ -10,6 +10,7 @@ import {
   type Attention,
   type HostAttention,
   type HostStatus,
+  type PrOpenItem,
   type Status,
 } from "../lib/contract.gen";
 import { addressOf, mergeHosts, oldestPoll, type HostRecord } from "../lib/hosts";
@@ -41,6 +42,21 @@ const contractSchemas: PollSchemas<ContractBodies> = {
 interface Fleet {
   hosts: HostRecord<ContractBodies>[];
   polls: number;
+}
+
+/** Changes the cached `pr_open` item of `run` on the record at `base`, ahead
+ *  of the read that confirms it. */
+export function patchFleetItem(client: QueryClient, base: string, run: number, change: (item: PrOpenItem) => PrOpenItem) {
+  client.setQueriesData<Fleet>({ queryKey: ["fleet"] }, (fleet) =>
+    fleet && {
+      ...fleet,
+      hosts: fleet.hosts.map((host) =>
+        host.base !== base || host.attention == null
+          ? host
+          : { ...host, attention: { ...host.attention, items: host.attention.items.map((item) => (item.kind === "pr_open" && item.run === run ? change(item) : item)) } },
+      ),
+    },
+  );
 }
 
 /** The new console's one cache. A failed read is not retried: the next

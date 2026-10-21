@@ -608,13 +608,35 @@ Each module, one line:
   after a merge of main turns the branch red: main runs without what only
   the branch adds, and is not compared when the failing command was left out.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
-  commands at one commit of main in a scratch worktree, within
+  commands at one commit of main, in the warm tree for a loop pass and
+  otherwise in a scratch worktree, within
   `[story] witness_sec`, and appends each verdict to the ledger;
   `main_tip()` reads the commit a pass runs at and `red_kind()` reads a
   red's kind from its output; `witness_pass()` runs an open story's
   witnesses at main's tip unless the ledger already holds it or the
   project is held, reruns once a red that was green at an earlier commit,
-  and notes each changed verdict on the parent.
+  and notes each changed verdict on the parent. A loop pass runs the
+  whole witness set only when it is due, and otherwise carries the last
+  real verdicts to the new commit.
+- `holophyte/story/witness_trigger.py` — `set_due()` answers whether a loop
+  pass runs a story's witness set at a commit: when the story has no real
+  run of every witness since the story's latest approval, when a child's
+  merged run's `mergeSha` is an
+  ancestor of the commit and not of the set's last real run (the oldest of
+  its witnesses' latest real verdicts, so a pass cut short still owes the
+  rest), when the
+  story's `## Witness paths` changed since that run, when its newest real
+  verdict is older than the most recent `[story] witness_nightly_hour`, or
+  when a git
+  command fails; `carry()` records each witness's latest real verdict again
+  at the commit, `carriedFrom` naming the commit it came from.
+- `holophyte/story/witness_tree.py` — the warm tree a project's loop
+  witness passes reuse: `witness-tree/` under the project's state directory,
+  taken under the non-blocking `witness-tree.lock`, checked out detached at
+  the commit and cleaned keeping each `[worktree] setup` table step's `keep`
+  paths; `witness-tree.json` stamps each table step's key over its `run` and
+  its inputs at the commit, so a step whose key matches and whose `keep`
+  paths exist is reused, until an earlier table step runs or a setup fails.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file, queueing the parent's Done,

@@ -7,6 +7,7 @@ import traceback
 
 import store.read
 from holophyte.admission import project_of
+from holophyte.host.ci_wake import parked_approval
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.reexec import LOOP_UNIT, SUPERVISOR_UNIT, start_loop, systemctl_user
 from holophyte.loop.runs import open_store
@@ -27,7 +28,7 @@ RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
            "merge": ("approve",), "ask": ("babysit",), "hold": ("hold",),
            "release-hold": ("release_hold",), "pause": ("pause",),
            "resume": ("resume",), "abort": ("abort", "abort_close"),
-           "steer": ("steer", "operator_note"), "mark-ready": ()}
+           "steer": ("steer", "operator_note"), "mark-ready": ("babysit",)}
 ACTIONS = frozenset(RECORDS)
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"
@@ -192,14 +193,13 @@ def send_back_action(project, run_id, note, author):
                  "detail": f"Sent back with operator_note event {event_id}"}
 
 
-def held_draft_url(conn, run_id):
-    row = conn.execute(
-        "SELECT r.prUrl FROM runs r JOIN tickets t ON t.lastRunId = r.id"
+def held_draft(conn, run_id):
+    return conn.execute(
+        "SELECT r.prUrl, t.id FROM runs r JOIN tickets t ON t.lastRunId = r.id"
         " WHERE r.id = ? AND r.phase = 'awaiting_merge_approval'"
         " AND r.prSeenState = 'draft' AND EXISTS (SELECT 1 FROM runEvents e"
         " WHERE e.runId = r.id AND e.kind = 'pr_draft_held')",
-        (run_id,)).fetchone()
-    return None if row is None else row[0]
+        (run_id,)).fetchone() or (None, None)
 
 
 def mark_ready_action(project, body):
@@ -211,9 +211,10 @@ def mark_ready_action(project, body):
         author = "maintainer"
     if not project.store_path.exists():
         return 503, no_store(project)
-    conn = open_store(project)
+    conn = action_store(project)
     try:
-        pull = parse_pr_url(held_draft_url(conn, run_id))
+        url, ticket_id = held_draft(conn, run_id)
+        pull = parse_pr_url(url)
         if pull is None:
             return 200, {"ok": False, "run": run_id, "detail":
                          f"run {run_id} is not a draft held for review"}
@@ -228,10 +229,30 @@ def mark_ready_action(project, body):
         store.record_event(conn, run_id, "pr_ready",
                            f"{pull.url} marked ready for review from the"
                            f" console by {author.strip()}")
+        detail = f"{pull.url} marked ready for review"
+        try:
+            detail += wake_ready(conn, run_id, ticket_id, pull)
+        except store.ApproveRefused as refused:
+            detail += f"; run {run_id} was not woken: {refused}"
+        recorded = written_on(conn, "mark-ready")
     finally:
         conn.close()
-    return 200, {"ok": True, "run": run_id,
-                 "detail": f"{pull.url} marked ready for review"}
+    return 200, {"ok": True, "run": run_id, "recorded": recorded,
+                 "detail": detail}
+
+
+def wake_ready(conn, run_id, ticket_id, pull):
+    with store.transaction(conn):
+        if held_draft(conn, run_id)[1] != ticket_id:
+            raise store.ApproveRefused(f"run {run_id} is no longer the draft"
+                                       " held for review")
+        store.set_pr_seen_state(conn, run_id, "ready")
+        if parked_approval(conn, run_id) is not None:
+            return ""
+        reason = f"{pull.url} was marked ready for review"
+        store.record_event(conn, run_id, "ci_wake", reason)
+        store.babysit(conn, ticket_id, reason, source="human")
+    return f"; run {run_id} sent back to the babysitter"
 
 
 def steer_action(project, body):

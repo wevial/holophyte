@@ -4,6 +4,8 @@ import { actionBase, postAction } from "../lib/actions";
 import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
 import { putConfig, type ConfigWrite } from "../lib/config";
 import { useToast } from "./components/Toast";
+import type { PrOpenItem } from "../lib/contract.gen";
+import { patchFleetItem } from "./fleet";
 import { PollDepsContext } from "./scope";
 import { routeKey } from "./queries";
 
@@ -25,11 +27,14 @@ interface ActionPost {
   route: string;
   body: Record<string, unknown>;
   said: string;
+  /** What an `ok` answer makes of the cached `pr_open` item of a run. */
+  patch?: { run: number; change: (item: PrOpenItem) => PrOpenItem };
 }
 
 /** A console action as a mutation resolving to the daemon's `{ ok, detail }`.
- *  An `ok` answer re-reads the fleet and every route query of `base`, and
- *  says its sentence in the toast; a refusal changes nothing. */
+ *  An `ok` answer applies the post's patch, re-reads the fleet and every
+ *  route query of `base`, and says its sentence in the toast; a refusal
+ *  changes nothing. */
 export function useAction() {
   const deps = useContext(PollDepsContext);
   const client = useQueryClient();
@@ -39,6 +44,7 @@ export function useAction() {
     onSuccess: (result, post) => {
       if (!result.ok) return;
       toast(post.said);
+      if (post.patch) patchFleetItem(client, post.base, post.patch.run, post.patch.change);
       void client.invalidateQueries({ queryKey: ["fleet"] });
       void client.invalidateQueries({ queryKey: ["route", post.base] });
     },

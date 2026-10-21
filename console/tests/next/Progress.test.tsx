@@ -164,3 +164,43 @@ test("the Stage line links to the Progress section by its id", async () => {
   expect(link.getAttribute("href")).toBe("#progress");
   expect(document.getElementById("progress")).toBe(section());
 });
+
+/** Cap 1: round 1 asks for changes, then the terminal adjudication records round 2 as `last`. */
+function adjudicated(last: Partial<RunDetail["rounds"][number]>): RunDetail {
+  return {
+    ...liveDetail,
+    run: { ...liveDetail.run, max_rounds: 1 },
+    events: [
+      ...liveDetail.events,
+      { at: at(16, 50), kind: "phase_change", summary: "addressing -> verifying" },
+      { at: at(16, 52), kind: "phase_change", summary: "verifying -> reviewing: terminal adjudication" },
+    ],
+    rounds: [round1, { ...round1, round: 2, started_ms: at(16, 52) + 2, ended_ms: at(16, 53), ...last }],
+    steer_notes: [],
+  };
+}
+
+test("the terminal adjudication after the last review round reads as the final check, not a review round past the cap", async () => {
+  await mount(progressFetch({ detail: adjudicated({ verdict: "pass", findings: [] }), asks: { ...asks, asks: [] } }));
+  const texts = items().map((li) => `${line(li).time} ${line(li).text}`);
+  expect(texts).toEqual([
+    "16:36 Run started · implementing",
+    "16:45 Review round 1: changes requested, 1 must-fix",
+    "16:45 Back to implement",
+    "16:50 Fix applied · verifying",
+    "16:52 Final check started",
+    "16:53 Final check: passed",
+  ]);
+  expect(texts.filter((text) => text.includes("Review round 2"))).toEqual([]);
+});
+
+test("a final check that requests changes reads failed, with its finding as the sub-line", async () => {
+  const blocker = { ...finding, message: "the sweep skips expired leases", line: 88 };
+  await mount(progressFetch({ detail: adjudicated({ verdict: "changes_requested", findings: [blocker] }), asks: { ...asks, asks: [] } }));
+  expect(items().map(line).filter((li) => li.kind === "round").at(-1)).toEqual({
+    time: "16:53",
+    kind: "round",
+    text: "Final check: failed",
+    sub: ["P1 · the sweep skips expired leases · holophyte/serve/server.py:88"],
+  });
+});
