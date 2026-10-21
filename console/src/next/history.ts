@@ -11,6 +11,7 @@ import type { AttentionItem } from "../lib/types";
 import type { ContractBodies } from "./fleet";
 import { useHistory, useReadiness } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { roundLabel } from "./components/StageChip";
 import { STATES, stateOf, type State } from "./state";
 
 interface HostedRun extends HistoryRow {
@@ -52,7 +53,7 @@ function stageWord(row: HostedRun, item: AttentionItem | null, now: number): str
   switch (row.state) {
     case "running": {
       const label = phaseLabel(row.phase);
-      return row.phase === "reviewing" ? `${label} · round ${row.rounds + 1} of ${row.max_rounds}` : label;
+      return row.phase === "reviewing" ? `${label} · ${roundLabel(row.rounds + 1, row.max_rounds)}` : label;
     }
     case "stale":
       return `stale · no beat ${formatSettled((row.heartbeat_age_ms ?? 0) + sinceSeen(row.seen_ms, now))}`;

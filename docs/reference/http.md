@@ -104,8 +104,9 @@ requeued counts toward the live one. `run_count` is the number of runs in
 the chain, 1 for a first attempt. `started_ms` is the chain's first run's
 start as epoch milliseconds; `round` is the review rounds the live run
 has recorded so far, so a run in `reviewing` is in round `round + 1`;
-`max_rounds` is the review rounds the run may take, the cap its claim
-recorded or the default; `strikes` is
+`max_rounds` is the review rounds the run may take: the cap its claim
+recorded, else the newest an earlier run of its ticket recorded since
+the ticket's last merged run, else the project's `[loop] review_rounds`; `strikes` is
 the sweep's tally for the run, 0 when it is not under suspicion.
 `ticket_url` is the ticket's page on the board (`tickets.url`), null when
 the store has none. `elapsed_ms` is wall time since `started_ms`.
@@ -374,7 +375,7 @@ while open (null when never measured); `estimate_ms`, the ticket estimate
 snapshotted when the run was claimed (null when it had none);
 `heartbeat_age_ms`, `now` minus the run's last heartbeat while open, else
 null; `rounds`, the run's own review rounds (those not in error);
-`max_rounds`, its cap, or the loop's base as `/runs/N` answers it; and
+`max_rounds`, its cap as `/runs/N` answers it; and
 `pr_url` and `host`, as `/shipped` spells them.
 
 The body echoes `since`, `until` (null when omitted) and the `limit` applied,
@@ -468,8 +469,9 @@ is live; `heartbeat_age_ms` is the daemon's `now` minus the run's last
 heartbeat while it is live and null once it has ended. `max_rounds` is
 the review-round cap the loop gave this run (two rounds plus one per 800
 changed lines, at most four), so a client can say "round 2 of 3" without
-recomputing it; a run recorded before the store carried the cap answers
-the loop's base of 2. `rounds` lists the run's review rounds oldest
+recomputing it; a run with no recorded cap (a babysit run resuming a pull
+request) answers the newest cap an earlier run of its ticket recorded
+since the ticket's last merged run, else the project's `[loop] review_rounds`. `rounds` lists the run's review rounds oldest
 first, each with its `findings` decoded into objects (`path`, `line`,
 `severity`, `criterion`, `message`) rather than the stored JSON string.
 A finding decoded from a pull-request review thread also carries `kind`

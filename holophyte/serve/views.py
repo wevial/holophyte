@@ -12,11 +12,10 @@ from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import board_mode, loop_config, sweep_config
 from holophyte.config.serve_settings import serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
-from holophyte.loop.runs import MAX_ROUNDS
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.review.criterion_ids import with_numbers
 from holophyte.serve.serve_levers import paused_item
-from holophyte.serve.serve_runs import json_host, no_store
+from holophyte.serve.serve_runs import json_host, no_store, served_round_caps
 from holophyte.story.witness_running import running_set
 from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
@@ -35,6 +34,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
     try:
         runs = store.read.live_runs(conn, SWEEPABLE_PHASES)
         chains = store.read.run_chains(conn, [run.id for run in runs])
+        caps = served_round_caps(conn, project, [run.id for run in runs])
         from holophyte.loop.stop import pending_requests
         stops = pending_requests(conn)
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
@@ -93,7 +93,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                   "time_box_ms": (int(run.timeBoxMs * scale)
                                   if run.timeBoxMs else run.timeBoxMs),
                   "round": run.reviewRoundCount,
-                  "max_rounds": run.reviewRoundCap or MAX_ROUNDS,
+                  "max_rounds": caps[run.id],
                   "strikes": (strikes[run.id].strikes
                               if strikes[run.id] is not None else 0),
                   "host": json_host(project, run.host),

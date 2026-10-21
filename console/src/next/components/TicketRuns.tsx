@@ -5,6 +5,7 @@ import { dayLabel, daysAgo, prLabel } from "../../lib/shipped";
 import { classicHref } from "../../lib/view";
 import { STATES, stateOf } from "../state";
 import { SECTION_LABEL } from "./Criteria";
+import { roundLabel } from "./StageChip";
 import { StateDot } from "./StateDot";
 
 const DASH = "–";
@@ -22,7 +23,7 @@ export function startedLabel(ms: number, now: number): string {
 function RunRow({ run, live, staleMs, base, now }: { run: TicketRun; live: StatusRun | undefined; staleMs: number; base: string; now: number }) {
   const state = stateOf({ run: { ...live, phase: run.phase, outcome: run.outcome }, staleMs });
   const word = state === "running" ? phaseLabel(run.phase, run.pr_url) : STATES[state].word;
-  const rounds = run.outcome == null && live != null ? `${live.round + 1} of ${live.max_rounds}` : run.rounds > 0 ? String(run.rounds) : DASH;
+  const rounds = run.outcome == null && live != null ? roundLabel(live.round + 1, live.max_rounds) : run.rounds > 0 ? String(run.rounds) : DASH;
   return (
     <tr data-run={run.run}>
       <td className={CELL}>
