@@ -1,14 +1,17 @@
 """The loop's witness step runs a pass for an open story whose ledger lacks
-main's tip, in the serial loop and in the pool's scheduler, and the host
-sweep starts a loop for such a story when none is live. A held project gets
-neither.
+main's tip, in the serial loop once its queue is empty and in a child the
+pool's scheduler spawns after its workers, under the project's witness
+lock, and the host sweep starts a loop for such a story when none is live.
+A held project gets neither.
 
 Run: python3 -m unittest discover -s tests -p 'test_witness_step.py' -v
 """
 from __future__ import annotations
 
+import fcntl
 import io
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -16,7 +19,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
-from loop_fixture import VALID_BODY, FakePool, LoopFixture  # noqa: E402
+from loop_fixture import ROOT, VALID_BODY, FakePool, LoopFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
@@ -33,13 +36,14 @@ from holophyte.host.supervisor import (  # noqa: E402
     reconcile_parked_pull_requests,
 )
 from holophyte.loop.runs import open_store  # noqa: E402
-from holophyte.story.witness import witness_step  # noqa: E402
+from holophyte.story.witness import witness_lock_path, witness_step  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
 from tests.test_witness_runner import PASSES, PYTHON  # noqa: E402
 
 W1_FILE = "tests/test_w1.py"
+PARKED = holophyte.loop.pool.WORKER_PARKED
 LEDGER = ("SELECT witnessKey, mainSha, verdict, verifier FROM witnessResults"
           " ORDER BY id")
 
@@ -84,8 +88,33 @@ class WitnessStepTests(LoopFixture):
             (identifier,)).fetchone()[0]
 
     def step(self):
-        with patch.object(sys, "stdout", io.StringIO()):
+        out = io.StringIO()
+        with patch.object(sys, "stdout", out):
             witness_step(self.project, self.conn, self.project_id)
+        return out.getvalue()
+
+    def file_ready(self):
+        return self.ticket_id(store.board.file_ticket(
+            self.conn, self.project_id, "NAT", VALID_BODY, column="ready"))
+
+    def take(self, *ticket_ids):
+        """What a worker's claim does to the queue: its ticket leaves it."""
+        for ticket_id in ticket_ids:
+            store.tickets.walk_ticket(self.conn, ticket_id, "in_flight")
+
+    def schedule(self, exits):
+        pool = FakePool(exits)
+        with patch.object(holophyte.loop.pool, "SPAWN", pool.spawn), \
+                patch.object(holophyte.loop.pool, "WAIT", pool.wait), \
+                patch.object(sys, "orig_argv",
+                             ["python3", "factory.py", str(self.target)]), \
+                patch.object(sys, "stdout", io.StringIO()):
+            holophyte.cli.operator.main(self.project, self.board)
+        return pool
+
+    @staticmethod
+    def modes(pool):
+        return [argv[-1] for argv in pool.spawned]
 
     def tip(self):
         return self.git("rev-parse", "main").strip()
@@ -119,20 +148,71 @@ class WitnessStepTests(LoopFixture):
             holophyte.cli.operator.main(self.project, self.board)
 
         self.assertIn("lands w1", self.subjects(), out.getvalue())
+        self.assertNotEqual(self.tip(), self.base)
         self.assertEqual(self.read(LEDGER), [
-            ("W1", self.base, "absent", "loop"),
             ("W1", self.tip(), "green", "loop")], out.getvalue())
 
     def test_the_pool_runs_a_pending_pass_before_it_returns(self):
         self.use(NATIVE + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
-        pool = FakePool([])
-        with patch.object(holophyte.loop.pool, "SPAWN", pool.spawn), \
-                patch.object(holophyte.loop.pool, "WAIT", pool.wait), \
-                patch.object(sys, "stdout", io.StringIO()):
-            holophyte.cli.operator.main(self.project, self.board)
+        pool = self.schedule([(0, None)])
 
-        self.assertEqual(pool.spawned, [])
+        self.assertEqual(self.modes(pool), ["--witness-step"])
+        self.assertEqual(pool.reaped, [(pool.next_pid, 0)])
+        self.assertEqual(pool.exits, [])
+        self.assertEqual(pool.alive, [])
+
+    def test_the_pool_spawns_its_workers_before_the_witness_child(self):
+        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.approved_story("backlog")
+        first, second = self.file_ready(), self.file_ready()
+        pool = self.schedule([(PARKED, lambda: self.take(first, second)),
+                              (PARKED, None), (0, None)])
+
+        self.assertEqual(self.modes(pool),
+                         ["--worker", "--worker", "--witness-step"])
+        self.assertEqual(self.read(LEDGER), [])
+
+    def test_a_ticket_filed_during_a_pass_gets_a_worker_and_no_second_pass(self):
+        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.approved_story("backlog")
+        first = self.file_ready()
+        filed = []
+
+        def park_and_file():
+            self.take(first)
+            filed.append(self.file_ready())
+
+        pool = self.schedule([(PARKED, park_and_file),
+                              (0, lambda: self.take(*filed)), (PARKED, None)])
+
+        self.assertEqual(self.modes(pool),
+                         ["--worker", "--witness-step", "--worker"])
+        witness_pid = pool.next_pid - 1
+        self.assertEqual([pid for pid, _ in pool.reaped],
+                         [witness_pid - 1, witness_pid, witness_pid + 1])
+
+    def test_a_held_witness_lock_skips_the_pass_until_it_is_released(self):
+        self.approved_story("backlog")
+        path = witness_lock_path(self.project)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            out = self.step()
+
+        self.assertIn("another witness pass holds the witness lock; skipping",
+                      out)
+        self.assertEqual(self.read(LEDGER), [])
+        self.step()
+        self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])
+
+    def test_the_witness_step_mode_runs_a_pass_in_its_own_process(self):
+        self.approved_story("backlog")
+        done = subprocess.run(
+            [sys.executable, "factory.py", "--witness-step", str(self.target)],
+            cwd=ROOT, capture_output=True, text=True, timeout=120)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])
 
     def test_the_sweep_starts_a_loop_once_for_a_pending_pass(self):

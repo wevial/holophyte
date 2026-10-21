@@ -80,6 +80,18 @@ def worker(target, provider):
         reset(target)
 
 
+def witness_child(target, provider):
+    from holophyte.story.witness import witness_step
+
+    conn = open_store(target)
+    try:
+        witness_step(target, conn, store.tickets.ensure_project(
+            conn, provider.team, target.path))
+    finally:
+        conn.close()
+    return 0
+
+
 def _worker(target, provider):
     from holophyte.loop.claim import _claim_next
     from holophyte.loop.claim_store import BOARD_DOWN
@@ -164,10 +176,10 @@ def scheduler(target, provider, knobs):
     from holophyte.loop.claim import _park_unlisted
     from holophyte.loop.claim_store import announce, store_mode
     from holophyte.loop.dispatch import _startup_sweep
-    from holophyte.story.witness import witness_step
 
     conn = open_store(target)
     pool = pool_handoff.restore(target)
+    witness = _WitnessChild()
     previous = set(pool)
     slots = iter(range(pool_handoff.next_slot(pool), sys.maxsize))
     state = _PoolState(self_hosted(target), knobs.stop_on_failure,
@@ -189,9 +201,8 @@ def scheduler(target, provider, knobs):
             admission.reconcile_tick(target, conn, project, provider, first_tick)
             first_tick = False
             held = admission.held_line(conn, project)
-            if admission.held_idle(held, pool, conn, project):
+            if admission.held_idle(held, pool or witness.child, conn, project):
                 return 1 if state.broken else 0
-            witness_step(target, conn, project)
             listing = None
             if state.spawning and not held and len(pool) < knobs.workers:
                 listing = pool_handoff.listing(target, conn, project, provider)
@@ -204,7 +215,9 @@ def scheduler(target, provider, knobs):
                         slot = next(slots)
                         child = _spawn_worker(target, slot)
                         pool[child.pid] = (slot, child)
-            if not pool:
+            if state.spawning:
+                witness.spawn_if_due(target, conn, project)
+            if not pool and witness.child is None:
                 if state.board_down or (listing is None and state.spawning):
                     what = (" could not be read back at the claim"
                             if state.board_down else "'s ready listing failed")
@@ -221,14 +234,51 @@ def scheduler(target, provider, knobs):
                                    [task["id"] for task in listing])
                 print("[holo2] Linear has no ready tickets. done.")
                 return 1 if state.broken else 0
-            pid, code = WAIT({pid: child for pid, (_, child) in pool.items()},
-                             knobs.tick_sec)
-            if pid in pool:
-                state.exited(pool.pop(pid)[0], code)
-                previous.discard(pid)
-                pool_handoff.save(target, pool, previous)
+            _reap(target, pool, previous, state, witness, knobs.tick_sec)
     finally:
         conn.close()
+
+
+def _reap(target, pool, previous, state, witness, tick_sec):
+    pid, code = WAIT({**{pid: child for pid, (_, child) in pool.items()},
+                      **witness.children()}, tick_sec)
+    if not witness.reaped(pid, code) and pid in pool:
+        state.exited(pool.pop(pid)[0], code)
+        previous.discard(pid)
+        pool_handoff.save(target, pool, previous)
+
+
+class _WitnessChild:
+    def __init__(self):
+        self.child = None
+        self.spawned_at = None
+
+    def spawn_if_due(self, target, conn, project):
+        from holophyte.story.witness import pass_due
+
+        if self.child is not None:
+            return
+        tip = pass_due(target, conn, project, self.spawned_at)
+        if tip is None:
+            return
+        program, argv = reexec_command()
+        env = {k: v for k, v in os.environ.items() if k != WORKER_SLOT_ENV}
+        self.child = SPAWN([program, *argv[1:], "--witness-step"], env=env,
+                           stdin=subprocess.DEVNULL)
+        self.spawned_at = tip
+        print(f"[holo2] started a witness pass at {tip[:12]} as pid"
+              f" {self.child.pid}")
+
+    def children(self):
+        return {} if self.child is None else {self.child.pid: self.child}
+
+    def reaped(self, pid, code):
+        if self.child is None or pid != self.child.pid:
+            return False
+        if code:
+            print(f"[holo2] the witness pass exited {code}")
+        self.child = None
+        return True
 
 
 class _PoolState:

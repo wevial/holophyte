@@ -1,5 +1,7 @@
 """A story's witness commands run at one commit of main, one verdict each."""
 import collections
+import contextlib
+import fcntl
 import hashlib
 import os
 import re
@@ -205,16 +207,54 @@ def pass_pending(target, conn, project_id):
 
 
 def witness_step(target, conn, project_id):
+    with witness_lock(target) as taken:
+        if not taken:
+            print("[holo2] another witness pass holds the witness lock;"
+                  " skipping")
+            return
+        try:
+            for story_id in pass_pending(target, conn, project_id):
+                rows = witness_pass(target, conn, story_id, "loop")
+                if rows:
+                    print(f"[holo2] witness pass at {rows[0].mainSha}: "
+                          + ", ".join(f"{row.witnessKey} {row.verdict}"
+                                      for row in rows))
+        except TIP_FAILURES as error:
+            print(f"[holo2] the witness pass could not run ({error}); the next"
+                  " pass tries again")
+
+
+def witness_lock_path(target):
+    return Path(target.holo_dir) / "witness.lock"
+
+
+@contextlib.contextmanager
+def witness_lock(target):
+    path = witness_lock_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     try:
-        for story_id in pass_pending(target, conn, project_id):
-            rows = witness_pass(target, conn, story_id, "loop")
-            if rows:
-                print(f"[holo2] witness pass at {rows[0].mainSha}: "
-                      + ", ".join(f"{row.witnessKey} {row.verdict}"
-                                  for row in rows))
-    except TIP_FAILURES as error:
-        print(f"[holo2] the witness pass could not run ({error}); the next"
-              " pass tries again")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+        else:
+            yield True
+    finally:
+        os.close(fd)
+
+
+def pass_due(target, conn, project_id, spawned_at):
+    with witness_lock(target) as free:
+        if not free:
+            return None
+    try:
+        if not pass_pending(target, conn, project_id):
+            return None
+        tip = main_tip(target)
+    except TIP_FAILURES:
+        return None
+    return None if tip == spawned_at else tip
 
 
 def pass_refusal(conn, story_id):
