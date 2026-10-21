@@ -313,10 +313,42 @@ cp -a /workspace /home/reviewer/candidate
                       *turn]
 
 
+FENCE_RE = re.compile(r"[ \t]*((?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)")
+
+
+def fence_flags(lines):
+    fence, item_indent = "", 0
+    for line in lines:
+        match = FENCE_RE.match(line)
+        run, rest = match.group(2, 3) if match else ("", "")
+        if fence and line.strip() and (
+                len(line) - len(line.lstrip()) < item_indent):
+            fence = ""
+        if not fence and run and not (run[0] == "`" and "`" in rest):
+            fence = run
+            item_indent = match.start(2) if match.group(1) else 0
+        elif fence and run.startswith(fence) and not rest.strip():
+            fence = ""
+        elif not fence:
+            yield line, False
+            continue
+        yield line, True
+
+
+def unwrapped(line: str) -> str:
+    for token in ("**", "__", "`"):
+        if (len(line) > 2 * len(token) and line.startswith(token)
+                and line.endswith(token)):
+            return line[len(token):-len(token)]
+    return line
+
+
 def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
     """Raise unless one allowed verdict line ends it: a bad reply is never approval."""
     allowed = [f"VERDICT: {verdict}" for verdict in verdicts]
-    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    lines = [line.strip() if fenced else unwrapped(line.strip())
+             for line, fenced in fence_flags(message.splitlines())
+             if line.strip()]
     found = [line for line in lines if line in allowed]
     if len(found) != 1 or lines[-1] != found[0]:
         raise ReviewBoundaryError(

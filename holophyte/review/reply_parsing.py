@@ -172,8 +172,11 @@ def finding_severity(block):
 
 # The separator is loose; the status word is not: only `met` clears the gate.
 CRITERION_LINE_RE = re.compile(
-    r"^\s*CRITERION\s+([Cc]?\d+)\s*:\s*(met|not met|unwitnessed)\b"
-    r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
+    r"^\s*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<open>\*\*|__|`)?"
+    r"CRITERION\s+(?P<n>[Cc]?\d+)\s*:\s*(?P<status>met|not met|unwitnessed)"
+    r"(?:\b|(?=(?P=open)))(?P<close>(?P=open))?"
+    r"\s*(?:[-\u2013\u2014:]+\s*)?(?P<note>.*?)(?(close)|(?P=open)?)\s*$",
+    re.I | re.M)
 
 
 UNWITNESSED_NOTE = "no CRITERION line in the reply"
@@ -185,10 +188,24 @@ SCOPE_LINE_RE = re.compile(
     r"[ \t]*(?:[-\u2013\u2014:]+[ \t]*)?(?P<note>.*?)[ \t]*$", re.I | re.M)
 
 
+def fenced_spans(reply):
+    spans, offset = [], 0
+    for line, fenced in review_runner.fence_flags(
+            reply.splitlines(keepends=True)):
+        if fenced:
+            spans.append((offset, offset + len(line)))
+        offset += len(line)
+    return spans
+
+
 def criteria_block(reply):
-    block = {}
+    block, fenced = {}, fenced_spans(reply)
     for match in CRITERION_LINE_RE.finditer(reply):
-        block[parse(match.group(1))] = (match.group(2).lower(), match.group(3))
+        bare = match[0].lstrip()[:9].upper() == "CRITERION"
+        if not bare and any(a <= match.start("n") < b for a, b in fenced):
+            continue
+        block[parse(match["n"])] = (match["status"].lower(),
+                                     match["note"])
     return block
 
 
