@@ -24,10 +24,10 @@ def set_due(target, conn, story_id, sha):
             or any(row.at <= found.approvedAt for row in current)):
         return True
     last = min(current, key=lambda row: row.id)
-    if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour):
-        return True
     if last.mainSha == sha:
         return False
+    if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour):
+        return True
     try:
         return (_paths_changed(target.path, last.mainSha, sha,
                                found.witnessPaths)

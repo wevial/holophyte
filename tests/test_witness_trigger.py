@@ -88,7 +88,7 @@ class WitnessPathsFilingTests(ConfigTestCase):
         self.assertEqual((found.state, found.witnessPaths),
                          ("approved", ("lib/reader/", "app/contract/")))
         body = self.directory / "story.md"
-        body.write_text(body.read_text().replace("- app/contract/\n", ""))
+        body.write_text(body.read_text().replace("app/contract/\n", ""))
 
         status, lines = self.cli("--file-story", "orders-csv", "--update",
                                  "NAT-1", "--revision", str(revision))
@@ -206,22 +206,17 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         self.assert_ran(b, 2)
         self.assertEqual(pass_pending(self.target, self.conn, 1), [])
 
-    def test_a_last_run_before_the_nightly_hour_runs_again_at_the_same_tip(self):
+    def test_a_set_that_last_ran_at_the_tip_is_not_due_after_the_nightly_hour(self):
         hour = (datetime.datetime.now().hour + 12) % 24
         self.target = self.project(f"[story]\nwitness_nightly_hour = {hour}\n")
         self.story()
-        a = self.land()
-        self.assertEqual(pass_pending(self.target, self.conn, 1), [])
+        self.land()
 
         self.age_real_rows(14 * HOUR_MS)
 
-        self.assertEqual(pass_pending(self.target, self.conn, 1),
-                         [self.story_id])
-        rows = self.loop()
-        self.assertEqual([(row.witnessKey, row.mainSha, row.carriedFrom)
-                          for row in rows], [("W1", a, None), ("W2", a, None)])
-        self.assertEqual((self.counter("W1"), self.counter("W2")), (2, 2))
         self.assertEqual(pass_pending(self.target, self.conn, 1), [])
+        self.assertEqual(self.loop(), [])
+        self.assertEqual((self.counter("W1"), self.counter("W2")), (1, 1))
 
     def test_a_pass_cut_short_after_one_witness_runs_the_rest_on_retry(self):
         self.story()

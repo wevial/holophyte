@@ -179,14 +179,13 @@ class StoryAdvisoryTests(StoryCliCase):
 
 
 def paths_section(*items):
-    return "\n".join(["## Witness paths", "", *(f"- {item}" for item in items),
-                      "", ""])
+    return "\n".join(["## Witness paths", "", "```", *items, "```", "", ""])
 
 
 class WitnessPathsTests(StoryCliCase):
     def test_the_story_names_its_witness_paths(self):
         directory = self.story(extra=paths_section("lib/reader/",
-                                                   "`app/contract/`"))
+                                                   "app/contract/"))
 
         story = story_template.parse_story((directory / "story.md").read_text())
 
@@ -202,6 +201,13 @@ class WitnessPathsTests(StoryCliCase):
                                         extra=paths_section("lib/", item))
                 self.assert_refused(directory, f"witness path is not one "
                                     f"repository-relative path: {item}")
+
+    def test_eleven_witness_paths_are_one_problem_naming_the_eleventh(self):
+        paths = [f"lib/part{index}/" for index in range(11)]
+        directory = self.story(extra=paths_section(*paths))
+
+        self.assert_refused(directory, "'Witness paths' has 11 lines; the "
+                            "limit is 10: lib/part10/")
 
 
 if __name__ == "__main__":

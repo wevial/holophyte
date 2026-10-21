@@ -41,8 +41,8 @@ W1: <exact runnable command>
 
 ## Witness paths
 
-<!-- Optional; drop the section to leave it out. One list item per
-     repository-relative path, such as `- lib/reader/`. A loop pass runs the
+<!-- Optional; drop the section to leave it out. One fenced block, one
+     repository-relative path a line, at most ten. A loop pass runs the
      story's whole witness set at a new commit of main when a child's merge
      landed since the set's last real run, when a file under one of these
      paths changed since then, or once a night at `[story]
