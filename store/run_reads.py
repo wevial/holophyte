@@ -437,7 +437,10 @@ def round_caps(conn, run_ids):
     rows = conn.execute(
         "SELECT r.id, COALESCE(r.reviewRoundCap, (SELECT e.reviewRoundCap"
         " FROM runs e WHERE e.ticketId = r.ticketId AND e.id < r.id"
-        " AND e.reviewRoundCap IS NOT NULL ORDER BY e.id DESC LIMIT 1))"
+        " AND e.reviewRoundCap IS NOT NULL AND NOT EXISTS (SELECT 1 FROM runs m"
+        "   WHERE m.ticketId = r.ticketId AND m.outcome = 'merged'"
+        "   AND m.id >= e.id AND m.id < r.id)"
+        " ORDER BY e.id DESC LIMIT 1))"
         f" FROM runs r WHERE r.id IN ({', '.join('?' * len(run_ids))})",
         run_ids).fetchall()
     return dict(rows)

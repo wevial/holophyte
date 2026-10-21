@@ -3,7 +3,7 @@ review round cap."""
 import store
 import store.tickets
 from holophyte.loop.runs import MAX_ROUNDS
-from tests.phase_fixture import advance_phase, park_run
+from tests.phase_fixture import advance_phase, finish_run, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 
 PR = "https://github.com/acme/repo/pull/2404"
@@ -68,3 +68,21 @@ class ServedRoundCapTests(ServeTestCase):
         self.assertEqual(run["max_rounds"], 3)
         _code, _, detail = self.request("GET", f"/runs/{self.run}")
         self.assertEqual(detail["run"]["max_rounds"], 3)
+
+    def test_a_cap_recorded_before_a_merge_is_not_served_after_it(self):
+        self.seed()
+        merged = self.run
+        with store.open(str(self.db)) as conn:
+            store.set_review_round_cap(conn, merged, 4)
+            finish_run(conn, merged, "merged", now=self.now - MIN)
+            ticket, project = conn.execute(
+                "SELECT t.id, t.projectId FROM runs r JOIN tickets t"
+                " ON t.id = r.ticketId WHERE r.id = ?", (merged,)).fetchone()
+            self.run = store.claim(conn, project, ticket, now=self.now)
+            advance_phase(conn, self.run, "reviewing", now=self.now)
+        self.start("[loop]\nreview_rounds = 2\nreview_rounds_max = 4\n")
+        _code, _, status = self.request("GET", "/status")
+        (run,) = status["runs"]
+        self.assertEqual((run["id"], run["max_rounds"]), (self.run, 2))
+        _code, _, detail = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(detail["run"]["max_rounds"], 2)
