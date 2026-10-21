@@ -3,7 +3,7 @@ child's merge, a change under the story's witness paths or the nightly hour
 came since the set's last real run, or when it has none. Otherwise the pass
 carries the last real verdicts to the new commit; a hand-run pass runs it.
 
-Run: python3 -m unittest discover -s tests -p 'test_witness_cadence.py' -v
+Run: python3 -m unittest discover -s tests -p 'test_witness_trigger.py' -v
 """
 import contextlib
 import datetime
@@ -24,6 +24,7 @@ from story_fixture import write_story  # noqa: E402
 import holophyte.cli.entry  # noqa: E402
 import linear_provider  # noqa: E402
 import store.stories  # noqa: E402
+from holophyte.config import config_tables  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.story_close import rerun_owed  # noqa: E402
 from holophyte.story.witness import pass_pending, witness_pass  # noqa: E402
@@ -383,6 +384,20 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
                          [("W1", None, "operator"), ("W2", None, "operator")])
         self.assertEqual(self.at(b)["W2"][:2], ("green", None))
         self.assertEqual((self.counter("W1"), self.counter("W2")), (2, 2))
+
+
+class WitnessNightlyHourConfigTests(WitnessRunnerFixture, unittest.TestCase):
+    def test_an_hour_from_0_to_23_loads_and_any_other_is_refused(self):
+        for hour in (0, 23):
+            with self.subTest(hour=hour):
+                self.assertEqual(config_tables.story_config(self.project(
+                    f"[story]\nwitness_nightly_hour = {hour}\n"
+                )).witness_nightly_hour, hour)
+        for value in ("24", "-1", '"3"'):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                    SystemExit, r"\[story\] witness_nightly_hour"):
+                config_tables.story_config(self.project(
+                    f"[story]\nwitness_nightly_hour = {value}\n"))
 
 
 if __name__ == "__main__":

@@ -617,7 +617,7 @@ Each module, one line:
   and notes each changed verdict on the parent. A loop pass runs the
   whole witness set only when it is due, and otherwise carries the last
   real verdicts to the new commit.
-- `holophyte/story/witness_cadence.py` — `set_due()` answers whether a loop
+- `holophyte/story/witness_trigger.py` — `set_due()` answers whether a loop
   pass runs a story's witness set at a commit: when the story has no real
   run of every witness since the story's latest approval, when a child's
   merged run's `mergeSha` is an

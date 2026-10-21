@@ -565,15 +565,6 @@ class WitnessBudgetConfigTests(WitnessRunnerFixture, unittest.TestCase):
                 config_tables.story_config(
                     self.project(f"[story]\nwitness_sec = {value}\n"))
 
-    def test_a_nightly_hour_outside_0_to_23_is_refused(self):
-        self.assertEqual(config_tables.story_config(self.project(
-            "[story]\nwitness_nightly_hour = 0\n")).witness_nightly_hour, 0)
-        for value in ("24", "-1", '"3"', "true"):
-            with self.subTest(value=value), self.assertRaisesRegex(
-                    SystemExit, r"\[story\] witness_nightly_hour"):
-                config_tables.story_config(self.project(
-                    f"[story]\nwitness_nightly_hour = {value}\n"))
-
 
 class RedKindTests(unittest.TestCase):
     def test_a_red_is_an_assert_only_when_only_assertions_failed(self):

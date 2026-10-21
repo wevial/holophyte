@@ -24,7 +24,7 @@ from holophyte.story.story_close import (
     settle_owed,
     settle_story,
 )
-from holophyte.story.witness_cadence import carry, set_due
+from holophyte.story.witness_trigger import carry, set_due
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
