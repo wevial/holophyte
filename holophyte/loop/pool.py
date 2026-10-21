@@ -1,4 +1,6 @@
+import contextlib
 import os
+import signal
 import subprocess
 import sys
 from time import monotonic, sleep
@@ -29,6 +31,7 @@ SPAWN = subprocess.Popen
 
 
 WAIT_POLL_S = 0.5
+MAX_RESTARTS = 2
 
 
 def _wait_any(children, timeout):
@@ -81,14 +84,20 @@ def worker(target, provider):
 
 
 def witness_child(target, provider):
-    from holophyte.story.witness import witness_step
+    from holophyte.story.witness import COMMAND, witness_step
 
+    def cancel(signum, frame):
+        COMMAND.cancel()
+        raise SystemExit(128 + signum)
+
+    previous = signal.signal(signal.SIGTERM, cancel)
     conn = open_store(target)
     try:
         witness_step(target, conn, store.tickets.ensure_project(
-            conn, provider.team, target.path))
+            conn, provider.team, target.path), step=True)
     finally:
         conn.close()
+        signal.signal(signal.SIGTERM, previous)
     return 0
 
 
@@ -215,9 +224,8 @@ def scheduler(target, provider, knobs):
                         slot = next(slots)
                         child = _spawn_worker(target, slot)
                         pool[child.pid] = (slot, child)
-            if state.spawning:
-                witness.spawn_if_due(target, conn, project)
-            if not pool and witness.child is None:
+            witness.tick(target, conn, project, state)
+            if not pool and witness.child is None and not witness.waiting:
                 if state.board_down or (listing is None and state.spawning):
                     what = (" could not be read back at the claim"
                             if state.board_down else "'s ready listing failed")
@@ -240,8 +248,12 @@ def scheduler(target, provider, knobs):
 
 
 def _reap(target, pool, previous, state, witness, tick_sec):
-    pid, code = WAIT({**{pid: child for pid, (_, child) in pool.items()},
-                      **witness.children()}, tick_sec)
+    children = {**{pid: child for pid, (_, child) in pool.items()},
+                **witness.children()}
+    if not children:
+        sleep(tick_sec)
+        return
+    pid, code = WAIT(children, tick_sec)
     if not witness.reaped(pid, code) and pid in pool:
         state.exited(pool.pop(pid)[0], code)
         previous.discard(pid)
@@ -254,15 +266,30 @@ class _WitnessChild:
         self.child = None
         self.spawned_at = None
         self.exited_at = None
+        self.waiting = False
+        self.cancelled = set()
+        self.let_run = set()
+
+    def tick(self, target, conn, project, state):
+        if state.spawning:
+            self.cancel_if_triggered(target, conn)
+            self.spawn_if_due(target, conn, project)
+        elif state.draining:
+            self.waiting = False
 
     def spawn_if_due(self, target, conn, project):
         from holophyte.story.witness import pass_due
+        from holophyte.story.witness_trigger import quiet
 
+        self.waiting = False
         if self.child is not None:
             return
         tip = pass_due(target, conn, project)
         if tip is None or (tip == self.spawned_at
                            and monotonic() - self.exited_at < self.tick_sec):
+            return
+        if not quiet(target, tip):
+            self.waiting = True
             return
         self.spawned_at = tip
         program, argv = reexec_command()
@@ -270,6 +297,33 @@ class _WitnessChild:
         self.child = SPAWN([program, *argv[1:], "--witness-step"], env=env,
                            stdin=subprocess.DEVNULL)
         print(f"[holo2] started a witness pass as pid {self.child.pid}")
+
+    def cancel_if_triggered(self, target, conn):
+        from holophyte.story.witness_running import (
+            add_restart,
+            restarts,
+            running_step,
+        )
+
+        running = running_step(target)
+        if running is None or running[0] in self.cancelled:
+            return
+        pid, identifier, ticket, sha = running
+        tip = _triggering_tip(target, conn, ticket, sha)
+        if tip is None or (pid, tip) in self.let_run:
+            return
+        moved = f"{identifier} at {sha[:12]}, main now at {tip[:12]}"
+        if restarts(target, ticket) >= MAX_RESTARTS:
+            self.let_run.add((pid, tip))
+            print(f"[holo2] letting the witness pass of {moved} run: restarted"
+                  f" {MAX_RESTARTS} times since its last completed pass")
+            return
+        add_restart(target, ticket)
+        self.cancelled.add(pid)
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+        print(f"[holo2] cancelled the witness pass of {moved}; it restarts"
+              " once main is quiet")
 
     def children(self):
         return {} if self.child is None else {self.child.pid: self.child}
@@ -282,6 +336,19 @@ class _WitnessChild:
         self.child = None
         self.exited_at = monotonic()
         return True
+
+
+def _triggering_tip(target, conn, ticket, sha):
+    from holophyte.story.witness import TIP_FAILURES, main_tip
+    from holophyte.story.witness_trigger import _GitFailed, triggered
+
+    try:
+        tip = main_tip(target)
+        if tip != sha and triggered(target, conn, ticket, sha, tip):
+            return tip
+    except (*TIP_FAILURES, _GitFailed):
+        pass
+    return None
 
 
 class _PoolState:

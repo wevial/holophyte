@@ -106,7 +106,7 @@ class ApproveStoryFixture(ConfigTestCase):
         holds `UNIT_VARIABLE` as each launch found it."""
         seen = []
 
-        def launch(target, command, cwd, timeout):
+        def launch(target, command, cwd, timeout, on_start=None):
             seen.append(os.environ.get(UNIT_VARIABLE))
             return 1, "FAILED (failures=1)\n"
 

@@ -622,7 +622,8 @@ Each module, one line:
   store names the witness set the loop's witness step is running:
   `mark_running()` writes it, `clear_running()` removes it and
   `running_set()` reads it for `/status`'s `witnesses`, ignoring a record
-  whose process has exited.
+  whose process has exited. `witness-restarts.json` beside it counts each
+  story's cancelled witness runs since its last completed pass.
 - `holophyte/story/witness_trigger.py` — `set_due()` answers whether a loop
   pass runs a story's witness set at a commit: when the story has no real
   run of every witness since the story's latest approval, when a child's
