@@ -1,5 +1,5 @@
 import { useContext, useId, useState } from "react";
-import { ageOf, describe, entryKey, prFacts, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
+import { ageOf, describe, entryKey, type NeedsYouEntry } from "../../lib/attention";
 import type { Triage } from "../../lib/contract.gen";
 import { formatAge, formatClock } from "../../lib/format";
 import { sinceSeen, UNREACHABLE, type HostRecord } from "../../lib/hosts";
@@ -76,15 +76,10 @@ const linkClass = "border-b border-rule text-ink-2 hover:border-ink hover:text-i
 
 function PullRequestLine({ item }: { item: AttentionItem }) {
   const url = str(item.pr_url);
-  const pr = item.kind === "pr_open" && item.pr != null && typeof item.pr === "object" ? (item.pr as PrFacts) : null;
-  const number = num(pr?.number);
-  const label = number != null ? `PR #${number}` : url != null ? prLabel(url) : null;
-  if (label == null) return <p className="text-ink-3">No pull request yet</p>;
-  const name = url == null ? label : <a href={url} target="_blank" rel="noreferrer" className={linkClass}>{label}</a>;
+  if (url == null) return <p className="text-ink-3">No pull request yet</p>;
   return (
     <p data-pr-line>
-      {name}
-      {pr != null && ` · ${prFacts(pr).map((fact) => fact.label).join(" · ")}`}
+      <a href={url} target="_blank" rel="noreferrer" className={linkClass}>{prLabel(url)}</a>
     </p>
   );
 }

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { Attention, Status, StatusRun } from "../../src/lib/contract.gen";
+import { addressOf } from "../../src/lib/hosts";
+import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import ready from "../../../tests/fixtures/serve/run-merge-ready.json";
@@ -40,6 +42,7 @@ interface Daemon {
   ticketBody?: string;
   sendBack?: { ok: boolean; detail: string };
   markReady?: { ok: boolean; detail: string };
+  merge?: { ok: boolean; detail: string };
   /** What `demo` answers once mark-ready is posted; its `/attention` waits on `answer`. */
   woken?: { items: Item[]; queued: Status["queued"]; answer: Promise<void> };
 }
@@ -48,7 +51,7 @@ let client: QueryClient | null = null;
 /** `demo`'s `/attention` requests made after the mark-ready post. */
 let readsAfterPost = 0;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, woken }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
@@ -76,6 +79,10 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
     if (url.endsWith("/actions/send-back")) {
       await fetchImpl(url, init);
       return Response.json(sendBack);
+    }
+    if (url.endsWith("/actions/merge")) {
+      await fetchImpl(url, init);
+      return Response.json(merge);
     }
     if (url.endsWith("/actions/mark-ready")) {
       await fetchImpl(url, init);
@@ -288,6 +295,59 @@ test("Mark ready for review is absent on a ready pull request and on a daemon wi
     await openRow(pr);
     expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" })).toBeTruthy();
     expect(within(rows()[0]!).queryByRole("button", { name: "Mark ready for review" })).toBeNull();
+    unmount();
+  }
+});
+
+const TOKEN = "tok-478";
+const detailButton = (name: string) => within(rows()[0]!.querySelector<HTMLElement>("[data-pr-detail]")!).queryByRole("button", { name });
+const pressMerge = async (name: string) => {
+  await act(async () => {
+    fireEvent.click(name === "Merge" ? detailButton("Merge")! : within(screen.getByRole("dialog")).getByRole("button", { name }));
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+};
+
+test("an opened ready-to-merge row leads with Merge, whose confirmed dialog posts the run with the bearer and toasts", async () => {
+  storeToken(addressOf(DEMO), TOKEN);
+  const seen = await mount({ items: [readyPark], actions: true });
+  await openRow(42);
+  expect(detailButton("Merge")!.dataset.variant).toBe("primary");
+  expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("quiet");
+  await pressMerge("Merge");
+  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
+  const safe = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
+  expect([...safe].map((fact) => fact.textContent)).toEqual(ready.facts.map((fact) => fact.detail));
+  await pressMerge("Merge PR #42");
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
+    { url: `${DEMO}/actions/merge`, body: { run: 9 }, authorization: `Bearer ${TOKEN}` },
+  ]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.querySelector("[data-toast]")?.textContent).toBe("Approved PR #42. The loop merges it on its next claim.");
+});
+
+test("a refused merge keeps the row's dialog open with the daemon's reason and its confirm pressable again", async () => {
+  const seen = await mount({ items: [readyPark], actions: true, merge: { ok: false, detail: "GitHub's review decision is REVIEW_REQUIRED" } });
+  await openRow(42);
+  await pressMerge("Merge");
+  await pressMerge("Merge PR #42");
+  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
+  expect(within(dialog).getByRole("alert").textContent).toBe("GitHub's review decision is REVIEW_REQUIRED");
+  const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
+  expect(confirm.hasAttribute("disabled")).toBe(false);
+  expect(document.querySelector("[data-toast]")?.textContent ?? "").toBe("");
+  await pressMerge("Merge PR #42");
+  expect(seen.filter((request) => request.url.endsWith("/actions/merge"))).toHaveLength(2);
+});
+
+test("an opened row not ready to merge, or a draft, draws no Merge and keeps Open PR to review primary", async () => {
+  for (const [item, pr] of [[readyPark, 42], [draftPark, 45]] as const) {
+    await mount({ items: [item], actions: true, readyRuns: [] });
+    await openRow(pr);
+    expect(detailButton("Merge")).toBeNull();
+    expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
     unmount();
   }
 });

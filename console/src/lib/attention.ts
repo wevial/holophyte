@@ -526,3 +526,9 @@ export function needsYouEntries(items: AttentionItem[], readiness: ReadinessMap,
   const entries = collapseFailed(kept).map((entry) => ({ ...entry, readyToMerge: entry.item.kind === "pr_open" }));
   return orderByAge(entries, (entry) => ageOf(entry.item, now));
 }
+
+/** The Overview's Waiting on you: the Needs you entries but a pull request
+ *  ready to merge, which Pull requests shows with its Merge. */
+export function waitingOnYou(items: AttentionItem[], readiness: ReadinessMap, now: number): NeedsYouEntry[] {
+  return needsYouEntries(items, readiness, now).filter((entry) => !entry.readyToMerge);
+}
