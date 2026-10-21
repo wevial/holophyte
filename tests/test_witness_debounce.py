@@ -23,6 +23,7 @@ import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
+from holophyte.host.supervisor_lock import pid_alive  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.witness import witness_step  # noqa: E402
 from provider import board_for  # noqa: E402
@@ -206,14 +207,6 @@ def _kill(child):
         child.wait()
 
 
-def _alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
 class WitnessDebounceTests(_DebounceFixture):
     def setUp(self):
         super().setUp()
@@ -309,9 +302,9 @@ class WitnessDebounceTests(_DebounceFixture):
             child = scheduler.children[0]
             started = time.monotonic()
             code = child.wait(timeout=10)
-            while _alive(killed[0]) and time.monotonic() - started < 10:
+            while pid_alive(killed[0]) and time.monotonic() - started < 10:
                 time.sleep(0.05)
-            self.assertFalse(_alive(killed[0]))
+            self.assertFalse(pid_alive(killed[0]))
             self.assertEqual(self.read("SELECT mainSha FROM witnessResults"
                                        f" WHERE mainSha = '{a}'"), [])
             return child.pid, code
