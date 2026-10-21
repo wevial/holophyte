@@ -93,6 +93,7 @@ holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop en
 holo sweep [--act] | board diff | board import -p NAME|PATH
 holo store import PATH --dry-run -p NAME|PATH     # factory.py --import-store PATH --dry-run
 holo report [--since WINDOW] [--notes] [--json] -p NAME|PATH # the window's counts, read from the store
+holo draft [KEY] -p NAME|PATH                    # ticketTemplate.md naming the project's implementer profiles, or KEY's stored body with its fields moved into the +++ header, for holo file --update
 holo file TICKET.md [--backlog] [--priority P] ["note" [--author NAME]] -p NAME|PATH # factory.py --file-ticket; --update KEY [--revision N] replaces the body
 holo move KEY ready|backlog --revision N ["note"] -p NAME|PATH # factory.py --move
 holo cancel KEY --revision N "note" -p NAME|PATH  # factory.py --cancel
