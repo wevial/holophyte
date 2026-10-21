@@ -13,7 +13,8 @@ import store.board
 import store.steer_notes
 import store.tickets
 from holophyte.loop import adjudicate, merge_gate, review_round, runs, steering
-from holophyte.loop.gates import RunFailure
+from holophyte.loop.gates import MergeParked, RunFailure
+from holophyte.review import reproduce
 from tests.test_ticket_criteria_rows import COMMANDS, ticket_body
 
 CRITERIA = ["the list shows every entry"]
@@ -132,6 +133,34 @@ class SteerVerifyTests(unittest.TestCase):
         (ticket,) = [row for row in json.loads(results)
                      if row["source"] == "ticket"]
         self.assertEqual((ticket["command"], ticket["exitCode"]), (V2, 0))
+
+    def test_rendering_a_rendered_ticket_keeps_one_multiline_verify_block(self):
+        split = f"{V2}\n\n{V1}"
+        key = self.conn.execute(
+            "SELECT linearIdentifier, projectId FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone()
+        store.board.edit_ticket(self.conn, key[1], key[0], body(split),
+                                expected_revision=2, now=self.edited + 500)
+        self.steer()
+        once = steering.reviewed_ticket(self.conn, self.run_id, body(V1))
+        self.assertIn(f"Amended verify command(s):\n{split}", once)
+        twice = steering.reviewed_ticket(self.conn, self.run_id, once)
+        self.assertTrue(twice.endswith(f"Amended verify command(s):\n{split}"))
+        self.assertEqual((twice.count(V1), twice.count(V2)),
+                         (once.count(V1), once.count(V2)))
+
+    def test_not_reproduced_evidence_check_verifies_with_the_adopted_block(self):
+        self.steer()
+        steering.take(self.conn, self.run_id)
+        with patch.object(review_round, "agent",
+                          return_value="VERDICT: PASS"), \
+                patch.object(runs, "agent_route", return_value="adjudicator"), \
+                self.assertRaises(MergeParked):
+            reproduce.review_rounds(
+                PROJECT, self.conn, self.run_id, None, "NAT-1", "main",
+                self.root, 60, "HEAD", "HEAD", body(V1), V1, [], CRITERIA, 10,
+                1)
+        self.assertEqual(self.ticket_command(), V2)
 
     def test_merge_gate_verifies_with_the_adopted_block(self):
         self.steer()

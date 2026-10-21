@@ -22,8 +22,8 @@ from holophyte.loop.gates import (
     with_baseline,
 )
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
+from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.steering import close as close_steering
-from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids, skipped_tests
@@ -158,7 +158,7 @@ def routed(resume):
 def review_rounds(*args, resume=None):
     import holophyte.loop.review_round as loop
 
-    frame, pending = Frame(*args), resume or {}
+    frame, pending = _adopted(Frame(*args)), resume or {}
     if "handed_on" in pending:
         return _hand_on(loop, frame, pending, pending["handed_on"])
     keep_route(frame.conn, frame.run_id, unreproduced=True)
@@ -191,7 +191,13 @@ def review_rounds(*args, resume=None):
                    {"declared": declared(fixes)})
 
 
+def _adopted(frame):
+    return replace(frame, verify_cmd=adopted_verify(
+        frame.conn, frame.run_id, frame.verify_cmd))
+
+
 def _second(loop, frame, pending):
+    frame = _adopted(frame)
     if not pending.get("declared"):
         return _hand_on(loop, frame, {"rnd": 2})
     ok, out = _verified(frame, 2, pending)
@@ -218,6 +224,8 @@ def _hand_on(loop, frame, pending, floor=None):
         if frame.conn is not None and frame.run_id is not None:
             store.set_review_round_cap(frame.conn, frame.run_id, frame.cap)
     keep_route(frame.conn, frame.run_id, unreproduced=True, handed_on=cap)
+    if "ok" in pending:
+        pending = {"verify_cmd": frame.verify_cmd, **pending}
     return loop._review_rounds(*frame.args(), resume=pending)
 
 

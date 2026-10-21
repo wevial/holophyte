@@ -36,7 +36,7 @@ def reviewed_ticket(conn, run_id, ticket):
         conn, run_snapshot(conn, run_id).ticketId)
     revised = adopted(conn, run_id) is not None
     if revised or any(amendment_edits(n.note)[0] for n in amendments):
-        ticket = re.sub(r"\n\nAmended verify command\(s\):\n.*?(?=\n\n|\Z)",
+        ticket = re.sub(r"\n\nAmended verify command\(s\):\n.*\Z",
                         "", ticket, flags=re.DOTALL)
         return render_amendments(conn, run_id, ticket, amendments,
                                  revised) + _verify_block(conn, run_id)
