@@ -41,6 +41,11 @@ const runs: Record<number, RunDetail> = {
     { at: STARTED + 4, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
     { at: STARTED + 5, kind: "babysit_step", summary: "fix" },
   ]),
+  17: fixing(17, [
+    { at: STARTED + 3, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
+    { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
+    { at: STARTED + 4, kind: "babysit_step", summary: "fix" },
+  ]),
   14: detail(14, "DEMO-14", { title: "Read a `+++` TOML header" }),
   40: detail(40, "DEMO-40", {
     phase: "failed",
@@ -169,6 +174,12 @@ test("a merge gate run whose babysitter moved on from its fix step to checks rea
 test("a later check fix round on two checks names both and its own round, not the earlier one", async () => {
   await mount("#/runs/demo/16", runFetch({ ...liveRow, id: 16, ticket: "DEMO-16", phase: "merge_gate" }));
   expect(verdict()).toStartWith("Fixing CI: vitest, lint failing (check fix round 2 of 2).");
+});
+
+test("a check fix round logged before the newest checks step at the same instant is not taken as the fix step's round", async () => {
+  await mount("#/runs/demo/17", runFetch({ ...liveRow, id: 17, ticket: "DEMO-17", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Merging.");
+  expect(stage()).not.toContain("fixing CI");
 });
 
 test("a run past its heartbeat threshold says how long it has been silent and counts its criteria before its daemon raises it", async () => {
