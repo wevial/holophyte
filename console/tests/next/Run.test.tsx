@@ -32,6 +32,26 @@ const runs: Record<number, RunDetail> = {
       { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
     ],
   },
+  15: {
+    ...detail(15, "DEMO-15", { phase: "merge_gate" }),
+    events: [
+      { at: STARTED, kind: "babysit_step", summary: "checks" },
+      { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
+      { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
+      { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
+    ],
+  },
+  16: {
+    ...detail(16, "DEMO-16", { phase: "merge_gate" }),
+    events: [
+      { at: STARTED, kind: "babysit_step", summary: "checks" },
+      { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
+      { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
+      { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
+      { at: STARTED + 4, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
+      { at: STARTED + 5, kind: "babysit_step", summary: "fix" },
+    ],
+  },
   14: detail(14, "DEMO-14", { title: "Read a `+++` TOML header" }),
   40: detail(40, "DEMO-40", {
     phase: "failed",
@@ -144,6 +164,18 @@ test("a run in its merge gate during a check fix round says it is fixing CI and 
   await mount("#/runs/demo/13", runFetch({ ...liveRow, id: 13, ticket: "DEMO-13", phase: "merge_gate" }));
   expect(verdict()).toStartWith("Fixing CI: vitest failing (check fix round 1 of 2).");
   expect(stage()).toStartWith("Merge · fixing CI");
+});
+
+test("a merge gate run whose babysitter moved on from its fix step to checks reads as merging again", async () => {
+  await mount("#/runs/demo/15", runFetch({ ...liveRow, id: 15, ticket: "DEMO-15", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Merging.");
+  expect(stage()).toStartWith("Merge");
+  expect(stage()).not.toContain("fixing CI");
+});
+
+test("a later check fix round on two checks names both and its own round, not the earlier one", async () => {
+  await mount("#/runs/demo/16", runFetch({ ...liveRow, id: 16, ticket: "DEMO-16", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Fixing CI: vitest, lint failing (check fix round 2 of 2).");
 });
 
 test("a run past its heartbeat threshold says how long it has been silent and counts its criteria before its daemon raises it", async () => {

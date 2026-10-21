@@ -3,6 +3,7 @@ import { describe, needsYouEntries, type Fact } from "../lib/attention";
 import type { ConsoleAsk, RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
+import { orderEvents } from "../lib/log";
 import { hostItems, sinceSeen, type HostRecord } from "../lib/hosts";
 import { AnswerError } from "../lib/poll";
 import { agentMs, phaseLabel, runKey } from "../lib/runs";
@@ -114,8 +115,24 @@ function stopsWord(phase: string, live: StatusRun | null): string {
   return phase === "reviewing" && live != null ? `${step.stage} round ${live.round + 1}` : step.doing;
 }
 
-function liveWords({ live, phase }: Facts): { stage: string; sentence: string } {
+const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
+
+/** The failing checks and round of the check fix round the babysitter's
+ *  newest step is working, or null when it is on another step. */
+function checkFixRound(events: RunDetail["events"]): string | null {
+  const ordered = orderEvents(events);
+  const steps = ordered.filter((event) => event.kind === "babysit_step");
+  if (steps.at(-1)?.summary !== "fix") return null;
+  const since = steps.findLast((event) => event.summary !== "fix")?.at ?? -Infinity;
+  const round = ordered.findLast((event) => event.kind === "check_fix_round");
+  const match = round != null && round.at >= since ? CHECK_FIX_ROUND.exec(round.summary) : null;
+  return match == null ? null : `${match[3]} failing (check fix round ${match[1]} of ${match[2]})`;
+}
+
+function liveWords({ detail, live, phase }: Facts): { stage: string; sentence: string } {
   const step = stepOf(phase);
+  const fixing = phase === "merge_gate" && live?.stop_requested == null ? checkFixRound(detail.events) : null;
+  if (fixing != null) return { stage: `${step.stage} · fixing CI`, sentence: `Fixing CI: ${fixing}.` };
   const round = phase === "reviewing" && live != null ? `round ${live.round + 1} of ${live.max_rounds}` : null;
   const stop = live?.stop_requested == null ? null : clause(live.stop_action === "pause" ? "Pause requested" : "Abort requested", live.stop_requested);
   return {
