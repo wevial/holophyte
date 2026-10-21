@@ -1,3 +1,4 @@
+import contextlib
 import json
 import subprocess
 import tempfile
@@ -11,7 +12,7 @@ import store
 import store.board
 import store.steer_notes
 import store.tickets
-from holophyte.loop import adjudicate, runs
+from holophyte.loop import adjudicate, merge_gate, review_round, runs, steering
 from holophyte.loop.gates import RunFailure
 from tests.test_ticket_criteria_rows import COMMANDS, ticket_body
 
@@ -50,15 +51,37 @@ class SteerVerifyTests(unittest.TestCase):
         ).fetchone()[0]
         store.tickets.transition(self.conn, ticket, "in_flight")
         self.run_id = store.claim(self.conn, project, ticket)
-        edited = int(time.time() * 1000) + 1000
+        self.ticket = ticket
+        self.edited = int(time.time() * 1000) + 1000
         store.board.edit_ticket(self.conn, project, key, body(V2),
-                                expected_revision=1, now=edited)
-        store.steer_notes.steer(
-            self.conn, ticket, "Meet revision 2's contract", "maintainer",
-            now=edited + 1000)
+                                expected_revision=1, now=self.edited)
         store.set_phase(self.conn, self.run_id, "working")
 
+    def steer(self, hint=False):
+        store.steer_notes.steer(
+            self.conn, self.ticket, "Meet revision 2's contract", "maintainer",
+            hint=hint, now=self.edited + (1000 if hint else 2000))
+
+    def ticket_command(self):
+        (results,) = self.conn.execute(
+            "SELECT verificationResults FROM reviewRounds WHERE runId = ?"
+            " ORDER BY round DESC", (self.run_id,)).fetchone()
+        (ticket,) = [row for row in json.loads(results)
+                     if row["source"] == "ticket"]
+        return ticket["command"]
+
+    def test_adopted_verify_follows_only_an_amendment_onto_the_revision(self):
+        self.assertEqual(steering.adopted_verify(self.conn, self.run_id, V1),
+                         V1)
+        self.steer(hint=True)
+        self.assertEqual(steering.adopted_verify(self.conn, self.run_id, V1),
+                         V1)
+        self.steer()
+        self.assertEqual(steering.adopted_verify(self.conn, self.run_id, V1),
+                         V2)
+
     def test_terminal_adjudication_verifies_with_the_adopted_block(self):
+        self.steer()
         with patch.object(adjudicate, "agent",
                           return_value="VERDICT: FAIL") as agent, \
                 patch.object(runs, "agent_route", return_value="adjudicator"):
@@ -71,12 +94,34 @@ class SteerVerifyTests(unittest.TestCase):
         agent.assert_called_once()
         self.assertIn(f"Amended verify command(s):\n{V2}",
                       agent.call_args.args[2])
-        (results,) = self.conn.execute(
-            "SELECT verificationResults FROM reviewRounds WHERE runId = ?",
-            (self.run_id,)).fetchone()
-        (ticket,) = [row for row in json.loads(results)
-                     if row["source"] == "ticket"]
-        self.assertEqual(ticket["command"], V2)
+        self.assertEqual(self.ticket_command(), V2)
+
+    def test_review_round_verifies_with_the_adopted_block(self):
+        self.steer()
+        steering.take(self.conn, self.run_id)
+        with patch.object(review_round, "agent",
+                          return_value="VERDICT: APPROVE"), \
+                patch.object(runs, "agent_route", return_value="reviewer"), \
+                patch("holophyte.agents.fix_session.fix_turn",
+                      return_value=("nothing to fix", False)), \
+                contextlib.suppress(RunFailure):
+            review_round._review_rounds(
+                PROJECT, self.conn, self.run_id, None, "NAT-1", "main",
+                self.root, 60, "HEAD", "HEAD", body(V1), V1, [], CRITERIA, 10,
+                1)
+        self.assertEqual(self.ticket_command(), V2)
+
+    def test_merge_gate_verifies_with_the_adopted_block(self):
+        self.steer()
+        for phase in ("verifying", "reviewing"):
+            store.set_phase(self.conn, self.run_id, phase)
+        merge_gate._merge_gate(
+            PROJECT, self.conn, self.run_id, None, "NAT-1", "issue", "main",
+            self.root, 60, "HEAD", V1, [], body(V1), 10, sync_main=False)
+        (question,) = self.conn.execute(
+            "SELECT blockedQuestion FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone()
+        self.assertIsNone(question)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from holophyte.loop.gates import (
 )
 from holophyte.loop.review_round import _verify_brief
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
-from holophyte.loop.steering import reviewed_ticket
+from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import criteria_brief, left_open_brief, tests_brief
@@ -87,6 +87,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            review_round=None):
     """No fix round follows: anything but PASS preserves the branch and stops."""
     criteria = numbered(conn, run_id, criteria)
+    verify_cmd = adopted_verify(conn, run_id, verify_cmd)
     pending = resume if resume and resume.get("terminal") else {}
     ticket = reviewed_ticket(conn, run_id, ticket)
     review_round = review_round or cap

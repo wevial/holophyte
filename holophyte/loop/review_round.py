@@ -30,8 +30,8 @@ from holophyte.loop.runs import (
     review_round_cap,
     set_phase,
 )
+from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.steering import pending as steer_pending
-from holophyte.loop.steering import reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
@@ -267,10 +267,12 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     pending = resume or {}
     mode = review_mode(project)
     rnd = pending.get("rnd", 1) - 1
+    claimed = verify_cmd
     for rnd in range(pending.get("rnd", 1), cap + 1):
         sha, pending = _steer_at_top(project, conn, run_id, beat_s, wt,
                                      budget_min, ticket, sha, pending)
         reviewed = reviewed_ticket(conn, run_id, ticket)
+        verify_cmd = adopted_verify(conn, run_id, claimed)
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         if rnd == 1:
             unresolved = merge_conflicts(wt)

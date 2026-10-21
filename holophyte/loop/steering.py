@@ -1,6 +1,9 @@
 """Steer notes recorded on a live run, carried by its next implementer turn."""
+import re
+
 from holophyte.babysit.maintainer_notes import render_amendments, steer_text
-from holophyte.review.criterion_ids import adopted
+from holophyte.review.criterion_ids import adopted, adopted_body, claimed_body
+from provider import parse_body
 from store import operator_notes, steer_notes
 from store.read import run_snapshot
 from ticket_criteria import amendment_edits
@@ -33,9 +36,28 @@ def reviewed_ticket(conn, run_id, ticket):
         conn, run_snapshot(conn, run_id).ticketId)
     revised = adopted(conn, run_id) is not None
     if revised or any(amendment_edits(n.note)[0] for n in amendments):
-        return render_amendments(conn, run_id, ticket, amendments, revised)
+        ticket = re.sub(r"\n\nAmended verify command\(s\):\n.*?(?=\n\n|\Z)",
+                        "", ticket, flags=re.DOTALL)
+        return render_amendments(conn, run_id, ticket, amendments,
+                                 revised) + _verify_block(conn, run_id)
     carried = [n for n in amendments if n.live and n.consumed_by == run_id]
     return ticket + "".join(f"\n\n{steer_text(n)}" for n in carried)
+
+
+def adopted_verify(conn, run_id, verify_cmd):
+    if conn is None or run_id is None:
+        return verify_cmd
+    body = adopted_body(conn, run_id)
+    adopted_cmd = parse_body("", body)["verify"] if body is not None else None
+    return adopted_cmd or verify_cmd
+
+
+def _verify_block(conn, run_id):
+    adopted_cmd = adopted_verify(conn, run_id, None)
+    claimed = parse_body("", claimed_body(conn, run_id) or "")["verify"]
+    if adopted_cmd is None or adopted_cmd == claimed:
+        return ""
+    return f"\n\nAmended verify command(s):\n{adopted_cmd}"
 
 
 def take_now(conn, run_id):
