@@ -152,6 +152,7 @@ class BlockedItem(TypedDict):
     kind: Literal["blocked"]
     ticket: str
     ticket_url: str | None
+    title: NotRequired[str]
     question: str | None
     run: int | None
     asked_ms: int | None
@@ -197,6 +198,7 @@ class StaleRunItem(TypedDict):
     run: int
     ticket: str
     ticket_url: str | None
+    title: NotRequired[str]
     phase: str
     heartbeat_age_ms: int
     pr_url: str | None
@@ -209,6 +211,7 @@ class FailedItem(TypedDict):
     run: int
     ticket: str
     ticket_url: str | None
+    title: NotRequired[str]
     reason: str | None
     ended_ms: int
     attempt: int

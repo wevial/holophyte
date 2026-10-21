@@ -344,6 +344,9 @@
             }
           ]
         },
+        "title": {
+          "type": "string"
+        },
         "question": {
           "anyOf": [
             {
@@ -644,6 +647,9 @@
             }
           ]
         },
+        "title": {
+          "type": "string"
+        },
         "phase": {
           "type": "string"
         },
@@ -763,6 +769,9 @@
               "type": "null"
             }
           ]
+        },
+        "title": {
+          "type": "string"
         },
         "reason": {
           "anyOf": [

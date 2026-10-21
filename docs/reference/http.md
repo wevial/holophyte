@@ -1013,16 +1013,16 @@ What needs the operator, computed where the store is:
 ```json
 {"level": "attention", "now": 1788450534491,
  "project": "/path/to/repo", "items": [
-  {"kind": "blocked", "ticket": "KO-n", "question": "…", "run": 50, "asked_ms": 1788449000000,
+  {"kind": "blocked", "ticket": "KO-n", "title": "…", "question": "…", "run": 50, "asked_ms": 1788449000000,
    "pr_url": null, "park_kind": "question", "pr": null, "level": "attention"},
   {"kind": "pr_open", "ticket": "KO-n", "title": "…", "run": 53,
    "pr_url": "https://github.com/example/repo/pull/2170", "park_kind": "pull_request", "reason": "…", "asked_ms": 1788449000000,
    "pr": {"number": 2170, "checks": "success", "review": "approved", "threads": 2, "title": "…", "state": "ready"},
    "round": 2, "waits_on": [{"ticket": "KO-m", "pr_url": "https://github.com/example/repo/pull/2168"}],
    "level": "attention"},
-  {"kind": "stale_run", "run": 52, "ticket": "KO-n", "phase": "working", "heartbeat_age_ms": 400000,
+  {"kind": "stale_run", "run": 52, "ticket": "KO-n", "title": "…", "phase": "working", "heartbeat_age_ms": 400000,
    "pr_url": null, "level": "attention"},
-  {"kind": "failed", "run": 51, "ticket": "KO-n", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
+  {"kind": "failed", "run": 51, "ticket": "KO-n", "title": "…", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
    "pr_url": null, "triage": {"choice": "infra", "confidence": 0.92, "backend": "claude",
    "model": "sonnet", "requeued": true}, "level": "attention"},
   {"kind": "stuck_wait", "ticket": "KO-n", "ticket_url": null, "title": "…", "dependency": "KO-m",
@@ -1084,9 +1084,9 @@ rounds its run recorded whose verdict is not `error`, the count a
 ticket's `dependsOn` order, each dependency whose store status is not
 `merged`, as `{"ticket": "KO-m", "pr_url": …}`, `pr_url` being that
 ticket's newest run's `runs.prUrl` (null when it has none or never ran);
-it is `[]` when the ticket has no dependency or every one merged. The
-item's own `title` is the ticket's title, which the console shows when
-`pr.title` is null. A `failed` item's `attempt` is the run's 1-based
+it is `[]` when the ticket has no dependency or every one merged. Every
+item that names a ticket carries the ticket's `title`, which a `pr_open`
+row shows when `pr.title` is null. A `failed` item's `attempt` is the run's 1-based
 attempt number. Its `triage` is the run's cause question under
 `[questions.failures]` (see `docs/config.md`): `choice` (`infra`, `code` or
 `spec`), `confidence`, the `backend` and `model` asked, and `requeued`, true
@@ -1481,8 +1481,8 @@ Every project's `/attention` items in one list, each item carrying its
   {"kind": "project_error", "project": "lotuspod", "path": "/path/to/lotuspod",
    "error": "OperationalError: database is locked", "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-219", "ticket_url": null,
-   "phase": "working", "heartbeat_age_ms": 1800000, "pr_url": null,
-   "level": "attention", "project": "holophyte"}
+   "title": "Add a thing", "phase": "working", "heartbeat_age_ms": 1800000,
+   "pr_url": null, "level": "attention", "project": "holophyte"}
 ]}
 ```
 
@@ -1493,7 +1493,8 @@ for a project the root `/status` shows with an `error`; `no_store` for one
 with no store and `no_project_row` for a store with no row for its path,
 each with a `detail` naming `factory.py project add`; and the project's own
 items as its `/attention` answers them (`kind`, `run`, `ticket`,
-`ticket_url`, `phase`, `heartbeat_age_ms`, `pr_url` and the rest, above),
+`ticket_url`, `title`, `phase`, `heartbeat_age_ms`, `pr_url` and the rest,
+above),
 each with `project` added. A project's `supervisor` item judges the host
 sweep's beat against two sweep intervals. `level` is `attention` when
 there is any item, else `working` when any project has a live run, else

@@ -16,6 +16,7 @@ const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const detail = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const ready = await Bun.file(new URL("run-merge-ready.json", SERVE)).json();
+const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Attention;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -156,6 +157,14 @@ test("an untitled item takes its live run's title, else the run detail's", async
 
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR)], details: { 4: { ...detail, run: { ...detail.run, title: "Retry the board sync" } } } }));
   expect(within(card()).getByRole("heading", { level: 3 }).textContent).toBe("Retry the board sync");
+});
+
+test("a pinned question park behind an older failure reads its filed title in its row with no live run", async () => {
+  const question = { ...served.items.find((item) => item.kind === "blocked")!, asked_ms: NOW - HOUR } as Item;
+  await mount(daemon({ items: [question, failed(code)] }));
+  expect(cardText()).toContain("DEMO-11");
+  const row = within(screen.getByRole("list", { name: "Then" })).getByRole("button", { name: "Show KO-14" });
+  expect(row.textContent).toContain("Pick the export format");
 });
 
 test("the pager, Later and a row each move the card through the entries", async () => {

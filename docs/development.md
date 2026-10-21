@@ -608,7 +608,8 @@ Each module, one line:
   after a merge of main turns the branch red: main runs without what only
   the branch adds, and is not compared when the failing command was left out.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
-  commands at one commit of main in a scratch worktree, within
+  commands at one commit of main, in the warm tree for a loop pass and
+  otherwise in a scratch worktree, within
   `[story] witness_sec`, and appends each verdict to the ledger;
   `main_tip()` reads the commit a pass runs at and `red_kind()` reads a
   red's kind from its output; `witness_pass()` runs an open story's
@@ -620,6 +621,13 @@ Each module, one line:
   `mark_running()` writes it, `clear_running()` removes it and
   `running_set()` reads it for `/status`'s `witnesses`, ignoring a record
   whose process has exited.
+- `holophyte/story/witness_tree.py` — the warm tree a project's loop
+  witness passes reuse: `witness-tree/` under the project's state directory,
+  taken under the non-blocking `witness-tree.lock`, checked out detached at
+  the commit and cleaned keeping each `[worktree] setup` table step's `keep`
+  paths; `witness-tree.json` stamps each table step's key over its `run` and
+  its inputs at the commit, so a step whose key matches and whose `keep`
+  paths exist is reused, until an earlier table step runs or a setup fails.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file, queueing the parent's Done,
@@ -742,6 +750,14 @@ At the root:
   declares `relative/path: exact literal` lines the gate asserts verbatim, so
   a required value (a port, a URL) cannot drift while the commands still pass.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
+- `landing/` — the static landing page at https://holophyte.ai, served by its
+  own Worker from `landing/public/` ([design note 6](design/0006-docs-hosting.md));
+  the root `wrangler.jsonc` serves this manual at https://docs.holophyte.ai.
+  Its screenshots and video are not in the repository: they live in the R2
+  bucket `holophyte-media` under `demo/`, served at
+  https://media.holophyte.ai/demo/. After a new capture,
+  `scripts/landing_media.sh CAPTURE_DIR` uploads every file the page
+  references from the capture output directory, with its content type.
 - `FINDINGS.md` (generated, not kept in this repository) — in a project with
   `[report] findings = "repo"`, a rendered window over the store, not a log:
   the factory regenerates it at each close-out from `runs`/`reviewRounds` as

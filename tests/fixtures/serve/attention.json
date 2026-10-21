@@ -29,6 +29,19 @@
       "round": 0,
       "waits_on": [],
       "level": "attention"
+    },
+    {
+      "kind": "blocked",
+      "ticket": "KO-14",
+      "ticket_url": null,
+      "title": "Pick the export format",
+      "question": "CSV or JSON?",
+      "park_kind": "question",
+      "pr": null,
+      "run": 5,
+      "asked_ms": 1749999985000,
+      "pr_url": null,
+      "level": "attention"
     }
   ],
   "now": 1750000000000,

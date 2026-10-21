@@ -150,7 +150,7 @@ def parked_item(ticket):
                              for identifier, pr_url in ticket.waitsOn],
                 "level": "attention"}
     return {"kind": "blocked", "ticket": ticket.linearIdentifier,
-            "ticket_url": ticket.ticketUrl,
+            "ticket_url": ticket.ticketUrl, "title": ticket.title,
             "question": ticket.blockedQuestion,
             "park_kind": ticket.parkKind,
             "pr": _pull_request_facts(ticket) if ticket.prUrl else None,
@@ -214,12 +214,14 @@ def attention(project, now=None, beat_stale_ms=None):
                 and run.boardState not in ("Backlog", "Canceled", "Done")):
             items.append({"kind": "stale_run", "run": run.id,
                           "ticket": run.linearIdentifier,
-                          "ticket_url": run.ticketUrl, "phase": run.phase,
+                          "ticket_url": run.ticketUrl, "title": run.title,
+                          "phase": run.phase,
                           "heartbeat_age_ms": age, "pr_url": run.prUrl,
                           "level": "attention"})
     items.extend({"kind": "failed", "run": run.id,
                   "ticket": run.linearIdentifier,
-                  "ticket_url": run.ticketUrl, "reason": run.outcomeReason,
+                  "ticket_url": run.ticketUrl, "title": run.title,
+                  "reason": run.outcomeReason,
                   "ended_ms": run.endedAt, "attempt": run.attempt,
                   "pr_url": run.prUrl, "triage": triage_view(run.triage),
                   "level": "attention"}
