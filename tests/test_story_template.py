@@ -178,36 +178,30 @@ class StoryAdvisoryTests(StoryCliCase):
         self.assert_advised(directory, "W1's criterion says 'one pass'")
 
 
-def cadence_section(*lines):
-    return "\n".join(["## Witness cadence", "", "```", *lines, "```", "", ""])
+def paths_section(*items):
+    return "\n".join(["## Witness paths", "", *(f"- {item}" for item in items),
+                      "", ""])
 
 
-class WitnessCadenceTests(StoryCliCase):
-    def test_a_cadence_line_gives_its_witness_paths_and_hours(self):
-        directory = self.story(extra=cadence_section(
-            "W2: paths lib/reader/ app/contract/; every 6h"))
+class WitnessPathsTests(StoryCliCase):
+    def test_the_story_names_its_witness_paths(self):
+        directory = self.story(extra=paths_section("lib/reader/",
+                                                   "`app/contract/`"))
 
         story = story_template.parse_story((directory / "story.md").read_text())
 
-        self.assertEqual({witness.key: witness.cadence
-                          for witness in story.witnesses},
-                         {"W1": None, "W2": {"paths": ["lib/reader/",
-                                                       "app/contract/"],
-                                             "hours": 6}})
+        self.assertEqual(story_template.witness_paths(story),
+                         ["lib/reader/", "app/contract/"])
         self.assertEqual(self.run_cli(directory).returncode, 0)
 
-    def test_each_bad_cadence_line_is_one_problem_naming_it(self):
-        for index, (lines, named) in enumerate((
-                (["W9: every 2h"], "W9: every 2h"),
-                (["W2: every 0h"], "W2: every 0h"),
-                (["W2: paths /abs"], "W2: paths /abs"),
-                (["W2: paths ../up"], "W2: paths ../up"),
-                (["W2: weekly"], "W2: weekly"),
-                (["W2: every 2h", "W2: paths lib/"], "W2: paths lib/"))):
-            with self.subTest(line=named):
+    def test_each_bad_witness_path_is_one_problem_naming_it(self):
+        for index, item in enumerate(("/abs", "../up", "lib/../..",
+                                      "lib/a lib/b")):
+            with self.subTest(item=item):
                 directory = write_story(Path(self.tmp.name) / f"plans{index}",
-                                        extra=cadence_section(*lines))
-                self.assert_refused(directory, named)
+                                        extra=paths_section("lib/", item))
+                self.assert_refused(directory, f"witness path is not one "
+                                    f"repository-relative path: {item}")
 
 
 if __name__ == "__main__":

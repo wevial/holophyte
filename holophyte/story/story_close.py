@@ -290,4 +290,4 @@ def _replan(conn, story_id):
     replan_story(conn, story_id, witnesses,
                  [(ticket_id, role, keys[ticket_id])
                   for ticket_id, role in roles.items()],
-                 found.standingOrders)
+                 found.standingOrders, witness_paths=found.witnessPaths)

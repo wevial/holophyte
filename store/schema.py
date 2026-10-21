@@ -293,7 +293,7 @@ ADDED_COLUMNS = (
      "withdrawnBy INTEGER REFERENCES interventions (id)"),
     ("interventions", "actor", "actor TEXT "
      + _enums.check_clause("actor", _enums.InterventionActor)),
-    ("storyWitnesses", "cadence", "cadence TEXT"),
+    ("stories", "witnessPaths", "witnessPaths TEXT"),
     ("witnessResults", "carriedFrom", "carriedFrom TEXT"),
 )
 

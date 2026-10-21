@@ -54,11 +54,11 @@ A new table or column follows the ones already there:
 A story is a parent ticket whose children serve one outcome; the five tables
 `stories`, `storyWitnesses`, `storyChildren`, `witnessResults` and
 `storyDecisions` hold its plan, its witnesses, its children's roles, each
-witness run on main and the questions it put to the operator. A witness's
-nullable `cadence` holds the JSON `{"paths", "hours"}` of its story's
-`## Witness cadence` line, NULL to run at every commit; a `witnessResults`
-row's nullable `carriedFrom` names the commit whose verdict a loop pass
-carried to this one without running the witness, NULL for a row that ran.
+witness run on main and the questions it put to the operator. A story's
+nullable `witnessPaths` holds the JSON list of its `## Witness paths`, NULL
+when it names none; a `witnessResults` row's nullable `carriedFrom` names
+the commit whose verdict a loop pass carried to this one without running
+the witness set, NULL for a row that ran.
 
 The last pull request read is stored on `runs` in `prSeenAt`,
 `prSeenChecks`, `prSeenReview`, `prSeenThreads`, `prSeenOpenThreads`,

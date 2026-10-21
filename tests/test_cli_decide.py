@@ -26,7 +26,11 @@ import store.tickets  # noqa: E402
 from holophyte.story import story_claim  # noqa: E402
 from store.stories import approve_story, file_story, story  # noqa: E402
 from tests.test_story_frontier import depending_on  # noqa: E402
-from tests.test_witness_runner import FAILS_AN_ASSERTION, PASSES  # noqa: E402
+from tests.test_witness_runner import (  # noqa: E402
+    FAILS_AN_ASSERTION,
+    PASSES,
+    merged_run,
+)
 
 DECIDES = "SELECT note FROM interventions WHERE action = 'decide'"
 ANSWERS = "SELECT answer FROM storyDecisions ORDER BY id"
@@ -198,7 +202,8 @@ class DecideTests(DecideFixture):
                                      witness("W2", "tests/test_w2.py")])
         self.commit(W1_FILE, PASSES, "w1 lands")
         self.step()
-        self.commit(W1_FILE, FAILS_AN_ASSERTION, "w1 breaks")
+        merged_run(self.conn, child,
+                   self.commit(W1_FILE, FAILS_AN_ASSERTION, "w1 breaks"))
         self.step()
         (decision,) = story(self.conn, parent).decisions
         self.assertEqual(decision.options[1], "rerun")

@@ -614,15 +614,17 @@ Each module, one line:
   red's kind from its output; `witness_pass()` runs an open story's
   witnesses at main's tip unless the ledger already holds it or the
   project is held, reruns once a red that was green at an earlier commit,
-  and notes each changed verdict on the parent. A loop pass runs only the
-  witnesses due under their `## Witness cadence` line and carries the
-  others' latest verdicts to the new commit.
-- `holophyte/story/witness_cadence.py` — `due_keys()` answers the witnesses
-  a loop pass runs at a commit: one with no cadence or no real verdict yet,
-  or whose files under its cadence paths (or its witness file) changed
-  since its latest real verdict and whose verdict is its cadence's hours
-  old; `carry()` records each other witness's latest real verdict again at
-  the commit, `carriedFrom` naming the commit it came from.
+  and notes each changed verdict on the parent. A loop pass runs the
+  whole witness set only when it is due, and otherwise carries the last
+  real verdicts to the new commit.
+- `holophyte/story/witness_cadence.py` — `set_due()` answers whether a loop
+  pass runs a story's witness set at a commit: when the story has no real
+  run of every witness yet, when a child's merged run's `mergeSha` is an
+  ancestor of the commit and not of the set's last real run, when the
+  story's `## Witness paths` changed since that run, when that run is older
+  than the most recent `[story] witness_nightly_hour`, or when a git
+  command fails; `carry()` records each witness's latest real verdict again
+  at the commit, `carriedFrom` naming the commit it came from.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file, queueing the parent's Done,

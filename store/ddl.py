@@ -407,7 +407,8 @@ CREATE TABLE IF NOT EXISTS stories (
     approvedBy       TEXT,
     approvedAt       INTEGER,
     closedSha        TEXT,
-    closedAt         INTEGER
+    closedAt         INTEGER,
+    witnessPaths     TEXT
 );
 
 -- storyWitnesses: a story's acceptance witnesses, one per criterion key.
@@ -420,7 +421,6 @@ CREATE TABLE IF NOT EXISTS storyWitnesses (
     source      TEXT    NOT NULL,
     sourceHash  TEXT    NOT NULL,
     completedBy INTEGER REFERENCES tickets (id),
-    cadence     TEXT,
     PRIMARY KEY (storyId, key)
 );
 

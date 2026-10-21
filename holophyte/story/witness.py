@@ -24,7 +24,7 @@ from holophyte.story.story_close import (
     settle_owed,
     settle_story,
 )
-from holophyte.story.witness_cadence import carry, due_keys
+from holophyte.story.witness_cadence import carry, set_due
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -105,9 +105,8 @@ def _pytest_message(rest):
 
 
 def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
-                  again=None, keys=None):
-    witnesses = [witness for witness in story(conn, story_id).witnesses
-                 if keys is None or witness.key in keys]
+                  again=None):
+    witnesses = story(conn, story_id).witnesses
     (identifier,) = conn.execute(
         "SELECT linearIdentifier FROM tickets WHERE id = ?",
         (story_id,)).fetchone()
@@ -170,9 +169,16 @@ def witness_pass(target, conn, story_id, verifier):
         return []
     sha = main_tip(target)
     keys = {witness.key for witness in story(conn, story_id).witnesses}
-    at_tip = {row.witnessKey for row in main_ledger(conn, story_id, sha)}
-    if (verifier != "operator" and keys <= at_tip
-            and not rerun_owed(conn, story_id, sha)):
+    at_tip = main_ledger(conn, story_id, sha)
+    owed = rerun_owed(conn, story_id, sha)
+    held = (verifier != "operator" and not owed
+            and keys <= {row.witnessKey for row in at_tip})
+    if held and all(row.carriedFrom is None for row in at_tip):
+        settle_story(target, conn, story_id, sha)
+        return []
+    due = (verifier != "loop" or bool(owed)
+           or set_due(target, conn, story_id, sha))
+    if held and not due:
         settle_story(target, conn, story_id, sha)
         return []
     before = [row for row in main_ledger(conn, story_id)
@@ -183,16 +189,10 @@ def witness_pass(target, conn, story_id, verifier):
         return {row.witnessKey for row in rows
                 if row.verdict == "red" and row.witnessKey in greens}
 
-    due = None
-    if verifier == "loop":
-        due = (due_keys(target.path, conn, story_id,
-                        story(conn, story_id).witnesses, sha)
-               | rerun_owed(conn, story_id, sha))
-    rows = (run_witnesses(target, conn, story_id, sha, verifier, again=again,
-                          keys=due) if due is None or due else [])
-    if due is not None:
-        rows += _rows(conn, story_id,
-                      carry(conn, story_id, sha, keys - due, verifier))
+    if due:
+        rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
+    else:
+        rows = _rows(conn, story_id, carry(conn, story_id, sha, verifier))
     _note_changes(conn, story_id, sha, before, rows)
     settle_story(target, conn, story_id, sha)
     return rows
@@ -210,11 +210,17 @@ def pass_pending(target, conn, project_id):
     deadline.check("main's tip for a witness pass")
     sha = main_tip(target)
     return [found.ticketId for found in stories
-            if {witness.key for witness in found.witnesses}
-            - {row.witnessKey for row in main_ledger(conn, found.ticketId,
-                                                     sha)}
-            or rerun_owed(conn, found.ticketId, sha)
-            or settle_owed(conn, found.ticketId, sha)]
+            if _pending(target, conn, found, sha)]
+
+
+def _pending(target, conn, found, sha):
+    at_tip = main_ledger(conn, found.ticketId, sha)
+    return bool({witness.key for witness in found.witnesses}
+                - {row.witnessKey for row in at_tip}
+                or rerun_owed(conn, found.ticketId, sha)
+                or settle_owed(conn, found.ticketId, sha)
+                or (any(row.carriedFrom for row in at_tip)
+                    and set_due(target, conn, found.ticketId, sha)))
 
 
 def witness_step(target, conn, project_id):

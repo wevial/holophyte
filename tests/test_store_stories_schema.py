@@ -188,10 +188,10 @@ class StoryConstraintTests(unittest.TestCase):
             " ORDER BY id").fetchall(), [("approve_story",), ("decide",)])
 
 
-class CadenceColumnsMigrationTests(unittest.TestCase):
+class CarriedRowsMigrationTests(unittest.TestCase):
     MAIN_VERSION = 55
 
-    def test_a_store_before_cadence_reads_null_cadence_and_carried_from(self):
+    def test_a_store_before_carried_rows_reads_null_paths_and_carried_from(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "store.db"
@@ -212,7 +212,7 @@ class CadenceColumnsMigrationTests(unittest.TestCase):
                          " mainSha, verdict, verifier, seconds, at)"
                          " VALUES (1, 'W1', ?, 'green', 'loop', 1.5, 1)",
                          (sha,))
-        conn.execute("ALTER TABLE storyWitnesses DROP COLUMN cadence")
+        conn.execute("ALTER TABLE stories DROP COLUMN witnessPaths")
         conn.execute("ALTER TABLE witnessResults DROP COLUMN carriedFrom")
         conn.execute(f"PRAGMA user_version = {self.MAIN_VERSION:d}")
         conn.commit()
@@ -228,10 +228,9 @@ class CadenceColumnsMigrationTests(unittest.TestCase):
             "SELECT mainSha, seconds, carriedFrom FROM witnessResults"
             " ORDER BY id").fetchall(), [("a", 1.5, None), ("b", 1.5, None)])
         self.assertEqual(conn.execute(
-            "SELECT key, cadence FROM storyWitnesses").fetchall(),
-            [("W1", None)])
-        (found,) = store.stories.story(conn, 1).witnesses
-        self.assertIsNone(found.cadence)
+            "SELECT ticketId, witnessPaths FROM stories").fetchall(),
+            [(1, None)])
+        self.assertEqual(store.stories.story(conn, 1).witnessPaths, ())
 
 
 if __name__ == "__main__":

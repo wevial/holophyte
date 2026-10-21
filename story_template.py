@@ -23,12 +23,7 @@ MAX_STANDING_ORDERS = 5
 WITNESS_RE = re.compile(
     r"^\[[ xX]\]\s*(W\d+):\s*(.+?)\s*\(a test in (\S+) witnesses [^()]+\)$")
 COMMAND_RE = re.compile(r"^(W\d+):\s*(\S.*)$")
-CADENCE_RE = re.compile(r"^(W\d+):\s*(.*)$")
-PATHS_RE = re.compile(r"^paths((?:\s+\S+)+)$")
-EVERY_RE = re.compile(r"^every\s+(\d+)h$")
-MAX_CADENCE_HOURS = 168
-CADENCE_FORMS = ("'Wn: paths P [P ...]', 'Wn: every Nh' or "
-                 "'Wn: paths P [P ...]; every Nh'")
+PATH_ITEM_RE = re.compile(r"^`?([^`\s]+)`?$")
 KEY_RE = re.compile(r"^\[[ xX]\]\s*(W\d+):")
 CHILD_NAME_RE = re.compile(r"^\d{2}-(.+)\.md$")
 HEADER_RE = re.compile(r"^Ticket:[ \t]*\S+[ \t]*\n")
@@ -47,7 +42,6 @@ class Witness(NamedTuple):
     file: str
     command: str | None
     line: str
-    cadence: dict | None = None
 
 
 class Child(NamedTuple):
@@ -66,64 +60,43 @@ class Story(NamedTuple):
     witnesses: list
     standing_orders: list
     open_questions_none: bool
-    cadence_lines: list
+    path_lines: list
 
 
 def _items(story, section):
     return tt._list_items(tt.COMMENT_RE.sub("", story.sections.get(section, "")))
 
 
-def _fenced(ticket, section):
-    return tt._fenced_lines(
-        tt.COMMENT_RE.sub("", ticket.sections.get(section, "")))
+def _witness_path(line):
+    match = PATH_ITEM_RE.match(line)
+    if match and not posixpath.isabs(match.group(1)) and (
+            ".." not in match.group(1).split("/")):
+        return match.group(1)
+    return None
 
 
-def _cadence(line):
-    match = CADENCE_RE.match(line)
-    if not match:
-        return None, None, f"cadence line is not {CADENCE_FORMS}: {line}"
-    key, cadence = match.group(1), {}
-    parts = [part.strip() for part in match.group(2).split(";")]
-    paths = PATHS_RE.match(parts[0])
-    if paths:
-        cadence["paths"] = paths.group(1).split()
-        parts.pop(0)
-    every = EVERY_RE.match(parts[0]) if len(parts) == 1 else None
-    if parts and not every:
-        return key, None, f"cadence line is not {CADENCE_FORMS}: {line}"
-    if every:
-        cadence["hours"] = int(every.group(1))
-        if not 1 <= cadence["hours"] <= MAX_CADENCE_HOURS:
-            return key, None, (f"cadence hours are not 1 to "
-                               f"{MAX_CADENCE_HOURS}: {line}")
-    for path in cadence.get("paths", ()):
-        if posixpath.isabs(path) or ".." in path.split("/"):
-            return key, None, (f"cadence path is absolute or climbs out of "
-                               f"the repository: {line}")
-    return key, cadence, None
+def witness_paths(story):
+    return [path for path in map(_witness_path, story.path_lines) if path]
 
 
 def parse_story(text):
     ticket = tt.parse(text)
-    commands, cadences = {}, {}
-    for line in _fenced(ticket, "Witness commands"):
+    commands = {}
+    for line in tt._fenced_lines(
+            tt.COMMENT_RE.sub("", ticket.sections.get("Witness commands", ""))):
         match = COMMAND_RE.match(line)
         if match:
             commands.setdefault(match.group(1), match.group(2).strip())
     story = Story(ticket.order, ticket.sections, [], [], [],
-                  ticket.open_questions_none,
-                  _fenced(ticket, "Witness cadence"))
-    for line in story.cadence_lines:
-        key, cadence, _ = _cadence(line)
-        cadences.setdefault(key, cadence)
+                  ticket.open_questions_none, [])
+    story.path_lines.extend(_items(story, "Witness paths"))
     story.witness_lines.extend(_items(story, "Witnesses"))
     for line in story.witness_lines:
         match = WITNESS_RE.match(line)
         if match:
             key, outcome, file = match.groups()
-            story.witnesses.append(Witness(key, outcome, file,
-                                           commands.get(key), line,
-                                           cadences.get(key)))
+            story.witnesses.append(
+                Witness(key, outcome, file, commands.get(key), line))
     story.standing_orders.extend(_items(story, "Standing orders"))
     return story
 
@@ -156,28 +129,15 @@ def _body_problems(story):
             problems.append(f"witnesses {owners[file]} and "
                             f"{witness.key} name one file: {witness.file}")
         owners.setdefault(file, witness.key)
-    problems.extend(_cadence_problems(story))
+    problems.extend(f"witness path is not one repository-relative path: "
+                    f"{line}" for line in story.path_lines
+                    if _witness_path(line) is None)
     if len(story.standing_orders) > MAX_STANDING_ORDERS:
         problems.append(f"'Standing orders' has {len(story.standing_orders)} "
                         f"lines; the limit is {MAX_STANDING_ORDERS}, since "
                         "every child's instructions carry them")
     if not story.open_questions_none:
         problems.append("'Open questions' must read exactly '- None'")
-    return problems
-
-
-def _cadence_problems(story):
-    keys = {witness.key for witness in story.witnesses}
-    problems, seen = [], set()
-    for line in story.cadence_lines:
-        key, _, problem = _cadence(line)
-        if problem is None and key not in keys:
-            problem = f"cadence line names {key}, which is no witness: {line}"
-        elif problem is None and key in seen:
-            problem = f"cadence line gives {key} a second cadence: {line}"
-        seen.add(key)
-        if problem:
-            problems.append(problem)
     return problems
 
 

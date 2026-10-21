@@ -15,15 +15,14 @@ from .writes import set_board_state
 
 STORY_COLUMNS = ("ticketId", "state", "generation", "standingOrders",
                  "approvedRevision", "approvedPlan", "approvedBy", "approvedAt",
-                 "closedSha", "closedAt")
+                 "closedSha", "closedAt", "witnessPaths")
 WITNESS_COLUMNS = ("key", "criterion", "file", "command", "source",
-                   "sourceHash", "completedBy", "cadence")
+                   "sourceHash", "completedBy")
 CHILD_COLUMNS = ("ticketId", "witnessKey", "role")
 WITNESS_FIELDS = ("key", "criterion", "file", "command", "source")
 RESULT_COLUMNS = ("id", "witnessKey", "mainSha", "verdict", "redKind",
                   "verifier", "fileHash", "evidencePath", "seconds", "at",
                   "carriedFrom")
-MAX_CADENCE_HOURS = 168
 DECISION_COLUMNS = ("id", "kind", "ticketId", "question", "options",
                     "defaultOption")
 
@@ -47,7 +46,7 @@ CLOSED_STATUSES = ("merged", "abandoned")
 
 
 def file_story(conn, parent_id, witnesses, children, standing_orders=(),
-               now=None):
+               now=None, witness_paths=()):
     witnesses = [dict(witness) for witness in witnesses]
     children = [(ticket_id, role, tuple(keys))
                 for ticket_id, role, keys in children]
@@ -56,16 +55,18 @@ def file_story(conn, parent_id, witnesses, children, standing_orders=(),
     orders = list(standing_orders)
     if not all(isinstance(order, str) and order.strip() for order in orders):
         raise ValueError("a standing order is blank")
+    paths = _check_paths(witness_paths)
     with _transaction(conn):
         _check_tickets(conn, parent_id, [child[0] for child in children])
         conn.execute("INSERT INTO stories (ticketId, state, generation,"
-                     " standingOrders) VALUES (?, 'planned', 0, ?)",
-                     (parent_id, json.dumps(orders)))
+                     " standingOrders, witnessPaths)"
+                     " VALUES (?, 'planned', 0, ?, ?)",
+                     (parent_id, json.dumps(orders), paths))
         _insert_plan(conn, parent_id, witnesses, children, completed_by)
 
 
 def replan_story(conn, parent_id, witnesses, children, standing_orders,
-                 now=None, body_revised=False):
+                 now=None, body_revised=False, witness_paths=()):
     witnesses = [dict(witness) for witness in witnesses]
     children = [(ticket_id, role, tuple(keys))
                 for ticket_id, role, keys in children]
@@ -74,6 +75,7 @@ def replan_story(conn, parent_id, witnesses, children, standing_orders,
     orders = list(standing_orders)
     if not all(isinstance(order, str) and order.strip() for order in orders):
         raise ValueError("a standing order is blank")
+    paths = _check_paths(witness_paths)
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -86,10 +88,10 @@ def replan_story(conn, parent_id, witnesses, children, standing_orders,
         conn.execute("DELETE FROM storyWitnesses WHERE storyId = ?",
                      (parent_id,))
         _insert_plan(conn, parent_id, witnesses, children, completed_by)
-        conn.execute("UPDATE stories SET standingOrders = ?, state = CASE"
-                     " WHEN state IN (?, ?) THEN 'planned' ELSE state END"
-                     " WHERE ticketId = ?",
-                     (json.dumps(orders), *OPEN_STATES, parent_id))
+        conn.execute("UPDATE stories SET standingOrders = ?, witnessPaths = ?,"
+                     " state = CASE WHEN state IN (?, ?) THEN 'planned'"
+                     " ELSE state END WHERE ticketId = ?",
+                     (json.dumps(orders), paths, *OPEN_STATES, parent_id))
         if not body_revised:
             _record_plan_revision(conn, parent_id, now)
         return _story_state(conn, parent_id)
@@ -104,10 +106,10 @@ def story(conn, ticket_id):
         return None
     fields = dict(zip(STORY_COLUMNS, row))
     fields["standingOrders"] = tuple(json.loads(fields["standingOrders"]))
+    fields["witnessPaths"] = tuple(json.loads(fields["witnessPaths"] or "[]"))
     if fields["approvedPlan"] is not None:
         fields["approvedPlan"] = json.loads(fields["approvedPlan"])
-    witnesses = tuple(StoryWitness(*witness[:-1], _loaded(witness[-1]))
-                      for witness in conn.execute(
+    witnesses = tuple(StoryWitness(*witness) for witness in conn.execute(
         f"SELECT {', '.join(WITNESS_COLUMNS)} FROM storyWitnesses"
         " WHERE storyId = ? ORDER BY key", (fields["ticketId"],)))
     children = tuple(StoryChild(*child) for child in conn.execute(
@@ -567,30 +569,17 @@ def _check_witnesses(witnesses):
         for field in WITNESS_FIELDS:
             if not isinstance(witness.get(field), str) or not witness[field].strip():
                 raise ValueError(f"a witness's {field} is blank")
-        _check_cadence(witness.get("cadence"))
         if witness["key"] in keys:
             raise ValueError(f"witness key {witness['key']} is given twice")
         keys.add(witness["key"])
     return keys
 
 
-def _check_cadence(cadence):
-    if cadence is None:
-        return
-    paths = cadence.get("paths", ["."]) if isinstance(cadence, dict) else None
-    hours = cadence.get("hours", 1) if isinstance(cadence, dict) else None
-    if (not cadence or set(cadence) - {"paths", "hours"}
-            or not isinstance(paths, list) or not paths
-            or not all(isinstance(path, str) and path.strip()
-                       for path in paths)
-            or type(hours) is not int
-            or not 1 <= hours <= MAX_CADENCE_HOURS):
-        raise ValueError(f"a witness's cadence {cadence!r} is not paths,"
-                         f" hours from 1 to {MAX_CADENCE_HOURS}, or both")
-
-
-def _loaded(cadence):
-    return None if cadence is None else json.loads(cadence)
+def _check_paths(witness_paths):
+    paths = list(witness_paths)
+    if not all(isinstance(path, str) and path.strip() for path in paths):
+        raise ValueError("a witness path is blank")
+    return json.dumps(paths) if paths else None
 
 
 def _check_children(parent_id, children, keys):
@@ -650,13 +639,11 @@ def _insert_plan(conn, parent_id, witnesses, children, completed_by):
     for witness in witnesses:
         conn.execute(
             "INSERT INTO storyWitnesses (storyId, key, criterion, file,"
-            " command, source, sourceHash, completedBy, cadence)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " command, source, sourceHash, completedBy)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (parent_id, *(witness[field] for field in WITNESS_FIELDS),
              hashlib.sha256(witness["source"].encode()).hexdigest(),
-             completed_by.get(witness["key"]),
-             None if witness.get("cadence") is None
-             else json.dumps(witness["cadence"], sort_keys=True)))
+             completed_by.get(witness["key"])))
     for ticket_id, role, child_keys in children:
         for key in child_keys or ("",):
             conn.execute("INSERT INTO storyChildren (ticketId, witnessKey,"
