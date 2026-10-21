@@ -12,6 +12,7 @@ import { Criteria, SECTION_LABEL } from "./Criteria";
 import { describeOn } from "./FocusCard";
 import { StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
+import { TitleText } from "./TitleText";
 
 const HEAD_BUTTON =
   "inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 border border-rule px-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.1em] text-ink-2 hover:border-ink-3 hover:text-ink";
@@ -149,7 +150,7 @@ export function TicketPeek({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-[18px]">
         <h2 id={titleId} className="break-words font-sans text-[22px] font-extrabold leading-[1.15] tracking-[-0.01em] [font-stretch:108%]">
-          {card.title}
+          <TitleText>{card.title}</TitleText>
         </h2>
         <div data-peek-column className="mt-3">
           <Chip>

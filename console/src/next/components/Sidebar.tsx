@@ -22,6 +22,7 @@ import {
   TicketsIcon,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { plainTitle, TitleText } from "./TitleText";
 
 const RAIL_KEY = "holophyte.next.rail";
 const STORIES_KEY = "holophyte.next.stories";
@@ -182,7 +183,7 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
                 params={{ project: story.project, key: story.ticket }}
                 search={keepScope}
                 activeOptions={{ exact: true, includeSearch: false }}
-                aria-label={`${story.ticket} ${story.title}, ${story.merged} of ${story.total} merged`}
+                aria-label={`${story.ticket} ${plainTitle(story.title)}, ${story.merged} of ${story.total} merged`}
                 className="flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-act-wash data-[status=active]:text-act"
               >
                 <span className="flex justify-between gap-2 font-mono text-[11px] leading-[1.3] font-medium text-ink-3">
@@ -191,7 +192,7 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
                     {story.merged}/{story.total}
                   </span>
                 </span>
-                <span className="truncate font-sans text-[13px] leading-[1.3]">{story.title}</span>
+                <span className="truncate font-sans text-[13px] leading-[1.3]"><TitleText>{story.title}</TitleText></span>
               </Link>
             </li>
           ))}

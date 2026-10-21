@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CleanReviewLine, FindingRow } from "../components/FindingRow";
 import { StateDot } from "../components/StateDot";
-import { useFindingsPage, type FindingRowView, type FindingsPage, type Idle, type OpenFinding } from "../findings";
+import { byProject, useFindingsPage, type FindingRowView, type FindingsPage, type Idle, type OpenFinding } from "../findings";
 import { storeScope } from "../projects";
 import type { State } from "../state";
 
@@ -52,16 +52,35 @@ function verdictOf(page: FindingsPage): { sentence: string; state: State } {
   return { sentence: openSentence(page.open) + drafts, state };
 }
 
-function Group({ label, empty, rows }: { label: string; empty: string; rows: ReactNode[] }) {
-  const count = rows.length;
+interface Part {
+  project: string | null;
+  rows: ReactNode[];
+}
+
+const LABEL = "font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em]";
+
+function ProjectPart({ project, rows }: Part) {
+  if (project == null) return <ul>{rows}</ul>;
+  return (
+    <div data-project-group className="flex flex-col gap-2">
+      <h3 className={`flex items-center gap-2 ${LABEL} text-ink-3`}>
+        <span className="[overflow-wrap:anywhere]">{project}</span> <span className="text-ink">{rows.length}</span>
+      </h3>
+      <ul>{rows}</ul>
+    </div>
+  );
+}
+
+function Group({ label, empty, parts }: { label: string; empty: string; parts: Part[] }) {
+  const count = parts.reduce((total, part) => total + part.rows.length, 0);
   return (
     <section aria-label={label} className="flex flex-col gap-3 px-5 py-4">
-      <h2 className="flex items-center gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
+      <h2 className={`flex items-center gap-2.5 ${LABEL} text-ink-3`}>
         <span>{label}</span>
         {count > 0 && <span data-count className="text-ink">{String(count).padStart(2, "0")}</span>}
         <span aria-hidden="true" className="h-px flex-1 bg-rule-2" />
       </h2>
-      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : <ul>{rows}</ul>}
+      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : parts.map((part) => <ProjectPart key={part.project ?? ""} {...part} />)}
     </section>
   );
 }
@@ -75,16 +94,20 @@ export function Findings() {
   const { project } = page;
   const where = project == null ? "" : ` in ${project}`;
   const verdict = verdictOf(page);
+  const split = <T,>(items: T[], projectOf: (item: T) => string, draw: (item: T) => ReactNode): Part[] =>
+    project == null
+      ? byProject(items, projectOf).map((part) => ({ project: part.project, rows: part.items.map(draw) }))
+      : [{ project: null, rows: items.map(draw) }];
   const findingRows = (list: { row: FindingRowView }[], quiet = false) =>
-    list.map(({ row }) => <FindingRow key={row.key} row={row} showProject={project == null} quiet={quiet} />);
+    split(list, ({ row }) => row.project, ({ row }) => <FindingRow key={row.key} row={row} showProject={false} quiet={quiet} />);
   const groups = [
-    { label: "Open", empty: `Nothing open${where}.`, rows: findingRows(page.open) },
-    { label: "Follow-ups", empty: `No follow-ups${where}.`, rows: findingRows(page.followUps) },
-    { label: "Settled this week", empty: `Nothing settled${where} this week.`, rows: findingRows(page.settled, true) },
+    { label: "Open", empty: `Nothing open${where}.`, parts: findingRows(page.open) },
+    { label: "Follow-ups", empty: `No follow-ups${where}.`, parts: findingRows(page.followUps) },
+    { label: "Settled this week", empty: `Nothing settled${where} this week.`, parts: findingRows(page.settled, true) },
     {
       label: "Clean reviews",
       empty: `No clean reviews${where} this week.`,
-      rows: page.clean.map((clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
+      parts: split(page.clean, (clean) => clean.project, (clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
     },
   ];
   return (

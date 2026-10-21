@@ -125,14 +125,13 @@ const writer3 = runOf(3, "WRITER-3", [
 ]);
 const reviewing7 = [{ ...run(7, "DEMO-7"), phase: "reviewing", round: 1, max_rounds: 3, heartbeat_age_ms: 30_000 }];
 
-test("open rows read worst first, then the higher round first even when it ended earlier, each pill coloured by severity and naming its project until one is picked", async () => {
-  await mount("#/findings", fleet({ runs: [demo11, demo7], live: reviewing7 }, { runs: [writer3] }));
+test("open rows read worst first, then the higher round first even when it ended earlier, each pill coloured by severity", async () => {
+  await mount("#/findings", fleet({ runs: [demo11, demo7, writer3], live: reviewing7 }));
   expect(titles("Open")).toEqual(["Retry loops forever", "Lease never expires", "Flag is ignored"]);
   const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);
   expect(pills.map((pill) => pill.textContent)).toEqual(["P1", "P1", "P2"]);
   expect(pills[0]!.classList.contains("bg-p1")).toBe(true);
   expect(pills[2]!.classList.contains("bg-p2")).toBe(true);
-  expect(rowsOf("Open").map((row) => row.querySelector("[data-project]")?.textContent)).toEqual(["writer", "demo", "demo"]);
   cleanup();
 
   sessionStorage.setItem("holophyte.next.project", "demo");

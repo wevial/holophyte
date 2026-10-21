@@ -6,6 +6,7 @@ import { keepScope } from "../scope";
 import { cardElementId, modified } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
 import { StateDot, TONE_TEXT } from "./StateDot";
+import { TitleText } from "./TitleText";
 
 const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "done"];
 
@@ -46,7 +47,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
         data-cell="title"
         className={`min-w-0 truncate font-read text-[15px] font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet ? "text-ink-2" : "text-ink"}`}
       >
-        {card.title}
+        <TitleText>{card.title}</TitleText>
       </span>
       <span data-cell="stage" className={`truncate max-[820px]:hidden ${TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
       <span data-cell="estimate" className="text-right text-ink-2 tabular-nums max-[820px]:hidden">

@@ -5,6 +5,7 @@ import { cardOf, STATES, type CardLook, type State } from "../state";
 import { arrowPath, layoutGraph, type Box, type StoryNode } from "../story";
 import { Card, cardSurface, type CardMark } from "./Card";
 import { STATE_ICONS, TONE_TEXT } from "./StateDot";
+import { plainTitle, TitleText } from "./TitleText";
 
 const WAIT_STATES = new Set<State>(["on_ci", "parked", "queued", "held"]);
 
@@ -52,7 +53,7 @@ function Legend() {
 function NodeCard({ node, base, className, after }: { node: StoryNode; base: string; className: string; after?: string }) {
   const look = cardOf(node.state);
   const waits = after ?? (node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story");
-  const label = `${node.ticket} ${node.title}, ${node.word}. ${waits}`;
+  const label = `${node.ticket} ${plainTitle(node.title)}, ${node.word}. ${waits}`;
   const body = (
     <Card look={look} mark={markOf(node)}>
       <span className="flex items-center gap-2 font-mono text-[11px] font-medium leading-none text-ink-3 tabular-nums">
@@ -63,7 +64,7 @@ function NodeCard({ node, base, className, after }: { node: StoryNode; base: str
           </span>
         )}
       </span>
-      <span className={`font-read text-[15px] leading-[1.35] [overflow-wrap:anywhere] ${TITLE[look]}`}>{node.title}</span>
+      <span className={`font-read text-[15px] leading-[1.35] [overflow-wrap:anywhere] ${TITLE[look]}`}><TitleText>{node.title}</TitleText></span>
       <span data-state-line className="flex min-w-0 items-center gap-[7px] font-mono text-[11.5px] font-medium leading-[1.3]">
         <Icon state={node.state} />
         <span className={`truncate ${QUIET_WORD[look] ?? TONE_TEXT[STATES[node.state].tone]}`}>{node.word}</span>
