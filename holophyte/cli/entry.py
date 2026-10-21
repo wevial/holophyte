@@ -33,7 +33,7 @@ from holophyte.config.checks import (
 from holophyte.config.config_tables import loop_config
 from holophyte.config.project import Project
 from holophyte.host.startup import eager_import
-from holophyte.loop.pool import worker
+from holophyte.loop.pool import witness_child, worker
 from holophyte.loop.shadow_spawn import shadow_mode
 from holophyte.serve.server import ADDRESS_SHAPE
 from provider import board_for
@@ -92,8 +92,10 @@ def _legacy_cli(argv):
                            note=args.note, author=args.author)
     if args.supervise:
         return _supervise_project(target, board)
-    if args.worker:
-        return worker(target, require_board(target, board))
+    pool_child = worker if args.worker else (
+        witness_child if args.witness_step else None)
+    if pool_child is not None:
+        return pool_child(target, require_board(target, board))
     from holophyte.admission import disabled_startup
     if disabled_startup(target):
         return 0
