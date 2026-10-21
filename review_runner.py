@@ -313,16 +313,20 @@ cp -a /workspace /home/reviewer/candidate
                       *turn]
 
 
-FENCE_RE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)")
+FENCE_RE = re.compile(r"[ \t]*((?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)")
 
 
 def fence_flags(lines):
-    fence = ""
+    fence, item_indent = "", 0
     for line in lines:
         match = FENCE_RE.match(line)
-        run, rest = match.groups() if match else ("", "")
+        run, rest = match.group(2, 3) if match else ("", "")
+        if fence and line.strip() and (
+                len(line) - len(line.lstrip()) < item_indent):
+            fence = ""
         if not fence and run and not (run[0] == "`" and "`" in rest):
             fence = run
+            item_indent = match.start(2) if match.group(1) else 0
         elif fence and run.startswith(fence) and not rest.strip():
             fence = ""
         elif not fence:

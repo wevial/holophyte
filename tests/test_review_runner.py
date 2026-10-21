@@ -280,6 +280,11 @@ class ReviewerBoundaryTests(unittest.TestCase):
         self.assertEqual(review_runner.terminal_verdict(
             reply, review_runner.ADJUDICATION_VERDICTS), "PASS")
 
+    def test_list_item_fence_ends_where_the_list_item_ends(self):
+        reply = "- ```\n  `VERDICT: FAIL`\n\n**VERDICT: PASS**"
+        self.assertEqual(review_runner.terminal_verdict(
+            reply, review_runner.ADJUDICATION_VERDICTS), "PASS")
+
     def test_verdict_wrapped_with_trailing_prose_or_twice_is_malformed(self):
         for reply in ("Checked.\n**VERDICT: PASS.** It is mergeable.",
                       "`VERDICT: FAIL`\nVERDICT: PASS"):
