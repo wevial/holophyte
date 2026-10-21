@@ -133,6 +133,13 @@ test("an older daemon's untitled blocked, stale_run and failed items parse; a nu
   });
 });
 
+test("an older daemon's status with no witnesses parses; a keyless witness set fails at its path", () => {
+  const { witnesses: _witnesses, ...older } = status;
+  expect<unknown>(statusSchema.parse(older)).toEqual(older);
+  const keyless = { ...older, witnesses: { story: "DEMO-20", started_ms: 1749990000000, elapsed_ms: 240000 } };
+  expect(firstIssuePath(statusSchema.safeParse(keyless))).toBe("witnesses.keys");
+});
+
 test("an attention item's kind narrows it to its own fields", () => {
   const item: Attention["items"][number] = attentionSchema.parse(attention).items[0];
   if (item.kind !== "pr_open") throw new Error(`expected pr_open, got ${item.kind}`);
