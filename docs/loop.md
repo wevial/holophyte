@@ -169,7 +169,9 @@ machines it walks. Back to the [README](index.md).
    question -- then
    the verify command passes again on the result, and the ticket is re-read
    from Linear and held against the snapshot the claim froze (title,
-   acceptance criteria, verify commands). A body edited while the run was
+   acceptance criteria, verify commands), or against the revision an
+   amendment steered onto the run adopted, when it adopted one, so only an
+   edit recorded after that revision counts. A body edited while the run was
    working refuses the merge and preserves the branch — the candidate answers
    the ticket as it was claimed, not as it now reads. A ticket that cannot be
    re-read (Linear down, issue gone) is *not* read as drift: the run records
