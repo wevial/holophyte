@@ -115,6 +115,7 @@ function scan(source: string): Item[] {
     if (cursor.at >= source.length) break;
     const first = cursor.line();
     let start = -1;
+    let read: Scalar | string[] | undefined;
     try {
       const table = cursor.take(/(\[\[?)[ \t]*([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)[ \t]*(\]\]?)/);
       if (table) {
@@ -126,12 +127,13 @@ function scan(source: string): Item[] {
         const item: Item = { kind: "key", path, key: key[1]!, first, last: first };
         items.push(item);
         start = cursor.at;
-        item.value = value(cursor);
+        read = value(cursor);
         item.last = cursor.line();
       }
       cursor.skip();
       const end = cursor.take(/(#[^\r\n]*)?\r?(?:\n|$)/) ?? cursor.fail("text after a value");
       if (end[1] && items.at(-1)!.kind === "key") items.at(-1)!.comment = end[1];
+      if (read !== undefined) items.at(-1)!.value = read;
     } catch {
       if (start >= 0) items.at(-1)!.comment = trailingComment(source.slice(start).split("\n", 1)[0]!);
       cursor.take(/[^\n]*\n?/);
@@ -274,7 +276,8 @@ function arrayLines(span: string[], key: string, value: string[], comment?: stri
     if (asWritten(r)) {
       const text = unseparated(r);
       if (text === null) return;
-      lines.push(text);
+      if (row.items.length) pushValues([text]);
+      else lines.push(text);
       const item = row.items.at(-1);
       const end = item ? item.end - strayCommas(r).filter(at => at < item.end).length : 0;
       if (item) open = item.comma && commaKept(item.comma) ? null : { line: lines.length - 1, end };

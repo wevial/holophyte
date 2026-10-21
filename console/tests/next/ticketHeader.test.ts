@@ -65,6 +65,9 @@ test("setting a key whose value the reader cannot read replaces its line, keepin
   expect(readHeader(source).estimate).toBeUndefined();
   expect(withKey(source, "", "estimate", 30)).toBe('ui_change = "none"\nestimate = 30 # rounded\ndepends_on = []\n');
   expect(withKey('note = "a # b\', c\n', "", "note", "d")).toBe('note = "d"\n');
+  const trailing = 'estimate = 45 min\n';
+  expect(readHeader(trailing).estimate).toBeUndefined();
+  expect(withKey(trailing, "", "estimate", 45)).toBe("estimate = 45\n");
 });
 
 test("editing a multi-line array keeps its comment rows and the rows of items that stay", () => {
@@ -98,4 +101,11 @@ test("adding an item to an array whose trailing comma shares the closing row mov
   const added = withKey(source, "", "depends_on", ["HOLO-1", "HOLO-9"]);
   expect(added).toBe('  depends_on = [\n    "HOLO-1",\n    # comment\n    "HOLO-9",\n   ]\n');
   expect(Bun.TOML.parse(added)).toEqual({ depends_on: ["HOLO-1", "HOLO-9"] });
+});
+
+test("removing an item between two kept items in a leading-comma array keeps them separated and the comment row", () => {
+  const source = 'depends_on = [\n  "HOLO-1"\n  , "HOLO-2",\n  # keep this comment\n  "HOLO-3",\n]\n';
+  const removed = withKey(source, "", "depends_on", ["HOLO-1", "HOLO-3"]);
+  expect(removed).toContain("  # keep this comment\n");
+  expect(Bun.TOML.parse(removed)).toEqual({ depends_on: ["HOLO-1", "HOLO-3"] });
 });
