@@ -1,4 +1,4 @@
-import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type Evidence, type TicketForm } from "./ticketForm";
 import { headerSpan, readHeader } from "./ticketHeader";
 
 const TITLE = "Title";
@@ -51,7 +51,7 @@ const drawn = (form: TicketForm, index: number, raw: Set<string>) => {
   return Object.hasOwn(SHAPES, name) && !raw.has(name) && form.sections.findIndex(section => section.name === name) === index;
 };
 
-const PROSE = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes", "mockupLink", "mockupApproval", "mockupImages"] as const;
+const PROSE = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes", "mockupLink", "mockupApproval", "mockupApproved", "mockupNote", "mockupImages"] as const;
 type Prose = typeof PROSE[number];
 
 /** A ticket revision as the edit form holds it: each list field one item a
@@ -67,6 +67,8 @@ export type EditFields = Record<Prose, string> & {
   priority: number | null;
   dependsOn: string[];
   uiChange: "major" | "minor" | null;
+  blastRadius: "medium" | "high" | null;
+  evidence: Evidence[];
   others: { index: number; name: string; text: string }[];
 };
 
@@ -75,7 +77,8 @@ const FIELD_NAMES: [keyof Omit<EditFields, "others" | "criteriaFrom" | "criteria
   ["title", "Title"], ["summary", "Summary"], ["what", "What"], ["why", "Why"], ["how", "How"],
   ["inScope", "In scope"], ["outOfScope", "Out of scope"], ["criteria", "Acceptance criteria"],
   ["verify", "Verify commands"], ["estimate", "Estimate"], ["priority", "Priority"], ["dependsOn", "Depends on"],
-  ["uiChange", "UI change"], ["mockupLink", "Mock-up link"], ["mockupApproval", "Approval"], ["mockupImages", "Boards"],
+  ["uiChange", "UI change"], ["blastRadius", "Blast radius"], ["mockupLink", "Mock-up link"], ["mockupApproval", "Approval"],
+  ["mockupApproved", "Approved on"], ["mockupNote", "What was approved"], ["mockupImages", "Boards"], ["evidence", "Evidence"],
   ["notes", "Implementation notes"],
 ];
 
@@ -144,6 +147,8 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     priority,
     dependsOn: fieldOf(form, "dependsOn"),
     uiChange: fieldOf(form, "uiChange"),
+    blastRadius: fieldOf(form, "blastRadius"),
+    evidence: fieldOf(form, "evidence"),
     others: [
       ...(raw.has(TITLE) ? [{ index: -2, name: TITLE, text: form.preamble.slice(titleStart(form.preamble)).trim() }] : []),
       ...(rest && !raw.has(PROSE_SECTION) ? [{ index: -1, name: PROSE_SECTION, text: rest }] : []),
@@ -151,6 +156,9 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     ],
   };
 }
+
+/** Whether `body` opens with a `+++` header, whose fields the form draws as their own controls. */
+export const hasHeader = (body: string) => headerSpan(body) !== null;
 
 /** Whether `body` has a Mock-up section or a header `[mockup]`, whose fields the form draws even with no UI change. */
 export function hasMockup(body: string): boolean {

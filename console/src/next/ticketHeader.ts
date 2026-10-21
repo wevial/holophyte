@@ -358,3 +358,24 @@ export function withEntries(source: string, path: string, entries: (Table | numb
   } else rows.splice(at, 0, ...(lines.length && at > 0 && !blank(rows[at - 1]) ? [""] : []), ...lines, ...tail);
   return join(rows, eol);
 }
+
+/** `source` with `key` of its `index`th `[[path]]` entry set to `value`:
+ *  the key's line rewritten in place, its comment kept, or a new line after
+ *  the entry's keys that sort before it. */
+export function withEntryKey(source: string, path: string, index: number, key: string, value: Scalar): string {
+  const { eol, rows } = split(source);
+  const items = scan(source);
+  const segment = segments(items, rows.length).filter(each => each.head?.kind === "array" && each.head.path === path)[index];
+  if (!segment) return source;
+  const keys = items.filter(item => item.kind === "key" && item.first >= segment.start && item.first < segment.end);
+  const found = keys.find(item => item.key === key);
+  if (found && JSON.stringify(found.value) === JSON.stringify(value)) return source;
+  const line = `${key} = ${formatValue(value)}`;
+  if (found) rows.splice(found.first, found.last - found.first + 1, found.comment ? `${line} ${found.comment}` : line);
+  else {
+    const order = KEY_ORDER[path] ?? [];
+    const before = keys.filter(item => rank(order, item.key) < rank(order, key)).at(-1);
+    rows.splice(before ? before.last + 1 : segment.start + 1, 0, line);
+  }
+  return join(rows, eol);
+}

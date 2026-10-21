@@ -4,7 +4,23 @@ import type { Tone } from "./state";
 /** The ticket as a whole: a message no field owns. */
 export const WHOLE_TICKET = "Ticket";
 
+/** The header problems, each naming the key it judges; a header problem
+ *  naming none belongs to the whole ticket. */
+const HEADER_PLACES: [RegExp, string][] = [
+  [/^header ui_change\b/, "UI change"],
+  [/^header blast_radius\b/, "Blast radius"],
+  [/^header estimate\b/, "Estimate"],
+  [/^header depends_on\b/, "Depends on"],
+  [/^header mockup\.url\b/, "Mock-up link"],
+  [/^header mockup\.approved\b/, "Approved on"],
+  [/^header mockup\.note\b/, "What was approved"],
+  [/^header mockup\.boards\b/, "Boards"],
+  [/^header evidence\[(\d+)\](?:\.(file|state)\b)?/, "E"],
+  [/^header\b/, WHOLE_TICKET],
+];
+
 const PLACES: [RegExp, string][] = [
+  ...HEADER_PLACES,
   [/H1 title/, "Title"],
   [/(?:acceptance criterion #|Acceptance criteria #|criterion )(\d+)\b/, "AC"],
   [/'Acceptance criteria'/, "Acceptance criteria"],
@@ -22,11 +38,12 @@ const PLACES: [RegExp, string][] = [
 ];
 
 /** The New ticket field a checker message belongs to, named as the form
- *  labels it ("Summary", "AC2", "Mock-up link"), read from the checker's
+ *  labels it ("Summary", "AC2", "Mock-up link", "E2 File"), read from the checker's
  *  own wording; `WHOLE_TICKET` when no field owns it. */
 export function placeMessage(text: string): string {
   for (const [pattern, field] of PLACES) {
     const match = pattern.exec(text);
+    if (match && field === "E") return `E${match[1]}${match[2] ? ` ${match[2] === "file" ? "File" : "State"}` : ""}`;
     if (match) return field === "AC" ? `AC${match[1]}` : field;
   }
   return WHOLE_TICKET;

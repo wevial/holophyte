@@ -5,13 +5,13 @@ import { editTicket } from "../../lib/boardWrites";
 import { formatAge, formatClock } from "../../lib/format";
 import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
-import { CHANGED, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, UiChangeField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { pickedBody, pickedSide, priorityPart, sectionParts, type Part, type Pick } from "../sectionPicks";
 import { useTicketPage } from "../ticket";
-import { changedNames, composeEdit, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
+import { changedNames, composeEdit, hasHeader, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
 import { clampEstimate } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
@@ -93,7 +93,7 @@ export function EditTicket() {
 }
 
 /** What the page read of revision `loaded`: its fields as the form draws them. */
-const readOf = (loaded: Loaded) => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), raw: rawParts(loaded.body) });
+const readOf = (loaded: Loaded) => ({ ...loaded, fields: loadEdit(loaded.body, loaded.priority), mockup: hasMockup(loaded.body), header: hasHeader(loaded.body), raw: rawParts(loaded.body) });
 type Read = ReturnType<typeof readOf>;
 
 function ConflictIcon() {
@@ -280,23 +280,32 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
             <PriorityField priority={fields.priority} onChange={value => set("priority", value)} changed={changed("priority")} />
             {drawn("Estimate & dependencies") && <DependsField dependsOn={fields.dependsOn} onChange={next => set("dependsOn", next)} dependency={dependency} onDependency={setDependency} cards={cards} marks={checked} changed={changed("dependsOn")} />}
           </div>
-          {drawn("What / Why / How") && <div className="space-y-5">
-            <label data-changed={changed("uiChange") || undefined} className={`flex items-center gap-3 text-[14px] font-semibold ${changed("uiChange") ? `${CHANGED} py-2 pl-2` : ""}`}>
-              <input id="new-UI change" type="checkbox" role="switch" checked={fields.uiChange !== null} onChange={() => set("uiChange", fields.uiChange ? null : read.fields.uiChange ?? "major")} {...marks("UI change", "h-5 w-9 accent-act")} />This ticket changes the UI
-            </label>
-            <Messages id={messagesId("UI change")} messages={messagesOf("UI change")} />
-            {(fields.uiChange || read.mockup) && drawn("Mock-up") && <>
+          {(read.header || drawn("What / Why / How")) && <div className="space-y-5">
+            <div className="grid gap-5 min-[720px]:grid-cols-2">
+              <UiChangeField uiChange={fields.uiChange} onChange={value => set("uiChange", value)} marks={checked} changed={changed("uiChange")} />
+              {read.header && <BlastRadiusField blastRadius={fields.blastRadius} onChange={value => set("blastRadius", value)} marks={checked} changed={changed("blastRadius")} />}
+            </div>
+            {(fields.uiChange === "major" || read.mockup) && drawn("Mock-up") && <>
               <Field label="Mock-up link" extra=" for a UI change" messages={messagesOf("Mock-up link")} changed={changed("mockupLink")}>
                 <input id="new-Mock-up link" {...marks("Mock-up link", INPUT)} placeholder="https://…" value={fields.mockupLink} onChange={event => set("mockupLink", event.target.value)} />
               </Field>
-              <Field label="Approval" changed={changed("mockupApproval")}>
+              {read.header ? <div className="grid gap-5 min-[720px]:grid-cols-[200px_minmax(0,1fr)]">
+                <Field label="Approved on" messages={messagesOf("Approved on")} changed={changed("mockupApproved")}>
+                  <input id="new-Approved on" type="date" {...marks("Approved on", `${INPUT} font-mono`)} value={fields.mockupApproved} onChange={event => set("mockupApproved", event.target.value)} />
+                </Field>
+                <Field label="What was approved" messages={messagesOf("What was approved")} changed={changed("mockupNote")}>
+                  <input id="new-What was approved" {...marks("What was approved", `${INPUT} font-sans`)} value={fields.mockupNote} onChange={event => set("mockupNote", event.target.value)} />
+                </Field>
+              </div> : <Field label="Approval" changed={changed("mockupApproval")}>
                 <input id="new-Approval" className={`${INPUT} font-mono`} value={fields.mockupApproval} onChange={event => set("mockupApproval", event.target.value)} />
-              </Field>
-              <Field label="Boards" optional hint="One image link a line." changed={changed("mockupImages")}>
-                <textarea id="new-Boards" rows={3} className={`${INPUT} font-mono`} value={fields.mockupImages} onChange={event => set("mockupImages", event.target.value)} />
+              </Field>}
+              <Field label="Boards" optional hint="One image link a line." messages={messagesOf("Boards")} changed={changed("mockupImages")}>
+                <textarea id="new-Boards" rows={3} {...marks("Boards", `${INPUT} font-mono`)} value={fields.mockupImages} onChange={event => set("mockupImages", event.target.value)} />
               </Field>
             </>}
           </div>}
+          {read.header && <EvidenceField evidence={fields.evidence} onChange={next => set("evidence", next)} marks={checked}
+            changed={index => !same(fields.evidence[index], origin.fields.evidence[index])} />}
           {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
           {fields.others.length > 0 && <div>
             <details open={read.raw.size > 0}>

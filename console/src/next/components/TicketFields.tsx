@@ -3,7 +3,7 @@ import { checkTicket, type CheckResult } from "../../lib/boardWrites";
 import type { PollDeps } from "../../lib/poll";
 import { placeMessage, WHOLE_TICKET } from "../checker";
 import { boardColumn, COLUMN_HEADS, type TicketCard } from "../tickets";
-import { clampEstimate } from "../ticketForm";
+import { clampEstimate, type Evidence, type Fields } from "../ticketForm";
 import { Btn } from "./Btn";
 import { TONE_TEXT } from "./StateDot";
 import type { Tone } from "../state";
@@ -59,7 +59,9 @@ export function checkMarks(check: CheckResult | null | undefined) {
 }
 type Marks = ReturnType<typeof checkMarks>;
 
+const evidenceField = /^E(\d+)(?: (File|State))?$/;
 const fieldId = (field: string) => field.startsWith("AC") ? `criterion-${Number(field.slice(2)) - 1}`
+  : evidenceField.test(field) ? field.replace(evidenceField, (_, row: string, box = "file") => `evidence-${box.toLowerCase()}-${Number(row) - 1}`)
   : field === "Acceptance criteria" ? "criterion-0" : field === "Estimate" ? "estimate" : `new-${field}`;
 
 export function Messages({ id, messages }: { id: string; messages: Message[] }) {
@@ -121,6 +123,71 @@ export function CriteriaField({ criteria, onChange, marks, changed = () => false
     <div className="mt-3 flex flex-wrap items-center gap-3">
       <Btn onClick={() => change([...rows, null])}>+ Add a criterion</Btn>
       <span className="font-mono text-[12px] text-ink-3">{criteria.filter(value => value.trim()).length} of {criteria.length} written</span>
+    </div>
+  </Field>;
+}
+
+const UI_CHANGES: [Fields["uiChange"], string][] = [[null, "None"], ["minor", "Minor"], ["major", "Major"]];
+const BLAST_RADII: [Fields["blastRadius"], string][] = [[null, "Diff decides"], ["medium", "Medium"], ["high", "High"]];
+
+function Choice<T extends string | null>({ label, options, value, onChange, marks, changed, hint, optional }: {
+  label: string; options: [T, string][]; value: T; onChange: (value: T) => void; marks: Marks; changed: boolean; hint?: string; optional?: boolean;
+}) {
+  return <Field label={label} optional={optional} hint={hint} messages={marks.messagesOf(label)} changed={changed}>
+    <select id={`new-${label}`} {...marks.marks(label, `${INPUT} font-sans`)} value={value ?? ""} onChange={event => onChange(options.find(([option]) => (option ?? "") === event.target.value)![0])}>
+      {options.map(([option, name]) => <option key={name} value={option ?? ""}>{name}</option>)}
+    </select>
+  </Field>;
+}
+
+export function UiChangeField({ uiChange, onChange, marks, changed = false }: { uiChange: Fields["uiChange"]; onChange: (value: Fields["uiChange"]) => void; marks: Marks; changed?: boolean }) {
+  return <Choice label="UI change" options={UI_CHANGES} value={uiChange} onChange={onChange} marks={marks} changed={changed} />;
+}
+
+export function BlastRadiusField({ blastRadius, onChange, marks, changed = false }: { blastRadius: Fields["blastRadius"]; onChange: (value: Fields["blastRadius"]) => void; marks: Marks; changed?: boolean }) {
+  return <Choice label="Blast radius" optional hint="Raises the review tier when a change is riskier than its diff." options={BLAST_RADII} value={blastRadius} onChange={onChange} marks={marks} changed={changed} />;
+}
+
+const MAX_EVIDENCE = 6;
+const position = (index: number) => String(index + 1).padStart(2, "0");
+const renumbered = (rows: Evidence[]) => rows.map((row, index) => /^\d{2}-/.test(row.file) ? { ...row, file: position(index) + row.file.slice(2) } : row);
+
+/** The `[[evidence]]` entries as one row each of a file and the state it
+ *  captures, reorderable and removable; a move or removal renumbers each
+ *  file that opens with its two-digit position. */
+export function EvidenceField({ evidence, onChange, marks, changed = () => false }: { evidence: Evidence[]; onChange: (next: Evidence[]) => void; marks: Marks; changed?: (index: number) => boolean }) {
+  const move = (index: number, delta: number) => {
+    const next = [...evidence];
+    [next[index], next[index + delta]] = [next[index + delta]!, next[index]!];
+    onChange(renumbered(next));
+  };
+  const edit = (index: number, part: Partial<Evidence>) => onChange(evidence.map((row, at) => at === index ? { ...row, ...part } : row));
+  return <Field label="Evidence" optional extra=" · the states the run captures" hint="Each a file named NN-slug.png, or NN-slug.webm for a flow, and the state it shows." messages={marks.messagesOf("Evidence")}>
+    <div className="mt-3 space-y-3 empty:hidden">
+      {evidence.map((row, index) => {
+        const name = `E${index + 1}`;
+        return <div key={index} data-changed={changed(index) || undefined} className={`flex flex-wrap items-end gap-2 border-b border-rule-2 pb-3 ${changed(index) ? `${CHANGED} pl-2 pt-2` : ""}`}>
+          <span className="w-8 pb-3 font-mono text-[11px] text-ink-3">{name}</span>
+          <label className="min-w-0 flex-1 basis-[150px] font-mono text-[10.5px] uppercase text-ink-3">File
+            <input id={`evidence-file-${index}`} aria-label={`${name} File`} placeholder={`${position(index)}-slug.png`} {...marks.marks([`${name} File`, name], `${INPUT} !mt-1 font-mono normal-case`)} value={row.file} onChange={event => edit(index, { file: event.target.value })} />
+          </label>
+          <label className="min-w-0 flex-[2] basis-[200px] font-mono text-[10.5px] uppercase text-ink-3">State
+            <input id={`evidence-state-${index}`} aria-label={`${name} State`} placeholder="the page and state it shows" {...marks.marks([`${name} State`, name], `${INPUT} !mt-1 font-sans normal-case`)} value={row.state} onChange={event => edit(index, { state: event.target.value })} />
+          </label>
+          <div className="ml-auto flex gap-1">
+            <Btn className="!w-10 !h-10 !p-0" aria-label={`Move ${name} up`} disabled={index === 0} onClick={() => move(index, -1)}>↑</Btn>
+            <Btn className="!w-10 !h-10 !p-0" aria-label={`Move ${name} down`} disabled={index === evidence.length - 1} onClick={() => move(index, 1)}>↓</Btn>
+            <Btn className="!w-10 !h-10 !p-0" aria-label={`Remove ${name}`} onClick={() => onChange(renumbered(evidence.filter((_, at) => at !== index)))}>×</Btn>
+          </div>
+          <div className="basis-full empty:hidden">
+            {[name, `${name} File`, `${name} State`].map(field => <Messages key={field} id={messagesId(field)} messages={marks.messagesOf(field)} />)}
+          </div>
+        </div>;
+      })}
+    </div>
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <Btn disabled={evidence.length >= MAX_EVIDENCE} onClick={() => onChange([...evidence, { file: `${position(evidence.length)}-`, state: "" }])}>+ Add a state</Btn>
+      <span className="font-mono text-[12px] text-ink-3">{evidence.length} of {MAX_EVIDENCE}</span>
     </div>
   </Field>;
 }

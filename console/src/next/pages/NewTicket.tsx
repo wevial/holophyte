@@ -6,12 +6,12 @@ import { formatClock } from "../../lib/format";
 import { projectName } from "../../lib/derive";
 import { checkSummary, fileNote } from "../checker";
 import { Btn } from "../components/Btn";
-import { CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, Field, INPUT, Messages, messagesId, PriorityField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, UiChangeField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
-import { blankForm, clampEstimate, composeBody, fieldOf, parseBody, withField } from "../ticketForm";
+import { blankForm, clampEstimate, composeBody, fieldOf, parseBody, withField, type Evidence } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { CRUMB_LINK } from "./runShared";
 
@@ -20,6 +20,7 @@ type TextField = typeof FIELDS[number];
 
 const emptyValues = () => Object.fromEntries(FIELDS.map(field => [field, ""])) as Record<TextField, string>;
 const draftKey = (project: string) => `holo.newTicket.${project}`;
+const today = () => new Date().toISOString().slice(0, 10);
 
 function newForm() {
   const form = blankForm();
@@ -99,19 +100,21 @@ export function NewTicket() {
   const [dependency, setDependency] = useState("");
   const [mockupLink, setMockupLink] = useState("");
   const [mockupBoards, setMockupBoards] = useState("");
-  const [approval, setApproval] = useState(() => `Approved ${new Date().toISOString().slice(0, 10)}: `);
+  const [approved, setApproved] = useState(today);
+  const [approvedNote, setApprovedNote] = useState("");
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [criteria, setCriteria] = useState([""]);
   const [estimateDraft, setEstimateDraft] = useState("25");
   const estimate = clampEstimate(Number(estimateDraft) || 25);
   const dependsOn = fieldOf(template, "dependsOn");
   const uiChange = fieldOf(template, "uiChange");
+  const blastRadius = fieldOf(template, "blastRadius");
   const cards = boards.filter(({ host }) => host.base === target?.base).flatMap(({ host, board }) => hostCards(host, board, readiness, peers.now));
-  const toggleUI = () => setTemplate(previous => withField(previous, "uiChange", fieldOf(previous, "uiChange") ? null : "major"));
   const [values, setValues] = useState(emptyValues);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   const restore = (draft: ReturnType<typeof readDraft>) => {
     const form = draft?.form ?? newForm();
-    setTemplate(withField(withField(newForm(), "dependsOn", fieldOf(form, "dependsOn")), "uiChange", fieldOf(form, "uiChange")));
+    setTemplate(withField(withField(withField(newForm(), "dependsOn", fieldOf(form, "dependsOn")), "uiChange", fieldOf(form, "uiChange")), "blastRadius", fieldOf(form, "blastRadius")));
     setValues(draft?.values ?? emptyValues());
     setPriority(draft ? draft.priority : 2);
     setRestoredAt(draft?.savedAt ?? null);
@@ -120,7 +123,9 @@ export function NewTicket() {
     setEstimateDraft(String(fieldOf(form, "estimate") ?? 25));
     setMockupLink(fieldOf(form, "mockupLink"));
     setMockupBoards(fieldOf(form, "mockupImages").map(image => image.replace(/^!\[[^\]]*\]\((.*)\)$/, "$1")).join("\n"));
-    setApproval(fieldOf(form, "mockupApproval") || `Approved ${new Date().toISOString().slice(0, 10)}: `);
+    setApproved(fieldOf(form, "mockupApproved") || today());
+    setApprovedNote(fieldOf(form, "mockupNote"));
+    setEvidence(fieldOf(form, "evidence"));
   };
   useEffect(() => {
     restore(readDraft(project));
@@ -130,14 +135,15 @@ export function NewTicket() {
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
-  let form = withField(withField(template, "criteria", criteria), "estimate", estimate);
+  let form = withField(withField(withField(template, "criteria", criteria), "estimate", estimate), "evidence", evidence);
   for (const field of FIELDS) {
     if (field === "inScope" || field === "outOfScope" || field === "verify") form = withField(form, field, values[field] ? values[field].split("\n") : []);
     else if (field === "notes") form = withField(form, field, values[field].split("\n").filter(line => line.trim()).map(line => `- ${line}`).join("\n"));
     else form = withField(form, field, values[field]);
   }
-  if (uiChange) {
-    form = withField(withField(withField(form, "mockupLink", mockupLink), "mockupApproval", approval), "mockupImages", mockupBoards.split("\n").filter(url => url.trim()).map(url => `![board](${url.trim()})`));
+  if (uiChange === "major") {
+    form = withField(withField(withField(form, "mockupLink", mockupLink), "mockupApproved", approved), "mockupNote", approvedNote);
+    form = withField(form, "mockupImages", mockupBoards.split("\n").filter(url => url.trim()).map(url => `![board](${url.trim()})`));
   }
   const body = composeBody(form);
   const blank = !values.title.trim() && !values.summary.trim() && !values.what.trim();
@@ -230,22 +236,28 @@ export function NewTicket() {
                 <DependsField dependsOn={dependsOn} onChange={next => setTemplate(previous => withField(previous, "dependsOn", next))} dependency={dependency} onDependency={setDependency} cards={cards} marks={checked} />
               </div>
               <div className="space-y-5">
-                <label className="flex items-center gap-3 text-[14px] font-semibold">
-                  <input id="new-UI change" type="checkbox" role="switch" checked={uiChange !== null} onChange={toggleUI} {...marks("UI change", "h-5 w-9 accent-act")} />This ticket changes the UI
-                </label>
-                <Messages id={messagesId("UI change")} messages={messagesOf("UI change")} />
-                {uiChange && <>
+                <div className="grid gap-5 min-[720px]:grid-cols-2">
+                  <UiChangeField uiChange={uiChange} onChange={value => setTemplate(previous => withField(previous, "uiChange", value))} marks={checked} />
+                  <BlastRadiusField blastRadius={blastRadius} onChange={value => setTemplate(previous => withField(previous, "blastRadius", value))} marks={checked} />
+                </div>
+                {uiChange === "major" && <>
                   <Field label="Mock-up link" extra=" for a UI change" hint="The design the implementer builds to and the reviewer compares against." messages={messagesOf("Mock-up link")}>
                     <input id="new-Mock-up link" {...marks("Mock-up link", INPUT)} placeholder="https://…" value={mockupLink} onChange={event => setMockupLink(event.target.value)} />
                   </Field>
-                  <Field label="Approval">
-                    <input id="new-Approval" className={`${INPUT} font-mono`} value={approval} onChange={event => setApproval(event.target.value)} />
-                  </Field>
-                  <Field label="Boards" optional hint="One image link a line.">
-                    <textarea id="new-Boards" rows={3} className={`${INPUT} font-mono`} value={mockupBoards} onChange={event => setMockupBoards(event.target.value)} />
+                  <div className="grid gap-5 min-[720px]:grid-cols-[200px_minmax(0,1fr)]">
+                    <Field label="Approved on" messages={messagesOf("Approved on")}>
+                      <input id="new-Approved on" type="date" {...marks("Approved on", `${INPUT} font-mono`)} value={approved} onChange={event => setApproved(event.target.value)} />
+                    </Field>
+                    <Field label="What was approved" messages={messagesOf("What was approved")}>
+                      <input id="new-What was approved" {...marks("What was approved", `${INPUT} font-sans`)} value={approvedNote} onChange={event => setApprovedNote(event.target.value)} />
+                    </Field>
+                  </div>
+                  <Field label="Boards" optional hint="One image link a line." messages={messagesOf("Boards")}>
+                    <textarea id="new-Boards" rows={3} {...marks("Boards", `${INPUT} font-mono`)} value={mockupBoards} onChange={event => setMockupBoards(event.target.value)} />
                   </Field>
                 </>}
               </div>
+              <EvidenceField evidence={evidence} onChange={setEvidence} marks={checked} />
               {input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
             </div>
             <aside aria-label="File ticket" className="min-w-0">
@@ -253,7 +265,7 @@ export function NewTicket() {
               <div className="border border-rule bg-paper p-5">
                 <div className="flex flex-wrap gap-2">
                   <Btn variant="primary" busy={busy} busyLabel="Filing…" disabled={held} onClick={() => void file()}>File ticket</Btn>
-                  <Btn disabled={busy || ((priority === null || priority === 0 || priority === 2) && !FIELDS.some(field => values[field].trim()) && !criteria.some(value => value.trim()) && estimate === 25 && !dependsOn.length && !dependency.trim() && !uiChange)} onClick={save}>Save draft</Btn>
+                  <Btn disabled={busy || ((priority === null || priority === 0 || priority === 2) && !FIELDS.some(field => values[field].trim()) && !criteria.some(value => value.trim()) && estimate === 25 && !dependsOn.length && !dependency.trim() && !uiChange && !blastRadius && !evidence.length)} onClick={save}>Save draft</Btn>
                 </div>
                 <p className="mt-3 font-mono text-[12px] text-ink-2">{fileNote(blank, errors, project)}</p>
                 {problems.length > 0 && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{problems.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}

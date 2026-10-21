@@ -62,6 +62,22 @@ PULL = "https://github.com/example/demo/pull/"
 MEDIA = "https://media.example/demo/pull-42/"
 SCREENSHOTS = ("01 split view", "02 custom slot", "03 saved document")
 DEPENDS = "\n## Estimate & dependencies\n\nEstimate: 15 min · Depends on: {}\n"
+HEADER = """\
++++
+ui_change = "minor"
+blast_radius = "medium"
+estimate = 30
+depends_on = []
+
+[[evidence]]
+file = "01-export-button.png"
+state = "the orders page with its Export button"
+
+[[evidence]]
+file = "02-export-done.png"
+state = "the toast after the export downloads"
++++
+"""
 W1 = dict(key="W1", criterion="A run that fails its verify is retried once",
           file="tests/test_recovery.py",
           command="python3 -m unittest tests.test_recovery",
@@ -123,7 +139,8 @@ def _seed_store(path):
     feature follow-up pending, DEMO-8 parked on pending checks, DEMO-9
     parked ready for its merge, DEMO-10 merged today, DEMO-11 failed and
     still in flight, DEMO-12 a story over six of them, DEMO-13 woken from
-    its park to fix its pull request; and a supervisor beating now."""
+    its park to fix its pull request, DEMO-14 a draft with a `+++` header;
+    and a supervisor beating now."""
     import store
     import store.board
     import store.tickets
@@ -266,6 +283,10 @@ def _seed_store(path):
         store.record_pr_seen(conn, run, (now - 2 * MIN, 3, 3, None, "failure",
                                          None, None, "ready"))
         store.heartbeat(conn, run, now=now)
+
+        filed(HEADER + re.sub(r"## Estimate & dependencies\n\n.*\n\n", "",
+                              body("Export the orders list as a sheet")),
+              column="backlog")
 
         store.record_supervisor_heartbeat(conn, os.getpid(), now - HOUR,
                                           now=now)

@@ -129,7 +129,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         columns = {column["state"]: {ticket["ticket"]: ticket
                                      for ticket in column["tickets"]}
                    for column in board["columns"]}
-        self.assertEqual(list(columns["backlog"]), ["DEMO-1", "DEMO-12"])
+        self.assertEqual(list(columns["backlog"]), ["DEMO-1", "DEMO-12", "DEMO-14"])
         self.assertEqual(list(columns["ready"]), ["DEMO-2"])
         self.assertEqual(sorted(columns["in_flight"]),
                          ["DEMO-11", "DEMO-13", "DEMO-3", "DEMO-7"])
@@ -236,7 +236,7 @@ class ConsoleFixtureTests(unittest.TestCase):
         (bare, _), (status, answer) = seen
         self.assertEqual(bare, 401)
         self.assertEqual(status, 201)
-        self.assertEqual(answer["ticket"], "DEMO-14")
+        self.assertEqual(answer["ticket"], "DEMO-15")
 
     def test_the_command_s_code_is_kept_and_everything_torn_down(self):
         result, (url, home) = self.script(RECORD)

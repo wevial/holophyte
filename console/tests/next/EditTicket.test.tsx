@@ -371,3 +371,35 @@ test("an edit to a magic-line ticket keeps its estimate line and adds no header"
   expect(saved).toContain("Estimate: 50 min · Depends on: none");
   expect(saved).not.toMatch(/^\+\+\+$/m);
 });
+
+const EVIDENCE_BODY = HEADER_BODY
+  .replace('ui_change = "minor"\n', 'ui_change = "minor"\nblast_radius = "medium"\n')
+  .replace('implementer = "fast"\n', 'implementer = "fast"\n\n[[evidence]]\nfile = "01-notes.png"\nstate = "the run page with two notes"\n\n[[evidence]]\nfile = "02-author.png"\nstate = "a note\'s author beside it"\n')
+  .replace("## Evidence\n\n- 01-notes.png: the run page with two notes.\n\n", "");
+
+test("a header ticket draws its blast radius and Evidence rows, and a state edit rewrites only that entry's state line", async () => {
+  const saved = await saveHeaderEdit(async () => {
+    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
+    expect(radius.selectedOptions[0]!.textContent).toBe("Medium");
+    expect(["E1 File", "E1 State", "E2 File", "E2 State"].map(name => box(name).value)).toEqual(["01-notes.png", "the run page with two notes", "02-author.png", "a note's author beside it"]);
+    await type("E2 State", "the author beside each note");
+  }, EVIDENCE_BODY);
+  expect(saved).toBe(EVIDENCE_BODY.replace('state = "a note\'s author beside it"', 'state = "the author beside each note"'));
+});
+
+test("a magic-line ticket draws no Blast radius select and no Evidence list", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit");
+  expect(box("Title").value).toBe(SERVED.Title);
+  expect(screen.getByRole("combobox", { name: "UI change" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Blast radius" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "+ Add a state" })).toBeNull();
+});
+
+test("a magic-line ticket's UI change select writes its **UI change:** line", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "UI change" }), { target: { value: "minor" } }));
+  await pressSave();
+  const saved = (puts[0]!.body as { body: string }).body;
+  expect(saved.match(/^\*\*UI change:\*\*.*$/gm)).toEqual(["**UI change:** minor"]);
+  expect(saved.replace("\n\n**UI change:** minor", "")).toBe(BODY);
+});
