@@ -52,7 +52,7 @@ const strip = () => screen.queryByLabelText("Notices");
 const banners = (kind: string) => Array.from(document.querySelectorAll(`[data-notice="${kind}"]`));
 const footer = () => document.querySelector("[data-footer-line]")!;
 const section = (name: string) => screen.getByRole("region", { name });
-const SECTIONS = ["Needs you", "Running", "Pull requests", "Merged today"];
+const SECTIONS = ["Waiting on you", "Running", "Pull requests", "Merged today"];
 
 interface Project {
   name: string;
@@ -185,7 +185,7 @@ test("before any host /peers lists answers the sections show bare labels under a
   daemons[SAME_HOST] = projectDaemon("/srv/dev/writer", NOW);
   await refetch(queries);
   expect(asking()).toEqual([]);
-  expect(section("Needs you").querySelector("h2 > span")!.textContent).toBe("0");
+  expect(section("Waiting on you").querySelector("h2 > span")!.textContent).toBe("0");
   expect(screen.getByText("The factory has it from here.")).toBeTruthy();
   cleanup();
 

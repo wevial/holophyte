@@ -1152,7 +1152,12 @@ identifier in the title. Describe what changed and why in a few short
 paragraphs; no testing plan." Anything but a string is a startup error
 naming the key.
 
-Visual evidence is captured when the diff matches `ui_paths`. Configure it
+Visual evidence is captured when the diff matches `ui_paths` and the ticket
+lists evidence states, declares `ui_change` `minor` or `major`, or declares
+neither and, under `ui_capture_local = true`, its worktree holds its own
+`<ui_capture_dir>/<ticket key>.capture.ts` (under `ui_capture_local = false`
+such a ticket is captured); a ticket declaring `none` with no states is never
+captured, and its PR and reviewer prompt carry no Evidence section. Configure it
 together with `ui_capture`; leaving both absent leaves PRs unchanged. The
 capture command receives one output-directory argument and has five minutes
 to write PNG, WebM or MP4 files. Evidence is shared with review prompts and
@@ -1201,8 +1206,10 @@ with the options below (or `python3 -m holophyte.capture_playwright`). It
 runs the spec `DIR/<HOLOPHYTE_TICKET>.capture.ts`, which lives outside the
 project's test tree, and refuses when the spec is missing, unless the ticket
 lists no evidence states and `--default SPEC` names an existing spec, which
-then runs in its place (a ticket that lists states and wrote no spec is still
-refused, and a `--default` naming a missing file is refused naming it). A
+then runs in its place; the factory reaches it only for a ticket declaring
+`ui_change` `minor` or `major` (a ticket that lists states and wrote no spec
+is still refused, and a `--default` naming a missing file is refused naming
+it). A
 default outside the working directory, such as one kept beside the factory's
 config, runs from a temporary copy in the capture directory, so it resolves
 the project's modules and path aliases; the copy is removed after the run, and

@@ -184,7 +184,7 @@ test("a check fix round logged before the newest checks step at the same instant
 
 test("a run past its heartbeat threshold says how long it has been silent and counts its criteria before its daemon raises it", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, heartbeat_age_ms: 15 * MINUTE }));
-  expect(verdict()).toBe("No heartbeat for 15m. It is up in Needs you. None of one criterion is met yet.");
+  expect(verdict()).toBe("No heartbeat for 15m. It is up in Waiting on you. None of one criterion is met yet.");
   expect(stage()).toBe("Stale · no beat 15m");
 });
 

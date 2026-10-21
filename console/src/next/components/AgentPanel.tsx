@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Markdown } from "../../components/Markdown";
 import type { ConsoleAsk, SteerNote } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
+import { noteAuthor } from "../progress";
 import { SECTION_LABEL } from "./Criteria";
 
 interface Message {
@@ -24,7 +25,7 @@ export function AgentPanel({ label, state, notes, asks, children }: {
   const messages: Message[] = notes.map((note) => ({
     key: `note-${note.id}`,
     at: note.at,
-    head: `${note.author === "maintainer" ? "You" : note.author} · ${note.kind === "hint" ? "hint" : "steer"}`,
+    head: `${noteAuthor(note.author, note.author)} · ${note.kind === "hint" ? "hint" : "steer"}`,
     text: note.note,
     effect: note.withdrawn ? "→ withdrawn" : note.consumed_ms == null
       ? "→ waiting until the agent reads it" : `→ the agent read it at ${formatClock(note.consumed_ms)}`,

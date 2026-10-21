@@ -27,7 +27,7 @@ function buttonName(row: SwitcherRow): string {
   const facts = [row.label];
   if (row.held) facts.push("held");
   if (row.down) facts.push("not answering");
-  if (row.need > 0) facts.push(`${row.need} need you`);
+  if (row.need > 0) facts.push(`${row.need} waiting on you`);
   return `Project: ${facts.join(", ")}. Switch project`;
 }
 

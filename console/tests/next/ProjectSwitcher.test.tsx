@@ -121,7 +121,7 @@ test("arrows wrap, Esc closes without moving, and Enter with no match does nothi
 test("a held scope shows its tag and need count, and picking All projects drops the scope but keeps the route", async () => {
   await mount("#/tickets?project=demo");
   const button = switcher();
-  expect(button.getAttribute("aria-label")).toBe("Project: demo, held, 2 need you. Switch project");
+  expect(button.getAttribute("aria-label")).toBe("Project: demo, held, 2 waiting on you. Switch project");
   expect(button.textContent).toBe("demoheld2");
 
   fireEvent.click(button);
@@ -135,19 +135,19 @@ test("a held scope shows its tag and need count, and picking All projects drops 
   await act(settle);
   expect(location()).toEqual({ path: "/tickets", project: null });
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 need you. Switch project");
+  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
 });
 
-test("each row counts its project's Needs you entries, so a pull request not ready to merge counts nowhere", async () => {
+test("each row counts its project's Waiting on you entries, so a pull request not ready to merge counts nowhere", async () => {
   await mount("#/runs", needsDaemons());
-  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 3 need you. Switch project");
+  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 3 waiting on you. Switch project");
   fireEvent.click(switcher());
   await act(settle);
   expect(optionNames()).toEqual(["All projects30 open", "demo20 open", "writer10 open"]);
   cleanup();
 
   await mount("#/runs", needsDaemons(false));
-  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 need you. Switch project");
+  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
   expect(badge()!.textContent).toBe("2");
   fireEvent.click(switcher());
   await act(settle);
