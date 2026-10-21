@@ -270,3 +270,34 @@ test("a live run's fixing line reads its pull request's number as a link and its
   expect(rowOf("DEMO-21").querySelector("[data-fixing]")).toBeNull();
   expect(rowOf("DEMO-21").textContent).not.toContain("fixing");
 });
+
+const witnessesOf = (keys: string[], elapsedMs: number) => ({ story: "DEMO-20", keys, started_ms: NOW - elapsedMs, elapsed_ms: elapsedMs });
+const witnessLine = (name: string) => lane(name).querySelector("[data-witnesses]");
+
+test("a running witness set keeps an idle project's lane, names its story, key range and time, and counts no worker busy", async () => {
+  const witnesses = witnessesOf(["W3", "W4", "W5", "W6"], 4 * MINUTE + 30_000);
+  await mount("#/", statusOf("/srv/dev/demo", [], { workers: 2, witnesses }), statusOf("/srv/dev/writer", []));
+  expect(lanes()).toEqual(["demo"]);
+  expect(head("demo")).toContain("0 of 2 workers busy");
+  expect(head("demo")).not.toContain("Nothing running.");
+  expect(witnessLine("demo")!.textContent).toBe("Witnesses · DEMO-20 · W3–W6 · running 4m");
+  expect(witnessLine("demo")!.querySelector("a")).toBeNull();
+});
+
+test("a witness set beside a live run lists keys that do not run consecutively and leaves the busy count to the run", async () => {
+  const witnesses = witnessesOf(["W1", "W3"], 12 * MINUTE);
+  await mount("#/", statusOf("/srv/dev/demo", [demoRun], { workers: 2, witnesses }), statusOf("/srv/dev/writer", []));
+  expect(within(lane("demo")).getAllByRole("link")).toHaveLength(1);
+  expect(head("demo")).toContain("1 of 2 workers busy");
+  expect(witnessLine("demo")!.textContent).toBe("Witnesses · DEMO-20 · W1, W3 · running 12m");
+});
+
+test("with no witness set running an idle project draws no lane and a live one no witness line", async () => {
+  await mount("#/", statusOf("/srv/dev/demo", [], { witnesses: null }), statusOf("/srv/dev/writer", []));
+  expect(lanes()).toEqual([]);
+  cleanup();
+
+  await mount("#/", statusOf("/srv/dev/demo", [demoRun], { witnesses: null }), statusOf("/srv/dev/writer", []));
+  expect(lanes()).toEqual(["demo"]);
+  expect(witnessLine("demo")).toBeNull();
+});

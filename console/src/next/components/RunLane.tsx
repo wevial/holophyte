@@ -7,7 +7,7 @@ import { formatDuration, formatSettled } from "../../lib/format";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { agentMs, boxPercent, groupByProject, phaseLabel, type ProjectGroup } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
-import type { StatusRun } from "../../lib/contract.gen";
+import type { StatusRun, WitnessSet } from "../../lib/contract.gen";
 import type { AttentionItem, Queued } from "../../lib/types";
 import type { ContractBodies } from "../fleet";
 import { prWait } from "../prRow";
@@ -39,6 +39,7 @@ export interface LaneGroup extends ProjectGroup {
   runs: StatusRun[];
   workers: number;
   onCi: OnCiRow[];
+  witnesses: WitnessSet | null;
 }
 
 function onCiRows(items: AttentionItem[], key: string, clockNow: number): OnCiRow[] {
@@ -60,8 +61,20 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[], items: Attention
   return groups.map((group) => {
     const own = answered.filter((entry) => entry.base === group.base && entry.status.project === group.path);
     const onCi = own.flatMap((entry) => onCiRows(items, entry.key, entry.status.now + sinceSeen(entry.seen_ms, now)));
-    return { ...group, runs: own.flatMap((entry) => entry.status.runs), workers: own[0]!.status.workers, onCi: orderByAge(onCi, (row) => row.ageMs) };
+    return {
+      ...group,
+      runs: own.flatMap((entry) => entry.status.runs),
+      workers: own[0]!.status.workers,
+      onCi: orderByAge(onCi, (row) => row.ageMs),
+      witnesses: own.find((entry) => entry.status.witnesses)?.status.witnesses ?? null,
+    };
   });
+}
+
+function witnessKeys(keys: string[]): string {
+  const numbers = keys.map((key) => (/^W\d+$/.test(key) ? Number(key.slice(1)) : NaN));
+  const run = keys.length > 1 && numbers.every((n, index) => n === numbers[0]! + index);
+  return run ? `${keys[0]}–${keys.at(-1)}` : keys.join(", ");
 }
 
 function quietSentence(keys: string[]): string {
@@ -191,7 +204,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
         {stale.length > 0 ? (
           <span>· {quietSentence(stale.map((run) => run.ticket))}</span>
         ) : (
-          live.length === 0 && <span>· Nothing running.</span>
+          live.length === 0 && !group.witnesses && <span>· Nothing running.</span>
         )}
         {queued.length > 0 && (
           <button
@@ -211,6 +224,12 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
             <RunLaneRow key={run.id} run={run} project={group.path} sinceMs={sinceMs} />
           ))}
         </ul>
+      )}
+      {group.witnesses && (
+        <p data-witnesses className="mt-2 font-mono text-[12px] text-ink-3">
+          Witnesses · {group.witnesses.story} · {witnessKeys(group.witnesses.keys)} · running{" "}
+          {formatSettled(group.witnesses.elapsed_ms + sinceMs)}
+        </p>
       )}
       {group.onCi.length > 0 && (
         <div className="mt-2">
@@ -232,7 +251,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
 }
 
 export function hasWork(group: LaneGroup): boolean {
-  return group.runs.length > 0 || group.onCi.length > 0 || (group.queued ?? []).length > 0 || group.status.admission === "held";
+  return group.runs.length > 0 || group.witnesses != null || group.onCi.length > 0 || (group.queued ?? []).length > 0 || group.status.admission === "held";
 }
 
 export function RunningLanes({ groups, now }: { groups: LaneGroup[]; now: number }) {

@@ -1,0 +1,38 @@
+"""The witness set a loop's witness step is running, in a file beside the store."""
+import json
+import os
+from pathlib import Path
+from time import time
+
+from holophyte.host.supervisor_lock import pid_alive
+
+
+def running_path(target):
+    return Path(target.holo_dir) / "witness-running.json"
+
+
+def mark_running(target, story, keys):
+    path = running_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"pid": os.getpid(), "story": story, "keys": keys,
+              "started_ms": int(time() * 1000)}
+    scratch = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    scratch.write_text(json.dumps(record))
+    os.replace(scratch, path)
+
+
+def clear_running(target):
+    running_path(target).unlink(missing_ok=True)
+
+
+def running_set(target, now):
+    try:
+        record = json.loads(running_path(target).read_text())
+        pid, started_ms = int(record["pid"]), int(record["started_ms"])
+        story, keys = str(record["story"]), [str(key) for key in record["keys"]]
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    if not pid_alive(pid):
+        return None
+    return {"story": story, "keys": keys, "started_ms": started_ms,
+            "elapsed_ms": now - started_ms}
