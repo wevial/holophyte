@@ -244,16 +244,14 @@ def witness_lock(target):
         os.close(fd)
 
 
-def pass_due(target, conn, project_id, spawned_at):
+def pass_due(target, conn, project_id):
     with witness_lock(target) as free:
         if not free:
-            return None
+            return False
     try:
-        pending = pass_pending(target, conn, project_id)
-        due = pending and (main_tip(target), tuple(pending))
+        return bool(pass_pending(target, conn, project_id))
     except TIP_FAILURES:
-        return None
-    return None if not due or due == spawned_at else due
+        return False
 
 
 def pass_refusal(conn, story_id):

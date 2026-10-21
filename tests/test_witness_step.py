@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
-from loop_fixture import ROOT, VALID_BODY, FakePool, LoopFixture  # noqa: E402
+from loop_fixture import ROOT, TICK, VALID_BODY, FakePool, LoopFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
@@ -191,6 +191,29 @@ class WitnessStepTests(LoopFixture):
         witness_pid = pool.next_pid - 1
         self.assertEqual([pid for pid, _ in pool.reaped],
                          [witness_pid - 1, witness_pid, witness_pid + 1])
+
+    def test_a_pass_that_recorded_nothing_is_retried_a_tick_later(self):
+        self.use(NATIVE + "[loop]\nworkers = 2\ntick_sec = 60\n")
+        self.approved_story("backlog")
+        first = self.file_ready()
+        filed, clock = [], [1000.0]
+
+        def park_and_file():
+            self.take(first)
+            filed.append(self.file_ready())
+
+        def a_tick_passes():
+            clock[0] += 60
+
+        with patch.object(holophyte.loop.pool, "monotonic", lambda: clock[0]):
+            pool = self.schedule([
+                (PARKED, park_and_file), (0, lambda: self.take(*filed)),
+                (TICK, a_tick_passes),
+                (PARKED, None), (0, self.step)])
+
+        self.assertEqual(self.modes(pool), ["--worker", "--witness-step",
+                                            "--worker", "--witness-step"])
+        self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])
 
     def test_a_held_witness_lock_skips_the_pass_until_it_is_released(self):
         self.approved_story("backlog")

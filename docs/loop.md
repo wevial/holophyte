@@ -381,11 +381,13 @@ child counts against no `workers` slot and is not handed over across a
 re-exec, but its exit is reaped like a worker's: the scheduler keeps
 ticking, claiming and reaping while it runs, an empty pool with the child
 alive waits on it with the tick deadline, and the loop returns once the
-pool is empty and the child has exited. A pass runs at the tip it reads
-when it starts, so a child spawned after a long set runs once at the
-newest tip however many commits landed meanwhile, and the scheduler
-spawns no second child at a tip it already spawned one for while the
-same stories are pending. A process
+pool is empty and the child has exited. Whether a pass is pending is read
+from the witness ledger, never from which children were spawned: a pass
+runs at the tip it reads when it starts, so a child spawned after a long
+set runs once at the newest tip however many commits landed meanwhile,
+and a child that recorded nothing leaves its pass pending for a child a
+tick after it exited. An empty pool does not wait out that tick, so a
+pass that keeps failing cannot hold the loop open. A process
 that finds the lock held -- a re-exec'd scheduler, a serial loop, a second
 loop -- prints `another witness pass holds the witness lock; skipping` and
 records nothing. The serial loop runs its witness step only once the queue

@@ -179,7 +179,7 @@ def scheduler(target, provider, knobs):
 
     conn = open_store(target)
     pool = pool_handoff.restore(target)
-    witness = _WitnessChild()
+    witness = _WitnessChild(knobs.tick_sec)
     previous = set(pool)
     slots = iter(range(pool_handoff.next_slot(pool), sys.maxsize))
     state = _PoolState(self_hosted(target), knobs.stop_on_failure,
@@ -249,25 +249,25 @@ def _reap(target, pool, previous, state, witness, tick_sec):
 
 
 class _WitnessChild:
-    def __init__(self):
+    def __init__(self, tick_sec):
+        self.tick_sec = tick_sec
         self.child = None
-        self.spawned_at = None
+        self.exited_at = None
 
     def spawn_if_due(self, target, conn, project):
         from holophyte.story.witness import pass_due
 
-        if self.child is not None:
+        if self.child is not None or (
+                self.exited_at is not None
+                and monotonic() - self.exited_at < self.tick_sec):
             return
-        due = pass_due(target, conn, project, self.spawned_at)
-        if due is None:
+        if not pass_due(target, conn, project):
             return
         program, argv = reexec_command()
         env = {k: v for k, v in os.environ.items() if k != WORKER_SLOT_ENV}
         self.child = SPAWN([program, *argv[1:], "--witness-step"], env=env,
                            stdin=subprocess.DEVNULL)
-        self.spawned_at = due
-        print(f"[holo2] started a witness pass at {due[0][:12]} as pid"
-              f" {self.child.pid}")
+        print(f"[holo2] started a witness pass as pid {self.child.pid}")
 
     def children(self):
         return {} if self.child is None else {self.child.pid: self.child}
@@ -278,6 +278,7 @@ class _WitnessChild:
         if code:
             print(f"[holo2] the witness pass exited {code}")
         self.child = None
+        self.exited_at = monotonic()
         return True
 
 
