@@ -35,8 +35,13 @@ def adopted(conn, run_id):
 
 
 def adopted_body(conn, run_id):
+    row = adopted_ticket_revision(conn, run_id)
+    return None if row is None else row.body
+
+
+def adopted_ticket_revision(conn, run_id):
     revision = store.steer_notes.adopted_revision(conn, run_id)
-    return None if revision is None else revision_body(conn, run_id, revision)
+    return None if revision is None else ticket_revision(conn, run_id, revision)
 
 
 def claimed_body(conn, run_id):
@@ -46,9 +51,13 @@ def claimed_body(conn, run_id):
 
 
 def revision_body(conn, run_id, revision):
+    row = ticket_revision(conn, run_id, revision)
+    return None if row is None else row.body
+
+
+def ticket_revision(conn, run_id, revision):
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-    return next((row.body for row in
-                 store.read.ticket_revisions(conn, ticket_id)
+    return next((row for row in store.read.ticket_revisions(conn, ticket_id)
                  if row.revision == revision), None)
 
 

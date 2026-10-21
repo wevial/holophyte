@@ -42,17 +42,42 @@ class MergeDriftAdoptedTests(LoopFixture):
             "SELECT id FROM tickets WHERE linearIdentifier = ?",
             (self.key,)).fetchone()
         store.tickets.transition(self.conn, ticket, "in_flight")
+        self.project_id, self.ticket = project, ticket
         self.run_id = store.claim(self.conn, project, ticket)
-        edited = int(time.time() * 1000) + 1000
-        revised = ticket_body(REVISED).replace(
+        self.edited = int(time.time() * 1000) + 1000
+        self.revised = ticket_body(REVISED).replace(
             "python3 -m unittest test_orders_export\nruff check .", V2)
-        store.board.edit_ticket(self.conn, project, self.key, revised,
-                                expected_revision=1, now=edited)
+        store.board.edit_ticket(self.conn, project, self.key, self.revised,
+                                expected_revision=1, now=self.edited)
+
+    def steer(self, hint=False):
         store.steer_notes.steer(
-            self.conn, ticket, "Meet revision 2's acceptance criteria",
-            "maintainer", now=edited + 1000)
+            self.conn, self.ticket, "Meet revision 2's acceptance criteria",
+            "maintainer", hint=hint, now=self.edited + 1000)
+
+    def drift(self):
+        return merge_drift(self.conn, self.run_id, self.board, self.key)
 
     def test_a_run_on_its_adopted_revision_has_not_drifted(self):
-        drift, live = merge_drift(self.conn, self.run_id, self.board, self.key)
+        self.steer()
+        drift, live = self.drift()
         self.assertEqual(drift, ())
         self.assertEqual(live["criteria"], REVISED)
+
+    def test_an_edit_after_the_adopted_revision_is_drift(self):
+        self.steer()
+        store.board.edit_ticket(
+            self.conn, self.project_id, self.key,
+            self.revised.replace(REVISED[1], "the table is sorted by date"),
+            expected_revision=2, now=self.edited + 2000)
+        drift, _ = self.drift()
+        self.assertEqual(drift, ("acceptanceCriteria",))
+
+    def test_without_an_amendment_the_claim_snapshot_is_the_baseline(self):
+        for hint in (None, True):
+            with self.subTest(steer="hint" if hint else "none"):
+                if hint:
+                    self.steer(hint=True)
+                drift, _ = self.drift()
+                self.assertEqual(drift, ("acceptanceCriteria",
+                                         "verificationCommands"))
