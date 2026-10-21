@@ -313,7 +313,7 @@ cp -a /workspace /home/reviewer/candidate
                       *turn]
 
 
-FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+FENCE_RE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(`{3,}|~{3,})(.*)")
 
 
 def fence_flags(lines):

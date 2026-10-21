@@ -106,6 +106,11 @@ class DecoratedCriterionLineTests(WorktreeCase):
             "- CRITERION 1: met — test_a.py::A::test_one\n```"),
             {"n": 1, "status": "unwitnessed", "note": UNWITNESSED_NOTE})
 
+    def test_decorated_criterion_in_a_list_item_code_fence_stays_unread(self):
+        self.assertEqual(self.first_status(
+            "- ```\n  **CRITERION 1: met** — test_a.py::A::test_one\n  ```"),
+            {"n": 1, "status": "unwitnessed", "note": UNWITNESSED_NOTE})
+
     def test_criterion_mentioned_inside_prose_stays_unread(self):
         self.assertEqual(self.first_status(
             "Last round wrote CRITERION 1: met — test_a.py::A::test_one"),
