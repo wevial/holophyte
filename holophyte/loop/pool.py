@@ -258,15 +258,15 @@ class _WitnessChild:
 
         if self.child is not None:
             return
-        tip = pass_due(target, conn, project, self.spawned_at)
-        if tip is None:
+        due = pass_due(target, conn, project, self.spawned_at)
+        if due is None:
             return
         program, argv = reexec_command()
         env = {k: v for k, v in os.environ.items() if k != WORKER_SLOT_ENV}
         self.child = SPAWN([program, *argv[1:], "--witness-step"], env=env,
                            stdin=subprocess.DEVNULL)
-        self.spawned_at = tip
-        print(f"[holo2] started a witness pass at {tip[:12]} as pid"
+        self.spawned_at = due
+        print(f"[holo2] started a witness pass at {due[0][:12]} as pid"
               f" {self.child.pid}")
 
     def children(self):

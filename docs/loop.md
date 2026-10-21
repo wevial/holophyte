@@ -384,7 +384,8 @@ alive waits on it with the tick deadline, and the loop returns once the
 pool is empty and the child has exited. A pass runs at the tip it reads
 when it starts, so a child spawned after a long set runs once at the
 newest tip however many commits landed meanwhile, and the scheduler
-spawns no second child at a tip it already spawned one for. A process
+spawns no second child at a tip it already spawned one for while the
+same stories are pending. A process
 that finds the lock held -- a re-exec'd scheduler, a serial loop, a second
 loop -- prints `another witness pass holds the witness lock; skipping` and
 records nothing. The serial loop runs its witness step only once the queue

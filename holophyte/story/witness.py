@@ -249,12 +249,11 @@ def pass_due(target, conn, project_id, spawned_at):
         if not free:
             return None
     try:
-        if not pass_pending(target, conn, project_id):
-            return None
-        tip = main_tip(target)
+        pending = pass_pending(target, conn, project_id)
+        due = pending and (main_tip(target), tuple(pending))
     except TIP_FAILURES:
         return None
-    return None if tip == spawned_at else tip
+    return None if not due or due == spawned_at else due
 
 
 def pass_refusal(conn, story_id):
