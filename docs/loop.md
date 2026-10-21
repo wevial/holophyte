@@ -375,8 +375,8 @@ spawned by the scheduler, never by a worker.
 A story's witness pass never holds up a claim. Each tick spawns its
 workers first; then, when no witness child of the scheduler is alive, the
 scheduler is spawning, the project's `witness.lock` is free and an open
-story's ledger lacks main's tip, or holds it only carried while the story's
-witness set is due, it spawns one `factory.py PROJECT
+story's ledger lacks main's tip or the story's witness set is due again, it
+spawns one `factory.py PROJECT
 --witness-step` child, which runs the pass under that lock and exits. The
 child counts against no `workers` slot and is not handed over across a
 re-exec, but its exit is reaped like a worker's: the scheduler keeps

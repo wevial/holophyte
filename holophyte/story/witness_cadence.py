@@ -22,9 +22,11 @@ def set_due(target, conn, story_id, sha):
     if not latest or any(witness.key not in latest
                          for witness in found.witnesses):
         return True
-    last = max(latest.values(), key=lambda row: row.id)
+    last = min(latest.values(), key=lambda row: row.id)
     if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour):
         return True
+    if last.mainSha == sha:
+        return False
     try:
         return (_paths_changed(target.path, last.mainSha, sha,
                                found.witnessPaths)

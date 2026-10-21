@@ -204,6 +204,38 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         self.assert_ran(b, 2)
         self.assertEqual(pass_pending(self.target, self.conn, 1), [])
 
+    def test_a_last_run_before_the_nightly_hour_runs_again_at_the_same_tip(self):
+        hour = (datetime.datetime.now().hour + 12) % 24
+        self.target = self.project(f"[story]\nwitness_nightly_hour = {hour}\n")
+        self.story()
+        a = self.land()
+        self.assertEqual(pass_pending(self.target, self.conn, 1), [])
+
+        self.age_real_rows(14 * HOUR_MS)
+
+        self.assertEqual(pass_pending(self.target, self.conn, 1),
+                         [self.story_id])
+        rows = self.loop()
+        self.assertEqual([(row.witnessKey, row.mainSha, row.carriedFrom)
+                          for row in rows], [("W1", a, None), ("W2", a, None)])
+        self.assertEqual((self.counter("W1"), self.counter("W2")), (2, 2))
+        self.assertEqual(pass_pending(self.target, self.conn, 1), [])
+
+    def test_a_pass_cut_short_after_one_witness_runs_the_rest_on_retry(self):
+        self.story()
+        self.land()
+        c = commit_file(self.repo, "src/export.py", "x = 1\n", "child work")
+        self.child_merged(c)
+        record_witness_result(self.conn, self.story_id, "W1", c, "green",
+                              "loop")
+
+        self.loop()
+
+        (w2,) = [row for row in witness_ledger(self.conn, self.story_id)
+                 if row.mainSha == c and row.witnessKey == "W2"]
+        self.assertIsNone(w2.carriedFrom)
+        self.assertEqual(self.counter("W2"), 2)
+
     def test_a_failing_git_command_counts_as_due(self):
         self.story(witness_paths=[FIXTURE_DIR])
         self.land()
