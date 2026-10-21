@@ -407,7 +407,8 @@ CREATE TABLE IF NOT EXISTS stories (
     approvedBy       TEXT,
     approvedAt       INTEGER,
     closedSha        TEXT,
-    closedAt         INTEGER
+    closedAt         INTEGER,
+    witnessPaths     TEXT
 );
 
 -- storyWitnesses: a story's acceptance witnesses, one per criterion key.
@@ -447,7 +448,8 @@ CREATE TABLE IF NOT EXISTS witnessResults (
     fileHash     TEXT,
     evidencePath TEXT,
     seconds      REAL,
-    at           INTEGER NOT NULL
+    at           INTEGER NOT NULL,
+    carriedFrom  TEXT
 );
 
 -- storyDecisions: a question a story put to the operator and its answer.
