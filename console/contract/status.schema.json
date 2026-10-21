@@ -734,6 +734,33 @@
       ],
       "additionalProperties": true
     },
+    "WitnessSet": {
+      "type": "object",
+      "properties": {
+        "story": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "elapsed_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "story",
+        "keys",
+        "started_ms",
+        "elapsed_ms"
+      ],
+      "additionalProperties": true
+    },
     "Status": {
       "type": "object",
       "properties": {
@@ -812,6 +839,16 @@
           "items": {
             "$ref": "#/$defs/QueuedTicket"
           }
+        },
+        "witnesses": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WitnessSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -832,7 +869,8 @@
         "thresholds",
         "config_edit",
         "runs",
-        "queued"
+        "queued",
+        "witnesses"
       ],
       "additionalProperties": true
     }

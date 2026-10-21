@@ -139,6 +139,14 @@ export const queuedTicketSchema = z.looseObject({
 });
 export type QueuedTicket = z.infer<typeof queuedTicketSchema>;
 
+export const witnessSetSchema = z.looseObject({
+  story: z.string(),
+  keys: z.array(z.string()),
+  started_ms: z.int(),
+  elapsed_ms: z.int(),
+});
+export type WitnessSet = z.infer<typeof witnessSetSchema>;
+
 export const statusSchema = z.looseObject({
   project: z.string(),
   admission: z.string(),
@@ -159,6 +167,7 @@ export const statusSchema = z.looseObject({
   config_edit: z.boolean(),
   runs: z.array(statusRunSchema),
   queued: z.array(queuedTicketSchema),
+  witnesses: witnessSetSchema.nullable(),
 });
 export type Status = z.infer<typeof statusSchema>;
 

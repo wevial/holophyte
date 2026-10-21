@@ -17,6 +17,7 @@ from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.review.criterion_ids import with_numbers
 from holophyte.serve.serve_levers import paused_item
 from holophyte.serve.serve_runs import json_host, no_store
+from holophyte.story.witness_running import running_set
 from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
 
@@ -105,6 +106,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                     "reason": ticket.outcomeReason, "pr_url": ticket.prUrl,
                     "waiting_ms": now - ticket.endedAt}
                    for ticket in queued],
+        "witnesses": running_set(project, now),
     }
 
 

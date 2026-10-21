@@ -615,6 +615,11 @@ Each module, one line:
   witnesses at main's tip unless the ledger already holds it or the
   project is held, reruns once a red that was green at an earlier commit,
   and notes each changed verdict on the parent.
+- `holophyte/story/witness_running.py` — `witness-running.json` beside the
+  store names the witness set the loop's witness step is running:
+  `mark_running()` writes it, `clear_running()` removes it and
+  `running_set()` reads it for `/status`'s `witnesses`, ignoring a record
+  whose process has exited.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file, queueing the parent's Done,

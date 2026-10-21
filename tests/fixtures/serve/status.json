@@ -148,6 +148,7 @@
       "waiting_ms": 60000
     }
   ],
+  "witnesses": null,
   "route_probes": {
     "implementer": {
       "primary": null,
