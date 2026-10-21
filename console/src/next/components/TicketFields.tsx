@@ -134,8 +134,12 @@ function Choice<T extends string | null>({ label, options, value, onChange, mark
   label: string; options: [T, string][]; value: T; onChange: (value: T) => void; marks: Marks; changed: boolean; hint?: string; optional?: boolean;
 }) {
   return <Field label={label} optional={optional} hint={hint} messages={marks.messagesOf(label)} changed={changed}>
-    <select id={`new-${label}`} {...marks.marks(label, `${INPUT} font-sans`)} value={value ?? ""} onChange={event => onChange(options.find(([option]) => (option ?? "") === event.target.value)![0])}>
+    <select id={`new-${label}`} {...marks.marks(label, `${INPUT} font-sans`)} value={value ?? ""} onChange={event => {
+      const chosen = options.find(([option]) => (option ?? "") === event.target.value);
+      if (chosen) onChange(chosen[0]);
+    }}>
       {options.map(([option, name]) => <option key={name} value={option ?? ""}>{name}</option>)}
+      {!options.some(([option]) => option === value) && <option value={value ?? ""} disabled>{`${value} · not a choice`}</option>}
     </select>
   </Field>;
 }

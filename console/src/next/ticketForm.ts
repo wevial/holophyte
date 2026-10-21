@@ -12,7 +12,8 @@ export interface Fields {
   why: string;
   how: string;
   uiChange: "major" | "minor" | null;
-  blastRadius: "medium" | "high" | null;
+  /** "medium" or "high", or the value a header holds outside them, kept so it can be cleared. */
+  blastRadius: string | null;
   mockupLink: string;
   mockupApproval: string;
   mockupApproved: string;
@@ -209,7 +210,7 @@ function headerField(source: string, field: HeaderField): Fields[HeaderField] {
   if (field === "dependsOn") return Array.isArray(header.depends_on) ? header.depends_on.filter(key => typeof key === "string") : [];
   if (field === "mockupLink") return typeof mockup.url === "string" ? mockup.url : "";
   if (field === "mockupImages") return boardsOf(mockup).map(board => `![${typeof board.caption === "string" ? board.caption : ""}](${board.url})`);
-  if (field === "blastRadius") return header.blast_radius === "medium" || header.blast_radius === "high" ? header.blast_radius : null;
+  if (field === "blastRadius") return header.blast_radius === undefined ? null : typeof header.blast_radius === "string" ? header.blast_radius : JSON.stringify(header.blast_radius);
   if (field === "mockupNote") return typeof mockup.note === "string" ? mockup.note : "";
   if (field === "evidence") return evidenceOf(header);
   const approved = approvedOn(mockup);

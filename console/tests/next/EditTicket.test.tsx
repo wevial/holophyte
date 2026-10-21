@@ -403,3 +403,14 @@ test("a magic-line ticket's UI change select writes its **UI change:** line", as
   expect(saved.match(/^\*\*UI change:\*\*.*$/gm)).toEqual(["**UI change:** minor"]);
   expect(saved.replace("\n\n**UI change:** minor", "")).toBe(BODY);
 });
+
+test("a header blast radius outside the choices shows as itself and Diff decides removes its line", async () => {
+  const body = EVIDENCE_BODY.replace('blast_radius = "medium"', 'blast_radius = "low"');
+  const saved = await saveHeaderEdit(async () => {
+    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
+    expect(radius.selectedOptions[0]!.textContent).toBe("low · not a choice");
+    await act(async () => void fireEvent.change(radius, { target: { value: "" } }));
+    expect(radius.selectedOptions[0]!.textContent).toBe("Diff decides");
+  }, body);
+  expect(saved).toBe(body.replace('blast_radius = "low"\n', ""));
+});
