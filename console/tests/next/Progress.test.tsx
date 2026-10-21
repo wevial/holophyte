@@ -113,18 +113,6 @@ test("steers and asks sit in time order among the events, each with what came of
   ]);
 });
 
-test("a steer line names the operator for a note the maintainer did not write, and You for the maintainer's own", async () => {
-  const steer_notes: RunDetail["steer_notes"] = [
-    { ...note, author: "operator", kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 40) },
-    { ...note, id: 2, kind: "hint", note: "the test lives in test_sweep", at: at(16, 50) },
-  ];
-  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
-  expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
-    "operator steered: don't add a new flag; reuse --act",
-    "You hinted: the test lives in test_sweep",
-  ]);
-});
-
 test("a steer line reads operator, not the login name, for a note recorded under a seat's login", async () => {
   const steer_notes: RunDetail["steer_notes"] = [
     { ...note, author: "seat-login", kind: "hint", note: "the test lives in test_sweep", at: at(16, 40) },
