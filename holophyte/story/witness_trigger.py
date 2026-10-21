@@ -42,19 +42,14 @@ def triggered(target, conn, story_id, since, sha):
             or _child_merged(target.path, conn, story_id, since, sha))
 
 
-def committed_at(repo, sha):
-    code, output = _git(repo, "log", "-1", "--format=%ct", sha)
-    if code or not output.strip().isdigit():
-        raise _GitFailed
-    return int(output)
-
-
 def quiet(target, sha):
     window = story_config(target).witness_quiet_sec
-    try:
-        return not window or time() - committed_at(target.path, sha) >= window
-    except _GitFailed:
+    if not window:
         return True
+    code, output = _git(target.path, "log", "-1", "--format=%ct", sha)
+    if code or not output.strip().isdigit():
+        return True
+    return time() - int(output) >= window
 
 
 def _last_nightly_ms(hour):
