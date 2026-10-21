@@ -313,10 +313,19 @@ cp -a /workspace /home/reviewer/candidate
                       *turn]
 
 
+def unwrapped(line: str) -> str:
+    for token in ("**", "__", "`"):
+        if (len(line) > 2 * len(token) and line.startswith(token)
+                and line.endswith(token)):
+            return line[len(token):-len(token)]
+    return line
+
+
 def terminal_verdict(message: str, verdicts: Sequence[str] = REVIEW_VERDICTS) -> str:
     """Raise unless one allowed verdict line ends it: a bad reply is never approval."""
     allowed = [f"VERDICT: {verdict}" for verdict in verdicts]
-    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    lines = [unwrapped(line.strip()) for line in message.splitlines()
+             if line.strip()]
     found = [line for line in lines if line in allowed]
     if len(found) != 1 or lines[-1] != found[0]:
         raise ReviewBoundaryError(

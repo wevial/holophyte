@@ -67,13 +67,20 @@ class CriteriaStatusesTests(WorktreeCase):
 
 
 class DecoratedCriterionLineTests(WorktreeCase):
-    def test_bolded_criterion_lines_read_as_the_bare_lines(self):
+    def setUp(self):
+        super().setUp()
         (self.root / "test_a.py").write_text(
             "import unittest\n\n\nclass A(unittest.TestCase):\n"
             "    def test_one(self):\n        pass\n")
         subprocess.run(["git", "add", "."], cwd=self.root, check=True)
         subprocess.run(["git", "commit", "-qm", "witness"], cwd=self.root,
                        check=True)
+
+    def first_status(self, line):
+        return criteria_statuses(f"{line}\n\nVERDICT: PASS", CRITERIA,
+                                 self.root)[0]
+
+    def test_bolded_criterion_lines_read_as_the_bare_lines(self):
         reply = ("**CRITERION C1: met** — `test_a.py::A::test_one`\n"
                  "**CRITERION C2: not met** — the row names loop\n\n"
                  "The row change is the one gap.\n\n"
@@ -82,6 +89,21 @@ class DecoratedCriterionLineTests(WorktreeCase):
             {"n": 1, "status": "met", "note": "`test_a.py::A::test_one`"},
             {"n": 2, "status": "not_met", "note": "the row names loop"},
             {"n": 3, "status": "unwitnessed", "note": UNWITNESSED_NOTE}])
+
+    def test_list_marker_and_wrapped_lines_read_as_the_bare_line(self):
+        for line in ("- CRITERION 1: met — test_a.py::A::test_one",
+                     "1. CRITERION 1: met — test_a.py::A::test_one",
+                     "* **CRITERION 1: met — test_a.py::A::test_one**",
+                     "`CRITERION 1: met — test_a.py::A::test_one`"):
+            with self.subTest(line=line):
+                self.assertEqual(self.first_status(line), {
+                    "n": 1, "status": "met",
+                    "note": "test_a.py::A::test_one"})
+
+    def test_criterion_mentioned_inside_prose_stays_unread(self):
+        self.assertEqual(self.first_status(
+            "Last round wrote CRITERION 1: met — test_a.py::A::test_one"),
+            {"n": 1, "status": "unwitnessed", "note": UNWITNESSED_NOTE})
 
 
 class CriteriaFindingsAgreeTests(WorktreeCase):

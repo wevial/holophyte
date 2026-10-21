@@ -275,6 +275,14 @@ class ReviewerBoundaryTests(unittest.TestCase):
         self.assertEqual(review_runner.terminal_verdict(
             reply, review_runner.ADJUDICATION_VERDICTS), "PASS")
 
+    def test_verdict_wrapped_with_trailing_prose_or_twice_is_malformed(self):
+        for reply in ("Checked.\n**VERDICT: PASS.** It is mergeable.",
+                      "`VERDICT: FAIL`\nVERDICT: PASS"):
+            with self.subTest(reply=reply):
+                with self.assertRaises(review_runner.ReviewBoundaryError):
+                    review_runner.terminal_verdict(
+                        reply, review_runner.ADJUDICATION_VERDICTS)
+
 
 if __name__ == "__main__":
     unittest.main()

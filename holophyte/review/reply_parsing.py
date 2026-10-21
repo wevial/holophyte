@@ -172,8 +172,11 @@ def finding_severity(block):
 
 # The separator is loose; the status word is not: only `met` clears the gate.
 CRITERION_LINE_RE = re.compile(
-    r"^\s*CRITERION\s+([Cc]?\d+)\s*:\s*(met|not met|unwitnessed)\b"
-    r"\s*(?:[-\u2013\u2014:]+\s*)?(.*?)\s*$", re.I | re.M)
+    r"^\s*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<open>\*\*|__|`)?"
+    r"CRITERION\s+(?P<n>[Cc]?\d+)\s*:\s*(?P<status>met|not met|unwitnessed)"
+    r"(?:\b|(?=(?P=open)))(?P<close>(?P=open))?"
+    r"\s*(?:[-\u2013\u2014:]+\s*)?(?P<note>.*?)(?(close)|(?P=open)?)\s*$",
+    re.I | re.M)
 
 
 UNWITNESSED_NOTE = "no CRITERION line in the reply"
@@ -188,7 +191,8 @@ SCOPE_LINE_RE = re.compile(
 def criteria_block(reply):
     block = {}
     for match in CRITERION_LINE_RE.finditer(reply):
-        block[parse(match.group(1))] = (match.group(2).lower(), match.group(3))
+        block[parse(match["n"])] = (match["status"].lower(),
+                                     match["note"])
     return block
 
 
