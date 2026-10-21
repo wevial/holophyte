@@ -70,7 +70,7 @@ function steerLines(detail: RunDetail): ProgressLine[] {
   const { id } = detail.run;
   return detail.steer_notes
     .filter((note) => !note.withdrawn || note.consumed_ms != null)
-    .filter((note) => note.consumed_by === id || !afterEnd(detail, note.at))
+    .filter((note) => note.consumed_by === id || (note.consumed_by == null && !afterEnd(detail, note.at)))
     .map((note) => ({
       at: note.at,
       kind: "steer",
