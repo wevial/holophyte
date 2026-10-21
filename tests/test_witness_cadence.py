@@ -33,6 +33,7 @@ from store.stories import (  # noqa: E402
     witness_ledger,
 )
 from tests.test_cli_native_update import NATIVE, no_linear  # noqa: E402
+from tests.test_story_template import paths_section  # noqa: E402
 from tests.test_witness_runner import (  # noqa: E402
     FAILS_AN_ASSERTION,
     PASSES,
@@ -44,11 +45,6 @@ from tests.test_witness_runner import (  # noqa: E402
 HOUR_MS = 3600 * 1000
 LANDED = PASSES + "\n# landed on main\n"
 FIXTURE_DIR = "lib/reader/"
-
-
-def paths_section(*items):
-    return "\n".join(["## Witness paths", "", *(f"- {item}" for item in items),
-                      "", ""])
 
 
 class WitnessPathsFilingTests(ConfigTestCase):

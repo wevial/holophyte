@@ -3,10 +3,8 @@ import datetime
 import subprocess
 
 from holophyte.config.config_tables import story_config
-from holophyte.story.story_close import main_ledger
+from holophyte.story.story_close import GIT_TIMEOUT, main_ledger
 from store.stories import record_witness_result, story
-
-GIT_TIMEOUT = 30
 
 
 class _GitFailed(Exception):
