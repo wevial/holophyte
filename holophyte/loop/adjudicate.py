@@ -87,8 +87,10 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            review_round=None):
     """No fix round follows: anything but PASS preserves the branch and stops."""
     criteria = numbered(conn, run_id, criteria)
-    verify_cmd = adopted_verify(conn, run_id, verify_cmd)
+    claimed, verify_cmd = verify_cmd, adopted_verify(conn, run_id, verify_cmd)
     pending = resume if resume and resume.get("terminal") else {}
+    if pending.get("verify_cmd", claimed) != verify_cmd:
+        pending = {}
     ticket = reviewed_ticket(conn, run_id, ticket)
     review_round = review_round or cap
     left_open = (pending["left_open"] if "left_open" in pending
@@ -106,7 +108,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
              ok=ok, out=str(out), reply=pending.get("reply"),
-             left_open=left_open, review_round=review_round)
+             left_open=left_open, review_round=review_round,
+             verify_cmd=verify_cmd)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
@@ -172,7 +175,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     if decision != "PASS":
         boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
                  ok=ok, out=str(out), reply=str(reply), left_open=left_open,
-                 review_round=review_round)
+                 review_round=review_round, verify_cmd=verify_cmd)
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",

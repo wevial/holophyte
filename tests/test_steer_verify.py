@@ -111,6 +111,28 @@ class SteerVerifyTests(unittest.TestCase):
                 1)
         self.assertEqual(self.ticket_command(), V2)
 
+    def test_resumed_round_reverifies_a_checkpoint_saved_under_the_claimed_block(self):
+        self.steer()
+        steering.take(self.conn, self.run_id)
+        saved = {"rnd": 1, "phase": "reviewing", "ok": False,
+                 "out": "[verify] FAILED: test_a.py", "verify_cmd": V1}
+        with patch.object(review_round, "agent",
+                          return_value="VERDICT: APPROVE"), \
+                patch.object(runs, "agent_route", return_value="reviewer"), \
+                patch("holophyte.agents.fix_session.fix_turn",
+                      return_value=("nothing to fix", False)), \
+                contextlib.suppress(RunFailure):
+            review_round._review_rounds(
+                PROJECT, self.conn, self.run_id, None, "NAT-1", "main",
+                self.root, 60, "HEAD", "HEAD", body(V1), V1, [], CRITERIA, 10,
+                1, resume=saved)
+        (results,) = self.conn.execute(
+            "SELECT verificationResults FROM reviewRounds WHERE runId = ?",
+            (self.run_id,)).fetchone()
+        (ticket,) = [row for row in json.loads(results)
+                     if row["source"] == "ticket"]
+        self.assertEqual((ticket["command"], ticket["exitCode"]), (V2, 0))
+
     def test_merge_gate_verifies_with_the_adopted_block(self):
         self.steer()
         for phase in ("verifying", "reviewing"):

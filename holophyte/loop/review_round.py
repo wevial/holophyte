@@ -208,12 +208,13 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
-              pending, ok, out):
+              pending, ok, out, verify_cmd):
     if pending.get("stale"):
         stale_again(branch, sha, stale)
     stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
     boundary(conn, run_id, "verifying", rnd=rnd + 1, stale=stale)
-    return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale}
+    return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale,
+            "verify_cmd": verify_cmd}
 
 
 def _steer_at_top(project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
@@ -233,6 +234,12 @@ def _steer_approved(project, conn, run_id, provider, task_id, wt, beat_s, sha,
     boundary(conn, run_id, "verifying", rnd=rnd + 1)
     return steer_turn(project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
                       timed=_timed, check_cap=_check_run_cap) or sha
+
+
+def _round_contract(conn, run_id, ticket, claimed, pending):
+    verify_cmd = adopted_verify(conn, run_id, claimed)
+    kept = pending if pending.get("verify_cmd", claimed) == verify_cmd else {}
+    return reviewed_ticket(conn, run_id, ticket), verify_cmd, kept
 
 
 def _verify(project, conn, run_id, beat_s, wt, verify_cmd, contracts, rnd):
@@ -271,8 +278,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     for rnd in range(pending.get("rnd", 1), cap + 1):
         sha, pending = _steer_at_top(project, conn, run_id, beat_s, wt,
                                      budget_min, ticket, sha, pending)
-        reviewed = reviewed_ticket(conn, run_id, ticket)
-        verify_cmd = adopted_verify(conn, run_id, claimed)
+        reviewed, verify_cmd, pending = _round_contract(
+            conn, run_id, ticket, claimed, pending)
         set_phase(conn, run_id, "verifying", f"round {rnd}: verify before review")
         if rnd == 1:
             unresolved = merge_conflicts(wt)
@@ -293,6 +300,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         leaks = leak_guard.branch_leaks(project, wt, sha)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
+                 verify_cmd=verify_cmd,
                  **({"stale": pending["stale"]} if "stale" in pending else {}),
                  **({"witness": witness} if witness else {}))
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
@@ -331,12 +339,13 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             stale = stale_approvals(decision, unwitnessed) if ok else []
             if stale:
                 pending = _rereview(conn, run_id, provider, task_id, branch,
-                                    sha, rnd, stale, pending, ok, out)
+                                    sha, rnd, stale, pending, ok, out,
+                                    verify_cmd)
                 continue
 
         _check_run_cap(project, conn, run_id, budget_min, sha)
         boundary(conn, run_id, "addressing", rnd=rnd, ok=ok,
-                 out=str(out), verdict=verdict)
+                 out=str(out), verdict=verdict, verify_cmd=verify_cmd)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         from holophyte.agents.fix_session import fix_turn
