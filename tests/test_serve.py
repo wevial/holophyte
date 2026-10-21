@@ -754,14 +754,14 @@ class AttentionTests(ServeTestCase):
                                    "run": self.blocked_run, "park_kind": "question",
                                    "asked_ms": self.asked, "pr_url": None, "pr": None,
                                    "level": "attention"})
-        self.assertEqual(stale_run["run"], self.run)
-        self.assertEqual(stale_run["ticket"], "KO-7")
+        self.assertEqual((stale_run["run"], stale_run["ticket"], stale_run["title"]),
+                         (self.run, "KO-7", "ticket KO-7"))
         self.assertEqual(stale_run["phase"], "working")
         self.assertTrue(
             20 * MIN <= stale_run["heartbeat_age_ms"] < 20 * MIN + SLACK,
             stale_run)
-        self.assertEqual(failed["run"], self.failed)
-        self.assertEqual(failed["ticket"], "KO-9")
+        self.assertEqual((failed["run"], failed["ticket"], failed["title"]),
+                         (self.failed, "KO-9", "ticket KO-9"))
         self.assertEqual(failed["reason"], "verify red")
         self.assertEqual(failed["ended_ms"], self.now - 2 * self.HOUR)
         self.assertEqual(failed["attempt"], 1)

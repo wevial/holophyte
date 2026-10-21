@@ -626,11 +626,11 @@ class StuckWaitAttentionTests(ServeTestCase):
         self.assertEqual(
             {k: stuck[0].get(k) for k in ("ticket", "dependency",
                                           "dependency_state", "reason",
-                                          "behind", "level")},
+                                          "behind", "level", "title")},
             {"ticket": "NAT-3", "dependency": "NAT-2",
              "dependency_state": "needs_spec",
              "reason": "critic: stale — already shipped by NAT-1",
-             "behind": 2, "level": "attention"})
+             "behind": 2, "level": "attention", "title": "ticket NAT-3"})
 
 
 class StuckWaitStatesTests(ServeTestCase):
@@ -728,45 +728,3 @@ class StuckWaitStatesTests(ServeTestCase):
             self.conn, shelved).status, "blocked_on_deps")
         self.assertEqual(self.stuck_waits(), {})
 
-
-class TicketTitleAttentionTests(ServeTestCase):
-    def test_every_item_naming_a_ticket_carries_its_ticket_title(self):
-        now = int(time() * 1000)
-        conn = store.open(str(self.db))
-        self.addCleanup(conn.close)
-        store.init(conn)
-        project = store.tickets.ensure_project(conn, "team-1", self.target)
-
-        def claimed(ident, title, at):
-            ticket = store.tickets.mirror_ticket(
-                conn, project, linear_issue_id=f"issue-{ident}",
-                linear_identifier=ident, title=title,
-                acceptance_criteria=[f"Given {ident}, then it is worked"],
-                verification_commands=["echo ok"], time_box_ms=25 * MIN)
-            store.tickets.transition(conn, ticket, "in_flight")
-            return ticket, store.claim(conn, project, ticket, now=at)
-
-        asking, run = claimed("KO-8", "Pick the export API", now - 90 * MIN)
-        store.tickets.transition(conn, asking, "blocked_on_operator")
-        store.set_question(conn, asking, "which API?")
-        park_run(conn, run, "blocked_on_operator", "which API?",
-                 now=now - 80 * MIN)
-        _, run = claimed("KO-9", "Retry the flaky upload", now - 70 * MIN)
-        store.release(conn, run, "failed", reason="verify red",
-                      now=now - 60 * MIN)
-        _, run = claimed("KO-7", "Rename the sweep knobs", now - 40 * MIN)
-        store.set_phase(conn, run, "working", now=now - 40 * MIN)
-        store.heartbeat(conn, run, now=now - 20 * MIN)
-        file_stuck_wait(conn, project, "NAT")
-        self.start()
-
-        code, _, body = self.request("GET", "/attention")
-
-        self.assertEqual(code, 200)
-        self.assertEqual(
-            {item["kind"]: (item["ticket"], item.get("title"))
-             for item in body["items"] if "ticket" in item},
-            {"blocked": ("KO-8", "Pick the export API"),
-             "failed": ("KO-9", "Retry the flaky upload"),
-             "stale_run": ("KO-7", "Rename the sweep knobs"),
-             "stuck_wait": ("NAT-3", "ticket NAT-3")})
