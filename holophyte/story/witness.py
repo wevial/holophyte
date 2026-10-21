@@ -24,6 +24,7 @@ from holophyte.story.story_close import (
     settle_owed,
     settle_story,
 )
+from holophyte.story.witness_tree import clean_args, warm_tree
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -42,7 +43,8 @@ NO_COLOR = "export NO_COLOR=1 PYTHON_COLORS=0\n"
 LOG_TAIL_BYTES = 64 * 1024
 ABSENT, REFUSED = "absent", "refused"
 Scratch = collections.namedtuple(
-    "Scratch", ("target", "tree", "sha", "copied", "deadline", "secrets"))
+    "Scratch", ("target", "tree", "sha", "copied", "deadline", "secrets",
+                "warm"), defaults=(None,))
 SPENT = "[witness] not run: the witness budget is spent\n"
 TIP_FAILURES = (OSError, RuntimeError, subprocess.SubprocessError)
 
@@ -113,26 +115,41 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
     stamp = f"{verifier}-{time.time_ns()}"
     deadline = time.monotonic() + story_config(target).witness_sec
     secrets = redact.known_secrets(target.config())
-    with tempfile.TemporaryDirectory(prefix="witness-") as scratch:
-        tree = Path(scratch) / "tree"
-        try:
-            failed = _add_worktree(target, tree, sha, deadline)
-            copied, found, failed = (
-                ([], {}, failed) if failed
-                else _checkout(tree, witnesses, copy_files))
-            run = Scratch(target, tree, sha, copied, deadline, secrets)
-            judge = _Judge(run, conn, story_id, verifier, found, failed)
-            ids = [judge.record(witness, logs / witness.key / f"{stamp}.log")
-                   for witness in witnesses]
-            rerun = again(_rows(conn, story_id, ids)) if again else ()
-            ids += [judge.record(witness,
-                                 logs / witness.key / f"{stamp}-again.log")
-                    for witness in witnesses
-                    if witness.key in rerun and time.monotonic() < deadline]
-        finally:
-            subprocess.run(["git", "worktree", "remove", "--force", "--force",
-                            str(tree)], cwd=target.path, capture_output=True)
+    with contextlib.ExitStack() as stack:
+        tree, warm, failed = _tree(stack, target, sha, verifier, deadline)
+        copied, found, failed = (
+            ([], {}, failed) if failed
+            else _checkout(tree, witnesses, copy_files))
+        run = Scratch(target, tree, sha, copied, deadline, secrets, warm)
+        judge = _Judge(run, conn, story_id, verifier, found, failed)
+        ids = [judge.record(witness, logs / witness.key / f"{stamp}.log")
+               for witness in witnesses]
+        rerun = again(_rows(conn, story_id, ids)) if again else ()
+        ids += [judge.record(witness,
+                             logs / witness.key / f"{stamp}-again.log")
+                for witness in witnesses
+                if witness.key in rerun and time.monotonic() < deadline]
     return _rows(conn, story_id, ids)
+
+
+def _tree(stack, target, sha, verifier, deadline):
+    warm = (stack.enter_context(warm_tree(target)) if verifier == "loop"
+            else None)
+    if warm is not None:
+        failed = warm.prepare(sha, deadline)
+        if not failed:
+            return warm.path, warm, None
+        print(f"[holo2] the warm witness tree could not be prepared; this pass"
+              f" runs in a scratch tree: {failed.strip()}")
+    elif verifier == "loop":
+        print("[holo2] another pass holds the warm witness tree; this pass"
+              " runs in a scratch tree")
+    tree = Path(stack.enter_context(
+        tempfile.TemporaryDirectory(prefix="witness-"))) / "tree"
+    stack.callback(subprocess.run, ["git", "worktree", "remove", "--force",
+                                    "--force", str(tree)],
+                   cwd=target.path, capture_output=True)
+    return tree, None, _add_worktree(target, tree, sha, deadline)
 
 
 def _rows(conn, story_id, ids):
@@ -331,8 +348,9 @@ def _copy_sources(tree, witnesses):
 
 
 def _restore(run):
+    keep = run.warm.keep if run.warm else ()
     for command in (["git", "reset", "-q", "--hard", run.sha],
-                    ["git", "clean", "-q", "-ffdx"]):
+                    ["git", *clean_args(keep)]):
         remaining = run.deadline - time.monotonic()
         if remaining <= 0:
             return SPENT
@@ -420,10 +438,19 @@ def _setup(run):
         if not isinstance(error.code, str):
             raise
         return False, error.code, ""
+    reuse, ran = run.warm.reuse(run.sha) if run.warm else ((), {})
+    ready = False
     try:
-        return prepare_worktree(run.target, run.tree, deadline=run.deadline)
+        ready, report, transcript = prepare_worktree(
+            run.target, run.tree, deadline=run.deadline, reuse=reuse)
     except OSError as error:
         return False, f"[witness] setup could not run: {error}", ""
+    finally:
+        if run.warm and ready:
+            run.warm.record(ran)
+        elif run.warm:
+            run.warm.clear()
+    return ready, report, transcript
 
 
 def _git(cwd, *args):
