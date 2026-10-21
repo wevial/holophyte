@@ -27,7 +27,11 @@ import store.stories  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.story_close import rerun_owed  # noqa: E402
 from holophyte.story.witness import pass_pending, witness_pass  # noqa: E402
-from store.stories import accept_witness, witness_ledger  # noqa: E402
+from store.stories import (  # noqa: E402
+    accept_witness,
+    record_witness_result,
+    witness_ledger,
+)
 from tests.test_cli_native_update import NATIVE, no_linear  # noqa: E402
 from tests.test_witness_runner import (  # noqa: E402
     FAILS_AN_ASSERTION,
@@ -241,6 +245,18 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
             " GROUP BY dedupKey").fetchall())
         self.assertEqual(notes.get(f"witness:{self.story_id}:W2:{b}"), 1)
         self.assertNotIn(f"witness:{self.story_id}:W2:{c}", notes)
+
+    def test_a_red_run_over_a_carried_green_is_still_owed_its_rerun(self):
+        self.story()
+        a = self.land()
+        b = commit_file(self.repo, "README.md", "more\n", "docs")
+        self.loop()
+        self.assert_carried(b, a, 1)
+
+        record_witness_result(self.conn, self.story_id, "W1", b, "red", "loop",
+                              red_kind="assert")
+
+        self.assertEqual(rerun_owed(self.conn, self.story_id, b), {"W1"})
 
     def test_a_story_closes_on_carried_greens_and_its_note_says_so(self):
         self.story(source=LANDED + "# approved\n")

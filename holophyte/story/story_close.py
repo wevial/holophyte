@@ -68,7 +68,8 @@ def rerun_owed(conn, story_id, sha):
     greens = {row.witnessKey for row in rows
               if row.mainSha != sha and row.verdict == "green"}
     runs = collections.Counter(row.witnessKey for row in rows
-                               if row.mainSha == sha)
+                               if row.mainSha == sha
+                               and row.carriedFrom is None)
     latest = {row.witnessKey: row for row in rows if row.mainSha == sha}
     return {key for key, row in latest.items()
             if row.verdict == "red" and row.carriedFrom is None
