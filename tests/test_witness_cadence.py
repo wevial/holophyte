@@ -236,6 +236,33 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertIsNone(w2.carriedFrom)
         self.assertEqual(self.counter("W2"), 2)
 
+    def test_a_witness_dropped_by_a_replan_no_longer_anchors_the_set(self):
+        self.story(witness_paths=[FIXTURE_DIR])
+        self.land()
+        (w1,) = [witness._asdict() for witness in store.stories.story(
+            self.conn, self.story_id).witnesses if witness.key == "W1"]
+        (child,) = self.conn.execute(
+            "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
+            (self.story_id,)).fetchone()
+        store.stories.replan_story(self.conn, self.story_id, [w1],
+                                   [(child, "completes", ["W1"])], (),
+                                   witness_paths=[FIXTURE_DIR])
+        (revision,) = self.conn.execute(
+            "SELECT revision FROM tickets WHERE id = ?",
+            (self.story_id,)).fetchone()
+        store.stories.approve_story(self.conn, self.story_id, revision,
+                                    "operator", "W1 only")
+        b = commit_file(self.repo, f"{FIXTURE_DIR}page.txt", "two\n", "page")
+        self.loop()
+        self.assertEqual(self.counter("W1"), 2)
+
+        self.assertEqual(pass_pending(self.target, self.conn, 1), [])
+        self.loop()
+
+        self.assertEqual(self.counter("W1"), 2)
+        self.assertEqual([row.witnessKey for row in witness_ledger(
+            self.conn, self.story_id) if row.mainSha == b], ["W1"])
+
     def test_a_failing_git_command_counts_as_due(self):
         self.story(witness_paths=[FIXTURE_DIR])
         self.land()

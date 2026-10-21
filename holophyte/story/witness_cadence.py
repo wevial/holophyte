@@ -19,10 +19,10 @@ def latest_real(conn, story_id):
 def set_due(target, conn, story_id, sha):
     found = story(conn, story_id)
     latest = latest_real(conn, story_id)
-    if not latest or any(witness.key not in latest
-                         for witness in found.witnesses):
+    current = [latest.get(witness.key) for witness in found.witnesses]
+    if not current or None in current:
         return True
-    last = min(latest.values(), key=lambda row: row.id)
+    last = min(current, key=lambda row: row.id)
     if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour):
         return True
     if last.mainSha == sha:
