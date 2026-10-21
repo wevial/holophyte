@@ -50,22 +50,14 @@ class ServedRoundCapTests(ServeTestCase):
             advance_phase(conn, self.run, "reviewing", now=self.now)
         self.assertNotEqual(self.run, first)
 
-    def test_a_babysit_run_serves_the_cap_its_ticket_recorded(self):
-        self.seed_babysat(3)
-        self.start("[loop]\nreview_rounds = 3\n")
-        _code, _, status = self.request("GET", "/status")
-        (run,) = status["runs"]
-        self.assertEqual((run["id"], run["max_rounds"]), (self.run, 3))
-        code, _, detail = self.request("GET", f"/runs/{self.run}")
-        self.assertEqual(code, 200, detail)
-        self.assertEqual(detail["run"]["max_rounds"], 3)
-
     def test_the_recorded_cap_outranks_the_configured_rounds(self):
         self.seed_babysat(4)
         self.start("[loop]\nreview_rounds = 3\nreview_rounds_max = 4\n")
         _code, _, status = self.request("GET", "/status")
-        self.assertEqual(status["runs"][0]["max_rounds"], 4)
-        _code, _, detail = self.request("GET", f"/runs/{self.run}")
+        (run,) = status["runs"]
+        self.assertEqual((run["id"], run["max_rounds"]), (self.run, 4))
+        code, _, detail = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200, detail)
         self.assertEqual(detail["run"]["max_rounds"], 4)
 
     def test_a_ticket_with_no_recorded_cap_serves_the_configured_rounds(self):
