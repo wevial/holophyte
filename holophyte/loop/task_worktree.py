@@ -113,7 +113,7 @@ def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None,
     return True, "", transcript
 
 
-def _run_setup_commands(project, wt, commands, deadline, reuse=()):
+def _run_setup_commands(project, wt, commands, deadline, reuse):
     timeout = setup_timeout(project)
     transcript = ""
     for n, command in enumerate(commands, 1):

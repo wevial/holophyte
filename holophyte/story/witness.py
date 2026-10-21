@@ -44,7 +44,7 @@ LOG_TAIL_BYTES = 64 * 1024
 ABSENT, REFUSED = "absent", "refused"
 Scratch = collections.namedtuple(
     "Scratch", ("target", "tree", "sha", "copied", "deadline", "secrets",
-                "warm"), defaults=(None,))
+                "warm"))
 SPENT = "[witness] not run: the witness budget is spent\n"
 TIP_FAILURES = (OSError, RuntimeError, subprocess.SubprocessError)
 

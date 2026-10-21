@@ -17,7 +17,7 @@ TREE, LOCK, STAMPS = "witness-tree", "witness-tree.lock", "witness-tree.json"
 MISSING_INPUT = "missing"
 
 
-def clean_args(keep=()):
+def clean_args(keep):
     return ["clean", "-q", "-ffdx",
             *(arg for path in keep for arg in ("-e", f"/{path}"))]
 

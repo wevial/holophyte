@@ -17,12 +17,8 @@ from holophyte.story.witness import run_witnesses, witness_pass
 from tests.test_witness_runner import PASSES, WitnessRunnerFixture, commit_file, git
 
 
-def toml_string(text):
-    return json.dumps(text)
-
-
 def table_step(run, inputs, keep=()):
-    return (f"{{ run = {toml_string(run)}, inputs = {json.dumps(list(inputs))},"
+    return (f"{{ run = {json.dumps(run)}, inputs = {json.dumps(list(inputs))},"
             f" keep = {json.dumps(list(keep))} }}")
 
 
@@ -66,7 +62,7 @@ class WarmTreeReuseTests(WarmTreeFixture, unittest.TestCase):
     def test_a_table_step_runs_once_until_its_input_or_keep_path_changes(self):
         commit_file(self.repo, "deps.lock", "v1\n", "lock")
         target = self.project(setup_config(
-            self.deps_step(), toml_string(self.appends(self.plain_count))))
+            self.deps_step(), json.dumps(self.appends(self.plain_count))))
         self.marker_story()
         green = [("W1", "green"), ("W2", "green")]
         a = commit_file(self.repo, "notes.txt", "a\n", "a")
