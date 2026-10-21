@@ -215,6 +215,26 @@ class WitnessStepTests(LoopFixture):
                                             "--worker", "--witness-step"])
         self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])
 
+    def test_a_tip_merged_during_a_pass_gets_its_own_pass_before_return(self):
+        self.use(NATIVE + "[loop]\nworkers = 2\ntick_sec = 60\n")
+        self.approved_story("backlog")
+        first = self.file_ready()
+
+        def witness_then_merge():
+            self.step()
+            self.take(first)
+            self.git("commit", "-q", "--allow-empty", "-m", "lands b")
+
+        pool = self.schedule([(PARKED, witness_then_merge), (0, None),
+                              (0, self.step)])
+
+        self.assertEqual(self.modes(pool),
+                         ["--worker", "--witness-step", "--witness-step"])
+        self.assertNotEqual(self.tip(), self.base)
+        self.assertEqual(self.read(LEDGER), [
+            ("W1", self.base, "absent", "loop"),
+            ("W1", self.tip(), "absent", "loop")])
+
     def test_a_held_witness_lock_skips_the_pass_until_it_is_released(self):
         self.approved_story("backlog")
         path = witness_lock_path(self.project)

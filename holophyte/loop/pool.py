@@ -252,17 +252,19 @@ class _WitnessChild:
     def __init__(self, tick_sec):
         self.tick_sec = tick_sec
         self.child = None
+        self.spawned_at = None
         self.exited_at = None
 
     def spawn_if_due(self, target, conn, project):
         from holophyte.story.witness import pass_due
 
-        if self.child is not None or (
-                self.exited_at is not None
-                and monotonic() - self.exited_at < self.tick_sec):
+        if self.child is not None:
             return
-        if not pass_due(target, conn, project):
+        tip = pass_due(target, conn, project)
+        if tip is None or (tip == self.spawned_at
+                           and monotonic() - self.exited_at < self.tick_sec):
             return
+        self.spawned_at = tip
         program, argv = reexec_command()
         env = {k: v for k, v in os.environ.items() if k != WORKER_SLOT_ENV}
         self.child = SPAWN([program, *argv[1:], "--witness-step"], env=env,

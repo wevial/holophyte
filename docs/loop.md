@@ -386,8 +386,10 @@ from the witness ledger, never from which children were spawned: a pass
 runs at the tip it reads when it starts, so a child spawned after a long
 set runs once at the newest tip however many commits landed meanwhile,
 and a child that recorded nothing leaves its pass pending for a child a
-tick after it exited. An empty pool does not wait out that tick, so a
-pass that keeps failing cannot hold the loop open. A process
+tick after it exited at the same tip, or at once at a newer one. An empty
+pool does not wait out that tick, so a pass that keeps failing at one tip
+cannot hold the loop open, but a tip a worker merged while the child ran
+gets its own child before the loop returns. A process
 that finds the lock held -- a re-exec'd scheduler, a serial loop, a second
 loop -- prints `another witness pass holds the witness lock; skipping` and
 records nothing. The serial loop runs its witness step only once the queue

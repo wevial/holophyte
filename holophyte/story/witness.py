@@ -247,11 +247,13 @@ def witness_lock(target):
 def pass_due(target, conn, project_id):
     with witness_lock(target) as free:
         if not free:
-            return False
+            return None
     try:
-        return bool(pass_pending(target, conn, project_id))
+        if not pass_pending(target, conn, project_id):
+            return None
+        return main_tip(target)
     except TIP_FAILURES:
-        return False
+        return None
 
 
 def pass_refusal(conn, story_id):
