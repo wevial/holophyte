@@ -218,6 +218,12 @@ function headerField(source: string, field: HeaderField): Fields[HeaderField] {
   return typeof mockup.approved === "string" ? mockup.approved : "";
 }
 
+/** The approval date `iso` as `source` writes it: kept quoted when it already is. */
+function approvalDate(source: string, iso: string): string | HeaderDate {
+  const mockup = readHeader(source).mockup;
+  return isTable(mockup) && mockup.approved === iso ? iso : new HeaderDate(iso);
+}
+
 /** The header TOML `source` with only the keys `field` reads set to `value`:
  *  an approval that does not read "Approved YYYY-MM-DD: note" is kept
  *  whole as a quoted `approved`, and a board whose URL stays keeps its caption. */
@@ -230,18 +236,12 @@ function withHeaderField(source: string, field: HeaderField, value: Fields[Heade
   if (field === "mockupNote") return withKey(source, "mockup", "note", (value as string) || undefined);
   if (field === "mockupApproved") {
     const approved = value as string;
-    const mockup = readHeader(source).mockup;
-    const quoted = isTable(mockup) && mockup.approved === approved;
-    return withKey(source, "mockup", "approved", !approved ? undefined : isDate(approved) && !quoted ? new HeaderDate(approved) : approved);
+    return withKey(source, "mockup", "approved", !approved ? undefined : isDate(approved) ? approvalDate(source, approved) : approved);
   }
   if (field === "mockupLink") return withKey(source, "mockup", "url", (value as string) || undefined);
   if (field === "mockupApproval") {
     const approval = headerApproval.exec((value as string).trimEnd());
-    if (approval && isDate(approval[1]!)) {
-      const mockup = readHeader(source).mockup;
-      const quoted = isTable(mockup) && mockup.approved === approval[1];
-      return withKey(withKey(source, "mockup", "approved", quoted ? approval[1]! : new HeaderDate(approval[1]!)), "mockup", "note", approval[2]!);
-    }
+    if (approval && isDate(approval[1]!)) return withKey(withKey(source, "mockup", "approved", approvalDate(source, approval[1]!)), "mockup", "note", approval[2]!);
     return withKey(withKey(source, "mockup", "approved", (value as string) || undefined), "mockup", "note", undefined);
   }
   const mockup = readHeader(source).mockup;
