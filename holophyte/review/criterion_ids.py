@@ -1,5 +1,7 @@
 import store.criteria
 import store.read
+import store.steer_notes
+from provider import parse_body
 from ticket_criteria import split_id
 
 
@@ -10,7 +12,9 @@ def parse(token):
 def numbered(conn, run_id, criteria):
     criteria = list(criteria or ())
     snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
-    result = _number_filed(conn, snapshot, criteria)
+    revised = adopted(conn, run_id) if snapshot is not None else None
+    result = _number_filed(conn, snapshot,
+                           criteria if revised is None else revised)
     if snapshot is None:
         return result
     edits = {row["criterion"]: row for row in
@@ -23,6 +27,16 @@ def numbered(conn, run_id, criteria):
     amended.extend((n, row["text"]) for n, row in edits.items()
                    if n not in present and row["status"] != "retired")
     return amended
+
+
+def adopted(conn, run_id):
+    revision = store.steer_notes.adopted_revision(conn, run_id)
+    if revision is None:
+        return None
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    body = next(row.body for row in store.read.ticket_revisions(conn, ticket_id)
+                if row.revision == revision)
+    return parse_body("", body)["criteria"]
 
 
 def _number_filed(conn, snapshot, criteria):
