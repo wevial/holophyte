@@ -333,8 +333,9 @@ def _estimate(fields, text):
 
 
 def _mockup(fields, text):
-    mockup = fields.setdefault("mockup", {})
-    for line in _stated(text, unwrap=False):
+    lines = _stated(text, unwrap=False)
+    mockup = fields.setdefault("mockup", {}) if lines else {}
+    for line in lines:
         if not _mockup_line(mockup, line):
             raise Unconvertible(line)
 

@@ -153,7 +153,7 @@ def draft(args, default):
         print(f"[holo2] {args.arg0}: no header field holds this line: {line}",
               file=sys.stderr)
         return 1
-    sys.stdout.write(text if text.endswith("\n") else text + "\n")
+    sys.stdout.write(text)
     return 0
 
 
