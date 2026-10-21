@@ -1,5 +1,6 @@
 """Steer notes recorded on a live run, carried by its next implementer turn."""
 from holophyte.babysit.maintainer_notes import render_amendments, steer_text
+from holophyte.review.criterion_ids import adopted
 from store import operator_notes, steer_notes
 from store.read import run_snapshot
 from ticket_criteria import amendment_edits
@@ -30,8 +31,9 @@ def reviewed_ticket(conn, run_id, ticket):
         return ticket
     amendments = steer_notes.amendments(
         conn, run_snapshot(conn, run_id).ticketId)
-    if any(amendment_edits(n.note)[0] for n in amendments):
-        return render_amendments(conn, run_id, ticket, amendments)
+    revised = adopted(conn, run_id) is not None
+    if revised or any(amendment_edits(n.note)[0] for n in amendments):
+        return render_amendments(conn, run_id, ticket, amendments, revised)
     carried = [n for n in amendments if n.live and n.consumed_by == run_id]
     return ticket + "".join(f"\n\n{steer_text(n)}" for n in carried)
 
