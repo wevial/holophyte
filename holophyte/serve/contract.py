@@ -110,6 +110,13 @@ class QueuedTicket(TypedDict):
     waiting_ms: int
 
 
+class WitnessSet(TypedDict):
+    story: str
+    keys: list[str]
+    started_ms: int
+    elapsed_ms: int
+
+
 class Status(TypedDict):
     project: str
     admission: str
@@ -130,6 +137,7 @@ class Status(TypedDict):
     config_edit: bool
     runs: list[StatusRun]
     queued: list[QueuedTicket]
+    witnesses: NotRequired[WitnessSet | None]
 
 
 class Triage(TypedDict):
