@@ -6,8 +6,10 @@ from __future__ import annotations
 import io
 import os
 import shlex
+import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -17,6 +19,7 @@ from loop_fixture import ROOT, VALID_BODY, LoopFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.pool  # noqa: E402
+import holophyte.story.witness  # noqa: E402
 import holophyte.story.witness_trigger  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
@@ -420,3 +423,78 @@ class WitnessDebounceTests(_DebounceFixture):
         self.assertEqual(scheduler.spawned_before, [0, 0, 1])
         self.assertEqual(self.real_rows(), [("W1", b, "green"),
                                             ("W2", b, "green")])
+
+    def test_an_inherited_child_at_the_restart_cap_is_waited_for(self):
+        self.blocking_story()
+        self.quiet()
+        before = _Scheduler(self)
+        tips = {}
+
+        def trigger(run, name):
+            def step():
+                self.w2_blocking(run)
+                tips[name] = self.land(name, write=[(f"{FIXTURE}page.txt",
+                                                     f"{name}\n")])
+            return step
+
+        def cancelled(run):
+            def step():
+                child = before.children[run - 1]
+                return child.pid, child.wait(timeout=10)
+            return step
+
+        before.run(trigger(1, "b"), cancelled(1), self.quiet,
+                   trigger(2, "c"), cancelled(2), self.quiet)
+        inherited = before.children[2]
+        self.w2_blocking(3)
+        d = self.land("d", write=[(f"{FIXTURE}page.txt", "d\n")],
+                      remove=[MARKER])
+        after = _Scheduler(self)
+
+        def inherited_finishes():
+            with self.assertRaises(subprocess.TimeoutExpired):
+                inherited.wait(timeout=2)
+            (self.w2_blocking(3)[2] / MARKER).unlink()
+            self.assertEqual(inherited.wait(timeout=120), 0)
+
+        def next_child_exits():
+            (child,) = after.children
+            return child.pid, child.wait(timeout=120)
+
+        rc = after.run(inherited_finishes, self.quiet, next_child_exits)
+
+        self.assertEqual(rc, 0, after.out.getvalue())
+        self.assertEqual(after.spawned_before, [0, 0, 1])
+        self.assertEqual(self.real_rows(), [
+            ("W1", tips["c"], "green"), ("W2", tips["c"], "green"),
+            ("W1", d, "green"), ("W2", d, "green")])
+
+    def test_a_cancel_as_the_witness_command_starts_kills_it_before_unwinding(self):
+        self.blocking_story()
+        real = holophyte.story.witness._verify_command
+        commands = []
+
+        def cancel_as_it_starts(project, command, cwd, timeout, on_start=None):
+            def start(proc):
+                if MARKER in command:
+                    commands.append(proc)
+                    os.kill(os.getpid(), signal.SIGTERM)
+                on_start(proc)
+            return real(project, command, cwd, timeout, on_start=start)
+
+        marker = Path(self.project.holo_dir) / "witness-tree" / MARKER
+        release = threading.Timer(15, marker.unlink, kwargs={"missing_ok": True})
+        release.start()
+        self.addCleanup(release.cancel)
+        started = time.monotonic()
+        with patch.object(holophyte.story.witness, "_verify_command",
+                          cancel_as_it_starts), \
+                patch.object(sys, "stdout", io.StringIO()), \
+                self.assertRaises(SystemExit) as raised:
+            holophyte.loop.pool.witness_child(self.project, self.board)
+
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+        (command,) = commands
+        self.assertEqual(command.returncode, -signal.SIGKILL)
+        self.assertEqual(self.real_rows(), [])

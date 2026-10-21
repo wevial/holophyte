@@ -63,22 +63,32 @@ Verdict = collections.namedtuple(
 class _Command:
     def __init__(self):
         self.proc = None
-        self.cancelled = False
+        self.starting = False
+        self.cancelled = None
+
+    def start(self):
+        self.proc, self.starting = None, True
 
     def arm(self, proc):
-        self.proc = proc
-        if self.cancelled:
-            self.kill()
+        self.proc, self.starting = proc, False
+        self.unwind()
 
-    def cancel(self):
-        self.cancelled = True
-        self.kill()
+    def started(self):
+        self.starting = False
+        self.unwind()
 
-    def kill(self):
-        if self.proc is None or self.proc.returncode is not None:
+    def cancel(self, signum):
+        self.cancelled = signum
+        if not self.starting:
+            self.unwind()
+
+    def unwind(self):
+        if self.cancelled is None:
             return
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(self.proc.pid, signal.SIGKILL)
+        if self.proc is not None and self.proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(self.proc.pid, signal.SIGKILL)
+        raise SystemExit(128 + self.cancelled)
 
 
 COMMAND = _Command()
@@ -470,6 +480,7 @@ def _run_one(run, witness, file_hash, log):
     if remaining <= 0:
         _write_log(log, transcript + SPENT, secrets)
         return "error", None, file_hash, time.monotonic() - started
+    COMMAND.start()
     try:
         code, output = _verify_command(run.target, NO_COLOR + witness.command,
                                        run.tree, remaining, on_start=COMMAND.arm)
@@ -481,6 +492,8 @@ def _run_one(run, witness, file_hash, log):
         _write_log(log, f"{transcript}[witness] could not run: {error}\n",
                    secrets)
         return "error", None, file_hash, time.monotonic() - started
+    finally:
+        COMMAND.started()
     output = output or ""
     seconds = time.monotonic() - started
     vacuous = vacuous_green_report(witness.command, output) if code == 0 else None

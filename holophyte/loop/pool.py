@@ -87,8 +87,7 @@ def witness_child(target, provider):
     from holophyte.story.witness import COMMAND, witness_step
 
     def cancel(signum, frame):
-        COMMAND.cancel()
-        raise SystemExit(128 + signum)
+        COMMAND.cancel(signum)
 
     previous = signal.signal(signal.SIGTERM, cancel)
     conn = open_store(target)
@@ -268,6 +267,7 @@ class _WitnessChild:
         self.exited_at = None
         self.waiting = False
         self.cancelled = set()
+        self.inherited = set()
         self.let_run = set()
 
     def tick(self, target, conn, project, state):
@@ -286,7 +286,7 @@ class _WitnessChild:
             return
         tip = pass_due(target, conn, project)
         if tip is None:
-            self.waiting = any(_still_running(pid) for pid in self.cancelled)
+            self.waiting = any(_still_running(pid) for pid in self.inherited)
             return
         if tip == self.spawned_at and monotonic() - self.exited_at < self.tick_sec:
             return
@@ -308,6 +308,9 @@ class _WitnessChild:
         )
 
         running = running_step(target)
+        if running is not None and (self.child is None
+                                    or running[0] != self.child.pid):
+            self.inherited.add(running[0])
         if running is None or running[0] in self.cancelled:
             return
         pid, identifier, ticket, sha = running
