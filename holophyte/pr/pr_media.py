@@ -670,7 +670,11 @@ def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files,
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
 
 
-def capture_failure(project, wt, task_id, evidence_states, evidence_files=()):
+def capture_failure(project, wt, task_id, evidence_states, evidence_files=(),
+                    ui_change=None):
+    if not _wants_capture(merge_config(project), wt, task_id, ui_change,
+                          evidence_states):
+        return None
     receipt = _receipt(project, wt, task_id, evidence_states, evidence_files)[0]
     failed, kind, log = (receipt.with_suffix(suffix)
                          for suffix in ('.failed', '.kind', '.log'))
