@@ -117,8 +117,6 @@ function stopsWord(phase: string, live: StatusRun | null): string {
 
 const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
 
-/** The failing checks and round of the check fix round the babysitter's
- *  newest step is working, or null when it is on another step. */
 function checkFixRound(events: RunDetail["events"]): string | null {
   const ordered = orderEvents(events);
   const steps = ordered.filter((event) => event.kind === "babysit_step");
