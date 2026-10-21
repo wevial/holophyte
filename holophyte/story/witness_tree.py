@@ -66,13 +66,13 @@ class WarmTree:
         for number, step in enumerate(self.steps, 1):
             if step.inputs is None:
                 continue
-            key = self._key(sha, step)
-            if (not ran and stamps.get(step.run) == key
+            key, name = self._key(sha, step), f"{number}: {step.run}"
+            if (not ran and stamps.get(name) == key
                     and all(os.path.lexists(self.path / path)
                             for path in step.keep)):
                 reused.add(number)
             else:
-                ran[step.run] = key
+                ran[name] = key
         return reused, ran
 
     def record(self, ran):
