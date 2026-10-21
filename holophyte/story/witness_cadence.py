@@ -1,7 +1,6 @@
 """Whether a loop pass runs a story's witness set, and the verdicts it carries."""
 import datetime
 import subprocess
-import time
 
 from holophyte.config.config_tables import story_config
 from holophyte.story.story_close import main_ledger
@@ -19,15 +18,14 @@ def latest_real(conn, story_id):
             if row.carriedFrom is None}
 
 
-def set_due(target, conn, story_id, sha, now=None):
+def set_due(target, conn, story_id, sha):
     found = story(conn, story_id)
     latest = latest_real(conn, story_id)
     if not latest or any(witness.key not in latest
                          for witness in found.witnesses):
         return True
     last = max(latest.values(), key=lambda row: row.id)
-    if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour,
-                                  now):
+    if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour):
         return True
     try:
         return (_paths_changed(target.path, last.mainSha, sha,
@@ -38,9 +36,8 @@ def set_due(target, conn, story_id, sha, now=None):
         return True
 
 
-def _last_nightly_ms(hour, now=None):
-    clock = datetime.datetime.fromtimestamp(
-        (time.time() * 1000 if now is None else now) / 1000)
+def _last_nightly_ms(hour):
+    clock = datetime.datetime.now()
     nightly = clock.replace(hour=hour, minute=0, second=0, microsecond=0)
     if nightly > clock:
         nightly -= datetime.timedelta(days=1)
