@@ -36,6 +36,7 @@ class SteerRevisionTests(unittest.TestCase):
         store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run_id = store.claim(self.conn, project, self.ticket)
         self.edited = int(time.time() * 1000) + 1000
+        self.project, self.key = project, key
         store.board.edit_ticket(self.conn, project, key, ticket_body(REVISED),
                                 expected_revision=1, now=self.edited)
 
@@ -52,6 +53,14 @@ class SteerRevisionTests(unittest.TestCase):
         self.amend()
         self.assertEqual(numbered(self.conn, self.run_id, CLAIMED),
                          self.held(REVISED))
+
+    def test_a_revision_restoring_the_claimed_criteria_supersedes_the_edit(self):
+        store.board.edit_ticket(self.conn, self.project, self.key,
+                                ticket_body(CLAIMED), expected_revision=2,
+                                now=self.edited + 500)
+        self.amend()
+        self.assertEqual(numbered(self.conn, self.run_id, CLAIMED),
+                         self.held(CLAIMED))
 
     def test_terminal_adjudication_judges_the_adopted_criteria(self):
         self.amend()
