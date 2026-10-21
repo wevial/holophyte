@@ -2,6 +2,8 @@
   // Cloudflare Workers Builds deploys the MkDocs site as static assets.
   // Build command: pip install mkdocs-material && mkdocs build
   // Deploy command: npx wrangler deploy
+  // Custom domains are attached in the dashboard, not listed here: a
+  // "routes" list would replace every domain attached there on deploy.
   "name": "holophyte-docs",
   "compatibility_date": "2026-09-05",
   "assets": {

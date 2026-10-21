@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Holophyte demo</title>
+<meta name="description" content="Holophyte is a minimal software factory: it claims a ticket from your board, implements it in an isolated worktree, verifies and reviews it, and lands it on main.">
+<link rel="icon" href="https://media.holophyte.ai/demo/mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --canvas: #eceaf3; --paper: #fbfafd; --paper-2: #f3f1f8;
+  --ink: #171a2c; --ink-2: #454b66; --ink-3: #5f6580;
+  --rule: #d3d0e0; --rule-2: #e5e3ee;
+  --act: #b02f6b; --act-ink: #ffffff; --act-wash: rgba(176, 47, 107, 0.08);
+  --live: #1f7a35; --wait: #5653a6; --bad: #c0321f; --ask: #8a6500;
+  --shadow: 0 8px 24px rgba(23, 26, 44, 0.12);
+  --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --read: "IBM Plex Sans", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #05070f; --paper: #0b1020; --paper-2: #11182c;
+  --ink: #e9ecf6; --ink-2: #b7bdd3; --ink-3: #8a92ad;
+  --rule: #273050; --rule-2: #1a2140;
+  --act: #f5a3c7; --act-ink: #1b0d16; --act-wash: rgba(245, 163, 199, 0.10);
+  --live: #86d993; --wait: #aaa7ec; --bad: #ff7b72; --ask: #f0cf62;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --canvas: #05070f; --paper: #0b1020; --paper-2: #11182c;
+    --ink: #e9ecf6; --ink-2: #b7bdd3; --ink-3: #8a92ad;
+    --rule: #273050; --rule-2: #1a2140;
+    --act: #f5a3c7; --act-ink: #1b0d16; --act-wash: rgba(245, 163, 199, 0.10);
+    --live: #86d993; --wait: #aaa7ec; --bad: #ff7b72; --ask: #f0cf62;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--canvas); color: var(--ink);
+  font-family: var(--sans); font-size: 15px; line-height: 1.5;
+}
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+img, video { display: block; max-width: 100%; height: auto; }
+code { font-family: var(--mono); font-size: 0.88em; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .wrap { padding: 0 32px; } }
+
+/* Shots follow the theme: the dawn capture in light, the night one in dark. */
+.night { display: none; }
+:root[data-theme="dark"] .dawn { display: none; }
+:root[data-theme="dark"] .night { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .dawn { display: none; }
+  :root:not([data-theme="light"]) .night { display: block; }
+}
+
+.top { border-bottom: 1px solid var(--rule); background: var(--paper); }
+.top .wrap { display: flex; align-items: center; gap: 16px; min-height: 60px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 650; font-size: 18px; letter-spacing: -0.01em; }
+.brand svg { width: 24px; height: 24px; }
+.top nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.top nav a, .theme {
+  font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+  text-decoration: none; color: var(--ink-2); padding: 10px 10px; border: 0; background: none; cursor: pointer;
+}
+.top nav a:hover, .theme:hover { color: var(--act); }
+.theme { border: 1px solid var(--rule); margin-left: 6px; }
+
+.hero.wrap { margin-top: 52px; margin-bottom: 0; }
+.hero h1 {
+  font-size: clamp(32px, 4.6vw, 50px); line-height: 1.04; letter-spacing: -0.025em; font-weight: 700;
+  font-variation-settings: "wdth" 104; margin: 0 0 18px; text-wrap: balance;
+}
+.hero h1 em { font-style: normal; color: var(--act); }
+.lead { font-family: var(--read); font-size: 18px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; margin: 0; }
+
+.frame { display: block; border: 1px solid var(--rule); background: var(--paper); box-shadow: var(--shadow); overflow: hidden; }
+
+/* Each section opens on a rule, its heading below. */
+section.wrap { margin-top: 64px; }
+section.wrap::before { content: ""; display: block; height: 1px; background: var(--rule); margin-bottom: 28px; }
+h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 700; margin: 0 0 24px; }
+
+/* The loop */
+.loop { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.loop li { position: relative; background: var(--paper); border: 1px solid var(--rule); padding: 16px 16px 18px; }
+.loop .n { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-3); letter-spacing: 0.08em; }
+.loop h3 { margin: 0 0 6px; font-size: 17px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.loop h3 i { width: 8px; height: 8px; display: inline-block; background: var(--live); }
+.loop li:nth-child(4) h3 i { background: var(--wait); }
+.loop li:nth-child(5) h3 i { background: var(--act); }
+.loop p { margin: 0; font-family: var(--read); font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+.loop li:not(:last-child)::after {
+  content: "↓"; position: absolute; left: 50%; transform: translateX(-50%); bottom: -14px; z-index: 1;
+  font-family: var(--mono); font-size: 13px; color: var(--ink-3); background: var(--canvas); padding: 0 4px; line-height: 16px;
+}
+.back { margin-top: 14px; display: flex; gap: 10px; align-items: baseline; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.back span { color: var(--wait); font-weight: 600; }
+.outs { display: grid; gap: 12px; margin-top: 18px; }
+.out { margin: 0; border-left: 3px solid var(--live); padding: 4px 0 4px 12px; font-family: var(--read); font-size: 14px; color: var(--ink-2); }
+.out.no { border-color: var(--bad); }
+.out b { font-family: var(--sans); color: var(--ink); }
+@media (min-width: 900px) {
+  .loop { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+  .loop li:not(:last-child)::after { content: "→"; left: auto; right: -16px; bottom: auto; top: 50%; transform: translateY(-50%); padding: 0 1px; }
+  .back { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: 18px; margin-top: 0; }
+  .back .bracket {
+    grid-column: 2 / 5; height: 22px; border: 1px dashed var(--wait); border-top: 0;
+    position: relative; margin: 0 40px;
+  }
+  .back .bracket::before { content: "▲"; position: absolute; left: -6px; top: -9px; font-size: 9px; color: var(--wait); }
+  .back .text { grid-column: 2 / 5; text-align: center; margin-top: 6px; }
+  .outs { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 899px) { .back .bracket { display: none; } }
+
+/* Video */
+.video video { width: 100%; aspect-ratio: 1440 / 900; background: var(--paper-2); }
+
+/* Screens: one row per screen, image side alternating on desktop. */
+.feats { display: grid; gap: 48px; }
+.feat { display: grid; gap: 16px; margin: 0; }
+.feat h3 { margin: 0 0 6px; font-size: 18px; font-weight: 650; }
+.feat p { margin: 0; font-family: var(--read); font-size: 15px; color: var(--ink-2); max-width: 46ch; }
+.feat .tall img { width: 100%; aspect-ratio: 1440 / 1000; object-fit: cover; object-position: top; }
+@media (min-width: 900px) {
+  .feats { gap: 64px; }
+  .feat { grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); gap: 40px; align-items: center; }
+  .feat:nth-child(odd) { grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); }
+  .feat:nth-child(odd) .copy { order: 2; }
+}
+
+/* Differences */
+.diff { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.diff li { display: grid; gap: 6px 28px; padding: 18px 0; border-bottom: 1px solid var(--rule); }
+.diff h3 { margin: 0; font-size: 16px; font-weight: 650; }
+.diff p { margin: 0; font-family: var(--read); font-size: 15px; color: var(--ink-2); max-width: 70ch; }
+@media (min-width: 720px) { .diff li { grid-template-columns: 220px 1fr; } }
+
+.foot { border-top: 1px solid var(--rule); background: var(--paper); padding: 24px 0 32px; margin-top: 72px; }
+.foot .wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; }
+.foot p { margin: 0; font-family: var(--read); font-size: 14px; color: var(--ink-2); max-width: 80ch; }
+.foot .links { margin-left: auto; display: flex; gap: 16px; font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="var(--act)" stroke="var(--canvas)" stroke-width="1.1" stroke-linejoin="round"><path d="M12 17C7.4 17.6 3.6 15.6 2 12.2 5.6 11.8 9.4 13.6 12 17Z"/><path d="M12 17C16.6 17.6 20.4 15.6 22 12.2 18.4 11.8 14.6 13.6 12 17Z"/><path d="M12 17C8.2 16.6 5.6 13 6 8 9 9.2 11.2 12.6 12 17Z"/><path d="M12 17C15.8 16.6 18.4 13 18 8 15 9.2 12.8 12.6 12 17Z"/><path d="M12 4C15.2 7.2 15.2 13 12 17 8.8 13 8.8 7.2 12 4Z"/></g><path d="M6 20.2H18" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-linecap="round"/></svg>
+      holophyte
+    </a>
+    <nav aria-label="Site">
+      <a href="https://docs.holophyte.ai/">Docs</a>
+      <a href="https://github.com/wevial/holophyte">GitHub</a>
+      <button class="theme" type="button" id="theme" aria-label="Colour theme">Theme</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero wrap">
+    <h1>Tickets in. <em>Reviewed</em> commits on main out.</h1>
+    <p class="lead">Holophyte claims a ticket from your board, has an agent implement it in an isolated git worktree, holds it to the ticket's verify commands and an independent review, and lands it on <code>main</code>.</p>
+  </div>
+
+  <section class="wrap" aria-labelledby="loop">
+    <h2 id="loop">One ticket, five steps</h2>
+    <ol class="loop">
+      <li><h3><span class="n">01</span><i></i>Claim</h3><p>The next Ready ticket whose dependencies have merged. Its body becomes the contract.</p></li>
+      <li><h3><span class="n">02</span><i></i>Implement</h3><p>An agent works and commits in its own git worktree, optionally in a container.</p></li>
+      <li><h3><span class="n">03</span><i></i>Verify</h3><p>The ticket's own verify commands run on the candidate.</p></li>
+      <li><h3><span class="n">04</span><i></i>Review</h3><p>An independent reviewer judges the diff and witnesses each criterion.</p></li>
+      <li><h3><span class="n">05</span><i></i>Land</h3><p>A merge to <code>main</code>, or a pull request watched through its checks.</p></li>
+    </ol>
+    <div class="back" aria-label="Fix rounds">
+      <div class="bracket" aria-hidden="true"></div>
+      <div class="text"><span>↺ changes requested</span> back to implement with the findings</div>
+    </div>
+    <div class="outs">
+      <p class="out"><b>Merged.</b> The store records the commit, the rounds and any follow-ups.</p>
+      <p class="out no"><b>Not merged.</b> The branch is kept and the run ends with its reason.</p>
+    </div>
+  </section>
+
+  <section class="wrap video" aria-labelledby="watch">
+    <h2 id="watch">Open a pull request, look at its screenshots, steer a run</h2>
+    <div class="frame">
+      <video controls muted loop playsinline preload="metadata" poster="https://media.holophyte.ai/demo/console-flow-poster.png" width="1440" height="900">
+        <source src="https://media.holophyte.ai/demo/console-flow.webm" type="video/webm">
+        <source src="https://media.holophyte.ai/demo/console-flow.mp4" type="video/mp4">
+      </video>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="console">
+    <h2 id="console">The console</h2>
+    <div class="feats">
+      <article class="feat">
+        <div class="copy"><h3>What needs you</h3><p>Overview puts questions and failures first, ahead of running work, pull requests and the day's log.</p></div>
+        <a class="frame tall" href="https://media.holophyte.ai/demo/overview-dawn.png">
+          <img class="dawn" src="https://media.holophyte.ai/demo/overview-dawn.png" width="1440" height="1620" alt="The console Overview in its Dawn theme: a question waiting on the operator, a failed run and a host needing attention, above the running runs and today's log." loading="lazy">
+          <img class="night" src="https://media.holophyte.ai/demo/overview-night.png" width="1440" height="1620" alt="The same Overview in the Night theme." loading="lazy">
+        </a>
+      </article>
+      <article class="feat">
+        <div class="copy"><h3>A run in review</h3><p>Progress by round, whether review witnessed each criterion, and the agent's chat with your steer notes.</p></div>
+        <a class="frame" href="https://media.holophyte.ai/demo/run-review-dawn.png">
+          <img class="dawn" src="https://media.holophyte.ai/demo/run-review-dawn.png" width="1440" height="900" alt="A run page mid-review: two of three acceptance criteria met, the progress log with round 1's finding and the loop back, and the agent panel with a steer note, a question and its answer." loading="lazy">
+          <img class="night" src="https://media.holophyte.ai/demo/run-review-night.png" width="1440" height="900" alt="The same run page in the Night theme." loading="lazy">
+        </a>
+      </article>
+      <article class="feat">
+        <div class="copy"><h3>A pull request, opened</h3><p>Checks, rounds, what it waits on, diff size, and the screenshots and video the run captured.</p></div>
+        <a class="frame" href="https://media.holophyte.ai/demo/pr-row-dawn.png"><img src="https://media.holophyte.ai/demo/pr-row-crop.png" width="870" height="420" alt="The pull request lane with one row opened: checks passing, six rounds, waits on another pull request, 9 files changed, three screenshots and a video, and actions to open the PR, open the preview, send it back with a note or open the run." loading="lazy"></a>
+      </article>
+      <article class="feat">
+        <div class="copy"><h3>Board</h3><p>Cards move as the factory works: queued, implementing, on CI, parked on a pull request, asking, failed, merged.</p></div>
+        <a class="frame" href="https://media.holophyte.ai/demo/board-dawn.png">
+          <img class="dawn" src="https://media.holophyte.ai/demo/board-crop-dawn.png" width="1208" height="700" alt="The board: Backlog, Ready, In flight, Needs you and Done today columns of ticket cards." loading="lazy">
+          <img class="night" src="https://media.holophyte.ai/demo/board-crop-night.png" width="1208" height="700" alt="The board in the Night theme." loading="lazy">
+        </a>
+      </article>
+      <article class="feat">
+        <div class="copy"><h3>Findings</h3><p>Review findings across runs, worst first, with the follow-ups that become Backlog drafts when their pull request merges.</p></div>
+        <a class="frame" href="https://media.holophyte.ai/demo/findings-dawn.png"><img src="https://media.holophyte.ai/demo/findings-crop.png" width="1208" height="700" alt="The findings page: one open P1 finding being fixed, two follow-ups, one finding settled this week and the clean reviews." loading="lazy"></a>
+      </article>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="different">
+    <h2 id="different">Built to be trusted unattended</h2>
+    <ul class="diff">
+      <li><h3>Witnessed criteria</h3><p>The reviewer marks each acceptance criterion met, not met or unwitnessed, and anything short of met blocks approval.</p></li>
+      <li><h3>Adversarial review</h3><p>Optionally, a second reviewer tries to break the candidate while the first checks it against the ticket.</p></li>
+      <li><h3>Isolation</h3><p>The implementer works in its own worktree, optionally in a container; the reviewer gets a read-only copy with no host credentials.</p></li>
+      <li><h3>Steer a live run</h3><p>Send a note from the run page or <code>holo steer</code> and the agent reads it at its next turn.</p></li>
+      <li><h3>The store is the record</h3><p>Every claim, round, finding, steer and merge is a row in one SQLite store per project, and the console renders from it.</p></li>
+    </ul>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p>The screens are the real console over a seeded demo store; the tickets, runs and pull requests are fixture data.</p>
+    <div class="links"><a href="https://docs.holophyte.ai/">Docs</a><a href="https://github.com/wevial/holophyte">GitHub</a></div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var button = document.getElementById("theme");
+  var KEY = "holophyte.demo.theme";
+  function system() { return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
+  function current() { return root.getAttribute("data-theme") || system(); }
+  function label() {
+    var dark = current() === "dark";
+    button.textContent = dark ? "Night" : "Dawn";
+    button.setAttribute("aria-label", "Colour theme: " + (dark ? "night. Switch to dawn" : "dawn. Switch to night"));
+  }
+  try { var saved = localStorage.getItem(KEY); if (saved === "dark" || saved === "light") root.setAttribute("data-theme", saved); } catch (e) {}
+  label();
+  button.addEventListener("click", function () {
+    var next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+    label();
+  });
+  if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", label);
+})();
+</script>
+</body>
+</html>
