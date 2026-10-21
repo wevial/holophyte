@@ -157,6 +157,9 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
             reply, review_runner.ADJUDICATION_VERDICTS)
     except review_runner.ReviewBoundaryError:
         decision = "MALFORMED"
+    if (not recorded and decision == "PASS" and criteria
+            and not criteria_block(reply)):
+        raise InfraFailure("terminal adjudication PASS named no criterion")
     refused = (_criteria_gate(reply, criteria, wt, left_open)
                if decision == "PASS" else [])
     if not recorded:

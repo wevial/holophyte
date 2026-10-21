@@ -1152,7 +1152,12 @@ identifier in the title. Describe what changed and why in a few short
 paragraphs; no testing plan." Anything but a string is a startup error
 naming the key.
 
-Visual evidence is captured when the diff matches `ui_paths`. Configure it
+Visual evidence is captured when the diff matches `ui_paths` and the ticket
+lists evidence states, declares `ui_change` `minor` or `major`, or declares
+neither and, under `ui_capture_local = true`, its worktree holds its own
+`<ui_capture_dir>/<ticket key>.capture.ts` (under `ui_capture_local = false`
+such a ticket is captured); a ticket declaring `none` with no states is never
+captured, and its PR and reviewer prompt carry no Evidence section. Configure it
 together with `ui_capture`; leaving both absent leaves PRs unchanged. The
 capture command receives one output-directory argument and has five minutes
 to write PNG, WebM or MP4 files. Evidence is shared with review prompts and
@@ -1201,8 +1206,10 @@ with the options below (or `python3 -m holophyte.capture_playwright`). It
 runs the spec `DIR/<HOLOPHYTE_TICKET>.capture.ts`, which lives outside the
 project's test tree, and refuses when the spec is missing, unless the ticket
 lists no evidence states and `--default SPEC` names an existing spec, which
-then runs in its place (a ticket that lists states and wrote no spec is still
-refused, and a `--default` naming a missing file is refused naming it). A
+then runs in its place; the factory reaches it only for a ticket declaring
+`ui_change` `minor` or `major` (a ticket that lists states and wrote no spec
+is still refused, and a `--default` naming a missing file is refused naming
+it). A
 default outside the working directory, such as one kept beside the factory's
 config, runs from a temporary copy in the capture directory, so it resolves
 the project's modules and path aliases; the copy is removed after the run, and
@@ -1729,16 +1736,19 @@ A story's witness runs and how many of its children run at once.
 | `witness_sec` | Default: `600` seconds | Positive integer; the most one witness run at a commit of `main` may take, all of the story's witness commands together. A witness still waiting when it is spent is recorded `error`. |
 | `max_parallel` | Default: `2` | Positive integer; the most children of the open story holding a live run at once. The claim refuses another child, naming the cap, until one ends. |
 | `dependency_ready` | Default: `merged` | When a child's approved dependencies count as ready. `merged`, the only value, waits until each one has merged. |
+| `witness_nightly_hour` | Default: `3` | Hour from 0 to 23, host local time. A loop pass runs an open story's whole witness set when its last real run is older than the most recent such hour, even when no child merged and none of its `## Witness paths` changed since; otherwise it carries the last verdicts. |
 
 ```toml
 [story]
 witness_sec = 600
 max_parallel = 2
 dependency_ready = "merged"
+witness_nightly_hour = 3
 ```
 
-A `witness_sec` or `max_parallel` that is not a positive integer, or a
-`dependency_ready` other than `merged`, is a startup error naming the key.
+A `witness_sec` or `max_parallel` that is not a positive integer, a
+`dependency_ready` other than `merged`, or a `witness_nightly_hour` that is
+not a whole hour from 0 to 23, is a startup error naming the key.
 
 ## `[review]`
 

@@ -1,6 +1,6 @@
 {
   "project": "/repo",
-  "schema_version": 55,
+  "schema_version": 56,
   "admission": "enabled",
   "hold_note": null,
   "workers": 1,
@@ -148,6 +148,7 @@
       "waiting_ms": 60000
     }
   ],
+  "witnesses": null,
   "route_probes": {
     "implementer": {
       "primary": null,

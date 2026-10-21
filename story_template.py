@@ -20,6 +20,7 @@ MAX_CHILDREN = 10
 MAX_WITNESSES = 10
 ADVISED_WITNESSES = 5
 MAX_STANDING_ORDERS = 5
+MAX_WITNESS_PATHS = 10
 WITNESS_RE = re.compile(
     r"^\[[ xX]\]\s*(W\d+):\s*(.+?)\s*\(a test in (\S+) witnesses [^()]+\)$")
 COMMAND_RE = re.compile(r"^(W\d+):\s*(\S.*)$")
@@ -59,10 +60,19 @@ class Story(NamedTuple):
     witnesses: list
     standing_orders: list
     open_questions_none: bool
+    path_lines: list
 
 
 def _items(story, section):
     return tt._list_items(tt.COMMENT_RE.sub("", story.sections.get(section, "")))
+
+
+def _is_witness_path(line):
+    return not posixpath.isabs(line) and ".." not in line.split("/")
+
+
+def witness_paths(story):
+    return [line for line in story.path_lines if _is_witness_path(line)]
 
 
 def parse_story(text):
@@ -74,7 +84,9 @@ def parse_story(text):
         if match:
             commands.setdefault(match.group(1), match.group(2).strip())
     story = Story(ticket.order, ticket.sections, [], [], [],
-                  ticket.open_questions_none)
+                  ticket.open_questions_none, [])
+    story.path_lines.extend(tt._fenced_lines(
+        tt.COMMENT_RE.sub("", ticket.sections.get("Witness paths", ""))))
     story.witness_lines.extend(_items(story, "Witnesses"))
     for line in story.witness_lines:
         match = WITNESS_RE.match(line)
@@ -114,6 +126,13 @@ def _body_problems(story):
             problems.append(f"witnesses {owners[file]} and "
                             f"{witness.key} name one file: {witness.file}")
         owners.setdefault(file, witness.key)
+    problems.extend(f"witness path is not repository-relative: "
+                    f"{line}" for line in story.path_lines
+                    if not _is_witness_path(line))
+    if len(story.path_lines) > MAX_WITNESS_PATHS:
+        problems.append(f"'Witness paths' has {len(story.path_lines)} lines; "
+                        f"the limit is {MAX_WITNESS_PATHS}: "
+                        f"{story.path_lines[MAX_WITNESS_PATHS]}")
     if len(story.standing_orders) > MAX_STANDING_ORDERS:
         problems.append(f"'Standing orders' has {len(story.standing_orders)} "
                         f"lines; the limit is {MAX_STANDING_ORDERS}, since "

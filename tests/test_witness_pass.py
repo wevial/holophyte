@@ -140,6 +140,7 @@ class WitnessPassTests(WitnessRunnerFixture, unittest.TestCase):
         witness_pass(self.target, self.conn, self.story_id, "loop")
         tip = commit_file(self.repo, "tests/test_w1.py", FAILS_AN_ASSERTION,
                           "w1 breaks")
+        self.child_merged(tip)
 
         witness_pass(self.target, self.conn, self.story_id, "loop")
 
@@ -154,6 +155,7 @@ class WitnessPassTests(WitnessRunnerFixture, unittest.TestCase):
         tip = commit_file(self.repo, "tests/test_w1.py",
                           FAILS_ONCE.format(marker=str(self.marker)),
                           "w1 flakes")
+        self.child_merged(tip)
 
         witness_pass(self.target, self.conn, self.story_id, "loop")
 

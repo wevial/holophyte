@@ -15,13 +15,14 @@ from .writes import set_board_state
 
 STORY_COLUMNS = ("ticketId", "state", "generation", "standingOrders",
                  "approvedRevision", "approvedPlan", "approvedBy", "approvedAt",
-                 "closedSha", "closedAt")
+                 "closedSha", "closedAt", "witnessPaths")
 WITNESS_COLUMNS = ("key", "criterion", "file", "command", "source",
                    "sourceHash", "completedBy")
 CHILD_COLUMNS = ("ticketId", "witnessKey", "role")
 WITNESS_FIELDS = ("key", "criterion", "file", "command", "source")
 RESULT_COLUMNS = ("id", "witnessKey", "mainSha", "verdict", "redKind",
-                  "verifier", "fileHash", "evidencePath", "seconds", "at")
+                  "verifier", "fileHash", "evidencePath", "seconds", "at",
+                  "carriedFrom")
 DECISION_COLUMNS = ("id", "kind", "ticketId", "question", "options",
                     "defaultOption")
 
@@ -45,7 +46,7 @@ CLOSED_STATUSES = ("merged", "abandoned")
 
 
 def file_story(conn, parent_id, witnesses, children, standing_orders=(),
-               now=None):
+               now=None, witness_paths=()):
     witnesses = [dict(witness) for witness in witnesses]
     children = [(ticket_id, role, tuple(keys))
                 for ticket_id, role, keys in children]
@@ -54,16 +55,18 @@ def file_story(conn, parent_id, witnesses, children, standing_orders=(),
     orders = list(standing_orders)
     if not all(isinstance(order, str) and order.strip() for order in orders):
         raise ValueError("a standing order is blank")
+    paths = _check_paths(witness_paths)
     with _transaction(conn):
         _check_tickets(conn, parent_id, [child[0] for child in children])
         conn.execute("INSERT INTO stories (ticketId, state, generation,"
-                     " standingOrders) VALUES (?, 'planned', 0, ?)",
-                     (parent_id, json.dumps(orders)))
+                     " standingOrders, witnessPaths)"
+                     " VALUES (?, 'planned', 0, ?, ?)",
+                     (parent_id, json.dumps(orders), paths))
         _insert_plan(conn, parent_id, witnesses, children, completed_by)
 
 
 def replan_story(conn, parent_id, witnesses, children, standing_orders,
-                 now=None, body_revised=False):
+                 now=None, body_revised=False, witness_paths=()):
     witnesses = [dict(witness) for witness in witnesses]
     children = [(ticket_id, role, tuple(keys))
                 for ticket_id, role, keys in children]
@@ -72,6 +75,7 @@ def replan_story(conn, parent_id, witnesses, children, standing_orders,
     orders = list(standing_orders)
     if not all(isinstance(order, str) and order.strip() for order in orders):
         raise ValueError("a standing order is blank")
+    paths = _check_paths(witness_paths)
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -84,10 +88,10 @@ def replan_story(conn, parent_id, witnesses, children, standing_orders,
         conn.execute("DELETE FROM storyWitnesses WHERE storyId = ?",
                      (parent_id,))
         _insert_plan(conn, parent_id, witnesses, children, completed_by)
-        conn.execute("UPDATE stories SET standingOrders = ?, state = CASE"
-                     " WHEN state IN (?, ?) THEN 'planned' ELSE state END"
-                     " WHERE ticketId = ?",
-                     (json.dumps(orders), *OPEN_STATES, parent_id))
+        conn.execute("UPDATE stories SET standingOrders = ?, witnessPaths = ?,"
+                     " state = CASE WHEN state IN (?, ?) THEN 'planned'"
+                     " ELSE state END WHERE ticketId = ?",
+                     (json.dumps(orders), paths, *OPEN_STATES, parent_id))
         if not body_revised:
             _record_plan_revision(conn, parent_id, now)
         return _story_state(conn, parent_id)
@@ -102,6 +106,7 @@ def story(conn, ticket_id):
         return None
     fields = dict(zip(STORY_COLUMNS, row))
     fields["standingOrders"] = tuple(json.loads(fields["standingOrders"]))
+    fields["witnessPaths"] = tuple(json.loads(fields["witnessPaths"] or "[]"))
     if fields["approvedPlan"] is not None:
         fields["approvedPlan"] = json.loads(fields["approvedPlan"])
     witnesses = tuple(StoryWitness(*witness) for witness in conn.execute(
@@ -331,8 +336,10 @@ def abandon_story(conn, parent_id, note, author, now=None):
 
 def record_witness_result(conn, story_id, key, main_sha, verdict, verifier,
                           red_kind=None, file_hash=None, evidence_path=None,
-                          seconds=None, now=None):
+                          seconds=None, carried_from=None, now=None):
     _check_text(main_sha=main_sha)
+    if carried_from is not None:
+        _check_text(carried_from=carried_from)
     _check_member("verdict", verdict, WitnessVerdict)
     _check_member("verifier", verifier, WitnessVerifier)
     if verdict == "red":
@@ -348,10 +355,10 @@ def record_witness_result(conn, story_id, key, main_sha, verdict, verifier,
             raise ValueError(f"story {story_id} has no witness {key!r}")
         return conn.execute(
             "INSERT INTO witnessResults (storyId, witnessKey, mainSha,"
-            " verdict, redKind, verifier, fileHash, evidencePath, seconds, at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " verdict, redKind, verifier, fileHash, evidencePath, seconds, at,"
+            " carriedFrom) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (story_id, key, main_sha, verdict, red_kind, verifier, file_hash,
-             evidence_path, seconds, now)).lastrowid
+             evidence_path, seconds, now, carried_from)).lastrowid
 
 
 def witness_ledger(conn, story_id, main_sha=None):
@@ -566,6 +573,13 @@ def _check_witnesses(witnesses):
             raise ValueError(f"witness key {witness['key']} is given twice")
         keys.add(witness["key"])
     return keys
+
+
+def _check_paths(witness_paths):
+    paths = list(witness_paths)
+    if not all(isinstance(path, str) and path.strip() for path in paths):
+        raise ValueError("a witness path is blank")
+    return json.dumps(paths) if paths else None
 
 
 def _check_children(parent_id, children, keys):

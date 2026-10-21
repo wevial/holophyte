@@ -247,6 +247,23 @@ def amendments(conn, ticket_id):
     return _notes(conn, "s.kind = ?", (ticket_id, AMENDMENT))
 
 
+def adopted_revision(conn, run_id):
+    (revision,) = conn.execute(
+        "SELECT MAX(v.revision) FROM runs r JOIN steerNotes s ON s.runId = r.id"
+        " AND s.kind = ? AND s.withdrawnBy IS NULL"
+        " JOIN ticketRevisions v ON v.ticketId = r.ticketId"
+        " AND v.revision > r.revision AND v.at < s.at WHERE r.id = ?",
+        (AMENDMENT, run_id)).fetchone()
+    if revision is None:
+        return None
+    changed = conn.execute(
+        "SELECT 1 FROM runs r JOIN ticketRevisions v ON v.ticketId = r.ticketId"
+        " AND v.revision = ? LEFT JOIN ticketRevisions c"
+        " ON c.ticketId = r.ticketId AND c.revision = r.revision"
+        " WHERE r.id = ? AND v.body IS NOT c.body", (revision, run_id)).fetchone()
+    return revision if changed else None
+
+
 def pending(conn, ticket_id, kind=None):
     if kind is None:
         return _notes(conn, "s.consumedBy IS NULL", (ticket_id,))

@@ -144,7 +144,8 @@ def _mirror_rows(conn, project_id, directory, text, children, tasks):
         rows.append((ticket_id, child.role, child.witnesses))
     story = story_template.parse_story(text)
     store.stories.file_story(conn, parent, _witnesses(directory, story), rows,
-                             standing_orders=story.standing_orders)
+                             standing_orders=story.standing_orders,
+                             witness_paths=story_template.witness_paths(story))
     return answer
 
 
@@ -187,7 +188,8 @@ def _file_rows(conn, project_id, key, directory, text, children, priority):
                      child.witnesses))
     store.stories.file_story(conn, _ticket_id(conn, project_id, parent),
                              _witnesses(directory, story), rows,
-                             standing_orders=story.standing_orders)
+                             standing_orders=story.standing_orders,
+                             witness_paths=story_template.witness_paths(story))
     return answer
 
 
@@ -417,12 +419,15 @@ def _update_rows(conn, project_id, key, directory, identifier, revision,
 def _replan(conn, parent_id, identifier, directory, text, rows, before, now):
     story = story_template.parse_story(text)
     witnesses = _witnesses(directory, story)
-    after = (text, *_rows_state(conn, witnesses, rows, story.standing_orders))
+    paths = story_template.witness_paths(story)
+    after = (text, *_rows_state(conn, witnesses, rows, story.standing_orders,
+                                paths))
     state = store.stories.story(conn, parent_id).state
     if after != before:
         state = store.stories.replan_story(conn, parent_id, witnesses, rows,
                                            story.standing_orders, now=now,
-                                           body_revised=before[0] != text)
+                                           body_revised=before[0] != text,
+                                           witness_paths=paths)
     (current,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
                               (parent_id,)).fetchone()
     return f"story {identifier} is {state} at revision {current}"
@@ -472,10 +477,10 @@ def _plan_state(conn, parent_id):
     return (body, *_rows_state(
         conn, witnesses, [(ticket_id, role, child_keys)
                           for ticket_id, (role, child_keys) in keys.items()],
-        stored.standingOrders))
+        stored.standingOrders, stored.witnessPaths))
 
 
-def _rows_state(conn, witnesses, rows, standing_orders):
+def _rows_state(conn, witnesses, rows, standing_orders, witness_paths):
     return (sorted(tuple(witness[field] for field in
                          store.stories.WITNESS_FIELDS)
                    for witness in witnesses),
@@ -483,7 +488,7 @@ def _rows_state(conn, witnesses, rows, standing_orders):
             {ticket_id: json.loads(conn.execute(
                 "SELECT dependsOn FROM tickets WHERE id = ?",
                 (ticket_id,)).fetchone()[0]) for ticket_id, _, _ in rows},
-            list(standing_orders))
+            list(standing_orders), list(witness_paths))
 
 
 def _witnesses(directory, story):

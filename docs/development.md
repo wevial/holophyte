@@ -615,7 +615,26 @@ Each module, one line:
   red's kind from its output; `witness_pass()` runs an open story's
   witnesses at main's tip unless the ledger already holds it or the
   project is held, reruns once a red that was green at an earlier commit,
-  and notes each changed verdict on the parent.
+  and notes each changed verdict on the parent. A loop pass runs the
+  whole witness set only when it is due, and otherwise carries the last
+  real verdicts to the new commit.
+- `holophyte/story/witness_running.py` — `witness-running.json` beside the
+  store names the witness set the loop's witness step is running:
+  `mark_running()` writes it, `clear_running()` removes it and
+  `running_set()` reads it for `/status`'s `witnesses`, ignoring a record
+  whose process has exited.
+- `holophyte/story/witness_trigger.py` — `set_due()` answers whether a loop
+  pass runs a story's witness set at a commit: when the story has no real
+  run of every witness since the story's latest approval, when a child's
+  merged run's `mergeSha` is an
+  ancestor of the commit and not of the set's last real run (the oldest of
+  its witnesses' latest real verdicts, so a pass cut short still owes the
+  rest), when the
+  story's `## Witness paths` changed since that run, when its newest real
+  verdict is older than the most recent `[story] witness_nightly_hour`, or
+  when a git
+  command fails; `carry()` records each witness's latest real verdict again
+  at the commit, `carriedFrom` naming the commit it came from.
 - `holophyte/story/witness_tree.py` — the warm tree a project's loop
   witness passes reuse: `witness-tree/` under the project's state directory,
   taken under the non-blocking `witness-tree.lock`, checked out detached at
