@@ -62,6 +62,10 @@ function afterEnd(detail: RunDetail, at: number): boolean {
   return outcome != null && ended != null && at > ended;
 }
 
+export function noteAuthor(author: string, other: string): string {
+  return author === "maintainer" ? "You" : other;
+}
+
 function steerLines(detail: RunDetail): ProgressLine[] {
   const { id } = detail.run;
   return detail.steer_notes
@@ -70,7 +74,7 @@ function steerLines(detail: RunDetail): ProgressLine[] {
     .map((note) => ({
       at: note.at,
       kind: "steer",
-      text: `${note.kind === "hint" ? "You hinted" : "You steered"}: ${note.note}`,
+      text: `${noteAuthor(note.author, "operator")} ${note.kind === "hint" ? "hinted" : "steered"}: ${note.note}`,
       sub: [note.consumed_ms == null ? "→ waiting until the agent reads it" : `→ the agent read it at ${formatClock(note.consumed_ms)}`],
     }));
 }
