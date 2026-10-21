@@ -80,6 +80,16 @@ test("the reviewing run names its implementer and next round and orders read and
   expect(requests.filter((url) => url === `${DEMO}/runs/12/asks`)).toHaveLength(1);
 });
 
+test("a note an earlier run of the chain read stays in the panel with its read time", async () => {
+  await mount({ ...detail, steer_notes: [
+    { ...note, id: 8, run: 11, kind: "amendment", note: "Keep the sweep idempotent.", at: at(0), consumed_by: 11, consumed_ms: at(5) },
+  ] });
+  const agent = within(panel());
+  expect(agent.getByText("You · steer · 16:00")).toBeTruthy();
+  expect(agent.getByText("Keep the sweep idempotent.")).toBeTruthy();
+  expect(agent.getByText("→ the agent read it at 16:05")).toBeTruthy();
+});
+
 test("the thread merges named authors and asks in time order and links the agent's answer to its posted comment from its head line", async () => {
   await mount({ ...detail, steer_notes: [
     { ...note, id: 3, kind: "amendment", author: "alex", note: "Use the existing lease fixture.", at: at(52), withdrawn: true, consumed_ms: at(53), consumed_by: 12 },
