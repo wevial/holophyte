@@ -216,12 +216,15 @@ class SteerVerifyTests(unittest.TestCase):
                 patch.object(runs, "agent_route", return_value="reviewer"), \
                 patch("holophyte.agents.fix_session.fix_turn",
                       side_effect=fix), \
+                patch("holophyte.agents.fix_session._session_turn",
+                      return_value=("steered", False)) as steer_agent, \
                 contextlib.suppress(RunFailure, MergeParked):
             reproduce.review_rounds(
                 PROJECT, self.conn, self.run_id, None, "NAT-1", "main",
                 self.root, 60, base, base, body(V1), V1, [], CRITERIA, 10,
                 1)
         self.assertEqual(fix.calls, 1)
+        steer_agent.assert_called_once()
         self.assertEqual(self.ticket_command(), V1)
 
     def test_merge_gate_verifies_with_the_adopted_block(self):
