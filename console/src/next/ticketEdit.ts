@@ -1,10 +1,13 @@
 import { clampEstimate, composeBody, criterionDetails, fieldOf, parseBody, withCriteria, withCriterion, withField, type TicketForm } from "./ticketForm";
+import { headerSpan, readHeader } from "./ticketHeader";
 
 const TITLE = "Title";
 const nonblank = (text: string) => text.split("\n").map(line => line.replace(/\r$/, "")).filter(line => line.trim());
 const listed = (text: string) => nonblank(text).every(line => /^- /.test(line));
 const FENCE_OPEN = /^ {0,3}`{3,}[^`]*$/;
 const FENCE_CLOSE = /^ {0,3}`{3,}[ \t]*$/;
+/** Where `preamble`'s title part starts: after its header, which the header fields own. */
+const titleStart = (preamble: string) => headerSpan(preamble)?.close ?? 0;
 
 /** The sections the edit form draws as fields, each with the shape its
  *  fields hold whole; a section of another shape, or holding a comment, is
@@ -31,8 +34,9 @@ const SHAPES: Record<string, (text: string) => boolean> = {
 export function rawParts(body: string): Set<string> {
   const form = parseBody(body);
   const raw = new Set<string>();
-  const preamble = nonblank(form.preamble);
-  if (form.preamble.includes("<!--") || preamble.length > 1 || (preamble.length === 1 && !/^# /.test(preamble[0]!))) raw.add(TITLE);
+  const title = form.preamble.slice(titleStart(form.preamble));
+  const preamble = nonblank(title);
+  if (title.includes("<!--") || preamble.length > 1 || (preamble.length === 1 && !/^# /.test(preamble[0]!))) raw.add(TITLE);
   for (const name of Object.keys(SHAPES)) {
     const section = form.sections.find(each => each.name === name);
     if (section && (section.text.includes("<!--") || !SHAPES[name]!(section.text))) raw.add(name);
@@ -141,15 +145,19 @@ export function loadEdit(body: string, priority: number | null): EditFields {
     dependsOn: fieldOf(form, "dependsOn"),
     uiChange: fieldOf(form, "uiChange"),
     others: [
-      ...(raw.has(TITLE) ? [{ index: -2, name: TITLE, text: form.preamble.trim() }] : []),
+      ...(raw.has(TITLE) ? [{ index: -2, name: TITLE, text: form.preamble.slice(titleStart(form.preamble)).trim() }] : []),
       ...(rest && !raw.has(PROSE_SECTION) ? [{ index: -1, name: PROSE_SECTION, text: rest }] : []),
       ...form.sections.flatMap((section, index) => drawn(form, index, raw) ? [] : [{ index, name: section.name, text: section.text.trim() }]),
     ],
   };
 }
 
-/** Whether `body` has a Mock-up section, whose fields the form draws even with no UI change. */
-export const hasMockup = (body: string) => parseBody(body).sections.some(section => section.name === "Mock-up");
+/** Whether `body` has a Mock-up section or a header `[mockup]`, whose fields the form draws even with no UI change. */
+export function hasMockup(body: string): boolean {
+  const span = headerSpan(body);
+  if (span) return Object.hasOwn(readHeader(body.slice(span.start, span.end)), "mockup");
+  return parseBody(body).sections.some(section => section.name === "Mock-up");
+}
 
 export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -207,7 +215,8 @@ export function composeEdit(body: string, loaded: EditFields, edited: EditFields
   const title = edited.others.findIndex(other => other.index === -2);
   form = {
     ...form,
-    preamble: title < 0 || edited.others[title]!.text === loaded.others[title]?.text ? form.preamble : withText(form.preamble, edited.others[title]!.text),
+    preamble: title < 0 || edited.others[title]!.text === loaded.others[title]?.text ? form.preamble
+      : form.preamble.slice(0, titleStart(form.preamble)) + withText(form.preamble.slice(titleStart(form.preamble)), edited.others[title]!.text),
     sections: form.sections.map((section, index) => {
       if (section === prosed) return { ...section, text: withProse(section.text, loaded, edited) };
       const at = edited.others.findIndex(other => other.index === index);

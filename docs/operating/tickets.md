@@ -8,27 +8,77 @@ operator's job.
 ## The shape
 
 `ticketTemplate.md` is the canonical structure and `ticket_template.py`
-validates it. Sections, in order: an H1 title; Summary; What / Why / How
-(the bold keys `**What:**`, `**Why:**`, `**How:**`, plain `What:` also
-accepted, and an optional `**UI change:** major` or `**UI change:** minor`
-declaring the size of a UI change); optional Reproduce (a bug's steps and
-where it was seen; its presence makes the first turn a reproduce turn that
-commits a failing test before any fix); optional Mock-up (one bare link to
-the approved mock-up, a `https://claude.ai/artifact/ID`,
-`https://claude.ai/code/artifact/ID` or `https://lotuspod.DOMAIN/NAME.html`
-page, one `Approved YYYY-MM-DD: what` line, and any number of media links
-below it: a `.png` snapshot of a board or a `.zip` bundle of the boards'
-`.dc.html` sources, `canvas.json` and PNGs, each bare, `![caption](URL)` or
-`[caption](URL)` and under the project's `[merge.media_bucket] public_base`;
-the run downloads them into the task worktree's ignored `.holophyte/mockup/`
-and lists them in the implementer's goal); In scope (at most six entries); Out of scope; Acceptance
-criteria (at most ten, each `Given … when … then …`); Verify command(s)
-(a fenced block of relative-path, non-interactive commands; exit 0 is
-pass); optional Contract checks (`relative/path: exact literal`); optional
-Evidence (at most six states to capture, one per line);
-Implementation notes; Estimate & dependencies (`Estimate: N min · Depends
-on: KO-n` or `none`, 90 minutes at most); Open questions (exactly
-`- None` to be claimable).
+validates it. A ticket opens with a header of typed fields in TOML between
+two `+++` lines, before its H1:
+
+```
++++
+ui_change = "major"
+estimate = 45
+depends_on = ["KO-7"]
+
+[mockup]
+url = "https://claude.ai/artifact/ID"
+approved = 2026-10-19
+note = "the two-column settings page"
+
+[[mockup.boards]]
+url = "https://media.example/settings.png"
+caption = "settings, desktop"
+
+[[evidence]]
+file = "01-settings.png"
+state = "the settings page, saved"
++++
+# Add a settings page
+```
+
+The fields, each optional but `estimate`:
+- `ui_change`: `"none"`, `"minor"` (copy, a button style, spacing) or
+  `"major"` (a new or reworked layout).
+- `blast_radius`: `"high"` or `"medium"`, when the change is riskier than its
+  diff shows; it can raise a review round's tier and never lower it.
+- `estimate`: whole minutes from 1 to 90.
+- `depends_on`: a list of ticket keys, like `["KO-7"]`.
+- `orchestration`: `"off"`, `"subagents"` or `"workflow"`, overriding the
+  project's `[agents.implementer] orchestration` for this ticket.
+- `implementer`: a profile name of letters, digits, `_` and `-`, run on the
+  project's `[agents.implementer_profiles.NAME]`.
+- `[mockup]`: `url`, the approved mock-up (a `https://claude.ai/artifact/ID`,
+  `https://claude.ai/code/artifact/ID` or `https://lotuspod.DOMAIN/NAME.html`
+  page), `approved`, a date like `2026-10-19`, and `note`, what was approved.
+  Each `[[mockup.boards]]` entry has a `url`, a `.png` snapshot of a board or
+  a `.zip` bundle of the boards' `.dc.html` sources, `canvas.json` and PNGs,
+  under the project's `[merge.media_bucket] public_base`, and an optional
+  `caption` of one line without brackets; the run downloads them into the
+  task worktree's ignored `.holophyte/mockup/` and lists them in the
+  implementer's goal.
+- `[[evidence]]`: at most six entries in capture order, each a `file`,
+  `NN-slug.png` for a state or `NN-slug.webm` for a recorded flow, numbered
+  from `01`, and a `state`, the page, state and interaction it shows.
+
+A field that fails its check is a problem naming it, as in `header estimate
+must be whole minutes from 1 to 90, not 120`.
+
+Sections, in order: an H1 title; Summary; What / Why / How (the bold keys
+`**What:**`, `**Why:**`, `**How:**`, plain `What:` also accepted); optional
+Reproduce (a bug's steps and where it was seen; its presence makes the first
+turn a reproduce turn that commits a failing test before any fix); In scope
+(at most six entries); Out of scope; Acceptance criteria (at most ten, each
+`Given … when … then …`); Verify command(s) (a fenced block of
+relative-path, non-interactive commands; exit 0 is pass); optional Contract
+checks (`relative/path: exact literal`); Implementation notes; optional
+Story; Open questions (exactly `- None` to be claimable).
+
+During the transition a body without a header still files in the magic-line
+form: a `**UI change:** major` or `minor` and a `**Blast radius:**` line under
+What / Why / How, a `## Mock-up` section (one bare mock-up link, one
+`Approved YYYY-MM-DD: what` line, then its media links, each bare,
+`![caption](URL)` or `[caption](URL)`), a `## Evidence` section (one state per
+line) and a `## Estimate & dependencies` section (`Estimate: N min · Depends
+on: KO-n` or `none`). A ticket uses one form or the other: any of those lines
+or sections beside a header is refused, as in `'## Mock-up' beside a header:
+give [mockup] in the header only`.
 
 Validate before filing, against the project repository:
 
@@ -59,18 +109,23 @@ check.
 | More than six in-scope items, ten criteria, or 90 minutes | KO-110 was a 180-minute blob. Small tickets converge; big ones burn rounds. The caps were raised from three, five and 30 after the 2026-09-29 measurement: across 74 merged tickets, implementation was about a tenth of claim-to-merge time, and the rest is a fixed cost paid once per ticket. Small tickets remain the norm for fixes. |
 | A non-relative path in a verify command | KO-111 `cd`'d to an absolute path and verified the wrong tree. |
 | A path a criterion names that the project repository gitignores | KO-166 named a rendered file under a gitignored `artifacts/`; the reviewer's export cannot contain it and the implementer force-tracked it. |
-| A `Depends on` that is not a ticket id or `none` | dependencies are machine-checked through Linear `blocks` relations |
+| A `depends_on` or `Depends on` that is not a ticket id (or `none`) | dependencies are machine-checked through Linear `blocks` relations |
 | Open questions not exactly `- None` | an open question is not a frozen contract |
 | `**UI change:**` other than `major` or `minor`, or a `## Mock-up` without exactly one accepted bare URL and one `Approved YYYY-MM-DD: what` line | a markdown link keeps only its text, and an unnamed approval is no agreement |
-| `**UI change:** major` with no `## Mock-up`, on a project whose `[merge]` sets `ui_paths` (`--file-ticket` and the claim) | a layout agreed before the run is cheaper than one corrected after the Evidence screenshots |
-| A `## Mock-up` media link outside `[merge.media_bucket] public_base`, or on a project without a bucket; or `**UI change:** major` whose `## Mock-up` has no snapshot or bundle, on a project that sets `ui_paths` and a bucket (`--file-ticket` and `--repo`, not the claim: a ticket filed earlier still claims and its run records a `mockup` warning) | no agent can open a claude.ai artifact; the implementer matches the design only from files the factory downloads |
+| `ui_change = "major"` (or `**UI change:** major`) with no `[mockup]` or `## Mock-up`, on a project whose `[merge]` sets `ui_paths` (`--file-ticket` and the claim) | a layout agreed before the run is cheaper than one corrected after the Evidence screenshots |
+| A mock-up board or media link outside `[merge.media_bucket] public_base`, or on a project without a bucket; or a major UI change whose mock-up has no snapshot or bundle, on a project that sets `ui_paths` and a bucket (`--file-ticket` and `--repo`, not the claim: a ticket filed earlier still claims and its run records a `mockup` warning) | no agent can open a claude.ai artifact; the implementer matches the design only from files the factory downloads |
+| `header has no closing '+++' line`, or `header is not valid TOML: …` | a header that does not parse sets no field, so its ticket would run without an estimate or a mock-up |
+| `header field "X" is not a ticket field`, at the top level or inside `[mockup]`, `[[mockup.boards]]` or `[[evidence]]` | a misspelled field would be dropped silently |
+| `header estimate is missing` | every ticket is budgeted |
+| A header field's value out of its range, as in `header ui_change must be …` or `header evidence[1].file must read 01-slug.png …` | a typed field holds only what the loop can act on |
+| A `**UI change:**` or `**Blast radius:**` line, or a `## Mock-up`, `## Evidence` or `## Estimate & dependencies` section, beside a header | two places for one field drift apart |
 | A named path `main` lacks, or a named symbol not in the file it is paired with, in a body with `Depends on: none` (`--repo` and `--file-ticket`; with a dependency each reason is an advisory, or a `warning:` line at filing, and the claim re-checks it) | the claim parks such a ticket as stale; LOTUS-95, LOTUS-96, LOTUS-97 and HOLO-182 passed filing and were parked at claim |
 
 Advisories: a `What:` that chains two deliverables; a bare `python3` in a
 verify command on a project with a venv; a criterion that reads as an
-operator or post-merge witness; an Evidence section of three or more states
-with no `**UI change:**` line and no Mock-up (declare `major` and link the
-mock-up, or declare `minor`).
+operator or post-merge witness; three or more evidence states with no UI
+change declared and no mock-up (declare `major` and link the mock-up, or
+declare `minor`).
 
 ## What the reviewer can witness
 

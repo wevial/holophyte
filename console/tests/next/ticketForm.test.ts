@@ -107,13 +107,15 @@ test("estimate and dependency edits retain orchestration and serialize an empty 
   ));
 });
 
+const blankHeader = '+++\nui_change = "none"\nestimate = 30\ndepends_on = []\n+++\n';
+
 test("a blank form keeps only required sections, clears guidance, and exposes the summary hint", () => {
   const form = blankForm();
   const body = composeBody(withField(form, "title", "Steer notes show on the run detail card"));
-  expect(body.startsWith("# Steer notes show on the run detail card\n")).toBe(true);
+  expect(body.startsWith(`${blankHeader}# Steer notes show on the run detail card\n`)).toBe(true);
   expect(form.sections.map((section) => section.name)).toEqual([
     "Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria",
-    "Verify command(s)", "Implementation notes", "Estimate & dependencies", "Open questions",
+    "Verify command(s)", "Implementation notes", "Open questions",
   ]);
   expect(body).not.toContain("<!--");
   expect(body).not.toMatch(/<[^>]*>/);
@@ -191,14 +193,14 @@ test("editing a blank summary preserves the following section boundary", () => {
   expect(fieldOf(reparsed, "summary")).toBe("New summary");
   expect(reparsed.sections.map((section) => section.name)).toEqual([
     "Summary", "What / Why / How", "In scope", "Out of scope", "Acceptance criteria",
-    "Verify command(s)", "Implementation notes", "Estimate & dependencies", "Open questions",
+    "Verify command(s)", "Implementation notes", "Open questions",
   ]);
 });
 
-test("filling a blank title replaces the empty H1 without adding a heading", () => {
+test("filling a blank title replaces the empty H1 under the header without adding a heading", () => {
   const form = blankForm();
   expect(composeBody(withField(form, "title", "A title"))).toBe(
-    "# A title\n\n" + form.sections.map(section => section.heading + section.text).join(""),
+    blankHeader + "# A title\n\n" + form.sections.map(section => section.heading + section.text).join(""),
   );
 });
 
@@ -375,4 +377,37 @@ test("editing prose around a fenced HTML comment preserves the example and hidde
       expect(composeBody(edited)).toBe(body.replace("Explain the example.", "Explain the updated example."));
     }
   }
+});
+
+const headerBody = (header: string) => `+++\n${header}+++\n# Steer notes\n\n## Summary\n\nShow the notes.\n`;
+
+test("adding a board to a header keeps the kept board's lines and the comments around them as written", () => {
+  const boards = `[mockup]
+url = "https://claude.ai/artifact/abc"
+approved = 2026-10-19
+note = "the defaults"
+
+[[mockup.boards]]
+url = "https://media.example/a.png"
+caption = "Row" # the first board
+
+# The captures, in order.
+[[evidence]]
+file = "01-row.png"
+state = "the row"
+`;
+  const form = parseBody(headerBody(boards));
+  const added = withField(form, "mockupImages", ["![board](https://media.example/a.png)", "![board](https://media.example/b.png)"]);
+  expect(composeBody(added)).toBe(headerBody(boards.replace(
+    'caption = "Row" # the first board\n',
+    'caption = "Row" # the first board\n\n[[mockup.boards]]\nurl = "https://media.example/b.png"\n',
+  )));
+});
+
+test("a quoted approval date shows with its note, and editing the note rewrites only the note line", () => {
+  const mockup = '[mockup]\nurl = "https://claude.ai/artifact/abc"\napproved = "2026-10-19"\nnote = "the defaults"\n';
+  const form = parseBody(headerBody(mockup));
+  expect(fieldOf(form, "mockupApproval")).toBe("Approved 2026-10-19: the defaults");
+  expect(composeBody(withField(form, "mockupApproval", "Approved 2026-10-19: revised defaults")))
+    .toBe(headerBody(mockup.replace('"the defaults"', '"revised defaults"')));
 });

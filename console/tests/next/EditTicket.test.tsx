@@ -322,3 +322,52 @@ test("a section its fields cannot hold whole is edited as its own text, comments
   await pressSave();
   expect(puts.map(put => (put.body as { body: string }).body)).toEqual([body.replace("List the notes", "List every note").replace("- Alpha", "- Beta")]);
 });
+
+const HEADER = `+++
+# owner: console
+ui_change = "minor"
+estimate = 45
+depends_on = []
+implementer = "fast"
++++
+`;
+const HEADER_BODY = HEADER + BODY.replace("**Blast radius:** medium\n\n", "").replace("## Estimate & dependencies\n\nEstimate: 30 min · Depends on: none\n\n", "");
+
+async function saveHeaderEdit(edit: () => Promise<void>, body = HEADER_BODY) {
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }), save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(box("Title").value).toBe(SERVED.Title);
+  await edit();
+  await pressSave();
+  cleanup();
+  return (puts[0]!.body as { body: string }).body;
+}
+
+test("an edit to a header ticket rewrites only the header line of the field it changes, keeping its comment and other keys", async () => {
+  const estimate = await saveHeaderEdit(async () => {
+    await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "50" } }));
+  });
+  expect(estimate).toBe(HEADER_BODY.replace("estimate = 45", "estimate = 50"));
+  const depends = await saveHeaderEdit(async () => {
+    await type("Depends on", "HOLO-9");
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Add" })));
+  });
+  expect(depends).toBe(HEADER_BODY.replace("depends_on = []", 'depends_on = ["HOLO-9"]'));
+});
+
+test("adding a dependency to an indented multi-line array adds one row in its indentation and keeps its comment rows", async () => {
+  const body = HEADER_BODY.replace("depends_on = []", '\tdepends_on = [\n\t\t"HOLO-1",\n\t\t# comment\n\t]');
+  const saved = await saveHeaderEdit(async () => {
+    await type("Depends on", "HOLO-9");
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Add" })));
+  }, body);
+  expect(saved).toBe(body.replace("\t\t# comment\n", '\t\t# comment\n\t\t"HOLO-9",\n'));
+});
+
+test("an edit to a magic-line ticket keeps its estimate line and adds no header", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "50" } }));
+  await pressSave();
+  const saved = (puts[0]!.body as { body: string }).body;
+  expect(saved).toContain("Estimate: 50 min · Depends on: none");
+  expect(saved).not.toMatch(/^\+\+\+$/m);
+});
