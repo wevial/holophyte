@@ -164,3 +164,28 @@ test("the Stage line links to the Progress section by its id", async () => {
   expect(link.getAttribute("href")).toBe("#progress");
   expect(document.getElementById("progress")).toBe(section());
 });
+
+test("the terminal adjudication after the last review round reads as the final check, not a review round past the cap", async () => {
+  const adjudicated: RunDetail = {
+    ...liveDetail,
+    run: { ...liveDetail.run, max_rounds: 1 },
+    events: [
+      ...liveDetail.events,
+      { at: at(16, 50), kind: "phase_change", summary: "addressing -> verifying" },
+      { at: at(16, 52), kind: "phase_change", summary: "verifying -> reviewing: terminal adjudication" },
+    ],
+    rounds: [round1, { ...round1, round: 2, started_ms: at(16, 52) + 2, ended_ms: at(16, 53), verdict: "pass", findings: [] }],
+    steer_notes: [],
+  };
+  await mount(progressFetch({ detail: adjudicated, asks: { ...asks, asks: [] } }));
+  const texts = items().map((li) => `${line(li).time} ${line(li).text}`);
+  expect(texts).toEqual([
+    "16:36 Run started · implementing",
+    "16:45 Review round 1: changes requested, 1 must-fix",
+    "16:45 Back to implement",
+    "16:50 Fix applied · verifying",
+    "16:52 Final check started",
+    "16:53 Final check: passed",
+  ]);
+  expect(texts.filter((text) => text.includes("Review round 2"))).toEqual([]);
+});
