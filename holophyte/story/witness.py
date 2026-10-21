@@ -290,6 +290,7 @@ def witness_step(target, conn, project_id, step=False):
                               for witness in story(conn, story_id).witnesses],
                              story_id, sha, step)
                 rows = witness_pass(target, conn, story_id, "loop", sha=sha)
+                clear_running(target)
                 clear_restarts(target, story_id)
                 if rows:
                     print(f"[holo2] witness pass at {rows[0].mainSha}: "
