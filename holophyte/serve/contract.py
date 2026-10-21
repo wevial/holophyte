@@ -137,7 +137,7 @@ class Status(TypedDict):
     config_edit: bool
     runs: list[StatusRun]
     queued: list[QueuedTicket]
-    witnesses: WitnessSet | None
+    witnesses: NotRequired[WitnessSet | None]
 
 
 class Triage(TypedDict):

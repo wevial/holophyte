@@ -869,8 +869,7 @@
         "thresholds",
         "config_edit",
         "runs",
-        "queued",
-        "witnesses"
+        "queued"
       ],
       "additionalProperties": true
     }

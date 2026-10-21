@@ -167,7 +167,7 @@ export const statusSchema = z.looseObject({
   config_edit: z.boolean(),
   runs: z.array(statusRunSchema),
   queued: z.array(queuedTicketSchema),
-  witnesses: witnessSetSchema.nullable(),
+  witnesses: witnessSetSchema.nullable().optional(),
 });
 export type Status = z.infer<typeof statusSchema>;
 
