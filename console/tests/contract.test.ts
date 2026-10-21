@@ -121,6 +121,18 @@ test("a mistyped field, an unknown kind and a missing key fail at their paths", 
   expect(firstIssuePath(failures[2])).toStartWith("supervisor");
 });
 
+test("an older daemon's untitled blocked, stale_run and failed items parse; a numeric title fails at its path", () => {
+  const { title: _title, ...blocked } = attention.items.find((item) => item.kind === "blocked")!;
+  const staleRun = { kind: "stale_run", run: 2, ticket: "KO-7", ticket_url: null, phase: "working", heartbeat_age_ms: 400000, pr_url: null, level: "attention" };
+  const failed = { kind: "failed", run: 3, ticket: "KO-9", ticket_url: null, reason: "verify red", ended_ms: 1749990000000, attempt: 1, pr_url: null, triage: null, level: "attention" };
+  const older = { ...attention, items: [blocked, staleRun, failed] };
+  expect<unknown>(attentionSchema.parse(older)).toEqual(older);
+  older.items.forEach((item, index) => {
+    const items = older.items.map((other, at) => (at === index ? { ...item, title: 42 } : other));
+    expect(firstIssuePath(attentionSchema.safeParse({ ...older, items }))).toBe(`items.${index}.title`);
+  });
+});
+
 test("an attention item's kind narrows it to its own fields", () => {
   const item: Attention["items"][number] = attentionSchema.parse(attention).items[0];
   if (item.kind !== "pr_open") throw new Error(`expected pr_open, got ${item.kind}`);

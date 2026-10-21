@@ -137,7 +137,6 @@ def contract_answers(case):
     answers = {}
     for name, (code, body) in {
         "status": holophyte.serve.server.status(target, now=NOW, started_ms=NOW),
-        "attention": holophyte.serve.server.attention(target, now=NOW),
         "run-detail": holophyte.serve.serve_runs.run_detail(
             target, str(case.run), now=NOW
         ),
@@ -186,7 +185,26 @@ def contract_answers(case):
     code, body = holophyte.serve.serve_stories.story_detail(target, "KO-11")
     case.assertEqual(code, 200)
     answers["story"] = normalize_contract(body)
+    seed_question_park(case.db, case.target)
+    code, body = holophyte.serve.server.attention(target, now=NOW)
+    case.assertEqual(code, 200)
+    answers["attention"] = normalize_contract(body)
     return answers
+
+
+def seed_question_park(db, repo):
+    with store.open(str(db)) as conn:
+        project = store.tickets.ensure_project(conn, "team-1", repo)
+        ticket = store.tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-14", linear_identifier="KO-14",
+            title="Pick the export format", acceptance_criteria=["Export as asked"],
+            verification_commands=["echo ok"], time_box_ms=None)
+        store.tickets.transition(conn, ticket, "in_flight")
+        run = store.claim(conn, project, ticket, now=NOW - 60_000)
+        store.tickets.transition(conn, ticket, "blocked_on_operator")
+        store.set_question(conn, ticket, "CSV or JSON?")
+        park_run(conn, run, "blocked_on_operator", "CSV or JSON?",
+                 now=NOW - 15_000)
 
 
 def seed_story(db, repo):

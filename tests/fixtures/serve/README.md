@@ -12,7 +12,9 @@ with its estimate, host, and work clocks null.
 It also lists one queued ticket, approved off its pull request and waiting
 for a claim, so its toil counts that approval.
 `attention.json` pins the same store's `/attention`: one ticket parked on
-its pull request, not yet approved, as a `pr_open` item.
+its pull request, not yet approved, as a `pr_open` item, then KO-14, parked
+on a question after the other answers are read, as a `blocked` item with
+its title.
 `shipped.json` pins the same store's `/shipped?outcome=all`: the approved
 ticket's ended run.
 `history.json` pins its `/history` with `since` 100 s before the frozen
