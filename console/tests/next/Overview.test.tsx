@@ -40,32 +40,32 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("unscoped, the heading counts every host's Needs you entries and the count line every host's work", async () => {
+test("unscoped, the heading counts every host's Waiting on you entries and the count line every host's work", async () => {
   await mount("#/", busy);
-  expect(heading()).toBe("3 need you.");
+  expect(heading()).toBe("3 waiting on you.");
   expect(countLine()).toBe("2 running · 1 open PR · 1 queued · 1 merged today");
 });
 
 test("a picked project scopes the heading, the count line and the Pull requests count", async () => {
   await mount("#/?project=demo", busy);
-  expect(heading()).toBe("2 need you.");
+  expect(heading()).toBe("2 waiting on you.");
   expect(countLine()).toBe("2 running · 0 open PRs · 1 queued · 1 merged today");
   expect(sectionHeader("Pull requests")).toBe("Pull requests0none wait on you");
   cleanup();
 
   await mount("#/?project=demo", fleet({ items: [blocked] }, { items: [prPark] }));
-  expect(heading()).toBe("1 needs you.");
+  expect(heading()).toBe("1 waiting on you.");
   cleanup();
 
   await mount("#/?project=demo", fleet({ items: [] }, { items: [prPark] }));
-  expect(heading()).toBe("Nothing needs you.");
+  expect(heading()).toBe("Nothing waiting on you.");
 });
 
 test("the four sections stand in order with their counts and summaries", async () => {
   await mount("#/", busy);
   const labels = screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"));
-  expect(labels).toEqual(["Needs you", "Running", "Pull requests", "Merged today"]);
-  expect(sectionHeader("Needs you")).toBe("Needs you3oldest waiting 8h 02m");
+  expect(labels).toEqual(["Waiting on you", "Running", "Pull requests", "Merged today"]);
+  expect(sectionHeader("Waiting on you")).toBe("Waiting on you3oldest 8h 02m");
   expect(sectionHeader("Running")).toBe("Running22 of 2 workers busy · 1 queued");
   expect(sectionHeader("Pull requests")).toBe("Pull requests11 waits on you");
   expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
@@ -107,7 +107,7 @@ test("a folded section stays folded across a remount, and folds with storage thr
 
 test("with nothing stored, Merged today starts folded and the other sections open", async () => {
   await mount("#/", busy);
-  for (const name of ["Needs you", "Running", "Pull requests"]) {
+  for (const name of ["Waiting on you", "Running", "Pull requests"]) {
     expect(within(section(name)).getByRole("button", { name }).getAttribute("aria-expanded")).toBe("true");
   }
   const done = within(section("Merged today")).getByRole("button", { name: "Merged today" });
@@ -136,21 +136,21 @@ test("empty sections say what the factory is doing, naming the picked project", 
   localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", quiet);
   expect(within(section("Running")).getByText("Nothing running and nothing queued.")).toBeTruthy();
-  expect(within(section("Needs you")).getByText("The factory has it from here.")).toBeTruthy();
+  expect(within(section("Waiting on you")).getByText("The factory has it from here.")).toBeTruthy();
   expect(within(section("Pull requests")).getByText("No pull request waits on you.")).toBeTruthy();
   expect(within(section("Merged today")).getByText("Nothing merged yet today.")).toBeTruthy();
   cleanup();
 
   await mount("#/?project=demo", quiet);
-  expect(within(section("Needs you")).getByText("Nothing in demo is waiting on you.")).toBeTruthy();
+  expect(within(section("Waiting on you")).getByText("Nothing in demo is waiting on you.")).toBeTruthy();
 });
 
 test("before any scoped host answers there is no heading and no count line", async () => {
   await mount("#/", () => new Promise<Response>(() => {}));
   expect(heading()).toBeNull();
   expect(countLine()).toBeNull();
-  expect(screen.queryByText("Nothing needs you.")).toBeNull();
-  expect(section("Needs you")).toBeTruthy();
+  expect(screen.queryByText("Nothing waiting on you.")).toBeNull();
+  expect(section("Waiting on you")).toBeTruthy();
 });
 
 test("a host daemon that answered with no projects draws the heading and a zero count line", async () => {
@@ -159,7 +159,7 @@ test("a host daemon that answered with no projects draws the heading and a zero 
     [DEMO]: { status: { ...hostStatus, projects: [] }, attention: { level: "none", now: NOW, items: [] } },
   });
   await mount("#/", empty);
-  expect(heading()).toBe("Nothing needs you.");
+  expect(heading()).toBe("Nothing waiting on you.");
   expect(countLine()).toBe("0 running · 0 open PRs · 0 queued · 0 merged today");
 });
 
@@ -178,10 +178,10 @@ test("the heading is the board's 20 px Archivo 600 title in a header closed by a
   expect(classes(number)).toContain("text-need");
 });
 
-test("at zero the heading draws Nothing in --live and leaves needs you. in the heading's ink", async () => {
+test("at zero the heading draws Nothing in --live and leaves waiting on you. in the heading's ink", async () => {
   await mount("#/", fleet({ items: [] }, { items: [] }));
   const h1 = screen.getByRole("heading", { level: 1 });
-  expect(h1.textContent).toBe("Nothing needs you.");
+  expect(h1.textContent).toBe("Nothing waiting on you.");
   const nothing = within(h1).getByText("Nothing");
   expect(nothing).not.toBe(h1);
   expect(classes(nothing)).toContain("text-live");
@@ -205,22 +205,22 @@ test("the count line sets each number in --ink at weight 600 and its words in --
 
 test("a section heading is the board's chevron, 19 px Archivo 700 name, mono count and mono summary over no rule", async () => {
   await mount("#/", busy);
-  const header = section("Needs you").querySelector("header")!;
-  const name = within(header).getByRole("button", { name: "Needs you" });
+  const header = section("Waiting on you").querySelector("header")!;
+  const name = within(header).getByRole("button", { name: "Waiting on you" });
   expect(name.querySelector("svg[data-chevron]")).toBeTruthy();
   expect(classes(name)).toEqual(expect.arrayContaining(["font-sans", "text-[19px]", "font-bold", "text-ink"]));
-  expect(sectionCount("Needs you").textContent).toBe("3");
-  expect(classes(sectionCount("Needs you"))).toEqual(expect.arrayContaining(["font-mono", "text-need"]));
-  const summary = within(header).getByText(/^oldest waiting /);
+  expect(sectionCount("Waiting on you").textContent).toBe("3");
+  expect(classes(sectionCount("Waiting on you"))).toEqual(expect.arrayContaining(["font-mono", "text-need"]));
+  const summary = within(header).getByText(/^oldest /);
   expect(classes(summary)).toEqual(expect.arrayContaining(["font-mono", "text-ink-3"]));
   expect(classes(header).filter((name) => name.startsWith("border"))).toEqual([]);
   expect(header.nextElementSibling!.id).toBe(name.getAttribute("aria-controls")!);
 });
 
-test("the Needs you count is --need above zero and every other count, or a zero Needs you, is --ink-3", async () => {
+test("the Waiting on you count is --need above zero and every other count, or a zero Waiting on you, is --ink-3", async () => {
   await mount("#/", busy);
-  expect(sectionCount("Needs you").textContent).toBe("3");
-  expect(classes(sectionCount("Needs you"))).toContain("text-need");
+  expect(sectionCount("Waiting on you").textContent).toBe("3");
+  expect(classes(sectionCount("Waiting on you"))).toContain("text-need");
   for (const name of ["Running", "Pull requests", "Merged today"]) {
     expect(classes(sectionCount(name))).toContain("text-ink-3");
     expect(classes(sectionCount(name))).not.toContain("text-need");
@@ -228,9 +228,9 @@ test("the Needs you count is --need above zero and every other count, or a zero 
   cleanup();
 
   await mount("#/", fleet({ items: [] }, { items: [] }));
-  expect(sectionCount("Needs you").textContent).toBe("0");
-  expect(classes(sectionCount("Needs you"))).toContain("text-ink-3");
-  expect(classes(sectionCount("Needs you"))).not.toContain("text-need");
+  expect(sectionCount("Waiting on you").textContent).toBe("0");
+  expect(classes(sectionCount("Waiting on you"))).toContain("text-ink-3");
+  expect(classes(sectionCount("Waiting on you"))).not.toContain("text-need");
   expect(classes(sectionCount("Running"))).toContain("text-ink-3");
   expect(classes(sectionCount("Running"))).not.toContain("text-need");
 });
@@ -238,7 +238,7 @@ test("the Needs you count is --need above zero and every other count, or a zero 
 test("an empty section's sentence draws no border of its own", async () => {
   localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", fleet({ items: [] }, { items: [] }));
-  for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
+  for (const name of ["Waiting on you", "Running", "Pull requests", "Merged today"]) {
     const sentence = section(name).querySelector("p")!;
     expect(sentence).toBeTruthy();
     expect(classes(sentence).filter((name) => name.startsWith("border"))).toEqual([]);
@@ -268,19 +268,19 @@ test("from 1600 px the Overview is the board's three-track grid, the header acro
   );
 });
 
-test("from 1600 px the first column holds Needs you then Running and the second Pull requests then Merged today, 44 px apart", async () => {
+test("from 1600 px the first column holds Waiting on you then Running and the second Pull requests then Merged today, 44 px apart", async () => {
   await mount("#/", busy);
   const [first, second] = columns();
   expect(columns()).toHaveLength(2);
   const names = (column: Element | undefined) => within(column as HTMLElement).getAllByRole("region").map((region) => region.getAttribute("aria-label"));
-  expect(names(first)).toEqual(["Needs you", "Running"]);
+  expect(names(first)).toEqual(["Waiting on you", "Running"]);
   expect(names(second)).toEqual(["Pull requests", "Merged today"]);
   for (const column of [first, second]) {
     expect(classes(column)).toEqual(expect.arrayContaining(["flex-col", "gap-[44px]", WIDE + "row-start-2"]));
   }
   expect(classes(first)).toContain(WIDE + "col-start-1");
   expect(classes(second)).toContain(WIDE + "col-start-2");
-  expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["Needs you", "Running", "Pull requests", "Merged today"]);
+  expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["Waiting on you", "Running", "Pull requests", "Merged today"]);
   expect(classes(first!.parentElement)).toEqual(expect.arrayContaining(["flex-col", "gap-[44px]", WIDE + "contents"]));
 });
 
@@ -319,16 +319,16 @@ test("the wide log fills its pinned grid wrapper with a thin hover scrollbar and
   expect(classes(log)).not.toContain("max-h-[calc(100vh-40px)]");
 });
 
-test("Then titles use medium reading text and the day log uses 13 px mono while headings keep Archivo", async () => {
+test("Waiting on you row titles use medium reading text and the day log uses 13 px mono while headings keep Archivo", async () => {
   const hosts = fleet({ items: [blocked, ...failed.map((item) => ({ ...item, title: "Recover the silent lease" }))] }, { items: [prPark] });
   const fetch: Fetch = async (url) => url.includes("/ledger?")
     ? Response.json({ active_outages: [], since: 0, limit: 200, entries: [{ at: NOW - MINUTE, run: 1, ticket: "DEMO-1", kind: "round", source: "loop", text: "Review complete" }] })
     : hosts(url);
   await mount("#/", fetch);
-  const title = within(screen.getByRole("list", { name: "Then" })).getByText("Recover the silent lease");
+  const title = within(screen.getByRole("list", { name: "Waiting on you" })).getByText("Recover the silent lease");
   expect(classes(title)).toEqual(expect.arrayContaining(["font-read", "font-medium", "text-[15px]", "leading-[1.35]"]));
   expect(classes(screen.getByRole("heading", { level: 1 }))).toContain("font-sans");
-  for (const name of ["Needs you", "Running", "Pull requests", "Merged today"]) {
+  for (const name of ["Waiting on you", "Running", "Pull requests", "Merged today"]) {
     expect(classes(within(section(name)).getByText(name))).toContain("font-sans");
   }
   expect(classes(within(dayLog()).getByRole("list"))).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "leading-[1.5]"]));

@@ -2,7 +2,7 @@ import { Fragment, useContext, useState, type ReactNode } from "react";
 import { ageOf } from "../../lib/attention";
 import { formatClock, formatSettled } from "../../lib/format";
 import { DayLog } from "../components/DayLog";
-import { FocusCard, useHeldEntry } from "../components/FocusCard";
+import { FocusCard, useOpenEntry } from "../components/FocusCard";
 import { MergedToday } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
 import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
@@ -97,7 +97,7 @@ export function Overview() {
   const peers = usePeerList(origin, everyHost.length === 0, deps);
   const asking = firstLoadLine(view.hosts, origin, peers);
   const firstLoad = asking != null;
-  const held = useHeldEntry(view.needs);
+  const opened = useOpenEntry(view.needs);
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
   const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
@@ -118,11 +118,11 @@ export function Overview() {
             <h1 className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">
               {need === 0 ? (
                 <>
-                  <span className="text-live">Nothing</span> needs you.
+                  <span className="text-live">Nothing</span> waiting on you.
                 </>
               ) : (
                 <>
-                  <span className="text-need">{need}</span> {need === 1 ? "needs" : "need"} you.
+                  <span className="text-need">{need}</span> waiting on you.
                 </>
               )}
             </h1>
@@ -157,13 +157,13 @@ export function Overview() {
             id="need"
             open={needOpen}
             onFold={setNeedOpen}
-            label="Needs you"
+            label="Waiting on you"
             count={need}
             hot
-            summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest waiting ${formatSettled(oldest)}`}
+            summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest ${formatSettled(oldest)}`}
             empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
           >
-            <FocusCard entries={view.needs} index={held.index} hold={held.hold} hosts={view.hosts} now={view.now} />
+            <FocusCard entries={view.needs} open={opened.open} toggle={opened.toggle} hosts={view.hosts} now={view.now} />
           </FoldingSection>
           <FoldingSection
             loading={firstLoad}

@@ -113,6 +113,23 @@ test("steers and asks sit in time order among the events, each with what came of
   ]);
 });
 
+test("a note an earlier run of the chain read is not in this run's Progress, which opens on the run starting", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [
+    { ...note, id: 5, run: 11, kind: "amendment", note: "keep the sweep idempotent", at: at(16, 0), consumed_by: 11, consumed_ms: at(16, 5) },
+  ];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(section().textContent).not.toContain("keep the sweep idempotent");
+  expect(line(items()[0]!).text).toBe("Run started · implementing");
+});
+
+test("a note no run has read yet, made before this run started, is listed as waiting", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [{ ...note, id: 6, kind: "hint", note: "the sweep runs hourly", at: at(16, 30) }];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(line(items()[0]!)).toEqual({
+    time: "16:30", kind: "steer", text: "You hinted: the sweep runs hourly", sub: ["→ waiting until the agent reads it"],
+  });
+});
+
 test("a steer line names the operator for a note the maintainer did not write, and You for the maintainer's own", async () => {
   const steer_notes: RunDetail["steer_notes"] = [
     { ...note, author: "operator", kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 40) },
