@@ -5,6 +5,7 @@ from importlib import metadata
 
 from holophyte.holo.grammar import (
     COMPLETION,
+    DRAFT,
     FOLLOW,
     HELPER,
     MCP,
@@ -116,6 +117,46 @@ def status(args, target, zone_name):
                  zone_name)
 
 
+def skeleton(target):
+    from holophyte.agents.harness import implementer_profiles
+    template = (factory_checkout() / "ticketTemplate.md").read_text()
+    names = implementer_profiles(target)
+    if not names:
+        return template
+    lines = template.splitlines(keepends=True)
+    from ticket_header import FENCE
+    closing = [index for index, line in enumerate(lines)
+               if line.rstrip("\r\n") == FENCE][1]
+    lines.insert(closing, "# this project's implementer profiles: "
+                          f"{', '.join(names)}\n")
+    return "".join(lines)
+
+
+def draft(args, default):
+    from pathlib import Path
+
+    from holophyte.config.project import Project
+    target = Project.locate(Path(project_argv(args, default)[0]), adopt=False)
+    if args.arg0 is None:
+        sys.stdout.write(skeleton(target))
+        return 0
+    from holophyte.holo.reads import ticket_answer
+    route, (code, body) = ticket_answer(args, target)
+    if code != 200:
+        print(f"[holo2] {route}: {body.get('error') or 'no such ticket'}",
+              file=sys.stderr)
+        return 1
+    from ticket_header import Unconvertible, converted
+    try:
+        text = converted(body["body"])
+    except Unconvertible as line:
+        print(f"[holo2] {args.arg0}: no header field holds this line: {line}",
+              file=sys.stderr)
+        return 1
+    sys.stdout.write(text)
+    return 0
+
+
 def local(args, default, zone_name):
     if getattr(args, "foreground", False):
         from holophyte.holo.units import foreground
@@ -173,6 +214,8 @@ def main(argv=None):
         return serve(package_version())
     from holophyte.holo.follow import check_intervals
     check_intervals(args)
+    if args.command is DRAFT:
+        return draft(args, default)
     if host is not None:
         return remote(args, argv, host, config)
     return local(args, default, config.get(TIMEZONE))

@@ -156,6 +156,9 @@ SHELLS = ("bash", "zsh", "fish")
 HELPER = "__complete"
 FOLLOW = Command(("follow",), None, "one line per run event as it is written",
                  flags=(JSON, SINCE, EVERY))
+DRAFT = Command(("draft",), None,
+                "print a ticket skeleton, or KEY's body with its fields in a"
+                " header", takes=("[KEY]",))
 MCP_HTTP = Flag("--http", "HOST:PORT", const="127.0.0.1:7711")
 MCP = Command(("mcp",), None,
               "serve the factory's tools to an agent over MCP: on stdio, or"
@@ -262,6 +265,7 @@ def add_commands(parser):
     shell.add_argument("shell", metavar="SHELL", choices=SHELLS)
     shell.set_defaults(command=COMPLETION, leaf=shell)
     _add_leaf(top, "follow", FOLLOW, FOLLOW.does)
+    _add_leaf(top, "draft", DRAFT, DRAFT.does)
     server = top.add_parser("mcp", help=MCP.does, description=MCP.does)
     server.add_argument(MCP_HTTP.name, dest=MCP_HTTP.dest, nargs="?",
                         const=MCP_HTTP.const, metavar=MCP_HTTP.metavar,
