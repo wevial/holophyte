@@ -145,31 +145,25 @@ class MarkReadyTests(ServeTestCase):
         self.assertEqual(self.github.graphql, [])
         self.assertEqual(self.ready_events(), [])
 
-    def test_marking_ready_wakes_the_run_back_to_the_babysitter(self):
-        self.park("draft")
-        code, _, reply = self.mark_ready()
-        self.assertEqual(code, 200, reply)
-        seen, woken, babysits = self.wake()
-        self.assertEqual(seen, "ready")
-        self.assertEqual(woken, [(f"{PR_URL} was marked ready for review",)])
-        self.assertEqual([source for _, source in babysits], ["human"])
-        with store.open(str(self.db)) as conn:
-            ticket = store.read.ticket_by_id(
-                conn, store.read.ticket_by_identifier(conn, "KO-7").id)
-        self.assertEqual((ticket.status, ticket.activeRunId), ("ready", None))
-
-    def test_the_answer_names_the_babysit_and_the_ticket_reads_queued(self):
+    def test_marking_ready_wakes_the_run_and_the_ticket_reads_queued(self):
         self.park("draft")
         _, _, before = self.request("GET", "/attention", self.BEARER)
         self.assertIn(("pr_open", self.run), [
             (item["kind"], item.get("run")) for item in before["items"]])
-        _, _, reply = self.mark_ready()
-        (_, _, [(intervention, _)]) = self.wake()
+        code, _, reply = self.mark_ready()
+        self.assertEqual(code, 200, reply)
+        seen, woken, [(intervention, source)] = self.wake()
+        self.assertEqual((seen, source), ("ready", "human"))
+        self.assertEqual(woken, [(f"{PR_URL} was marked ready for review",)])
         self.assertIs(reply["ok"], True, reply)
         self.assertEqual(reply["recorded"], intervention)
         self.assertEqual(reply["detail"],
                          f"{PR_URL} marked ready for review; run {self.run}"
                          " sent back to the babysitter")
+        with store.open(str(self.db)) as conn:
+            ticket = store.read.ticket_by_id(
+                conn, store.read.ticket_by_identifier(conn, "KO-7").id)
+        self.assertEqual((ticket.status, ticket.activeRunId), ("ready", None))
         _, _, attention = self.request("GET", "/attention", self.BEARER)
         self.assertNotIn(("pr_open", self.run), [
             (item["kind"], item.get("run")) for item in attention["items"]])
