@@ -34,10 +34,13 @@ class FakeGitHub:
     def __init__(self):
         self.graphql = []
         self.refuse = None
+        self.meanwhile = None
 
     def __call__(self, target, host, method, path, payload, accept=None):
         if path == "graphql":
             self.graphql.append(payload)
+            if self.meanwhile is not None:
+                self.meanwhile()
             if self.refuse == "mutation":
                 return {"errors": [{"message": "Resource not accessible"}]}
             return {"data": {"markPullRequestReadyForReview":
@@ -180,6 +183,39 @@ class MarkReadyTests(ServeTestCase):
             (phase,) = conn.execute("SELECT phase FROM runs WHERE id = ?",
                                     (self.run,)).fetchone()
         self.assertEqual(phase, "awaiting_merge_approval")
+
+    def test_a_run_superseded_while_github_answers_is_not_woken(self):
+        self.park("draft")
+
+        def repark():
+            with store.open(str(self.db)) as conn:
+                ticket = store.read.ticket_by_identifier(conn, "KO-7").id
+                store.babysit(conn, ticket, "another wake", source="supervisor")
+                store.tickets.transition(conn, ticket, "in_flight")
+                project = conn.execute("SELECT projectId FROM tickets WHERE"
+                                       " id = ?", (ticket,)).fetchone()[0]
+                self.newer = store.claim(conn, project, ticket)
+                for phase in ("working", "verifying", "reviewing",
+                              "merge_gate"):
+                    store.set_phase(conn, self.newer, phase)
+                store.park(conn, self.newer, "awaiting_merge_approval",
+                           pr_url=PR_URL, park_kind="pull_request")
+                store.tickets.transition(conn, ticket, "blocked_on_operator")
+        self.github.meanwhile = repark
+        _, _, reply = self.mark_ready()
+        self.assertIs(reply["ok"], True, reply)
+        self.assertNotIn("sent back to the babysitter", reply["detail"])
+        self.assertIsNone(reply["recorded"])
+        with store.open(str(self.db)) as conn:
+            woken = conn.execute("SELECT runId FROM runEvents"
+                                 " WHERE kind = 'ci_wake'").fetchall()
+            human = conn.execute("SELECT runId FROM interventions WHERE"
+                                 " action = 'babysit' AND source = 'human'"
+                                 ).fetchall()
+            (phase,) = conn.execute("SELECT phase FROM runs WHERE id = ?",
+                                    (self.newer,)).fetchone()
+        self.assertEqual((woken, human, phase),
+                         ([], [], "awaiting_merge_approval"))
 
     def assert_refused_unwoken(self, state, refuse=None, held=True):
         self.github.refuse = refuse

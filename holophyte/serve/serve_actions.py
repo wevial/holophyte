@@ -243,6 +243,9 @@ def mark_ready_action(project, body):
 
 def wake_ready(conn, run_id, ticket_id, pull):
     with store.transaction(conn):
+        if held_draft(conn, run_id)[1] != ticket_id:
+            raise store.ApproveRefused(f"run {run_id} is no longer the draft"
+                                       " held for review")
         store.set_pr_seen_state(conn, run_id, "ready")
         if parked_approval(conn, run_id) is not None:
             return ""
