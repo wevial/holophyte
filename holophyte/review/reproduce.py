@@ -82,9 +82,16 @@ class Frame:
     criteria: object
     budget_min: float
     cap: int
+    claimed: object = None
+
+    def __post_init__(self):
+        if self.claimed is None:
+            object.__setattr__(self, "claimed", self.verify_cmd)
 
     def args(self):
-        return tuple(getattr(self, field.name) for field in fields(self))
+        return tuple(self.claimed if field.name == "verify_cmd"
+                     else getattr(self, field.name)
+                     for field in fields(self) if field.name != "claimed")
 
 
 @dataclass(frozen=True)
@@ -158,7 +165,8 @@ def routed(resume):
 def review_rounds(*args, resume=None):
     import holophyte.loop.review_round as loop
 
-    frame, pending = _adopted(Frame(*args)), resume or {}
+    frame = _adopted(Frame(*args))
+    pending = _kept(frame, resume or {})
     if "handed_on" in pending:
         return _hand_on(loop, frame, pending, pending["handed_on"])
     keep_route(frame.conn, frame.run_id, unreproduced=True)
@@ -193,11 +201,19 @@ def review_rounds(*args, resume=None):
 
 def _adopted(frame):
     return replace(frame, verify_cmd=adopted_verify(
-        frame.conn, frame.run_id, frame.verify_cmd))
+        frame.conn, frame.run_id, frame.claimed))
+
+
+def _kept(frame, pending):
+    if pending.get("verify_cmd", frame.claimed) == frame.verify_cmd:
+        return pending
+    return {key: value for key, value in pending.items()
+            if key not in ("phase", "ok", "out", "verdict", "verify_cmd")}
 
 
 def _second(loop, frame, pending):
     frame = _adopted(frame)
+    pending = _kept(frame, pending)
     if not pending.get("declared"):
         return _hand_on(loop, frame, {"rnd": 2})
     ok, out = _verified(frame, 2, pending)
@@ -294,7 +310,7 @@ def _probe(frame, command):
 
 def _check(loop, frame, rnd, ok, out):
     boundary(frame.conn, frame.run_id, "reviewing", rnd=rnd, ok=ok,
-             out=str(out), declared=True)
+             out=str(out), declared=True, verify_cmd=frame.verify_cmd)
     set_phase(frame.conn, frame.run_id, "reviewing",
               f"round {rnd}: not-reproduced evidence check")
     base, candidate = review_refs(frame.run_id)
@@ -348,7 +364,7 @@ def _fix(loop, frame, reasons, ok, out, headline):
     loop._check_run_cap(frame.target, frame.conn, frame.run_id,
                         frame.budget_min, frame.sha)
     boundary(frame.conn, frame.run_id, "addressing", rnd=1, ok=ok,
-             out=str(out), verdict=reasons)
+             out=str(out), verdict=reasons, verify_cmd=frame.verify_cmd)
     set_phase(frame.conn, frame.run_id, "addressing",
               "round 1: addressing the evidence check")
     fixes, timed_out = fix_turn(

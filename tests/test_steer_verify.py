@@ -162,6 +162,68 @@ class SteerVerifyTests(unittest.TestCase):
                 1)
         self.assertEqual(self.ticket_command(), V2)
 
+    def test_resumed_evidence_check_reverifies_a_checkpoint_of_the_claimed_block(self):
+        self.steer()
+        steering.take(self.conn, self.run_id)
+        saved = {"rnd": 1, "phase": "reviewing", "ok": False,
+                 "out": "[verify] FAILED: test_a.py", "verify_cmd": V1}
+        with patch.object(review_round, "agent",
+                          return_value="VERDICT: PASS"), \
+                patch.object(runs, "agent_route", return_value="adjudicator"), \
+                self.assertRaises(MergeParked):
+            reproduce.review_rounds(
+                PROJECT, self.conn, self.run_id, None, "NAT-1", "main",
+                self.root, 60, "HEAD", "HEAD", body(V1), V1, [], CRITERIA, 10,
+                1, resume=saved)
+        self.assertEqual(self.ticket_command(), V2)
+
+    def test_second_evidence_round_follows_a_revision_back_to_the_claimed_block(self):
+        self.steer()
+        steering.take(self.conn, self.run_id)
+        key, project = self.conn.execute(
+            "SELECT linearIdentifier, projectId FROM tickets WHERE id = ?",
+            (self.ticket,)).fetchone()
+
+        def reply(_target, _role, prompt, *args, **kwargs):
+            if "evidence checker" in prompt:
+                return "VERDICT: FAIL"
+            return "VERDICT: APPROVE"
+
+        def fix(*args, **kwargs):
+            if fix.calls:
+                return "nothing to fix", False
+            fix.calls += 1
+            store.board.edit_ticket(
+                self.conn, project, key,
+                ticket_body(CRITERIA + ["the list is sorted"]).replace(
+                    COMMANDS, V1),
+                expected_revision=2, now=self.edited + 3000)
+            store.steer_notes.steer(
+                self.conn, self.ticket, "Meet revision 3's contract",
+                "maintainer", now=self.edited + 4000)
+            (self.root / "notes.txt").write_text("fix\n")
+            for git in (("add", "notes.txt"),
+                        ("-c", "user.name=t", "-c", "user.email=t@example.test",
+                         "commit", "-qm", "fix")):
+                subprocess.run(["git", *git], cwd=self.root, check=True)
+            return f"fixed\n{reproduce.DECLARATION}", False
+        fix.calls = 0
+
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root,
+                              check=True, capture_output=True,
+                              text=True).stdout.strip()
+        with patch.object(review_round, "agent", side_effect=reply), \
+                patch.object(runs, "agent_route", return_value="reviewer"), \
+                patch("holophyte.agents.fix_session.fix_turn",
+                      side_effect=fix), \
+                contextlib.suppress(RunFailure, MergeParked):
+            reproduce.review_rounds(
+                PROJECT, self.conn, self.run_id, None, "NAT-1", "main",
+                self.root, 60, base, base, body(V1), V1, [], CRITERIA, 10,
+                1)
+        self.assertEqual(fix.calls, 1)
+        self.assertEqual(self.ticket_command(), V1)
+
     def test_merge_gate_verifies_with_the_adopted_block(self):
         self.steer()
         for phase in ("verifying", "reviewing"):
