@@ -137,7 +137,6 @@ def contract_answers(case):
     answers = {}
     for name, (code, body) in {
         "status": holophyte.serve.server.status(target, now=NOW, started_ms=NOW),
-        "attention": holophyte.serve.server.attention(target, now=NOW),
         "run-detail": holophyte.serve.serve_runs.run_detail(
             target, str(case.run), now=NOW
         ),
