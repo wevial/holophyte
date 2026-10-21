@@ -183,7 +183,6 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
             href={prUrl}
             target="_blank"
             rel="noreferrer"
-            onClick={(event) => event.stopPropagation()}
             className="shrink-0 whitespace-nowrap border-b border-rule font-mono text-[12px] text-ink hover:border-ink"
           >
             {prLabel(prUrl).replace(/^PR (?=#)/, "")}
