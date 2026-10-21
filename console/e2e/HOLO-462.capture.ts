@@ -27,7 +27,7 @@ async function scrolledLogShot(page: Page, name: string) {
   const heading = log.getByRole("heading", { name: "Today's log", exact: true });
   await expect(log.getByRole("listitem").first()).toBeVisible();
   const scrollable = await log.evaluate(element => element.scrollHeight > element.clientHeight);
-  expect(scrollable, "the seeded day log overflows its column").toBe(true);
+  expect(scrollable, "the served day log overflows its column").toBe(true);
   await log.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await expect.poll(() => log.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
   const logBox = (await log.boundingBox())!;
