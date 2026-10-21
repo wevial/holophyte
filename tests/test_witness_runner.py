@@ -140,11 +140,14 @@ class WitnessRunnerFixture:
         approve_story(self.conn, ids[0], 1, "operator", "go")
         self.story_id = ids[0]
 
-    def child_merged(self, sha):
+    def child_id(self):
         (child,) = self.conn.execute(
             "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
             (self.story_id,)).fetchone()
-        merged_run(self.conn, child, sha)
+        return child
+
+    def child_merged(self, sha):
+        merged_run(self.conn, self.child_id(), sha)
 
     def three_witnesses(self):
         return [

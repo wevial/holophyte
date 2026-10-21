@@ -238,11 +238,8 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         self.land()
         (w1,) = [witness._asdict() for witness in store.stories.story(
             self.conn, self.story_id).witnesses if witness.key == "W1"]
-        (child,) = self.conn.execute(
-            "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
-            (self.story_id,)).fetchone()
         store.stories.replan_story(self.conn, self.story_id, [w1],
-                                   [(child, "completes", ["W1"])], (),
+                                   [(self.child_id(), "completes", ["W1"])], (),
                                    witness_paths=[FIXTURE_DIR])
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?",
@@ -267,11 +264,9 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
                      for witness in store.stories.story(
                          self.conn, self.story_id).witnesses]
         witnesses[0]["command"] = "exit 1"
-        (child,) = self.conn.execute(
-            "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
-            (self.story_id,)).fetchone()
         store.stories.replan_story(self.conn, self.story_id, witnesses,
-                                   [(child, "completes", ["W1", "W2"])], ())
+                                   [(self.child_id(), "completes",
+                                     ["W1", "W2"])], ())
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?",
             (self.story_id,)).fetchone()
