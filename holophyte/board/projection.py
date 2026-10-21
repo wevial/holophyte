@@ -20,7 +20,9 @@ from holophyte.cli.report import host_label
 from holophyte.loop.runs import warn_on_run
 from holophyte.redact import outbound, redact_values
 from holophyte.redact import safe_print as print
+from holophyte.review.criterion_ids import adopted_ticket_revision
 from holophyte.review.findings import refresh_findings
+from provider import parse_body
 
 LEASE_LABEL_PREFIX = "holo:"
 
@@ -196,6 +198,7 @@ def merge_drift(conn, run_id, provider, issue_id):
     claimed = store.run_contract(conn, run_id)
     if claimed is None:
         return (), None
+    claimed = _adopted_contract(conn, run_id) or claimed
     try:
         live = fetch(issue_id)
     except Exception as e:
@@ -210,6 +213,15 @@ def merge_drift(conn, run_id, provider, issue_id):
         return (), None
     return store.contract_drift(
         claimed, store.contract_snapshot(*task_contract(live))), live
+
+
+def _adopted_contract(conn, run_id):
+    revision = adopted_ticket_revision(conn, run_id)
+    if revision is None:
+        return None
+    task = parse_body("", revision.body)
+    task["title"] = revision.title
+    return store.contract_snapshot(*task_contract(task))
 
 
 def refresh_board_states(conn, project, provider):
