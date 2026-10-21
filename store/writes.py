@@ -48,6 +48,12 @@ def set_question(conn, ticket_id, question, *, park_kind=None):
                          (park_kind, ticket_id))
 
 
+def set_pr_seen_state(conn, run_id, state):
+    with _transaction(conn):
+        conn.execute("UPDATE runs SET prSeenState = ? WHERE id = ?"
+                     " AND phase = 'awaiting_merge_approval'", (state, run_id))
+
+
 def clear_merge_sha(conn, run_id):
     with _transaction(conn):
         conn.execute("UPDATE runs SET mergeSha = NULL WHERE id = ?", (run_id,))

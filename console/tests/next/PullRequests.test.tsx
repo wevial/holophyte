@@ -40,11 +40,15 @@ interface Daemon {
   ticketBody?: string;
   sendBack?: { ok: boolean; detail: string };
   markReady?: { ok: boolean; detail: string };
+  /** What `demo` answers once mark-ready is posted; its `/attention` waits on `answer`. */
+  woken?: { items: Item[]; queued: Status["queued"]; answer: Promise<void> };
 }
 
 let client: QueryClient | null = null;
+/** `demo`'s `/attention` requests made after the mark-ready post. */
+let readsAfterPost = 0;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" } }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, woken }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
@@ -53,7 +57,15 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
     [WRITER]: { status: statusOf(second), attention: attention(second, []) },
   });
   const { seen, fetchImpl } = fakeFetch({});
+  let posted = false;
+  readsAfterPost = 0;
   const routed: typeof fetchImpl = async (url, init) => {
+    if (posted && url === `${DEMO}/attention`) readsAfterPost += 1;
+    if (posted && woken && url === `${DEMO}/attention`) {
+      await woken.answer;
+      return Response.json(attention(first, woken.items));
+    }
+    if (posted && woken && url === `${DEMO}/status`) return Response.json({ ...statusOf(first, runs), queued: woken.queued });
     const merge = url.match(/\/runs\/(\d+)\/merge$/);
     if (merge) return Response.json({ ...ready, run: Number(merge[1]), ready: readyRuns.includes(Number(merge[1])) });
     const ticket = url.match(/\/tickets\/([^/?]+)$/);
@@ -67,6 +79,7 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
     }
     if (url.endsWith("/actions/mark-ready")) {
       await fetchImpl(url, init);
+      posted = true;
       return Response.json(markReady);
     }
     return fleet(url, init);
@@ -234,6 +247,39 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
   await openRow(45);
   await markReady();
   expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
+  expect(waits()).toEqual([["Your review", "draft · 1h"]]);
+  expect(screen.queryByRole("list", { name: /on CI$/ })).toBeNull();
+});
+
+test("an ok Mark ready moves #45 to its project's On CI list at once, and the read after the post settles it as queued", async () => {
+  let answer = () => {};
+  const held = new Promise<void>((resolve) => (answer = resolve));
+  const queued = [{ ...served.queued[0]!, ticket: "DEMO-12", pr_url: "https://github.com/example/demo/pull/45" }];
+  await mount({ items: [draftPark], actions: true, readyRuns: [], woken: { items: [], queued, answer: held } });
+  await openRow(45);
+  await act(async () => {
+    fireEvent.click(within(rows()[0]!).getByRole("button", { name: "Mark ready for review" }));
+    await settle();
+  });
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark ready for review" }));
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(readsAfterPost).toBe(1);
+  expect(waits()).toEqual([]);
+  const onCi = screen.getByRole("list", { name: "demo on CI" });
+  expect(within(onCi).getAllByRole("listitem").map((item) => item.textContent)).toEqual([expect.stringContaining("checks running")]);
+  expect(onCi.textContent).toContain("#45");
+
+  await act(async () => {
+    answer();
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(readsAfterPost).toBe(1);
+  expect(screen.queryByRole("list", { name: "demo on CI" })).toBeNull();
+  expect(within(screen.getByRole("group", { name: "demo" })).getByRole("button", { name: "1 queued" })).toBeTruthy();
 });
 
 test("Mark ready for review is absent on a ready pull request and on a daemon without actions", async () => {
