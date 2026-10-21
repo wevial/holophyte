@@ -498,3 +498,31 @@ class WitnessDebounceTests(_DebounceFixture):
         (command,) = commands
         self.assertEqual(command.returncode, -signal.SIGKILL)
         self.assertEqual(self.real_rows(), [])
+
+    def test_a_cancel_during_a_checkout_waits_for_the_step_and_its_timeout(self):
+        self.use("[story]\nwitness_sec = 2\n")
+        self.blocking_story()
+        flag = self.target.parent / "hook.pid"
+        hook = self.target / ".git" / "hooks" / "post-checkout"
+        hook.write_text(f"#!/bin/sh\necho $$ > {shlex.quote(str(flag))}\n"
+                        "sleep 30\n")
+        hook.chmod(0o755)
+
+        def cancel_in_the_hook():
+            deadline = time.monotonic() + 30
+            while not flag.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        canceller = threading.Thread(target=cancel_in_the_hook)
+        started = time.monotonic()
+        canceller.start()
+        with patch.object(sys, "stdout", io.StringIO()), \
+                self.assertRaises(SystemExit) as raised:
+            holophyte.loop.pool.witness_child(self.project, self.board)
+        canceller.join()
+
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+        self.assertTrue(flag.exists())
+        self.assertEqual(self.real_rows(), [])

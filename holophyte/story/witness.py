@@ -63,29 +63,35 @@ Verdict = collections.namedtuple(
 class _Command:
     def __init__(self):
         self.proc = None
-        self.starting = False
+        self.held = 0
         self.cancelled = None
 
-    def start(self):
-        self.proc, self.starting = None, True
+    @contextlib.contextmanager
+    def hold(self):
+        self.proc = None
+        self.held += 1
+        try:
+            yield
+        finally:
+            self.held -= 1
+            self.unwind()
 
     def arm(self, proc):
-        self.proc, self.starting = proc, False
-        self.unwind()
-
-    def started(self):
-        self.starting = False
+        self.proc = proc
         self.unwind()
 
     def cancel(self, signum):
         self.cancelled = signum
-        if not self.starting:
+        if not self.held or self._running():
             self.unwind()
+
+    def _running(self):
+        return self.proc is not None and self.proc.returncode is None
 
     def unwind(self):
         if self.cancelled is None:
             return
-        if self.proc is not None and self.proc.returncode is None:
+        if self._running():
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(self.proc.pid, signal.SIGKILL)
         raise SystemExit(128 + self.cancelled)
@@ -159,7 +165,8 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
     deadline = time.monotonic() + story_config(target).witness_sec
     secrets = redact.known_secrets(target.config())
     with contextlib.ExitStack() as stack:
-        tree, warm, failed = _tree(stack, target, sha, verifier, deadline)
+        with COMMAND.hold():
+            tree, warm, failed = _tree(stack, target, sha, verifier, deadline)
         copied, found, failed = (
             ([], {}, failed) if failed
             else _checkout(tree, witnesses, copy_files))
@@ -226,7 +233,8 @@ class _Judge:
             _write_log(log, self.failed or _refusal(witness), self.run.secrets)
             verdict = ("error", None, None, 0.0)
         else:
-            verdict = _judge(self.run, witness, state, log, self.ran)
+            with COMMAND.hold():
+                verdict = _judge(self.run, witness, state, log, self.ran)
             self.ran = True
         verdict_name, kind, file_hash, seconds = verdict
         return Verdict(witness.key, verdict_name, kind, file_hash,
@@ -480,7 +488,6 @@ def _run_one(run, witness, file_hash, log):
     if remaining <= 0:
         _write_log(log, transcript + SPENT, secrets)
         return "error", None, file_hash, time.monotonic() - started
-    COMMAND.start()
     try:
         code, output = _verify_command(run.target, NO_COLOR + witness.command,
                                        run.tree, remaining, on_start=COMMAND.arm)
@@ -492,8 +499,6 @@ def _run_one(run, witness, file_hash, log):
         _write_log(log, f"{transcript}[witness] could not run: {error}\n",
                    secrets)
         return "error", None, file_hash, time.monotonic() - started
-    finally:
-        COMMAND.started()
     output = output or ""
     seconds = time.monotonic() - started
     vacuous = vacuous_green_report(witness.command, output) if code == 0 else None
