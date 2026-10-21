@@ -52,7 +52,7 @@ test("02 a steer line and its read-at sub-line", async ({ page }) => {
     const first = Math.min(...body.events.map((event: { at: number }) => event.at));
     const at = first + 4 * 60_000;
     const note = {
-      id: 9001, kind: "amendment", note: "don't add a new flag for the dry run; reuse --act", author: "operator",
+      id: 9001, kind: "amendment", note: "don't add a new flag for the dry run; reuse --act", author: "maintainer",
       at, run, consumed_by: run, consumed_ms: at + 60_000, interrupt: false, withdrawn: false,
     };
     await route.fulfill({ response, json: { ...body, steer_notes: [...body.steer_notes, note] } });

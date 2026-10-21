@@ -125,6 +125,18 @@ test("a steer line names the operator for a note the maintainer did not write, a
   ]);
 });
 
+test("a steer line reads operator, not the login name, for a note recorded under a seat's login", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [
+    { ...note, author: "seat-login", kind: "hint", note: "the test lives in test_sweep", at: at(16, 40) },
+    { ...note, id: 2, kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 50) },
+  ];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
+    "operator hinted: the test lives in test_sweep",
+    "You steered: don't add a new flag; reuse --act",
+  ]);
+});
+
 test("a live run's label says live and only a line a later poll adds is marked new", async () => {
   const bodies = { detail: liveDetail, asks };
   const queries = await mount(progressFetch(bodies));
