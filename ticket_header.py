@@ -279,7 +279,7 @@ def converted(body):
         if name in movers:
             movers[name](fields, tt.COMMENT_RE.sub("", "".join(part[1:])))
         elif name == "What / Why / How":
-            kept += [line for line in part if not _bold_field(fields, line)]
+            kept += _unfielded(fields, part)
         else:
             kept += part
     ending = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
@@ -303,6 +303,16 @@ def _stated(text, unwrap=True):
     if unwrap:
         text = tt.MD_LINK_RE.sub(r"\1", text)
     return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _unfielded(fields, lines):
+    import ticket_template as tt
+    kept, in_fence = [], False
+    for line in lines:
+        in_fence ^= bool(tt.FENCE_RE.match(line.strip()))
+        if in_fence or not _bold_field(fields, line):
+            kept.append(line)
+    return kept
 
 
 def _bold_field(fields, line):
@@ -385,7 +395,7 @@ def _evidence(fields, text):
 
 def _slug(state):
     words = [re.sub(r"[^a-z0-9]", "", word.lower()) for word in state.split()]
-    return "-".join([word for word in words if word][:SLUG_WORDS])
+    return "-".join([word for word in words if word][:SLUG_WORDS]) or "state"
 
 
 def _header_rows(fields):

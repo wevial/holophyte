@@ -198,6 +198,20 @@ state = "the send-back flow"
         self.assertNotIn("## Evidence", out)
         self.assertTrue(out.endswith("+++\n" + TOP + MIDDLE + NOTES + OPEN))
 
+    def test_a_state_without_ascii_words_gets_a_file_name_the_header_accepts(self):
+        body = TOP + "## Evidence\n\n- 登录页面\n- —\n\n" + NOTES + ESTIMATE + OPEN
+        drafted = ticket_template.parse(ticket_header.converted(body))
+        self.assertEqual(drafted.header_problems, [])
+        self.assertEqual(drafted.evidence_states, ["登录页面", "—"])
+
+    def test_a_fenced_field_example_stays_in_the_body_beside_the_real_field(self):
+        example = "```\n**UI change:** major\n```\n\n"
+        out = ticket_header.converted(TOP + example + FIELD_LINES + MIDDLE + NOTES
+                                      + ESTIMATE + OPEN)
+        self.assertIn('ui_change = "minor"\n', out)
+        self.assertIn(TOP + example + "\n\n" + MIDDLE, out)
+        self.assertEqual(ticket_template.parse(out).header_problems, [])
+
 
 class RefusalTests(DraftCase):
     def test_a_mockup_line_no_header_field_holds_exits_1_naming_it(self):
