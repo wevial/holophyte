@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import review_runner
+import ticket_template
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import pr_media, pullrequest
 from tests.test_media_store import CREDS, receiver
@@ -711,6 +712,53 @@ class MediaTests(unittest.TestCase):
         self.config = {}
         self.assertEqual(self.open(), "Description.\n\nLinear: KO-505")
         self.assertFalse((self.repo / "captured").exists())
+
+    def test_ticket_declaring_no_ui_change_is_not_captured(self):
+        self.candidate()
+        ticket = '+++\nui_change = "none"\n+++\n# Backend route\n\nDescription.\n'
+        body = self.open(ticket=ticket)
+        self.assertNotIn("## Evidence", body)
+        self.assertFalse((self.repo / "captured").exists())
+
+    def test_legacy_ticket_declaring_no_ui_change_is_not_refreshed_or_briefed(self):
+        from holophyte.review.briefs import evidence_brief
+
+        self.config["merge"]["mode"] = "pr"
+        self.candidate()
+        parsed = ticket_template.parse(
+            "# Backend route\n\n## What / Why / How\n\n**What:** a route\n"
+            "**UI change:** none\n")
+        refreshed = pr_media.refresh(self.target, self.repo, "KO-505", "",
+                                     ui_change=parsed.ui_change)
+        brief = evidence_brief(self.target, self.repo, "KO-505",
+                               ui_change=parsed.ui_change)
+        self.assertIsNone(refreshed)
+        self.assertNotIn("## Evidence", brief)
+        self.assertFalse((self.repo / "captured").exists())
+
+    def test_declared_ui_change_or_listed_evidence_is_captured(self):
+        self.candidate(script="from pathlib import Path\nimport sys\n"
+                       'Path("captured").touch()\n'
+                       f'Path(sys.argv[1], "01-a.png").write_bytes({PNG!r})\n')
+        tickets = {
+            "minor": '+++\nui_change = "minor"\n+++\n# A screen\n',
+            "none with evidence": '+++\nui_change = "none"\n\n[[evidence]]\n'
+                                  'file = "01-a.png"\nstate = "the dialog open"\n'
+                                  '+++\n# A screen\n'}
+        for name, ticket in tickets.items():
+            with (self.subTest(name), patch("holophyte.pr.pr_media.repo_is_private",
+                                            return_value=False),
+                  patch("holophyte.pr.github.origin_url",
+                        return_value="https://github.com/example/repo.git")):
+                (self.repo / "captured").unlink(missing_ok=True)
+                parsed = ticket_template.parse(ticket)
+                section = pr_media.prepare(
+                    self.target, self.repo, "KO-505",
+                    evidence_states=parsed.evidence_states,
+                    evidence_files=parsed.evidence_files,
+                    ui_change=parsed.ui_change)
+                self.assertTrue(section.startswith("## Evidence"))
+                self.assertTrue((self.repo / "captured").exists())
 
     def test_failed_or_empty_capture_still_opens(self):
         for script, expected in [
