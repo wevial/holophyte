@@ -96,8 +96,8 @@ const row = (key: string) => document.querySelector<HTMLElement>(`li[data-wait-r
 const toggleOf = (key: string) => row(key).querySelector<HTMLButtonElement>(":scope > div > button")!;
 const openKeys = () => waitRows().filter((li) => toggleOf(li.dataset.waitRow!).getAttribute("aria-expanded") === "true").map((li) => li.dataset.waitRow);
 const openRow = () => document.querySelector<HTMLElement>("li[data-wait-row][data-open]")!;
-const card = () => document.getElementById(toggleOf(openRow().dataset.waitRow!).getAttribute("aria-controls")!)!;
-const cardText = () => card().textContent ?? "";
+const openDetail = () => document.getElementById(toggleOf(openRow().dataset.waitRow!).getAttribute("aria-controls")!)!;
+const openDetailText = () => openDetail().textContent ?? "";
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
@@ -112,17 +112,16 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a failed item's row names its state, key and age, and its open detail ends with triage's verdict", async () => {
+test("a failed item's row names its state, key and age, and its open detail its strike, or its bare why without triage", async () => {
   await mount(daemon({ items: [failed(code), blocked("DEMO-4", 4, HOUR)] }));
   expect(rows()).toEqual(["DEMO-11", "DEMO-4"]);
   expect(within(row("DEMO-11")).getByRole("img", { name: "failed" })).toBeTruthy();
   expect(toggleOf("DEMO-11").textContent).toEndWith("failed · 8h");
-  expect(within(card()).getByText("Verify command failed. Triage says it is the code, 81%.")).toBeTruthy();
-  expect(within(card()).getByText("run #12 · strike 2 of 3")).toBeTruthy();
+  expect(within(openDetail()).getByText("run #12 · strike 2 of 3")).toBeTruthy();
   cleanup();
 
   await mount(daemon({ items: [failed(null), blocked("DEMO-4", 4, HOUR)] }));
-  expect(within(card()).getByText("Verify command failed")).toBeTruthy();
+  expect(within(openDetail()).getByText("Verify command failed")).toBeTruthy();
 });
 
 test("the open detail lists the run's three newest events but bookkeeping, newest first, and a parked PR's facts", async () => {
@@ -134,13 +133,13 @@ test("the open detail lists the run's three newest events but bookkeeping, newes
     { at: at(15, 55), kind: "phase_change", summary: "working -> verifying" },
   ];
   await mount(daemon({ items: [failed(code)], details: { 12: { ...detail, events } } }));
-  const lines = within(card()).getByRole("list", { name: "Latest progress" }).querySelectorAll("li");
+  const lines = within(openDetail()).getByRole("list", { name: "Latest progress" }).querySelectorAll("li");
   expect([...lines].map((line) => `${line.querySelector("time")?.textContent}${line.querySelector("p")?.textContent}`)).toEqual([
     "16:02verify failed: 2 tests red",
     "15:55working -> verifying",
     "15:40round 1 changes requested",
   ]);
-  expect(cardText()).toContain("No pull request yet");
+  expect(openDetailText()).toContain("No pull request yet");
   cleanup();
 
   const park = {
@@ -149,7 +148,7 @@ test("the open detail lists the run's three newest events but bookkeeping, newes
     pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run", state: "ready" },
   } as Item;
   await mount(daemon({ items: [park], details: { 9: { ...detail, events: [] } } }));
-  expect(card().querySelector("[data-pr-line]")?.textContent).toBe("PR #42 · checks green · approved · no open threads");
+  expect(openDetail().querySelector("[data-pr-line]")?.textContent).toBe("PR #42 · checks green · approved · no open threads");
 });
 
 test("an untitled item's row takes its live run's title, else the open run detail's", async () => {
@@ -201,7 +200,7 @@ test("pressing a row's toggle opens it alone, and pressing the open one leaves n
 test("an open question row's detail holds its headline, ask, latest events and actions; a closed row draws no detail", async () => {
   const events = [{ at: at(16, 2), kind: "review", summary: "round 1 changes requested" }];
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], actions: true, details: { 1: { ...detail, events } } }));
-  const open = card();
+  const open = openDetail();
   expect(within(open).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
   expect(within(open).getByText("Which way?")).toBeTruthy();
   expect(within(open).getByRole("list", { name: "Latest progress" }).textContent).toContain("round 1 changes requested");
@@ -218,10 +217,10 @@ test("a failed row's open detail ends its why with triage's verdict, and a stuck
   } as Item;
   await mount(daemon({ items: [failed(code), stuck] }));
   expect(rows()).toEqual(["DEMO-11", "DEMO-5"]);
-  expect(within(card()).getByText(/^Verify command failed/).textContent).toEndWith("Triage says it is the code, 81%.");
+  expect(within(openDetail()).getByText(/^Verify command failed/).textContent).toEndWith("Triage says it is the code, 81%.");
   fireEvent.click(toggleOf("DEMO-5"));
-  expect(within(card()).getByText("Waits on DEMO-2, which was abandoned")).toBeTruthy();
-  expect(within(card()).getByText("4 queued behind")).toBeTruthy();
+  expect(within(openDetail()).getByText("Waits on DEMO-2, which was abandoned")).toBeTruthy();
+  expect(within(openDetail()).getByText("4 queued behind")).toBeTruthy();
 });
 
 test("a poll that puts an older item first leaves the open row open", async () => {
@@ -283,11 +282,11 @@ test("an unreachable host's open detail says it is not answering and when it was
   down = true;
   fake.clock.now = NOW;
   await repoll();
-  expect(within(card()).getByText("host-a is not answering")).toBeTruthy();
-  expect(within(card()).getByText("last seen 4m ago")).toBeTruthy();
-  expect(cardText()).not.toContain("PR");
-  expect(cardText()).not.toContain("pull request");
-  expect(within(card()).queryByRole("list", { name: "Latest progress" })).toBeNull();
+  expect(within(openDetail()).getByText("host-a is not answering")).toBeTruthy();
+  expect(within(openDetail()).getByText("last seen 4m ago")).toBeTruthy();
+  expect(openDetailText()).not.toContain("PR");
+  expect(openDetailText()).not.toContain("pull request");
+  expect(within(openDetail()).queryByRole("list", { name: "Latest progress" })).toBeNull();
 });
 
 const TICKET_URL = "https://linear.app/demo/issue/DEMO-11";
@@ -305,7 +304,7 @@ const paused = {
   kind: "paused", level: "attention", ticket: "DEMO-6", ticket_url: null, title: "Hold the migration", note: "hold", run: 6, asked_ms: NOW - HOUR, pr_url: null,
 } as Item;
 
-const inCard = (name: string) => within(card()).getByRole("button", { name }) as HTMLButtonElement;
+const inDetail = (name: string) => within(openDetail()).getByRole("button", { name }) as HTMLButtonElement;
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const attentionReads = (asked: string[]) => asked.filter((url) => url.endsWith("/attention")).length;
 const press = async (button: HTMLElement) => {
@@ -315,20 +314,20 @@ const press = async (button: HTMLElement) => {
   for (let round = 0; round < 3; round += 1) await act(settle);
 };
 
-test("pressing Open run on a failed run's card opens that run's Run page", async () => {
+test("pressing Open run on a failed run's open row opens that run's Run page", async () => {
   const run40 = { ...detail, run: { ...detail.run, id: 40, ticket: "DEMO-40", title: "Write the notes", phase: "failed", outcome: "failed" } };
   await mount(daemon({ items: [{ ...failed(null), run: 40, ticket: "DEMO-40" } as Item], details: { 40: run40 } }));
-  await press(within(card()).getByRole("link", { name: "Open run" }));
+  await press(within(openDetail()).getByRole("link", { name: "Open run" }));
   expect(window.location.hash).toStartWith("#/runs/demo/40");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Write the notes");
 });
 
-test("the card's primary is the entry's first action, the rest sit under More, and Open run and Open ticket follow", async () => {
+test("the open row's primary is the entry's first action, the rest sit under More, and Open run and Open ticket follow", async () => {
   await mount(daemon({ items: [failedAt()], actions: true }));
-  const primary = inCard("Requeue");
+  const primary = inDetail("Requeue");
   expect(primary.dataset.variant).toBe("primary");
-  expect(within(card()).queryByRole("button", { name: "Mark needs_spec" })).toBeNull();
-  const more = inCard("More");
+  expect(within(openDetail()).queryByRole("button", { name: "Mark needs_spec" })).toBeNull();
+  const more = inDetail("More");
   fireEvent.click(more);
   expect(more.getAttribute("aria-expanded")).toBe("true");
   const needsSpec = within(screen.getByRole("group", { name: "More actions" })).getByRole("button", { name: "Mark needs_spec" });
@@ -337,29 +336,29 @@ test("the card's primary is the entry's first action, the rest sit under More, a
   fireEvent.keyDown(needsSpec, { key: "Escape" });
   expect(screen.queryByRole("group", { name: "More actions" })).toBeNull();
   expect(document.activeElement).toBe(more);
-  expect(within(card()).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/12");
-  const ticket = within(card()).getByRole("link", { name: "Open ticket" });
+  expect(within(openDetail()).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/12");
+  const ticket = within(openDetail()).getByRole("link", { name: "Open ticket" });
   expect(ticket.getAttribute("href")).toBe(TICKET_URL);
   expect(ticket.getAttribute("target")).toBe("_blank");
   cleanup();
 
   await mount(daemon({ items: [stale], actions: true }));
-  expect(inCard("Abort").dataset.variant).toBe("danger");
-  fireEvent.click(inCard("More"));
+  expect(inDetail("Abort").dataset.variant).toBe("danger");
+  fireEvent.click(inDetail("More"));
   const staleMore = within(screen.getByRole("group", { name: "More actions" })).getAllByRole("button");
   expect(staleMore.map((button) => button.textContent)).toEqual(["Abort and close", "Requeue"]);
   cleanup();
 
   await mount(daemon({ items: [park], actions: true, details: { 9: { ...detail, events: [] } } }));
-  expect(inCard("Merge").dataset.variant).toBe("primary");
-  fireEvent.click(inCard("More"));
+  expect(inDetail("Merge").dataset.variant).toBe("primary");
+  fireEvent.click(inDetail("More"));
   expect(within(screen.getByRole("group", { name: "More actions" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Open PR"]);
 });
 
 test("Merge asks first in a dialog listing why it is safe; Esc posts nothing and Confirm posts the run once with the bearer", async () => {
   const action = fakeFetch({ ok: true, detail: "approved" });
   await mount(daemon({ items: [park], actions: true, act: action.fetchImpl, details: { 9: { ...detail, events: [] } } }));
-  const merge = inCard("Merge");
+  const merge = inDetail("Merge");
   await press(merge);
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
   const facts = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
@@ -392,7 +391,7 @@ test("Merge asks first in a dialog listing why it is safe; Esc posts nothing and
 test("a refused merge keeps the dialog open with the daemon's reason and its confirm pressable again", async () => {
   const action = fakeFetch({ ok: false, detail: "GitHub's review decision is REVIEW_REQUIRED" });
   await mount(daemon({ items: [park], actions: true, act: action.fetchImpl, details: { 9: { ...detail, events: [] } } }));
-  await press(inCard("Merge"));
+  await press(inDetail("Merge"));
   await press(within(screen.getByRole("dialog")).getByRole("button", { name: "Merge PR #42" }));
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
   expect(within(dialog).getByRole("alert").textContent).toBe("GitHub's review decision is REVIEW_REQUIRED");
@@ -404,14 +403,14 @@ test("a refused merge keeps the dialog open with the daemon's reason and its con
   expect(action.seen).toHaveLength(2);
 });
 
-test("a host without actions draws no button on the card, says so, and still links the run", async () => {
+test("a host without actions draws no button in the open row, says so, and still links the run", async () => {
   await mount(daemon({ items: [failedAt()] }));
-  expect(within(card()).queryAllByRole("button")).toEqual([]);
-  expect(cardText()).toContain("Actions are off on this host");
-  expect(within(card()).getByRole("link", { name: "Open run" })).toBeTruthy();
+  expect(within(openDetail()).queryAllByRole("button")).toEqual([]);
+  expect(openDetailText()).toContain("Actions are off on this host");
+  expect(within(openDetail()).getByRole("link", { name: "Open run" })).toBeTruthy();
 });
 
-test("a taken requeue says so in the toast and re-reads the fleet at once; a refused one shows the daemon's reason on the card", async () => {
+test("a taken requeue says so in the toast and re-reads the fleet at once; a refused one shows the daemon's reason in the open row", async () => {
   const asked: string[] = [];
   const state: Daemon = { items: [failedAt(), blocked("DEMO-4", 4, HOUR)], actions: true, asked };
   const taken = fakeFetch({ ok: true, detail: "requeued" });
@@ -421,7 +420,7 @@ test("a taken requeue says so in the toast and re-reads the fleet at once; a ref
   };
   await mount(daemon(state));
   const reads = attentionReads(asked);
-  await press(inCard("Requeue"));
+  await press(inDetail("Requeue"));
   expect(taken.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-11" } }]);
   expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe("Requeued DEMO-11.");
   expect(attentionReads(asked)).toBeGreaterThan(reads);
@@ -430,26 +429,26 @@ test("a taken requeue says so in the toast and re-reads the fleet at once; a ref
 
   const refused = fakeFetch({ ok: false, detail: "ticket DEMO-11 has a live run" });
   await mount(daemon({ items: [failedAt()], actions: true, act: refused.fetchImpl }));
-  await press(inCard("Requeue"));
+  await press(inDetail("Requeue"));
   expect(openRow().dataset.waitRow).toBe("DEMO-11");
-  expect(within(card()).getByRole("status").textContent).toBe("ticket DEMO-11 has a live run");
+  expect(within(openDetail()).getByRole("status").textContent).toBe("ticket DEMO-11 has a live run");
   expect(toast()).toBe("");
 });
 
-test("Resume opens a reason box on the card whose Send posts the ticket and the note once, then toasts and re-reads the fleet", async () => {
+test("Resume opens a reason box in the open row whose Send posts the ticket and the note once, then toasts and re-reads the fleet", async () => {
   const asked: string[] = [];
   const action = fakeFetch({ ok: true, detail: "resumed" });
   await mount(daemon({ items: [paused], actions: true, act: action.fetchImpl, asked }));
   const reads = attentionReads(asked);
-  await press(inCard("Resume"));
-  fireEvent.change(within(card()).getByRole("textbox", { name: "Reason to resume" }), { target: { value: "window is open" } });
-  await press(inCard("Send"));
+  await press(inDetail("Resume"));
+  fireEvent.change(within(openDetail()).getByRole("textbox", { name: "Reason to resume" }), { target: { value: "window is open" } });
+  await press(inDetail("Send"));
   expect(action.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/resume`, body: { ticket: "DEMO-6", note: "window is open" } }]);
   expect(toast()).toBe("Resumed DEMO-6.");
   expect(attentionReads(asked)).toBeGreaterThan(reads);
 });
 
-test("a host sweep card on a host with no named projects reads the root's actions and posts Run sweep at the root", async () => {
+test("a host sweep row on a host with no named projects reads the root's actions and posts Run sweep at the root", async () => {
   const hostStatus = await Bun.file(new URL("host-status.json", SERVE)).json();
   const action = fakeFetch({ ok: true, detail: "started" });
   const sweep = { kind: "sweep_stale", project: null, state: "killed", started: NOW - 200_000, ended: null, level: "attention" };
@@ -460,8 +459,8 @@ test("a host sweep card on a host with no named projects reads the root's action
     if (url.includes("/actions/")) return action.fetchImpl(url, init);
     return new Response("not found", { status: 404 });
   });
-  expect(cardText()).not.toContain("Actions are off");
-  await press(inCard("Run sweep"));
+  expect(openDetailText()).not.toContain("Actions are off");
+  await press(inDetail("Run sweep"));
   expect(action.seen.map(({ url }) => url)).toEqual([`${DEMO}/actions/run-sweep`]);
   expect(toast()).toBe("Started a host sweep on writer-host.");
 });
@@ -475,28 +474,28 @@ const fixDeclined = (extra: object = {}) => blocked("DEMO-4", 4, HOUR, {
 
 test("a declined check fix leads with structured facts and renders the ask without machine prefixes", async () => {
   await mount(daemon({ items: [fixDeclined()] }));
-  expect(within(card()).getByRole("heading", { name: "Checks failed on PR #644 and the fix round found nothing to change" })).toBeTruthy();
-  expect(within(card()).getByRole("link", { name: "PR #644" }).getAttribute("href")).toBe(prUrl);
-  expect(card().querySelector("code")?.textContent).toBe("unit");
-  expect(card().querySelector("strong")?.textContent).toBe("The CI log:");
-  expect(card().querySelectorAll("li")).toHaveLength(2);
-  expect(cardText()).not.toContain("PR open:");
-  expect(cardText()).not.toContain("Fix round made no commit");
+  expect(within(openDetail()).getByRole("heading", { name: "Checks failed on PR #644 and the fix round found nothing to change" })).toBeTruthy();
+  expect(within(openDetail()).getByRole("link", { name: "PR #644" }).getAttribute("href")).toBe(prUrl);
+  expect(openDetail().querySelector("code")?.textContent).toBe("unit");
+  expect(openDetail().querySelector("strong")?.textContent).toBe("The CI log:");
+  expect(openDetail().querySelectorAll("li")).toHaveLength(2);
+  expect(openDetailText()).not.toContain("PR open:");
+  expect(openDetailText()).not.toContain("Fix round made no commit");
 });
 
 test("a question without a pull request has a generic headline and no PR link", async () => {
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, { park_kind: "question", pr: null, pr_url: null })] }));
-  expect(within(card()).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
-  expect(within(card()).queryByRole("link", { name: /PR/ })).toBeNull();
+  expect(within(openDetail()).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
+  expect(within(openDetail()).queryByRole("link", { name: /PR/ })).toBeNull();
 });
 
 test("the ask displays raw HTML literally and expands from four lines", async () => {
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, { question: "<script>alert(1)</script>" })] }));
-  expect(card().querySelector("script")).toBeNull();
-  expect(within(card()).getByText("<script>alert(1)</script>")).toBeTruthy();
-  const folded = card().querySelector(".line-clamp-4")!;
+  expect(openDetail().querySelector("script")).toBeNull();
+  expect(within(openDetail()).getByText("<script>alert(1)</script>")).toBeTruthy();
+  const folded = openDetail().querySelector(".line-clamp-4")!;
   expect(folded).toBeTruthy();
-  const toggle = within(card()).getByRole("button", { name: "Show all" });
+  const toggle = within(openDetail()).getByRole("button", { name: "Show all" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
   expect(folded.classList.contains("line-clamp-4")).toBe(false);
@@ -508,7 +507,7 @@ test("the ask displays raw HTML literally and expands from four lines", async ()
 
 test("latest event Markdown expands independently from two lines", async () => {
   await mount(daemon({ items: [fixDeclined()], details: { 4: { ...detail, events: [{ at: NOW, kind: "phase_change", summary: "**Parked** on `unit`" }] } } }));
-  const entry = within(card()).getByRole("list", { name: "Latest progress" }).firstElementChild!;
+  const entry = within(openDetail()).getByRole("list", { name: "Latest progress" }).firstElementChild!;
   expect(entry.querySelector("strong")?.textContent).toBe("Parked");
   expect(entry.querySelector("code")?.textContent).toBe("unit");
   const folded = entry.querySelector(".line-clamp-2")!;
@@ -518,7 +517,7 @@ test("latest event Markdown expands independently from two lines", async () => {
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(folded.classList.contains("line-clamp-2")).toBe(false);
-  expect(card().querySelector(".line-clamp-4")).toBeTruthy();
+  expect(openDetail().querySelector(".line-clamp-4")).toBeTruthy();
 });
 
 test.each([
@@ -527,21 +526,21 @@ test.each([
   [{ park_kind: null }, "The run has a question for you"],
 ])("the blocked headline falls back using available structured facts (%j)", async (extra, headline) => {
   await mount(daemon({ items: [fixDeclined(extra)] }));
-  expect(within(card()).getByRole("heading", { name: headline })).toBeTruthy();
+  expect(within(openDetail()).getByRole("heading", { name: headline })).toBeTruthy();
 });
 
 test("ask links use safe URLs and unsupported headings and images retain their text", async () => {
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, {
     question: "# Read this\n\n![Important instruction](https://example.com/image.png)\n\n![Reference instruction][image]\n\n[image]: https://example.com/image.png\n\n[Log](https://example.com/log) and [unsafe](javascript:alert%281%29)",
   })] }));
-  expect(within(card()).getByText("Read this")).toBeTruthy();
-  expect(within(card()).queryByRole("heading", { name: "Read this" })).toBeNull();
-  expect(within(card()).getByText("Important instruction")).toBeTruthy();
-  expect(within(card()).getByText("Reference instruction")).toBeTruthy();
-  expect(card().querySelector("img")).toBeNull();
-  const log = within(card()).getByRole("link", { name: "Log" });
+  expect(within(openDetail()).getByText("Read this")).toBeTruthy();
+  expect(within(openDetail()).queryByRole("heading", { name: "Read this" })).toBeNull();
+  expect(within(openDetail()).getByText("Important instruction")).toBeTruthy();
+  expect(within(openDetail()).getByText("Reference instruction")).toBeTruthy();
+  expect(openDetail().querySelector("img")).toBeNull();
+  const log = within(openDetail()).getByRole("link", { name: "Log" });
   expect(log.getAttribute("href")).toBe("https://example.com/log");
   expect(log.getAttribute("target")).toBe("_blank");
   expect(log.getAttribute("rel")).toBe("noreferrer");
-  expect(within(card()).getByText("unsafe").getAttribute("href")).toBe("");
+  expect(within(openDetail()).getByText("unsafe").getAttribute("href")).toBe("");
 });
