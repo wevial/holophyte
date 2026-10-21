@@ -261,6 +261,7 @@ PINNED = {
     "holophyte/story/story_scope.py": 3,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
+    "holophyte/story/witness_cadence.py": 1,
 
     "linear_provider.py": 20,
     "provider.py": 12,

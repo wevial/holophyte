@@ -17,11 +17,13 @@ STORY_COLUMNS = ("ticketId", "state", "generation", "standingOrders",
                  "approvedRevision", "approvedPlan", "approvedBy", "approvedAt",
                  "closedSha", "closedAt")
 WITNESS_COLUMNS = ("key", "criterion", "file", "command", "source",
-                   "sourceHash", "completedBy")
+                   "sourceHash", "completedBy", "cadence")
 CHILD_COLUMNS = ("ticketId", "witnessKey", "role")
 WITNESS_FIELDS = ("key", "criterion", "file", "command", "source")
 RESULT_COLUMNS = ("id", "witnessKey", "mainSha", "verdict", "redKind",
-                  "verifier", "fileHash", "evidencePath", "seconds", "at")
+                  "verifier", "fileHash", "evidencePath", "seconds", "at",
+                  "carriedFrom")
+MAX_CADENCE_HOURS = 168
 DECISION_COLUMNS = ("id", "kind", "ticketId", "question", "options",
                     "defaultOption")
 
@@ -104,7 +106,8 @@ def story(conn, ticket_id):
     fields["standingOrders"] = tuple(json.loads(fields["standingOrders"]))
     if fields["approvedPlan"] is not None:
         fields["approvedPlan"] = json.loads(fields["approvedPlan"])
-    witnesses = tuple(StoryWitness(*witness) for witness in conn.execute(
+    witnesses = tuple(StoryWitness(*witness[:-1], _loaded(witness[-1]))
+                      for witness in conn.execute(
         f"SELECT {', '.join(WITNESS_COLUMNS)} FROM storyWitnesses"
         " WHERE storyId = ? ORDER BY key", (fields["ticketId"],)))
     children = tuple(StoryChild(*child) for child in conn.execute(
@@ -331,8 +334,10 @@ def abandon_story(conn, parent_id, note, author, now=None):
 
 def record_witness_result(conn, story_id, key, main_sha, verdict, verifier,
                           red_kind=None, file_hash=None, evidence_path=None,
-                          seconds=None, now=None):
+                          seconds=None, carried_from=None, now=None):
     _check_text(main_sha=main_sha)
+    if carried_from is not None:
+        _check_text(carried_from=carried_from)
     _check_member("verdict", verdict, WitnessVerdict)
     _check_member("verifier", verifier, WitnessVerifier)
     if verdict == "red":
@@ -348,10 +353,10 @@ def record_witness_result(conn, story_id, key, main_sha, verdict, verifier,
             raise ValueError(f"story {story_id} has no witness {key!r}")
         return conn.execute(
             "INSERT INTO witnessResults (storyId, witnessKey, mainSha,"
-            " verdict, redKind, verifier, fileHash, evidencePath, seconds, at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " verdict, redKind, verifier, fileHash, evidencePath, seconds, at,"
+            " carriedFrom) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (story_id, key, main_sha, verdict, red_kind, verifier, file_hash,
-             evidence_path, seconds, now)).lastrowid
+             evidence_path, seconds, now, carried_from)).lastrowid
 
 
 def witness_ledger(conn, story_id, main_sha=None):
@@ -562,10 +567,30 @@ def _check_witnesses(witnesses):
         for field in WITNESS_FIELDS:
             if not isinstance(witness.get(field), str) or not witness[field].strip():
                 raise ValueError(f"a witness's {field} is blank")
+        _check_cadence(witness.get("cadence"))
         if witness["key"] in keys:
             raise ValueError(f"witness key {witness['key']} is given twice")
         keys.add(witness["key"])
     return keys
+
+
+def _check_cadence(cadence):
+    if cadence is None:
+        return
+    paths = cadence.get("paths", ["."]) if isinstance(cadence, dict) else None
+    hours = cadence.get("hours", 1) if isinstance(cadence, dict) else None
+    if (not cadence or set(cadence) - {"paths", "hours"}
+            or not isinstance(paths, list) or not paths
+            or not all(isinstance(path, str) and path.strip()
+                       for path in paths)
+            or type(hours) is not int
+            or not 1 <= hours <= MAX_CADENCE_HOURS):
+        raise ValueError(f"a witness's cadence {cadence!r} is not paths,"
+                         f" hours from 1 to {MAX_CADENCE_HOURS}, or both")
+
+
+def _loaded(cadence):
+    return None if cadence is None else json.loads(cadence)
 
 
 def _check_children(parent_id, children, keys):
@@ -625,11 +650,13 @@ def _insert_plan(conn, parent_id, witnesses, children, completed_by):
     for witness in witnesses:
         conn.execute(
             "INSERT INTO storyWitnesses (storyId, key, criterion, file,"
-            " command, source, sourceHash, completedBy)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " command, source, sourceHash, completedBy, cadence)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (parent_id, *(witness[field] for field in WITNESS_FIELDS),
              hashlib.sha256(witness["source"].encode()).hexdigest(),
-             completed_by.get(witness["key"])))
+             completed_by.get(witness["key"]),
+             None if witness.get("cadence") is None
+             else json.dumps(witness["cadence"], sort_keys=True)))
     for ticket_id, role, child_keys in children:
         for key in child_keys or ("",):
             conn.execute("INSERT INTO storyChildren (ticketId, witnessKey,"

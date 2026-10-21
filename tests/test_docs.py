@@ -349,7 +349,8 @@ class StoryTemplateTests(unittest.TestCase):
     def test_the_template_has_the_story_sections_in_order(self):
         self.assertEqual(headings(self.TEMPLATE.read_text(), 2),
                          ["Summary", "Goal", "Witnesses", "Witness commands",
-                          "Standing orders", "Out of scope", "Open questions"])
+                          "Witness cadence", "Standing orders", "Out of scope",
+                          "Open questions"])
 
     def test_witnesses_hold_one_criterion_line(self):
         body = self.section(self.TEMPLATE.read_text(), "Witnesses")

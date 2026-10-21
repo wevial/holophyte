@@ -39,6 +39,22 @@
 W1: <exact runnable command>
 ```
 
+## Witness cadence
+
+<!-- Optional; drop the section to run every witness at every commit of
+     main. One fenced block, at most one line per witness, in one of the
+     forms `Wn: paths P [P ...]`, `Wn: every Nh` or
+     `Wn: paths P [P ...]; every Nh`. A loop pass runs such a witness only
+     when files under the repository-relative paths P (or its own witness
+     file) changed since its last verdict, and only when that verdict is N
+     hours old or more (N from 1 to 168); otherwise it carries the last
+     verdict to the new commit. A witness with no line runs at every
+     commit. For example:
+         ```
+         W1: paths lib/reader/; every 6h
+         ```
+-->
+
 ## Standing orders
 
 - <A rule every child ticket keeps: a constraint, a surface not to touch, a convention to follow.>

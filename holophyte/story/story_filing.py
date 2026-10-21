@@ -476,8 +476,9 @@ def _plan_state(conn, parent_id):
 
 
 def _rows_state(conn, witnesses, rows, standing_orders):
-    return (sorted(tuple(witness[field] for field in
-                         store.stories.WITNESS_FIELDS)
+    return (sorted((*(witness[field] for field in
+                      store.stories.WITNESS_FIELDS),
+                    json.dumps(witness.get("cadence"), sort_keys=True))
                    for witness in witnesses),
             {ticket_id: (role, sorted(keys)) for ticket_id, role, keys in rows},
             {ticket_id: json.loads(conn.execute(
@@ -490,7 +491,8 @@ def _witnesses(directory, story):
     return [{"key": witness.key, "criterion": witness.outcome,
              "file": witness.file, "command": witness.command,
              "source": (directory / story_template.WITNESSES
-                        / witness.file).read_text()}
+                        / witness.file).read_text(),
+             "cadence": witness.cadence}
             for witness in story.witnesses]
 
 

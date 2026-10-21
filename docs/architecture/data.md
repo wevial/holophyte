@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 55) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 56) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -54,7 +54,11 @@ A new table or column follows the ones already there:
 A story is a parent ticket whose children serve one outcome; the five tables
 `stories`, `storyWitnesses`, `storyChildren`, `witnessResults` and
 `storyDecisions` hold its plan, its witnesses, its children's roles, each
-witness run on main and the questions it put to the operator.
+witness run on main and the questions it put to the operator. A witness's
+nullable `cadence` holds the JSON `{"paths", "hours"}` of its story's
+`## Witness cadence` line, NULL to run at every commit; a `witnessResults`
+row's nullable `carriedFrom` names the commit whose verdict a loop pass
+carried to this one without running the witness, NULL for a row that ran.
 
 The last pull request read is stored on `runs` in `prSeenAt`,
 `prSeenChecks`, `prSeenReview`, `prSeenThreads`, `prSeenOpenThreads`,

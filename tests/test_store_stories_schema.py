@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
+import store.stories
 
 FROZEN = Path(__file__).with_name("store_pre_stories.sql")
 STORY_TABLES = ("stories", "storyWitnesses", "storyChildren",
@@ -185,6 +186,52 @@ class StoryConstraintTests(unittest.TestCase):
         self.assertEqual(self.conn.execute(
             "SELECT action FROM interventions WHERE projectId = 1"
             " ORDER BY id").fetchall(), [("approve_story",), ("decide",)])
+
+
+class CadenceColumnsMigrationTests(unittest.TestCase):
+    MAIN_VERSION = 55
+
+    def test_a_store_before_cadence_reads_null_cadence_and_carried_from(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "store.db"
+        conn = store.open(path)
+        conn.execute("INSERT INTO projects (linearTeamId, repoPath,"
+                     " defaultBranch, autonomyProfile)"
+                     " VALUES ('t', '/repo', 'main', 'personal')")
+        conn.execute("INSERT INTO tickets (projectId, linearIssueId,"
+                     " linearIdentifier, title, mirroredAt, status, affinity)"
+                     " VALUES (1, 'i1', 'KO-1', 't', 1, 'ready', 'any')")
+        conn.execute("INSERT INTO stories (ticketId, state)"
+                     " VALUES (1, 'approved')")
+        conn.execute("INSERT INTO storyWitnesses (storyId, key, criterion,"
+                     " file, command, source, sourceHash)"
+                     " VALUES (1, 'W1', 'c', 'f', 'true', 's', 'h')")
+        for sha in ("a", "b"):
+            conn.execute("INSERT INTO witnessResults (storyId, witnessKey,"
+                         " mainSha, verdict, verifier, seconds, at)"
+                         " VALUES (1, 'W1', ?, 'green', 'loop', 1.5, 1)",
+                         (sha,))
+        conn.execute("ALTER TABLE storyWitnesses DROP COLUMN cadence")
+        conn.execute("ALTER TABLE witnessResults DROP COLUMN carriedFrom")
+        conn.execute(f"PRAGMA user_version = {self.MAIN_VERSION:d}")
+        conn.commit()
+        conn.close()
+
+        conn = store.open(path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                         (self.MAIN_VERSION + 1,))
+        self.assertEqual(store.schema.READABLE_FROM, 50)
+        self.assertEqual(conn.execute(
+            "SELECT mainSha, seconds, carriedFrom FROM witnessResults"
+            " ORDER BY id").fetchall(), [("a", 1.5, None), ("b", 1.5, None)])
+        self.assertEqual(conn.execute(
+            "SELECT key, cadence FROM storyWitnesses").fetchall(),
+            [("W1", None)])
+        (found,) = store.stories.story(conn, 1).witnesses
+        self.assertIsNone(found.cadence)
 
 
 if __name__ == "__main__":

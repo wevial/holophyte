@@ -108,7 +108,7 @@ class WitnessRunnerFixture:
         target.config_path.write_text(config)
         return target
 
-    def approve(self, witnesses):
+    def approve(self, witnesses, cadences=None):
         self.conn.execute("INSERT INTO projects (linearTeamId, repoPath,"
                           " defaultBranch, autonomyProfile)"
                           " VALUES ('t', ?, 'main', 'personal')",
@@ -122,7 +122,8 @@ class WitnessRunnerFixture:
         self.conn.commit()
         file_story(self.conn, ids[0], [
             {"key": key, "criterion": f"{key} holds", "file": path,
-             "command": command, "source": source}
+             "command": command, "source": source,
+             "cadence": (cadences or {}).get(key)}
             for key, path, command, source in witnesses],
             [(ids[1], "completes", [key for key, *_ in witnesses])])
         approve_story(self.conn, ids[0], 1, "operator", "go")

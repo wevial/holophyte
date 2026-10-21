@@ -24,6 +24,7 @@ from holophyte.story.story_close import (
     settle_owed,
     settle_story,
 )
+from holophyte.story.witness_cadence import carry, due_keys
 from store.notes import record_note
 from store.stories import OPEN_STATES, record_witness_result, story, witness_ledger
 
@@ -104,8 +105,9 @@ def _pytest_message(rest):
 
 
 def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
-                  again=None):
-    witnesses = story(conn, story_id).witnesses
+                  again=None, keys=None):
+    witnesses = [witness for witness in story(conn, story_id).witnesses
+                 if keys is None or witness.key in keys]
     (identifier,) = conn.execute(
         "SELECT linearIdentifier FROM tickets WHERE id = ?",
         (story_id,)).fetchone()
@@ -181,7 +183,16 @@ def witness_pass(target, conn, story_id, verifier):
         return {row.witnessKey for row in rows
                 if row.verdict == "red" and row.witnessKey in greens}
 
-    rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
+    due = None
+    if verifier == "loop":
+        due = (due_keys(target.path, conn, story_id,
+                        story(conn, story_id).witnesses, sha)
+               | rerun_owed(conn, story_id, sha))
+    rows = (run_witnesses(target, conn, story_id, sha, verifier, again=again,
+                          keys=due) if due is None or due else [])
+    if due is not None:
+        rows += _rows(conn, story_id,
+                      carry(conn, story_id, sha, keys - due, verifier))
     _note_changes(conn, story_id, sha, before, rows)
     settle_story(target, conn, story_id, sha)
     return rows
@@ -273,7 +284,8 @@ def _note_changes(conn, story_id, sha, before, rows):
     now = {row.witnessKey: row for row in rows}
     for key, row in sorted(now.items()):
         was = previous.get(key)
-        if was is None or was.verdict == row.verdict:
+        if (was is None or was.verdict == row.verdict
+                or row.carriedFrom is not None):
             continue
         record_note(conn, story_id, "verdict",
                     f"Witness {key} is {row.verdict} at {sha}, was"

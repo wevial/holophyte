@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import story_template
 from tests.story_fixture import witness_path, write_story
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -175,6 +176,38 @@ class StoryAdvisoryTests(StoryCliCase):
         self.edit(directory, "witnesses outcome 1)",
                   "witnesses outcome 1 after one pass)")
         self.assert_advised(directory, "W1's criterion says 'one pass'")
+
+
+def cadence_section(*lines):
+    return "\n".join(["## Witness cadence", "", "```", *lines, "```", "", ""])
+
+
+class WitnessCadenceTests(StoryCliCase):
+    def test_a_cadence_line_gives_its_witness_paths_and_hours(self):
+        directory = self.story(extra=cadence_section(
+            "W2: paths lib/reader/ app/contract/; every 6h"))
+
+        story = story_template.parse_story((directory / "story.md").read_text())
+
+        self.assertEqual({witness.key: witness.cadence
+                          for witness in story.witnesses},
+                         {"W1": None, "W2": {"paths": ["lib/reader/",
+                                                       "app/contract/"],
+                                             "hours": 6}})
+        self.assertEqual(self.run_cli(directory).returncode, 0)
+
+    def test_each_bad_cadence_line_is_one_problem_naming_it(self):
+        for index, (lines, named) in enumerate((
+                (["W9: every 2h"], "W9: every 2h"),
+                (["W2: every 0h"], "W2: every 0h"),
+                (["W2: paths /abs"], "W2: paths /abs"),
+                (["W2: paths ../up"], "W2: paths ../up"),
+                (["W2: weekly"], "W2: weekly"),
+                (["W2: every 2h", "W2: paths lib/"], "W2: paths lib/"))):
+            with self.subTest(line=named):
+                directory = write_story(Path(self.tmp.name) / f"plans{index}",
+                                        extra=cadence_section(*lines))
+                self.assert_refused(directory, named)
 
 
 if __name__ == "__main__":

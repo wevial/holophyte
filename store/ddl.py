@@ -420,6 +420,7 @@ CREATE TABLE IF NOT EXISTS storyWitnesses (
     source      TEXT    NOT NULL,
     sourceHash  TEXT    NOT NULL,
     completedBy INTEGER REFERENCES tickets (id),
+    cadence     TEXT,
     PRIMARY KEY (storyId, key)
 );
 
@@ -447,7 +448,8 @@ CREATE TABLE IF NOT EXISTS witnessResults (
     fileHash     TEXT,
     evidencePath TEXT,
     seconds      REAL,
-    at           INTEGER NOT NULL
+    at           INTEGER NOT NULL,
+    carriedFrom  TEXT
 );
 
 -- storyDecisions: a question a story put to the operator and its answer.
