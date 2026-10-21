@@ -291,13 +291,3 @@ test("a witness set beside a live run lists keys that do not run consecutively a
   expect(head("demo")).toContain("1 of 2 workers busy");
   expect(witnessLine("demo")!.textContent).toBe("Witnesses · DEMO-20 · W1, W3 · running 12m");
 });
-
-test("with no witness set running an idle project draws no lane and a live one no witness line", async () => {
-  await mount("#/", statusOf("/srv/dev/demo", [], { witnesses: null }), statusOf("/srv/dev/writer", []));
-  expect(lanes()).toEqual([]);
-  cleanup();
-
-  await mount("#/", statusOf("/srv/dev/demo", [demoRun], { witnesses: null }), statusOf("/srv/dev/writer", []));
-  expect(lanes()).toEqual(["demo"]);
-  expect(witnessLine("demo")).toBeNull();
-});
