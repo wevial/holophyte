@@ -2,6 +2,7 @@ import re
 from dataclasses import replace
 
 from holophyte.pr.github import Thread
+from holophyte.review.criterion_ids import adopted, numbered
 from holophyte.review.findings import decode_findings
 from store import console_asks, criteria, operator_notes, steer_notes
 from store.read import run_snapshot
@@ -56,9 +57,9 @@ def carry_amendments(conn, run_id, ticket):
     return render_amendments(conn, run_id, ticket, amendments)
 
 
-def render_amendments(conn, run_id, ticket, amendments):
+def render_amendments(conn, run_id, ticket, amendments, revised=False):
     parsed = [(n, *amendment_edits(n.note)) for n in amendments]
-    if any(edits for _, edits, _ in parsed):
+    if revised or any(edits for _, edits, _ in parsed):
         ticket = re.sub(r"\n\nAmended acceptance criteria:\n.*?(?=\n\n|\Z)",
                         "", ticket, flags=re.DOTALL)
         ticket += _criteria_block(conn, run_id)
@@ -72,10 +73,14 @@ def _criteria_block(conn, run_id):
         conn, run_snapshot(conn, run_id).ticketId)]
     reasons = {(note.id, number): text for note, edits, _ in parsed
                for verb, number, text in edits if verb == "DROP"}
-    lines = []
+    revised = adopted(conn, run_id) is not None
+    lines = ([f"- **C{n}** {text}" for n, text in numbered(conn, run_id, ())]
+             if revised else [])
     for row in criteria.current(conn, run_snapshot(conn, run_id).ticketId):
         number = row["criterion"]
         if row["status"] != "retired":
+            if revised:
+                continue
             lines.append(f"- **C{number}** {row['text']}")
         elif (row["steerNoteId"], number) in reasons:
             reason = reasons[row["steerNoteId"], number]

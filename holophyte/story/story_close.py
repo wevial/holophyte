@@ -68,10 +68,12 @@ def rerun_owed(conn, story_id, sha):
     greens = {row.witnessKey for row in rows
               if row.mainSha != sha and row.verdict == "green"}
     runs = collections.Counter(row.witnessKey for row in rows
-                               if row.mainSha == sha)
+                               if row.mainSha == sha
+                               and row.carriedFrom is None)
     latest = {row.witnessKey: row for row in rows if row.mainSha == sha}
     return {key for key, row in latest.items()
-            if row.verdict == "red" and key in greens and runs[key] < 2}
+            if row.verdict == "red" and row.carriedFrom is None
+            and key in greens and runs[key] < 2}
 
 
 def _settle(target, conn, story_id, sha):
@@ -122,7 +124,10 @@ def _plan(conn, found, sha):
 
 def _close(target, conn, found, sha):
     latest = main_ledger(conn, found.ticketId, sha)
-    verdicts = ", ".join(f"{row.witnessKey} {row.verdict}" for row in latest)
+    verdicts = ", ".join(
+        f"{row.witnessKey} {row.verdict}" + (
+            f" (carried from {row.carriedFrom[:12]})" if row.carriedFrom
+            else "") for row in latest)
     note = f"Story closed on its witnesses at {sha}: {verdicts}."
     proposals = open_proposals(conn, found.ticketId)
     if proposals:
@@ -286,4 +291,4 @@ def _replan(conn, story_id):
     replan_story(conn, story_id, witnesses,
                  [(ticket_id, role, keys[ticket_id])
                   for ticket_id, role in roles.items()],
-                 found.standingOrders)
+                 found.standingOrders, witness_paths=found.witnessPaths)

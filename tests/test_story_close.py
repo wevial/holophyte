@@ -62,6 +62,7 @@ from tests.test_witness_runner import (  # noqa: E402
     FAILS_AN_ASSERTION,
     PASSES,
     PYTHON,
+    merged_run,
 )
 
 W1_FILE, W2_FILE = "tests/test_w1.py", "tests/test_w2.py"
@@ -273,6 +274,7 @@ class StoryCloseTests(StoryCloseFixture):
         self.commit(W1_FILE, PASSES, "w1 lands")
         self.step()
         red_at = self.commit(W1_FILE, FAILS_AN_ASSERTION, "w1 breaks")
+        merged_run(self.conn, child, red_at)
 
         self.step()
         self.operator_pass(parent)
@@ -296,6 +298,7 @@ class StoryCloseTests(StoryCloseFixture):
         self.step()
         self.commit(W2_FILE, PASSES, "w2 lands")
         red_at = self.commit(W1_FILE, FAILS_AN_ASSERTION, "w1 breaks")
+        merged_run(self.conn, child, red_at)
         runs_of_w1 = ("SELECT verdict FROM witnessResults"
                       f" WHERE mainSha = '{red_at}' AND witnessKey = 'W1'")
 
