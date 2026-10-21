@@ -127,8 +127,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
           fixing{" "}
           <a className="border-b border-rule text-ink-2 hover:border-ink hover:text-ink" href={run.pr_url} target="_blank" rel="noreferrer">
             {bareNumber(run.pr_url)}
-          </a>{" "}
-          · round {run.round} of {run.max_rounds}
+          </a>
         </p>
       )}
     </li>

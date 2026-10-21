@@ -12,11 +12,10 @@ from holophyte.babysit.thread_findings import normalize_thread
 from holophyte.babysit.thread_mentions import bot_author
 from holophyte.cli.report import ended_rows, host_label
 from holophyte.config.agent_settings import budget_scale
-from holophyte.config.config_tables import MERGE_KEYS, merge_config
+from holophyte.config.config_tables import MERGE_KEYS, loop_config, merge_config
 from holophyte.config.project import worktree_path
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
-from holophyte.loop.runs import MAX_ROUNDS
 from store.operator_notes import round_notes
 from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
@@ -280,7 +279,7 @@ def run_detail(project, run_id, now=None):
             conn, run.id,
             detail_kinds=("implementer_output", "operator_note_consumed",
                           "crash"))
-        chain = chain_detail(conn, run.id, now)
+        chain = chain_detail(conn, project, run.id, now)
         steered = chain_notes(conn, run.ticketId, chain["started_ms"])
         criteria = chain_criteria(conn, [link["id"] for link in chain["runs"]])
     finally:
@@ -307,7 +306,7 @@ def run_detail(project, run_id, now=None):
                 "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
                 "verify_started_ms": run.verifyStartedAt,
                 "approved_at": run.approvedAt, "approved_by": run.approvedBy,
-                "max_rounds": run.reviewRoundCap or MAX_ROUNDS},
+                "max_rounds": chain["runs"][-1]["max_rounds"]},
         "rounds": rounds,
         "findings": advisories(events),
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}
@@ -358,10 +357,17 @@ def run_clocks(run, now):
             "verify_ms": verify_work(run, clock)}
 
 
-def chain_detail(conn, run_id, now):
+def served_round_caps(conn, project, run_ids):
+    caps = store.read.round_caps(conn, run_ids)
+    configured = loop_config(project).review_rounds
+    return {run_id: caps.get(run_id) or configured for run_id in run_ids}
+
+
+def chain_detail(conn, project, run_id, now):
     from holophyte.agents.transcripts import turns
     runs = [store.read.run_detail(conn, link.id)
             for link in store.read.run_chains(conn, [run_id])[run_id]]
+    caps = served_round_caps(conn, project, [run.id for run in runs])
     end = now if runs[-1].endedAt is None else runs[-1].endedAt
     return {"started_ms": runs[0].startedAt,
             "elapsed_ms": end - runs[0].startedAt,
@@ -372,7 +378,7 @@ def chain_detail(conn, run_id, now):
                       "outcome": run.outcome, "phase": run.phase,
                       "started_ms": run.startedAt, "ended_ms": run.endedAt,
                       **run_clocks(run, now),
-                      "max_rounds": run.reviewRoundCap or MAX_ROUNDS,
+                      "max_rounds": caps[run.id],
                       "turn_count": len(turns(turn_events(conn, run.id))),
                       "rounds": [{"round": r.round, "verdict": r.verdict,
                                   "reviewer_model": r.reviewerModel}

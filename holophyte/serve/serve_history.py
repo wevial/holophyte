@@ -3,13 +3,13 @@ from __future__ import annotations
 from time import time
 
 import store.read
-from holophyte.loop.runs import MAX_ROUNDS
 from holophyte.serve.serve_runs import (
     json_host,
     no_store,
     parse_limit,
     parse_since,
     parse_until,
+    served_round_caps,
 )
 from store.working import effective_work
 
@@ -32,15 +32,16 @@ def history(project, query, now=None):
     conn = store.read.open_readonly(project.store_path)
     try:
         runs, total = store.read.recent_runs(conn, since, limit, until)
+        caps = served_round_caps(conn, project, [run.id for run in runs])
     finally:
         conn.close()
-    return 200, {"rows": [history_row(project, run, now)
+    return 200, {"rows": [history_row(project, run, now, caps[run.id])
                           for run in runs],
                  "since": since, "until": until, "limit": limit,
                  "truncated": total > limit, "total": total, "now": now}
 
 
-def history_row(project, run, now):
+def history_row(project, run, now, max_rounds):
     live = run.endedAt is None
     return {"id": run.id, "ticket": run.linearIdentifier,
             "ticket_url": run.ticketUrl, "title": run.title,
@@ -55,5 +56,5 @@ def history_row(project, run, now):
             "working_ms": effective_work(run, now if live else run.endedAt),
             "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
             "rounds": run.reviewRoundCount,
-            "max_rounds": run.reviewRoundCap or MAX_ROUNDS,
+            "max_rounds": max_rounds,
             "pr_url": run.prUrl, "host": json_host(project, run.host)}

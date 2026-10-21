@@ -27,6 +27,7 @@ import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.serve_runs  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
+from holophyte.config.config_tables import LOOP_KEYS  # noqa: E402
 from tests.phase_fixture import finish_run
 from tests.ticket_url_fixture import assert_api_url
 from tests.transcript_fixture import TranscriptCase
@@ -701,9 +702,8 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         self.assertEqual(run["merge_sha"], MERGE_SHA)
         self.assertEqual(run["started_ms"], self.now - 30 * MIN)
         self.assertEqual(run["ended_ms"], self.now - 10 * MIN)
-        # Older runs without a stored cap use the loop's constant.
-        self.assertEqual(run["max_rounds"],
-                         holophyte.serve.serve_runs.MAX_ROUNDS)
+        # Older runs without a stored cap use the project's review rounds.
+        self.assertEqual(run["max_rounds"], LOOP_KEYS["review_rounds"])
         self.assertIsInstance(run["max_rounds"], int)
         self.assertIn("branch", run)
 
@@ -713,7 +713,7 @@ class RunDetailTests(BotFindingCases, ServeTestCase):
         _code, _headers, body = self.request("GET", f"/runs/{self.run}")
         self.assertEqual(body["run"]["max_rounds"], 4)
         self.assertNotEqual(body["run"]["max_rounds"],
-                            holophyte.serve.serve_runs.MAX_ROUNDS)
+                            LOOP_KEYS["review_rounds"])
 
     def test_a_live_run_has_a_heartbeat_age_and_an_ended_one_null(self):
         self.seed()  # KO-7, live in `working`, beating 30 s ago

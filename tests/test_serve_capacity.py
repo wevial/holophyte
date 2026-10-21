@@ -1,8 +1,12 @@
 """`/status` serves the project's worker ceiling and each live run's
 review round cap."""
 import store
+import store.tickets
 from holophyte.loop.runs import MAX_ROUNDS
-from tests.serve_fixture import ServeTestCase
+from tests.phase_fixture import advance_phase, park_run
+from tests.serve_fixture import MIN, ServeTestCase
+
+PR = "https://github.com/acme/repo/pull/2404"
 
 
 class StatusCapacityTests(ServeTestCase):
@@ -25,3 +29,42 @@ class StatusCapacityTests(ServeTestCase):
         self.assertEqual(body["workers"], 1)
         (run,) = body["runs"]
         self.assertEqual(run["max_rounds"], MAX_ROUNDS)
+
+
+class ServedRoundCapTests(ServeTestCase):
+    def seed_babysat(self):
+        """KO-7's first run recorded cap 3 and parked on its pull request;
+        the babysit run that resumed it records none."""
+        self.seed()
+        first = self.run
+        with store.open(str(self.db)) as conn:
+            store.set_review_round_cap(conn, first, 3)
+            park_run(conn, first, "awaiting_merge_approval", pr_url=PR,
+                       now=self.now - MIN)
+            ticket, project = conn.execute(
+                "SELECT t.id, t.projectId FROM runs r JOIN tickets t"
+                " ON t.id = r.ticketId WHERE r.id = ?", (first,)).fetchone()
+            store.tickets.transition(conn, ticket, "blocked_on_operator")
+            store.babysit(conn, ticket, "resume", now=self.now - MIN)
+            self.run = store.claim(conn, project, ticket, now=self.now)
+            advance_phase(conn, self.run, "reviewing", now=self.now)
+        self.assertNotEqual(self.run, first)
+
+    def test_a_babysit_run_serves_the_cap_its_ticket_recorded(self):
+        self.seed_babysat()
+        self.start("[loop]\nreview_rounds = 3\nreview_rounds_max = 4\n")
+        _code, _, status = self.request("GET", "/status")
+        (run,) = status["runs"]
+        self.assertEqual((run["id"], run["max_rounds"]), (self.run, 3))
+        code, _, detail = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(code, 200, detail)
+        self.assertEqual(detail["run"]["max_rounds"], 3)
+
+    def test_a_ticket_with_no_recorded_cap_serves_the_configured_rounds(self):
+        self.seed()
+        self.start("[loop]\nreview_rounds = 3\n")
+        _code, _, status = self.request("GET", "/status")
+        (run,) = status["runs"]
+        self.assertEqual(run["max_rounds"], 3)
+        _code, _, detail = self.request("GET", f"/runs/{self.run}")
+        self.assertEqual(detail["run"]["max_rounds"], 3)

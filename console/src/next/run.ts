@@ -14,6 +14,7 @@ import { failureWord } from "./history";
 import { progressLines, type ProgressLine } from "./progress";
 import { useReadiness, useRun, useRunAsks } from "./queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { roundLabel } from "./components/StageChip";
 import { stateOf, type State } from "./state";
 
 export type RunPage =
@@ -131,7 +132,7 @@ function liveWords({ detail, live, phase }: Facts): { stage: string; sentence: s
   const step = stepOf(phase);
   const fixing = phase === "merge_gate" && live?.stop_requested == null ? checkFixRound(detail.events) : null;
   if (fixing != null) return { stage: `${step.stage} · fixing CI`, sentence: `Fixing CI: ${fixing}.` };
-  const round = phase === "reviewing" && live != null ? `round ${live.round + 1} of ${live.max_rounds}` : null;
+  const round = phase === "reviewing" && live != null ? roundLabel(live.round + 1, live.max_rounds) : null;
   const stop = live?.stop_requested == null ? null : clause(live.stop_action === "pause" ? "Pause requested" : "Abort requested", live.stop_requested);
   return {
     stage: round == null ? step.stage : `${step.stage} · ${round}`,

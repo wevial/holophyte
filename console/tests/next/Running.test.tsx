@@ -249,7 +249,7 @@ test("a run fixing a pull request names it under its title, and the lane lists i
   const fixing = runOf(20, "DEMO-20", "Fix the slot", { phase: "working", round: 1, max_rounds: 3, pr_url: "https://github.com/example/demo/pull/77" });
   await mountAll("#/", [statusOf("/srv/dev/demo", [fixing], { workers: 2 }), statusOf("/srv/dev/writer", [])], {}, [draftPark, readyPark, ciPark]);
   const row = within(lane("demo")).getByRole("link", { name: /^DEMO-20 / }).closest("li")!;
-  expect(row.querySelector("[data-fixing]")!.textContent).toBe("fixing #77 · round 1 of 3");
+  expect(row.querySelector("[data-fixing]")!.textContent).toBe("fixing #77");
   expect(laneItems("demo")).toEqual([["run", "On CI", "on-ci"]]);
   expect([...lane("demo").querySelectorAll("p")].map((p) => p.textContent)).not.toContain("On CI");
   expect(onCiRows("demo").map((ci) => [...ci.children].map((cell) => cell.textContent))).toEqual([["#41", "DEMO-8", "Ticket 8", "checks running · 4m"]]);
@@ -268,16 +268,18 @@ test("a project whose only pull request is on CI keeps its Running lane, its hea
   expect(within(prs).queryAllByRole("group")).toEqual([]);
 });
 
-test("a live run's fixing line reads its pull request's number as a link and its round of the cap, and a run without a pull request has none", async () => {
-  const url = "https://github.com/example/demo/pull/2374";
-  const fixing = runOf(20, "DEMO-20", "Fix the slot", { phase: "working", round: 4, max_rounds: 6, pr_url: url });
-  const fresh = runOf(21, "DEMO-21", "Fresh run", { phase: "working", round: 0, pr_url: null });
-  await mount("#/", statusOf("/srv/dev/demo", [fixing, fresh], { workers: 2 }), statusOf("/srv/dev/writer", []));
+test("a reviewing run past its review cap names its round without the cap once, in its chip, and one within the cap names both", async () => {
+  const url = "https://github.com/example/demo/pull/2404";
+  const past = runOf(20, "DEMO-20", "Fix the slot", { phase: "reviewing", round: 6, max_rounds: 2, pr_url: url });
+  const fresh = runOf(21, "DEMO-21", "Fresh run", { phase: "reviewing", round: 0, max_rounds: 2, pr_url: null });
+  await mount("#/", statusOf("/srv/dev/demo", [past, fresh], { workers: 2 }), statusOf("/srv/dev/writer", []));
   const rowOf = (ticket: string) => within(lane("demo")).getByRole("link", { name: new RegExp(`^${ticket} `) }).closest("li")!;
-  expect(rowOf("DEMO-20").querySelector("[data-fixing]")!.textContent).toBe("fixing #2374 · round 4 of 6");
-  expect(within(rowOf("DEMO-20")).getByRole("link", { name: "#2374" }).getAttribute("href")).toBe(url);
+  expect(within(rowOf("DEMO-20")).getByText("reviewing · round 7")).toBeTruthy();
+  expect(rowOf("DEMO-20").querySelector("[data-fixing]")!.textContent).toBe("fixing #2404");
+  expect(within(rowOf("DEMO-20")).getByRole("link", { name: "#2404" }).getAttribute("href")).toBe(url);
+  expect(rowOf("DEMO-20").textContent).not.toContain(" of 2");
+  expect(within(rowOf("DEMO-21")).getByText("reviewing · round 1 of 2")).toBeTruthy();
   expect(rowOf("DEMO-21").querySelector("[data-fixing]")).toBeNull();
-  expect(rowOf("DEMO-21").textContent).not.toContain("fixing");
 });
 
 const witnessesOf = (keys: string[], elapsedMs: number) => ({ story: "DEMO-20", keys, started_ms: NOW - elapsedMs, elapsed_ms: elapsedMs });

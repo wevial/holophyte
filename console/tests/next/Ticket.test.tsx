@@ -225,7 +225,7 @@ test("the Runs table lists every attempt newest first with its outcome, rounds, 
   const section = screen.getByRole("region", { name: "Runs 2" });
   const rows = within(section).getAllByRole("row").slice(1);
   expect(rows.map((row) => within(row).getAllByRole("cell").map((cell) => cell.textContent).join(" · "))).toEqual([
-    "run 9 · reviewing · 2 of 3 · PR #524 · today 16:36",
+    "run 9 · reviewing · round 2 of 3 · PR #524 · today 16:36",
     "run 5 · failed · 1 · – · yesterday 15:10",
   ]);
   expect(within(section).getByRole("link", { name: "run 9" }).getAttribute("href")).toBe(`/?classic#run=9&daemon=${encodeURIComponent(DEMO)}`);

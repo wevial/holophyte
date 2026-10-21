@@ -9,10 +9,15 @@ export interface StageRun {
   pr_url?: string | null;
 }
 
-/** "round 2 of 3" while a run is reviewing, else null. */
+/** "round 2 of 3" within the cap; "round 3" past it or with no cap. */
+export function roundLabel(round: number, max?: number | null): string {
+  return max != null && round <= max ? `round ${round} of ${max}` : `round ${round}`;
+}
+
+/** The run's round while it is reviewing, else null. */
 export function reviewRound(run: StageRun): string | null {
   if (run.phase !== "reviewing" || run.round == null) return null;
-  return `round ${run.round}${run.max_rounds != null ? ` of ${run.max_rounds}` : ""}`;
+  return roundLabel(run.round, run.max_rounds);
 }
 
 /** "reviewing · round 2 of 3": a live run's stage, with its round while reviewing. */

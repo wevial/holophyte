@@ -430,6 +430,19 @@ def run_chains(conn, run_ids):
     return chains
 
 
+def round_caps(conn, run_ids):
+    run_ids = tuple(run_ids)
+    if not run_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT r.id, COALESCE(r.reviewRoundCap, (SELECT e.reviewRoundCap"
+        " FROM runs e WHERE e.ticketId = r.ticketId AND e.id < r.id"
+        " AND e.reviewRoundCap IS NOT NULL ORDER BY e.id DESC LIMIT 1))"
+        f" FROM runs r WHERE r.id IN ({', '.join('?' * len(run_ids))})",
+        run_ids).fetchall()
+    return dict(rows)
+
+
 @dataclass(frozen=True)
 class CriteriaEvent:
     runId: int

@@ -327,6 +327,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-331: `/history`'s
                                                     # open and recent runs.
                                                     "recent_runs",
+                                                    # HOLO-466: the review cap
+                                                    # a ticket's runs recorded.
+                                                    "round_caps",
                                                     # HOLO-109: a run's chain
                                                     # of its ticket's runs.
                                                     "run_chains",
