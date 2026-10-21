@@ -369,7 +369,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # `standing` and `withdrawn_events`.
                                  # HOLO-324: `chain_notes`, a run chain's
                                  # notes as `/runs/N` serves them.
-                                 (store.steer_notes, ["amendments",
+                                 # HOLO-471: `adopted_revision`, the later
+                                 # revision a live run's amendment adopts.
+                                 (store.steer_notes, ["adopted_revision",
+                                                      "amendments",
                                                       "babysat_interrupts",
                                                       "chain_notes",
                                                       "close", "consume",
