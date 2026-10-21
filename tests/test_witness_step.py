@@ -47,6 +47,7 @@ from tests.test_witness_runner import PASSES, PYTHON  # noqa: E402
 
 W1_FILE = "tests/test_w1.py"
 PARKED = holophyte.loop.pool.WORKER_PARKED
+QUIET = "[story]\nwitness_quiet_sec = 0\n"
 LEDGER = ("SELECT witnessKey, mainSha, verdict, verifier FROM witnessResults"
           " ORDER BY id")
 
@@ -161,7 +162,7 @@ class WitnessStepTests(LoopFixture):
             ("W1", self.tip(), "green", "loop")], out.getvalue())
 
     def test_the_pool_runs_a_pending_pass_before_it_returns(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         pool = self.schedule([(0, None)])
 
@@ -171,7 +172,7 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(pool.alive, [])
 
     def test_the_pool_spawns_its_workers_before_the_witness_child(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         first, second = self.file_ready(), self.file_ready()
         pool = self.schedule([(PARKED, lambda: self.take(first, second)),
@@ -182,7 +183,7 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(self.read(LEDGER), [])
 
     def test_a_ticket_filed_during_a_pass_gets_a_worker_and_no_second_pass(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         first = self.file_ready()
         filed = []
@@ -201,7 +202,7 @@ class WitnessStepTests(LoopFixture):
                          [witness_pid - 1, witness_pid, witness_pid + 1])
 
     def test_a_pass_that_recorded_nothing_is_retried_a_tick_later(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\ntick_sec = 60\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\ntick_sec = 60\n")
         self.approved_story("backlog")
         first = self.file_ready()
         filed, clock = [], [1000.0]
@@ -224,7 +225,7 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])
 
     def test_a_tip_merged_during_a_pass_gets_its_own_pass_before_return(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\ntick_sec = 60\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\ntick_sec = 60\n")
         self.approved_story("backlog")
         first = self.file_ready()
 

@@ -395,6 +395,22 @@ that finds the lock held -- a re-exec'd scheduler, a serial loop, a second
 loop -- prints `another witness pass holds the witness lock; skipping` and
 records nothing. The serial loop runs its witness step only once the queue
 is empty.
+The pool scheduler starts no witness child while main's tip commit is
+younger than `[story] witness_quiet_sec` (300 s by default) by its
+committer time, so a burst of merges gets one pass at its last commit; a
+git failure reading that time counts as quiet. While a pass waits on the
+window the scheduler keeps ticking and does not return. When a triggering
+commit lands while a story's set runs in a witness child -- a merged child
+of the story or a change under its `## Witness paths` between the commit
+the pass runs at and main's tip -- the scheduler sends the child `SIGTERM`.
+The child kills the witness command's process group and exits, and the set
+runs again from the start on the newest tip once that tip is quiet. A story
+is restarted at most twice before it next completes a pass; after that a
+further trigger lets the run finish at its own commit, and the next pass
+runs at the newest tip. A pass writes all of its verdicts in one store
+transaction once its set has finished, so a cancelled run records nothing.
+The serial loop and `--witness-pass` get that single write but no window
+and no cancel.
 
 ## State machines
 

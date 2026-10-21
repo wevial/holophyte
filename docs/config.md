@@ -1737,6 +1737,7 @@ A story's witness runs and how many of its children run at once.
 | `max_parallel` | Default: `2` | Positive integer; the most children of the open story holding a live run at once. The claim refuses another child, naming the cap, until one ends. |
 | `dependency_ready` | Default: `merged` | When a child's approved dependencies count as ready. `merged`, the only value, waits until each one has merged. |
 | `witness_nightly_hour` | Default: `3` | Hour from 0 to 23, host local time. A loop pass runs an open story's whole witness set when its last real run is older than the most recent such hour, even when no child merged and none of its `## Witness paths` changed since; otherwise it carries the last verdicts. |
+| `witness_quiet_sec` | Default: `300` seconds | Whole number of seconds, zero or more. The pool scheduler starts no witness child while main's tip commit is younger than this, by its committer time; `0` starts one at once. |
 
 ```toml
 [story]
@@ -1744,11 +1745,13 @@ witness_sec = 600
 max_parallel = 2
 dependency_ready = "merged"
 witness_nightly_hour = 3
+witness_quiet_sec = 300
 ```
 
 A `witness_sec` or `max_parallel` that is not a positive integer, a
-`dependency_ready` other than `merged`, or a `witness_nightly_hour` that is
-not a whole hour from 0 to 23, is a startup error naming the key.
+`dependency_ready` other than `merged`, a `witness_nightly_hour` that is
+not a whole hour from 0 to 23, or a `witness_quiet_sec` that is not a whole
+number of seconds, zero or more, is a startup error naming the key.
 
 ## `[review]`
 

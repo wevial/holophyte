@@ -542,7 +542,7 @@ def _pass_key(run_id, cmd, cwd, timeout):
                                VERIFY_TIMEOUT if timeout is None else timeout)
 
 
-def _verify_command(project, command, cwd, timeout):
+def _verify_command(project, command, cwd, timeout, on_start=None):
     from holophyte.isolation import launcher
 
     route = launcher.route_for(project) if project is not None else launcher.Route()
@@ -550,7 +550,7 @@ def _verify_command(project, command, cwd, timeout):
     env = launcher.environment(project) if project is not None else None
     carry = carry_directories(project) if project is not None else None
     return launcher.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped,
-                            carry=carry)
+                            carry=carry, on_start=on_start)
 
 
 def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
