@@ -5,11 +5,13 @@ import fcntl
 import hashlib
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 
+import store
 from holophyte import deadline, redact
 from holophyte.admission import held_line
 from holophyte.config.config_tables import merge_config, story_config
@@ -23,6 +25,11 @@ from holophyte.story.story_close import (
     rerun_owed,
     settle_owed,
     settle_story,
+)
+from holophyte.story.witness_running import (
+    clear_restarts,
+    clear_running,
+    mark_running,
 )
 from holophyte.story.witness_tree import clean_args, warm_tree
 from holophyte.story.witness_trigger import carry, set_due
@@ -48,6 +55,49 @@ Scratch = collections.namedtuple(
                 "warm"))
 SPENT = "[witness] not run: the witness budget is spent\n"
 TIP_FAILURES = (OSError, RuntimeError, subprocess.SubprocessError)
+Verdict = collections.namedtuple(
+    "Verdict", ("witnessKey", "verdict", "redKind", "fileHash", "evidencePath",
+                "seconds"))
+
+
+class _Command:
+    def __init__(self):
+        self.proc = None
+        self.held = 0
+        self.cancelled = None
+
+    @contextlib.contextmanager
+    def hold(self):
+        self.proc = None
+        self.held += 1
+        try:
+            yield
+        finally:
+            self.held -= 1
+            self.unwind()
+
+    def arm(self, proc):
+        self.proc = proc
+        self.unwind()
+
+    def cancel(self, signum):
+        self.cancelled = signum
+        if not self.held or self._running():
+            self.unwind()
+
+    def _running(self):
+        return self.proc is not None and self.proc.returncode is None
+
+    def unwind(self):
+        if self.cancelled is None:
+            return
+        if self._running():
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(self.proc.pid, signal.SIGKILL)
+        raise SystemExit(128 + self.cancelled)
+
+
+COMMAND = _Command()
 
 
 def main_tip(target):
@@ -107,30 +157,45 @@ def _pytest_message(rest):
 
 
 def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
-                  again=None):
+                  again=None, recorded=None):
     witnesses = story(conn, story_id).witnesses
-    (identifier,) = conn.execute(
-        "SELECT linearIdentifier FROM tickets WHERE id = ?",
-        (story_id,)).fetchone()
+    identifier = _identifier(conn, story_id)
     logs = Path(target.holo_dir) / "witness" / identifier / sha
     stamp = f"{verifier}-{time.time_ns()}"
     deadline = time.monotonic() + story_config(target).witness_sec
     secrets = redact.known_secrets(target.config())
     with contextlib.ExitStack() as stack:
-        tree, warm, failed = _tree(stack, target, sha, verifier, deadline)
+        with COMMAND.hold():
+            tree, warm, failed = _tree(stack, target, sha, verifier, deadline)
         copied, found, failed = (
             ([], {}, failed) if failed
             else _checkout(tree, witnesses, copy_files))
         run = Scratch(target, tree, sha, copied, deadline, secrets, warm)
-        judge = _Judge(run, conn, story_id, verifier, found, failed)
-        ids = [judge.record(witness, logs / witness.key / f"{stamp}.log")
-               for witness in witnesses]
-        rerun = again(_rows(conn, story_id, ids)) if again else ()
-        ids += [judge.record(witness,
-                             logs / witness.key / f"{stamp}-again.log")
-                for witness in witnesses
-                if witness.key in rerun and time.monotonic() < deadline]
+        judge = _Judge(run, found, failed)
+        verdicts = [judge.record(witness, logs / witness.key / f"{stamp}.log")
+                    for witness in witnesses]
+        rerun = again(verdicts) if again else ()
+        verdicts += [judge.record(witness,
+                                  logs / witness.key / f"{stamp}-again.log")
+                     for witness in witnesses
+                     if witness.key in rerun and time.monotonic() < deadline]
+    with COMMAND.hold():
+        with store.transaction(conn):
+            ids = [record_witness_result(
+                conn, story_id, verdict.witnessKey, sha, verdict.verdict,
+                verifier, red_kind=verdict.redKind, file_hash=verdict.fileHash,
+                evidence_path=verdict.evidencePath, seconds=verdict.seconds)
+                for verdict in verdicts]
+        if recorded:
+            recorded()
     return _rows(conn, story_id, ids)
+
+
+def _identifier(conn, story_id):
+    (identifier,) = conn.execute(
+        "SELECT linearIdentifier FROM tickets WHERE id = ?",
+        (story_id,)).fetchone()
+    return identifier
 
 
 def _tree(stack, target, sha, verifier, deadline):
@@ -158,9 +223,8 @@ def _rows(conn, story_id, ids):
 
 
 class _Judge:
-    def __init__(self, run, conn, story_id, verifier, found, failed):
-        self.run, self.conn, self.story_id = run, conn, story_id
-        self.verifier, self.found, self.failed = verifier, found, failed
+    def __init__(self, run, found, failed):
+        self.run, self.found, self.failed = run, found, failed
         self.ran = False
 
     def record(self, witness, log):
@@ -172,19 +236,19 @@ class _Judge:
             _write_log(log, self.failed or _refusal(witness), self.run.secrets)
             verdict = ("error", None, None, 0.0)
         else:
-            verdict = _judge(self.run, witness, state, log, self.ran)
+            with COMMAND.hold():
+                verdict = _judge(self.run, witness, state, log, self.ran)
             self.ran = True
         verdict_name, kind, file_hash, seconds = verdict
-        return record_witness_result(
-            self.conn, self.story_id, witness.key, self.run.sha, verdict_name,
-            self.verifier, red_kind=kind, file_hash=file_hash,
-            evidence_path=str(log) if log.exists() else None, seconds=seconds)
+        return Verdict(witness.key, verdict_name, kind, file_hash,
+                       str(log) if log.exists() else None, seconds)
 
 
-def witness_pass(target, conn, story_id, verifier):
+def witness_pass(target, conn, story_id, verifier, sha=None, recorded=None):
     if pass_refusal(conn, story_id) is not None:
         return []
-    sha = main_tip(target)
+    if sha is None:
+        sha = main_tip(target)
     keys = {witness.key for witness in story(conn, story_id).witnesses}
     at_tip = {row.witnessKey for row in main_ledger(conn, story_id, sha)}
     owed = rerun_owed(conn, story_id, sha)
@@ -202,7 +266,8 @@ def witness_pass(target, conn, story_id, verifier):
                 if row.verdict == "red" and row.witnessKey in greens}
 
     if due:
-        rows = run_witnesses(target, conn, story_id, sha, verifier, again=again)
+        rows = run_witnesses(target, conn, story_id, sha, verifier, again=again,
+                             recorded=recorded)
     else:
         rows = _rows(conn, story_id, carry(conn, story_id, sha, verifier))
     _note_changes(conn, story_id, sha, before, rows)
@@ -233,7 +298,7 @@ def _pending(target, conn, found, sha):
             or set_due(target, conn, found.ticketId, sha))
 
 
-def witness_step(target, conn, project_id):
+def witness_step(target, conn, project_id, step=False):
     with witness_lock(target) as taken:
         if not taken:
             print("[holo2] another witness pass holds the witness lock;"
@@ -241,7 +306,16 @@ def witness_step(target, conn, project_id):
             return
         try:
             for story_id in pass_pending(target, conn, project_id):
-                rows = witness_pass(target, conn, story_id, "loop")
+                sha = main_tip(target)
+                mark_running(target, _identifier(conn, story_id),
+                             [witness.key
+                              for witness in story(conn, story_id).witnesses],
+                             story_id, sha, step)
+                rows = witness_pass(
+                    target, conn, story_id, "loop", sha=sha,
+                    recorded=lambda: clear_restarts(target, story_id))
+                clear_running(target)
+                clear_restarts(target, story_id)
                 if rows:
                     print(f"[holo2] witness pass at {rows[0].mainSha}: "
                           + ", ".join(f"{row.witnessKey} {row.verdict}"
@@ -249,6 +323,8 @@ def witness_step(target, conn, project_id):
         except TIP_FAILURES as error:
             print(f"[holo2] the witness pass could not run ({error}); the next"
                   " pass tries again")
+        finally:
+            clear_running(target)
 
 
 def witness_lock_path(target):
@@ -420,7 +496,7 @@ def _run_one(run, witness, file_hash, log):
         return "error", None, file_hash, time.monotonic() - started
     try:
         code, output = _verify_command(run.target, NO_COLOR + witness.command,
-                                       run.tree, remaining)
+                                       run.tree, remaining, on_start=COMMAND.arm)
     except subprocess.TimeoutExpired as expired:
         _write_log(log, f"{transcript}{expired.output or ''}\n[witness] timed"
                         f" out after {remaining:.0f}s\n", secrets)

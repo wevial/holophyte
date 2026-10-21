@@ -22,8 +22,30 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>, ro
   run: { ...servedRun.run, id, ticket, title: `${ticket} title`, host: "writer-1", started_ms: STARTED, ...facts },
 });
 
+const fixing = (id: number, after: RunDetail["events"]): RunDetail => ({
+  ...detail(id, `DEMO-${id}`, { phase: "merge_gate" }),
+  events: [
+    { at: STARTED, kind: "babysit_step", summary: "checks" },
+    { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
+    { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
+    ...after,
+  ],
+});
+
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { title: "Count the rounds", phase: "reviewing", agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE }, [changes]),
+  13: fixing(13, []),
+  15: fixing(15, [{ at: STARTED + 3, kind: "babysit_step", summary: "checks" }]),
+  16: fixing(16, [
+    { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
+    { at: STARTED + 4, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
+    { at: STARTED + 5, kind: "babysit_step", summary: "fix" },
+  ]),
+  17: fixing(17, [
+    { at: STARTED + 3, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
+    { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
+    { at: STARTED + 4, kind: "babysit_step", summary: "fix" },
+  ]),
   14: detail(14, "DEMO-14", { title: "Read a `+++` TOML header" }),
   40: detail(40, "DEMO-40", {
     phase: "failed",
@@ -126,15 +148,43 @@ test("a failed run waiting in Needs you gives its failure and reason, and a merg
   expect(stage()).toBe("Merged · 5acc138");
 });
 
-test("a run in its merge phase reads as merging on the Merge stage", async () => {
+test("a run in its merge phase or its merge gate with no check fix round reads as merging on the Merge stage", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merging" }));
+  expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
+  expect(stage()).toBe("Merge · 1 loop back");
+  cleanup();
+  await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merge_gate" }));
   expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
   expect(stage()).toBe("Merge · 1 loop back");
 });
 
+test("a run in its merge gate during a check fix round says it is fixing CI and names the failing check and round", async () => {
+  await mount("#/runs/demo/13", runFetch({ ...liveRow, id: 13, ticket: "DEMO-13", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Fixing CI: vitest failing (check fix round 1 of 2).");
+  expect(stage()).toStartWith("Merge · fixing CI");
+});
+
+test("a merge gate run whose babysitter moved on from its fix step to checks reads as merging again", async () => {
+  await mount("#/runs/demo/15", runFetch({ ...liveRow, id: 15, ticket: "DEMO-15", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Merging.");
+  expect(stage()).toStartWith("Merge");
+  expect(stage()).not.toContain("fixing CI");
+});
+
+test("a later check fix round on two checks names both and its own round, not the earlier one", async () => {
+  await mount("#/runs/demo/16", runFetch({ ...liveRow, id: 16, ticket: "DEMO-16", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Fixing CI: vitest, lint failing (check fix round 2 of 2).");
+});
+
+test("a check fix round logged before the newest checks step at the same instant is not taken as the fix step's round", async () => {
+  await mount("#/runs/demo/17", runFetch({ ...liveRow, id: 17, ticket: "DEMO-17", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Merging.");
+  expect(stage()).not.toContain("fixing CI");
+});
+
 test("a run past its heartbeat threshold says how long it has been silent and counts its criteria before its daemon raises it", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, heartbeat_age_ms: 15 * MINUTE }));
-  expect(verdict()).toBe("No heartbeat for 15m. It is up in Needs you. None of one criterion is met yet.");
+  expect(verdict()).toBe("No heartbeat for 15m. It is up in Waiting on you. None of one criterion is met yet.");
   expect(stage()).toBe("Stale · no beat 15m");
 });
 

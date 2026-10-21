@@ -1,6 +1,7 @@
 """Whether a loop pass runs a story's witness set, and the verdicts it carries."""
 import datetime
 import subprocess
+from time import time
 
 from holophyte.config.config_tables import story_config
 from holophyte.story.story_close import GIT_TIMEOUT, main_ledger
@@ -30,12 +31,28 @@ def set_due(target, conn, story_id, sha):
             story_config(target).witness_nightly_hour):
         return True
     try:
-        return (_paths_changed(target.path, last.mainSha, sha,
-                               found.witnessPaths)
-                or _child_merged(target.path, conn, story_id, last.mainSha,
-                                 sha))
+        return triggered(target, conn, story_id, last.mainSha, sha)
     except _GitFailed:
         return True
+
+
+def triggered(target, conn, story_id, since, sha):
+    return (_paths_changed(target.path, since, sha,
+                           story(conn, story_id).witnessPaths)
+            or _child_merged(target.path, conn, story_id, since, sha))
+
+
+def quiet(target, sha):
+    window = story_config(target).witness_quiet_sec
+    if not window:
+        return True
+    try:
+        code, output = _git(target.path, "log", "-1", "--format=%ct", sha)
+    except _GitFailed:
+        return True
+    if code or not output.strip().isdigit():
+        return True
+    return time() - int(output) >= window
 
 
 def _last_nightly_ms(hour):

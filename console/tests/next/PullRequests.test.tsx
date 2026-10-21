@@ -110,6 +110,7 @@ const waits = () => rows().map((row) => [
   row.querySelector("[data-pr-since]")?.textContent ?? "",
 ]);
 const facts = (row: Element) => [...row.querySelectorAll("[data-fact]")].map((fact) => fact.textContent);
+const onCiRows = () => [...document.querySelectorAll<HTMLElement>("[data-on-ci]")];
 const rowButton = (pr: number) => within(section()).getByRole("button", { name: new RegExp(`^PR #${pr}, `) });
 
 async function openRow(pr: number) {
@@ -248,7 +249,7 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
   await markReady();
   expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
   expect(waits()).toEqual([["Your review", "draft · 1h"]]);
-  expect(screen.queryByRole("list", { name: /on CI$/ })).toBeNull();
+  expect(onCiRows()).toEqual([]);
 });
 
 test("an ok Mark ready moves #45 to its project's On CI list at once, and the read after the post settles it as queued", async () => {
@@ -268,9 +269,8 @@ test("an ok Mark ready moves #45 to its project's On CI list at once, and the re
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(readsAfterPost).toBe(1);
   expect(waits()).toEqual([]);
-  const onCi = screen.getByRole("list", { name: "demo on CI" });
-  expect(within(onCi).getAllByRole("listitem").map((item) => item.textContent)).toEqual([expect.stringContaining("checks running")]);
-  expect(onCi.textContent).toContain("#45");
+  expect(onCiRows().map((row) => row.textContent)).toEqual([expect.stringContaining("checks running")]);
+  expect(onCiRows()[0]!.textContent).toContain("#45");
 
   await act(async () => {
     answer();
@@ -278,7 +278,7 @@ test("an ok Mark ready moves #45 to its project's On CI list at once, and the re
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(readsAfterPost).toBe(1);
-  expect(screen.queryByRole("list", { name: "demo on CI" })).toBeNull();
+  expect(onCiRows()).toEqual([]);
   expect(within(screen.getByRole("group", { name: "demo" })).getByRole("button", { name: "1 queued" })).toBeTruthy();
 });
 

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import fcntl
 import io
+import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -37,6 +39,7 @@ from holophyte.host.supervisor import (  # noqa: E402
 )
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.witness import witness_lock_path, witness_step  # noqa: E402
+from holophyte.story.witness_running import mark_running  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
@@ -44,6 +47,7 @@ from tests.test_witness_runner import PASSES, PYTHON  # noqa: E402
 
 W1_FILE = "tests/test_w1.py"
 PARKED = holophyte.loop.pool.WORKER_PARKED
+QUIET = "[story]\nwitness_quiet_sec = 0\n"
 LEDGER = ("SELECT witnessKey, mainSha, verdict, verifier FROM witnessResults"
           " ORDER BY id")
 
@@ -66,21 +70,26 @@ class WitnessStepTests(LoopFixture):
         self.project_id = store.tickets.ensure_project(
             self.conn, self.board.team, self.project.path)
 
-    def approved_story(self, child_column):
+    def approved_story(self, child_column,
+                       command=f"{PYTHON} -m unittest tests.test_w1"):
         """An approved story whose one child, in `child_column`, completes
-        W1 by landing `W1_FILE`; the parent's ticket id."""
+        W1 by landing `W1_FILE`, W1 running `command`; the parent's ticket
+        id."""
         parent, child = (
             self.ticket_id(store.board.file_ticket(
                 self.conn, self.project_id, "NAT", VALID_BODY, column=column))
             for column in ("backlog", child_column))
         file_story(self.conn, parent, [{
             "key": "W1", "criterion": "W1 holds", "file": W1_FILE,
-            "command": f"{PYTHON} -m unittest tests.test_w1",
+            "command": command,
             "source": PASSES}], [(child, "completes", ["W1"])])
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
         approve_story(self.conn, parent, revision, "operator", "go")
         return parent
+
+    def record(self):
+        return Path(self.project.holo_dir) / "witness-running.json"
 
     def ticket_id(self, identifier):
         return self.conn.execute(
@@ -153,7 +162,7 @@ class WitnessStepTests(LoopFixture):
             ("W1", self.tip(), "green", "loop")], out.getvalue())
 
     def test_the_pool_runs_a_pending_pass_before_it_returns(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         pool = self.schedule([(0, None)])
 
@@ -163,7 +172,7 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(pool.alive, [])
 
     def test_the_pool_spawns_its_workers_before_the_witness_child(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         first, second = self.file_ready(), self.file_ready()
         pool = self.schedule([(PARKED, lambda: self.take(first, second)),
@@ -174,7 +183,7 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(self.read(LEDGER), [])
 
     def test_a_ticket_filed_during_a_pass_gets_a_worker_and_no_second_pass(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\n")
         self.approved_story("backlog")
         first = self.file_ready()
         filed = []
@@ -193,7 +202,7 @@ class WitnessStepTests(LoopFixture):
                          [witness_pid - 1, witness_pid, witness_pid + 1])
 
     def test_a_pass_that_recorded_nothing_is_retried_a_tick_later(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\ntick_sec = 60\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\ntick_sec = 60\n")
         self.approved_story("backlog")
         first = self.file_ready()
         filed, clock = [], [1000.0]
@@ -216,7 +225,7 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(self.read(LEDGER), [("W1", self.base, "absent", "loop")])
 
     def test_a_tip_merged_during_a_pass_gets_its_own_pass_before_return(self):
-        self.use(NATIVE + "[loop]\nworkers = 2\ntick_sec = 60\n")
+        self.use(NATIVE + QUIET + "[loop]\nworkers = 2\ntick_sec = 60\n")
         self.approved_story("backlog")
         first = self.file_ready()
 
@@ -273,3 +282,45 @@ class WitnessStepTests(LoopFixture):
         self.assertEqual(self.sweep(), [])
         self.step()
         self.assertEqual(self.read(LEDGER), [])
+
+    def test_the_step_names_the_running_set_and_removes_it_after(self):
+        copy = Path(self.target).parent / "seen.json"
+        parent = self.approved_story("backlog", command=(
+            f"cp {shlex.quote(str(self.record()))} {shlex.quote(str(copy))}"))
+        (self.target / W1_FILE).write_text(PASSES)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "lands w1")
+        (identifier,) = self.conn.execute(
+            "SELECT linearIdentifier FROM tickets WHERE id = ?",
+            (parent,)).fetchone()
+        before = int(time.time() * 1000)
+        out = self.step()
+        after = int(time.time() * 1000)
+
+        seen = json.loads(copy.read_text())
+        self.assertEqual((seen["story"], seen["keys"], seen["pid"]),
+                         (identifier, ["W1"], os.getpid()), out)
+        self.assertTrue(before <= seen["started_ms"] <= after, seen)
+        self.assertFalse(self.record().exists())
+
+    def test_a_pass_that_raises_leaves_no_running_record(self):
+        self.approved_story("backlog")
+        with patch("holophyte.story.witness.witness_pass",
+                   side_effect=RuntimeError("no tip")):
+            out = self.step()
+
+        self.assertIn("the witness pass could not run (no tip)", out)
+        self.assertFalse(self.record().exists())
+
+    def test_a_step_that_finds_the_lock_held_leaves_the_record_alone(self):
+        self.approved_story("backlog")
+        mark_running(self.project, "NAT-9", ["W2", "W3"])
+        written = self.record().read_text()
+        path = witness_lock_path(self.project)
+        with open(path, "a") as holder:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            out = self.step()
+
+        self.assertIn("another witness pass holds the witness lock; skipping",
+                      out)
+        self.assertEqual(self.record().read_text(), written)

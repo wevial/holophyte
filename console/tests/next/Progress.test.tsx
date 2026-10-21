@@ -18,7 +18,7 @@ const at = (hour: number, minute: number) => new Date(2026, 9, 15, hour, minute)
 
 const finding = { ...servedRound!.findings[0]!, severity: "p1", message: "the dry run writes a row", path: "holophyte/serve/server.py", line: 142 };
 const round1 = { ...servedRound!, round: 1, started_ms: at(16, 44), ended_ms: at(16, 45), verdict: "changes_requested", findings: [finding] };
-const note = { id: 1, author: "operator", run: 12, consumed_by: null, consumed_ms: null, interrupt: false, withdrawn: false };
+const note = { id: 1, author: "maintainer", run: 12, consumed_by: null, consumed_ms: null, interrupt: false, withdrawn: false };
 
 const liveDetail: RunDetail = {
   ...servedRun,
@@ -110,6 +110,47 @@ test("steers and asks sit in time order among the events, each with what came of
     "16:45 Back to implement",
     "16:47 You asked: does the dry run print anything? | → answered: One line per lease.",
     "16:50 You hinted: the test lives in test_sweep | → waiting until the agent reads it",
+  ]);
+});
+
+test("a note an earlier run of the chain read is not in this run's Progress, which opens on the run starting", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [
+    { ...note, id: 5, run: 11, kind: "amendment", note: "keep the sweep idempotent", at: at(16, 0), consumed_by: 11, consumed_ms: at(16, 5) },
+  ];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(section().textContent).not.toContain("keep the sweep idempotent");
+  expect(line(items()[0]!).text).toBe("Run started · implementing");
+});
+
+test("a note no run has read yet, made before this run started, is listed as waiting", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [{ ...note, id: 6, kind: "hint", note: "the sweep runs hourly", at: at(16, 30) }];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(line(items()[0]!)).toEqual({
+    time: "16:30", kind: "steer", text: "You hinted: the sweep runs hourly", sub: ["→ waiting until the agent reads it"],
+  });
+});
+
+test("a steer line names the operator for a note the maintainer did not write, and You for the maintainer's own", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [
+    { ...note, author: "operator", kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 40) },
+    { ...note, id: 2, kind: "hint", note: "the test lives in test_sweep", at: at(16, 50) },
+  ];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
+    "operator steered: don't add a new flag; reuse --act",
+    "You hinted: the test lives in test_sweep",
+  ]);
+});
+
+test("a steer line reads operator, not the login name, for a note recorded under a seat's login", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [
+    { ...note, author: "seat-login", kind: "hint", note: "the test lives in test_sweep", at: at(16, 40) },
+    { ...note, id: 2, kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 50) },
+  ];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
+    "operator hinted: the test lives in test_sweep",
+    "You steered: don't add a new flag; reuse --act",
   ]);
 });
 

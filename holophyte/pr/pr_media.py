@@ -94,6 +94,16 @@ def _local_spec(cfg, task_id):
     return PurePosixPath(cfg.ui_capture_dir, f"{task_id}.capture.ts")
 
 
+def _wants_capture(cfg, wt, task_id, ui_change, evidence_states):
+    if "\n".join(evidence_states).strip():
+        return True
+    declared = (ui_change or "").strip().lower()
+    if declared:
+        return declared != "none"
+    return (not cfg.ui_capture_local
+            or Path(wt, _local_spec(cfg, task_id)).is_file())
+
+
 def capture_spec_digest(project, wt, task_id, evidence_states=()):
     cfg = merge_config(project)
     if not cfg.ui_capture_local:
@@ -596,10 +606,10 @@ def _execution_fingerprint(project):
 
 
 def prepare(project, wt, task_id, record_note=None, evidence_states=(),
-            evidence_files=()):
+            evidence_files=(), ui_change=None):
     """Keep the receipt in the worktree's git directory, outside candidate files."""
     return _prepare(project, wt, task_id, record_note, evidence_states,
-                    evidence_files)[0]
+                    evidence_files, ui_change)[0]
 
 
 def _stamp(section, sha):
@@ -624,9 +634,11 @@ def _receipt(project, wt, task_id, evidence_states, evidence_files=()):
     return git_dir / f'pr-media-{key}.txt', revisions.split()[0]
 
 
-def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files):
+def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files,
+             ui_change=None):
     cfg = merge_config(project)
-    if not cfg.ui_paths or not matches(wt, cfg.ui_paths):
+    if (not cfg.ui_paths or not matches(wt, cfg.ui_paths)
+            or not _wants_capture(cfg, wt, task_id, ui_change, evidence_states)):
         return '', ''
     receipt, head = _receipt(project, wt, task_id, evidence_states, evidence_files)
     note = receipt.with_suffix('.note')
@@ -658,7 +670,11 @@ def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files)
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
 
 
-def capture_failure(project, wt, task_id, evidence_states, evidence_files=()):
+def capture_failure(project, wt, task_id, evidence_states, evidence_files=(),
+                    ui_change=None):
+    if not _wants_capture(merge_config(project), wt, task_id, ui_change,
+                          evidence_states):
+        return None
     receipt = _receipt(project, wt, task_id, evidence_states, evidence_files)[0]
     failed, kind, log = (receipt.with_suffix(suffix)
                          for suffix in ('.failed', '.kind', '.log'))
@@ -689,9 +705,10 @@ def _seen(project, wt, task_id, evidence, evidence_states, evidence_files):
 
 
 def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=(),
-            evidence_files=()):
+            evidence_files=(), ui_change=None):
     cfg = merge_config(project)
-    if not cfg.ui_paths:
+    if (not cfg.ui_paths
+            or not _wants_capture(cfg, wt, task_id, ui_change, evidence_states)):
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
@@ -700,7 +717,7 @@ def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()
         unquoted = QUOTED.sub('', evidence)
         return seen or (unquoted if unquoted != evidence else None)
     section, failure = _prepare(project, wt, task_id, record_note, evidence_states,
-                                evidence_files)
+                                evidence_files, ui_change)
     if not section:
         return None
     if not failure or not evidence:
