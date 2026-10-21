@@ -203,6 +203,8 @@ test("with no run anywhere, a project with a queued ticket keeps its lane and an
   await mount("#/", statusOf("/srv/dev/demo", [], { queued: [queuedOf("DEMO-2")] }), statusOf("/srv/dev/writer", []));
   expect(lanes()).toEqual(["demo"]);
   expect(queueButton("demo").textContent).toBe("1 queued");
+  expect(head("demo")).toContain("· Nothing running.");
+  expect(within(lane("demo")).queryByRole("list", { name: "demo running" })).toBeNull();
 });
 
 test("a lane is drawn only for a project with a run or a queued ticket, while the summary still counts every worker", async () => {
@@ -238,23 +240,30 @@ test("a backticked span in a running row's title shows as inline code, and its a
 });
 
 const onCiRows = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-on-ci]")];
+const laneItems = (name: string) =>
+  within(lane(name)).getAllByRole("list").map((list) =>
+    [...list.children].map((item) => (item.hasAttribute("data-on-ci") ? "on-ci" : item.querySelector("a[data-row]") ? "run" : item.textContent)),
+  );
 
-test("a run fixing a pull request names it under its title, and the lane lists its pull requests on CI without counting them busy", async () => {
+test("a run fixing a pull request names it under its title, and the lane lists its pull requests on CI in its one list under the runs without counting them busy", async () => {
   const fixing = runOf(20, "DEMO-20", "Fix the slot", { phase: "working", round: 1, max_rounds: 3, pr_url: "https://github.com/example/demo/pull/77" });
   await mountAll("#/", [statusOf("/srv/dev/demo", [fixing], { workers: 2 }), statusOf("/srv/dev/writer", [])], {}, [draftPark, readyPark, ciPark]);
   const row = within(lane("demo")).getByRole("link", { name: /^DEMO-20 / }).closest("li")!;
   expect(row.querySelector("[data-fixing]")!.textContent).toBe("fixing #77 · round 1 of 3");
-  expect(within(lane("demo")).getByRole("list", { name: "demo on CI" }).parentElement!.textContent).toStartWith("On CI");
+  expect(laneItems("demo")).toEqual([["run", "On CI", "on-ci"]]);
+  expect([...lane("demo").querySelectorAll("p")].map((p) => p.textContent)).not.toContain("On CI");
   expect(onCiRows("demo").map((ci) => [...ci.children].map((cell) => cell.textContent))).toEqual([["#41", "DEMO-8", "Ticket 8", "checks running · 4m"]]);
   expect(head("demo")).toContain("1 of 2 workers busy");
   expect(running().querySelector("header")!.textContent).toContain("1 of 3 workers busy");
 });
 
-test("a project whose only pull request is on CI keeps its Running lane with nothing busy and draws no Pull requests lane", async () => {
+test("a project whose only pull request is on CI keeps its Running lane, its head counting it on CI with nothing busy, and draws no Pull requests lane", async () => {
   await mountAll("#/", [statusOf("/srv/dev/demo", [], { workers: 2 }), statusOf("/srv/dev/writer", [])], {}, [ciPark]);
   expect(lanes()).toEqual(["demo"]);
   expect(head("demo")).toContain("0 of 2 workers busy");
-  expect(onCiRows("demo")).toHaveLength(1);
+  expect(head("demo")).toContain("· 1 on CI");
+  expect(head("demo")).not.toContain("Nothing running.");
+  expect(laneItems("demo")).toEqual([["On CI", "on-ci"]]);
   const prs = screen.getByRole("region", { name: "Pull requests" });
   expect(within(prs).queryAllByRole("group")).toEqual([]);
 });
