@@ -334,7 +334,9 @@ Its reply quotes the request; there is no review thread to resolve.
 Unmentioned conversation comments are ignored.
 A bot review's "Outside diff range comments" are treated as bot threads; each
 is answered with one pull request comment carrying a fingerprint marker, so a
-later pass does not act on it again.
+later pass does not act on it again. An outside-diff heading whose items
+cannot all be split becomes one item holding the section's text, which still
+blocks the ready park.
 
 A merge under human approval requires an explicit approve recorded on the
 run: `--approve KO-n` records `approvedAt` and `approvedBy`. A `--babysit`
