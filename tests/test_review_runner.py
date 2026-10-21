@@ -270,6 +270,11 @@ class ReviewerBoundaryTests(unittest.TestCase):
         with self.assertRaises(review_runner.ReviewBoundaryError):
             review_runner.parse_codex_output(without_command)
 
+    def test_bolded_final_verdict_line_reads_as_its_verdict(self):
+        reply = "CRITERION 1: met — test_a.py::A::test_one\n\n**VERDICT: PASS**"
+        self.assertEqual(review_runner.terminal_verdict(
+            reply, review_runner.ADJUDICATION_VERDICTS), "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

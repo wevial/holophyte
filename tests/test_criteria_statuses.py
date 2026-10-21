@@ -66,6 +66,24 @@ class CriteriaStatusesTests(WorktreeCase):
                         first["note"])
 
 
+class DecoratedCriterionLineTests(WorktreeCase):
+    def test_bolded_criterion_lines_read_as_the_bare_lines(self):
+        (self.root / "test_a.py").write_text(
+            "import unittest\n\n\nclass A(unittest.TestCase):\n"
+            "    def test_one(self):\n        pass\n")
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-qm", "witness"], cwd=self.root,
+                       check=True)
+        reply = ("**CRITERION C1: met** — `test_a.py::A::test_one`\n"
+                 "**CRITERION C2: not met** — the row names loop\n\n"
+                 "The row change is the one gap.\n\n"
+                 "VERDICT: PASS")
+        self.assertEqual(criteria_statuses(reply, CRITERIA, self.root), [
+            {"n": 1, "status": "met", "note": "`test_a.py::A::test_one`"},
+            {"n": 2, "status": "not_met", "note": "the row names loop"},
+            {"n": 3, "status": "unwitnessed", "note": UNWITNESSED_NOTE}])
+
+
 class CriteriaFindingsAgreeTests(WorktreeCase):
     def assert_findings_are_the_unmet_statuses(self):
         statuses = criteria_statuses(REPLY, CRITERIA, self.root)
