@@ -133,6 +133,7 @@ class WarmTree:
             if line.startswith("worktree "))
 
     def _create(self, sha, deadline):
+        self.clear()
         self._discard()
         failed = _git(["worktree", "add", "--detach", str(self.path), sha],
                       self.target.path, deadline)

@@ -82,6 +82,22 @@ class WarmTreeReuseTests(WarmTreeFixture, unittest.TestCase):
         self.assertEqual(self.loop_pass(target, d), green)
         self.assertEqual(self.count(self.table_count), 3)
 
+    def test_a_recreated_warm_tree_runs_a_table_step_whose_keep_path_is_tracked(self):
+        commit_file(self.repo, ".gitignore", "deps/marker\n", "ignore")
+        commit_file(self.repo, "deps/.gitkeep", "", "deps")
+        commit_file(self.repo, "deps.lock", "v1\n", "lock")
+        target = self.project(setup_config(self.deps_step()))
+        self.marker_story()
+        a = commit_file(self.repo, "notes.txt", "a\n", "a")
+        self.loop_pass(target, a)
+
+        shutil.rmtree(self.warm(target))
+        b = commit_file(self.repo, "notes.txt", "b\n", "b")
+
+        self.assertEqual(self.loop_pass(target, b),
+                         [("W1", "green"), ("W2", "green")])
+        self.assertEqual(self.count(self.table_count), 2)
+
     def test_a_rerun_table_step_reruns_every_later_table_step(self):
         commit_file(self.repo, "first.lock", "v1\n", "first")
         commit_file(self.repo, "second.lock", "v1\n", "second")
