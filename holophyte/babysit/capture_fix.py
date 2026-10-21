@@ -82,7 +82,8 @@ def fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
     parsed = ticket_template.parse(ticket)
     with heartbeat_while(conn, run_id, beat_s):
         pr_media.prepare(project, wt, task_id, evidence_states=parsed.evidence_states,
-                         evidence_files=parsed.evidence_files)
+                         evidence_files=parsed.evidence_files,
+                         ui_change=parsed.ui_change)
     again = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
                              fixed, beat_s)
     if again is not None and again.kind != "infra":

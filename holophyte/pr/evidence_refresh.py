@@ -16,7 +16,7 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat
         evidence = github.split_pr_body(body)[2]
         section = pr_media.refresh(
             project, wt, task_id, evidence, evidence_states=states,
-            evidence_files=files,
+            evidence_files=files, ui_change=parsed.ui_change,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
         failure = pr_media.capture_failure(project, wt, task_id, states, files)
         if section is None or section.rstrip() == evidence.rstrip():
