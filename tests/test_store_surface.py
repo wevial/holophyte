@@ -118,6 +118,8 @@ EXPECTED = [
     "set_gone_since",  # KO-739: the store-mode sweep's gone stamp.
     "set_outcome_reason",
     "set_phase",
+    # HOLO-464: the console's mark-ready records the pull request ready.
+    "set_pr_seen_state",
     "set_pull_request",
     "set_question",
     # KO-321: the review-round cap the loop gave a run, written where the

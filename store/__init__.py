@@ -29,6 +29,7 @@ from .writes import (  # noqa: F401
     set_board_state,
     set_gone_since,
     set_outcome_reason,
+    set_pr_seen_state,
     set_pull_request,
     set_question,
     stamp_board_ask,
