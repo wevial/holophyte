@@ -1207,8 +1207,9 @@ runs the spec `DIR/<HOLOPHYTE_TICKET>.capture.ts`, which lives outside the
 project's test tree, and refuses when the spec is missing, unless the ticket
 lists no evidence states and `--default SPEC` names an existing spec, which
 then runs in its place; the factory reaches it only for a ticket declaring
-`ui_change` `minor` or `major` (a ticket that lists states and wrote no spec is still
-refused, and a `--default` naming a missing file is refused naming it). A
+`ui_change` `minor` or `major` (a ticket that lists states and wrote no spec
+is still refused, and a `--default` naming a missing file is refused naming
+it). A
 default outside the working directory, such as one kept beside the factory's
 config, runs from a temporary copy in the capture directory, so it resolves
 the project's modules and path aliases; the copy is removed after the run, and
