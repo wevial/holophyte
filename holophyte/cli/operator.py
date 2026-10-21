@@ -107,7 +107,6 @@ def _serial(target, provider, knobs):
             if moved and not moved.readable:
                 _reexec(target, conn, project, moved.reason)
                 return
-            witness_step(target, conn, project)
             if not first_pass:
                 skip -= _reconcile_pull_requests(target, conn, project,
                                                  provider)
@@ -122,6 +121,7 @@ def _serial(target, provider, knobs):
             task, ticket_id, run_id = _claim_next(target, conn, project,
                                                   provider, order, skip, seen)
             if not task:
+                witness_step(target, conn, project)
                 return _queue_ended(conn, project, task, failed)
             if run_id is None:
                 return

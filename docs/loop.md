@@ -372,6 +372,29 @@ started with, and the scheduler re-execs itself once the last one is in,
 so no worker ever runs code newer than its scheduler. The supervisor is
 spawned by the scheduler, never by a worker.
 
+A story's witness pass never holds up a claim. Each tick spawns its
+workers first; then, when no witness child of the scheduler is alive, the
+scheduler is spawning, the project's `witness.lock` is free and an open
+story's ledger lacks main's tip, it spawns one `factory.py PROJECT
+--witness-step` child, which runs the pass under that lock and exits. The
+child counts against no `workers` slot and is not handed over across a
+re-exec, but its exit is reaped like a worker's: the scheduler keeps
+ticking, claiming and reaping while it runs, an empty pool with the child
+alive waits on it with the tick deadline, and the loop returns once the
+pool is empty and the child has exited. Whether a pass is pending is read
+from the witness ledger, never from which children were spawned: a pass
+runs at the tip it reads when it starts, so a child spawned after a long
+set runs once at the newest tip however many commits landed meanwhile,
+and a child that recorded nothing leaves its pass pending for a child a
+tick after it exited at the same tip, or at once at a newer one. An empty
+pool does not wait out that tick, so a pass that keeps failing at one tip
+cannot hold the loop open, but a tip a worker merged while the child ran
+gets its own child before the loop returns. A process
+that finds the lock held -- a re-exec'd scheduler, a serial loop, a second
+loop -- prints `another witness pass holds the witness lock; skipping` and
+records nothing. The serial loop runs its witness step only once the queue
+is empty.
+
 ## State machines
 
 Both diagrams below are generated from the code, not drawn:
