@@ -1,6 +1,6 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { PullRequestFacts } from "../../lib/contract.gen";
+import type { PrOpenItem, PullRequestFacts } from "../../lib/contract.gen";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
 import { useAction } from "../actions";
@@ -50,13 +50,15 @@ function SendBackBox({ base, run, label, onClose }: { base: string; run: number;
   );
 }
 
+const onCi = (item: PrOpenItem): PrOpenItem => ({ ...item, park_kind: "ci", pr: { ...item.pr, state: "ready", checks: "pending" } });
+
 function MarkReady({ base, run, label }: { base: string; run: number; label: string }) {
   const action = useAction();
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const confirm = async () => {
     if (action.isPending) return;
-    const result = await action.mutateAsync({ label: "Mark ready for review", base, route: "/actions/mark-ready", body: { run }, said: `Marked ${label} ready for review.` });
+    const result = await action.mutateAsync({ label: "Mark ready for review", base, route: "/actions/mark-ready", body: { run }, said: `Marked ${label} ready for review.`, patch: { run, change: onCi } });
     if (result.ok) setOpen(false);
   };
   return (
