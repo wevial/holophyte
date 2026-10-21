@@ -14,7 +14,7 @@ import { prWait } from "../prRow";
 import { runPage } from "../run";
 import { stateOf } from "../state";
 import { LaneHead } from "./LaneHead";
-import { StageChip } from "./StageChip";
+import { reviewRound, StageChip } from "./StageChip";
 import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
@@ -91,17 +91,19 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
   const minutes = used == null ? null : Math.floor(used / MINUTE);
   const spoken = minutes == null ? "" : box == null ? `, ${minutes} minutes` : `, ${minutes} of ${Math.floor(box / MINUTE)} minutes`;
   const title = run.title ?? "";
+  const chip = { phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds };
+  const round = reviewRound(chip);
   const stop = run.stop_requested ? `${run.stop_action?.startsWith("abort") ? "Abort" : "Pause"} requested: ${run.stop_requested}` : null;
   return (
     <li className="border-rule-2 transition-colors duration-(--motion-colour) hover:bg-paper-2 [&+&]:border-t">
       <Link
         data-row
         {...runPage(project, run.id)}
-        aria-label={`${run.ticket} ${plainTitle(title)}, ${stage}${spoken}`}
+        aria-label={`${run.ticket} ${plainTitle(title)}, ${stage}${round == null ? "" : `, ${round}`}${spoken}`}
         className={`${ROW_GRID} min-h-[66px] no-underline`}
       >
         <span className="min-w-0">
-          <StageChip run={{ phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds }} />
+          <StageChip run={chip} />
         </span>
         <span className="whitespace-nowrap text-ink-2">{run.ticket}</span>
         <span className={TITLE_CELL}>

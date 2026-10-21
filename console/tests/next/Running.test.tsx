@@ -96,7 +96,7 @@ test("a lane per project in record order, each live run a row with its stage, ti
   await mount("#/", statusOf("/srv/dev/demo", [demoRun]), statusOf("/srv/dev/writer", [writerRun]));
   expect(lanes()).toEqual(["demo", "writer"]);
 
-  const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Count the rounds, reviewing, 16 of 25 minutes" });
+  const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Count the rounds, reviewing, round 2 of 2, 16 of 25 minutes" });
   expect(row.getAttribute("href")).toEndWith("#/runs/demo/7");
   expect(within(row).getByText("reviewing · round 2 of 2")).toBeTruthy();
   expect(within(row).getByText("16m / 25m")).toBeTruthy();
@@ -235,7 +235,7 @@ test("with every project idle and not held, Running draws no lane and says nothi
 test("a backticked span in a running row's title shows as inline code, and its accessible name drops the backticks", async () => {
   const live = runOf(7, "DEMO-7", "Read a `+++` TOML header", { phase: "reviewing", round: 1, agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE });
   await mount("#/", statusOf("/srv/dev/demo", [live]), statusOf("/srv/dev/writer", []));
-  const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Read a +++ TOML header, reviewing, 16 of 25 minutes" });
+  const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Read a +++ TOML header, reviewing, round 2 of 2, 16 of 25 minutes" });
   expect([...row.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
 });
 
@@ -275,6 +275,7 @@ test("a reviewing run past its review cap names its round without the cap once, 
   await mount("#/", statusOf("/srv/dev/demo", [past, fresh], { workers: 2 }), statusOf("/srv/dev/writer", []));
   const rowOf = (ticket: string) => within(lane("demo")).getByRole("link", { name: new RegExp(`^${ticket} `) }).closest("li")!;
   expect(within(rowOf("DEMO-20")).getByText("reviewing · round 7")).toBeTruthy();
+  expect(within(lane("demo")).getByRole("link", { name: "DEMO-20 Fix the slot, reviewing, round 7, 0 of 25 minutes" })).toBeTruthy();
   expect(rowOf("DEMO-20").querySelector("[data-fixing]")!.textContent).toBe("fixing #2404");
   expect(within(rowOf("DEMO-20")).getByRole("link", { name: "#2404" }).getAttribute("href")).toBe(url);
   expect(rowOf("DEMO-20").textContent).not.toContain(" of 2");
