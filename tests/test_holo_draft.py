@@ -159,6 +159,15 @@ class ConversionTests(DraftCase):
             self.assertEqual(getattr(drafted, field), getattr(filed, field), field)
         self.assertEqual(drafted.header_problems, [])
 
+    def test_mixed_case_field_values_convert_to_valid_header_values(self):
+        self.project_with(PROFILES)
+        key = self.filed(MAGIC.replace("** minor", "** Minor")
+                         .replace("** medium", "** Medium"))
+        code, out, err = self.draft(key)
+        self.assertEqual(code, 0, err)
+        self.assertIn('+++\nui_change = "minor"\nblast_radius = "medium"\n', out)
+        self.assertEqual(ticket_template.parse(out).header_problems, [])
+
     def test_mockup_and_evidence_sections_become_their_header_tables(self):
         body = TOP + MOCKUP + MIDDLE + EVIDENCE + NOTES + ESTIMATE + OPEN
         out = ticket_header.converted(body)

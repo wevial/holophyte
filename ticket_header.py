@@ -310,7 +310,11 @@ def _bold_field(fields, line):
     found = tt.BOLD_KEY_RE.match(tt.MD_LINK_RE.sub(r"\1", line).strip())
     if not (found and found.group(1) in BOLD_FIELDS):
         return False
-    fields[BOLD_FIELDS[found.group(1)]] = tt._clean(found.group(2))
+    value = tt._clean(found.group(2))
+    choices = {"UI change": tt.UI_CHANGE_VALUES,
+               "Blast radius": tt.BLAST_RADIUS_VALUES}[found.group(1)]
+    fields[BOLD_FIELDS[found.group(1)]] = (value.lower() if value.lower() in choices
+                                          else value)
     return True
 
 
