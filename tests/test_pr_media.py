@@ -712,6 +712,13 @@ class MediaTests(unittest.TestCase):
         self.assertEqual(self.open(), "Description.\n\nLinear: KO-505")
         self.assertFalse((self.repo / "captured").exists())
 
+    def test_ticket_declaring_no_ui_change_is_not_captured(self):
+        self.candidate()
+        ticket = '+++\nui_change = "none"\n+++\n# Backend route\n\nDescription.\n'
+        body = self.open(ticket=ticket)
+        self.assertNotIn("## Evidence", body)
+        self.assertFalse((self.repo / "captured").exists())
+
     def test_failed_or_empty_capture_still_opens(self):
         for script, expected in [
             ("raise SystemExit(7)", "failed"),
