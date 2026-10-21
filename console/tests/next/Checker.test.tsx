@@ -235,3 +235,45 @@ test("checker messages land on the field their wording names, the rest on the ti
     OPEN_QUESTIONS,
   ].map(placeMessage)).toEqual(["Title", "How", "AC3", "AC4", "Acceptance criteria", "Estimate", "Depends on", "Verify commands", "Mock-up link", "Ticket"]);
 });
+
+test("header problems land on the control of the key they name, an Evidence one on its row's box, and the rest on the ticket", async () => {
+  const problems = [
+    'header blast_radius must be "high" or "medium", not "low"',
+    'header evidence[2].file must read 02-slug.png or 02-slug.webm, not "shot.png"',
+    'header mockup.approved must be a date like 2026-10-19, not "yesterday"',
+    "header is not valid TOML: Expected '=' after a key",
+  ];
+  await mount(fakeFetch({ problems, advisories: [], blocks: true }).fetchImpl);
+  await type("Title", "Steer notes show on the run detail card");
+  const ui = screen.getByRole("combobox", { name: "UI change" });
+  await act(async () => void fireEvent.change(ui, { target: { value: "major" } }));
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
+  await type("E2 File", "shot.png");
+  await advance(600);
+
+  expect(under(screen.getByRole("combobox", { name: "Blast radius" }))).toBe(`×${problems[0]}`);
+  const file = screen.getByRole("textbox", { name: "E2 File" });
+  expect(file.getAttribute("aria-invalid")).toBe("true");
+  expect(under(file)).toContain(problems[1]!);
+  expect(screen.getByRole("textbox", { name: "E2 State" }).getAttribute("aria-invalid")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "E1 File" }).getAttribute("aria-invalid")).toBeNull();
+  expect(under(screen.getByLabelText("Approved on"))).toContain(problems[2]!);
+  const row = within(panel()).getByText(problems[3]!).closest("li")!;
+  expect(row.textContent).toStartWith("×Ticket");
+  expect(inline()).not.toContain(problems[3]!);
+});
+
+test("a header problem is placed by the key it names before the body's wording is read", () => {
+  expect([
+    "header ui_change must be \"none\", \"minor\" or \"major\", not \"big\"",
+    "header estimate is missing: give whole minutes from 1 to 90",
+    "header depends_on must be a list of ticket keys, not \"HOLO\"",
+    "header mockup.url is missing: link the approved mock-up",
+    "header mockup.note must say what was approved, not null",
+    "header mockup.boards[1].url is not a .png snapshot or a .zip bundle: \"x\"",
+    "header evidence[3].state must name the UI state to capture, not \"\"",
+    "header evidence has 7 entries; at most 6",
+    "header has no closing '+++' line",
+  ].map(placeMessage)).toEqual(["UI change", "Estimate", "Depends on", "Mock-up link", "What was approved", "Boards", "E3 State", "Ticket", "Ticket"]);
+});

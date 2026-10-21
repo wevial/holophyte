@@ -1,5 +1,7 @@
 import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
-import { HeaderDate, headerSpan, readHeader, withEntries, withKey, type Table, type Value } from "./ticketHeader";
+import { HeaderDate, headerSpan, readHeader, withEntries, withEntryKey, withKey, type Table, type Value } from "./ticketHeader";
+
+export interface Evidence { file: string; state: string }
 
 export interface Fields {
   title: string;
@@ -9,9 +11,13 @@ export interface Fields {
   what: string;
   why: string;
   how: string;
-  uiChange: "major" | "minor" | null;
+  /** Each a choice, or the value a header holds outside them, kept so it can be cleared. */
+  uiChange: string | null;
+  blastRadius: string | null;
   mockupLink: string;
   mockupApproval: string;
+  mockupApproved: string;
+  mockupNote: string;
   mockupImages: string[];
   inScope: string[];
   outOfScope: string[];
@@ -19,6 +25,7 @@ export interface Fields {
   verify: string[];
   estimate: number | null;
   dependsOn: string[];
+  evidence: Evidence[];
 }
 export type Field = keyof Fields;
 export interface TicketSection { name: string; heading: string; text: string }
@@ -103,7 +110,11 @@ export function composeBody(form: TicketForm): string {
   return form.preamble + form.sections.map(section => section.heading + section.text).join("");
 }
 
-const sections: Record<Exclude<Field, "title">, string> = {
+const HEADER_ONLY = ["blastRadius", "mockupApproved", "mockupNote", "evidence"] as const;
+type HeaderOnly = typeof HEADER_ONLY[number];
+const headerOnly = (field: Field): field is HeaderOnly => (HEADER_ONLY as readonly Field[]).includes(field);
+type SectionField = Exclude<Field, "title" | HeaderOnly>;
+const sections: Record<SectionField, string> = {
   summary: "Summary", notes: "Implementation notes", openQuestions: "Open questions",
   what: "What / Why / How", why: "What / Why / How", how: "What / Why / How", uiChange: "What / Why / How",
   mockupLink: "Mock-up", mockupApproval: "Mock-up", mockupImages: "Mock-up",
@@ -160,7 +171,7 @@ function verifySpan(text: string): Span | undefined {
 }
 const estimatePattern = /^Estimate: (.*?) min · Depends on: (.*)$/;
 
-const HEADER_FIELDS = ["uiChange", "estimate", "dependsOn", "mockupLink", "mockupApproval", "mockupImages"] as const;
+const HEADER_FIELDS = ["uiChange", "estimate", "dependsOn", "mockupLink", "mockupApproval", "mockupImages", ...HEADER_ONLY] as const;
 type HeaderField = typeof HEADER_FIELDS[number];
 const inHeader = (field: Field): field is HeaderField => (HEADER_FIELDS as readonly Field[]).includes(field);
 const headerApproval = /^Approved (\d{4}-\d{2}-\d{2}):[ \t]*(.*)$/;
@@ -171,17 +182,48 @@ const isDate = (iso: string) => /^\d{4}-\d{2}-\d{2}$/.test(iso) && !Number.isNaN
 const approvedOn = (mockup: Table) => mockup.approved instanceof HeaderDate ? mockup.approved.iso
   : typeof mockup.approved === "string" && isDate(mockup.approved) ? mockup.approved : null;
 
+const evidenceOf = (header: Table): Evidence[] => (Array.isArray(header.evidence) ? header.evidence : []).filter(isTable)
+  .map(entry => ({ file: typeof entry.file === "string" ? entry.file : "", state: typeof entry.state === "string" ? entry.state : "" }));
+
+/** The header TOML with its `[[evidence]]` entries set to `value`, an `evidence = …` key dropped:
+ *  as many entries as before are rewritten key by key, comments kept; a
+ *  changed count keeps each entry still found whole and writes the rest. */
+function withEvidence(written: string, value: Evidence[]): string {
+  const source = withKey(written, "", "evidence", undefined);
+  const old = evidenceOf(readHeader(source));
+  if (old.length === value.length) {
+    return value.reduce((text, entry, index) => withEntryKey(withEntryKey(text, "evidence", index, "file", entry.file), "evidence", index, "state", entry.state), source);
+  }
+  const kept = new Set<number>();
+  return withEntries(source, "evidence", value.map(entry => {
+    const at = old.findIndex((each, index) => !kept.has(index) && each.file === entry.file && each.state === entry.state);
+    if (at < 0) return { file: entry.file, state: entry.state };
+    kept.add(at);
+    return at;
+  }));
+}
+
 function headerField(source: string, field: HeaderField): Fields[HeaderField] {
   const header = readHeader(source);
   const mockup = isTable(header.mockup) ? header.mockup : {};
-  if (field === "uiChange") return header.ui_change === "major" || header.ui_change === "minor" ? header.ui_change : null;
+  if (field === "uiChange") return header.ui_change === undefined || header.ui_change === "none" ? null : typeof header.ui_change === "string" ? header.ui_change : JSON.stringify(header.ui_change);
   if (field === "estimate") return Number.isInteger(header.estimate) ? header.estimate as number : null;
   if (field === "dependsOn") return Array.isArray(header.depends_on) ? header.depends_on.filter(key => typeof key === "string") : [];
   if (field === "mockupLink") return typeof mockup.url === "string" ? mockup.url : "";
   if (field === "mockupImages") return boardsOf(mockup).map(board => `![${typeof board.caption === "string" ? board.caption : ""}](${board.url})`);
+  if (field === "blastRadius") return header.blast_radius === undefined ? null : typeof header.blast_radius === "string" ? header.blast_radius : JSON.stringify(header.blast_radius);
+  if (field === "mockupNote") return typeof mockup.note === "string" ? mockup.note : "";
+  if (field === "evidence") return evidenceOf(header);
   const approved = approvedOn(mockup);
+  if (field === "mockupApproved") return approved ?? (typeof mockup.approved === "string" ? mockup.approved : "");
   if (approved) return `Approved ${approved}: ${typeof mockup.note === "string" ? mockup.note : ""}`;
   return typeof mockup.approved === "string" ? mockup.approved : "";
+}
+
+/** The approval date `iso` as `source` writes it: kept quoted when it already is. */
+function approvalDate(source: string, iso: string): string | HeaderDate {
+  const mockup = readHeader(source).mockup;
+  return isTable(mockup) && mockup.approved === iso ? iso : new HeaderDate(iso);
 }
 
 /** The header TOML `source` with only the keys `field` reads set to `value`:
@@ -191,14 +233,17 @@ function withHeaderField(source: string, field: HeaderField, value: Fields[Heade
   if (field === "uiChange") return withKey(source, "", "ui_change", (value as Fields["uiChange"]) ?? "none");
   if (field === "estimate") return withKey(source, "", "estimate", (value as Fields["estimate"]) ?? undefined);
   if (field === "dependsOn") return withKey(source, "", "depends_on", value as string[]);
+  if (field === "blastRadius") return withKey(source, "", "blast_radius", (value as Fields["blastRadius"]) ?? undefined);
+  if (field === "evidence") return withEvidence(source, value as Evidence[]);
+  if (field === "mockupNote") return withKey(source, "mockup", "note", (value as string) || undefined);
+  if (field === "mockupApproved") {
+    const approved = value as string;
+    return withKey(source, "mockup", "approved", !approved ? undefined : isDate(approved) ? approvalDate(source, approved) : approved);
+  }
   if (field === "mockupLink") return withKey(source, "mockup", "url", (value as string) || undefined);
   if (field === "mockupApproval") {
     const approval = headerApproval.exec((value as string).trimEnd());
-    if (approval && isDate(approval[1]!)) {
-      const mockup = readHeader(source).mockup;
-      const quoted = isTable(mockup) && mockup.approved === approval[1];
-      return withKey(withKey(source, "mockup", "approved", quoted ? approval[1]! : new HeaderDate(approval[1]!)), "mockup", "note", approval[2]!);
-    }
+    if (approval && isDate(approval[1]!)) return withKey(withKey(source, "mockup", "approved", approvalDate(source, approval[1]!)), "mockup", "note", approval[2]!);
     return withKey(withKey(source, "mockup", "approved", (value as string) || undefined), "mockup", "note", undefined);
   }
   const mockup = readHeader(source).mockup;
@@ -217,7 +262,8 @@ function withHeaderField(source: string, field: HeaderField, value: Fields[Heade
 export function fieldOf<K extends Field>(form: TicketForm, field: K): Fields[K] {
   const span = headerSpan(form.preamble);
   if (span && inHeader(field)) return headerField(form.preamble.slice(span.start, span.end), field) as Fields[K];
-  const text = field === "title" ? form.preamble.slice(span?.close ?? 0) : form.sections.find(section => section.name === sections[field as Exclude<Field, "title">])?.text ?? "";
+  if (headerOnly(field)) return (field === "evidence" ? [] : field === "blastRadius" ? null : "") as Fields[K];
+  const text = field === "title" ? form.preamble.slice(span?.close ?? 0) : form.sections.find(section => section.name === sections[field as SectionField])?.text ?? "";
   let value: Fields[Field];
   if (field === "title") value = matching(text, /^# /)[0]?.text.slice(2) ?? "";
   else if (field === "summary" || field === "notes" || field === "openQuestions") value = visibleSource(text).visible.trim();
@@ -264,7 +310,7 @@ function replaceItems(text: string, field: keyof typeof itemPatterns, value: str
   return text;
 }
 
-function editText(text: string, field: Exclude<Field, "title">, value: Fields[Field], eol: string): string {
+function editText(text: string, field: SectionField, value: Fields[Field], eol: string): string {
   if (field === "summary" || field === "notes" || field === "openQuestions") {
     const { visible, offsets } = visibleSource(text);
     if (!visible.trim()) return append(text, String(value), eol);
@@ -363,7 +409,8 @@ export function withCriteria(form: TicketForm, rows: { origin: number | null; te
 
 export function withField<K extends Field>(form: TicketForm, field: K, value: Fields[K]): TicketForm {
   const span = headerSpan(form.preamble);
-  const present = field === "title" || (span && inHeader(field)) || form.sections.some(section => section.name === sections[field as Exclude<Field, "title">]);
+  if (!span && headerOnly(field)) return form;
+  const present = field === "title" || (span && inHeader(field)) || form.sections.some(section => section.name === sections[field as SectionField]);
   if (present && JSON.stringify(fieldOf(form, field)) === JSON.stringify(value)) return form;
   const eol = composeBody(form).includes("\r\n") ? "\r\n" : "\n";
   if (span && inHeader(field)) {
@@ -377,7 +424,7 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
     const end = row ? Math.min(row.end - row.eol.length, Math.max(row.start + 2, row.contentEnd)) : 0;
     return { ...form, preamble: head + (row ? splice(rest, row.start, end, `# ${value}`) : `# ${value}${eol}${eol}` + rest) };
   }
-  const name = sections[field as Exclude<Field, "title">];
+  const name = sections[field as SectionField];
   const updated = form.sections.slice();
   let index = updated.findIndex(section => section.name === name);
   let preamble = form.preamble;
@@ -390,7 +437,7 @@ export function withField<K extends Field>(form: TicketForm, field: K, value: Fi
     } else if (preamble && !preamble.endsWith(eol)) preamble += eol;
     updated.splice(index, 0, { name, heading: `## ${name}${eol}`, text: eol + eol });
   }
-  updated[index] = { ...updated[index], text: editText(updated[index].text, field, value, eol) };
+  updated[index] = { ...updated[index], text: editText(updated[index].text, field as SectionField, value, eol) };
   return { ...form, preamble, sections: updated };
 }
 
@@ -403,6 +450,7 @@ function headerHints(source: string): Partial<Record<HeaderField, string>> {
   const names: Record<HeaderField, string> = {
     uiChange: "ui_change", estimate: "estimate", dependsOn: "depends_on",
     mockupLink: "[mockup]", mockupApproval: "[mockup]", mockupImages: "[[mockup.boards]]",
+    blastRadius: "blast_radius", mockupApproved: "[mockup]", mockupNote: "[mockup]", evidence: "[[evidence]]",
   };
   const rows = source.split(/\r?\n/);
   const stop = /^#\s*$|^#\s*\[\[?[\w.]+\]\]?\s*$|^#\s*[\w-]+ = |^#\s*(?:\[\[?[\w.]+\]\]?|[\w-]+):\s/;
@@ -423,7 +471,7 @@ export function blankForm(): TicketForm {
   const hints: TicketForm["hints"] = headerHints(header);
   const uncommented = commented.slice(0, span.start) + header.replace(/^[ \t]*#.*(?:\r?\n|$)/gm, "") + commented.slice(span.end);
   const hintTemplate = parseBody(uncommented);
-  for (const field of Object.keys(sections) as Exclude<Field, "title">[]) {
+  for (const field of Object.keys(sections) as SectionField[]) {
     if (inHeader(field)) continue;
     const section = hintTemplate.sections.find(section => section.name === sections[field])!.text;
     let raw: Fields[Field] = fieldOf(hintTemplate, field);

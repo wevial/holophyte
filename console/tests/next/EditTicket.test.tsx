@@ -371,3 +371,68 @@ test("an edit to a magic-line ticket keeps its estimate line and adds no header"
   expect(saved).toContain("Estimate: 50 min · Depends on: none");
   expect(saved).not.toMatch(/^\+\+\+$/m);
 });
+
+const EVIDENCE_BODY = HEADER_BODY
+  .replace('ui_change = "minor"\n', 'ui_change = "minor"\nblast_radius = "medium"\n')
+  .replace('implementer = "fast"\n', 'implementer = "fast"\n\n[[evidence]]\nfile = "01-notes.png"\nstate = "the run page with two notes"\n\n[[evidence]]\nfile = "02-author.png"\nstate = "a note\'s author beside it"\n')
+  .replace("## Evidence\n\n- 01-notes.png: the run page with two notes.\n\n", "");
+
+test("a header ticket draws its blast radius and Evidence rows, and a state edit rewrites only that entry's state line", async () => {
+  const saved = await saveHeaderEdit(async () => {
+    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
+    expect(radius.selectedOptions[0]!.textContent).toBe("Medium");
+    expect(["E1 File", "E1 State", "E2 File", "E2 State"].map(name => box(name).value)).toEqual(["01-notes.png", "the run page with two notes", "02-author.png", "a note's author beside it"]);
+    await type("E2 State", "the author beside each note");
+  }, EVIDENCE_BODY);
+  expect(saved).toBe(EVIDENCE_BODY.replace('state = "a note\'s author beside it"', 'state = "the author beside each note"'));
+});
+
+test("a magic-line ticket draws no Blast radius select and no Evidence list", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit");
+  expect(box("Title").value).toBe(SERVED.Title);
+  expect(screen.getByRole("combobox", { name: "UI change" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Blast radius" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "+ Add a state" })).toBeNull();
+});
+
+test("a magic-line ticket's UI change select writes its **UI change:** line", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "UI change" }), { target: { value: "minor" } }));
+  await pressSave();
+  const saved = (puts[0]!.body as { body: string }).body;
+  expect(saved.match(/^\*\*UI change:\*\*.*$/gm)).toEqual(["**UI change:** minor"]);
+  expect(saved.replace("\n\n**UI change:** minor", "")).toBe(BODY);
+});
+
+test("a header blast radius outside the choices shows as itself and Diff decides removes its line", async () => {
+  const body = EVIDENCE_BODY.replace('blast_radius = "medium"', 'blast_radius = "low"');
+  const saved = await saveHeaderEdit(async () => {
+    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
+    expect(radius.selectedOptions[0]!.textContent).toBe("low · not a choice");
+    await act(async () => void fireEvent.change(radius, { target: { value: "" } }));
+    expect(radius.selectedOptions[0]!.textContent).toBe("Diff decides");
+  }, body);
+  expect(saved).toBe(body.replace('blast_radius = "low"\n', ""));
+});
+
+test("a header UI change outside the choices shows as itself and None replaces it", async () => {
+  const body = HEADER_BODY.replace('ui_change = "minor"', 'ui_change = "big"');
+  const saved = await saveHeaderEdit(async () => {
+    const change = screen.getByRole("combobox", { name: "UI change" }) as HTMLSelectElement;
+    expect(change.selectedOptions[0]!.textContent).toBe("big · not a choice");
+    await act(async () => void fireEvent.change(change, { target: { value: "" } }));
+    expect(change.selectedOptions[0]!.textContent).toBe("None");
+  }, body);
+  expect(saved).toBe(body.replace('ui_change = "big"', 'ui_change = "none"'));
+});
+
+test("adding a state to a header whose evidence is not entries replaces that key with the row", async () => {
+  const body = HEADER_BODY.replace('implementer = "fast"\n', 'implementer = "fast"\nevidence = "bad"\n');
+  const saved = await saveHeaderEdit(async () => {
+    expect(screen.queryByRole("textbox", { name: "E1 File" })).toBeNull();
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
+    await type("E1 State", "the run page");
+  }, body);
+  expect(saved).not.toContain('evidence = "bad"');
+  expect(saved.match(/^\[\[evidence\]\]\r?\nfile = "01-"\r?\nstate = "the run page"$/m)).toBeTruthy();
+});

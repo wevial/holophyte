@@ -257,22 +257,43 @@ test.each([[true, "Needs you"], [false, "In flight"]] as const)("a pull-request 
   expect(screen.getByText(`DEMO-9 · ${label}`, { exact: true })).toBeTruthy();
 });
 
-test("UI change files its header fields: ui_change, estimate, depends_on, then [mockup] and its boards, and switching off leaves ui_change none", async () => {
+const select = (name: string) => screen.getByRole("combobox", { name }) as HTMLSelectElement;
+const options = (name: string) => within(select(name)).getAllByRole("option").map(option => option.textContent);
+async function choose(name: string, label: string) {
+  const option = within(select(name)).getAllByRole("option").find(each => each.textContent === label) as HTMLOptionElement;
+  await act(async () => void fireEvent.change(select(name), { target: { value: option.value } }));
+}
+const header = (body: string) => body.slice(0, body.indexOf("\n+++\n") + 4).split("\n");
+
+test("UI change chooses None, Minor or Major: Minor files no [mockup], Major files its link, approval date, note and boards", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
   await type("Title", "Steer notes show on the run detail card");
+  expect(options("UI change")).toEqual(["None", "Minor", "Major"]);
+  expect(select("UI change").selectedOptions[0]!.textContent).toBe("None");
   await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "45" } }));
   await type("Depends on", "HOLO-7");
   await press("Add");
-  const toggle = screen.getByRole("switch", { name: "This ticket changes the UI" });
+
+  await choose("UI change", "Minor");
   expect(screen.queryByRole("textbox", { name: "Mock-up link" })).toBeNull();
-  await act(async () => void fireEvent.click(toggle));
+  await press("File ticket");
+  expect(header(posted(answer).body)).toEqual([
+    "+++",
+    'ui_change = "minor"',
+    "estimate = 45",
+    'depends_on = ["HOLO-7"]',
+    "+++",
+  ]);
+
+  await choose("UI change", "Major");
   await type("Mock-up link", "https://claude.ai/artifact/abc123");
-  await type("Approval", "Approved 2026-10-19: the defaults");
+  await act(async () => void fireEvent.change(screen.getByLabelText("Approved on"), { target: { value: "2026-10-19" } }));
+  await type("What was approved", "the defaults");
   await type("Boards", "https://media.example/b.png");
   await press("File ticket");
-  const body = posted(answer).body;
-  expect(body.split("\n").slice(0, 15)).toEqual([
+  const body = posted(answer, 1).body;
+  expect(header(body)).toEqual([
     "+++",
     'ui_change = "major"',
     "estimate = 45",
@@ -286,21 +307,53 @@ test("UI change files its header fields: ui_change, estimate, depends_on, then [
     "[[mockup.boards]]",
     'url = "https://media.example/b.png"',
     "+++",
-    "# Steer notes show on the run detail card",
-    "",
   ]);
   expect(body).not.toMatch(/^\*\*UI change:\*\*/m);
   expect(body).not.toMatch(/^## (?:Mock-up|Estimate & dependencies)$/m);
-  await act(async () => void fireEvent.click(toggle));
+});
+
+test("Blast radius offers Diff decides, Medium and High: Diff decides files no blast_radius and High files it after ui_change", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
+  expect(options("Blast radius")).toEqual(["Diff decides", "Medium", "High"]);
+  expect(select("Blast radius").selectedOptions[0]!.textContent).toBe("Diff decides");
   await press("File ticket");
-  expect(posted(answer, 1).body.split("\n").slice(0, 6)).toEqual([
-    "+++",
-    'ui_change = "none"',
-    "estimate = 45",
-    'depends_on = ["HOLO-7"]',
-    "+++",
-    "# Steer notes show on the run detail card",
+  expect(posted(answer).body).not.toMatch(/^blast_radius/m);
+  await choose("Blast radius", "High");
+  await press("File ticket");
+  expect(header(posted(answer, 1).body).slice(0, 4)).toEqual(["+++", 'ui_change = "none"', 'blast_radius = "high"', "estimate = 25"]);
+});
+
+const files = () => screen.queryAllByRole("textbox", { name: /^E\d+ File$/ }).map(input => (input as HTMLInputElement).value);
+
+test("Evidence rows start numbered, renumber their files when moved, file in order and stop at six", async () => {
+  const answer = rejectTicket();
+  await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
+  await type("Title", "Steer notes show on the run detail card");
+  expect(files()).toEqual([]);
+  await press("+ Add a state");
+  await press("+ Add a state");
+  expect(files()).toEqual(["01-", "02-"]);
+  await type("E1 File", "01-lane.png");
+  await type("E1 State", "the lane");
+  await type("E2 File", "02-row.png");
+  await type("E2 State", "the row");
+  await press("Move E2 up");
+  expect(files()).toEqual(["01-row.png", "02-lane.png"]);
+  await press("File ticket");
+  expect(posted(answer).body.split("\n+++\n")[0]!.split("\n").filter(line => /^(?:\[\[evidence\]\]$|file = |state = )/.test(line))).toEqual([
+    "[[evidence]]",
+    'file = "01-row.png"',
+    'state = "the row"',
+    "[[evidence]]",
+    'file = "02-lane.png"',
+    'state = "the lane"',
   ]);
+  for (let row = 3; row <= 6; row += 1) await press("+ Add a state");
+  expect(files()).toEqual(["01-row.png", "02-lane.png", "03-", "04-", "05-", "06-"]);
+  expect((screen.getByRole("button", { name: "+ Add a state" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("6 of 6")).toBeTruthy();
 });
 
 test("estimate stepping stops at 5 and 120 minutes and files those boundary values", async () => {
