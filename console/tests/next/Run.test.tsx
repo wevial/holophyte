@@ -22,36 +22,25 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>, ro
   run: { ...servedRun.run, id, ticket, title: `${ticket} title`, host: "writer-1", started_ms: STARTED, ...facts },
 });
 
+const fixing = (id: number, after: RunDetail["events"]): RunDetail => ({
+  ...detail(id, `DEMO-${id}`, { phase: "merge_gate" }),
+  events: [
+    { at: STARTED, kind: "babysit_step", summary: "checks" },
+    { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
+    { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
+    ...after,
+  ],
+});
+
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { title: "Count the rounds", phase: "reviewing", agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE }, [changes]),
-  13: {
-    ...detail(13, "DEMO-13", { phase: "merge_gate" }),
-    events: [
-      { at: STARTED, kind: "babysit_step", summary: "checks" },
-      { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
-      { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
-    ],
-  },
-  15: {
-    ...detail(15, "DEMO-15", { phase: "merge_gate" }),
-    events: [
-      { at: STARTED, kind: "babysit_step", summary: "checks" },
-      { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
-      { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
-      { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
-    ],
-  },
-  16: {
-    ...detail(16, "DEMO-16", { phase: "merge_gate" }),
-    events: [
-      { at: STARTED, kind: "babysit_step", summary: "checks" },
-      { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
-      { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
-      { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
-      { at: STARTED + 4, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
-      { at: STARTED + 5, kind: "babysit_step", summary: "fix" },
-    ],
-  },
+  13: fixing(13, []),
+  15: fixing(15, [{ at: STARTED + 3, kind: "babysit_step", summary: "checks" }]),
+  16: fixing(16, [
+    { at: STARTED + 3, kind: "babysit_step", summary: "checks" },
+    { at: STARTED + 4, kind: "check_fix_round", summary: "check fix round 2 of 2 on https://github.com/o/r/pull/7: vitest, lint; failing: 2 tests red; E501 line too long" },
+    { at: STARTED + 5, kind: "babysit_step", summary: "fix" },
+  ]),
   14: detail(14, "DEMO-14", { title: "Read a `+++` TOML header" }),
   40: detail(40, "DEMO-40", {
     phase: "failed",
