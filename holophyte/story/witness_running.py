@@ -14,7 +14,7 @@ def running_path(target):
 def mark_running(target, story, keys):
     path = running_path(target)
     path.parent.mkdir(parents=True, exist_ok=True)
-    record = {"pid": os.getpid(), "story": story, "keys": list(keys),
+    record = {"pid": os.getpid(), "story": story, "keys": keys,
               "started_ms": int(time() * 1000)}
     scratch = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     scratch.write_text(json.dumps(record))
