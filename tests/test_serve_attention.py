@@ -730,7 +730,7 @@ class StuckWaitStatesTests(ServeTestCase):
 
 
 class TicketTitleAttentionTests(ServeTestCase):
-    def test_every_item_naming_a_ticket_carries_its_ticket_title(self):
+    def test_blocked_failed_stale_and_stuck_items_carry_ticket_titles(self):
         now = int(time() * 1000)
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
