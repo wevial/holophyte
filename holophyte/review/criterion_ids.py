@@ -30,13 +30,26 @@ def numbered(conn, run_id, criteria):
 
 
 def adopted(conn, run_id):
+    body = adopted_body(conn, run_id)
+    return None if body is None else parse_body("", body)["criteria"]
+
+
+def adopted_body(conn, run_id):
     revision = store.steer_notes.adopted_revision(conn, run_id)
-    if revision is None:
-        return None
+    return None if revision is None else revision_body(conn, run_id, revision)
+
+
+def claimed_body(conn, run_id):
+    (revision,) = conn.execute("SELECT revision FROM runs WHERE id = ?",
+                               (run_id,)).fetchone()
+    return revision_body(conn, run_id, revision)
+
+
+def revision_body(conn, run_id, revision):
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-    body = next(row.body for row in store.read.ticket_revisions(conn, ticket_id)
-                if row.revision == revision)
-    return parse_body("", body)["criteria"]
+    return next((row.body for row in
+                 store.read.ticket_revisions(conn, ticket_id)
+                 if row.revision == revision), None)
 
 
 def _number_filed(conn, snapshot, criteria):

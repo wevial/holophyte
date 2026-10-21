@@ -19,6 +19,7 @@ from holophyte.loop.gates import (
     with_baseline,
 )
 from holophyte.loop.runs import heartbeat_while, set_phase, warn_on_run
+from holophyte.loop.steering import adopted_verify
 from holophyte.loop.stop import end_aborted, stop_if_requested
 from holophyte.loop.task_worktree import retire_merged_worktree
 from holophyte.pr.pullrequest import (
@@ -236,6 +237,7 @@ def merge_conflict_goal(branch, pull, conflicts):
 def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                 beat_s, sha, verify_cmd, contracts, ticket, budget_min,
                 sync_main=True):
+    verify_cmd = adopted_verify(conn, run_id, verify_cmd)
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     reviewed, shared = sha, None
     if sync_main:
