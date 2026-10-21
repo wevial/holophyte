@@ -151,6 +151,17 @@ class LocalCaptureSpecTests(unittest.TestCase):
         self.assertTrue(section.startswith("## Evidence"))
         self.assertEqual(self.run_count(), 1)
 
+    def test_refresh_captures_the_default_spec_for_a_declared_ui_change(self):
+        (self.root / SPEC).unlink()
+        (self.root / "e2e/default.capture.ts").write_text("default")
+        self.configure(f"{self.command} --default e2e/default.capture.ts")
+
+        section = pr_media.refresh(self.project, self.root, "KO-1", "",
+                                   ui_change="minor")
+
+        self.assertTrue(section.startswith("## Evidence"))
+        self.assertEqual(self.run_count(), 1)
+
     def test_committed_capture_mode_ignores_uncommitted_capture_files(self):
         self.write_spec("FIXED")
         self.configure(self.command, local="false")

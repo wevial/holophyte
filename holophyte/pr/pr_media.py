@@ -713,7 +713,7 @@ def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()
         unquoted = QUOTED.sub('', evidence)
         return seen or (unquoted if unquoted != evidence else None)
     section, failure = _prepare(project, wt, task_id, record_note, evidence_states,
-                                evidence_files)
+                                evidence_files, ui_change)
     if not section:
         return None
     if not failure or not evidence:
