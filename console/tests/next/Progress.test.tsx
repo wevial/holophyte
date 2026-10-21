@@ -18,7 +18,7 @@ const at = (hour: number, minute: number) => new Date(2026, 9, 15, hour, minute)
 
 const finding = { ...servedRound!.findings[0]!, severity: "p1", message: "the dry run writes a row", path: "holophyte/serve/server.py", line: 142 };
 const round1 = { ...servedRound!, round: 1, started_ms: at(16, 44), ended_ms: at(16, 45), verdict: "changes_requested", findings: [finding] };
-const note = { id: 1, author: "operator", run: 12, consumed_by: null, consumed_ms: null, interrupt: false, withdrawn: false };
+const note = { id: 1, author: "maintainer", run: 12, consumed_by: null, consumed_ms: null, interrupt: false, withdrawn: false };
 
 const liveDetail: RunDetail = {
   ...servedRun,
@@ -110,6 +110,18 @@ test("steers and asks sit in time order among the events, each with what came of
     "16:45 Back to implement",
     "16:47 You asked: does the dry run print anything? | → answered: One line per lease.",
     "16:50 You hinted: the test lives in test_sweep | → waiting until the agent reads it",
+  ]);
+});
+
+test("a steer line names the operator for a note the maintainer did not write, and You for the maintainer's own", async () => {
+  const steer_notes: RunDetail["steer_notes"] = [
+    { ...note, author: "operator", kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 40) },
+    { ...note, id: 2, kind: "hint", note: "the test lives in test_sweep", at: at(16, 50) },
+  ];
+  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
+    "operator steered: don't add a new flag; reuse --act",
+    "You hinted: the test lives in test_sweep",
   ]);
 });
 
