@@ -143,8 +143,12 @@ test("a failed run waiting in Needs you gives its failure and reason, and a merg
   expect(stage()).toBe("Merged · 5acc138");
 });
 
-test("a run in its merge phase reads as merging on the Merge stage", async () => {
+test("a run in its merge phase or its merge gate with no check fix round reads as merging on the Merge stage", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merging" }));
+  expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
+  expect(stage()).toBe("Merge · 1 loop back");
+  cleanup();
+  await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merge_gate" }));
   expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
   expect(stage()).toBe("Merge · 1 loop back");
 });
