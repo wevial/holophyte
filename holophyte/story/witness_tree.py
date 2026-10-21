@@ -4,6 +4,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,9 +18,16 @@ TREE, LOCK, STAMPS = "witness-tree", "witness-tree.lock", "witness-tree.json"
 MISSING_INPUT = "missing"
 
 
+GLOB_SPECIAL = re.compile(r"([\\*?\[]|\s$)")
+
+
 def clean_args(keep):
     return ["clean", "-q", "-ffdx",
-            *(arg for path in keep for arg in ("-e", f"/{path}"))]
+            *(arg for path in keep for arg in ("-e", _literal(path)))]
+
+
+def _literal(path):
+    return "/" + GLOB_SPECIAL.sub(r"\\\1", path)
 
 
 @contextlib.contextmanager

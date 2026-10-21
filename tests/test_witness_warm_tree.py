@@ -137,6 +137,23 @@ class WarmTreeCleanTests(WarmTreeFixture, unittest.TestCase):
         self.assertEqual(self.loop_pass(target, b), green)
 
 
+    def test_a_keep_path_with_pattern_characters_keeps_only_that_path(self):
+        commit_file(self.repo, "deps.lock", "v1\n", "lock")
+        run = (f"{self.appends(self.table_count)} && mkdir -p 'deps[1]'"
+               " && touch 'deps[1]/marker'")
+        target = self.project(setup_config(
+            table_step(run, ["deps.lock"], ["deps[1]"])))
+        for key in ("w1", "w2"):
+            commit_file(self.repo, f"tests/test_{key}.py", PASSES, f"{key} lands")
+        checks = "test -f 'deps[1]/marker' && test ! -e deps1/scratch"
+        self.approve([(key, f"tests/test_{key.lower()}.py",
+                       f"{checks} && mkdir -p deps1 && touch deps1/scratch",
+                       PASSES) for key in ("W1", "W2")])
+
+        self.assertEqual(self.loop_pass(target, git(self.repo, "rev-parse", "HEAD")),
+                         [("W1", "green"), ("W2", "green")])
+        self.assertEqual(self.count(self.table_count), 1)
+
 class WarmTreeFallbackTests(WarmTreeFixture, unittest.TestCase):
     def test_a_held_warm_tree_runs_full_setup_and_leaves_the_stamps_alone(self):
         commit_file(self.repo, "deps.lock", "v1\n", "lock")
