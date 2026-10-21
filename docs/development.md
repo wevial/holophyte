@@ -750,6 +750,14 @@ At the root:
   declares `relative/path: exact literal` lines the gate asserts verbatim, so
   a required value (a port, a URL) cannot drift while the commands still pass.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
+- `landing/` — the static landing page at https://holophyte.ai, served by its
+  own Worker from `landing/public/` ([design note 6](design/0006-docs-hosting.md));
+  the root `wrangler.jsonc` serves this manual at https://docs.holophyte.ai.
+  Its screenshots and video are not in the repository: they live in the R2
+  bucket `holophyte-media` under `demo/`, served at
+  https://media.holophyte.ai/demo/. After a new capture,
+  `scripts/landing_media.sh CAPTURE_DIR` uploads every file the page
+  references from the capture output directory, with its content type.
 - `FINDINGS.md` (generated, not kept in this repository) — in a project with
   `[report] findings = "repo"`, a rendered window over the store, not a log:
   the factory regenerates it at each close-out from `runs`/`reviewRounds` as

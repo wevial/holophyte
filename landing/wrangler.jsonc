@@ -1,0 +1,15 @@
+{
+  // Cloudflare Workers Builds deploys this directory as static assets.
+  // Root directory: landing; build command: none; deploy: npx wrangler deploy
+  "name": "holophyte-landing",
+  "compatibility_date": "2026-10-21",
+  "assets": {
+    "directory": "./public",
+    "html_handling": "auto-trailing-slash"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "holophyte.ai", "custom_domain": true }
+  ]
+}
