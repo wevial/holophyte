@@ -6,6 +6,7 @@
       "run": 1,
       "ticket": "KO-7",
       "ticket_url": null,
+      "title": "beta ticket",
       "phase": "working",
       "heartbeat_age_ms": 1800000,
       "pr_url": null,

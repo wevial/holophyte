@@ -1471,8 +1471,8 @@ Every project's `/attention` items in one list, each item carrying its
   {"kind": "project_error", "project": "lotuspod", "path": "/path/to/lotuspod",
    "error": "OperationalError: database is locked", "level": "attention"},
   {"kind": "stale_run", "run": 52, "ticket": "KO-219", "ticket_url": null,
-   "phase": "working", "heartbeat_age_ms": 1800000, "pr_url": null,
-   "level": "attention", "project": "holophyte"}
+   "title": "Add a thing", "phase": "working", "heartbeat_age_ms": 1800000,
+   "pr_url": null, "level": "attention", "project": "holophyte"}
 ]}
 ```
 
@@ -1483,7 +1483,8 @@ for a project the root `/status` shows with an `error`; `no_store` for one
 with no store and `no_project_row` for a store with no row for its path,
 each with a `detail` naming `factory.py project add`; and the project's own
 items as its `/attention` answers them (`kind`, `run`, `ticket`,
-`ticket_url`, `phase`, `heartbeat_age_ms`, `pr_url` and the rest, above),
+`ticket_url`, `title`, `phase`, `heartbeat_age_ms`, `pr_url` and the rest,
+above),
 each with `project` added. A project's `supervisor` item judges the host
 sweep's beat against two sweep intervals. `level` is `attention` when
 there is any item, else `working` when any project has a live run, else
