@@ -251,8 +251,11 @@ def adopted_revision(conn, run_id):
     (revision,) = conn.execute(
         "SELECT MAX(v.revision) FROM runs r JOIN steerNotes s ON s.runId = r.id"
         " AND s.kind = ? AND s.withdrawnBy IS NULL"
+        " JOIN ticketRevisions c ON c.ticketId = r.ticketId"
+        " AND c.revision = r.revision"
         " JOIN ticketRevisions v ON v.ticketId = r.ticketId"
-        " AND v.revision > r.revision AND v.at < s.at WHERE r.id = ?",
+        " AND v.revision > r.revision AND v.at < s.at AND v.body IS NOT c.body"
+        " WHERE r.id = ?",
         (AMENDMENT, run_id)).fetchone()
     return revision
 
