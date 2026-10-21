@@ -124,7 +124,7 @@ test("a run past the heartbeat threshold is named as gone quiet, not drawn, and 
   const writer = statusOf("/srv/dev/writer", [quiet]);
   await mount("#/", demo, writer);
   expect(within(lane("writer")).queryAllByRole("link")).toEqual([]);
-  expect(lane("writer").textContent).toContain("WRITER-3 went quiet. It is up in Needs you.");
+  expect(lane("writer").textContent).toContain("WRITER-3 went quiet. It is up in Waiting on you.");
   expect(head("writer")).toContain("1 of 1 workers busy");
   expect(head("demo")).toContain("1 of 1 workers busy");
   cleanup();

@@ -66,7 +66,7 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[], items: Attention
 
 function quietSentence(keys: string[]): string {
   const named = keys.length === 1 ? keys[0] : `${keys.slice(0, -1).join(", ")} and ${keys.at(-1)}`;
-  return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Needs you.`;
+  return `${named} went quiet. ${keys.length === 1 ? "It is" : "They are"} up in Waiting on you.`;
 }
 
 function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string; sinceMs: number }) {

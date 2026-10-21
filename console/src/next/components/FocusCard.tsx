@@ -1,7 +1,7 @@
-import { useContext, useState, type Ref } from "react";
+import { useContext, useId, useState } from "react";
 import { ageOf, describe, entryKey, prFacts, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import type { Triage } from "../../lib/contract.gen";
-import { formatAge, formatClock, formatSettled } from "../../lib/format";
+import { formatAge, formatClock } from "../../lib/format";
 import { sinceSeen, UNREACHABLE, type HostRecord } from "../../lib/hosts";
 import { agentMs, latestEvents, workingMs } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
@@ -12,9 +12,8 @@ import type { ContractBodies } from "../fleet";
 import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
 import { STATES, stateOf } from "../state";
-import { Btn } from "./Btn";
 import { CardActions } from "./CardActions";
-import { ChevronIcon } from "./icons";
+import { OPEN_ROW } from "./PrLane";
 import { StateDot } from "./StateDot";
 import { TitleText } from "./TitleText";
 
@@ -23,16 +22,16 @@ type Host = HostRecord<ContractBodies>;
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
 
-/** The card's entry: the held key where it still stands, else whatever
- *  now stands at its last position, else the last entry. */
-export function useHeldEntry(entries: NeedsYouEntry[]): { index: number; hold: (index: number) => void } {
-  const [held, setHeld] = useState<{ key: string; index: number } | null>(null);
+/** The open row's index, or null once the open row is closed: the held key
+ *  where it still stands, else the oldest row. */
+export function useOpenEntry(entries: NeedsYouEntry[]): { open: number | null; toggle: (index: number) => void } {
+  const [held, setHeld] = useState<string | null | undefined>(undefined);
   const keys = entries.map(entryKey);
-  const found = held == null ? -1 : keys.indexOf(held.key);
-  const index = found >= 0 ? found : Math.max(0, Math.min(held?.index ?? 0, entries.length - 1));
-  const hold = (next: number) => setHeld(keys[next] == null ? null : { key: keys[next], index: next });
-  if (keys.length > 0 && (held?.key !== keys[index] || held?.index !== index)) hold(index);
-  return { index, hold };
+  const found = typeof held === "string" ? keys.indexOf(held) : -1;
+  const open = held === null || keys.length === 0 ? null : Math.max(found, 0);
+  if (open != null && held !== keys[open]) setHeld(keys[open]);
+  const toggle = (index: number) => setHeld(index === open ? null : keys[index]);
+  return { open, toggle };
 }
 
 const hostOf = (hosts: Host[], item: AttentionItem) => hosts.find((host) => host.key === item.daemon);
@@ -111,156 +110,112 @@ function stateOfEntry(entry: NeedsYouEntry) {
   return stateOf({ attention: entry.item, readiness: { ready: entry.readyToMerge } });
 }
 
-function Pager({ index, count, hold }: { index: number; count: number; hold: (index: number) => void }) {
-  const pagerButton = "grid size-11 place-items-center border border-rule bg-paper text-ink-2 hover:text-ink disabled:opacity-40";
+function Detail({ entry, host, now, run, title, id }: { entry: NeedsYouEntry; host: Host | undefined; now: number; run: ReturnType<typeof useRun>; title: string | null; id: string }) {
+  const { item } = entry;
+  const description = describeOn(item, host, now);
+  const seen = num(item.last_seen_ms);
+  const detailClass = "border-t border-dashed border-rule-2 py-4 pl-[148px] pr-5 max-[720px]:px-4";
+  if (item.kind === UNREACHABLE) {
+    return (
+      <div id={id} className={detailClass}>
+        <p className="font-read text-[16px] leading-[1.5] text-ink-2">{description.body}</p>
+        <p className="mt-1.5 font-mono text-[12px] text-ink-3">{seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`}</p>
+      </div>
+    );
+  }
   return (
-    <span data-pager className="flex w-full items-center gap-2 min-[720px]:ml-auto min-[720px]:w-auto">
-      <span>
-        {index + 1} of {count}
-      </span>
-      <button type="button" aria-label="Previous item" disabled={index === 0} onClick={() => hold(index - 1)} className={pagerButton}>
-        <ChevronIcon folded={false} />
-      </button>
-      <button type="button" aria-label="Next item" disabled={index === count - 1} onClick={() => hold(index + 1)} className={pagerButton}>
-        <ChevronIcon folded />
-      </button>
-    </span>
+    <div id={id} className={detailClass}>
+      {item.kind === "blocked" ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-[16px] font-semibold text-ink">{blockedHeadline(item)}</h4>
+            {str(item.pr_url) && <a href={str(item.pr_url)!} target="_blank" rel="noreferrer" className="rounded border border-rule px-2 py-0.5 font-mono text-xs text-ink-2 hover:text-ink">{focusPrLabel(item)}</a>}
+          </div>
+          <div className="mt-2.5 max-w-[75ch] font-read text-[16px] leading-[1.5] text-ink-2 [&_button]:font-sans">
+            <LimitedMarkdown lines={4}>{blockedAsk(item)}</LimitedMarkdown>
+          </div>
+        </>
+      ) : description.body !== "" && <p className="max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink-2">{whyOf(description.body, item)}</p>}
+      {description.meta != null && <p className="mt-1.5 font-mono text-[12px] text-ink-3">{description.meta}</p>}
+      <div className="mt-4 flex flex-col gap-3.5 border-t border-dashed border-rule pt-4 font-mono text-[12.5px] leading-normal text-ink-2">
+        {item.kind !== "blocked" && <PullRequestLine item={item} />}
+        {num(item.run) != null && <LatestEvents run={run} />}
+      </div>
+      <CardActions entry={entry} host={host} actions={description.actions} title={title} />
+    </div>
   );
 }
 
-function Card({
-  entry,
-  index,
-  count,
-  hosts,
-  now,
-  hold,
-  cardRef,
-}: {
-  entry: NeedsYouEntry;
-  index: number;
-  count: number;
-  hosts: Host[];
-  now: number;
-  hold: (index: number) => void;
-  cardRef?: Ref<HTMLElement>;
-}) {
+function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; hosts: Host[]; now: number; open: boolean; onToggle: () => void }) {
   const deps = useContext(PollDepsContext);
+  const detailId = useId();
   const { item } = entry;
   const host = hostOf(hosts, item);
   const unreachable = item.kind === UNREACHABLE;
   const runId = unreachable ? null : num(item.run);
-  const run = useRun(runId == null ? null : (host?.base ?? null), runId, deps);
-  const description = describeOn(item, host, now);
-  const key = str(item.ticket);
-  const ticketUrl = str(item.ticket_url);
-  const age = ageOf(item, now);
-  const seen = num(item.last_seen_ms);
-  const title = unreachable ? description.body : (namedTitle(item, host) ?? str(run.data?.run.title) ?? key);
-  return (
-    <article ref={cardRef} tabIndex={-1} aria-label="Focus" data-focus={key ?? undefined} className="flex flex-col border border-rule bg-paper px-7 pb-6 pt-[26px] max-[720px]:px-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[12.5px] text-ink-3">
-        <StateDot state={stateOfEntry(entry)} />
-        {key != null &&
-          (ticketUrl == null ? (
-            <span className="text-ink-2">{key}</span>
-          ) : (
-            <a href={ticketUrl} target="_blank" rel="noreferrer" className={linkClass}>
-              {key}
-            </a>
-          ))}
-        {age != null && <span>waiting {formatSettled(age)}</span>}
-        <Pager index={index} count={count} hold={hold} />
-      </div>
-      {title != null && <h3 className="mt-3.5 break-words font-sans text-[20px] font-semibold leading-tight text-ink">{unreachable ? title : <TitleText>{title}</TitleText>}</h3>}
-      {unreachable ? (
-        <p className="mt-1.5 font-mono text-[12px] text-ink-3">{seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`}</p>
-      ) : (
-        <>
-          {item.kind === "blocked" ? (
-            <>
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                <h4 className="text-[16px] font-semibold text-ink">{blockedHeadline(item)}</h4>
-                {str(item.pr_url) && <a href={str(item.pr_url)!} target="_blank" rel="noreferrer" className="rounded border border-rule px-2 py-0.5 font-mono text-xs text-ink-2 hover:text-ink">{focusPrLabel(item)}</a>}
-              </div>
-              <div className="mt-2.5 max-w-[75ch] font-read text-[16px] leading-[1.5] text-ink-2 [&_button]:font-sans">
-                <LimitedMarkdown lines={4}>{blockedAsk(item)}</LimitedMarkdown>
-              </div>
-            </>
-          ) : description.body !== "" && <p className="mt-2.5 max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink-2">{whyOf(description.body, item)}</p>}
-          {description.meta != null && <p className="mt-1.5 font-mono text-[12px] text-ink-3">{description.meta}</p>}
-          <div className="mt-5 flex flex-col gap-3.5 border-t border-dashed border-rule pt-[18px] font-mono text-[12.5px] leading-normal text-ink-2">
-            {item.kind !== "blocked" && <PullRequestLine item={item} />}
-            {runId != null && <LatestEvents run={run} />}
-          </div>
-          <CardActions entry={entry} host={host} actions={description.actions} title={title} />
-        </>
-      )}
-    </article>
-  );
-}
-
-function Row({ entry, hosts, now, onPick }: { entry: NeedsYouEntry; hosts: Host[]; now: number; onPick: () => void }) {
-  const { item } = entry;
+  const run = useRun(open && runId != null ? (host?.base ?? null) : null, runId, deps);
   const state = stateOfEntry(entry);
-  const name = str(item.ticket) ?? str(item.host) ?? str(item.daemon) ?? item.kind;
-  const title = item.kind === UNREACHABLE ? null : namedTitle(item, hostOf(hosts, item));
+  const key = str(item.ticket);
+  const name = key ?? str(item.host) ?? str(item.daemon) ?? item.kind;
+  const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));
   const age = ageOf(item, now);
+  const prUrl = str(item.pr_url);
   return (
-    <li>
-      <button
-        type="button"
-        aria-label={`Show ${name}`}
-        onClick={onPick}
-        className="grid min-h-[50px] w-full grid-cols-[20px_88px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 max-[720px]:grid-cols-[20px_minmax(0,1fr)_auto]"
-      >
-        <StateDot state={state} hideWord />
-        <span className="truncate text-ink-2">{name}</span>
-        <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
-        <span>
-          {STATES[state].word}
-          {age != null && ` · ${formatAge(age)}`}
-        </span>
-      </button>
+    <li data-wait-row={name} data-open={open || undefined} className={`group border-rule-2 [&+&]:border-t ${OPEN_ROW}`}>
+      <div className="flex items-center pr-4 hover:bg-paper-2 group-data-open:hover:bg-transparent">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={detailId}
+          onClick={onToggle}
+          className="grid min-h-[50px] min-w-0 flex-1 grid-cols-[20px_88px_minmax(0,1fr)_auto] items-center gap-3 py-2 pl-4 pr-3 text-left font-mono text-[12px] text-ink-3 max-[720px]:grid-cols-[20px_minmax(0,1fr)_auto]"
+        >
+          <StateDot state={state} hideWord />
+          <span className="truncate text-ink-2">{name}</span>
+          <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
+          <span>
+            {STATES[state].word}
+            {age != null && ` · ${formatAge(age)}`}
+          </span>
+        </button>
+        {prUrl != null && (
+          <a
+            href={prUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="shrink-0 whitespace-nowrap border-b border-rule font-mono text-[12px] text-ink hover:border-ink"
+          >
+            {prLabel(prUrl).replace(/^PR (?=#)/, "")}
+          </a>
+        )}
+      </div>
+      {open && <Detail entry={entry} host={host} now={now} run={run} title={title ?? key} id={detailId} />}
     </li>
   );
 }
 
-/** The Needs you queue: the held entry as the card, every other as a row
- *  that becomes the card when pressed. */
+/** Waiting on you: a row each, oldest first, the open one showing what the
+ *  entry asks and the actions that answer it. */
 export function FocusCard({
   entries,
-  index,
-  hold,
+  open,
+  toggle,
   hosts,
   now,
-  cardRef,
 }: {
   entries: NeedsYouEntry[];
-  index: number;
-  hold: (index: number) => void;
+  open: number | null;
+  toggle: (index: number) => void;
   hosts: Host[];
   now: number;
-  cardRef?: Ref<HTMLElement>;
 }) {
-  const entry = entries[index];
-  if (entry == null) return null;
-  const last = index === entries.length - 1;
+  if (entries.length === 0) return null;
   return (
-    <div className="flex flex-col gap-2.5">
-      <Card key={entryKey(entry, index)} entry={entry} index={index} count={entries.length} hosts={hosts} now={now} hold={hold} cardRef={cardRef} />
-      {!last && (
-        <div className="flex justify-end">
-          <Btn onClick={() => hold(index + 1)}>Later, show the next one</Btn>
-        </div>
-      )}
-      {entries.length > 1 && (
-        <ul aria-label="Then" className="divide-y divide-rule-2 border border-rule bg-paper">
-          {entries.map((other, at) =>
-            at === index ? null : <Row key={entryKey(other, at)} entry={other} hosts={hosts} now={now} onPick={() => hold(at)} />,
-          )}
-        </ul>
-      )}
-    </div>
+    <ul aria-label="Waiting on you" className="border border-rule bg-paper">
+      {entries.map((entry, at) => (
+        <WaitRow key={entryKey(entry, at)} entry={entry} hosts={hosts} now={now} open={at === open} onToggle={() => toggle(at)} />
+      ))}
+    </ul>
   );
 }

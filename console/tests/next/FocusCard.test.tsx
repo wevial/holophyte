@@ -90,10 +90,14 @@ async function repoll() {
   for (let round = 0; round < 2; round += 1) await act(settle);
 }
 
-const card = () => screen.getByRole("article", { name: "Focus" });
+const waitRows = () => [...document.querySelectorAll<HTMLElement>("li[data-wait-row]")];
+const rows = () => waitRows().map((row) => row.dataset.waitRow);
+const row = (key: string) => document.querySelector<HTMLElement>(`li[data-wait-row="${key}"]`)!;
+const toggleOf = (key: string) => row(key).querySelector<HTMLButtonElement>(":scope > div > button")!;
+const openKeys = () => waitRows().filter((li) => toggleOf(li.dataset.waitRow!).getAttribute("aria-expanded") === "true").map((li) => li.dataset.waitRow);
+const openRow = () => document.querySelector<HTMLElement>("li[data-wait-row][data-open]")!;
+const card = () => document.getElementById(toggleOf(openRow().dataset.waitRow!).getAttribute("aria-controls")!)!;
 const cardText = () => card().textContent ?? "";
-const rows = () => within(screen.getByRole("list", { name: "Then" })).getAllByRole("button").map((row) => row.getAttribute("aria-label"));
-
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
@@ -108,21 +112,20 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a failed item's card names its state, key and wait, its why ends with triage's verdict, and the rest are rows", async () => {
+test("a failed item's row names its state, key and age, and its open detail ends with triage's verdict", async () => {
   await mount(daemon({ items: [failed(code), blocked("DEMO-4", 4, HOUR)] }));
-  expect(within(card()).getByRole("img", { name: "failed" })).toBeTruthy();
-  expect(cardText()).toContain("DEMO-11");
-  expect(cardText()).toContain("waiting 8h 02m");
+  expect(rows()).toEqual(["DEMO-11", "DEMO-4"]);
+  expect(within(row("DEMO-11")).getByRole("img", { name: "failed" })).toBeTruthy();
+  expect(toggleOf("DEMO-11").textContent).toEndWith("failed · 8h");
   expect(within(card()).getByText("Verify command failed. Triage says it is the code, 81%.")).toBeTruthy();
   expect(within(card()).getByText("run #12 · strike 2 of 3")).toBeTruthy();
-  expect(rows()).toEqual(["Show DEMO-4"]);
   cleanup();
 
   await mount(daemon({ items: [failed(null), blocked("DEMO-4", 4, HOUR)] }));
   expect(within(card()).getByText("Verify command failed")).toBeTruthy();
 });
 
-test("the card lists the run's three newest events but bookkeeping, newest first, and a parked PR's facts", async () => {
+test("the open detail lists the run's three newest events but bookkeeping, newest first, and a parked PR's facts", async () => {
   const events = [
     { at: at(15, 10), kind: "phase_change", summary: "claimed -> working" },
     { at: at(16, 2), kind: "verify", summary: "verify failed: 2 tests red" },
@@ -149,79 +152,126 @@ test("the card lists the run's three newest events but bookkeeping, newest first
   expect(card().querySelector("[data-pr-line]")?.textContent).toBe("PR #42 · checks green · approved · no open threads");
 });
 
-test("an untitled item takes its live run's title, else the run detail's", async () => {
+test("an untitled item's row takes its live run's title, else the open run detail's", async () => {
   const live = { ...working.runs[0]!, id: 4, ticket: "DEMO-4", title: "Cache the board read" };
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR)], runs: [live], details: { 4: { ...detail, run: { ...detail.run, title: "Stale title" } } } }));
-  expect(within(card()).getByRole("heading", { level: 3 }).textContent).toBe("Cache the board read");
+  expect(toggleOf("DEMO-4").textContent).toContain("Cache the board read");
+  expect(toggleOf("DEMO-4").textContent).not.toContain("Stale title");
   cleanup();
 
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR)], details: { 4: { ...detail, run: { ...detail.run, title: "Retry the board sync" } } } }));
-  expect(within(card()).getByRole("heading", { level: 3 }).textContent).toBe("Retry the board sync");
+  expect(toggleOf("DEMO-4").textContent).toContain("Retry the board sync");
 });
 
 test("a pinned question park behind an older failure reads its filed title in its row with no live run", async () => {
   const question = { ...served.items.find((item) => item.kind === "blocked")!, asked_ms: NOW - HOUR } as Item;
   await mount(daemon({ items: [question, failed(code)] }));
-  expect(cardText()).toContain("DEMO-11");
-  const row = within(screen.getByRole("list", { name: "Then" })).getByRole("button", { name: "Show KO-14" });
-  expect(row.textContent).toContain("Pick the export format");
+  expect(rows()).toEqual(["DEMO-11", "KO-14"]);
+  expect(toggleOf("KO-14").textContent).toContain("Pick the export format");
 });
 
-test("the pager, Later and a row each move the card through the entries", async () => {
-  await mount(daemon({ items: [blocked("A-1", 1, 3 * HOUR), blocked("B-2", 2, 2 * HOUR), blocked("C-3", 3, HOUR)] }));
-  expect(cardText()).toContain("A-1");
-  expect(cardText()).toContain("1 of 3");
-  expect(within(card()).getByRole("button", { name: "Previous item" }).hasAttribute("disabled")).toBe(true);
+const titled = (ticket: string, run: number, askedAgo: number, extra: object = {}) =>
+  blocked(ticket, run, askedAgo, { park_kind: "question", title: `Title of ${ticket}`, ...extra });
 
-  fireEvent.click(within(card()).getByRole("button", { name: "Next item" }));
-  expect(cardText()).toContain("B-2");
-  expect(cardText()).toContain("2 of 3");
-  expect(rows()).toEqual(["Show A-1", "Show C-3"]);
-
-  fireEvent.click(screen.getByRole("button", { name: "Later, show the next one" }));
-  expect(cardText()).toContain("C-3");
-  expect(within(card()).getByRole("button", { name: "Next item" }).hasAttribute("disabled")).toBe(true);
-  expect(screen.queryByRole("button", { name: "Later, show the next one" })).toBeNull();
-
-  fireEvent.click(screen.getByRole("button", { name: "Show A-1" }));
-  expect(cardText()).toContain("A-1");
-  expect(cardText()).toContain("1 of 3");
+test("Waiting on you draws a row per entry, oldest first with the oldest open, and no card, pager or Later", async () => {
+  await mount(daemon({ items: [titled("C-3", 3, HOUR), titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
+  expect(rows()).toEqual(["A-1", "B-2", "C-3"]);
+  for (const [key, age] of [["A-1", "3h"], ["B-2", "2h"], ["C-3", "1h"]] as const) {
+    const line = toggleOf(key);
+    expect(within(line).getByRole("img", { name: "question" })).toBeTruthy();
+    expect([...line.children].map((part) => part.textContent)).toEqual(["", key, `Title of ${key}`, `question · ${age}`]);
+  }
+  expect(openKeys()).toEqual(["A-1"]);
+  expect(screen.queryByRole("article", { name: "Focus" })).toBeNull();
+  expect(screen.queryByText(/1 of 3/)).toBeNull();
+  for (const name of ["Previous item", "Next item", "Later, show the next one"]) expect(screen.queryByRole("button", { name })).toBeNull();
 });
 
-test("when a poll drops the card's item the card shows the one that followed, or the one before the last", async () => {
-  const a = blocked("A-1", 1, 3 * HOUR);
-  const b = blocked("B-2", 2, 2 * HOUR);
-  const c = blocked("C-3", 3, HOUR);
+test("pressing a row's toggle opens it alone, and pressing the open one leaves no row open", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR), titled("C-3", 3, HOUR)] }));
+  fireEvent.click(toggleOf("B-2"));
+  expect(openKeys()).toEqual(["B-2"]);
+  fireEvent.click(toggleOf("B-2"));
+  expect(openKeys()).toEqual([]);
+  expect(document.querySelector("li[data-wait-row][data-open]")).toBeNull();
+  fireEvent.click(toggleOf("C-3"));
+  expect(openKeys()).toEqual(["C-3"]);
+});
+
+test("an open question row's detail holds its headline, ask, latest events and actions; a closed row draws no detail", async () => {
+  const events = [{ at: at(16, 2), kind: "review", summary: "round 1 changes requested" }];
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], actions: true, details: { 1: { ...detail, events } } }));
+  const open = card();
+  expect(within(open).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
+  expect(within(open).getByText("Which way?")).toBeTruthy();
+  expect(within(open).getByRole("list", { name: "Latest progress" }).textContent).toContain("round 1 changes requested");
+  expect(within(open).getByRole("button", { name: "Answer" }).dataset.variant).toBe("primary");
+  fireEvent.click(within(open).getByRole("button", { name: "More" }));
+  expect(within(screen.getByRole("group", { name: "More actions" })).getByRole("button", { name: "Requeue" })).toBeTruthy();
+  expect(within(open).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/1");
+  expect(document.getElementById(toggleOf("B-2").getAttribute("aria-controls")!)).toBeNull();
+});
+
+test("a failed row's open detail ends its why with triage's verdict, and a stuck wait's reads its dependency and queue", async () => {
+  const stuck = {
+    kind: "stuck_wait", level: "attention", ticket: "DEMO-5", ticket_url: null, title: "Ship the export", dependency: "DEMO-2", dependency_state: "abandoned", reason: null, behind: 4,
+  } as Item;
+  await mount(daemon({ items: [failed(code), stuck] }));
+  expect(rows()).toEqual(["DEMO-11", "DEMO-5"]);
+  expect(within(card()).getByText(/^Verify command failed/).textContent).toEndWith("Triage says it is the code, 81%.");
+  fireEvent.click(toggleOf("DEMO-5"));
+  expect(within(card()).getByText("Waits on DEMO-2, which was abandoned")).toBeTruthy();
+  expect(within(card()).getByText("4 queued behind")).toBeTruthy();
+});
+
+test("a poll that puts an older item first leaves the open row open", async () => {
+  const b = titled("B-2", 2, 2 * HOUR);
+  const c = titled("C-3", 3, HOUR);
+  const state: Daemon = { items: [b, c] };
+  await mount(daemon(state));
+  expect(openKeys()).toEqual(["B-2"]);
+  state.items = [titled("A-1", 1, 3 * HOUR), b, c];
+  await repoll();
+  expect(rows()).toEqual(["A-1", "B-2", "C-3"]);
+  expect(openKeys()).toEqual(["B-2"]);
+});
+
+test("when a poll drops the open row's item the oldest remaining row opens", async () => {
+  const a = titled("A-1", 1, 3 * HOUR);
+  const b = titled("B-2", 2, 2 * HOUR);
+  const c = titled("C-3", 3, HOUR);
   const state: Daemon = { items: [a, b, c] };
   await mount(daemon(state));
-  fireEvent.click(screen.getByRole("button", { name: "Show B-2" }));
+  fireEvent.click(toggleOf("B-2"));
   state.items = [a, c];
   await repoll();
-  expect(cardText()).toContain("C-3");
-  expect(cardText()).toContain("2 of 2");
-  cleanup();
-
-  state.items = [a, b, c];
-  await mount(daemon(state));
-  fireEvent.click(screen.getByRole("button", { name: "Show C-3" }));
-  state.items = [a, b];
-  await repoll();
-  expect(cardText()).toContain("B-2");
-  expect(cardText()).toContain("2 of 2");
+  expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("a poll that puts an older item first leaves the card on the item it showed", async () => {
-  const b = blocked("B-2", 2, 2 * HOUR);
-  const state: Daemon = { items: [b] };
-  await mount(daemon(state));
-  expect(cardText()).toContain("B-2");
-  state.items = [blocked("A-1", 1, 3 * HOUR), b];
-  await repoll();
-  expect(cardText()).toContain("B-2");
-  expect(cardText()).toContain("2 of 2");
+test("an open Waiting on you row and an open Pull requests row carry data-open and the same opened style", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR), park], details: { 1: { ...detail, events: [] }, 9: { ...detail, events: [] } } }));
+  const prRow = document.querySelector<HTMLElement>("li[data-pr-row]")!;
+  fireEvent.click(within(prRow).getByRole("button", { expanded: false }));
+  for (const li of [row("A-1"), prRow]) {
+    expect(li.hasAttribute("data-open")).toBe(true);
+    expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining(["data-open:bg-act-wash", "data-open:shadow-[inset_2px_0_0_var(--act)]"]));
+  }
+  expect(row("B-2").hasAttribute("data-open")).toBe(false);
 });
 
-test("an unreachable host's card says it is not answering and when it was last seen, with no PR line or events", async () => {
+test("a row with a pull request links it as #N beside its toggle without toggling; a row without one shows no link", async () => {
+  const pr = "https://github.com/example/demo/pull/2405";
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR, { pr_url: pr })] }));
+  const link = within(row("B-2")).getByRole("link", { name: "#2405" });
+  expect(link.getAttribute("href")).toBe(pr);
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(toggleOf("B-2").contains(link)).toBe(false);
+  fireEvent.click(link);
+  expect(openKeys()).toEqual(["A-1"]);
+  expect(within(row("A-1")).queryByRole("link", { name: /^#/ })).toBeNull();
+});
+
+test("an unreachable host's open detail says it is not answering and when it was last seen, with no PR line or events", async () => {
   let down = false;
   const up = daemon({ items: [] });
   const host = { ...working, host: "host-a", now: NOW, project: "/srv/dev/demo", runs: [], queued: [] };
@@ -233,7 +283,7 @@ test("an unreachable host's card says it is not answering and when it was last s
   down = true;
   fake.clock.now = NOW;
   await repoll();
-  expect(within(card()).getByRole("heading", { level: 3 }).textContent).toBe("host-a is not answering");
+  expect(within(card()).getByText("host-a is not answering")).toBeTruthy();
   expect(within(card()).getByText("last seen 4m ago")).toBeTruthy();
   expect(cardText()).not.toContain("PR");
   expect(cardText()).not.toContain("pull request");
@@ -356,7 +406,7 @@ test("a refused merge keeps the dialog open with the daemon's reason and its con
 
 test("a host without actions draws no button on the card, says so, and still links the run", async () => {
   await mount(daemon({ items: [failedAt()] }));
-  expect(within(card()).queryAllByRole("button").filter((button) => !button.closest("[data-pager]"))).toEqual([]);
+  expect(within(card()).queryAllByRole("button")).toEqual([]);
   expect(cardText()).toContain("Actions are off on this host");
   expect(within(card()).getByRole("link", { name: "Open run" })).toBeTruthy();
 });
@@ -375,13 +425,13 @@ test("a taken requeue says so in the toast and re-reads the fleet at once; a ref
   expect(taken.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-11" } }]);
   expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe("Requeued DEMO-11.");
   expect(attentionReads(asked)).toBeGreaterThan(reads);
-  expect(card().getAttribute("data-focus")).toBe("DEMO-4");
+  expect(openRow().dataset.waitRow).toBe("DEMO-4");
   cleanup();
 
   const refused = fakeFetch({ ok: false, detail: "ticket DEMO-11 has a live run" });
   await mount(daemon({ items: [failedAt()], actions: true, act: refused.fetchImpl }));
   await press(inCard("Requeue"));
-  expect(card().getAttribute("data-focus")).toBe("DEMO-11");
+  expect(openRow().dataset.waitRow).toBe("DEMO-11");
   expect(within(card()).getByRole("status").textContent).toBe("ticket DEMO-11 has a live run");
   expect(toast()).toBe("");
 });
