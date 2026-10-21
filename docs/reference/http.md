@@ -88,7 +88,9 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
     {"ticket": "KO-220", "ticket_url": null, "title": "Name the held project",
      "reason": "approved for merge; the next claim resumes the candidate at the merge gate",
      "pr_url": "https://github.com/example/repo/pull/41", "waiting_ms": 95000}
-  ]
+  ],
+  "witnesses": {"story": "KO-200", "keys": ["W3", "W4", "W5", "W6"],
+                "started_ms": 1788450294491, "elapsed_ms": 240000}
 }
 ```
 
@@ -151,6 +153,14 @@ admission state. A ready ticket that never ran is not in it. Each entry
 carries the ticket's `ticket`, `ticket_url` and `title`, the last run's
 outcome reason as `reason` and its pull request as `pr_url` (null without
 one), and `waiting_ms`, the daemon's `now` minus the run's end.
+`witnesses` is the story witness set the loop's witness step is running
+now, null when none runs: the story's ticket as `story`, its witness keys
+in story order as `keys`, the set's start as `started_ms` (epoch
+milliseconds) and `elapsed_ms`, the daemon's `now` minus that start. It is
+read from `witness-running.json` beside the store, which the witness step
+writes while it holds the witness lock, and is null when that file is
+missing, does not parse or names a process that has exited. A hand-run
+`--witness-pass` and an approval's baseline run write no record.
 `hold_note` is the note of the latest admission change, null when there
 is none.
 `actions` is whether
