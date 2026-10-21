@@ -67,15 +67,13 @@ def _items(story, section):
     return tt._list_items(tt.COMMENT_RE.sub("", story.sections.get(section, "")))
 
 
-def _witness_path(line):
-    if (len(line.split()) == 1 and not posixpath.isabs(line)
-            and ".." not in line.split("/")):
-        return line
-    return None
+def _is_witness_path(line):
+    return (len(line.split()) == 1 and not posixpath.isabs(line)
+            and ".." not in line.split("/"))
 
 
 def witness_paths(story):
-    return [path for path in map(_witness_path, story.path_lines) if path]
+    return [line for line in story.path_lines if _is_witness_path(line)]
 
 
 def parse_story(text):
@@ -131,7 +129,7 @@ def _body_problems(story):
         owners.setdefault(file, witness.key)
     problems.extend(f"witness path is not one repository-relative path: "
                     f"{line}" for line in story.path_lines
-                    if _witness_path(line) is None)
+                    if not _is_witness_path(line))
     if len(story.path_lines) > MAX_WITNESS_PATHS:
         problems.append(f"'Witness paths' has {len(story.path_lines)} lines; "
                         f"the limit is {MAX_WITNESS_PATHS}: "
