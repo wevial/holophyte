@@ -16,6 +16,15 @@ CAPTION_RE = re.compile(r"[^\[\]\n]*")
 SLUG = r"[a-z0-9][a-z0-9-]*"
 MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
 MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
+WHAT_WHY_HOW = "What / Why / How"
+BOLD_FIELDS = {"UI change": "ui_change", "Blast radius": "blast_radius"}
+LISTED = r"(?:[-*+]\s+)?"
+APPROVAL_RE = re.compile(rf"{LISTED}Approved (\d{{4}}-\d{{2}}-\d{{2}}):\s*(.*)")
+LINK_LINE_RE = re.compile(rf"{LISTED}!?\[([^\[\]\n]*)\]\(<?([^()\s<>]*)>?\)")
+BARE_LINE_RE = re.compile(rf"{LISTED}(\S+)")
+EVIDENCE_FILE_RE = re.compile(rf"`(\d{{2}}-{SLUG}\.(?:png|webm))`:\s*(.*)")
+SLUG_WORDS = 3
+TABLES = ("mockup", "boards", "evidence")
 BESIDE = (
     (lambda t, body: _field_line(body, "UI change"),
      "'**UI change:**' line beside a header: give ui_change in the header only"),
@@ -251,3 +260,150 @@ def _set_mockup(t, mockup):
         later = [index for index, name in enumerate(t.order)
                  if name in tt.TEMPLATE_ORDER and rank(name) > rank("Mock-up")]
         t.order.insert(later[0] if later else len(t.order), "Mock-up")
+
+
+class Unconvertible(ValueError):
+    pass
+
+
+def converted(body):
+    import ticket_template as tt
+    if split(body)[1] is not None:
+        return body
+    lines = body.splitlines(keepends=True)
+    first = next((index for index, line in enumerate(lines)
+                  if tt.H1_RE.match(line)), None)
+    above, start = (0, 0) if first is None else (first, first + 1)
+    fields, kept = {}, lines[above:start]
+    movers = {tt.ESTIMATE: _estimate, "Mock-up": _mockup, "Evidence": _evidence}
+    for name, part in _sections(lines[start:]):
+        if name in movers:
+            movers[name](fields, tt.COMMENT_RE.sub("", "".join(part[1:])))
+        elif name == WHAT_WHY_HOW:
+            kept += [line for line in part if not _bold_field(fields, line)]
+        else:
+            kept += part
+    ending = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
+    header = "".join(row + ending for row in _header_rows(fields))
+    return "".join(lines[:above]) + header + "".join(kept)
+
+
+def _sections(lines):
+    import ticket_template as tt
+    sections = [(None, [])]
+    for line in lines:
+        heading = tt.H2_RE.match(line)
+        if heading:
+            sections.append((heading.group(1).strip(), []))
+        sections[-1][1].append(line)
+    return sections
+
+
+def _stated(text, unwrap=True):
+    import ticket_template as tt
+    if unwrap:
+        text = tt.MD_LINK_RE.sub(r"\1", text)
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _bold_field(fields, line):
+    import ticket_template as tt
+    found = tt.BOLD_KEY_RE.match(tt.MD_LINK_RE.sub(r"\1", line).strip())
+    if not (found and found.group(1) in BOLD_FIELDS):
+        return False
+    fields[BOLD_FIELDS[found.group(1)]] = tt._clean(found.group(2))
+    return True
+
+
+def _estimate(fields, text):
+    import ticket_template as tt
+    for line in _stated(text):
+        estimate = tt.ESTIMATE_RE.match(line)
+        mode = tt.ORCHESTRATION_RE.match(line)
+        named = tt.IMPLEMENTER_RE.match(line)
+        if estimate and "estimate" not in fields:
+            fields["estimate"] = int(estimate.group(1))
+            fields["depends_on"] = tt._deps(estimate.group(2))
+        elif mode and "orchestration" not in fields:
+            fields["orchestration"] = mode.group(1)
+        elif named and "implementer" not in fields:
+            fields["implementer"] = named.group(1)
+        else:
+            raise Unconvertible(line)
+
+
+def _mockup(fields, text):
+    mockup = fields.setdefault("mockup", {})
+    for line in _stated(text, unwrap=False):
+        if not _mockup_line(mockup, line):
+            raise Unconvertible(line)
+
+
+def _mockup_line(mockup, line):
+    import ticket_template as tt
+    approval = APPROVAL_RE.fullmatch(line)
+    if approval and "approved" not in mockup:
+        try:
+            mockup["approved"] = datetime.date.fromisoformat(approval.group(1))
+        except ValueError:
+            return False
+        mockup["note"] = approval.group(2).strip()
+        return True
+    link, bare = LINK_LINE_RE.fullmatch(line), BARE_LINE_RE.fullmatch(line)
+    if link:
+        caption, urls = link.group(1), [link.group(1), link.group(2)]
+    elif bare and tt._mockup_urls(bare.group(1)):
+        caption, urls = "", tt._mockup_urls(bare.group(1))[:1]
+    else:
+        return False
+    if mockup_media_kind(urls[-1]):
+        board = {"url": urls[-1], **({"caption": caption} if caption else {})}
+        mockup.setdefault("boards", []).append(board)
+        return True
+    design = next((url for url in urls if tt.MOCKUP_URL_RE.fullmatch(url)), None)
+    if design is None or "url" in mockup:
+        return False
+    mockup["url"] = design
+    return True
+
+
+def _evidence(fields, text):
+    import ticket_template as tt
+    states = [state for state in tt._evidence_states(tt.MD_LINK_RE.sub(r"\1", text))
+              if state.strip()]
+    entries = fields.setdefault("evidence", [])
+    for position, state in enumerate(states, len(entries) + 1):
+        named = EVIDENCE_FILE_RE.fullmatch(state)
+        entries.append({"file": named.group(1), "state": named.group(2)} if named
+                       else {"file": f"{position:02d}-{_slug(state)}.png",
+                             "state": state})
+
+
+def _slug(state):
+    words = [re.sub(r"[^a-z0-9]", "", word.lower()) for word in state.split()]
+    return "-".join([word for word in words if word][:SLUG_WORDS])
+
+
+def _header_rows(fields):
+    rows = [FENCE] + _rows(fields, FIELDS)
+    mockup = fields.get("mockup")
+    if mockup is not None:
+        rows += ["[mockup]"] + _rows(mockup, MOCKUP_FIELDS)
+        for board in mockup.get("boards", []):
+            rows += ["[[mockup.boards]]"] + _rows(board, BOARD_FIELDS)
+    for entry in fields.get("evidence", []):
+        rows += ["[[evidence]]"] + _rows(entry, EVIDENCE_FIELDS)
+    return rows + [FENCE]
+
+
+def _rows(table, keys):
+    return [f"{key} = {_toml(table[key])}" for key in keys
+            if key in table and key not in TABLES]
+
+
+def _toml(value):
+    if isinstance(value, list):
+        return "[" + ", ".join(map(_toml, value)) + "]"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+    return value.isoformat() if isinstance(value, datetime.date) else str(value)

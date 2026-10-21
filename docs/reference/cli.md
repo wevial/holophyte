@@ -118,6 +118,7 @@ claim's implement stage.
 | `holo board diff` | | `--board-diff PROJECT` |
 | `holo board import [--dry-run]` | | `--board-import [--dry-run] PROJECT` |
 | `holo store import PATH --dry-run` | | `--import-store PATH --dry-run PROJECT` |
+| `holo draft [KEY]` | | none: prints `ticketTemplate.md`, its header's last line `# this project's implementer profiles: NAME, ...` when the project configures `[agents.implementer_profiles]`; with `KEY`, the ticket's stored body with its `**UI change:**` and `**Blast radius:**` lines, `## Estimate & dependencies`, `## Mock-up` and `## Evidence` moved into a `+++` header, ready for `holo file FILE --update KEY`. An evidence state without a "`NN-slug.png`: text" file is given `NN-` and its first three words as its file. A line no header field holds is printed on stderr and the command exits 1, as does an unknown `KEY`; a body already in the header form prints unchanged. It reads the project on this machine, never through a remote host |
 | `holo file FILE [--backlog] [--priority P] [NOTE [--author NAME]]` | `holo ticket file` | `--file-ticket FILE [--state Backlog] [--priority P] [--note NOTE [--author NAME]] PROJECT` |
 | `holo file FILE --update KEY [--revision N] [--labels a,b] [NOTE [--author NAME]]` | `holo ticket file` | `--file-ticket FILE --update KEY [--revision N] [--labels a,b] [--note NOTE [--author NAME]] PROJECT`, the note posted on KEY after the update |
 | `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
