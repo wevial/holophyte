@@ -158,6 +158,26 @@ test("Details describes a successful completed review as passed", async () => {
   expect(round.textContent).toBe("Round 1: passed · codex gpt-6-sol · 16:45 · 0 findings");
 });
 
+test("Details names the terminal adjudication's round the final check and keeps the review round's number", async () => {
+  const adjudicated = new Date(2026, 9, 15, 16, 52).getTime();
+  await mount(files, {
+    ...detail,
+    run: { ...detail.run, phase: "done", max_rounds: 1 },
+    events: [
+      { at: new Date(2026, 9, 15, 16, 44).getTime(), kind: "phase_change", summary: "verifying -> reviewing: round 1 review" },
+      { at: adjudicated, kind: "phase_change", summary: "verifying -> reviewing: terminal adjudication" },
+    ],
+    rounds: [
+      detail.rounds[0]!,
+      { ...detail.rounds[0]!, round: 2, reviewer_model: "claude-adjudicate", started_ms: adjudicated + 2, ended_ms: new Date(2026, 9, 15, 16, 53).getTime(), verdict: "pass", findings: [] },
+    ],
+  });
+  await openDetails();
+  const rounds = within(screen.getByRole("region", { name: "Review rounds" })).getAllByRole("listitem");
+  expect(rounds[0]!.querySelector("div")!.textContent).toStartWith("Round 1: changes requested");
+  expect(rounds[1]!.textContent).toBe("Final check: passed · claude-adjudicate · 16:53 · 0 findings");
+});
+
 test("Details labels a truncated file list as shown rather than a total", async () => {
   await mount({ ...files, truncated: true });
   await openDetails();

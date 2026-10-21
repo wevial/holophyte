@@ -80,7 +80,7 @@ test("a merged four-round run's phase changes summarize in the handoff's words, 
 
 test("an unmapped transition reads FROM → TO without its detail; other kinds keep their summary", () => {
   expect(summarize({ at: T, kind: "phase_change", summary: "working -> failed: time box exhausted" })).toBe("working → failed");
-  expect(summarize({ at: T + 2 * MINUTE, kind: "phase_change", summary: "verifying -> reviewing: terminal adjudication" }, ROUNDS)).toBe(
+  expect(summarize({ at: T + 2 * MINUTE, kind: "phase_change", summary: "verifying -> reviewing" }, ROUNDS)).toBe(
     "review round 1 started",
   );
   expect(summarize({ at: T, kind: "heartbeat", summary: "heartbeat" }, ROUNDS)).toBe("heartbeat");
