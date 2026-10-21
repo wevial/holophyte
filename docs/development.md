@@ -624,8 +624,9 @@ Each module, one line:
   ancestor of the commit and not of the set's last real run (the oldest of
   its witnesses' latest real verdicts, so a pass cut short still owes the
   rest), when the
-  story's `## Witness paths` changed since that run, when that run is older
-  than the most recent `[story] witness_nightly_hour`, or when a git
+  story's `## Witness paths` changed since that run, when its newest real
+  verdict is older than the most recent `[story] witness_nightly_hour`, or
+  when a git
   command fails; `carry()` records each witness's latest real verdict again
   at the commit, `carriedFrom` naming the commit it came from.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass

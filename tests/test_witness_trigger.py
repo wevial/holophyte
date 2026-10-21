@@ -206,6 +206,24 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         self.assert_ran(b, 2)
         self.assertEqual(pass_pending(self.target, self.conn, 1), [])
 
+    def test_a_set_whose_latest_real_row_is_after_the_nightly_hour_carries(self):
+        hour = (datetime.datetime.now().hour + 12) % 24
+        self.target = self.project(f"[story]\nwitness_nightly_hour = {hour}\n")
+        self.story()
+        a = self.land()
+        now = int(time.time() * 1000)
+        for key, ago in (("W1", 13 * HOUR_MS), ("W2", HOUR_MS)):
+            self.conn.execute("UPDATE witnessResults SET at = ?"
+                              " WHERE witnessKey = ?", (now - ago, key))
+        self.conn.execute("UPDATE stories SET approvedAt = ?",
+                          (now - 14 * HOUR_MS,))
+        self.conn.commit()
+        b = commit_file(self.repo, "README.md", "more\n", "docs")
+
+        self.loop()
+
+        self.assert_carried(b, a, 1)
+
     def test_a_set_that_last_ran_at_the_tip_is_not_due_after_the_nightly_hour(self):
         hour = (datetime.datetime.now().hour + 12) % 24
         self.target = self.project(f"[story]\nwitness_nightly_hour = {hour}\n")
