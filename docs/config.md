@@ -727,7 +727,7 @@ them succeeding says nothing about these two keys.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `setup` | Default: `[]` | List of non-empty shell command strings; set to install the project's dependencies before agent turns. Setup runs where verify commands run: under `implementer_isolation = "container"` it runs in the image, so commands name tools by the names the image puts on `PATH`, not by host paths. |
+| `setup` | Default: `[]` | List of entries, each a non-empty shell command string or a table `{ run = "...", inputs = [...], keep = [...] }`; set to install the project's dependencies before agent turns. A table's `run` is a non-empty command, `inputs` a non-empty list of repository-relative files or directories, and optional `keep` a list of repository-relative paths the step leaves behind; any other key is refused. Task worktrees and the main-side checkout run every entry's command; a loop witness pass reuses a table step in its warm tree while its inputs at the commit match its last successful run. Setup runs where verify commands run: under `implementer_isolation = "container"` it runs in the image, so commands name tools by the names the image puts on `PATH`, not by host paths. |
 | `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
 | `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the project's branch naming convention. |
 | `env_source` | Default: absent | Source dotenv path, with `~` expanded; relative paths resolve beside config.toml. Requires `env_allow`. |
@@ -775,6 +775,32 @@ run there, since the worktree they are written against does not exist yet.
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the project's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
+
+A setup entry may be a table that declares what the step reads and leaves
+behind:
+
+```toml
+[worktree]
+setup = [
+  { run = "npm ci --no-audit --no-fund", inputs = ["package-lock.json"], keep = ["node_modules", "prisma/generated"] },
+  { run = "npx prisma generate", inputs = ["package-lock.json", "prisma"], keep = ["prisma/generated"] },
+  "npx next typegen",
+]
+```
+
+Task worktrees and the main-side checkout run every entry's `run` in order,
+as for a string. A loop witness pass keeps one warm tree per project,
+`witness-tree/` in the project's state directory, beside its lock
+`witness-tree.lock` and its stamps `witness-tree.json`. Each pass checks the
+commit out there and runs `git clean -ffdx`, keeping every `keep` path; the
+same clean runs between witnesses. A table step is reused, printing
+`worktree setup N/M reused`, while a key over its `run` and its `inputs` at
+the commit matches the stamp of its last successful run, every `keep` path
+exists, and no earlier table step ran; a string runs every time. A failed
+setup clears every stamp. A pass that finds the warm tree held by another, or
+cannot check it out or clean it, runs in a scratch tree with full setup, as a
+hand-run `--witness-pass` and the approval baseline always do. Inputs outside
+the repository cannot be declared: a step that reads one stays a string.
 
 `env_source` accepts `NAME=value` lines, blank lines, comments and an optional
 `export ` prefix. Values (including quotes) are kept verbatim; no shell

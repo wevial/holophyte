@@ -329,6 +329,7 @@ class MergeApprovalTests(LoopFixture):
         # intervention, so `asked_ms` is the run's last heartbeat.
         (beat,), = self.read("SELECT lastHeartbeat FROM runs WHERE id = 1")
         self.assertEqual(blocked, [{"kind": "blocked", "ticket": "KO-131",
+                                    "title": "add a thing",
                                     "question": "merge?", "run": 1, "ticket_url": None,
                                     "asked_ms": beat, "pr_url": None,
                                     "park_kind": "question", "pr": None,

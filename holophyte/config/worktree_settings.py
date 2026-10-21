@@ -1,3 +1,4 @@
+import collections
 import math
 import pathlib
 import re
@@ -5,25 +6,69 @@ from pathlib import Path
 
 from holophyte.config.reader import VERIFY_TIMEOUT, config_table
 
+SetupStep = collections.namedtuple("SetupStep", ("run", "inputs", "keep"))
+SETUP_STEP_KEYS = {"run", "inputs", "keep"}
+
 
 def setup_commands(project):
-    commands = config_table(project, "worktree").get("setup")
-    if commands is None:
+    return [step.run for step in setup_steps(project)]
+
+
+def setup_steps(project):
+    entries = config_table(project, "worktree").get("setup")
+    if entries is None:
         return []
-    if not isinstance(commands, list):
+    if not isinstance(entries, list):
         raise SystemExit(
             f"[holo2] {project.config_path}: [worktree] setup must be a list of "
-            f"command strings, got {type(commands).__name__}")
-    for command in commands:
-        if not isinstance(command, str):
-            raise SystemExit(
-                f"[holo2] {project.config_path}: [worktree] setup: every entry must be "
-                f"a command string, got {type(command).__name__}")
-        if not command.strip():
-            raise SystemExit(
-                f"[holo2] {project.config_path}: [worktree] setup: entry {command!r} "
-                "is empty")
-    return commands
+            f"command strings, got {type(entries).__name__}")
+    return [_setup_step(project, number, entry)
+            for number, entry in enumerate(entries, 1)]
+
+
+def _setup_step(project, number, entry):
+    prefix = f"[holo2] {project.config_path}: [worktree] setup: entry {number} "
+    if isinstance(entry, dict):
+        return _table_step(prefix, entry)
+    if not isinstance(entry, str):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [worktree] setup: every entry must be "
+            f"a command string or a table, got {type(entry).__name__}")
+    if not entry.strip():
+        raise SystemExit(prefix + f"{entry!r} is empty")
+    return SetupStep(entry, None, ())
+
+
+def _table_step(prefix, entry):
+    unknown = sorted(set(entry) - SETUP_STEP_KEYS)
+    if unknown:
+        raise SystemExit(prefix + f"has unknown key {unknown[0]!r}; a table takes"
+                         " run, inputs and keep")
+    run = entry.get("run")
+    if not isinstance(run, str) or not run.strip():
+        raise SystemExit(prefix + "needs run, a non-empty command string")
+    inputs = _step_paths(prefix, "inputs", entry.get("inputs"))
+    if not inputs:
+        raise SystemExit(prefix + "needs inputs, a non-empty list of"
+                         " repository-relative paths")
+    return SetupStep(run, tuple(inputs),
+                     tuple(_step_paths(prefix, "keep", entry.get("keep", []))))
+
+
+def _step_paths(prefix, key, paths):
+    if not isinstance(paths, list):
+        raise SystemExit(prefix + f"{key} must be a list of repository-relative"
+                         f" paths, got {type(paths).__name__}")
+    for path in paths:
+        if not isinstance(path, str):
+            raise SystemExit(prefix + f"{key}: every path must be a string, got"
+                             f" {type(path).__name__}")
+        parts = pathlib.PurePosixPath(path).parts
+        if (not path.strip() or path.startswith("/") or not parts
+                or ".." in parts):
+            raise SystemExit(prefix + f"{key}: {path!r} must be a relative path"
+                             " inside the repository")
+    return [pathlib.PurePosixPath(path).as_posix() for path in paths]
 
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
