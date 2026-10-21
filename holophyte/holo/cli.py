@@ -120,7 +120,7 @@ def status(args, target, zone_name):
 def skeleton(target):
     from holophyte.agents.harness import implementer_profiles
     template = (factory_checkout() / "ticketTemplate.md").read_text()
-    names = list(implementer_profiles(target))
+    names = implementer_profiles(target)
     if not names:
         return template
     lines = template.splitlines(keepends=True)

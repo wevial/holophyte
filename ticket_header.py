@@ -16,7 +16,6 @@ CAPTION_RE = re.compile(r"[^\[\]\n]*")
 SLUG = r"[a-z0-9][a-z0-9-]*"
 MOCKUP_MEDIA_RE = re.compile(r"https?://[^/?#\s]+/[^?#\s]*\.(png|zip)")
 MOCKUP_MEDIA_KINDS = {"png": "snapshot", "zip": "bundle"}
-WHAT_WHY_HOW = "What / Why / How"
 BOLD_FIELDS = {"UI change": "ui_change", "Blast radius": "blast_radius"}
 LISTED = r"(?:[-*+]\s+)?"
 APPROVAL_RE = re.compile(rf"{LISTED}Approved (\d{{4}}-\d{{2}}-\d{{2}}):\s*(.*)")
@@ -279,7 +278,7 @@ def converted(body):
     for name, part in _sections(lines[start:]):
         if name in movers:
             movers[name](fields, tt.COMMENT_RE.sub("", "".join(part[1:])))
-        elif name == WHAT_WHY_HOW:
+        elif name == "What / Why / How":
             kept += [line for line in part if not _bold_field(fields, line)]
         else:
             kept += part
