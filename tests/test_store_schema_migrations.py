@@ -946,9 +946,9 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 55)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 56)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (55,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (56,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)

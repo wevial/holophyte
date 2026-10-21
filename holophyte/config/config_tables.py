@@ -135,7 +135,7 @@ def loop_config(project):
 
 
 STORY_KEYS = {"witness_sec": 600, "max_parallel": 2,
-              "dependency_ready": "merged"}
+              "dependency_ready": "merged", "witness_nightly_hour": 3}
 STORY_CHOICES = {"dependency_ready": ("merged",)}
 StoryConfig = collections.namedtuple("StoryConfig", STORY_KEYS)
 
@@ -154,6 +154,12 @@ def story_config(project):
                 raise SystemExit(
                     f"[holo2] {project.config_path}: [story] {key} must be "
                     f"one of {', '.join(STORY_CHOICES[key])}, got {value!r}")
+        elif key == "witness_nightly_hour":
+            if (isinstance(value, bool) or not isinstance(value, int)
+                    or not 0 <= value <= 23):
+                raise SystemExit(
+                    f"[holo2] {project.config_path}: [story] {key} must be "
+                    f"an hour from 0 to 23, got {value!r}")
         elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [story] {key} must be a "
