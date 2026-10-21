@@ -309,13 +309,14 @@ UNFETCHABLE_RULE = (
     "not fetch URL: REASON` before the CRITERION lines, never as a finding.")
 
 
-def evidence_brief(target, wt, task_id, evidence_states=(), evidence_files=()):
+def evidence_brief(target, wt, task_id, evidence_states=(), evidence_files=(),
+                   ui_change=None):
     from holophyte.config.config_tables import merge_config
     from holophyte.pr import evidence_fetch, mockup, pr_media
 
     cfg = merge_config(target)
     section = (pr_media.prepare(target, wt, task_id, evidence_states=evidence_states,
-                                evidence_files=evidence_files)
+                                evidence_files=evidence_files, ui_change=ui_change)
                if cfg.mode == "pr" else "")
     if not section:
         return mockup.reviewer_brief(wt)

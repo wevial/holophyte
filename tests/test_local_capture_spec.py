@@ -126,12 +126,56 @@ class LocalCaptureSpecTests(unittest.TestCase):
                 default.write_text("first")
                 self.configure(f"{self.command} {option}")
 
-                pr_media.prepare(self.project, self.root, "KO-1")
+                pr_media.prepare(self.project, self.root, "KO-1", ui_change="minor")
                 default.write_text("second")
-                pr_media.prepare(self.project, self.root, "KO-1")
+                pr_media.prepare(self.project, self.root, "KO-1", ui_change="minor")
 
                 self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
                 self.assertEqual(self.run_count(), 2)
+
+    def test_undeclared_ticket_is_captured_only_with_its_own_spec(self):
+        from holophyte.review.briefs import evidence_brief
+
+        (self.root / SPEC).unlink()
+        (self.root / "e2e/default.capture.ts").write_text("default")
+        self.configure(f"{self.command} --default e2e/default.capture.ts")
+
+        section = pr_media.prepare(self.project, self.root, "KO-1")
+        brief = evidence_brief(self.project, self.root, "KO-1")
+        self.assertEqual(section, "")
+        self.assertNotIn("## Evidence", brief)
+        self.assertEqual(self.run_count(), 0)
+
+        self.write_spec("FIXED")
+        section = pr_media.prepare(self.project, self.root, "KO-1")
+        self.assertTrue(section.startswith("## Evidence"))
+        self.assertEqual(self.run_count(), 1)
+
+    def test_undeclared_ticket_without_its_own_spec_reports_no_earlier_failure(self):
+        self.configure(self.command, local="false")
+        failed = pr_media.prepare(self.project, self.root, "KO-1")
+        self.assertIn("failed (exit 1)", failed)
+        self.assertIsNotNone(pr_media.capture_failure(self.project, self.root,
+                                                      "KO-1", ()))
+
+        (self.root / SPEC).unlink()
+        self.configure(self.command)
+
+        self.assertIsNone(pr_media.refresh(self.project, self.root, "KO-1", ""))
+        self.assertIsNone(pr_media.capture_failure(self.project, self.root,
+                                                   "KO-1", ()))
+        self.assertEqual(self.run_count(), 1)
+
+    def test_refresh_captures_the_default_spec_for_a_declared_ui_change(self):
+        (self.root / SPEC).unlink()
+        (self.root / "e2e/default.capture.ts").write_text("default")
+        self.configure(f"{self.command} --default e2e/default.capture.ts")
+
+        section = pr_media.refresh(self.project, self.root, "KO-1", "",
+                                   ui_change="minor")
+
+        self.assertTrue(section.startswith("## Evidence"))
+        self.assertEqual(self.run_count(), 1)
 
     def test_committed_capture_mode_ignores_uncommitted_capture_files(self):
         self.write_spec("FIXED")

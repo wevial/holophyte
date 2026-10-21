@@ -122,7 +122,7 @@ def _record_mode(conn, run_id, mode, rnd):
 def _evidence_brief(project, wt, task_id, ticket):
     parsed = ticket_template.parse(ticket)
     return evidence_brief(project, wt, task_id, parsed.evidence_states,
-                          parsed.evidence_files)
+                          parsed.evidence_files, ui_change=parsed.ui_change)
 
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
