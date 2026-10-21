@@ -62,7 +62,6 @@ function afterEnd(detail: RunDetail, at: number): boolean {
   return outcome != null && ended != null && at > ended;
 }
 
-/** The maintainer's own note reads "You"; anyone else's reads `other`. */
 export function noteAuthor(author: string, other: string): string {
   return author === "maintainer" ? "You" : other;
 }
