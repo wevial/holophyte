@@ -82,7 +82,8 @@ def run_worktree_setup(project, wt, conn=None, run_id=None):
     return ok, report
 
 
-def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None):
+def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None,
+                     reuse=()):
     try:
         write_worktree_environment(project, wt)
     except (SystemExit, InfraFailure) as error:
@@ -97,7 +98,8 @@ def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None):
     if commands:
         set_phase(conn, run_id, "working",
                   f"worktree setup: {len(commands)} command(s) in {wt}")
-    ok, report, transcript = _run_setup_commands(project, wt, commands, deadline)
+    ok, report, transcript = _run_setup_commands(project, wt, commands, deadline,
+                                                 reuse)
     if not ok:
         return False, report, transcript
     if (Path(wt) / ".githooks").is_dir():
@@ -111,10 +113,15 @@ def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None):
     return True, "", transcript
 
 
-def _run_setup_commands(project, wt, commands, deadline):
+def _run_setup_commands(project, wt, commands, deadline, reuse):
     timeout = setup_timeout(project)
     transcript = ""
     for n, command in enumerate(commands, 1):
+        if n in reuse:
+            line = f"[holo2] worktree setup {n}/{len(commands)} reused: "
+            print(line + command)
+            transcript += line + redact_values(command) + "\n"
+            continue
         limit = timeout if deadline is None else min(
             timeout, deadline - time.monotonic())
         if limit <= 0:
