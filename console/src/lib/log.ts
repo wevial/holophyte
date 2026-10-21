@@ -22,6 +22,18 @@ function roundOf(event: RunEvent, rounds: Round[]): number | null {
   return begun.length > 0 ? Math.max(...begun.map((round) => round.round)) : null;
 }
 
+const TERMINAL_ADJUDICATION = /^\s*verifying\s*->\s*reviewing\s*:\s*terminal adjudication\s*$/;
+
+const isTerminalAdjudication = (event: RunEvent) => event.kind === "phase_change" && TERMINAL_ADJUDICATION.test(event.summary);
+
+/** Whether `round` is the verdict recorded past the round cap: the newest
+ *  phase change at or before its start is the terminal adjudication. */
+export function isFinalCheck(round: Round, events: RunEvent[]): boolean {
+  const before = orderEvents(events).filter((event) => event.kind === "phase_change" && event.at <= round.started_ms);
+  const newest = before[before.length - 1];
+  return newest != null && isTerminalAdjudication(newest);
+}
+
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 /**
@@ -44,6 +56,7 @@ export function summarize(event: RunEvent, rounds: Round[] = []): string {
     case "working -> verifying":
       return "implement done · verifying";
     case "verifying -> reviewing": {
+      if (isTerminalAdjudication(event)) return "final check started";
       const n = round();
       return n == null ? "review started" : `review round ${n} started`;
     }
