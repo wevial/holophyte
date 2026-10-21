@@ -338,6 +338,12 @@ def build_parser():
              "spawned by the scheduler under [loop] workers > 1, not meant "
              "to be typed")
     modes.add_argument(
+        "--witness-step", action="store_true",
+        help="internal: run the loop's witness step once -- a pass for each "
+             "open story whose ledger lacks main's tip, under the project's "
+             "witness lock -- and exit 0; spawned by the scheduler under "
+             "[loop] workers > 1, not meant to be typed")
+    modes.add_argument(
         "--shadow", metavar="BRIEF",
         help="internal: run the shadow implementer from the brief file "
              "BRIEF under the project's shadow lock, record its result on "
