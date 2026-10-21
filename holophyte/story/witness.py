@@ -176,8 +176,7 @@ def witness_pass(target, conn, story_id, verifier):
     if held and all(row.carriedFrom is None for row in at_tip):
         settle_story(target, conn, story_id, sha)
         return []
-    due = (verifier != "loop" or bool(owed)
-           or set_due(target, conn, story_id, sha))
+    due = verifier != "loop" or owed or set_due(target, conn, story_id, sha)
     if held and not due:
         settle_story(target, conn, story_id, sha)
         return []
@@ -215,12 +214,12 @@ def pass_pending(target, conn, project_id):
 
 def _pending(target, conn, found, sha):
     at_tip = main_ledger(conn, found.ticketId, sha)
-    return bool({witness.key for witness in found.witnesses}
-                - {row.witnessKey for row in at_tip}
-                or rerun_owed(conn, found.ticketId, sha)
-                or settle_owed(conn, found.ticketId, sha)
-                or (any(row.carriedFrom for row in at_tip)
-                    and set_due(target, conn, found.ticketId, sha)))
+    return ({witness.key for witness in found.witnesses}
+            - {row.witnessKey for row in at_tip}
+            or rerun_owed(conn, found.ticketId, sha)
+            or settle_owed(conn, found.ticketId, sha)
+            or (any(row.carriedFrom for row in at_tip)
+                and set_due(target, conn, found.ticketId, sha)))
 
 
 def witness_step(target, conn, project_id):
