@@ -130,9 +130,10 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         return witness_pass(self.target, self.conn, self.story_id, "loop")
 
     def age_real_rows(self, ms):
+        at = int(time.time() * 1000) - ms
         self.conn.execute("UPDATE witnessResults SET at = ?"
-                          " WHERE carriedFrom IS NULL",
-                          (int(time.time() * 1000) - ms,))
+                          " WHERE carriedFrom IS NULL", (at,))
+        self.conn.execute("UPDATE stories SET approvedAt = ?", (at - 1,))
         self.conn.commit()
 
     def at(self, sha):
@@ -262,6 +263,43 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertEqual(self.counter("W1"), 2)
         self.assertEqual([row.witnessKey for row in witness_ledger(
             self.conn, self.story_id) if row.mainSha == b], ["W1"])
+
+    def test_a_replanned_witness_runs_before_its_old_verdict_can_close(self):
+        self.story(source=LANDED + "# approved\n")
+        self.land()
+        witnesses = [dict(witness._asdict(), source=LANDED)
+                     for witness in store.stories.story(
+                         self.conn, self.story_id).witnesses]
+        witnesses[0]["command"] = "exit 1"
+        (child,) = self.conn.execute(
+            "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
+            (self.story_id,)).fetchone()
+        store.stories.replan_story(self.conn, self.story_id, witnesses,
+                                   [(child, "completes", ["W1", "W2"])], ())
+        (revision,) = self.conn.execute(
+            "SELECT revision FROM tickets WHERE id = ?",
+            (self.story_id,)).fetchone()
+        store.stories.approve_story(self.conn, self.story_id, revision,
+                                    "operator", "W1 changed")
+        b = commit_file(self.repo, "README.md", "more\n", "docs")
+
+        self.loop()
+
+        self.assertEqual(self.at(b)["W1"][:2], ("red", None))
+        self.assertNotEqual(
+            store.stories.story(self.conn, self.story_id).state, "closed")
+
+    def test_a_witness_path_is_literal_not_a_pattern(self):
+        self.story(witness_paths=["app/[id]/page.tsx"])
+        a = self.land()
+        b = commit_file(self.repo, "app/i/page.tsx", "one\n", "matches a glob")
+        self.loop()
+        self.assert_carried(b, a, 1)
+
+        c = commit_file(self.repo, "app/[id]/page.tsx", "one\n", "the path")
+        self.loop()
+
+        self.assert_ran(c, 2)
 
     def test_a_failing_git_command_counts_as_due(self):
         self.story(witness_paths=[FIXTURE_DIR])

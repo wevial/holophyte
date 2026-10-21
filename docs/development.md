@@ -619,7 +619,8 @@ Each module, one line:
   real verdicts to the new commit.
 - `holophyte/story/witness_cadence.py` — `set_due()` answers whether a loop
   pass runs a story's witness set at a commit: when the story has no real
-  run of every witness yet, when a child's merged run's `mergeSha` is an
+  run of every witness since the story's latest approval, when a child's
+  merged run's `mergeSha` is an
   ancestor of the commit and not of the set's last real run (the oldest of
   its witnesses' latest real verdicts, so a pass cut short still owes the
   rest), when the

@@ -20,7 +20,8 @@ def set_due(target, conn, story_id, sha):
     found = story(conn, story_id)
     latest = latest_real(conn, story_id)
     current = [latest.get(witness.key) for witness in found.witnesses]
-    if not current or None in current:
+    if (not current or None in current
+            or any(row.at <= found.approvedAt for row in current)):
         return True
     last = min(current, key=lambda row: row.id)
     if last.at < _last_nightly_ms(story_config(target).witness_nightly_hour):
@@ -47,7 +48,8 @@ def _last_nightly_ms(hour):
 def _paths_changed(repo, since, sha, paths):
     if not paths:
         return False
-    code, output = _git(repo, "diff", "--name-only", since, sha, "--", *paths)
+    code, output = _git(repo, "--literal-pathspecs", "diff", "--name-only",
+                        since, sha, "--", *paths)
     if code:
         raise _GitFailed
     return bool(output.strip())
