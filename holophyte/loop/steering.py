@@ -47,15 +47,19 @@ def reviewed_ticket(conn, run_id, ticket):
 def adopted_verify(conn, run_id, verify_cmd):
     if conn is None or run_id is None:
         return verify_cmd
+    return _revised_verify(conn, run_id) or verify_cmd
+
+
+def _revised_verify(conn, run_id):
     body = adopted_body(conn, run_id)
     adopted_cmd = parse_body("", body)["verify"] if body is not None else None
-    return adopted_cmd or verify_cmd
+    claimed = parse_body("", claimed_body(conn, run_id) or "")["verify"]
+    return adopted_cmd if adopted_cmd != claimed else None
 
 
 def _verify_block(conn, run_id):
-    adopted_cmd = adopted_verify(conn, run_id, None)
-    claimed = parse_body("", claimed_body(conn, run_id) or "")["verify"]
-    if adopted_cmd is None or adopted_cmd == claimed:
+    adopted_cmd = _revised_verify(conn, run_id)
+    if adopted_cmd is None:
         return ""
     return f"\n\nAmended verify command(s):\n{adopted_cmd}"
 
