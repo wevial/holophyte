@@ -285,8 +285,10 @@ class _WitnessChild:
         if self.child is not None:
             return
         tip = pass_due(target, conn, project)
-        if tip is None or (tip == self.spawned_at
-                           and monotonic() - self.exited_at < self.tick_sec):
+        if tip is None:
+            self.waiting = any(_still_running(pid) for pid in self.cancelled)
+            return
+        if tip == self.spawned_at and monotonic() - self.exited_at < self.tick_sec:
             return
         if not quiet(target, tip):
             self.waiting = True
@@ -336,6 +338,16 @@ class _WitnessChild:
         self.child = None
         self.exited_at = monotonic()
         return True
+
+
+def _still_running(pid):
+    from holophyte.host.supervisor_lock import pid_alive
+
+    try:
+        exited, _ = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        return pid_alive(pid)
+    return not exited
 
 
 def _triggering_tip(target, conn, ticket, sha):

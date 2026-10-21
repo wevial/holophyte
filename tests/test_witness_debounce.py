@@ -157,6 +157,14 @@ class QuietWindowTests(_DebounceFixture):
                     check_config(self.project)
                 self.assertIn("[story] witness_quiet_sec", str(raised.exception))
 
+    def test_a_git_timeout_reading_the_tip_time_counts_as_quiet(self):
+        tip = self.git("rev-parse", "main").strip()
+        quiet = holophyte.story.witness_trigger.quiet
+        self.assertFalse(quiet(self.project, tip))
+
+        with patch.object(holophyte.story.witness_trigger, "GIT_TIMEOUT", 1e-6):
+            self.assertTrue(quiet(self.project, tip))
+
 
 class _Scheduler:
     """The real pool scheduler spawning real `--witness-step` children, its
@@ -386,3 +394,29 @@ class WitnessDebounceTests(_DebounceFixture):
                                             ("W2", tips["c"], "green")])
         self.assertEqual(out.count("cancelled the witness pass"), 3, out)
         self.assertEqual(out.count("letting the witness pass"), 1, out)
+
+    def test_a_scheduler_that_cancels_an_inherited_child_restarts_the_pass(self):
+        self.blocking_story()
+        self.quiet()
+        inherited = subprocess.Popen(
+            [sys.executable, str(ROOT / "factory.py"), str(self.target),
+             "--witness-step"], cwd=ROOT, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        self.addCleanup(_kill, inherited)
+        self.w2_blocking(1)
+        b = self.land("b", remove=[MARKER])
+        scheduler = _Scheduler(self)
+
+        def inherited_exits():
+            self.assertEqual(inherited.wait(timeout=10), 143)
+
+        def restarted_child_exits():
+            (child,) = scheduler.children
+            return child.pid, child.wait(timeout=120)
+
+        rc = scheduler.run(inherited_exits, self.quiet, restarted_child_exits)
+
+        self.assertEqual(rc, 0, scheduler.out.getvalue())
+        self.assertEqual(scheduler.spawned_before, [0, 0, 1])
+        self.assertEqual(self.real_rows(), [("W1", b, "green"),
+                                            ("W2", b, "green")])

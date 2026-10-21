@@ -46,7 +46,10 @@ def quiet(target, sha):
     window = story_config(target).witness_quiet_sec
     if not window:
         return True
-    code, output = _git(target.path, "log", "-1", "--format=%ct", sha)
+    try:
+        code, output = _git(target.path, "log", "-1", "--format=%ct", sha)
+    except _GitFailed:
+        return True
     if code or not output.strip().isdigit():
         return True
     return time() - int(output) >= window
