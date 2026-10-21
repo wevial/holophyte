@@ -50,9 +50,9 @@ class StoryLedgerTests(StoryFixture, unittest.TestCase):
         self.assertEqual(
             [tuple(row) for row in witness_ledger(self.conn, self.parent, "A")],
             [(green, "W1", "A", "green", None, "loop", "h1", "ev/w1.log", 1.5,
-              2),
+              2, None),
              (absent, "W2", "A", "absent", None, "baseline", None, None, None,
-              3)])
+              3, None)])
 
     def test_a_bad_witness_result_is_refused_and_appends_nothing(self):
         self.approve()

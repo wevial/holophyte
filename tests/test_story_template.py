@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import story_template
 from tests.story_fixture import witness_path, write_story
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -175,6 +176,37 @@ class StoryAdvisoryTests(StoryCliCase):
         self.edit(directory, "witnesses outcome 1)",
                   "witnesses outcome 1 after one pass)")
         self.assert_advised(directory, "W1's criterion says 'one pass'")
+
+
+def paths_section(*items):
+    return "\n".join(["## Witness paths", "", "```", *items, "```", "", ""])
+
+
+class WitnessPathsTests(StoryCliCase):
+    def test_the_story_names_its_witness_paths(self):
+        directory = self.story(extra=paths_section("lib/reader/",
+                                                   "app/my contract/"))
+
+        story = story_template.parse_story((directory / "story.md").read_text())
+
+        self.assertEqual(story_template.witness_paths(story),
+                         ["lib/reader/", "app/my contract/"])
+        self.assertEqual(self.run_cli(directory).returncode, 0)
+
+    def test_each_bad_witness_path_is_one_problem_naming_it(self):
+        for index, item in enumerate(("/abs", "../up", "lib/../..")):
+            with self.subTest(item=item):
+                directory = write_story(Path(self.tmp.name) / f"plans{index}",
+                                        extra=paths_section("lib/", item))
+                self.assert_refused(directory, "witness path is not "
+                                    f"repository-relative: {item}")
+
+    def test_eleven_witness_paths_are_one_problem_naming_the_eleventh(self):
+        paths = [f"lib/part{index}/" for index in range(11)]
+        directory = self.story(extra=paths_section(*paths))
+
+        self.assert_refused(directory, "'Witness paths' has 11 lines; the "
+                            "limit is 10: lib/part10/")
 
 
 if __name__ == "__main__":

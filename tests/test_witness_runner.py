@@ -86,6 +86,17 @@ def unittest_output(tmp, source):
     return run.stdout + run.stderr
 
 
+def merged_run(conn, ticket_id, sha):
+    (project_id,) = conn.execute("SELECT projectId FROM tickets WHERE id = ?",
+                                 (ticket_id,)).fetchone()
+    conn.execute(
+        "INSERT INTO runs (ticketId, projectId, attempt, phase, startedAt,"
+        " lastHeartbeat, endedAt, outcome, mergeSha)"
+        " VALUES (?, ?, 1, 'done', 1, 2, 2, 'merged', ?)",
+        (ticket_id, project_id, sha))
+    conn.commit()
+
+
 class WitnessRunnerFixture:
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -108,7 +119,7 @@ class WitnessRunnerFixture:
         target.config_path.write_text(config)
         return target
 
-    def approve(self, witnesses):
+    def approve(self, witnesses, witness_paths=()):
         self.conn.execute("INSERT INTO projects (linearTeamId, repoPath,"
                           " defaultBranch, autonomyProfile)"
                           " VALUES ('t', ?, 'main', 'personal')",
@@ -124,9 +135,19 @@ class WitnessRunnerFixture:
             {"key": key, "criterion": f"{key} holds", "file": path,
              "command": command, "source": source}
             for key, path, command, source in witnesses],
-            [(ids[1], "completes", [key for key, *_ in witnesses])])
+            [(ids[1], "completes", [key for key, *_ in witnesses])],
+            witness_paths=witness_paths)
         approve_story(self.conn, ids[0], 1, "operator", "go")
         self.story_id = ids[0]
+
+    def child_id(self):
+        (child,) = self.conn.execute(
+            "SELECT DISTINCT ticketId FROM storyChildren WHERE storyId = ?",
+            (self.story_id,)).fetchone()
+        return child
+
+    def child_merged(self, sha):
+        merged_run(self.conn, self.child_id(), sha)
 
     def three_witnesses(self):
         return [

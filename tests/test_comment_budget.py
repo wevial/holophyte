@@ -263,6 +263,7 @@ PINNED = {
     "holophyte/story/witness.py": 1,
     "holophyte/story/witness_running.py": 1,
     "holophyte/story/witness_tree.py": 1,
+    "holophyte/story/witness_trigger.py": 1,
 
     "linear_provider.py": 20,
     "provider.py": 12,
