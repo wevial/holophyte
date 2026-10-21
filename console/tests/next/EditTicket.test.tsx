@@ -414,3 +414,25 @@ test("a header blast radius outside the choices shows as itself and Diff decides
   }, body);
   expect(saved).toBe(body.replace('blast_radius = "low"\n', ""));
 });
+
+test("a header UI change outside the choices shows as itself and None replaces it", async () => {
+  const body = HEADER_BODY.replace('ui_change = "minor"', 'ui_change = "big"');
+  const saved = await saveHeaderEdit(async () => {
+    const change = screen.getByRole("combobox", { name: "UI change" }) as HTMLSelectElement;
+    expect(change.selectedOptions[0]!.textContent).toBe("big · not a choice");
+    await act(async () => void fireEvent.change(change, { target: { value: "" } }));
+    expect(change.selectedOptions[0]!.textContent).toBe("None");
+  }, body);
+  expect(saved).toBe(body.replace('ui_change = "big"', 'ui_change = "none"'));
+});
+
+test("adding a state to a header whose evidence is not entries replaces that key with the row", async () => {
+  const body = HEADER_BODY.replace('implementer = "fast"\n', 'implementer = "fast"\nevidence = "bad"\n');
+  const saved = await saveHeaderEdit(async () => {
+    expect(screen.queryByRole("textbox", { name: "E1 File" })).toBeNull();
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
+    await type("E1 State", "the run page");
+  }, body);
+  expect(saved).not.toContain('evidence = "bad"');
+  expect(saved.match(/^\[\[evidence\]\]\r?\nfile = "01-"\r?\nstate = "the run page"$/m)).toBeTruthy();
+});

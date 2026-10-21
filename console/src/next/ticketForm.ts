@@ -11,8 +11,8 @@ export interface Fields {
   what: string;
   why: string;
   how: string;
-  uiChange: "major" | "minor" | null;
-  /** "medium" or "high", or the value a header holds outside them, kept so it can be cleared. */
+  /** Each a choice, or the value a header holds outside them, kept so it can be cleared. */
+  uiChange: string | null;
   blastRadius: string | null;
   mockupLink: string;
   mockupApproval: string;
@@ -185,10 +185,11 @@ const approvedOn = (mockup: Table) => mockup.approved instanceof HeaderDate ? mo
 const evidenceOf = (header: Table): Evidence[] => (Array.isArray(header.evidence) ? header.evidence : []).filter(isTable)
   .map(entry => ({ file: typeof entry.file === "string" ? entry.file : "", state: typeof entry.state === "string" ? entry.state : "" }));
 
-/** The header TOML `source` with its `[[evidence]]` entries set to `value`:
+/** The header TOML with its `[[evidence]]` entries set to `value`, an `evidence = …` key dropped:
  *  as many entries as before are rewritten key by key, comments kept; a
  *  changed count keeps each entry still found whole and writes the rest. */
-function withEvidence(source: string, value: Evidence[]): string {
+function withEvidence(written: string, value: Evidence[]): string {
+  const source = withKey(written, "", "evidence", undefined);
   const old = evidenceOf(readHeader(source));
   if (old.length === value.length) {
     return value.reduce((text, entry, index) => withEntryKey(withEntryKey(text, "evidence", index, "file", entry.file), "evidence", index, "state", entry.state), source);
@@ -205,7 +206,7 @@ function withEvidence(source: string, value: Evidence[]): string {
 function headerField(source: string, field: HeaderField): Fields[HeaderField] {
   const header = readHeader(source);
   const mockup = isTable(header.mockup) ? header.mockup : {};
-  if (field === "uiChange") return header.ui_change === "major" || header.ui_change === "minor" ? header.ui_change : null;
+  if (field === "uiChange") return header.ui_change === undefined || header.ui_change === "none" ? null : typeof header.ui_change === "string" ? header.ui_change : JSON.stringify(header.ui_change);
   if (field === "estimate") return Number.isInteger(header.estimate) ? header.estimate as number : null;
   if (field === "dependsOn") return Array.isArray(header.depends_on) ? header.depends_on.filter(key => typeof key === "string") : [];
   if (field === "mockupLink") return typeof mockup.url === "string" ? mockup.url : "";

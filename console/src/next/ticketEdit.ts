@@ -66,7 +66,7 @@ export type EditFields = Record<Prose, string> & {
   estimate: string;
   priority: number | null;
   dependsOn: string[];
-  uiChange: "major" | "minor" | null;
+  uiChange: string | null;
   blastRadius: string | null;
   evidence: Evidence[];
   others: { index: number; name: string; text: string }[];
