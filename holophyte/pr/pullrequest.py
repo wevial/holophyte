@@ -266,6 +266,7 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
             project, wt, task_id, evidence,
             evidence_states=parsed.evidence_states,
             evidence_files=parsed.evidence_files,
+            ui_change=parsed.ui_change,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     text = None if written else _refreshed_prose(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
@@ -318,6 +319,7 @@ def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
             project, wt, task_id,
             evidence_states=parsed.evidence_states,
             evidence_files=parsed.evidence_files,
+            ui_change=parsed.ui_change,
             record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
     title, text = _written_pr_text(project, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
