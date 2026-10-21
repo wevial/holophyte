@@ -24,6 +24,7 @@ from holophyte.story.story_close import (
     settle_owed,
     settle_story,
 )
+from holophyte.story.witness_running import clear_running, mark_running
 from holophyte.story.witness_tree import clean_args, warm_tree
 from holophyte.story.witness_trigger import carry, set_due
 from store.notes import record_note
@@ -109,9 +110,7 @@ def _pytest_message(rest):
 def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
                   again=None):
     witnesses = story(conn, story_id).witnesses
-    (identifier,) = conn.execute(
-        "SELECT linearIdentifier FROM tickets WHERE id = ?",
-        (story_id,)).fetchone()
+    identifier = _identifier(conn, story_id)
     logs = Path(target.holo_dir) / "witness" / identifier / sha
     stamp = f"{verifier}-{time.time_ns()}"
     deadline = time.monotonic() + story_config(target).witness_sec
@@ -131,6 +130,13 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
                 for witness in witnesses
                 if witness.key in rerun and time.monotonic() < deadline]
     return _rows(conn, story_id, ids)
+
+
+def _identifier(conn, story_id):
+    (identifier,) = conn.execute(
+        "SELECT linearIdentifier FROM tickets WHERE id = ?",
+        (story_id,)).fetchone()
+    return identifier
 
 
 def _tree(stack, target, sha, verifier, deadline):
@@ -241,6 +247,9 @@ def witness_step(target, conn, project_id):
             return
         try:
             for story_id in pass_pending(target, conn, project_id):
+                mark_running(target, _identifier(conn, story_id),
+                             [witness.key
+                              for witness in story(conn, story_id).witnesses])
                 rows = witness_pass(target, conn, story_id, "loop")
                 if rows:
                     print(f"[holo2] witness pass at {rows[0].mainSha}: "
@@ -249,6 +258,8 @@ def witness_step(target, conn, project_id):
         except TIP_FAILURES as error:
             print(f"[holo2] the witness pass could not run ({error}); the next"
                   " pass tries again")
+        finally:
+            clear_running(target)
 
 
 def witness_lock_path(target):
