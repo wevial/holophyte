@@ -123,8 +123,9 @@ export function NewTicket() {
     setEstimateDraft(String(fieldOf(form, "estimate") ?? 25));
     setMockupLink(fieldOf(form, "mockupLink"));
     setMockupBoards(fieldOf(form, "mockupImages").map(image => image.replace(/^!\[[^\]]*\]\((.*)\)$/, "$1")).join("\n"));
-    setApproved(fieldOf(form, "mockupApproved") || today());
-    setApprovedNote(fieldOf(form, "mockupNote"));
+    const approval = /^Approved (\d{4}-\d{2}-\d{2}):[ \t]*(.*)$/.exec(fieldOf(form, "mockupApproval"));
+    setApproved(fieldOf(form, "mockupApproved") || approval?.[1] || today());
+    setApprovedNote(fieldOf(form, "mockupNote") || approval?.[2] || "");
     setEvidence(fieldOf(form, "evidence"));
   };
   useEffect(() => {

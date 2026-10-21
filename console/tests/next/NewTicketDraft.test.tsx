@@ -237,3 +237,15 @@ test("blocked browser storage opens blank, explains Save draft failure and still
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Filed DEMO-12 in demo Backlog.");
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-12");
 });
+
+test("a draft saved before the header restores its Mock-up approval into Approved on and What was approved", async () => {
+  const body = `# ${title}\n\n## Summary\n\nThe run page lists each steer note.\n\n## What / Why / How\n\n**What:** Show the notes.\n\n**UI change:** major\n\n**How:** Read the notes.\n\n## Mock-up\n\nhttps://claude.ai/artifact/abc123\n\nApproved 2026-10-19: the defaults\n`;
+  storage.setItem(key, JSON.stringify({ body, priority: 2, savedAt: NOW }));
+  const answer = fakeFetch(() => Response.json({ problems: ["Complete the ticket"] }, { status: 422 }));
+  await mount("demo", fleet(answer.fetchImpl));
+  expect((screen.getByLabelText("Approved on") as HTMLInputElement).value).toBe("2026-10-19");
+  expect((screen.getByRole("textbox", { name: "What was approved" }) as HTMLInputElement).value).toBe("the defaults");
+  await press("File ticket");
+  const posted = (answer.seen[0]!.body as { body: string }).body;
+  expect(posted.match(/^(?:url|approved|note) = .*$/gm)).toEqual(['url = "https://claude.ai/artifact/abc123"', "approved = 2026-10-19", 'note = "the defaults"']);
+});
