@@ -24,6 +24,14 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>, ro
 
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { title: "Count the rounds", phase: "reviewing", agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE }, [changes]),
+  13: {
+    ...detail(13, "DEMO-13", { phase: "merge_gate" }),
+    events: [
+      { at: STARTED, kind: "babysit_step", summary: "checks" },
+      { at: STARTED + 1, kind: "check_fix_round", summary: "check fix round 1 of 2 on https://github.com/o/r/pull/7: vitest; failing: 2 tests red" },
+      { at: STARTED + 2, kind: "babysit_step", summary: "fix" },
+    ],
+  },
   14: detail(14, "DEMO-14", { title: "Read a `+++` TOML header" }),
   40: detail(40, "DEMO-40", {
     phase: "failed",
@@ -130,6 +138,12 @@ test("a run in its merge phase reads as merging on the Merge stage", async () =>
   await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merging" }));
   expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
   expect(stage()).toBe("Merge · 1 loop back");
+});
+
+test("a run in its merge gate during a check fix round says it is fixing CI and names the failing check and round", async () => {
+  await mount("#/runs/demo/13", runFetch({ ...liveRow, id: 13, ticket: "DEMO-13", phase: "merge_gate" }));
+  expect(verdict()).toStartWith("Fixing CI: vitest failing (check fix round 1 of 2).");
+  expect(stage()).toStartWith("Merge · fixing CI");
 });
 
 test("a run past its heartbeat threshold says how long it has been silent and counts its criteria before its daemon raises it", async () => {
