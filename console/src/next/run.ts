@@ -123,9 +123,9 @@ function checkFixRound(events: RunDetail["events"]): string | null {
   const ordered = orderEvents(events);
   const steps = ordered.filter((event) => event.kind === "babysit_step");
   if (steps.at(-1)?.summary !== "fix") return null;
-  const since = steps.findLast((event) => event.summary !== "fix")?.at ?? -Infinity;
-  const round = ordered.findLast((event) => event.kind === "check_fix_round");
-  const match = round != null && round.at >= since ? CHECK_FIX_ROUND.exec(round.summary) : null;
+  const since = ordered.findLastIndex((event) => event.kind === "babysit_step" && event.summary !== "fix");
+  const at = ordered.findLastIndex((event) => event.kind === "check_fix_round");
+  const match = at > since ? CHECK_FIX_ROUND.exec(ordered[at]!.summary) : null;
   return match == null ? null : `${match[3]} failing (check fix round ${match[1]} of ${match[2]})`;
 }
 
