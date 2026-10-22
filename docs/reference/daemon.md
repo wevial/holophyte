@@ -239,8 +239,8 @@ releasing without reading GitHub.
 Body: a JSON object with `run` (required, a run parked on its pull
 request), `question` (required) and `author` (optional, default
 `maintainer`). The console's question about the pull request: the loop's
-next claim answers it there, without waiting for the host sweep to see new
-pull request activity.
+next claim answers it in the console, without waiting for the host sweep to
+see new pull request activity. Nothing from a console ask is posted to GitHub.
 
 A `run` that is not a positive integer is 400, a run the store does not
 hold is 404 `no such run`, and a project with no store is 503. Other
@@ -272,19 +272,18 @@ row. The daemon calls no GitHub API.
 ```json
 {"action": "ask", "ok": true, "run": 52, "ticket": "KO-219",
  "event_id": 812, "recorded": 88,
- "detail": "console ask event 812 recorded; the loop's next claim answers it on https://github.com/example/repo/pull/31"}
+ "detail": "console ask event 812 recorded; the loop's next claim answers it in the console"}
 ```
 
 On that claim the babysitter treats each unanswered console ask on the
 ticket's pull request as an `@holophyte ask:` on its conversation, whatever
 `[merge] mention_accounts` lists: the adjudicator reads the checkout and the
-ticket and changes nothing. One conversation comment is posted, starting
-`> [Asked from the console by AUTHOR](PR_URL)` with the question quoted,
-then the answer under the factory's comment header; the babysitter never
-reads that comment back as an instruction. The answer records the usual
-`instruction` event (outcome `asked`) and a `console_ask_answered` event
-with payload `{"event_id", "url", "answer"}`, and the run parks again as
-before. [`GET /runs/N/asks`](http.md#get-runsnasks) lists the asks and
+ticket and changes nothing. No comment, review reply or issue comment is
+posted: the answer, redacted, is recorded as a `console_ask_answered` event
+with payload `{"event_id", "url", "answer"}` and a null `url`, and the run
+parks again as before. An ask answered before console answers stayed in the
+console keeps its posted comment's `url`, and such a comment, found on the
+pull request, still settles its ask. [`GET /runs/N/asks`](http.md#get-runsnasks) lists the asks and
 their answers. A failed or empty answer fails the run, as an
 `@holophyte ask:` does, and the ask stays unanswered.
 
@@ -479,8 +478,8 @@ ruleset and posts `"bypass_review": true`.
 Beside it the console draws Ask from [`GET /runs/N/asks`](http.md#get-runsnasks):
 an in-row question box whose Send posts [`POST /actions/ask`](#post-actionsask)
 with the row's `run` and the `question`. While the latest ask is unanswered
-the row shows it as waiting and offers no Ask; once answered, the row links
-the answer comment and shows the answer.
+the row shows it as waiting and offers no Ask; once answered, the row shows
+the question and the answer, with no link to GitHub.
 `--approve KO-n` on the writer host releases a parked candidate without
 reading GitHub.
 
