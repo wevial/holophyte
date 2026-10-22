@@ -14,6 +14,7 @@ import type { MenuActions } from "./menu.ts";
 import { POLL_INTERVAL_MS, pollAll, readTokenSources, readTokens } from "./poll.ts";
 import { seedScript } from "./seed.ts";
 import { type Level, buildSummary, summarizeAnswer, trayImageFile } from "./tray.ts";
+import { windowOptions } from "./window.ts";
 
 // The SwiftBar drawer's template icon; nativeImage picks up the @2x sibling
 // by name. From the repository, app.getAppPath() is this package's directory
@@ -64,14 +65,7 @@ function showConsole(url: string, configText: string | null): void {
     mainWindow.focus();
     return;
   }
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 860,
-    minWidth: 1100,
-    minHeight: 600,
-    title: "Holophyte Console",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
+  mainWindow = new BrowserWindow(windowOptions(process.platform));
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -90,7 +84,7 @@ function showConsole(url: string, configText: string | null): void {
   contents.on("did-finish-load", () => {
     const tokens = readTokens(configText, app.getPath("userData"));
     contents
-      .executeJavaScript(seedScript(tokens))
+      .executeJavaScript(seedScript(tokens, process.platform === "darwin" ? "macos" : null))
       .then((changed: unknown) => {
         if (changed === true) contents.reload();
       })

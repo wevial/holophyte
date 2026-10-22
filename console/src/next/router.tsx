@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
+import { APP_DRAG, inMacApp } from "../lib/view";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
@@ -31,11 +32,13 @@ import { validateTicketsSearch } from "./tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
+  const [macApp] = useState(inMacApp);
   return (
     <ToastProvider>
       <div className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
         <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
+          {macApp && <div aria-hidden="true" className={`sticky top-0 z-10 h-7 bg-canvas ${APP_DRAG}`} />}
           <TokenPrompt />
           <Outlet />
         </main>

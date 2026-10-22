@@ -5,7 +5,7 @@ import type { ProjectChoice } from "../lib/attention";
 import { groupByHost, hostItems, hostTone, type HostRecord, type HostTone } from "../lib/hosts";
 import type { PeersState } from "../hooks/usePeers";
 import type { Theme } from "../lib/theme";
-import { switchView } from "../lib/view";
+import { APP_DRAG, inMacApp, switchView } from "../lib/view";
 import { HostCard } from "./HostCard";
 import { ProjectRow } from "./ProjectRow";
 import { RailGroup } from "./RailGroup";
@@ -80,7 +80,7 @@ export function Rail({
       aria-label="Console"
       className="flex h-full w-[220px] shrink-0 flex-col gap-[22px] overflow-y-auto bg-rail px-[14px] py-[18px]"
     >
-      <div className="flex items-center gap-2 px-2">
+      <div className={`flex items-center gap-2 pr-2 ${inMacApp() ? `pl-[62px] ${APP_DRAG}` : "pl-2"}`}>
         <img src={logo} alt="" width={20} height={20} className="size-5" />
         <span className="text-[15px] font-bold text-rail-fg">Holophyte</span>
       </div>

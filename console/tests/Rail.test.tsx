@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { Rail } from "../src/components/Rail";
 import type { HostRecord } from "../src/lib/hosts";
 import type { Status } from "../src/lib/types";
-import { VIEW_KEY } from "../src/lib/view";
+import { APP_SHELL_KEY, VIEW_KEY } from "../src/lib/view";
 import { NO_ATTENTION, fixture, hostOf } from "./harness";
 
 const working = await fixture<Status>("working.json");
@@ -101,5 +101,23 @@ test("New view remembers the new view and loads its page with the same hash", ()
   } finally {
     localStorage.clear();
     location.href = "about:blank";
+  }
+});
+
+test("in the macOS app the logo row drags the window and starts clear of the traffic lights; in a browser it does neither", () => {
+  const logoRow = () => screen.getByText("Holophyte").parentElement!.classList;
+  try {
+    localStorage.setItem(APP_SHELL_KEY, "macos");
+    mountRail([]);
+    expect(logoRow().contains("[-webkit-app-region:drag]")).toBe(true);
+    expect(logoRow().contains("pl-[62px]")).toBe(true);
+    cleanup();
+
+    localStorage.removeItem(APP_SHELL_KEY);
+    mountRail([]);
+    expect(logoRow().contains("[-webkit-app-region:drag]")).toBe(false);
+    expect(logoRow().contains("pl-[62px]")).toBe(false);
+  } finally {
+    localStorage.removeItem(APP_SHELL_KEY);
   }
 });

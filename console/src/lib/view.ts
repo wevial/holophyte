@@ -2,6 +2,12 @@ type ConsoleView = "classic" | "next";
 
 export const VIEW_KEY = "holophyte.view";
 
+/** Written only by the desktop app's seed script, on macOS. */
+export const APP_SHELL_KEY = "holophyte.app-shell";
+
+export const APP_DRAG = "[-webkit-app-region:drag]";
+export const APP_NO_DRAG = "[-webkit-app-region:no-drag]";
+
 const PAGES: Record<ConsoleView, string> = { classic: "/", next: "/next.html" };
 
 /** The remembered front end, `classic` when nothing valid is stored or
@@ -11,6 +17,16 @@ function readView(): ConsoleView {
     return localStorage.getItem(VIEW_KEY) === "next" ? "next" : "classic";
   } catch {
     return "classic";
+  }
+}
+
+/** Whether the page sits in the macOS app, under its hidden title bar;
+ *  false in a browser or when storage is unavailable. */
+export function inMacApp(): boolean {
+  try {
+    return localStorage.getItem(APP_SHELL_KEY) === "macos";
+  } catch {
+    return false;
   }
 }
 
