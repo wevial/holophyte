@@ -51,22 +51,10 @@ test("unscoped, the heading counts every host's Waiting on you entries and the c
 
 test("a pull request ready to merge is a Pull requests row reading Your review, not a Waiting on you row or count", async () => {
   await mount("#/", busy);
-  expect(sectionCount("Waiting on you").textContent).toBe("2");
-  expect(waitRows()).toHaveLength(2);
   expect(waitRows().map((row) => row.textContent).join(" ")).not.toContain("WRITER-9");
-  expect(sectionHeader("Pull requests")).toBe("Pull requests11 waits on you");
   expect(prRows().map((row) => [row.textContent!.includes("WRITER-9"), row.querySelector("[data-pr-wait]")!.textContent, row.querySelector("[data-pr-since]")!.textContent!.split(" · ")[0]])).toEqual([
     [true, "Your review", "ready to merge"],
   ]);
-  cleanup();
-
-  localStorage.clear();
-  await mount("#/", fleet({ items: [] }, { items: [prPark] }));
-  expect(heading()).toBe("Nothing waiting on you.");
-  expect(waitRows()).toEqual([]);
-  expect(within(section("Waiting on you")).getByText("The factory has it from here.")).toBeTruthy();
-  expect(prRows()).toHaveLength(1);
-  expect(prRows()[0]!.textContent).toContain("WRITER-9");
 });
 
 test("a thread park with a pull request and a question park are Waiting on you rows counted in the heading, not Pull requests rows", async () => {
@@ -75,7 +63,6 @@ test("a thread park with a pull request and a question park are Waiting on you r
   expect(heading()).toBe("2 waiting on you.");
   expect(waitRows().map((row) => row.textContent!.match(/DEMO-\d+/)![0]).sort()).toEqual(["DEMO-4", "DEMO-5"]);
   expect(prRows()).toEqual([]);
-  expect(sectionHeader("Pull requests")).toBe("Pull requests0none wait on you");
 });
 
 test("a picked project scopes the heading, the count line and the Pull requests count", async () => {

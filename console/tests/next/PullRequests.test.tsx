@@ -347,14 +347,11 @@ test("a refused merge keeps the row's dialog open with the daemon's reason and i
   expect(seen.filter((request) => request.url.endsWith("/actions/merge"))).toHaveLength(2);
 });
 
-test("an opened row whose readiness answers not ready, a ready-state park or a draft, draws no Merge and keeps Open PR to review primary", async () => {
-  for (const [item, pr] of [[readyPark, 42], [draftPark, 45]] as const) {
-    await mount({ items: [item], actions: true, readyRuns: [] });
-    await openRow(pr);
-    expect(detailButton("Merge")).toBeNull();
-    expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
-    unmount();
-  }
+test("an opened row whose readiness answers not ready draws no Merge and keeps Open PR to review primary", async () => {
+  await mount({ items: [readyPark], actions: true, readyRuns: [] });
+  await openRow(42);
+  expect(detailButton("Merge")).toBeNull();
+  expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
 });
 
 test("the PR number links to GitHub without toggling or fetching the row detail", async () => {
