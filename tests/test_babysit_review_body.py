@@ -22,6 +22,16 @@ FINGERPRINT = hashlib.sha1(
 MARKER = f"<!-- holophyte:review-finding {FINGERPRINT} -->"
 QUOTE = (f"> [Review by @coderabbitai](https://github.com/example/repo/pull/7"
          f"#pullrequestreview-1): src/app.py:40-52 (Major): {TITLE}")
+HEADING_REVIEW = (HERE / "fixtures" / "pullrequest"
+                  / "coderabbit_outside_diff_heading_review.md").read_text()
+HEADING_PATH = "app/(client)/admin/organizations/page.tsx"
+HEADING_TITLE = "Pass `null` when no credit account exists."
+HEADING_MARKER = "<!-- holophyte:review-finding {} -->".format(hashlib.sha1(
+    f"coderabbitai\n{HEADING_PATH}\n70-77\n{HEADING_TITLE}".encode()
+).hexdigest()[:12])
+HEADING_QUOTE = (f"> [Review by @coderabbitai](https://github.com/example/repo"
+                 f"/pull/7#pullrequestreview-1): {HEADING_PATH}:70-77 (Major):"
+                 f" {HEADING_TITLE}")
 
 
 NOTE_REPLY = ((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
@@ -29,11 +39,11 @@ NOTE_REPLY = ((("holophyte", "Bot"), "---- Comment by fake ----\n\n"
 
 
 class ReviewBodyFindingTests(MergeModeFixture):
-    def with_review(self, state, author=("coderabbitai", "Bot")):
+    def with_review(self, state, author=("coderabbitai", "Bot"), body=REVIEW):
         login, kind = author
         state["data"]["repository"]["pullRequest"]["reviews"] = {"nodes": [{
             "id": "PRR_1", "author": {"login": login, "__typename": kind},
-            "body": REVIEW, "url": f"{self.URL}#pullrequestreview-1"}]}
+            "body": body, "url": f"{self.URL}#pullrequestreview-1"}]}
         return state
 
     def test_outside_diff_finding_is_adjudicated_fixed_and_answered(self):
@@ -66,6 +76,57 @@ class ReviewBodyFindingTests(MergeModeFixture):
         self.assertTrue(any("POST repos/example/repo/issues/7/comments" in c
                             for c in self.recorded()))
         return body
+
+    def test_a_bold_heading_finding_is_adjudicated_fixed_and_answered(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[
+            self.with_review(self.pr_state(), body=HEADING_REVIEW),
+            self.pr_state()])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- pass null"),
+                            Commit("pass null"), Idle(""),
+                            provider=self.provider())
+        brief = fake.turns[fake.roles.index("adjudicate")].goal
+        self.assertIn(f"{HEADING_PATH}:70", brief)
+        self.assertIn(HEADING_TITLE, brief)
+        fix = fake.turns[fake.roles.index("adjudicate") + 1]
+        self.assertIn("pass null", fix.goal)
+        kinds = [kind for kind, _ in self.api_calls()]
+        self.assertEqual(kinds.count("conversation"), 1)
+        self.assertNotIn("reply", kinds)
+        self.assertNotIn("resolve", kinds)
+        body = self.answer()
+        self.assertTrue(body.startswith(HEADING_QUOTE + "\n\n"))
+        self.assertIn(f"Addressed in {self.git('rev-parse', BRANCH).strip()}",
+                      body)
+        self.assertTrue(body.endswith(HEADING_MARKER))
+
+    def test_an_answered_bold_heading_finding_parks_ready(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        state = self.with_review(self.pr_state(), body=HEADING_REVIEW)
+        state["data"]["repository"]["pullRequest"]["comments"] = {"nodes": [
+            dict(self.comment(2, ("writer", "User"),
+                              f"{HEADING_QUOTE}\n\nDeclined: no.\n\n"
+                              f"{HEADING_MARKER}"),
+                 id="IC_2", viewerDidAuthor=True)]}
+        self.fake_route(states=[state])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertNotIn("adjudicate", fake.roles)
+        self.assertIn("waiting for a human to say merge", self.question())
+
+    def test_the_fix_prompt_outside_diff_line_alone_makes_no_item(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        prompt_only = "\n".join(line for line in HEADING_REVIEW.splitlines()
+                                 if not line.startswith(">"))
+        self.assertIn("Outside diff comments:", prompt_only)
+        self.fake_route(states=[
+            self.with_review(self.pr_state(), body=prompt_only)])
+        fake, _ = self.loop(Commit("initial work"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertNotIn("adjudicate", fake.roles)
+        self.assertNotIn("conversation", [kind for kind, _ in self.api_calls()])
+        self.assertIn("waiting for a human to say merge", self.question())
 
     def test_a_finding_repeated_in_two_reviews_is_one_item(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')

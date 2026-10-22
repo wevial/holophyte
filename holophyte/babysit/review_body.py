@@ -19,6 +19,12 @@ FILE_SUMMARY_RE = re.compile(r"^(.+?)\s*\(\d+\)$")
 LOCATION_RE = re.compile(r"^`(\d+)(?:-(\d+))?`:(.*)$", re.MULTILINE)
 SEVERITY_RE = re.compile(r"_\W*(Critical|Major|Minor|Trivial)_")
 TITLE_RE = re.compile(r"^\*\*(.+?)\*\*\s*$", re.MULTILINE)
+HEADING_RE = re.compile(
+    r"^\*\*\W*Outside diff range comments\s*\((\d+)\)\*\*\s*$", re.MULTILINE)
+ITEM_LOCATION_RE = re.compile(
+    r"^`([^`\n]+?):(\d+)(?:-(\d+))?`\s*$", re.MULTILINE)
+BOLD_SEVERITY_RE = re.compile(
+    r"(?:\*\*|<strong>)\W*(Critical|Major|Minor|Trivial)(?:\*\*|</strong>)")
 CLOSERS_RE = re.compile(r"(?:\s*</?(?:blockquote|details)>)+\s*$")
 MARKER = "<!-- holophyte:review-finding {} -->"
 MARKER_RE = re.compile(r"<!-- holophyte:review-finding ([0-9a-f]{12}) -->")
@@ -110,6 +116,49 @@ def _file_findings(path, text):
                           title[1].strip(), chunk)
 
 
+def _heading_section(body, text):
+    heading = next(iter(_unfenced(HEADING_RE, text)), None)
+    if heading is None:
+        return None
+    raw, lines = body.splitlines(), text.splitlines()
+    first = text.count("\n", 0, heading.start()) + 1
+    end = first
+    quoted = raw[first - 1].startswith(">")
+    while end < len(lines) and (raw[end].startswith(">") if quoted
+                                else lines[end].strip() != "---"):
+        end += 1
+    return int(heading[1]), "\n".join(lines[first:end])
+
+
+def _item_title(chunk):
+    return next((title[1].strip() for title in _unfenced(TITLE_RE, chunk)
+                 if "** | **" not in title[0]), None)
+
+
+def _item_finding(summary, inner):
+    location = next(iter(_unfenced(ITEM_LOCATION_RE, inner)), None)
+    if location is None:
+        return None
+    chunk = CLOSERS_RE.sub("", inner[location.start():]).strip()
+    title = _item_title(chunk)
+    if title is None:
+        return None
+    severity = (BOLD_SEVERITY_RE.search(chunk)
+                or BOLD_SEVERITY_RE.search(summary))
+    start = int(location[2])
+    return Finding(location[1], start, int(location[3] or start),
+                   severity[1] if severity else "", title, chunk)
+
+
+def _heading_findings(declared, section):
+    found = [finding for finding in (_item_finding(summary, inner)
+                                     for summary, inner in _details(section))
+             if finding]
+    if len(found) < declared:
+        found.append(_unsplit(section))
+    return found
+
+
 def _unsplit(text):
     return Finding("", None, None, "", UNSPLIT_TITLE,
                    CLOSERS_RE.sub("", text).strip())
@@ -127,6 +176,9 @@ def findings(body):
         if len(found) < int(section[1]):
             found.append(_unsplit(inner))
         return found
+    section = _heading_section(body or "", text)
+    if section:
+        return _heading_findings(*section)
     return _unclosed_section(text)
 
 

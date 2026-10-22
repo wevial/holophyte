@@ -11,6 +11,8 @@ from holophyte.babysit.review_body import findings  # noqa: E402
 
 REVIEW = (HERE / "fixtures" / "pullrequest"
           / "coderabbit_outside_diff_review.md").read_text()
+HEADING_REVIEW = (HERE / "fixtures" / "pullrequest"
+                  / "coderabbit_outside_diff_heading_review.md").read_text()
 
 
 class OutsideDiffParseTests(unittest.TestCase):
@@ -89,6 +91,27 @@ class OutsideDiffParseTests(unittest.TestCase):
                 "<summary>⚠️ Outside diff range comments (1)</summary>"
                 "<blockquote>\n```\n\n</details>\n")
         self.assertEqual(findings(body), [])
+
+    def test_a_bold_heading_section_yields_its_details_item(self):
+        (finding,) = findings(HEADING_REVIEW)
+        self.assertEqual((finding.path, finding.start, finding.end,
+                          finding.severity, finding.title),
+                         ("app/(client)/admin/organizations/page.tsx", 70, 77,
+                          "Major", "Pass `null` when no credit account exists."))
+        self.assertIn("strict type checking rejects this path", finding.text)
+        self.assertIn("Prompt for AI Agents", finding.text)
+        self.assertNotIn("Prompt to fix review comments", finding.text)
+
+    def test_a_bold_heading_short_count_also_yields_the_whole_section(self):
+        body = HEADING_REVIEW.replace("Outside diff range comments (1)",
+                                      "Outside diff range comments (2)")
+        whole, unsplit = findings(body)
+        self.assertEqual((whole.path, whole.start, whole.end),
+                         ("app/(client)/admin/organizations/page.tsx", 70, 77))
+        self.assertEqual((unsplit.path, unsplit.title),
+                         ("", "Outside diff range comments that could not be split"))
+        self.assertIn("strict type checking rejects this path", unsplit.text)
+        self.assertNotIn("Prompt to fix review comments", unsplit.text)
 
 
 if __name__ == "__main__":
