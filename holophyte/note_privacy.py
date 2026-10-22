@@ -30,7 +30,7 @@ def private_texts(conn, run_id):
 
 
 def _pattern(words):
-    body = r"\s+".join(re.escape(word) for word in words)
+    body = r"\s+(?:>+\s*)*".join(re.escape(word) for word in words)
     head = r"(?<!\w)" if re.match(r"\w", words[0]) else ""
     tail = r"(?!\w)" if re.search(r"\w\Z", words[-1]) else ""
     return re.compile(head + body + tail, re.IGNORECASE)

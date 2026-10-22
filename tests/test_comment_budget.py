@@ -193,6 +193,7 @@ PINNED = {
     "holophyte/loop/task_worktree.py": 5,
 
     "holophyte/media_store.py": 1,
+    "holophyte/note_privacy.py": 0,
 
     "holophyte/pr/__init__.py": 0,
     "holophyte/pr/evidence_fetch.py": 0,
