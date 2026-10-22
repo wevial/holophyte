@@ -1,5 +1,5 @@
-"""`--abort KO-n --close-pr`: the abort, then the pull request's comment and
-close, recorded on the intervention before anything is killed (KO-611)."""
+"""`--abort KO-n --close-pr`: the abort, then the pull request's close and any
+--pr-comment, recorded on the intervention before anything is killed (KO-611)."""
 from __future__ import annotations
 
 import contextlib
