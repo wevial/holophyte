@@ -1031,7 +1031,11 @@ one timestamped line each, to `console.log` in Electron's user-data
 directory (beside `console.json`; source paths only, never query strings),
 truncated once it passes 1 MB, so a blank view can be diagnosed afterwards.
 On macOS closing the window leaves the tray in place and the dock or tray
-reopens it; elsewhere closing the window quits.
+reopens it; elsewhere closing the window quits. On macOS the window also
+hides its title bar and draws the traffic lights in the sidebar header
+(options in `console/electron/window.ts`); the seed script writes
+`holophyte.app-shell` = `macos` to the page's storage, which is how either
+console view knows to inset its header and mark the drag regions.
 
 The console URL comes from the first of three sources, and a bad value in
 that source is a dialog naming it, never a fall-through to the next:
@@ -1088,7 +1092,8 @@ bun --cwd=console/electron run start
 ```
 
 `test` exercises the pure URL resolver in `console/electron/config.ts`, the
-summary builder in `console/electron/tray.ts` and the poll in
+summary builder in `console/electron/tray.ts`, the window options in
+`console/electron/window.ts` and the poll in
 `console/electron/poll.ts` (with a fake `fetch`), and needs no Electron
 binary, which is why the verify install skips the
 download. `start` needs the binary, and a second `install` after the

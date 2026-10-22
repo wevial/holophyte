@@ -13,11 +13,14 @@
  * accepted when `checkToken` would accept it (trimmed, printable ASCII
  * `0x21` to `0x7E`, at most `TOKEN_MAX_BYTES` bytes), both from
  * `console/src/lib/token.ts`. Tokens are embedded with `JSON.stringify`
- * and never leave the script text.
+ * and never leave the script text. On macOS the script also writes
+ * `APP_SHELL_KEY` (`console/src/lib/view.ts`), which tells the page it
+ * sits under the app's hidden title bar.
  */
 
 export const TOKEN_KEY_PREFIX = "holophyte.token.";
 export const TOKEN_MAX_BYTES = 512;
+export const APP_SHELL_KEY = "holophyte.app-shell";
 
 /** Whether the page's `checkToken` would accept `token` (trimmed). */
 export function acceptable(token: string): boolean {
@@ -28,14 +31,16 @@ export function acceptable(token: string): boolean {
 }
 
 /** JavaScript text that stores each acceptable token under the page's
- *  key, skipping a key whose value is already the same, and evaluates
+ *  key, and `appShell` under `APP_SHELL_KEY` when it is not null,
+ *  skipping a key whose value is already the same, and evaluates
  *  to `true` when it wrote at least one key, `false` otherwise. */
-export function seedScript(tokens: Record<string, string>): string {
+export function seedScript(tokens: Record<string, string>, appShell: "macos" | null): string {
   const entries: [string, string][] = [];
   for (const [address, token] of Object.entries(tokens)) {
     if (!acceptable(token)) continue;
     entries.push([`${TOKEN_KEY_PREFIX}${address}`, token.trim()]);
   }
+  if (appShell !== null) entries.push([APP_SHELL_KEY, appShell]);
   return [
     "(() => {",
     `  const entries = ${JSON.stringify(entries)};`,

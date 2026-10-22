@@ -24,6 +24,7 @@
     "tray.ts",
     "poll.ts",
     "seed.ts",
+    "window.ts",
     "icon.ts",
     "tests"
   ]

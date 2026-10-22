@@ -1,7 +1,7 @@
 import { useContext, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTheme } from "../appearance";
-import { classicHref, writeView } from "../../lib/view";
+import { APP_DRAG, APP_NO_DRAG, classicHref, inMacApp, writeView } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { hostsNeedingAttention } from "../settings";
@@ -206,6 +206,7 @@ export function Sidebar() {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const [folded, setFolded] = useState(readFolded);
+  const [macApp] = useState(inMacApp);
   const deps = useContext(PollDepsContext);
   const readiness = useReadiness(hosts, deps);
   const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
@@ -235,15 +236,15 @@ export function Sidebar() {
     >
       <div
         className={`flex shrink-0 items-center border-b border-rule-2 ${
-          folded ? "flex-col justify-center py-2" : "h-[60px] justify-between pl-4"
-        }`}
+          folded ? `flex-col justify-center ${macApp ? "pt-[44px] pb-2" : "py-2"}` : `h-[60px] justify-between ${macApp ? "pl-[76px]" : "pl-4"}`
+        } ${macApp ? APP_DRAG : ""}`}
       >
         <Link
           to="/"
           search={keepScope}
           aria-label={folded ? "holophyte" : undefined}
           title={folded ? "holophyte" : undefined}
-          className={`flex items-center gap-2 text-act ${folded ? "size-11 justify-center" : ""}`}
+          className={`flex items-center gap-2 text-act ${folded ? "size-11 justify-center" : ""} ${macApp ? APP_NO_DRAG : ""}`}
         >
           <Mark />
           {!folded && <span className="text-[16px] font-semibold tracking-[0.02em] text-ink">holophyte</span>}
@@ -253,7 +254,7 @@ export function Sidebar() {
           aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!folded}
           onClick={fold}
-          className="flex size-11 items-center justify-center text-ink-3 hover:text-ink"
+          className={`flex size-11 items-center justify-center text-ink-3 hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
         >
           <ChevronIcon folded={folded} />
         </button>

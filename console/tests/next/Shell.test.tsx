@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { THEME_KEY } from "../../src/lib/theme";
-import { openRememberedView, VIEW_KEY } from "../../src/lib/view";
+import { APP_SHELL_KEY, openRememberedView, VIEW_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -259,4 +259,39 @@ test("the four page icons differ from one another and from the All projects icon
   expect(new Set(drawn()).size).toBe(5);
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
   expect(new Set(drawn()).size).toBe(5);
+});
+
+const DRAG = "[-webkit-app-region:drag]";
+const NO_DRAG = "[-webkit-app-region:no-drag]";
+const headerRow = () => screen.getByRole("link", { name: "holophyte" }).parentElement!;
+
+test("in the macOS app the sidebar header and a strip atop the main pane drag the window, and their controls do not", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mount("#/");
+  const header = headerRow();
+  expect(header.classList.contains(DRAG)).toBe(true);
+  expect(header.classList.contains("pl-[76px]")).toBe(true);
+  const strip = screen.getByRole("main").firstElementChild as HTMLElement;
+  expect(strip.classList.contains(DRAG)).toBe(true);
+  expect(strip.getAttribute("aria-hidden")).toBe("true");
+  const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
+  expect(regions).toEqual([header, strip]);
+  for (const control of regions.flatMap((region) => Array.from(region.querySelectorAll("a, button")))) {
+    expect(control.classList.contains(NO_DRAG)).toBe(true);
+  }
+
+  fireEvent.click(within(header).getByRole("button", { name: "Collapse sidebar" }));
+  const folded = headerRow();
+  expect(folded.classList.contains("pt-[44px]")).toBe(true);
+  expect(folded.classList.contains(DRAG)).toBe(true);
+  expect(within(folded).getByRole("link", { name: "holophyte" }).classList.contains(NO_DRAG)).toBe(true);
+  expect(within(folded).getByRole("button", { name: "Expand sidebar" }).classList.contains(NO_DRAG)).toBe(true);
+});
+
+test("in a browser nothing names a window drag region and the header keeps its usual inset", async () => {
+  await mount("#/");
+  const named = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.className.includes("-webkit-app-region"));
+  expect(named).toEqual([]);
+  expect(headerRow().classList.contains("pl-4")).toBe(true);
+  expect(Array.from(screen.getByRole("main").children).filter((child) => child.getAttribute("aria-hidden") === "true")).toEqual([]);
 });
