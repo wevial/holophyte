@@ -150,8 +150,9 @@ project's admission state (`store/enums.py` `ProjectAdmission`): `enabled`,
 `[loop] workers`.
 `queued` lists the project's tickets waiting for the next claim: `ready`,
 with no active run and an ended last run, oldest wait first, whatever the
-admission state. A ready ticket that never ran is not in it. Each entry
-carries the ticket's `ticket`, `ticket_url` and `title`, the last run's
+admission state. A ready ticket that never ran is not in it.
+A ticket in the Backlog column is not in it, nor one in Canceled. Each
+entry carries the ticket's `ticket`, `ticket_url` and `title`, the last run's
 outcome reason as `reason` and its pull request as `pr_url` (null without
 one), and `waiting_ms`, the daemon's `now` minus the run's end.
 `witnesses` is the story witness set the loop's witness step is running
