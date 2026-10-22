@@ -292,6 +292,26 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
         self.assertIn("src/app.py:30", answer["answer"])
         self.assertNotIn("Forged", answer["answer"])
 
+    def test_a_console_ask_is_answered_in_the_store_and_posts_nothing(self):
+        run = self.parked()
+        _, accepted = ask_action(self.project, {
+            "run": run, "question": QUESTION, "author": "maintainer"})
+        self.assertTrue(accepted["ok"], accepted)
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state())
+        fake, _ = self.loop(Reply(f"Yes: src/app.py:30. {self.SECRET}"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["adjudicate"])
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind in ("conversation", "reply")], [])
+        latest = self.read("SELECT MAX(id) FROM runs")[0][0]
+        (answer,) = run_asks(self.project, str(latest))[1]["asks"]
+        self.assertEqual((answer["id"], answer["url"]), (accepted["event_id"], None))
+        self.assertIsNotNone(answer["answered_ms"])
+        self.assertIn("src/app.py:30", answer["answer"])
+        self.assertNotIn(self.SECRET, answer["answer"])
+
 
 if __name__ == "__main__":
     unittest.main()
