@@ -69,8 +69,8 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
       return Response.json(attention(first, woken.items));
     }
     if (posted && woken && url === `${DEMO}/status`) return Response.json({ ...statusOf(first, runs), queued: woken.queued });
-    const merge = url.match(/\/runs\/(\d+)\/merge$/);
-    if (merge) return Response.json({ ...ready, run: Number(merge[1]), ready: readyRuns.includes(Number(merge[1])) });
+    const readiness = url.match(/\/runs\/(\d+)\/merge$/);
+    if (readiness) return Response.json({ ...ready, run: Number(readiness[1]), ready: readyRuns.includes(Number(readiness[1])) });
     const ticket = url.match(/\/tickets\/([^/?]+)$/);
     if (ticket) {
       await fetchImpl(url, init);
@@ -319,6 +319,11 @@ test("an opened ready-to-merge row leads with Merge, whose confirmed dialog post
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
   const safe = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
   expect([...safe].map((fact) => fact.textContent)).toEqual(ready.facts.map((fact) => fact.detail));
+  expect(dialog.textContent).toContain("The console cannot undo a merge");
+  fireEvent.keyDown(within(dialog).getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(seen.filter((request) => request.method === "POST")).toEqual([]);
+  await pressMerge("Merge");
   await pressMerge("Merge PR #42");
   const posts = seen.filter((request) => request.method === "POST");
   expect(posts.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([

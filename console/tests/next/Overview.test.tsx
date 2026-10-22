@@ -40,10 +40,42 @@ afterEach(() => {
   window.location.hash = "";
 });
 
+const waitRows = () => [...section("Waiting on you").querySelectorAll<HTMLElement>("li[data-wait-row]")];
+const prRows = () => [...section("Pull requests").querySelectorAll<HTMLElement>("[data-pr-row]")];
+
 test("unscoped, the heading counts every host's Waiting on you entries and the count line every host's work", async () => {
   await mount("#/", busy);
-  expect(heading()).toBe("3 waiting on you.");
+  expect(heading()).toBe("2 waiting on you.");
   expect(countLine()).toBe("2 running · 1 open PR · 1 queued · 1 merged today");
+});
+
+test("a pull request ready to merge is a Pull requests row reading Your review, not a Waiting on you row or count", async () => {
+  await mount("#/", busy);
+  expect(sectionCount("Waiting on you").textContent).toBe("2");
+  expect(waitRows()).toHaveLength(2);
+  expect(waitRows().map((row) => row.textContent).join(" ")).not.toContain("WRITER-9");
+  expect(sectionHeader("Pull requests")).toBe("Pull requests11 waits on you");
+  expect(prRows().map((row) => [row.textContent!.includes("WRITER-9"), row.querySelector("[data-pr-wait]")!.textContent, row.querySelector("[data-pr-since]")!.textContent!.split(" · ")[0]])).toEqual([
+    [true, "Your review", "ready to merge"],
+  ]);
+  cleanup();
+
+  localStorage.clear();
+  await mount("#/", fleet({ items: [] }, { items: [prPark] }));
+  expect(heading()).toBe("Nothing waiting on you.");
+  expect(waitRows()).toEqual([]);
+  expect(within(section("Waiting on you")).getByText("The factory has it from here.")).toBeTruthy();
+  expect(prRows()).toHaveLength(1);
+  expect(prRows()[0]!.textContent).toContain("WRITER-9");
+});
+
+test("a thread park with a pull request and a question park are Waiting on you rows counted in the heading, not Pull requests rows", async () => {
+  const thread = { ...blocked, ticket: "DEMO-5", run: 5, park_kind: "thread", pr_url: "https://github.com/example/demo/pull/55" };
+  await mount("#/", fleet({ items: [blocked, thread] }, { items: [] }));
+  expect(heading()).toBe("2 waiting on you.");
+  expect(waitRows().map((row) => row.textContent!.match(/DEMO-\d+/)![0]).sort()).toEqual(["DEMO-4", "DEMO-5"]);
+  expect(prRows()).toEqual([]);
+  expect(sectionHeader("Pull requests")).toBe("Pull requests0none wait on you");
 });
 
 test("a picked project scopes the heading, the count line and the Pull requests count", async () => {
@@ -65,7 +97,7 @@ test("the four sections stand in order with their counts and summaries", async (
   await mount("#/", busy);
   const labels = screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"));
   expect(labels).toEqual(["Waiting on you", "Running", "Pull requests", "Merged today"]);
-  expect(sectionHeader("Waiting on you")).toBe("Waiting on you3oldest 8h 02m");
+  expect(sectionHeader("Waiting on you")).toBe("Waiting on you2oldest 8h 02m");
   expect(sectionHeader("Running")).toBe("Running22 of 2 workers busy · 1 queued");
   expect(sectionHeader("Pull requests")).toBe("Pull requests11 waits on you");
   expect(sectionHeader("Merged today")).toBe("Merged today1last at 11:30");
@@ -174,7 +206,7 @@ test("the heading is the board's 20 px Archivo 600 title in a header closed by a
   expect(classes(h1)).not.toContain("font-bold");
   expect(classes(h1.parentElement)).toEqual(expect.arrayContaining(["pb-[18px]", "border-b", "border-rule"]));
   expect(h1.parentElement!.contains(document.querySelector("[data-count-line]"))).toBe(true);
-  const number = within(h1).getByText("3");
+  const number = within(h1).getByText("2");
   expect(classes(number)).toContain("text-need");
 });
 
@@ -209,7 +241,7 @@ test("a section heading is the board's chevron, 19 px Archivo 700 name, mono cou
   const name = within(header).getByRole("button", { name: "Waiting on you" });
   expect(name.querySelector("svg[data-chevron]")).toBeTruthy();
   expect(classes(name)).toEqual(expect.arrayContaining(["font-sans", "text-[19px]", "font-bold", "text-ink"]));
-  expect(sectionCount("Waiting on you").textContent).toBe("3");
+  expect(sectionCount("Waiting on you").textContent).toBe("2");
   expect(classes(sectionCount("Waiting on you"))).toEqual(expect.arrayContaining(["font-mono", "text-need"]));
   const summary = within(header).getByText(/^oldest /);
   expect(classes(summary)).toEqual(expect.arrayContaining(["font-mono", "text-ink-3"]));
@@ -219,7 +251,7 @@ test("a section heading is the board's chevron, 19 px Archivo 700 name, mono cou
 
 test("the Waiting on you count is --need above zero and every other count, or a zero Waiting on you, is --ink-3", async () => {
   await mount("#/", busy);
-  expect(sectionCount("Waiting on you").textContent).toBe("3");
+  expect(sectionCount("Waiting on you").textContent).toBe("2");
   expect(classes(sectionCount("Waiting on you"))).toContain("text-need");
   for (const name of ["Running", "Pull requests", "Merged today"]) {
     expect(classes(sectionCount(name))).toContain("text-ink-3");
