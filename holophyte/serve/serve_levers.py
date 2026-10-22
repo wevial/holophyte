@@ -111,7 +111,7 @@ def abort_action(target, body):
     if pr_comment is not None and (not isinstance(pr_comment, str)
                                    or not pr_comment.strip()):
         return 400, {"error": "pr_comment must be non-blank text or null"}
-    if pr_comment is not None and close is not True:
+    if pr_comment is not None and not close:
         return 400, {"error": "pr_comment is posted only with close: true"}
 
     def act(conn, reason):
