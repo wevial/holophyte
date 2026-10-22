@@ -5,7 +5,7 @@ import { DayLog } from "../components/DayLog";
 import { FocusCard, useOpenEntry } from "../components/FocusCard";
 import { MergedToday } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
-import { prLaneGroups, PullRequestLanes } from "../components/PrLane";
+import { prLaneGroups, PullRequestLanes, readyToMergeCount } from "../components/PrLane";
 import { hasWork, laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
@@ -100,7 +100,6 @@ export function Overview() {
   const opened = useOpenEntry(view.needs);
   const need = view.needs.length;
   const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
-  const waiting = view.needs.filter((entry) => entry.readyToMerge).length;
   const queued = view.queued.length;
   const newest = view.mergedToday[0];
   const lanes = laneGroups(view.hosts, view.pullRequests, view.now);
@@ -108,6 +107,7 @@ export function Overview() {
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
   const openPrs = prLanes.reduce((sum, group) => sum + group.rows.length, 0);
+  const waiting = readyToMergeCount(prLanes, view.readiness);
   const [needOpen, setNeedOpen] = useState(() => readOpen("need"));
   return (
     <div className="flex flex-col gap-8 px-8 py-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:grid min-[1600px]:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px] min-[1600px]:grid-rows-[auto_1fr] min-[1600px]:gap-x-[36px] min-[1600px]:gap-y-[32px]">

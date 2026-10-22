@@ -1,4 +1,4 @@
-import { needsYouEntries, type ReadinessMap } from "../lib/attention";
+import { waitingOnYou, type ReadinessMap } from "../lib/attention";
 import { projectName } from "../lib/derive";
 import { hostItems, type HostRecord } from "../lib/hosts";
 import type { PollBodies } from "../lib/poll";
@@ -28,7 +28,7 @@ function rowOf(name: string | null, hosts: SwitcherHost[], now: number, readines
     name,
     label: name ?? ALL_PROJECTS,
     held: name != null && hosts.some((host) => host.status?.admission === "held"),
-    need: needsYouEntries(items, readiness, now).length,
+    need: waitingOnYou(items, readiness, now).length,
     open: hosts.reduce((total, host) => total + (host.status?.runs.length ?? 0), 0),
     down: name != null && hosts.every((host) => host.error != null),
   };

@@ -53,12 +53,23 @@ export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number)
   });
 }
 
+const runOf = (item: AttentionItem) => (typeof item.run === "number" ? item.run : null);
+
+function rowState(item: AttentionItem, host: Host, readiness: ReadinessMap) {
+  const run = runOf(item);
+  return stateOf({ attention: item, readiness: run == null ? undefined : readiness.get(runKey(host.key, run)) });
+}
+
+/** How many rows only wait on the maintainer's merge. */
+export const readyToMergeCount = (groups: PrLaneGroup[], readiness: ReadinessMap): number =>
+  groups.reduce((sum, group) => sum + group.rows.filter((row) => rowState(row.item, group.host, readiness) === "ready_to_merge").length, 0);
+
 function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness: ReadinessMap }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const { item, facts } = row;
-  const run = typeof item.run === "number" ? item.run : null;
-  const state = stateOf({ attention: item, readiness: run == null ? undefined : readiness.get(runKey(host.key, run)) });
+  const run = runOf(item);
+  const state = rowState(item, host, readiness);
   const wait = prWait(state, item, row.ageMs);
   const word = wait.line === "" ? wait.status : `${wait.status}, ${wait.line}`;
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
@@ -103,7 +114,7 @@ function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness
       </div>
       {shown && (
         <div id={detailId} className={DETAIL}>
-          <PrRowDetail base={host.base} project={host.status?.project ?? ""} run={run} item={item} actions={host.status?.actions === true} />
+          <PrRowDetail host={host} run={run} item={item} ready={state === "ready_to_merge"} />
         </div>
       )}
     </li>

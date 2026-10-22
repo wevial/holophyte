@@ -138,20 +138,16 @@ test("a held scope shows its tag and need count, and picking All projects drops 
   expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
 });
 
-test("each row counts its project's Waiting on you entries, so a pull request not ready to merge counts nowhere", async () => {
-  await mount("#/runs", needsDaemons());
-  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 3 waiting on you. Switch project");
-  fireEvent.click(switcher());
-  await act(settle);
-  expect(optionNames()).toEqual(["All projects30 open", "demo20 open", "writer10 open"]);
-  cleanup();
-
-  await mount("#/runs", needsDaemons(false));
-  expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
-  expect(badge()!.textContent).toBe("2");
-  fireEvent.click(switcher());
-  await act(settle);
-  expect(optionNames()).toEqual(["All projects20 open", "demo20 open", "writer0 open"]);
+test("each row counts its project's Waiting on you entries, so a pull request counts nowhere", async () => {
+  for (const writerReady of [true, false]) {
+    await mount("#/runs", needsDaemons(writerReady));
+    expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
+    expect(badge()!.textContent).toBe("2");
+    fireEvent.click(switcher());
+    await act(settle);
+    expect(optionNames()).toEqual(["All projects20 open", "demo20 open", "writer0 open"]);
+    cleanup();
+  }
 });
 
 test("a bare open restores the session's scope on Overview, while a named route stays as linked", async () => {

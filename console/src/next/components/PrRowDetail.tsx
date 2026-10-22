@@ -1,14 +1,18 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { prTitle } from "../../lib/attention";
 import type { PrOpenItem, PullRequestFacts } from "../../lib/contract.gen";
+import type { HostRecord } from "../../lib/hosts";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
 import { useAction } from "../actions";
+import type { ContractBodies } from "../fleet";
 import { useTicket } from "../queries";
 import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { fieldOf, parseBody } from "../ticketForm";
 import { Btn } from "./Btn";
+import { CardActions } from "./CardActions";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { LimitedMarkdown } from "./LimitedMarkdown";
 import { MediaLightbox, type MediaItem } from "./MediaLightbox";
@@ -112,7 +116,10 @@ function MediaTile({ item, ref, onOpen }: { item: MediaItem; ref: (node: HTMLBut
   );
 }
 
-export function PrRowDetail({ base, project, run, item, actions }: { base: string; project: string; run: number; item: AttentionItem; actions: boolean }) {
+export function PrRowDetail({ host, run, item, ready }: { host: HostRecord<ContractBodies>; run: number; item: AttentionItem; ready: boolean }) {
+  const { base } = host;
+  const project = host.status?.project ?? "";
+  const actions = host.status?.actions === true;
   const deps = useContext(PollDepsContext);
   const ticket = typeof item.ticket === "string" ? item.ticket : "";
   const { data } = useTicket(base, ticket, deps);
@@ -155,8 +162,9 @@ export function PrRowDetail({ base, project, run, item, actions }: { base: strin
         />
       )}
       <div className="flex flex-wrap items-center gap-2">
+        {actions && ready && <CardActions entry={{ item, readyToMerge: true }} host={host} actions={[]} title={prTitle(item)} only="primary" />}
         {prUrl != null && (
-          <a href={prUrl} target="_blank" rel="noreferrer" className="btn" data-variant="primary">
+          <a href={prUrl} target="_blank" rel="noreferrer" className="btn" data-variant={actions && ready ? "quiet" : "primary"}>
             Open PR to review
           </a>
         )}

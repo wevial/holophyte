@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { needsYouEntries, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
+import { waitingOnYou, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
 import type { QueuedTicket, Status } from "../lib/contract.gen";
 import { hostItems, runCounts, type HostRecord } from "../lib/hosts";
 import type { AttentionItem, ShippedRow } from "../lib/types";
@@ -40,7 +40,7 @@ export function useOverview(): Overview {
     hosts,
     answered: hosts.some((host) => host.seen_ms != null),
     items,
-    needs: needsYouEntries(items, readiness, now),
+    needs: waitingOnYou(items, readiness, now),
     readiness,
     pullRequests: items.filter((item) => item.kind === "pr_open"),
     runs: statuses.flatMap((status) => status.runs),

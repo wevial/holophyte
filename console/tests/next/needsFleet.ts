@@ -59,5 +59,5 @@ export function fleet(demo: Daemon, writer: Daemon, writerReady = true): Fetch {
 }
 
 /** DEMO with a blocked ticket, two failed attempts of one ticket and a `ci`
- *  park; WRITER with one `pull_request` park: three Needs you entries. */
+ *  park; WRITER with one `pull_request` park: two Waiting on you entries. */
 export const needsDaemons = (writerReady = true) => fleet({ items: [blocked, ...failed, ciPark] }, { items: [prPark] }, writerReady);

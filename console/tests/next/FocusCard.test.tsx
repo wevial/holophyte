@@ -124,7 +124,7 @@ test("a failed item's row names its state, key and age, and its open detail its 
   expect(within(openDetail()).getByText("Verify command failed")).toBeTruthy();
 });
 
-test("the open detail lists the run's three newest events but bookkeeping, newest first, and a parked PR's facts", async () => {
+test("the open detail lists the run's three newest events but bookkeeping, newest first", async () => {
   const events = [
     { at: at(15, 10), kind: "phase_change", summary: "claimed -> working" },
     { at: at(16, 2), kind: "verify", summary: "verify failed: 2 tests red" },
@@ -140,15 +140,6 @@ test("the open detail lists the run's three newest events but bookkeeping, newes
     "15:40round 1 changes requested",
   ]);
   expect(openDetailText()).toContain("No pull request yet");
-  cleanup();
-
-  const park = {
-    kind: "pr_open", level: "attention", ticket: "DEMO-9", ticket_url: null, title: "Link each run to its pull request", run: 9, park_kind: "pull_request", asked_ms: NOW - HOUR,
-    reason: "PR open", pr_url: "https://github.com/example/demo/pull/42",
-    pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run", state: "ready" },
-  } as Item;
-  await mount(daemon({ items: [park], details: { 9: { ...detail, events: [] } } }));
-  expect(openDetail().querySelector("[data-pr-line]")?.textContent).toBe("PR #42 · checks green · approved · no open threads");
 });
 
 test("an untitled item's row takes its live run's title, else the open run detail's", async () => {
@@ -347,60 +338,6 @@ test("the open row's primary is the entry's first action, the rest sit under Mor
   fireEvent.click(inDetail("More"));
   const staleMore = within(screen.getByRole("group", { name: "More actions" })).getAllByRole("button");
   expect(staleMore.map((button) => button.textContent)).toEqual(["Abort and close", "Requeue"]);
-  cleanup();
-
-  await mount(daemon({ items: [park], actions: true, details: { 9: { ...detail, events: [] } } }));
-  expect(inDetail("Merge").dataset.variant).toBe("primary");
-  fireEvent.click(inDetail("More"));
-  expect(within(screen.getByRole("group", { name: "More actions" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Open PR"]);
-});
-
-test("Merge asks first in a dialog listing why it is safe; Esc posts nothing and Confirm posts the run once with the bearer", async () => {
-  const action = fakeFetch({ ok: true, detail: "approved" });
-  await mount(daemon({ items: [park], actions: true, act: action.fetchImpl, details: { 9: { ...detail, events: [] } } }));
-  const merge = inDetail("Merge");
-  await press(merge);
-  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
-  const facts = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
-  expect([...facts].map((fact) => fact.textContent)).toEqual((ready.facts as { detail: string }[]).map((fact) => fact.detail));
-  expect(facts).toHaveLength(8);
-  expect(dialog.textContent).toContain("The console cannot undo a merge");
-  const cancel = within(dialog).getByRole("button", { name: "Cancel" });
-  const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
-  expect(document.activeElement).toBe(cancel);
-  fireEvent.keyDown(cancel, { key: "Tab" });
-  expect(document.activeElement).toBe(confirm);
-  fireEvent.keyDown(confirm, { key: "Tab" });
-  expect(document.activeElement).toBe(cancel);
-  fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
-  expect(document.activeElement).toBe(confirm);
-  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(document.activeElement).toBe(merge);
-  expect(action.seen).toEqual([]);
-
-  await press(merge);
-  await press(within(screen.getByRole("dialog")).getByRole("button", { name: "Merge PR #42" }));
-  expect(action.seen.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
-    { url: `${DEMO}/actions/merge`, body: { run: 9 }, authorization: `Bearer ${TOKEN}` },
-  ]);
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(toast()).toBe("Approved PR #42. The loop merges it on its next claim.");
-});
-
-test("a refused merge keeps the dialog open with the daemon's reason and its confirm pressable again", async () => {
-  const action = fakeFetch({ ok: false, detail: "GitHub's review decision is REVIEW_REQUIRED" });
-  await mount(daemon({ items: [park], actions: true, act: action.fetchImpl, details: { 9: { ...detail, events: [] } } }));
-  await press(inDetail("Merge"));
-  await press(within(screen.getByRole("dialog")).getByRole("button", { name: "Merge PR #42" }));
-  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
-  expect(within(dialog).getByRole("alert").textContent).toBe("GitHub's review decision is REVIEW_REQUIRED");
-  const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
-  expect(confirm.hasAttribute("disabled")).toBe(false);
-  expect(confirm.getAttribute("aria-busy")).toBe("false");
-  expect(toast()).toBe("");
-  await press(confirm);
-  expect(action.seen).toHaveLength(2);
 });
 
 test("a host without actions draws no button in the open row, says so, and still links the run", async () => {
