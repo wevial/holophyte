@@ -5,6 +5,8 @@ Run: python3 -m unittest discover -s tests -p 'test_note_privacy.py' -v
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,8 +20,8 @@ from holophyte.pr.github import Thread
 from holophyte.pr.pr_status import parse_pr_url
 from store import console_asks, steer_notes
 from store.operator_notes import send_back
-from tests.fake_agent import APPROVE, Commit, Idle, Reply, _git
-from tests.loop_fixture import MergeModeFixture
+from tests.fake_agent import APPROVE, Commit, Consolidate, Idle, Reply, _git
+from tests.loop_fixture import BRANCH, MergeModeFixture
 from tests.phase_fixture import park_run
 
 NOTE = ("drop the legacy export flag and keep the importer reading"
@@ -42,10 +44,40 @@ class Recorded(Commit):
         return self.reply if self.reply is not None else answer
 
 
-class SendBackPushTests(MergeModeFixture):
+class OriginFixture(MergeModeFixture):
+    """The fake route, with each push it answers also made by real `git`
+    into a bare repository standing in for origin."""
+
+    def route(self, **kwargs):
+        bare = Path(self.enterContext(tempfile.TemporaryDirectory())) / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        self.bare, real_git = bare, shutil.which("git")
+        self.fake_route(push_sh=f'  for last in "$@"; do :; done\n'
+                                f'  "{real_git}" push -q "{bare}" "$last" || exit 1',
+                        **kwargs)
+
+    def origin(self, *args):
+        return subprocess.run(["git", "--git-dir", str(self.bare), *args],
+                              check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def origin_tip(self):
+        return self.origin("rev-parse", f"refs/heads/{BRANCH}")
+
+    def sent(self):
+        """Every request text the fake `gh` recorded: argv, API bodies and
+        the pull request body."""
+        texts = [*self.recorded(),
+                 *(p.read_text() for p in self.api_dir.iterdir())]
+        if self.pr_body.exists():
+            texts.append(self.pr_body.read_text())
+        return "\n".join(texts)
+
+
+class SendBackPushTests(OriginFixture):
     def sent_back(self, threads=(), note=NOTE, steer=None):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.fake_route(states=[self.pr_state()])
+        self.route(states=[self.pr_state()])
         self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
         with store.open(str(self.project.store_path)) as conn:
             run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
@@ -63,28 +95,19 @@ class SendBackPushTests(MergeModeFixture):
         self.serve(self.pr_state(list(threads)), self.pr_state())
         return note_id
 
-    def sent(self):
-        """Every request text the fake `gh` recorded: argv, API bodies and
-        the pull request body."""
-        texts = [*self.recorded(),
-                 *(p.read_text() for p in self.api_dir.iterdir())]
-        if self.pr_body.exists():
-            texts.append(self.pr_body.read_text())
-        return "\n".join(texts)
-
     def test_a_fix_commit_quoting_a_send_back_is_pushed_with_the_note_withheld(self):
         note_id = self.sent_back()
         title = "Apply the maintainer's instruction"
         fix = Recorded(f"{title}\n\nPer operator_note event {note_id}: {NOTE}")
         self.loop(fix, Idle(""), provider=self.provider())
 
-        _, tip = self.pushed()[-1]
-        message = self.git("log", "-1", "--format=%B", tip).strip()
+        tip = self.origin_tip()
+        message = self.origin("log", "-1", "--format=%B", tip)
         self.assertEqual(
             message, f"{title}\n\nPer operator_note event {note_id}: {WITHHELD}")
         self.assertNotEqual(tip, fix.sha)
-        self.assertEqual(self.git("rev-parse", f"{tip}^{{tree}}"),
-                         self.git("rev-parse", f"{fix.sha}^{{tree}}"))
+        self.assertEqual(self.origin("rev-parse", f"{tip}^{{tree}}"),
+                         self.git("rev-parse", f"{fix.sha}^{{tree}}").strip())
         self.assertNotIn(NOTE, self.sent())
 
     def test_a_fix_commit_citing_only_the_id_is_pushed_unchanged(self):
@@ -92,8 +115,7 @@ class SendBackPushTests(MergeModeFixture):
         fix = Recorded(f"Apply operator_note event {note_id}")
         self.loop(fix, Idle(""), provider=self.provider())
 
-        _, tip = self.pushed()[-1]
-        self.assertEqual(tip, fix.sha)
+        self.assertEqual(self.origin_tip(), fix.sha)
 
     def test_a_thread_reply_and_the_description_withhold_a_quoted_note(self):
         self.sent_back([self.NIT])
@@ -134,11 +156,11 @@ class FixBriefTests(unittest.TestCase):
         self.assertIn(NEVER, brief)
 
 
-class RequeuePushTests(MergeModeFixture):
+class RequeuePushTests(OriginFixture):
     def test_a_commit_restating_a_requeue_note_is_pushed_with_it_withheld(self):
         from tests.test_cli_requeue import RequeuedClaimTests
         self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route(states=[self.pr_state()])
+        self.route(states=[self.pr_state()])
         run = RequeuedClaimTests.fail_a_run(self, note=NOTE)
         with store.open(str(self.project.store_path)) as conn:
             (event,) = conn.execute(
@@ -154,11 +176,33 @@ class RequeuePushTests(MergeModeFixture):
                       opening)
         self.assertIn("by its id alone", opening)
         self.assertIn(NEVER, opening)
-        _, tip = self.pushed()[-1]
-        self.assertEqual(self.git("log", "-1", "--format=%B", tip).strip(),
+        self.assertEqual(self.origin("log", "-1", "--format=%B", self.origin_tip()),
                          f"Rework the importer\n\nThis change will {WITHHELD}"
                          " as before.")
-        self.assertNotIn(words, SendBackPushTests.sent(self))
+        self.assertNotIn(words, self.sent())
+
+
+    def test_a_held_concern_quoting_a_requeue_note_is_withheld_from_the_body(self):
+        from tests.test_adversary import Change, attack, finding
+        from tests.test_cli_requeue import RequeuedClaimTests
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       "[review]\nadversary = true\n")
+        self.route()
+        RequeuedClaimTests.fail_a_run(self, note=NOTE)
+        self.loop(
+            Change("poetry.lock"),
+            Reply("- src/app.py:3 [p1] load() returns None\n\n"
+                  "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+                  "VERDICT: REQUEST_CHANGES"),
+            attack(*(finding(f"src/c{n}.py", n, message, "concern") for n, message
+                     in enumerate(("one", "two", "three",
+                                   f"the note asks to {NOTE}"), 1))),
+            Consolidate(), Change("poetry.lock", "relocked\n"),
+            APPROVE, attack(), Idle(""), provider=self.provider())
+
+        body = self.pr_body.read_text()
+        self.assertIn(f"src/c4.py:4 [p1] the note asks to {WITHHELD}", body)
+        self.assertNotIn(NOTE, self.sent())
 
 
 class PrivateTextsTests(unittest.TestCase):
@@ -222,6 +266,13 @@ class PrivateTextsTests(unittest.TestCase):
             self.assertTrue(any(note in text for text in texts), note)
         self.assertFalse(any(self.OTHER in text for text in texts))
         self.assertNotIn(BABYSIT_DEFAULT_NOTE, texts)
+
+    def test_a_send_back_worded_like_the_factorys_babysit_note_stays_private(self):
+        ticket = self.ticket("KO-1")
+        note = "https://github.com/example/repo/pull/7 was marked ready for review"
+        send_back(self.conn, self.parked(ticket), note, "maintainer")
+
+        self.assertEqual(private_texts(self.conn, self.claim(ticket)), (note,))
 
 
 if __name__ == "__main__":

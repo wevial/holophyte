@@ -17,8 +17,8 @@ def private_texts(conn, run_id):
         return ()
     ticket_id = run_snapshot(conn, run_id).ticketId
     texts = []
-    for note in steer_notes.console_notes(conn, ticket_id):
-        if FACTORY_BABYSIT.match(note.strip()):
+    for kind, note in steer_notes.console_notes(conn, ticket_id):
+        if kind == "babysit" and FACTORY_BABYSIT.match(note.strip()):
             continue
         try:
             note = amendment_edits(note)[1]

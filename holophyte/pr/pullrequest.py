@@ -286,6 +286,8 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
             body = github.replace_pr_text(body, text)
         if section is not None:
             body = github.replace_pr_evidence(body, section)
+        body = note_privacy.withhold(
+            body, note_privacy.private_texts(conn, run_id))
         github.edit_pr_body(project, pull, body)
         notes = image_fetch.check(project, pull, body)
     for note in notes:
@@ -359,11 +361,13 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
                            f"pushing {branch} to {github.REMOTE} and opening its"
                            " pull request")
     adopted = False
+    notes = note_privacy.private_texts(conn, run_id)
+    title = note_privacy.withhold(title, notes)
+    text = note_privacy.withhold(text, notes)
     leak_guard.refuse_private_text(project, pull_request_title=title,
                                    pull_request_body=text)
     with heartbeat_while(conn, run_id, beat_s):
-        github.push_branch(project, branch,
-                           notes=note_privacy.private_texts(conn, run_id))
+        github.push_branch(project, branch, notes=notes)
         print(f"[holo2] pushed {branch} to {github.REMOTE}")
         # `gh pr create` refuses a branch already open as a PR: adopt it.
         url = github.open_pull_request(project, branch)

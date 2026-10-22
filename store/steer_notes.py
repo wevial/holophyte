@@ -349,15 +349,17 @@ def steers(conn):
 
 
 def console_notes(conn, ticket_id):
-    return [text for (text,) in conn.execute(
-        "SELECT note FROM steerNotes WHERE ticketId = ?"
-        " UNION ALL SELECT json_extract(e.payload, '$.note') FROM runEvents e"
+    return [(kind, text) for kind, text in conn.execute(
+        "SELECT 'steer', note FROM steerNotes WHERE ticketId = ?"
+        " UNION ALL SELECT e.kind, json_extract(e.payload, '$.note')"
+        " FROM runEvents e"
         " JOIN runs r ON r.id = e.runId WHERE r.ticketId = ?"
         " AND e.kind = 'operator_note'"
-        " UNION ALL SELECT json_extract(e.payload, '$.question') FROM runEvents e"
+        " UNION ALL SELECT e.kind, json_extract(e.payload, '$.question')"
+        " FROM runEvents e"
         " JOIN runs r ON r.id = e.runId WHERE r.ticketId = ?"
         " AND e.kind = 'console_ask'"
-        " UNION ALL SELECT i.note FROM interventions i"
+        " UNION ALL SELECT i.\"action\", i.note FROM interventions i"
         " JOIN runs r ON r.id = i.runId WHERE r.ticketId = ?"
         " AND (i.\"action\" IN ('requeue', 'abort', 'abort_close')"
         " OR (i.\"action\" = 'babysit' AND i.source = 'human'))",
