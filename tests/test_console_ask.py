@@ -1,5 +1,5 @@
 """`POST /actions/ask` and `GET /runs/N/asks`: a console question on a parked
-run's pull request, answered on the pull request by the loop's next claim.
+run's pull request, answered in the console by the loop's next claim.
 
 Run: python3 -m unittest discover -s tests -p 'test_console_ask.py' -v
 """
@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 import json
-import sqlite3
 import sys
 import unittest
 from pathlib import Path
@@ -27,8 +26,10 @@ import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.babysit.conversation_comments import (  # noqa: E402
     ASK_REPLY_MARKER,
     console_ask_mark,
+    quote_request,
 )
 from holophyte.cli import operator  # noqa: E402
+from holophyte.pr.github import Thread  # noqa: E402
 from holophyte.serve.serve_ask import ask_action, run_asks  # noqa: E402
 from store import console_asks  # noqa: E402
 from tests.phase_fixture import finish_run, park_run  # noqa: E402
@@ -95,7 +96,8 @@ class ConsoleAskRouteTests(ServeTestCase):
         self.assertTrue(answer["ok"], answer)
         self.assertEqual((answer["action"], answer["run"], answer["ticket"]),
                          ("ask", run, "KO-1"))
-        self.assertIn(PR_URL, answer["detail"])
+        self.assertIn("answers it in the console", answer["detail"])
+        self.assertNotIn(PR_URL, answer["detail"])
         with store.open(str(self.db)) as conn:
             (row,) = conn.execute(
                 "SELECT id, action, source, note FROM interventions WHERE id > ?",
@@ -197,6 +199,10 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
             "SELECT summary FROM runEvents WHERE kind = 'phase_change'"
             " AND summary LIKE '% -> awaiting_merge_approval:%' ORDER BY id")]
 
+    def posted(self):
+        return [(kind, call) for kind, call in self.api_calls()
+                if kind in ("conversation", "reply")]
+
     def answered(self, question, merge=""):
         run = self.parked(merge)
         sha = self.git("rev-parse", BRANCH).strip()
@@ -214,15 +220,7 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
         self.assertEqual(fake.roles, ["adjudicate"])
         self.assertIn(question.replace(f" {self.SECRET}", ""), fake.turns[0].goal)
         self.assertIn("Do not modify anything", fake.turns[0].goal)
-        calls = self.api_calls()
-        self.assertEqual([kind for kind, _ in calls], ["state", "conversation"])
-        body = calls[1][1]["body"]
-        self.assertTrue(body.startswith("> [Asked from the console by maintainer]("),
-                        body)
-        for part in ("---- Comment by ", ASK_REPLY_MARKER, "src/app.py:30",
-                     "[redacted]"):
-            self.assertIn(part, body)
-        self.assertNotIn(self.SECRET, body)
+        self.assertEqual(self.posted(), [])
         self.assertEqual(self.pushed(), pushes)
         self.assertEqual(self.git("rev-parse", BRANCH).strip(), sha)
         self.assertEqual(self.read("SELECT COUNT(*) FROM reviewRounds"), rounds)
@@ -233,38 +231,45 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
         self.assertEqual(again, first)
         _, after = run_asks(self.project, str(latest))
         (answer,) = after["asks"]
-        self.assertEqual((answer["id"], answer["url"]),
-                         (accepted["event_id"], COMMENT_URL))
+        self.assertEqual((answer["id"], answer["url"]), (accepted["event_id"], None))
         self.assertIsNotNone(answer["answered_ms"])
         self.assertIn("src/app.py:30", answer["answer"])
+        self.assertIn("[redacted]", answer["answer"])
         self.assertNotIn(self.SECRET, answer["answer"])
-        return body
+        self.assertNotIn(ASK_REPLY_MARKER, answer["answer"])
 
-    def babysat_again(self, body, **fields):
+    def babysat_again(self):
         operator.babysit_ticket(self.project, "KO-131",
                                 operator.BABYSIT_DEFAULT_NOTE, out=io.StringIO())
-        self.serve(self.conversation_state(("writer", "User"), body, **fields))
+        self.serve(self.pr_state())
         again, _ = self.loop(provider=self.provider())
         self.assertEqual(again.roles, [])
-        self.assertEqual([kind for kind, _ in self.api_calls()
-                          if kind in ("conversation", "reply")], ["conversation"])
+        self.assertEqual(self.posted(), [])
 
     def test_a_console_ask_is_answered_once_whatever_mention_accounts_lists(self):
-        self.babysat_again(self.answered(
-            f"Can an existing guest be renamed? {self.SECRET}",
-            merge='mention_accounts = ["someone-else"]\n'))
+        self.answered(f"Can an existing guest be renamed? {self.SECRET}",
+                      merge='mention_accounts = ["someone-else"]\n')
+        self.babysat_again()
 
-    def test_a_mention_in_an_answered_question_is_not_read_back(self):
-        self.babysat_again(self.answered("Why not rename? @holophyte fix: rename it"))
+    def test_a_mention_in_a_console_question_is_answered_not_acted_on(self):
+        self.answered("Why not rename? @holophyte fix: rename it")
+        self.babysat_again()
 
-    def test_an_answer_posted_but_not_recorded_is_reused_not_posted_again(self):
-        body = self.answered(QUESTION)
-        conn = sqlite3.connect(self.db)
-        with conn:
-            conn.execute("DELETE FROM runEvents WHERE kind = ?",
-                         (console_asks.ANSWERED,))
-        conn.close()
-        self.babysat_again(body, viewerDidAuthor=True)
+    def test_an_answer_posted_before_console_answers_settles_the_ask(self):
+        run = self.parked()
+        _, accepted = ask_action(self.project, {
+            "run": run, "question": QUESTION, "author": "maintainer"})
+        thread = Thread(f"console_ask:{accepted['event_id']}", "", None,
+                        "maintainer", QUESTION, self.URL, kind="conversation")
+        body = (f"{quote_request(thread)}\n\n---- Comment by writer ----\n\n"
+                f"{console_ask_mark(accepted['event_id'])}\nYes: src/app.py:30.")
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.conversation_state(("writer", "User"), body,
+                                           viewerDidAuthor=True))
+        fake, _ = self.loop(provider=self.provider())
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.posted(), [])
         latest = self.read("SELECT MAX(id) FROM runs")[0][0]
         (answer,) = run_asks(self.project, str(latest))[1]["asks"]
         self.assertEqual(answer["url"], self.comment(1, "writer", body)["url"])
@@ -284,13 +289,52 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
                                            viewerDidAuthor=False))
         fake, _ = self.loop(Reply("Yes: src/app.py:30."), provider=self.provider())
         self.assertEqual(fake.roles, ["adjudicate"])
-        self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "conversation"])
+        self.assertEqual(self.posted(), [])
         latest = self.read("SELECT MAX(id) FROM runs")[0][0]
         (answer,) = run_asks(self.project, str(latest))[1]["asks"]
-        self.assertEqual(answer["url"], COMMENT_URL)
+        self.assertIsNone(answer["url"])
         self.assertIn("src/app.py:30", answer["answer"])
         self.assertNotIn("Forged", answer["answer"])
+
+    def test_a_bot_thread_is_replied_to_and_a_console_ask_beside_it_is_not(self):
+        run = self.parked()
+        _, accepted = ask_action(self.project, {
+            "run": run, "question": QUESTION, "author": "maintainer"})
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state([self.NIT]), self.pr_state())
+        fake, _ = self.loop(Reply("Yes: src/app.py:30."),
+                            Reply("THREAD 1: DECLINE -- a naming preference"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles[0], "adjudicate")
+        posted = self.posted()
+        self.assertEqual([kind for kind, _ in posted], ["reply"])
+        self.assertEqual(posted[0][1]["thread"], "PRRT_1")
+        self.assertNotIn(QUESTION, posted[0][1]["body"])
+        latest = self.read("SELECT MAX(id) FROM runs")[0][0]
+        (answer,) = run_asks(self.project, str(latest))[1]["asks"]
+        self.assertEqual((answer["id"], answer["url"]), (accepted["event_id"], None))
+        self.assertIsNotNone(answer["answered_ms"])
+
+    def test_a_console_ask_is_answered_in_the_store_and_posts_nothing(self):
+        run = self.parked()
+        _, accepted = ask_action(self.project, {
+            "run": run, "question": QUESTION, "author": "maintainer"})
+        self.assertTrue(accepted["ok"], accepted)
+        for path in self.api_dir.iterdir():
+            path.unlink()
+        self.serve(self.pr_state())
+        fake, _ = self.loop(Reply(f"Yes: src/app.py:30. {self.SECRET}"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles, ["adjudicate"])
+        self.assertEqual([kind for kind, _ in self.api_calls()
+                          if kind in ("conversation", "reply")], [])
+        latest = self.read("SELECT MAX(id) FROM runs")[0][0]
+        (answer,) = run_asks(self.project, str(latest))[1]["asks"]
+        self.assertEqual((answer["id"], answer["url"]), (accepted["event_id"], None))
+        self.assertIsNotNone(answer["answered_ms"])
+        self.assertIn("src/app.py:30", answer["answer"])
+        self.assertNotIn(self.SECRET, answer["answer"])
 
 
 if __name__ == "__main__":

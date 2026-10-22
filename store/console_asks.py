@@ -76,6 +76,6 @@ def pending(conn, run_id, pr_url=None):
 def answered(conn, run_id, event_id, url, answer):
     store.record_event(conn, run_id, ANSWERED,
                        f"console ask event {event_id} answered"
-                       f" on {url or 'the pull request'}",
+                       f" {'on ' + url if url else 'in the console'}",
                        level="detail", payload=json.dumps(
                            {"event_id": event_id, "url": url, "answer": answer}))

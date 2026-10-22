@@ -90,7 +90,7 @@ test("a note an earlier run of the chain read stays in the panel with its read t
   expect(agent.getByText("→ the agent read it at 16:05")).toBeTruthy();
 });
 
-test("the thread merges named authors and asks in time order and links the agent's answer to its posted comment from its head line", async () => {
+test("the thread merges named authors and asks in time order and shows an answer with a posted comment url without a GitHub link", async () => {
   await mount({ ...detail, steer_notes: [
     { ...note, id: 3, kind: "amendment", author: "alex", note: "Use the existing lease fixture.", at: at(52), withdrawn: true, consumed_ms: at(53), consumed_by: 12 },
   ] }, { ...emptyAsks, asks: [
@@ -107,28 +107,23 @@ test("the thread merges named authors and asks in time order and links the agent
   expect(agent.queryByText("→ the agent read it at 16:53")).toBeNull();
   expect(agent.getByText("Can we reuse the fixture?")).toBeTruthy();
   expect(agent.getByText("What does the dry run print?")).toBeTruthy();
-  expect(agent.getByText("One line per lease.").closest("a")).toBeNull();
-  expect(agent.getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://github.com/example/project/pull/12#issuecomment-42");
+  expect(agent.getByText("One line per lease.")).toBeTruthy();
+  expect(agent.queryByRole("link", { name: /Open on GitHub/ })).toBeNull();
+  expect(agent.queryByText(/Open on GitHub/)).toBeNull();
 });
 
 const answered = (question: string, answer: string, url: string | null = null): RunAsks => ({ ...emptyAsks, asks: [
   { id: 6, author: "maintainer", question, asked_ms: at(51), answered_ms: at(54), answer, url },
 ] });
 
-test("an answer renders its markdown as bold and code, and only its head line links to the thread", async () => {
+test("an answer renders its markdown as bold and code and links nowhere", async () => {
   const url = "https://github.com/example/project/pull/12#issuecomment-77";
   await mount({ ...detail, steer_notes: [] }, answered("When does the prompt show?",
     "**When the prompt shows.** In `components/x.tsx:104`, the modal opens once the lease is held.", url));
   const answer = within(panel()).getByText("Agent · 16:54").closest("li")!;
   expect(within(answer).getByText("When the prompt shows.").tagName).toBe("STRONG");
   expect(within(answer).getByText("components/x.tsx:104").tagName).toBe("CODE");
-  const links = within(answer).getAllByRole("link");
-  expect(links).toHaveLength(1);
-  expect(links[0]!.textContent).toContain("Open on GitHub");
-  expect(links[0]!.getAttribute("href")).toBe(url);
-  expect(links[0]!.getAttribute("target")).toBe("_blank");
-  expect(links[0]!.parentElement).toBe(within(answer).getByText("Agent · 16:54").parentElement);
-  expect(within(answer).getByText("When the prompt shows.").closest("a")).toBeNull();
+  expect(within(answer).queryAllByRole("link")).toHaveLength(0);
 });
 
 test("a maintainer ask written as a markdown list renders its items as a list", async () => {

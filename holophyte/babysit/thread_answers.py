@@ -7,7 +7,6 @@ from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes, review_body, thread_mentions
 from holophyte.babysit.conversation_comments import (
     ASK_REPLY_MARKER,
-    console_ask_mark,
     quote_request,
 )
 from holophyte.loop.gates import InfraFailure
@@ -47,13 +46,15 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
         if (getattr(reply, "timed_out", False)
                 or getattr(reply, "exit_code", 0) != 0 or not reply.strip()):
             raise InfraFailure("ask adjudicator failed or returned an empty answer")
-        header = babysitter.COMMENT_HEADER.format(
-            model=agent_route(target, "adjudicate"))
         reply = github_links(
             reply, f"https://{pull.host}/{pull.owner}/{pull.name}", sha)
-        marker = (console_ask_mark(maintainer_notes.event_id(thread))
-                  if maintainer_notes.is_console_ask(thread) else ASK_REPLY_MARKER)
-        body = f"{header}\n\n{marker}\n{reply}"
+        if maintainer_notes.is_console_ask(thread):
+            console_asks.answered(conn, run_id, maintainer_notes.event_id(thread),
+                                  None, outbound(reply, known_secrets(target.config())))
+            continue
+        header = babysitter.COMMENT_HEADER.format(
+            model=agent_route(target, "adjudicate"))
+        body = f"{header}\n\n{ASK_REPLY_MARKER}\n{reply}"
         if thread.triage is not None:
             body += "\n\n" + thread_mentions.FIX_HINT
         post(target, conn, run_id, beat_s, pull, thread, body, resolve=True,

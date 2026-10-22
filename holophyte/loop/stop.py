@@ -29,7 +29,7 @@ def stop_if_requested(conn, run_id, phase):
     if action in ABORTS:
         end_aborted(conn, run_id)
         return
-    stopped_at, phase = phase, "merge_gate" if pr_url else phase
+    phase = "merge_gate" if pr_url else phase
     target = Project.locate(repo)
     sha = preserve(target, branch) if branch else None
     if not _end_paused(conn, run_id, ticket_id, phase, note, sha):
@@ -37,7 +37,7 @@ def stop_if_requested(conn, run_id, phase):
         return
     if pr_url:
         from holophyte.loop import pause_notice
-        pause_notice.mark(target, conn, run_id, stopped_at)
+        pause_notice.mark(target, conn, run_id)
     raise store.RunEnded(run_id, "paused", note)
 
 

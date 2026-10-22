@@ -127,21 +127,21 @@ test("Ask on a parked pull request sends the run and question and preserves a re
   expect(toast()).toBe("");
 });
 
-test("a successful Ask names the pull request in its toast and clears the question", async () => {
+test("a successful Ask toasts that the answer appears here and clears the question", async () => {
   const action = fakeFetch({ ok: true, detail: "asked" });
   await mount({ body: parked, answer: action.fetchImpl });
   await click(agent().getByRole("button", { name: "Ask" }));
   await type("Does it print?");
   await click(agent().getByRole("button", { name: "Send" }));
-  expect(toast()).toBe("Asked on PR #28.");
+  expect(toast()).toBe("Asked. The answer appears here.");
   expect(textbox().value).toBe("");
 });
 
-test("a live run disables Ask with the pull request explanation and the header link focuses its composer", async () => {
+test("a live run disables Ask until the run parks on its pull request and the header link focuses its composer", async () => {
   await mount();
   const ask = agent().getByRole("button", { name: "Ask" });
   expect(ask.hasAttribute("disabled")).toBe(true);
-  expect(ask.getAttribute("title")).toBe("Questions are answered on the pull request, once the run parks on it.");
+  expect(ask.getAttribute("title")).toBe("Ask opens once the run parks on its pull request.");
   const link = screen.getByRole("link", { name: "Steer or ask" });
   expect(link.getAttribute("href")).toBe("#agent");
   await click(link);
