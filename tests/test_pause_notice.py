@@ -1,5 +1,5 @@
 """KO-608: a paused run's pull request carries the `holophyte:paused` label
-and one notice comment, both removed on `--resume`."""
+and no comment, so the pause note never reaches GitHub; `--resume` unlabels."""
 from __future__ import annotations
 
 import json
@@ -14,7 +14,6 @@ from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
 from pause_fixture import PauseEdit  # noqa: E402
 
-from holophyte.babysit.babysitter import COMMENT_HEADER  # noqa: E402
 from holophyte.loop.stop import command  # noqa: E402
 
 LABELS = "repos/example/repo/issues/7/labels"
@@ -38,29 +37,23 @@ class PauseNoticeTests(MergeModeFixture):
         return [line for line in self.recorded()
                 if "/labels" in line or "/comments" in line]
 
-    def test_pause_labels_and_comments_then_resume_removes_both(self):
+    def test_pause_labels_without_comment_or_note_then_resume_unlabels(self):
         self.pause_in_babysit()
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
-        (label,) = [line for line in self.github() if "/labels" in line]
-        self.assertIn(f"--method POST {LABELS}", label)
+        paused = self.github()
+        self.assertEqual(len(paused), 1, paused)
+        self.assertIn(f"--method POST {LABELS}", paused[0])
         self.assertEqual(json.loads(self.label_log.read_text()),
                          {"labels": ["holophyte:paused"]})
-        (comment,) = [v["body"] for kind, v in self.api_calls()
-                      if kind == "conversation"]
-        self.assertTrue(comment.startswith(COMMENT_HEADER.split("{")[0]), comment)
-        for text in ("reboot writer", "KO-131", "--resume"):
-            self.assertIn(text, comment)
-        (notice,) = self.notices()
-        comment_id = notice["commentId"]
-        self.assertIsNotNone(comment_id)
+        self.assertNotIn("conversation", [kind for kind, _ in self.api_calls()])
+        wire = [*self.recorded(), self.label_log.read_text(),
+                *(json.dumps(body) for _, body in self.api_calls())]
+        self.assertFalse([call for call in wire if "reboot writer" in call])
 
-        before = len(self.github())
         command(self.project, "KO-131", None, resume=True)
-        after = self.github()[before:]
-        self.assertEqual(len(after), 2, after)
-        self.assertIn("--method DELETE repos/example/repo/issues/comments/"
-                      f"{comment_id}", after[0])
-        self.assertIn(f"--method DELETE {LABELS}/holophyte%3Apaused", after[1])
+        after = self.github()[len(paused):]
+        self.assertEqual(len(after), 1, after)
+        self.assertIn(f"--method DELETE {LABELS}/holophyte%3Apaused", after[0])
         self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
 
     def test_refused_label_leaves_the_pause_standing(self):

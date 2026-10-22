@@ -3,7 +3,6 @@ import json
 from urllib.parse import quote
 
 import store
-from holophyte.babysit.babysitter import COMMENT_HEADER
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr.github import rest
 from holophyte.pr.pr_status import parse_pr_url
@@ -13,36 +12,15 @@ LABEL = "holophyte:paused"
 KIND = "pause_notice"
 
 
-def body(identifier, who, note, boundary):
-    return (f"{COMMENT_HEADER.format(model='holophyte')}\n\n"
-            f"**Paused.** The factory has stopped working on this pull request:"
-            f" {who} paused {identifier} at its `{boundary}` boundary.\n\n"
-            f"Note: {note or '(none recorded)'}\n\n"
-            f"To resume, run `factory.py PROJECT --resume {identifier} --note TEXT`"
-            " on the writer host, or press Resume on the ticket in the console."
-            f" Resuming removes the `{LABEL}` label and this comment.")
-
-
-def mark(target, conn, run_id, boundary):
-    identifier, pr_url, source, note = conn.execute(
-        "SELECT t.linearIdentifier, r.prUrl, i.source, i.guidance FROM runs r"
-        " JOIN tickets t ON t.id = r.ticketId"
-        " LEFT JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?",
-        (run_id,)).fetchone()
+def mark(target, conn, run_id):
+    (pr_url,) = conn.execute("SELECT prUrl FROM runs WHERE id = ?",
+                             (run_id,)).fetchone()
     pull = _pull(conn, run_id, pr_url)
     if pull is None:
         return
     issue = f"repos/{pull.repo}/issues/{pull.number}"
     _attempt(conn, run_id, "label", lambda: rest(
         target, pull, "POST", f"{issue}/labels", {"labels": [LABEL]}))
-    who = "the supervisor" if source == "supervisor" else "the operator"
-    answer = _attempt(conn, run_id, "comment", lambda: rest(
-        target, pull, "POST", f"{issue}/comments",
-        {"body": body(identifier, who, note, boundary)}))
-    if answer is not None:
-        comment = answer.get("id") if isinstance(answer, dict) else None
-        store.record_event(conn, run_id, KIND, f"posted pause comment {comment}",
-                           level="detail", payload=json.dumps({"commentId": comment}))
 
 
 def unmark(target, conn, run_id):
