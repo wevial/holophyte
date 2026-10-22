@@ -55,4 +55,4 @@ def ask_action(project, body):
     return 200, {"action": ASK_ACTION, "ok": True, "run": run_id,
                  "ticket": ticket, "event_id": event_id, "recorded": recorded,
                  "detail": f"console ask event {event_id} recorded; the loop's"
-                           f" next claim answers it on {pr_url}"}
+                           f" next claim answers it in the console"}

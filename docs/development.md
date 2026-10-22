@@ -274,7 +274,8 @@ Each module, one line:
   readiness, and released through the store's `approve` only when ready.
 - `holophyte/serve/serve_ask.py` — the daemon's `POST /actions/ask` and
   `GET /runs/N/asks`: a question on a parked run's pull request, recorded
-  with the park's release, and the console asks on that pull request.
+  with the park's release and answered in the console with nothing posted
+  to GitHub, and the console asks on that pull request.
 - `holophyte/agents/transcripts.py` — opted-in transcript location, rendering and turn event joins.
 - `holophyte/agents/transcript_config.py` — the daemon transcript root allow-list.
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
@@ -526,7 +527,7 @@ Each module, one line:
   evidence across attempts on the same pull request.
 - `store/console_asks.py` — a console ask recorded and its park released in one
   transaction, the unanswered asks on a ticket's pull request, and each
-  answer's comment.
+  answer, recorded in the console with nothing posted to GitHub.
 - `holophyte/babysit/bot_threads.py` — advisory bot findings and human-reply escalation.
 - `holophyte/babysit/conversation_comments.py` — paged human conversation instructions
   and recognition of quoted factory replies.

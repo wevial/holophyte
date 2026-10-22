@@ -1,16 +1,14 @@
 import { useState, type Ref } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
-import { prLabel } from "../../lib/shipped";
 import { useAction } from "../actions";
 import { Btn } from "./Btn";
 
-const ASK_OFF = "Questions are answered on the pull request, once the run parks on it.";
+const ASK_OFF = "Ask opens once the run parks on its pull request.";
 
-export function AgentCompose({ base, run, ticket, prUrl, actions, parked, live, ref }: {
+export function AgentCompose({ base, run, ticket, actions, parked, live, ref }: {
   base: string;
   run: number;
   ticket: string;
-  prUrl: string | null;
   actions: boolean;
   parked: boolean;
   live: boolean;
@@ -32,7 +30,7 @@ export function AgentCompose({ base, run, ticket, prUrl, actions, parked, live, 
     const result = await action.mutateAsync({
       label: kind, base, route: asking ? "/actions/ask" : "/actions/steer",
       body: asking ? { run, question: text.trim() } : { ticket, note: text.trim(), hint, now: stop },
-      said: asking ? `Asked on ${prUrl == null ? "the pull request" : prLabel(prUrl)}.` : `Steered ${ticket}.`,
+      said: asking ? "Asked. The answer appears here." : `Steered ${ticket}.`,
     });
     if (result.ok) {
       setText("");

@@ -798,10 +798,11 @@ and `pr_url` are run N's. `asks` holds every console ask recorded on any
 run of N's ticket with N's pull request URL, so the run the loop re-parks
 after answering lists the asks made on the run before it. Each ask is its
 event `id`, its `question` and `author`, and `asked_ms`, when it was
-recorded. Once the babysitter has posted its answer on the pull request,
-`answered_ms` is when, `url` the posted comment's `html_url` (null if
-GitHub answered none) and `answer` the answer text as posted, redacted;
-until then the three are null. A run with no pull request answers an empty
+recorded. Once the babysitter has answered it, `answered_ms` is when,
+`answer` the answer text, redacted, and `url` null: the answer is recorded
+in the console and nothing is posted to GitHub. An ask answered before
+that keeps its posted comment's `html_url` in `url`. Until answered the
+three are null. A run with no pull request answers an empty
 list. `N` parses as on `/runs/N`: a non-integer is 400, an integer with no
 run is 404 carrying `run`. The route writes nothing and asks GitHub
 nothing.
