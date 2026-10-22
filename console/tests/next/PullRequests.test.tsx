@@ -156,17 +156,19 @@ test("only rows waiting on you stay: a draft and a ready park, not a ci park or 
   await mount({ items: [draft, readyPark, onCi], runs: [fixing] });
   expect(lane("demo").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
   expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#45", "#42"]);
-  expect(waits()).toEqual([["Your review", "draft · 3h"], ["Your review", "ready to merge · 2h"]]);
+  expect(waits()).toEqual([["Draft · 3h", ""], ["Your review", "ready to merge · 2h"]]);
   expect(section().textContent).not.toMatch(/waiting on the factory|On CI|Factory fixing|#41|#2374/);
 });
 
-test("a draft held for review reads Your review over draft and its age, with no chip or repeated state", async () => {
-  await mount({ items: [park(12, "pull_request", 2 * 24 * HOUR, {
+test("a draft held for review reads Draft and its age with no second line, while a ready row keeps Your review over ready to merge", async () => {
+  await mount({ items: [park(12, "pull_request", 30 * MINUTE, {
     state: "draft", title: "Improve the overview", checks: "success", review: "review_required", threads: 0, open_threads: 0,
-  })], readyRuns: [] });
-  const row = rows()[0]!;
-  expect(waits()).toEqual([["Your review", "draft · 2d"]]);
-  expect(within(row).queryByText("Draft", { exact: true })).toBeNull();
+  }), readyPark] });
+  const [ready, row] = rows() as [HTMLElement, HTMLElement];
+  expect(row.querySelector("[data-pr-wait]")!.textContent).toBe("Draft · 30m");
+  expect(row.querySelector("[data-pr-since]")).toBeNull();
+  expect(ready.querySelector("[data-pr-wait]")!.textContent).toBe("Your review");
+  expect(ready.querySelector("[data-pr-since]")!.textContent).toBe("ready to merge · 2h");
   expect(row.textContent).not.toContain("held for your review");
   expect(row.textContent).not.toContain("review pending");
 });
@@ -255,7 +257,7 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
   await openRow(45);
   await markReady();
   expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
-  expect(waits()).toEqual([["Your review", "draft · 1h"]]);
+  expect(waits()).toEqual([["Draft · 1h", ""]]);
   expect(onCiRows()).toEqual([]);
 });
 
