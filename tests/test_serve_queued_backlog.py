@@ -64,6 +64,15 @@ class QueuedBacklogTests(ServeTestCase):
         self.assertEqual(self.move("backlog"), ("ready", "backlog"))
         self.assertNotIn("NAT-1", self.queued())
 
+    def test_a_backlog_ticket_moved_back_to_ready_is_queued_again(self):
+        self.move("backlog")
+        self.assertEqual(self.move("ready"), ("ready", "ready"))
+
+        _, _, served = self.request("GET", "/status")
+        self.assertEqual(
+            [(q["ticket"], q["waiting_ms"]) for q in served["queued"]],
+            [("NAT-1", served["now"] - (self.now - 5 * MIN))])
+
 
 if __name__ == "__main__":
     unittest.main()
