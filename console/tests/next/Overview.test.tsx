@@ -57,6 +57,14 @@ test("a pull request ready to merge is a Pull requests row reading Your review, 
   ]);
 });
 
+test("with only a ready pull request, nothing waits on you and the pull request stays a Pull requests row", async () => {
+  await mount("#/", fleet({ items: [] }, { items: [prPark] }));
+  expect(heading()).toBe("Nothing waiting on you.");
+  expect(waitRows()).toEqual([]);
+  expect(within(section("Waiting on you")).getByText("The factory has it from here.")).toBeTruthy();
+  expect(prRows().map((row) => row.textContent!.includes("WRITER-9"))).toEqual([true]);
+});
+
 test("a thread park with a pull request and a question park are Waiting on you rows counted in the heading, not Pull requests rows", async () => {
   const thread = { ...blocked, ticket: "DEMO-5", run: 5, park_kind: "thread", pr_url: "https://github.com/example/demo/pull/55" };
   await mount("#/", fleet({ items: [blocked, thread] }, { items: [] }));
