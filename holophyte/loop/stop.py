@@ -131,7 +131,7 @@ def abort_pr_comment(conn, run_id, request_id):
     return None
 
 
-def close_pull(target, conn, run_id, pr_url, body=None):
+def close_pull(target, conn, run_id, pr_url, body):
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
     from holophyte.pr.pr_status import parse_pr_url
