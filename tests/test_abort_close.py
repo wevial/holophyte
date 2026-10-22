@@ -125,6 +125,18 @@ class AbortCloseTests(MergeModeFixture):
             "SELECT r.outcome, t.status FROM runs r JOIN tickets t"
             " ON t.id = r.ticketId"), [("abandoned", "blocked_on_operator")])
 
+    def test_close_without_a_pr_comment_closes_silently(self):
+        self.parked_on_its_pull_request()
+        pushes = len(self.pushed())
+
+        self.abort("--close-pr")
+
+        self.assertEqual(self.gh(COMMENT, CLOSE), [CLOSE])
+        self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
+                         [("abandoned", NOTE)])
+        wip = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.pushed()[pushes:], [(BRANCH, wip)])
+
     def test_a_plain_abort_leaves_the_pull_request_open(self):
         self.parked_on_its_pull_request()
 
