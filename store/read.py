@@ -702,6 +702,7 @@ def queued_tickets(conn, project_id):
         "SELECT t.linearIdentifier, t.url, t.title, r.outcomeReason, r.prUrl,"
         " r.endedAt FROM tickets t JOIN runs r ON r.id = t.lastRunId"
         " WHERE t.status = 'ready' AND t.activeRunId IS NULL"
+        " AND COALESCE(t.boardColumn, '') NOT IN ('backlog', 'canceled')"
         " AND r.endedAt IS NOT NULL AND t.projectId = ?"
         " ORDER BY r.endedAt, t.id",
         (project_id,)).fetchall()
