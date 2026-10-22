@@ -247,7 +247,7 @@ export const GAP_PX = 3;
 const MIN_SEGMENT_PX = 6;
 
 /** A length of the bar as `pct`% of its width plus `px` pixels. */
-export interface Length {
+interface Length {
   pct: number;
   px: number;
 }

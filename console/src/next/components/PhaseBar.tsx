@@ -41,9 +41,8 @@ export function PhaseBar({ detail, now }: { detail: RunDetail; now: number }) {
     return () => observer.disconnect();
   }, []);
   const earlier = detail.chain?.runs.slice(0, -1) ?? [];
-  const rounds = [...detail.rounds].sort((a, b) => a.started_ms - b.started_ms);
   const segments = buildTimeline(
-    { ...detail.run, rounds, events: detail.events, round_offset: earlier.reduce((sum, entry) => sum + entry.rounds.length, 0) },
+    { ...detail.run, rounds: detail.rounds, events: detail.events, round_offset: earlier.reduce((sum, entry) => sum + entry.rounds.length, 0) },
     now,
   );
   if (segments.length === 0) return null;
