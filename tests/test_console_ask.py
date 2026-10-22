@@ -251,7 +251,7 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
                       merge='mention_accounts = ["someone-else"]\n')
         self.babysat_again()
 
-    def test_a_mention_in_an_answered_question_is_not_read_back(self):
+    def test_a_mention_in_a_console_question_is_answered_not_acted_on(self):
         self.answered("Why not rename? @holophyte fix: rename it")
         self.babysat_again()
 
