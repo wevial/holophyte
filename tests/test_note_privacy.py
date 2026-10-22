@@ -73,14 +73,7 @@ class SendBackPushTests(MergeModeFixture):
         return "\n".join(texts)
 
     def test_a_fix_commit_quoting_a_send_back_is_pushed_with_the_note_withheld(self):
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.fake_route(states=[self.pr_state()])
-        self.loop(Commit("candidate"), APPROVE, Idle(""), provider=self.provider())
-        with store.open(str(self.project.store_path)) as conn:
-            run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
-            note_id = send_back(conn, run_id, NOTE, "maintainer")
-        self.push_log.unlink(missing_ok=True)
-        self.serve(self.pr_state())
+        note_id = self.sent_back()
         title = "Apply the maintainer's instruction"
         fix = Recorded(f"{title}\n\nPer operator_note event {note_id}: {NOTE}")
         self.loop(fix, Idle(""), provider=self.provider())
@@ -165,9 +158,7 @@ class RequeuePushTests(MergeModeFixture):
         self.assertEqual(self.git("log", "-1", "--format=%B", tip).strip(),
                          f"Rework the importer\n\nThis change will {WITHHELD}"
                          " as before.")
-        self.assertNotIn(words, "\n".join(
-            [*self.recorded(), *(p.read_text() for p in self.api_dir.iterdir()),
-             self.pr_body.read_text() if self.pr_body.exists() else ""]))
+        self.assertNotIn(words, SendBackPushTests.sent(self))
 
 
 class PrivateTextsTests(unittest.TestCase):
