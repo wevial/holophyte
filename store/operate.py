@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import getpass
+import json
 import re
 import socket
 import time
@@ -374,7 +375,13 @@ def pause(conn, run_id, note, source="human", now=None):
 _CANCEL_TRIGGERS = ("linear_cancelled", "board_cancelled")
 
 
-def abort(conn, run_id, note, source="human", now=None, close=False, trigger="manual"):
+def abort(conn, run_id, note, source="human", now=None, close=False, trigger="manual",
+          pr_comment=None):
+    if pr_comment is not None and (not isinstance(pr_comment, str)
+                                   or not pr_comment.strip()):
+        raise ValueError("pr_comment must be non-blank text or None")
+    if pr_comment is not None and not close:
+        raise ValueError("pr_comment is posted only with close")
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.endedAt, r.outcome, r.phase, r.stopRequested, i.action,"
@@ -399,6 +406,12 @@ def abort(conn, run_id, note, source="human", now=None, close=False, trigger="ma
                                       trigger=trigger, guidance=note, now=now)
         conn.execute("UPDATE runs SET stopRequested = ? WHERE id = ?",
                      (request, run_id))
+        if pr_comment is not None:
+            _append_event(conn, run_id, "detail", "abort_pr_comment",
+                          "pull request comment for the abort",
+                          int(time.time() * 1000) if now is None else now,
+                          payload=json.dumps({"intervention": request,
+                                              "body": pr_comment}))
     return request
 
 

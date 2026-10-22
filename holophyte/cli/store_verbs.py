@@ -18,7 +18,8 @@ def _store_verb(args, target, board):
     if args.abort:
         from holophyte.loop.stop import abort_command
         abort_command(target, args.abort, args.note,
-                      provider=require_board(target, board), close=args.close_pr)
+                      provider=require_board(target, board), close=args.close_pr,
+                      pr_comment=args.pr_comment)
         return True
     if args.pause or args.resume:
         from holophyte.loop.stop import command

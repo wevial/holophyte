@@ -338,7 +338,8 @@ HTTP_ROUTES = {
     ("release",): Route("POST", "/actions/release-hold", ("note",)),
     ("pause",): Route("POST", "/actions/pause", ("run", "note")),
     ("resume",): Route("POST", "/actions/resume", ("ticket", "note")),
-    ("abort",): Route("POST", "/actions/abort", ("run", "note", "close")),
+    ("abort",): Route("POST", "/actions/abort",
+                      ("run", "note", "close", "pr_comment")),
     ("start",): Route("POST", "/actions/launch-loop"),
 }
 
@@ -454,7 +455,8 @@ def fields(args, route):
              "force": bool(getattr(args, "force", False)),
              "hint": bool(getattr(args, "hint", False)),
              "now": bool(getattr(args, "now", False)),
-             "author": author[-1] if author else None}
+             "author": author[-1] if author else None,
+             "pr_comment": (getattr(args, "pr_comment", None) or [None])[-1]}
     first = command.takes[:1]
     if first == ("KEY",):
         known["ticket"] = values[0]

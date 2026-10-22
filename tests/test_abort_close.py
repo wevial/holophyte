@@ -1,5 +1,5 @@
-"""`--abort KO-n --close-pr`: the abort, then the pull request's comment and
-close, recorded on the intervention before anything is killed (KO-611)."""
+"""`--abort KO-n --close-pr`: the abort, then the pull request's close and any
+--pr-comment, recorded on the intervention before anything is killed (KO-611)."""
 from __future__ import annotations
 
 import contextlib
@@ -99,13 +99,7 @@ class AbortCloseTests(MergeModeFixture):
         self.assertEqual(self.subjects(BRANCH)[0],
                          "WIP: preserve work at operator abort")
         self.assertEqual(self.pushed()[-1], (BRANCH, wip))
-        self.assertEqual(self.gh(COMMENT, CLOSE), [COMMENT, CLOSE])
-        (body,) = [call["body"] for kind, call in self.api_calls()
-                   if kind == "conversation"]
-        self.assertTrue(body.startswith("---- Comment by "), body)
-        self.assertIn(NOTE, body)
-        self.assertIn(wip[:7], body)
-        self.assertIn("--requeue KO-131", body)
+        self.assertEqual(self.gh(COMMENT, CLOSE), [CLOSE])
 
     def test_the_cli_closes_for_a_worker_that_is_gone(self):
         self.parked_on_its_pull_request()
@@ -117,13 +111,37 @@ class AbortCloseTests(MergeModeFixture):
         self.assertEqual(self.subjects(BRANCH)[0],
                          "WIP: preserve work at operator abort")
         self.assertEqual(self.pushed()[pushes:], [(BRANCH, wip)])
-        self.assertEqual(self.gh(COMMENT, CLOSE), [COMMENT, CLOSE])
+        self.assertEqual(self.gh(COMMENT, CLOSE), [CLOSE])
         self.assertEqual(self.read("SELECT action FROM interventions"
                                    " WHERE action LIKE 'abort%'"),
                          [("abort_close",)])
         self.assertEqual(self.read(
             "SELECT r.outcome, t.status FROM runs r JOIN tickets t"
             " ON t.id = r.ticketId"), [("abandoned", "blocked_on_operator")])
+
+    def test_close_without_a_pr_comment_closes_silently(self):
+        self.parked_on_its_pull_request()
+        pushes = len(self.pushed())
+
+        self.abort("--close-pr")
+
+        self.assertEqual(self.gh(COMMENT, CLOSE), [CLOSE])
+        self.assertEqual(self.read("SELECT outcome, outcomeReason FROM runs"),
+                         [("abandoned", NOTE)])
+        wip = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.pushed()[pushes:], [(BRANCH, wip)])
+
+    def test_a_pr_comment_is_posted_alone_under_the_header_then_closed(self):
+        self.parked_on_its_pull_request()
+        text = "Superseded by a smaller change."
+
+        self.abort("--close-pr", "--pr-comment", text)
+
+        self.assertEqual(self.gh(COMMENT, CLOSE), [COMMENT, CLOSE])
+        (body,) = [call["body"] for kind, call in self.api_calls()
+                   if kind == "conversation"]
+        self.assertEqual(body, f"---- Comment by holophyte ----\n\n{text}")
+        self.assertNotIn(NOTE, body)
 
     def test_a_plain_abort_leaves_the_pull_request_open(self):
         self.parked_on_its_pull_request()
@@ -140,7 +158,7 @@ class AbortCloseTests(MergeModeFixture):
 
         printed = self.abort("--close-pr")
 
-        self.assertEqual(self.gh(COMMENT, CLOSE), [COMMENT, CLOSE])
+        self.assertEqual(self.gh(COMMENT, CLOSE), [CLOSE])
         self.assertEqual(self.read(
             "SELECT r.outcome, t.status FROM runs r JOIN tickets t"
             " ON t.id = r.ticketId"), [("abandoned", "blocked_on_operator")])
@@ -157,3 +175,14 @@ class AbortCloseTests(MergeModeFixture):
             holophyte.cli.entry.cli([str(self.target), "--close-pr"])
         self.assertNotEqual(exited.exception.code, 0)
         self.assertIn("--abort", err.getvalue())
+
+    def test_pr_comment_without_close_pr_is_refused_naming_close_pr(self):
+        self.parked_on_its_pull_request()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                self.assertRaises(SystemExit) as exited:
+            self.abort("--pr-comment", "Superseded.")
+        self.assertNotEqual(exited.exception.code, 0)
+        self.assertIn("--close-pr", err.getvalue())
+        self.assertEqual(self.read("SELECT action FROM interventions"
+                                   " WHERE action LIKE 'abort%'"), [])

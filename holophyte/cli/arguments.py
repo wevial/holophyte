@@ -134,6 +134,8 @@ def _close_checks(parser, args):
         parser.error("--landed belongs to --close")
     if args.close_pr and not args.abort:
         parser.error("--close-pr belongs to --abort")
+    if args.pr_comment is not None and not args.close_pr:
+        parser.error("--pr-comment belongs to --close-pr")
 
 
 def _gap_layer_checks(parser, args):
@@ -186,8 +188,11 @@ def build_parser():
                        " WIP, push an open pull request's branch, park the"
                        " ticket; requires --note")
     parser.add_argument("--close-pr", action="store_true",
-                        help="with --abort: then comment the note on the run's"
-                        " pull request and close it; the branch is kept")
+                        help="with --abort: then close the run's pull request"
+                        " without a comment; the branch is kept")
+    parser.add_argument("--pr-comment", metavar="TEXT",
+                        help="with --close-pr: post TEXT alone on the pull"
+                        " request before closing it")
     modes.add_argument(
         "--report", action="store_true",
         help="print the project store's estimate-vs-actual table and exit; "

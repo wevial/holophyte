@@ -81,10 +81,9 @@ def end_aborted(conn, run_id):
     from holophyte.leak_guard import record_refusal
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
-    branch, ticket_id, repo, pr_url, identifier = conn.execute(
-        "SELECT r.branch, r.ticketId, p.repoPath, r.prUrl, t.linearIdentifier"
-        " FROM runs r JOIN projects p ON p.id = r.projectId"
-        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
+    branch, ticket_id, repo, pr_url = conn.execute(
+        "SELECT r.branch, r.ticketId, p.repoPath, r.prUrl"
+        " FROM runs r JOIN projects p ON p.id = r.projectId WHERE r.id = ?",
         (run_id,)).fetchone()
     target = Project.locate(repo)
     sha = preserve(target, branch, "abort") if branch else None
@@ -95,12 +94,13 @@ def end_aborted(conn, run_id):
         if ended is not None:
             raise store.RunEnded(run_id, outcome, reason)
         request = conn.execute(
-            'SELECT i.guidance, i.action, i.source, i."trigger" FROM runs r'
+            'SELECT i.guidance, i.action, i."trigger", i.id FROM runs r'
             " JOIN interventions i ON i.id = r.stopRequested WHERE r.id = ?"
             " AND i.action IN ('abort', 'abort_close')", (run_id,)).fetchone()
         if request is None:
             return
-        note, action, source, trigger = request
+        note, action, trigger, request_id = request
+        comment = abort_pr_comment(conn, run_id, request_id)
         store.release(conn, run_id, "abandoned", note, candidate_sha=sha)
         if trigger in ("linear_cancelled", "board_cancelled"):
             store.walk_ticket(conn, ticket_id, "abandoned")
@@ -116,17 +116,22 @@ def end_aborted(conn, run_id):
     # Closed after the run ends, so a reconcile never finds a parked run to reject.
     if pr_url and action == "abort_close":
         from holophyte.babysit.babysitter import COMMENT_HEADER
-        who = "the operator" if source == "human" else f"the {source}"
-        kept = f"WIP commit {sha[:7]} on" if sha else "the"
-        close_pull(target, conn, run_id, pr_url, (
-            f"{COMMENT_HEADER.format(model='holophyte')}\n\n"
-            f"Aborted by {who}: {note}\n\n"
-            f"The work is kept as {kept} branch `{branch}`; start again with"
-            f" `factory.py <repo> --requeue {identifier} --note TEXT`."))
+        close_pull(target, conn, run_id, pr_url, None if comment is None else
+                   f"{COMMENT_HEADER.format(model='holophyte')}\n\n{comment}")
     raise Aborted(run_id, "abandoned", note)
 
 
-def close_pull(target, conn, run_id, pr_url, body):
+def abort_pr_comment(conn, run_id, request_id):
+    for (payload,) in conn.execute(
+            "SELECT payload FROM runEvents WHERE runId = ?"
+            " AND kind = 'abort_pr_comment' ORDER BY id DESC", (run_id,)):
+        saved = json.loads(payload)
+        if saved.get("intervention") == request_id:
+            return saved.get("body")
+    return None
+
+
+def close_pull(target, conn, run_id, pr_url, body=None):
     from holophyte.loop.gates import InfraFailure
     from holophyte.pr import github
     from holophyte.pr.pr_status import parse_pr_url
@@ -135,6 +140,8 @@ def close_pull(target, conn, run_id, pr_url, body):
              ("close", lambda: github.rest(
                  target, pull, "PATCH",
                  f"repos/{pull.repo}/pulls/{pull.number}", {"state": "closed"})))
+    if body is None:
+        steps = steps[1:]
     for step, call in steps if pull else ():
         try:
             call()
@@ -233,7 +240,8 @@ def resume_paused(target, conn, ticket_id, note):
     return run_id
 
 
-def abort_command(target, identifier, note, *, provider, close=False):
+def abort_command(target, identifier, note, *, provider, close=False,
+                  pr_comment=None):
     from holophyte.cli.operator import _operator_store, _ticket_by_identifier
     conn = _operator_store(target)
     try:
@@ -243,7 +251,7 @@ def abort_command(target, identifier, note, *, provider, close=False):
         if run_id is None:
             raise ValueError(f"{identifier} has no run to abort")
         if not abort_run(target, conn, run_id, note, provider=provider,
-                         close=close):
+                         close=close, pr_comment=pr_comment):
             print(f"[holo2] {identifier}: abort requested; run {run_id} ends"
                   " at its worker's next heartbeat (this host cannot confirm"
                   " that worker gone; a silent one is the sweep's)")
@@ -257,10 +265,10 @@ def abort_command(target, identifier, note, *, provider, close=False):
 
 
 def abort_run(target, conn, run_id, note, *, provider, close=False,
-              source="human", trigger="manual"):
+              source="human", trigger="manual", pr_comment=None):
     from holophyte.board import projection
     store.abort(conn, run_id, note, source=source, close=close,
-                trigger=trigger)
+                trigger=trigger, pr_comment=pr_comment)
     if not worker_gone(conn, run_id):
         return False
     try:
