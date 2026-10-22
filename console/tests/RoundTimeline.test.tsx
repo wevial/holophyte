@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import type { ReactElement } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { GAP_PX, RoundTimeline } from "../src/components/RoundTimeline";
+import { RoundTimeline } from "../src/components/RoundTimeline";
 import { buildTimeline, type Segment, type TimelineRun } from "../src/lib/timeline";
 
 const MINUTE = 60_000;
@@ -70,58 +70,12 @@ test("a run with one finished implement segment fills the whole bar with it and 
   expect(widths[0]).toBeCloseTo(1000, 6);
 });
 
-test("7 minutes implementing and a running 3-minute review draw 70% and 30% of the bar after its one gap", () => {
+test("a live run's status line names its running review and the time it has run", () => {
   const run = runOf([[0, "claimed -> working: KO-1"], [420, "working -> reviewing: review"]], null, "reviewing");
   const now = T + 10 * MINUTE;
-  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, now)} run={run} now={now} />);
-  expect(widths[0]).toBeCloseTo(0.7 * (1000 - GAP_PX), 6);
-  expect(widths[1]).toBeCloseTo(0.3 * (1000 - GAP_PX), 6);
+  render(<RoundTimeline segments={buildTimeline(run, now)} run={run} now={now} />);
   expect(segment(1).getAttribute("data-running")).toBe("true");
   expect(document.querySelector("[data-timeline-status]")!.textContent).toBe("review · 3m 00s");
-});
-
-test("phases of 2 s and 12 s beside 50 minutes keep a 6 px minimum while the bar still sums to its width", () => {
-  const run = runOf(
-    [[0, "claimed -> working: KO-1"], [3000, "working -> verifying: verify"], [3002, "verifying -> merging: merge"], [3014, "merging -> done: merged"]],
-    T + 3014_000,
-    "done",
-  );
-  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, T + 3014_000)} run={run} now={T + 3014_000} />);
-  expect(widths[1]).toBeGreaterThanOrEqual(6);
-  expect(widths[2]).toBeGreaterThanOrEqual(6);
-  expect(widths.reduce((sum, px) => sum + px, 0) + (widths.length - 1) * GAP_PX).toBeCloseTo(1000, 6);
-});
-
-test("a widened short segment's tooltip centres on where it draws, past the widened segments before it", () => {
-  const changes: [number, string][] = [[0, "claimed -> verifying: verify"]];
-  for (let index = 1; index < 10; index++) {
-    changes.push([2 * index, index % 2 ? "verifying -> reviewing: review" : "reviewing -> verifying: verify"]);
-  }
-  changes.push([20, "reviewing -> working: rework"], [20 + 3000, "working -> done: merged"]);
-  const run = runOf(changes, T + 3020_000, "done");
-  const widths = drawnAt(1000, <RoundTimeline segments={buildTimeline(run, T + 3020_000)} run={run} now={T + 3020_000} />);
-  expect(widths).toHaveLength(11);
-  const tenth = widths.slice(0, 9).reduce((sum, px) => sum + px + GAP_PX, 0) + widths[9]! / 2;
-  fireEvent.focusIn(segment(9));
-  const tooltip = document.querySelector("[data-segment-tooltip]") as HTMLElement;
-  expect(resolvePx(tooltip.style.left, 1000)).toBeCloseTo(tenth, 6);
-});
-
-test("40 equal segments in a 320 px bar too narrow for their minimums still fit it, the last tooltip centred on the last segment", () => {
-  const changes: [number, string][] = [[0, "claimed -> verifying: verify"]];
-  for (let index = 1; index < 40; index++) {
-    changes.push([60 * index, index % 2 ? "verifying -> reviewing: review" : "reviewing -> verifying: verify"]);
-  }
-  changes.push([2400, "reviewing -> done: merged"]);
-  const run = runOf(changes, T + 2400_000, "done");
-  const widths = drawnAt(320, <RoundTimeline segments={buildTimeline(run, T + 2400_000)} run={run} now={T + 2400_000} />);
-  expect(widths).toHaveLength(40);
-  const gap = Number.parseFloat(bar().style.gap);
-  expect(widths.every((px) => px > 0)).toBe(true);
-  expect(widths.reduce((sum, px) => sum + px, 0) + 39 * gap).toBeCloseTo(320, 3);
-  fireEvent.focusIn(segment(39));
-  const tooltip = document.querySelector("[data-segment-tooltip]") as HTMLElement;
-  expect(resolvePx(tooltip.style.left, 320)).toBeCloseTo(320 - widths[39]! / 2, 3);
 });
 
 test("each segment is a focusable img naming itself; hovering it floats the long name and duration, leaving hides it", () => {

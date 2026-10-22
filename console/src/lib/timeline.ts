@@ -1,3 +1,4 @@
+import { formatTotal } from "./format";
 import { phaseLabel, roundLabel } from "./runs";
 import type { RunEvent } from "./types";
 
@@ -236,4 +237,81 @@ export function buildTimeline(run: TimelineRun, now: number): Segment[] {
 /** Positive: milliseconds left in the box; negative: how far past it. */
 export function boxRemaining(run: { started_ms: number; time_box_ms: number | null }, now: number): number | null {
   return run.time_box_ms == null ? null : run.time_box_ms - (now - run.started_ms);
+}
+
+/** Gap between bar items, in px, before `spacing` shrinks it for a bar too
+ *  narrow to hold every segment at its minimum. */
+export const GAP_PX = 3;
+
+/** The narrowest a segment draws, so it stays hoverable and focusable. */
+const MIN_SEGMENT_PX = 6;
+
+/** A length of the bar as `pct`% of its width plus `px` pixels. */
+interface Length {
+  pct: number;
+  px: number;
+}
+
+export const barLength = ({ pct, px }: Length) =>
+  pct === 0 ? `${px}px` : `calc(${pct}% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
+
+/** The minimum segment width and the gap for `count` segments in a bar
+ *  `barPx` wide, shrunk together when every segment at the minimum plus the
+ *  gaps would overflow the bar. */
+export function spacing(count: number, barPx: number): { minPx: number; gapPx: number } {
+  const needed = count * MIN_SEGMENT_PX + Math.max(0, count - 1) * GAP_PX;
+  const scale = barPx > 0 && needed > barPx ? barPx / needed : 1;
+  return { minPx: MIN_SEGMENT_PX * scale, gapPx: GAP_PX * scale };
+}
+
+/** Each segment's width in a bar `barPx` wide: a share that would draw
+ *  under `minPx` takes it and the rest split what is left by share. An
+ *  unmeasured bar draws plain shares. */
+export function fitWidths(shares: number[], barPx: number, gapsPx: number, minPx: number): Length[] {
+  const pinned = new Set<number>();
+  for (let grew = barPx > 0; grew; ) {
+    const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
+    const room = barPx - gapsPx - pinned.size * minPx;
+    grew = false;
+    shares.forEach((share, index) => {
+      if (pinned.has(index) || (free > 0 && (share / free) * room >= minPx)) return;
+      pinned.add(index);
+      grew = true;
+    });
+  }
+  const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
+  const reserved = gapsPx + pinned.size * minPx;
+  return shares.map((share, index) => {
+    if (pinned.has(index)) return { pct: 0, px: minPx };
+    const part = free > 0 ? Math.max(0, share / free) : 0;
+    return { pct: part * 100, px: -part * reserved };
+  });
+}
+
+/** Each segment's centre along the bar, past the widths and gaps before it. */
+export function centres(widths: Length[], gapPx: number): Length[] {
+  const out: Length[] = [];
+  let start: Length = { pct: 0, px: 0 };
+  for (const { pct, px } of widths) {
+    out.push({ pct: start.pct + pct / 2, px: start.px + px / 2 });
+    start = { pct: start.pct + pct, px: start.px + px + gapPx };
+  }
+  return out;
+}
+
+/** A segment's name on the bar and in its accessible label. */
+export const shortLabel = (segment: Segment) =>
+  segment.round != null ? segmentName(segment) : segment.kind === "fix" && segment.reason !== "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
+
+/** A segment's tooltip: its long name, duration and opening event. */
+export const segmentDescription = (segment: Segment) =>
+  `${segmentName(segment)} · ${formatTotal(segment.to - segment.from)}${segment.reason ? ` · ${segment.reason}` : ""}`;
+
+/** Each kind's summed time, in first-seen order ("implement · 14m 00s · …"). */
+export function totalsLine(segments: Segment[]): string {
+  const totals = new Map<SegmentKind, number>();
+  for (const segment of segments) {
+    totals.set(segment.kind, (totals.get(segment.kind) ?? 0) + segment.to - segment.from);
+  }
+  return [...totals].map(([kind, ms]) => `${kind === "fix" ? "rework" : kind} · ${formatTotal(ms)}`).join(" · ");
 }

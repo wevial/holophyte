@@ -41,6 +41,8 @@ export type RunPage =
       sentence: string;
       stage: { label: string; sub: string | null };
       progress: ProgressLine[];
+      /** The fleet poll's clock the page's figures are read at. */
+      now: number;
       asks: ConsoleAsk[];
       agentState: string;
       phase: string;
@@ -242,6 +244,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
     asks: asks.data?.asks ?? [],
     agentState: agentState({ ...detail.run, phase, round: live?.round ?? detail.rounds.length }),
     progress: progressLines(detail, asks.data?.asks ?? [], now),
+    now,
     live: detail.run.outcome == null,
   };
 }

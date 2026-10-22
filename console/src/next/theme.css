@@ -465,6 +465,14 @@ body {
   }
 }
 
+.phase-running {
+  animation: phase-running 1.6s ease-in-out infinite;
+}
+
+@keyframes phase-running {
+  50% { opacity: 0.45; }
+}
+
 .day-log-scroll {
   scrollbar-color: transparent transparent;
 }

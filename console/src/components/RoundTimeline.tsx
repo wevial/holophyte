@@ -1,7 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { formatSpan, formatTotal } from "../lib/format";
 import { phaseLabel } from "../lib/runs";
-import { segmentName, type Segment, type SegmentKind, type TimelineRun } from "../lib/timeline";
+import {
+  barLength,
+  centres,
+  fitWidths,
+  segmentDescription,
+  segmentName,
+  shortLabel,
+  spacing,
+  totalsLine,
+  type Segment,
+  type SegmentKind,
+  type TimelineRun,
+} from "../lib/timeline";
 
 const FILLS: Record<SegmentKind, string> = {
   implement: "bg-accent",
@@ -12,72 +24,6 @@ const FILLS: Record<SegmentKind, string> = {
   wait: "bg-faint",
   parked: "bg-warn",
 };
-
-/** Gap between bar items, in px, before `spacing` shrinks it for a bar too
- *  narrow to hold every segment at its minimum. */
-export const GAP_PX = 3;
-
-/** The narrowest a segment draws, so it stays hoverable and focusable. */
-const MIN_SEGMENT_PX = 6;
-
-/** A length of the bar as `pct`% of its width plus `px` pixels. */
-interface Length {
-  pct: number;
-  px: number;
-}
-
-const css = ({ pct, px }: Length) =>
-  pct === 0 ? `${px}px` : `calc(${pct}% ${px < 0 ? "-" : "+"} ${Math.abs(px)}px)`;
-
-/** The minimum segment width and the gap for `count` segments in a bar
- *  `barPx` wide, shrunk together when every segment at the minimum plus the
- *  gaps would overflow the bar. */
-function spacing(count: number, barPx: number): { minPx: number; gapPx: number } {
-  const needed = count * MIN_SEGMENT_PX + Math.max(0, count - 1) * GAP_PX;
-  const scale = barPx > 0 && needed > barPx ? barPx / needed : 1;
-  return { minPx: MIN_SEGMENT_PX * scale, gapPx: GAP_PX * scale };
-}
-
-/** Each segment's width in a bar `barPx` wide: a share that would draw
- *  under `minPx` takes it and the rest split what is left by share. An
- *  unmeasured bar draws plain shares. */
-function fitWidths(shares: number[], barPx: number, gapsPx: number, minPx: number): Length[] {
-  const pinned = new Set<number>();
-  for (let grew = barPx > 0; grew; ) {
-    const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
-    const room = barPx - gapsPx - pinned.size * minPx;
-    grew = false;
-    shares.forEach((share, index) => {
-      if (pinned.has(index) || (free > 0 && (share / free) * room >= minPx)) return;
-      pinned.add(index);
-      grew = true;
-    });
-  }
-  const free = shares.reduce((sum, share, index) => (pinned.has(index) ? sum : sum + share), 0);
-  const reserved = gapsPx + pinned.size * minPx;
-  return shares.map((share, index) => {
-    if (pinned.has(index)) return { pct: 0, px: minPx };
-    const part = free > 0 ? Math.max(0, share / free) : 0;
-    return { pct: part * 100, px: -part * reserved };
-  });
-}
-
-/** Each segment's centre along the bar, past the widths and gaps before it. */
-function centres(widths: Length[], gapPx: number): Length[] {
-  const out: Length[] = [];
-  let start: Length = { pct: 0, px: 0 };
-  for (const { pct, px } of widths) {
-    out.push({ pct: start.pct + pct / 2, px: start.px + px / 2 });
-    start = { pct: start.pct + pct, px: start.px + px + gapPx };
-  }
-  return out;
-}
-
-const shortLabel = (segment: Segment) =>
-  segment.round != null ? segmentName(segment) : segment.kind === "fix" && segment.reason !== "fix" ? segment.label.replace(/^fix/, "rework") : segment.label;
-
-const description = (segment: Segment) =>
-  `${segmentName(segment)} · ${formatTotal(segment.to - segment.from)}${segment.reason ? ` · ${segment.reason}` : ""}`;
 
 /** Segments filling the bar by their share of the time spent, with
  * share-based labels, reason tooltips and totals; a running segment pulses. */
@@ -115,10 +61,7 @@ export function RoundTimeline({
   const gapsPx = Math.max(0, segments.length - 1) * gapPx;
   const widths = fitWidths(segments.map((segment) => segment.width), barPx, gapsPx, minPx);
   const middles = centres(widths, gapPx);
-  const totals = new Map<SegmentKind, number>();
-  for (const segment of segments) {
-    totals.set(segment.kind, (totals.get(segment.kind) ?? 0) + segment.to - segment.from);
-  }
+  const totals = totalsLine(segments);
   const last = segments[segments.length - 1];
   const status =
     run.ended_ms != null
@@ -146,11 +89,11 @@ export function RoundTimeline({
             onFocus={() => setActive(index)}
             onBlur={() => setActive(null)}
             className="min-w-0 shrink-0"
-            style={{ width: css(widths[index]!) }}
+            style={{ width: barLength(widths[index]!) }}
           >
             <span
               aria-hidden="true"
-              title={description(segment)}
+              title={segmentDescription(segment)}
               className={`block overflow-hidden whitespace-nowrap h-[22px] rounded-[6px] text-center font-mono text-[10px] leading-[22px] text-badge-text ${FILLS[segment.kind]} ${segment.running ? "segment-running" : ""}`}
             >
               {segment.width >= 0.15 ? `${shortLabel(segment)} · ${formatTotal(segment.to - segment.from)}` : null}
@@ -163,14 +106,14 @@ export function RoundTimeline({
           data-segment-tooltip
           role="tooltip"
           className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-button border border-line bg-rail px-2 py-[3px] font-mono text-[11px] text-rail-fg shadow-card"
-          style={{ left: css(middles[active!]!), bottom: "calc(100% + 4px)" }}
+          style={{ left: barLength(middles[active!]!), bottom: "calc(100% + 4px)" }}
         >
-          {description(hovered)}
+          {segmentDescription(hovered)}
         </div>
       )}
-      {totals.size > 0 && (
+      {totals && (
         <p data-timeline-totals className="mt-1.5 font-mono text-[11px] text-muted">
-          {[...totals].map(([kind, ms]) => `${kind === "fix" ? "rework" : kind} · ${formatTotal(ms)}`).join(" · ")}
+          {totals}
         </p>
       )}
       {status && (

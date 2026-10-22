@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { formatClock } from "../../lib/format";
 import type { ProgressKind, ProgressLine } from "../progress";
 import { SECTION_LABEL } from "./Criteria";
@@ -17,9 +17,10 @@ const KIND_TEXT: Record<ProgressKind, string> = {
 
 const lineKey = (line: ProgressLine) => `${line.at}:${line.kind}:${line.text}`;
 
-/** The run's Progress: one line each, oldest first. A line that was not
- *  there at first render is marked new and fades in. */
-export function ProgressLog({ lines, live }: { lines: ProgressLine[]; live: boolean }) {
+/** The run's Progress: `children` under the heading, then one line each,
+ *  oldest first. A line that was not there at first render is marked new
+ *  and fades in. */
+export function ProgressLog({ lines, live, children }: { lines: ProgressLine[]; live: boolean; children?: ReactNode }) {
   const [seen] = useState(() => new Set(lines.map(lineKey)));
   const counts = new Map<string, number>();
   return (
@@ -35,6 +36,7 @@ export function ProgressLog({ lines, live }: { lines: ProgressLine[]; live: bool
           </span>
         )}
       </h2>
+      {children}
       <ol aria-live="polite" className="m-0 mt-3 list-none p-0 font-mono text-[12.5px] leading-[1.5]">
         {lines.map((line) => {
           const key = lineKey(line);
