@@ -347,7 +347,7 @@ test("a refused merge keeps the row's dialog open with the daemon's reason and i
   expect(seen.filter((request) => request.url.endsWith("/actions/merge"))).toHaveLength(2);
 });
 
-test("an opened row not ready to merge, or a draft, draws no Merge and keeps Open PR to review primary", async () => {
+test("an opened row whose readiness answers not ready, a ready-state park or a draft, draws no Merge and keeps Open PR to review primary", async () => {
   for (const [item, pr] of [[readyPark, 42], [draftPark, 45]] as const) {
     await mount({ items: [item], actions: true, readyRuns: [] });
     await openRow(pr);
