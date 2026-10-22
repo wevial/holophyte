@@ -292,8 +292,8 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                                                        self.pr_state()]))
         push = holophyte.pr.github.push_branch
 
-        def push_with_stale_api(target, branch):
-            push(target, branch)
+        def push_with_stale_api(target, branch, notes=()):
+            push(target, branch, notes)
             if len(self.pushed()) == 2:
                 previous = self.pushed()[0][1]
                 for answer in self.answers.glob("*.json"):

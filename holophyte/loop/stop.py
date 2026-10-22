@@ -80,6 +80,7 @@ def abort_requested(conn, run_id):
 def end_aborted(conn, run_id):
     from holophyte.leak_guard import record_refusal
     from holophyte.loop.gates import InfraFailure
+    from holophyte.note_privacy import private_texts
     from holophyte.pr import github
     branch, ticket_id, repo, pr_url = conn.execute(
         "SELECT r.branch, r.ticketId, p.repoPath, r.prUrl"
@@ -109,7 +110,8 @@ def end_aborted(conn, run_id):
             store.set_question(conn, ticket_id, note)
     if sha and pr_url:
         try:
-            github.push_branch(target, branch)
+            github.push_branch(target, branch,
+                               notes=private_texts(conn, run_id))
         except InfraFailure as refused:
             record_refusal(conn, run_id, refused)
             store.record_event(conn, run_id, "warning", f"abort push: {refused}")

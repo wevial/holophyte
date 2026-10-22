@@ -24,7 +24,8 @@ for the operator.
   `FOLLOW_UP(feature): TEXT @ PATH:LINE` or
   `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` (the tail optional): when the run
   merges, a feature becomes a Backlog draft and a guardrail a findings-ledger
-  row.
+  row. A verdict line or `FOLLOW_UP` that comes from a maintainer's note
+  cites the note by its id alone and never restates the note's text.
 * Commit messages carry no AI attribution or co-author lines.
 * A reviewer changes nothing, and no agent reviews its own candidate.
 

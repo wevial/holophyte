@@ -374,11 +374,14 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # notes as `/runs/N` serves them.
                                  # HOLO-471: `adopted_revision`, the later
                                  # revision a live run's amendment adopts.
+                                 # HOLO-485: `console_notes`, every console
+                                 # note's text on a ticket, kept off GitHub.
                                  (store.steer_notes, ["adopted_revision",
                                                       "amendments",
                                                       "babysat_interrupts",
                                                       "chain_notes",
-                                                      "close", "consume",
+                                                      "close", "console_notes",
+                                                      "consume",
                                                       "interrupting",
                                                       "pending", "standing",
                                                       "steer", "steers",

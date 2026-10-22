@@ -303,12 +303,14 @@ def edit_pr_body(target, pull, body):
         raise InfraFailure(f"{GH} pr edit failed: {detail}")
 
 
-def push_branch(target, branch):
+def push_branch(target, branch, notes=()):
     from holophyte.commit_hygiene import strip_attribution
     from holophyte.environment_git import refuse_environment_history
     from holophyte.leak_guard import refuse_private_history
+    from holophyte.note_privacy import withhold_history
 
     strip_attribution(target, target.path, branch)
+    withhold_history(target.path, branch, notes)
     checked = refuse_environment_history(target, branch, action="push")
     refuse_private_history(target, branch)
     refspec = f"{checked}:refs/heads/{branch}" if checked != branch else branch

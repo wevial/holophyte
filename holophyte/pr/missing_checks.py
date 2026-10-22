@@ -5,6 +5,7 @@ from holophyte.config.config_tables import merge_config
 from holophyte.environment_git import factory_identity
 from holophyte.loop.gates import sh
 from holophyte.loop.stop import stop_if_requested
+from holophyte.note_privacy import private_texts
 from holophyte.pr import github
 from holophyte.pr.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
@@ -28,7 +29,8 @@ class Retrigger:
         listed = ", ".join(names)
         sh(["git", *factory_identity(run.wt), "commit", "--allow-empty", "-m",
             f"{SUBJECT}{listed}"], cwd=run.wt)
-        github.push_branch(run.project, run.branch)
+        github.push_branch(run.project, run.branch, notes=private_texts(
+            run.conn, run.run_id))
         sha = sh(["git", "rev-parse", run.branch], run.wt)
         if run.conn is not None and run.run_id is not None:
             store.record_event(run.conn, run.run_id, "pull_request",

@@ -554,7 +554,8 @@ class MergeModeFixture(LoopFixture):
         read's page n answers the workflow runs `merge_groups[n-1]` (KO-714).
         `plan_gated_rules` refuses the rules and protection reads with the
         403 GitHub gives a plan that cannot have them (HOLO-11).
-        An unqualified `git fetch origin` is swallowed, or with `fetch_from`
+        An unqualified `git fetch origin`, or the history rewrite's fetch of
+        every branch, is swallowed, or with `fetch_from`
         runs the real fetch of that repository's branches into origin's
         remote-tracking refs; the merge's fetch of `main` alone leaves an
         `origin/main` a test set, and otherwise points it at the target's.
@@ -616,6 +617,8 @@ class MergeModeFixture(LoopFixture):
         (bindir / "git").write_text(
             "#!/bin/sh\n"
             'if [ "$1" = fetch ] && [ "$#" = 2 ] && [ "$2" = origin ];'
+            f" then {fetch}; fi\n"
+            'if [ "$1" = -c ] && [ "$3" = fetch ] && [ "$6" = origin ];'
             f" then {fetch}; fi\n"
             'if [ "$1" = fetch ] && [ "$#" = 3 ] && [ "$2" = origin ] &&'
             ' [ "$3" = +refs/heads/main:refs/remotes/origin/main ];'

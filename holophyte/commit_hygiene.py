@@ -41,7 +41,7 @@ def _message(message, patterns):
     return cleaned
 
 
-def _reword(wt, sha, rewritten, patterns):
+def _reword(wt, sha, rewritten, transform):
     original = _git(wt, 'cat-file', 'commit', sha)
     headers, message = original.split(b'\n\n', 1)
     lines = headers.split(b'\n')
@@ -51,7 +51,7 @@ def _reword(wt, sha, rewritten, patterns):
             parent = line[7:].decode('ascii')
             line = b'parent ' + rewritten.get(parent, parent).encode('ascii')
         updated.append(line)
-    cleaned = _message(message, patterns)
+    cleaned = transform(message)
     if updated == lines and cleaned == message:
         return sha
     # A signature covers the original object and cannot survive a reword.
@@ -74,38 +74,39 @@ def _unpublished(wt, tip):
                 '--not', 'refs/heads/main', *published).decode().splitlines()
 
 
-def _has_attribution(wt, commits, patterns):
+def _changes(wt, commits, transform):
     for sha in commits:
         message = _git(wt, 'cat-file', 'commit', sha).split(b'\n\n', 1)[1]
-        if _message(message, patterns) != message:
+        if transform(message) != message:
             return True
     return False
 
 
-def strip_attribution(target, wt, branch):
-    """Reword with no checkout, index or hooks; a failure leaves the old tip intact."""
-    patterns = [re.compile(p) for p in merge_config(target).strip_attribution]
-    if not patterns:
-        return
+def rewrite_unpublished(wt, branch, transform, what):
     ref = f'refs/heads/{branch}'
     tip = _git(wt, 'rev-parse', '--verify', ref).decode().strip()
-    commits = _unpublished(wt, tip)
-    if not _has_attribution(wt, commits, patterns):
+    if not _changes(wt, _unpublished(wt, tip), transform):
         return
     remotes = _git(wt, 'remote').decode().splitlines()
     if 'origin' in remotes:
         # Explicit refspec also covers remotes configured to fetch only main.
         _git(wt, 'fetch', '--prune', '--no-tags', 'origin',
              '+refs/heads/*:refs/remotes/origin/*')
-    commits = _unpublished(wt, tip)
     rewritten = {}
-    for sha in commits:
-        rewritten[sha] = _reword(wt, sha, rewritten, patterns)
+    for sha in _unpublished(wt, tip):
+        rewritten[sha] = _reword(wt, sha, rewritten, transform)
     new_tip = rewritten.get(tip, tip)
     if new_tip == tip:
         return
     old_tree = _git(wt, 'rev-parse', tip + '^{tree}')
     if _git(wt, 'rev-parse', new_tip + '^{tree}') != old_tree:
-        raise InfraFailure('commit attribution cleanup changed the tip tree; '
-                           'branch preserved')
-    _git(wt, 'update-ref', '-m', 'Strip commit attribution', ref, new_tip, tip)
+        raise InfraFailure(f'{what} changed the tip tree; branch preserved')
+    _git(wt, 'update-ref', '-m', what.capitalize(), ref, new_tip, tip)
+
+
+def strip_attribution(target, wt, branch):
+    """Reword with no checkout, index or hooks; a failure leaves the old tip intact."""
+    patterns = [re.compile(p) for p in merge_config(target).strip_attribution]
+    if patterns:
+        rewrite_unpublished(wt, branch, lambda m: _message(m, patterns),
+                            'commit attribution cleanup')

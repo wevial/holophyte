@@ -6,7 +6,7 @@ from time import monotonic, time
 import store
 import store.read
 import ticket_template
-from holophyte import failure_reason
+from holophyte import failure_reason, note_privacy
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import babysitter, maintainer_notes, thread_mentions
@@ -132,7 +132,8 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
         merged = detail
     with heartbeat_while(conn, run_id, beat_s):
         stop_if_requested(conn, run_id, "merge_gate")
-        github.push_branch(project, branch)
+        github.push_branch(project, branch,
+                           notes=note_privacy.private_texts(conn, run_id))
     merged = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed {branch} to {github.REMOTE} at {merged[:12]}"
           " after the conflict merge")
@@ -953,7 +954,8 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
             f"branch {branch} preserved at {fixed[:12]}"))
     with heartbeat_while(conn, run_id, beat_s):
         stop_if_requested(conn, run_id, "merge_gate")
-        github.push_branch(project, branch)
+        github.push_branch(project, branch,
+                           notes=note_privacy.private_texts(conn, run_id))
     fixed = sh(["git", "rev-parse", branch], wt)
     print(f"[holo2] pushed the fix round to {github.REMOTE} at {fixed[:12]}")
     for index, (n, thread, reason) in enumerate(addressed):

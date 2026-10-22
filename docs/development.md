@@ -449,6 +449,11 @@ Each module, one line:
   staging and refuses candidate pushes containing it.
 - `holophyte/commit_hygiene.py` — removes configured attribution lines from
   unpublished commits before task pushes and local merges.
+- `holophyte/note_privacy.py` — keeps console notes (send-backs, steers,
+  requeue, abort and human babysit notes, console asks) off GitHub: before a
+  push it rewords unpublished commits to replace a note's text, or any eight
+  consecutive words of it, with `[maintainer note withheld]`, and it does the
+  same to written pull request text and thread replies.
 - `holophyte/leak_guard.py` — scans unpublished commits, pull request text and
   ticket bodies for `[merge] private_patterns` and refuses a match by location
   and pattern index.
