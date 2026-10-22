@@ -35,7 +35,7 @@ interface PrLaneGroup {
 }
 
 const waitsOnYou = (item: AttentionItem) =>
-  item.park_kind === "question" || prWait(stateOf({ attention: item }), item, null).status === "Your review";
+  item.park_kind === "question" || prWait(stateOf({ attention: item }), item, null).tone === "need";
 
 export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number): PrLaneGroup[] {
   return hosts.flatMap((host) => {
