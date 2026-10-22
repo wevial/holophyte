@@ -10,12 +10,13 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import store
 import store.tickets
 from holophyte.babysit.thread_text import fix_brief
 from holophyte.cli.operator import BABYSIT_DEFAULT_NOTE
-from holophyte.note_privacy import private_texts
+from holophyte.note_privacy import private_texts, withhold
 from holophyte.pr.github import Thread
 from holophyte.pr.pr_status import parse_pr_url
 from store import console_asks, steer_notes
@@ -145,6 +146,32 @@ class SendBackPushTests(OriginFixture):
         self.assertNotIn(prose, self.sent())
 
 
+    def test_an_evidence_failure_log_quoting_a_note_is_withheld_from_the_body(self):
+        from holophyte.pr import pr_media
+        from holophyte.pr.evidence_refresh import publish_evidence
+        note_id = self.sent_back()
+        self.loop(Commit(f"Apply operator_note event {note_id}"), Idle(""),
+                  provider=self.provider())
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n'
+                       'ui_paths = ["ui/**"]\nui_capture = "true"\n')
+        section = f"## Evidence\n\nCapture failed:\n\n    echo {NOTE}\n"
+        with store.open(str(self.project.store_path)) as conn, \
+                patch.object(pr_media, "refresh", return_value=section), \
+                patch.object(pr_media, "capture_failure", return_value=None):
+            run_id = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+            publish_evidence(self.project, conn, run_id, "KO-131", self.target,
+                             parse_pr_url(self.URL), self.BODY, "a" * 40, 1)
+
+        self.assertIn(f"echo {WITHHELD}", self.pr_body.read_text())
+        self.assertNotIn(NOTE, self.sent())
+
+
+class WithholdTests(unittest.TestCase):
+    def test_a_note_of_repeated_words_is_withheld_whole(self):
+        note = "keep the old name keep the old name keep the old name"
+        self.assertEqual(withhold(f"Done: {note}.", [note]), f"Done: {WITHHELD}.")
+
+
 class FixBriefTests(unittest.TestCase):
     def test_the_brief_cites_the_note_by_id_and_forbids_restating_it(self):
         note = Thread("operator_note:52894", "", None, "maintainer", NOTE, "",
@@ -266,6 +293,14 @@ class PrivateTextsTests(unittest.TestCase):
             self.assertTrue(any(note in text for text in texts), note)
         self.assertFalse(any(self.OTHER in text for text in texts))
         self.assertNotIn(BABYSIT_DEFAULT_NOTE, texts)
+
+    def test_a_human_babysit_note_worded_like_mark_ready_stays_private(self):
+        ticket = self.ticket("KO-1")
+        note = "Everything was marked ready for review"
+        self.parked(ticket)
+        store.babysit(self.conn, ticket, note)
+
+        self.assertEqual(private_texts(self.conn, self.claim(ticket)), (note,))
 
     def test_a_send_back_worded_like_the_factorys_babysit_note_stays_private(self):
         ticket = self.ticket("KO-1")

@@ -1,4 +1,5 @@
 import ticket_template
+from holophyte import note_privacy
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
@@ -23,7 +24,8 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat
         if section is None or section.rstrip() == evidence.rstrip():
             return failure
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
-        body = github.replace_pr_evidence(body, section)
+        body = note_privacy.withhold(github.replace_pr_evidence(body, section),
+                                     note_privacy.private_texts(conn, run_id))
         github.edit_pr_body(project, pull, body)
         notes = image_fetch.check(project, pull, body)
     for note in notes:

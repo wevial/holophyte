@@ -388,7 +388,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
             # The PR is the run's `prUrl` from now, even for a run that never parks.
             store.set_pull_request(conn, run_id, url)
     with heartbeat_while(conn, run_id, beat_s):
-        written = _adopt_evidence(project, url, text) if adopted else text
+        written = _adopt_evidence(project, url, text, notes) if adopted else text
         pull = pr_status.parse_pr_url(url)
         notes = image_fetch.check(project, pull, written) if pull else []
     if conn is not None and run_id is not None:
@@ -397,7 +397,7 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
     return url
 
 
-def _adopt_evidence(project, url, text):
+def _adopt_evidence(project, url, text, notes=()):
     section = github.split_pr_body(text)[2]
     if not section:
         return None
@@ -406,7 +406,7 @@ def _adopt_evidence(project, url, text):
                        f"repos/{pull.repo}/pulls/{pull.number}")["body"] or ""
     if github.split_pr_body(body)[2].rstrip() == section.rstrip():
         return None
-    body = github.replace_pr_evidence(body, section)
+    body = note_privacy.withhold(github.replace_pr_evidence(body, section), notes)
     github.edit_pr_body(project, pull, body)
     return body
 

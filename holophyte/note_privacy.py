@@ -9,7 +9,7 @@ WITHHELD = "[maintainer note withheld]"
 WINDOW = 8
 SHORTEST = 4
 FACTORY_BABYSIT = re.compile(r"(?:sent back to the babysitter"
-                             r"|\S+ was marked ready for review)\Z")
+                             r"|https?://\S+/pull/\d+ was marked ready for review)\Z")
 
 
 def private_texts(conn, run_id):
@@ -40,17 +40,22 @@ def _patterns(note):
     words = note.split()
     if len(words) < SHORTEST:
         return []
-    if len(words) < WINDOW:
-        return [_pattern(words)]
-    return [_pattern(words[i:i + WINDOW])
-            for i in range(len(words) - WINDOW + 1)]
+    return [_pattern(words)] + [_pattern(words[i:i + WINDOW])
+                                for i in range(len(words) - WINDOW + 1)]
+
+
+def _overlapping(pattern, text):
+    match = pattern.search(text)
+    while match is not None:
+        yield match.span()
+        match = pattern.search(text, match.start() + 1)
 
 
 def withhold(text, notes):
     if not text or not notes:
         return text
-    spans = sorted(m.span() for note in notes for pattern in _patterns(note)
-                   for m in pattern.finditer(text))
+    spans = sorted(span for note in notes for pattern in _patterns(note)
+                   for span in _overlapping(pattern, text))
     merged = []
     for start, end in spans:
         if merged and start <= merged[-1][1]:
