@@ -83,6 +83,14 @@ class AbortRouteTests(ServeTestCase):
         self.assertEqual(code, 400, body)
         self.assertEqual(self.dump(), before)
 
+    def test_a_pr_comment_without_close_is_400_and_records_nothing(self):
+        before = self.dump()
+        code, _, body = self.post(run=self.run, note="stop it", close=False,
+                                  pr_comment="Superseded.")
+        self.assertEqual(code, 400, body)
+        self.assertIn("close", body["error"])
+        self.assertEqual(self.dump(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,6 +30,7 @@ JSON = Flag("--json")
 DRY_RUN = Flag("--dry-run")
 ONCE = Flag("--once")
 CLOSE_PR = Flag("--close-pr")
+PR_COMMENT = Flag("--pr-comment", "TEXT")
 FORCE = Flag("--force")
 HINT = Flag("--hint")
 WITHDRAW = Flag("--withdraw")
@@ -104,7 +105,7 @@ COMMANDS = (
     Command(("resume",), "--resume", "continue a paused run", takes=("KEY",),
             note=REQUIRED, records=("resume",)),
     Command(("abort",), "--abort", "end a run now, preserving its work",
-            takes=("KEY",), note=REQUIRED, flags=(CLOSE_PR,),
+            takes=("KEY",), note=REQUIRED, flags=(CLOSE_PR, PR_COMMENT),
             records=("abort", "abort_close")),
     Command(("hold",), "--hold", "stop new admission", note=REQUIRED,
             records=("hold",)),

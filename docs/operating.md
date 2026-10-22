@@ -81,13 +81,14 @@ schema version change.
 candidate is dead: the intervention is recorded as `abort_close` instead, in
 the same transaction, before anything is killed, so whichever process
 finishes the abort -- the worker or the command -- also closes the pull
-request. Once the run has ended `abandoned` it posts one comment on the pull
-request, under the factory's comment header, giving the note, the short sha
-the branch was kept at and `--requeue KO-n` as the way to start again, and
-then closes it. The branch and worktree are kept. A refused comment or close
+request. Once the run has ended `abandoned` it closes the pull request with
+no comment. With `--pr-comment TEXT` it first posts one comment, TEXT alone
+under the factory's comment header. The abort note is never posted to
+GitHub. The branch and worktree are kept. A refused comment or close
 does not undo the abort: it is a `warning` run event and a printed line. The
 reconcile leaves the closed pull request alone, since the run is no longer
-parked on it. `--close-pr` without `--abort` is refused. The `abort_close`
+parked on it. `--close-pr` without `--abort` is refused, as is
+`--pr-comment` without `--close-pr`. The `abort_close`
 action is schema version 35 (KO-611).
 
 ## Requeue, re-point or send back a parked ticket

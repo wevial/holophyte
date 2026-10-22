@@ -23,6 +23,7 @@ import { TitleText } from "./TitleText";
 type Host = HostRecord<ContractBodies>;
 
 const MERGE = "Merge";
+const PR_COMMENT = "Comment on the PR (optional)";
 const REASONED = new Set([RESUME, ABORT, ABORT_CLOSE]);
 
 export const BUSY: Record<string, string> = {
@@ -132,6 +133,7 @@ export function CardActions({
 }) {
   const action = useAction();
   const [reasoning, setReasoning] = useState<string | null>(null);
+  const [prComment, setPrComment] = useState("");
   const [merging, setMerging] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
@@ -242,12 +244,19 @@ export function CardActions({
           key={reasoning}
           daemon={{ base: host.base, actions: true }}
           route={reasoning === RESUME ? "/actions/resume" : ROUTES[reasoning]!}
-          body={reasoning === RESUME ? { ticket } : { run, close: reasoning === ABORT_CLOSE }}
+          body={reasoning === RESUME ? { ticket } : { run, close: reasoning === ABORT_CLOSE, ...(reasoning === ABORT_CLOSE && prComment.trim() ? { pr_comment: prComment } : {}) }}
           label={reasoning}
           defaultOpen
           post={(route, body) => post(reasoning, route, body)}
-          onClose={() => setReasoning(null)}
-        />
+          onClose={() => { setReasoning(null); setPrComment(""); }}
+        >
+          {reasoning === ABORT_CLOSE && (
+            <label className="flex flex-col gap-1 text-sm">
+              <span>{PR_COMMENT}</span>
+              <textarea aria-label={PR_COMMENT} value={prComment} onChange={(event) => setPrComment(event.target.value)} className="rounded border p-2 text-sm" />
+            </label>
+          )}
+        </ReasonAction>
       )}
       {refused != null && (
         <p role="status" data-action-detail className={`text-bad ${detailLine}`}>
