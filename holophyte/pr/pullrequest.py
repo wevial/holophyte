@@ -7,7 +7,7 @@ from time import monotonic
 import store
 import store.read
 import ticket_template
-from holophyte import leak_guard
+from holophyte import leak_guard, note_privacy
 from holophyte.babysit import babysitter, maintainer_notes
 from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import board_mode, merge_config, sweep_config
@@ -82,6 +82,9 @@ def _resume_on_pr(run, carried, verify_cmd, contracts, body, criteria=()):
 
 
 PR_TEXT_DIFF_CAP = 60_000
+PRIVATE_NOTES = ("A maintainer's instruction, hint or babysit note in the ticket"
+                 " or in what the fix answered is private: the description"
+                 " neither quotes nor mentions it.")
 PR_TEXT_BUDGET_MIN = 5
 # The factory opens through the API, so the turn is handed the template.
 PR_TEMPLATE_FILES = (".github/pull_request_template.md",
@@ -142,6 +145,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         " Use this repository's own style; do not paste the ticket, and do not add"
         " a link to the ticket -- the loop appends one. Do not edit, commit"
         " or run anything: answer with the text only.",
+        PRIVATE_NOTES,
     ]
     if merge_config(project).ui_paths:
         parts.append("The loop appends captured Evidence after this turn. Do not"
@@ -195,12 +199,15 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
             return None
         print(f"[holo2] written PR text refused for {task_id}: {why};"
               " opening the pull request with the ticket's title and a stub")
-        return github.pr_title(task_id, task), github.pr_body_stub(
+        title, text = github.pr_title(task_id, task), github.pr_body_stub(
             {"id": task_id, "body": body}, why, issue_url, native)
-    title, text = parsed
-    if refresh is not None:
-        return title, text
-    return title, github.pr_body_written(text, task_id, issue_url, native)
+    else:
+        title, text = parsed
+        if refresh is None:
+            text = github.pr_body_written(text, task_id, issue_url, native)
+    notes = note_privacy.private_texts(conn, run_id)
+    return (note_privacy.withhold(title, notes),
+            note_privacy.withhold(text, notes))
 
 
 def _refresh_parts(project, current, answered, review):
@@ -213,7 +220,7 @@ def _refresh_parts(project, current, answered, review):
     parts.append("Rewrite the description to explain the current behaviour and"
                  " reasons. The title will be ignored. Do not include Linear,"
                  " Evidence, or appended bot blocks. Follow the same prose rules"
-                 " above.")
+                 " above. " + PRIVATE_NOTES)
     if merge_config(project).pr_changes_log:
         parts.append("Under `## Changes since first review`, give one bullet for"
                      " this fix: what changed in behaviour, one line only."
@@ -355,7 +362,8 @@ def _push_and_open(project, conn, run_id, branch, title, text, beat_s,
     leak_guard.refuse_private_text(project, pull_request_title=title,
                                    pull_request_body=text)
     with heartbeat_while(conn, run_id, beat_s):
-        github.push_branch(project, branch)
+        github.push_branch(project, branch,
+                           notes=note_privacy.private_texts(conn, run_id))
         print(f"[holo2] pushed {branch} to {github.REMOTE}")
         # `gh pr create` refuses a branch already open as a PR: adopt it.
         url = github.open_pull_request(project, branch)

@@ -6,7 +6,7 @@ import store
 import store.board
 import store.steer_notes
 import store.tickets
-from holophyte.babysit.maintainer_notes import PREFIX, carry_amendments
+from holophyte.babysit.maintainer_notes import PREFIX, PRIVATE, carry_amendments
 from holophyte.board.projection import mirror_task
 from holophyte.loop import steering
 from holophyte.review.criterion_ids import numbered
@@ -94,7 +94,8 @@ class SteerCriteriaTests(unittest.TestCase):
         note = self.amend(text)
         rendered = carry_amendments(self.conn, self.claim(), "Filed ticket body")
         self.assertEqual(rendered, "Filed ticket body\n\n" + PREFIX
-                         + f"\nsteer note {note.id} by maintainer:\n" + text)
+                         + f"\nsteer note {note.id} by maintainer:\n" + text
+                         + "\n" + PRIVATE)
         self.assertEqual(self.conn.execute("SELECT * FROM ticketCriteria").fetchall(),
                          rows)
 

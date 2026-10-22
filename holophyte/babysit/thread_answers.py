@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 import store
 import store.read
+from holophyte import note_privacy
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes, review_body, thread_mentions
 from holophyte.babysit.conversation_comments import (
@@ -138,7 +139,8 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
          answer=None):
     from holophyte.babysit import babysitter
     secrets = known_secrets(target.config())
-    body = outbound(body, secrets)
+    notes = note_privacy.private_texts(conn, run_id)
+    body = note_privacy.withhold(outbound(body, secrets), notes)
     safe_instruction = (
         {key: outbound(value, secrets) if isinstance(value, str) else value
          for key, value in instruction.items()}
@@ -147,15 +149,15 @@ def post(target, conn, run_id, beat_s, pull, thread, body, resolve, instruction=
     url = None
     with heartbeat_while(conn, run_id, beat_s):
         if thread.kind == "conversation":
-            posted = github.comment_on_pull(target, pull, outbound(
-                f"{quote_request(thread)}\n\n{body}", secrets))
+            posted = github.comment_on_pull(target, pull, note_privacy.withhold(
+                outbound(f"{quote_request(thread)}\n\n{body}", secrets), notes))
             url = posted.get("html_url") if isinstance(posted, dict) else None
             if maintainer_notes.is_console_ask(thread):
                 console_asks.answered(conn, run_id, maintainer_notes.event_id(thread),
                                       url, outbound(answer, secrets))
         elif thread.kind == "review_body":
-            github.comment_on_pull(target, pull, outbound(
-                review_body.answer(thread, body), secrets))
+            github.comment_on_pull(target, pull, note_privacy.withhold(
+                outbound(review_body.answer(thread, body), secrets), notes))
         else:
             github.reply_thread(target, pull, thread.id, body)
         if thread.classification == "MENTIONED":

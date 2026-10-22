@@ -10,6 +10,9 @@ from ticket_criteria import amendment_edits
 
 PREFIX = "Maintainer's instruction (amends the ticket where they conflict):"
 HINT_PREFIX = "Maintainer's hint for this turn (advice, not part of the contract):"
+PRIVATE = ("This note is private: cite it in a commit by its id alone, as given"
+           " above it, and never quote, restate or paraphrase it in a commit"
+           " message, a FOLLOW_UP line, pull request text or a thread reply.")
 
 
 def is_note(thread):
@@ -44,7 +47,8 @@ def amended_ticket(conn, run_id, ticket, url):
 
 def steer_text(note):
     prefix = HINT_PREFIX if note.kind == steer_notes.HINT else PREFIX
-    return f"{prefix}\nsteer note {note.id} by {note.author}:\n{note.note}"
+    return (f"{prefix}\nsteer note {note.id} by {note.author}:\n{note.note}\n"
+            f"{PRIVATE}")
 
 
 def carry_amendments(conn, run_id, ticket):
@@ -117,15 +121,16 @@ def requeue_context(conn, run_id):
         return ""
     (prev,) = prev
     event = conn.execute(
-        "SELECT summary FROM runEvents WHERE runId = ? AND kind = 'intervention'"
+        "SELECT id, summary FROM runEvents WHERE runId = ? AND kind = 'intervention'"
         " AND (summary LIKE ? OR summary LIKE ?) ORDER BY seq DESC LIMIT 1",
         (prev, REQUEUE_PREFIX + "%", FACTORY_PREFIX + "%")).fetchone()
-    summary = event[0] if event else REQUEUE_PREFIX
+    summary = event[1] if event else REQUEUE_PREFIX
+    cited = f" (intervention event {event[0]})" if event else ""
     factory = summary.startswith(FACTORY_PREFIX)
     note = summary[len(FACTORY_PREFIX if factory else REQUEUE_PREFIX):]
     block = (f"Context from the previous attempt (run {prev}):\n"
-             f"{'The factory' if factory else 'Operator'}'s requeue note:\n"
-             f"{note}\n")
+             f"{'The factory' if factory else 'Operator'}'s requeue note"
+             f"{cited}:\n{note}\n{PRIVATE}\n")
     last = conn.execute(
         "SELECT round, verdict, findings FROM reviewRounds WHERE runId = ?"
         " ORDER BY round DESC LIMIT 1", (prev,)).fetchone()
@@ -165,7 +170,8 @@ def pending_state(conn, run_id, state, url):
 
 def instruction(thread):
     return (f"{PREFIX}\n{thread.body}\n"
-            f"Cite operator_note event {event_id(thread)} in the fix commit message.")
+            f"Cite operator_note event {event_id(thread)} in the fix commit"
+            f" message. {PRIVATE}")
 
 
 def start_fix(conn, run_id, addressed, prompt, url):

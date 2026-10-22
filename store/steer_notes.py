@@ -346,3 +346,19 @@ def steers(conn):
         " s.runId, s.eventId, COALESCE(s.consumedBy, c.runId),"
         f" COALESCE(s.consumedAt, c.at), {withdrawn} FROM steerNotes s"
         " JOIN tickets t ON t.id = s.ticketId" + _READER + " ORDER BY s.id")]
+
+
+def console_notes(conn, ticket_id):
+    return [text for (text,) in conn.execute(
+        "SELECT note FROM steerNotes WHERE ticketId = ?"
+        " UNION ALL SELECT json_extract(e.payload, '$.note') FROM runEvents e"
+        " JOIN runs r ON r.id = e.runId WHERE r.ticketId = ?"
+        " AND e.kind = 'operator_note'"
+        " UNION ALL SELECT json_extract(e.payload, '$.question') FROM runEvents e"
+        " JOIN runs r ON r.id = e.runId WHERE r.ticketId = ?"
+        " AND e.kind = 'console_ask'"
+        " UNION ALL SELECT i.note FROM interventions i"
+        " JOIN runs r ON r.id = i.runId WHERE r.ticketId = ?"
+        " AND (i.\"action\" IN ('requeue', 'abort', 'abort_close')"
+        " OR (i.\"action\" = 'babysit' AND i.source = 'human'))",
+        (ticket_id,) * 4) if text]
