@@ -66,7 +66,7 @@ async function mount(fetch: Fetch) {
 }
 
 const section = () => screen.getByRole("region", { name: "Progress" });
-const items = () => Array.from(section().querySelectorAll("li"));
+const items = () => Array.from(section().querySelectorAll("ol[aria-live] > li"));
 const line = (li: Element) => ({
   time: li.querySelector("time")!.textContent,
   kind: li.getAttribute("data-kind"),

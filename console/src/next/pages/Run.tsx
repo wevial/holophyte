@@ -9,6 +9,7 @@ import { AgentCompose } from "../components/AgentCompose";
 import { AgentPanel } from "../components/AgentPanel";
 import { CriteriaList } from "../components/CriteriaList";
 import { SECTION_LABEL } from "../components/Criteria";
+import { PhaseBar } from "../components/PhaseBar";
 import { ProgressLog } from "../components/ProgressLog";
 import { RunDetails } from "../components/RunDetails";
 import { RunPullRequest } from "../components/RunPullRequest";
@@ -150,7 +151,9 @@ export function RunPage() {
           )}
           <RunTicket base={page.base} ticket={run.ticket} />
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
-          <ProgressLog key={run.id} lines={page.progress} live={page.live} />
+          <ProgressLog key={run.id} lines={page.progress} live={page.live}>
+            <PhaseBar detail={page.detail} now={page.now} />
+          </ProgressLog>
           <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
         </div>
         <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks}>
