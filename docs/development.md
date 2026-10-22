@@ -453,8 +453,8 @@ Each module, one line:
   ticket bodies for `[merge] private_patterns` and refuses a match by location
   and pattern index.
 - `holophyte/loop/pause_notice.py` — a paused run's pull request gets the
-  `holophyte:paused` label and one notice comment; `--resume` removes both
-  (KO-608).
+  `holophyte:paused` label and no comment; `--resume` removes the label and
+  any notice comment an earlier pause recorded (KO-608).
 - `holophyte/pr/github.py` — `[merge] mode = "pr"`'s GitHub writes: the startup
   route check, the push, the pull request and its body, the babysitter's
   replies and resolves, the merge through the PR API, and the `gh`/API
