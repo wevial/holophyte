@@ -59,7 +59,7 @@ python3 factory.py --babysit KO-n [--note TEXT [--author NAME]] /path/to/repo # 
 python3 factory.py /path/to/repo --pause KO-n --note TEXT # stop at the next safe point
 python3 factory.py /path/to/repo --resume KO-n --note TEXT # continue a paused run
 python3 factory.py /path/to/repo --abort KO-n --note TEXT # end a run now, preserving its work
-python3 factory.py /path/to/repo --abort KO-n --close-pr --note TEXT # ...and close its pull request
+python3 factory.py /path/to/repo --abort KO-n --close-pr [--pr-comment TEXT] --note TEXT # ...and close its pull request
 python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
 python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
 python3 factory.py /path/to/repo --gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] [--found-by witness|operator] # where a gap's lesson landed: impossible, static, witness, guidance, review or none; who found it
@@ -102,7 +102,7 @@ holo babysit KEY ["note" [--author NAME]] -p NAME|PATH # factory.py --babysit
 holo repoint KEY SHA "note" -p NAME|PATH         # factory.py --repoint
 holo pause KEY "note" -p NAME|PATH               # factory.py --pause
 holo resume KEY "note" -p NAME|PATH              # factory.py --resume
-holo abort KEY "note" [--close-pr] -p NAME|PATH  # factory.py --abort
+holo abort KEY "note" [--close-pr [--pr-comment TEXT]] -p NAME|PATH # factory.py --abort
 holo close KEY URL ["note"] -p NAME|PATH         # factory.py --close KEY --landed URL
 holo gap KEY LAYER "note" [--carried-by KEY] [--found-by F] -p NAME|PATH # factory.py --gap-layer
 holo loop start|stop ...                         # the same as holo start and holo stop

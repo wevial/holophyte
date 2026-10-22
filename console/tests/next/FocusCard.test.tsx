@@ -385,6 +385,26 @@ test("Resume opens a reason box in the open row whose Send posts the ticket and 
   expect(attentionReads(asked)).toBeGreaterThan(reads);
 });
 
+test("Abort and close posts the run, close and the reason, and adds pr_comment only when its optional box holds text", async () => {
+  const abortClose = async (comment: string | null) => {
+    const action = fakeFetch({ ok: true, detail: "aborted" });
+    await mount(daemon({ items: [stale], actions: true, act: action.fetchImpl }));
+    fireEvent.click(inDetail("More"));
+    await press(within(screen.getByRole("group", { name: "More actions" })).getByRole("button", { name: "Abort and close" }));
+    fireEvent.change(within(openDetail()).getByRole("textbox", { name: "Reason to abort and close" }), { target: { value: "wrong approach" } });
+    const box = within(openDetail()).getByRole("textbox", { name: "Comment on the PR (optional)" }) as HTMLTextAreaElement;
+    expect(box.value).toBe("");
+    if (comment != null) fireEvent.change(box, { target: { value: comment } });
+    await press(inDetail("Send"));
+    cleanup();
+    return action.seen.map(({ url, body }) => ({ url, body }));
+  };
+  expect(await abortClose(null)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 7, close: true, note: "wrong approach" } }]);
+  expect(await abortClose("Superseded.")).toEqual([
+    { url: `${DEMO}/actions/abort`, body: { run: 7, close: true, pr_comment: "Superseded.", note: "wrong approach" } },
+  ]);
+});
+
 test("a host sweep row on a host with no named projects reads the root's actions and posts Run sweep at the root", async () => {
   const hostStatus = await Bun.file(new URL("host-status.json", SERVE)).json();
   const action = fakeFetch({ ok: true, detail: "started" });

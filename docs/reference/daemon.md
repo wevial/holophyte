@@ -174,6 +174,23 @@ recorded as `forced past N relaunches: NOTE`. A body that is not a JSON
 object, one with no `ticket`, a `force` that is not a boolean, or
 `"force": true` without a non-blank `note` is 400 naming it. A project with no store is 503.
 
+## `POST /actions/abort`
+
+Body: a JSON object with `run` (required, the run to end), `note`
+(required, why), `close` (optional boolean, default `false`) and
+`pr_comment` (optional text). The daemon does what
+`factory.py PROJECT --abort KO-n --note TEXT` does, with `close: true` as
+`--close-pr` and `pr_comment` as `--pr-comment TEXT`. With `close: true`
+the run's pull request is closed with no comment, or, with `pr_comment`,
+after one comment holding `pr_comment` alone under the factory's comment
+header. `pr_comment` is posted only with `close: true`. The abort note is
+never posted to GitHub.
+
+A `run` that is not a positive integer, a missing or blank `note`, a
+`close` that is not a boolean, a `pr_comment` that is not text or is blank,
+or a `pr_comment` without `close: true` is 400 naming it; nothing is
+written. A `null` `pr_comment` is no comment.
+
 ## `POST /actions/merge`
 
 Body: a JSON object with `run` (required, the run parked for a human's

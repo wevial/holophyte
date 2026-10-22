@@ -107,6 +107,12 @@ def abort_action(target, body):
     close = body.get("close", False)
     if type(close) is not bool:
         return 400, {"error": "close must be true or false"}
+    pr_comment = body.get("pr_comment")
+    if pr_comment is not None and (not isinstance(pr_comment, str)
+                                   or not pr_comment.strip()):
+        return 400, {"error": "pr_comment must be non-blank text or null"}
+    if pr_comment is not None and close is not True:
+        return 400, {"error": "pr_comment is posted only with close: true"}
 
     def act(conn, reason):
         from provider import board_for
@@ -115,7 +121,8 @@ def abort_action(target, body):
             return False, (f"{target.config_path}: [board] project_id is not"
                            " set; nothing written"), {"run": run_id}
         ended = abort_run(target, conn, run_id, reason,
-                          provider=board, close=close)
+                          provider=board, close=close,
+                          pr_comment=pr_comment)
         detail = (f"run {run_id} had no live worker; ended abandoned and parked"
                   if ended else f"abort requested; run {run_id} ends at its"
                   " worker's next heartbeat")
