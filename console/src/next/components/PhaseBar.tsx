@@ -14,13 +14,13 @@ import {
 } from "../../lib/timeline";
 
 const FILLS: Record<SegmentKind, string> = {
-  implement: "bg-act",
-  verify: "bg-live",
-  review: "bg-wait",
-  fix: "bg-ask",
-  merge: "bg-ink-2",
-  wait: "bg-done",
-  parked: "bg-fact-warn",
+  implement: "bg-act text-paper",
+  verify: "bg-live text-paper",
+  review: "bg-wait text-paper",
+  fix: "bg-ask text-paper",
+  merge: "bg-ink-2 text-paper",
+  wait: "bg-rule text-ink",
+  parked: "bg-fact-warn text-paper",
 };
 
 /** Where the run's time went: one segment per phase, each as wide as its
@@ -71,7 +71,7 @@ export function PhaseBar({ detail, now }: { detail: RunDetail; now: number }) {
           >
             <span
               aria-hidden="true"
-              className={`block h-[22px] overflow-hidden whitespace-nowrap text-center font-mono text-[10.5px] leading-[22px] text-paper ${FILLS[segment.kind]} ${segment.running ? "phase-running" : ""}`}
+              className={`block h-[22px] overflow-hidden whitespace-nowrap text-center font-mono text-[10.5px] leading-[22px] ${FILLS[segment.kind]} ${segment.running ? "phase-running" : ""}`}
             >
               {segment.width >= 0.15 ? `${shortLabel(segment)} · ${formatTotal(segment.to - segment.from)}` : null}
             </span>
