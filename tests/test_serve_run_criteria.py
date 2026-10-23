@@ -1,5 +1,6 @@
 """`/runs/N` lists each acceptance criterion with the status and note the
-newest review over its chain recorded."""
+newest review over its chain recorded, each round's own judgement, the
+final check's verdicts and the run's first witness pre-check."""
 from __future__ import annotations
 
 import json
@@ -122,6 +123,85 @@ class RunCriteriaTests(ServeTestCase):
         self.assertEqual(new["criteria"], [
             {"n": 4, "id": "C4", "text": SECOND, "status": "met",
              "note": "Witnessed", "run": newest, "round": 2}])
+
+    def reviewed(self, key):
+        run = self.claim(self.ticket(key), self.now - 30 * MIN)
+        store.set_review_round_cap(self.conn, run, 3)
+        self.judged(run, 1, self.now - 25 * MIN,
+                    (1, FIRST, "met", "tests/test_a.py::test_one"),
+                    (2, SECOND, "met", "tests/test_b.py::test_two"))
+        self.judged(run, 1, self.now - 24 * MIN,
+                    (1, FIRST, "not_met", "export is absent"),
+                    (2, SECOND, "met", "tests/test_b.py::test_two"))
+        for rnd in (1, 2, 3):
+            store.record_review_round(self.conn, run, rnd, "changes_requested",
+                                      "reviewer")
+        return run
+
+    def test_each_review_round_serves_its_own_newest_judgement(self):
+        run = self.reviewed("DEMO-24")
+
+        (body,) = self.details(run)
+
+        self.assertEqual(body["rounds"][0]["criteria"], [
+            {"id": "C1", "n": 1, "status": "not_met",
+             "note": "export is absent"},
+            {"id": "C2", "n": 2, "status": "met",
+             "note": "tests/test_b.py::test_two"}])
+        self.assertEqual(body["rounds"][1]["criteria"], [])
+
+    def test_the_final_check_marks_its_criterion_findings_and_the_rest_met(self):
+        run = self.reviewed("DEMO-25")
+        store.record_review_round(
+            self.conn, run, 4, "changes_requested", "reviewer", findings=[
+                {"path": store.CRITERIA_PATH, "line": 2, "severity": "p1",
+                 "message": "CRITERION C2: unwitnessed \u2014 no CRITERION "
+                            f"line in the reply\n{SECOND}"}])
+
+        (body,) = self.details(run)
+
+        self.assertEqual(body["run"]["max_rounds"], 3)
+        self.assertEqual(body["rounds"][3]["criteria"], [
+            {"id": "C1", "n": 1, "status": "met", "note": ""},
+            {"id": "C2", "n": 2, "status": "unwitnessed",
+             "note": "no CRITERION line in the reply"}])
+
+    def test_a_final_check_that_errored_judges_nothing(self):
+        run = self.reviewed("DEMO-26")
+        store.record_review_round(
+            self.conn, run, 4, "error", "reviewer", findings=[
+                {"path": "(unparsed)", "severity": "p1",
+                 "message": "the reviewer answered no verdict"}])
+
+        (body,) = self.details(run)
+
+        self.assertEqual(body["rounds"][3]["criteria"], [])
+
+    def prechecked(self, run, sha, *criteria):
+        store.record_event(
+            self.conn, run, "witness_precheck_results", "witness pre-check",
+            level="detail", payload=json.dumps({
+                "sha": sha, "base": "b" * 40, "criteria": [
+                    {"criterion": n, "id": f"C{n}", "files": files,
+                     "named": "ok" if files else "no_file", "checks": [],
+                     "gaps": gaps} for n, files, gaps in criteria]}))
+
+    def test_the_first_witness_precheck_is_served_and_none_is_null(self):
+        run = self.claim(self.ticket("DEMO-27"), self.now - 30 * MIN)
+        self.prechecked(run, "1" * 40, (1, ["tests/test_a.py"], []), (2, [], []))
+        self.prechecked(run, "2" * 40,
+                        (1, ["tests/test_a.py"],
+                         ["criterion C1 names `tests/test_a.py`; it fails"]),
+                        (2, ["tests/test_b.py"], []))
+        bare = self.claim(self.ticket("DEMO-28"), self.now - 5 * MIN)
+
+        checked, unchecked = self.details(run, bare)
+
+        self.assertEqual(checked["precheck"], {"sha": "1" * 40, "criteria": [
+            {"id": "C1", "n": 1, "witnessed": True, "note": ""},
+            {"id": "C2", "n": 2, "witnessed": False,
+             "note": "names no test file"}]})
+        self.assertIsNone(unchecked["precheck"])
 
 
 if __name__ == "__main__":

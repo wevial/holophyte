@@ -308,6 +308,9 @@ Each module, one line:
 - `holophyte/serve/contract_pr.py` — the pull request facts and the
   unmerged dependency a parked pull request waits on, as the contract
   declares them on `/attention` and `/status`.
+- `holophyte/serve/contract_run.py` — a run's review round as `/runs/N`
+  and `/findings` serve it, its per-round criteria judgement, and the
+  run's witness pre-check, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.

@@ -461,6 +461,14 @@ def criteria_events(conn, run_ids):
             for row in rows]
 
 
+def witness_prechecks(conn, run_id):
+    rows = conn.execute(
+        "SELECT payload FROM runEvents"
+        " WHERE kind = 'witness_precheck_results' AND runId = ?"
+        " ORDER BY seq", (run_id,)).fetchall()
+    return [json.loads(row[0]) for row in rows]
+
+
 @dataclass(frozen=True)
 class FailedAttempt:
     attempt: int
