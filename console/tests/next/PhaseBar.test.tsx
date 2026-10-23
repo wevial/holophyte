@@ -163,6 +163,22 @@ test("7 minutes implementing and a running 3-minute review draw 70% and 30% of t
   expect(widths[1]).toBeCloseTo(0.3 * (1000 - GAP_PX), 6);
 });
 
+test("implement, verify, review, rework and parked segments each pair their fill with its own ink", () => {
+  const detail = runOf(
+    [[0, "claimed -> working: KO-1"], [600, "working -> verifying: verify"], [900, "verifying -> reviewing: review"],
+      [1200, "reviewing -> addressing: fix"], [1500, "addressing -> blocked_on_operator: parked"], [1800, "blocked_on_operator -> done: merged"]],
+    1800,
+  );
+  drawnAt(1000, <PhaseBar detail={detail} now={T + 1800_000} />);
+  expect(segments().map((item) => [item.getAttribute("data-segment"), [...item.querySelector("span")!.classList].filter((name) => /^(bg|text)-(?!center|\[)/.test(name))])).toEqual([
+    ["implement", ["bg-act", "text-act-ink"]],
+    ["verify", ["bg-live", "text-green-on"]],
+    ["review", ["bg-wait", "text-violet-on"]],
+    ["fix", ["bg-ask", "text-gold-on"]],
+    ["parked", ["bg-fact-warn", "text-orange-on"]],
+  ]);
+});
+
 test("phases of 2 s and 12 s beside 50 minutes keep a 6 px minimum while the bar still sums to its width", () => {
   const detail = runOf(
     [[0, "claimed -> working: KO-1"], [3000, "working -> verifying: verify"], [3002, "verifying -> merging: merge"], [3014, "merging -> done: merged"]],

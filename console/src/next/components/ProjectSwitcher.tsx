@@ -187,7 +187,7 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
               setActive(0);
             }}
             onKeyDown={onFindKey}
-            className="min-h-9 border border-ink-3 bg-paper-2 px-2.5 text-[13px] text-ink placeholder:text-ink-2 focus:outline-2 focus:outline-act focus:-outline-offset-1!"
+            className="min-h-9 border border-ink-3 bg-paper-2 px-2.5 text-[13px] text-ink placeholder:text-ink-2 focus:outline-2 focus:outline-focus focus:-outline-offset-1!"
           />
           {matches.length === 0 ? (
             <p className="mt-2 px-2 py-2.5 text-[13px] text-ink-3">No project matches.</p>

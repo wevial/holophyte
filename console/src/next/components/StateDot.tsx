@@ -3,7 +3,7 @@ import { STATES, type State, type Tone } from "../state";
 
 export const TONE_TEXT: Record<Tone, string> = {
   bad: "text-bad",
-  ask: "text-ask",
+  ask: "text-ask-ink",
   need: "text-need",
   live: "text-live",
   wait: "text-wait",

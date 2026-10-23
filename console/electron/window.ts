@@ -21,6 +21,6 @@ export function windowOptions(platform: NodeJS.Platform): BrowserWindowConstruct
     ...options,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 23 },
-    backgroundColor: "#05070f",
+    backgroundColor: "#0d0a15",
   };
 }

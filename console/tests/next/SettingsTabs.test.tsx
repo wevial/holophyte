@@ -82,7 +82,7 @@ test("Agents show live, fallback and down routes beside commands and reject an e
   expect(reviewer.value).toBe("");
   expect(reviewer.placeholder).toBe("the default route");
   expect(row("Reviewer").getByText("default")).toBeTruthy();
-  expect(row("Reviewer").getByText("on its fallback codex exec").className).toContain("text-ask");
+  expect(row("Reviewer").getByText("on its fallback codex exec").className).toContain("text-ask-ink");
   expect(row("Adjudicator").getByText("down").className).toContain("text-bad");
   fireEvent.change(implementer, { target: { value: "" } });
   expect(row("Implementer").getByRole("alert").textContent).toBe("A seat needs a command. Remove the key in Raw TOML to use the default.");

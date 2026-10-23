@@ -224,7 +224,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
           refusal={refusal && <p role="alert" className="mt-4 font-mono text-[13px] text-bad">{refusal}</p>}>
           <p className="mt-4 font-read text-[15px] text-ink-2">These lines change in config.toml on {hostLabel}.</p>
           <div className="my-5 max-h-[40vh] overflow-y-auto border border-rule py-2 font-mono text-[13px]">
-            {(rawMode ? diff.slice(0, 40).map((line) => ({ ...line, text: `${line.number} ${line.text}` })) : patchLines(answer?.state === "ok" ? answer.config.values : null, edits)).map((line, index) => <div key={index} className={`whitespace-pre-wrap break-words px-3 py-1 ${line.kind === "removed" ? "bg-bad-wash text-bad" : line.kind === "added" ? "text-live" : "text-ink-3"}`}>{line.kind === "removed" ? "− " : line.kind === "added" ? "+ " : ""}{line.text}</div>)}
+            {(rawMode ? diff.slice(0, 40).map((line) => ({ ...line, text: `${line.number} ${line.text}` })) : patchLines(answer?.state === "ok" ? answer.config.values : null, edits)).map((line, index) => <div key={index} className={`whitespace-pre-wrap break-words px-3 py-1 ${line.kind === "removed" ? "bg-bad-wash text-bad-text" : line.kind === "added" ? "text-live" : "text-ink-3"}`}>{line.kind === "removed" ? "− " : line.kind === "added" ? "+ " : ""}{line.text}</div>)}
             {rawMode && diff.length > 40 && <p className="px-3 py-1 text-ink-3">and {diff.length - 40} more lines</p>}
           </div>
           <p className="font-read text-[14px] text-ink-2">Applies at the {answer?.state === "ok" ? answer.config.applies : "next loop start"}.</p>
