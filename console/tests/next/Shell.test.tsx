@@ -363,9 +363,10 @@ test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords
   expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
   expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-expanded")).toBe("true");
-  fireEvent.keyDown(document, { key: "\\" });
-  fireEvent.keyDown(document, { key: "\\", metaKey: true, shiftKey: true });
-  expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeTruthy();
+  for (const chord of [{}, { metaKey: true, shiftKey: true }]) {
+    fireEvent.keyDown(document, { key: "\\", ...chord });
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-expanded")).toBe("true");
+  }
 });
 
 test("each page's heading section opens on the title row's padding", async () => {
