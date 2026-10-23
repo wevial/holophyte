@@ -117,16 +117,14 @@ function implementGroup(detail: RunDetail, events: RunEvent[], used: Set<RunEven
   return [draft("implement", start, "Implement", { sub, end })];
 }
 
-/** The rounds recorded while a babysit pass reads the PR's threads. */
-function threadRounds(detail: RunDetail, events: RunEvent[]): Map<Round, RunEvent> {
+/** Each round recorded once babysitting began, with the babysit step it was recorded under. */
+function babysitRounds(detail: RunDetail, events: RunEvent[]): Map<Round, RunEvent> {
   const steps = events.filter((event) => event.kind === "babysit_step");
   const held = new Map<Round, RunEvent>();
-  steps.forEach((step, index) => {
-    if (step.summary !== "threads") return;
-    const until = steps[index + 1]?.at ?? Infinity;
-    const round = detail.rounds.find((round) => round.started_ms >= step.at && round.started_ms < until && !held.has(round));
-    if (round) held.set(round, step);
-  });
+  for (const round of detail.rounds) {
+    const step = steps.findLast((step) => step.at <= round.started_ms);
+    if (step) held.set(round, step);
+  }
   return held;
 }
 
@@ -181,9 +179,9 @@ function roundGroup(detail: RunDetail, events: RunEvent[], round: Round, opened:
 }
 
 /** Each review round from the verify that led into it, then the verify a live run is in before its next round. */
-function roundGroups(detail: RunDetail, events: RunEvent[], threads: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
-  const verifies = events.filter((event) => isEdge(event, null, "verifying"));
-  const reviewed = detail.rounds.filter((round) => !threads.has(round)).sort((a, b) => a.round - b.round);
+function roundGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
+  const verifies = events.filter((event) => isEdge(event, null, "verifying") && !isEdge(event, "verifying", null));
+  const reviewed = detail.rounds.filter((round) => !babysat.has(round)).sort((a, b) => a.round - b.round);
   let claimed = -1;
   const groups = reviewed.map((round, index) => {
     const opener = verifies.findLastIndex((event, at) => at > claimed && event.at <= round.started_ms);
@@ -237,23 +235,24 @@ function fixingRound(events: RunEvent[], fix: number): RegExpExecArray | null {
   return round < 0 ? null : CHECK_FIX_ROUND.exec(events[round]!.summary);
 }
 
-function babysitGroups(events: RunEvent[], threads: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
+function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
   return events.flatMap((event, index): Draft[] => {
     if (event.kind !== "babysit_step") return [];
+    const round = [...babysat].find(([, step]) => step === event)?.[0] ?? null;
+    const held = { round, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
     if (event.summary === "checks") {
       used.add(event);
-      return [draft("checks", event.at, "Checks")];
+      return [draft("checks", event.at, "Checks", held)];
     }
     if (event.summary === "threads") {
       used.add(event);
-      const round = [...threads].find(([, step]) => step === event)?.[0] ?? null;
       const found = round?.findings.length ?? 0;
-      return [draft("threads", event.at, "Review threads", { round, sub: round ? [plural(found, "thread")] : [], tone: found > 0 ? "warn" : "ok" })];
+      return [draft("threads", event.at, "Review threads", { ...held, sub: round ? [plural(found, "thread")] : [], tone: found > 0 ? "warn" : "ok" })];
     }
     const fixing = event.summary === "fix" ? fixingRound(events, index) : null;
     if (fixing == null) return [];
     used.add(event);
-    return [draft("fix_ci", event.at, "Fix CI", { sub: [`round ${fixing[1]} of ${fixing[2]}`], tone: "act", what: `Fixing CI · ${fixing[3]}` })];
+    return [draft("fix_ci", event.at, "Fix CI", { ...held, sub: [`round ${fixing[1]} of ${fixing[2]}`], tone: "act", what: `Fixing CI · ${fixing[3]}` })];
   });
 }
 
@@ -311,13 +310,13 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
   const events = orderEvents(detail.events);
   const used = new Set<RunEvent>();
   const notes = runNotes(detail);
-  const threads = threadRounds(detail, events);
+  const babysat = babysitRounds(detail, events);
   const carried = notes.filter((note) => note.consumed_by === detail.run.id && note.at < detail.run.started_ms);
   const drafts = [
     ...implementGroup(detail, events, used),
-    ...roundGroups(detail, events, threads, used),
+    ...roundGroups(detail, events, babysat, used),
     ...pullRequestGroups(events, used),
-    ...babysitGroups(events, threads, used),
+    ...babysitGroups(events, babysat, used),
   ].sort((a, b) => a.at - b.at);
   const during = notes.filter((note) => !carried.includes(note));
   place(drafts, [...eventSteps(detail, events, used), ...during.map(noteStep), ...askSteps(detail, asks)]);

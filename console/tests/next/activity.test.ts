@@ -168,3 +168,39 @@ test("a round's other events are quiet steps, but not commit sightings or phase 
   expect(first.steps.map((step) => step.text)).not.toContain("abc123");
   expect(first.steps.some((step) => step.text.includes("working"))).toBe(false);
 });
+
+test("a round the babysitter records after a checks step stays inside Checks with the check steps", () => {
+  const url = "https://github.com/o/r/pull/2400";
+  const events = [
+    event(T, "pull_request", `resuming run 392's candidate holo/x at f1da4c08e5f4 on ${url} for another babysit pass`),
+    event(T + MIN, "babysit_step", "checks"),
+    event(T + 3 * MIN, "check_rerun", `rerunning the failed jobs of vitest on ${url}: workflow run(s) 7`),
+    event(T + 5 * MIN, "check_fix_round", `check fix round 1 of 2 on ${url}: vitest; failing: expected 2`),
+  ];
+  const bookkeeping = round({ round: 1, started_ms: T + 2 * MIN, ended_ms: T + 2 * MIN, verdict: "pass" });
+  const { groups } = runActivity(detail({}, events, [bookkeeping]), [], T + 60 * MIN);
+  expect(groups.map((group) => group.kind)).toEqual(["pickup", "checks"]);
+  expect(groups[1]!.round).toBe(bookkeeping);
+  expect(groups[1]!.steps.map((step) => step.text)).toEqual(["vitest rerun", "vitest failed again · expected 2 → CI fix round 1 of 2"]);
+});
+
+test("a verify that steps into another verify keeps its first start and its pre-check", () => {
+  const events = [
+    phase(T, "claimed -> working"),
+    phase(T + 10 * MIN, "working -> verifying: round 1: verify before review"),
+    event(T + 10 * MIN + 10 * SEC, "witness_precheck", "witness pre-check at abc: 1 of 2 criteria witnessed\ncriterion C2 names no test file"),
+    phase(T + 10 * MIN + 20 * SEC, "verifying -> verifying: round 1: witness turn 1 of 2"),
+    phase(T + 11 * MIN, "verifying -> reviewing: round 1 review"),
+  ];
+  const first = round({ round: 1, started_ms: T + 11 * MIN, ended_ms: T + 12 * MIN, verdict: "pass" });
+  const { groups } = runActivity(detail({}, events, [first]), [], T + 60 * MIN);
+  const verify = groups.find((group) => group.kind === "round")!.steps[0]!;
+  expect([verify.at, verify.ms, verify.text]).toEqual([T + 10 * MIN, MIN, "Verify · 1 of 2 witnessed · C2"]);
+});
+
+test("a Review threads group marks its round's criteria not met or unwitnessed", () => {
+  const events = [event(T + MIN, "babysit_step", "threads")];
+  const threads = round({ round: 2, started_ms: T + 2 * MIN, ended_ms: T + 3 * MIN, criteria: [criterion(1, "met"), criterion(2, "unwitnessed")] });
+  const group = runActivity(detail({}, events, [threads]), [], T + 60 * MIN).groups.find((group) => group.kind === "threads")!;
+  expect(group.marks.map((mark) => [mark.id, mark.status])).toEqual([["C2", "unwitnessed"]]);
+});
