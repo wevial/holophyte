@@ -171,7 +171,8 @@ class PauseFixTurnTests(cases.BabysitHelpers, MergeModeFixture):
                                 provider=self.provider())
         self.assertTrue(paused)
         self.assertNotIn(True, naps)
-        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertEqual([turn.goal for turn in fake.turns
+                          if "CHECK unit" in turn.goal], [])
         self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
                          [("paused", "merge_gate")])
 

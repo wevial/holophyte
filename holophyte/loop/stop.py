@@ -353,5 +353,6 @@ def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
                          verify_cmd, contracts, budget_min, saved["pass_no"],
                          review_follows=saved["review_follows"],
                          goal=_rerun_goal(saved, sha) if rerun else None,
-                         resume_step=None if rerun else saved, criteria=criteria)
+                         resume_step=None if rerun else saved, criteria=criteria,
+                         rerun=bool(rerun))
     return fixed, True

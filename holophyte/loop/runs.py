@@ -164,7 +164,8 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat,
             try:
                 alive = current_heartbeat()()
                 if alive:
-                    stopping = None if interrupted or own is None else (
+                    stopping = None if interrupted or own is None or (
+                        on_interrupt is None and on_pause is None) else (
                         _interrupted(own, run_id, on_interrupt, on_pause))
                     if stopping is not None:
                         interrupted = True
