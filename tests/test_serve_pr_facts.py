@@ -115,7 +115,6 @@ class PullRequestFactsTests(ServeTestCase):
         self.assertEqual((runs[retried]["pr_url"], runs[retried]["woke_ms"]),
                          (PULL.format(10), None))
 
-
     def test_a_check_fix_round_serves_its_step_and_a_run_without_none(self):
         fixing = self.claim(self.ticket(11))
         idle = self.claim(self.ticket(12))
@@ -134,6 +133,7 @@ class PullRequestFactsTests(ServeTestCase):
         runs = {run["id"]: run for run in body["runs"]}
         self.assertEqual(runs[fixing]["step"], "fixing checks (round 1 of 2)")
         self.assertIsNone(runs[idle]["step"])
+
 
 if __name__ == "__main__":
     unittest.main()

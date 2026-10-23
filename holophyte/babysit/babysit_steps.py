@@ -18,7 +18,7 @@ def record_step(conn, run_id, step):
         store.record_event(conn, run_id, "babysit_step", step)
 
 
-CHECK_FIX_ROUND = re.compile(r"^check fix round (\d+) of (\d+) on \S+: ")
+CHECK_FIX_ROUND = re.compile(r"^check fix round (\d+) of (\d+) on \S+: .+?; failing: ")
 
 
 def running_step(conn, run_id):
