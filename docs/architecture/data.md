@@ -9,7 +9,10 @@ SQLite file per project in WAL mode, at
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
-the loop and its supervisor contend on one file without either dying.
+the loop and its supervisor contend on one file. A lock held past that wait
+skips one scheduler tick (or one supervisor pass) rather than exiting; the
+scheduler keeps waiting on its live workers, and three skipped ticks in a
+row stop the loop with status 1.
 
 KO-522 adds `evidenceStates` to the JSON in `runs.ticketSnapshot`, parsed
 from `tickets.body` at claim time. No SQL schema migration is needed.
