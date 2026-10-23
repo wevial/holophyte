@@ -52,7 +52,7 @@ def review_base(repo, frozen, candidate):
         merged = main_base(repo, candidate, f"no main base for {candidate}")
     except RangeError:
         return frozen
-    if merged in (frozen, candidate) or subprocess.run(
+    if merged == candidate or subprocess.run(
             ["git", "merge-base", "--is-ancestor", frozen, merged],
             cwd=repo, capture_output=True).returncode:
         return frozen
