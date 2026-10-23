@@ -13,7 +13,7 @@ export function declarations(source: string): Declaration[] {
       path.pop();
       buffer = "";
     } else if (char === ";") {
-      const match = /^\s*(--[a-z0-9-]+|[a-z][a-z0-9-]*)\s*:\s*([\s\S]*)$/.exec(buffer);
+      const match = /^\s*(--[a-z0-9-]+|-?[a-z][a-z0-9-]*)\s*:\s*([\s\S]*)$/.exec(buffer);
       if (match) out.push({ path: [...path], name: match[1]!, value: match[2]!.trim() });
       buffer = "";
     } else {

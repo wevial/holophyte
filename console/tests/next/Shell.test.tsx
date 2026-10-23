@@ -6,15 +6,17 @@ import { NextConsole } from "../../src/next/router";
 import { THEME_KEY } from "../../src/lib/theme";
 import { APP_SHELL_KEY, openRememberedView, VIEW_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
-import type { Attention, Status } from "../../src/lib/contract.gen";
+import type { Attention, Board, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { needsDaemons } from "./needsFleet";
+import { declarations } from "../cssTokens";
 
 const ORIGIN = "http://writer-host:7710";
 const PEER = "http://writer-host:7711";
 
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 
 const happyDOM = (window as unknown as {
   happyDOM: { settings: { device: { prefersColorScheme: string } }; setViewport: (viewport: { width: number }) => void };
@@ -165,11 +167,9 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   expect(expand.getAttribute("aria-expanded")).toBe("false");
   expect(pages().map((link) => link.textContent)).toEqual(["", "", "", ""]);
   expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
-  for (const name of ["holophyte", "Classic console"]) {
-    const link = screen.getByRole("link", { name });
-    expect(link.textContent).toBe("");
-    expect(link.getAttribute("title")).toBe(name);
-  }
+  const classic = screen.getByRole("link", { name: "Classic console" });
+  expect(classic.textContent).toBe("");
+  expect(classic.getAttribute("title")).toBe("Classic console");
   cleanup();
 
   await mount("#/");
@@ -263,35 +263,118 @@ test("the four page icons differ from one another and from the All projects icon
 
 const DRAG = "[-webkit-app-region:drag]";
 const NO_DRAG = "[-webkit-app-region:no-drag]";
-const headerRow = () => screen.getByRole("link", { name: "holophyte" }).parentElement!;
+const toggle = () => screen.getByRole("button", { name: /^(Collapse|Expand) sidebar$/ });
+const headerRow = () => toggle().parentElement!;
+const aside = () => screen.getByRole("complementary", { name: "Console" });
 
-test("in the macOS app the sidebar header and a strip atop the main pane drag the window, and their controls do not", async () => {
+test("in a browser the title row holds the panel-left toggle, then the lotus mark alone linking home", async () => {
+  await mount("#/");
+  const header = headerRow();
+  expect(header.classList.contains("h-[52px]")).toBe(true);
+  expect(header.classList.contains("pl-3")).toBe(true);
+  const [first, second] = Array.from(header.children);
+  expect(first).toBe(screen.getByRole("button", { name: "Collapse sidebar" }));
+  expect(first!.getAttribute("aria-expanded")).toBe("true");
+  expect(first!.classList.contains("size-7")).toBe(true);
+  const home = screen.getByRole("link", { name: "holophyte" });
+  expect(second).toBe(home);
+  expect(home.textContent).toBe("");
+  expect(home.getAttribute("title")).toBe("holophyte");
+  expect(home.querySelectorAll("svg").length).toBe(1);
+
+  fireEvent.click(first!);
+  expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
+  const folded = headerRow();
+  expect(folded.classList.contains("h-[52px]")).toBe(true);
+  expect(within(folded).getByRole("button", { name: "Expand sidebar" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("link", { name: "holophyte" })).toBeNull();
+});
+
+test("the sidebar toggle draws one icon in both states, unlike the story list's chevron", async () => {
+  const polls = daemons([], []);
+  const stories = [{ ticket: "DEMO-12", title: "Unattended runs recover themselves", children: [], merged: 2, total: 6 }];
+  await mount("#/", async (url) => (url === `${ORIGIN}/board` ? Response.json({ ...pinned, stories }) : polls(url)));
+  await act(settle);
+  const expanded = toggle().querySelector("svg")!.outerHTML;
+  const chevron = screen.getByRole("button", { name: "Hide the story list" }).querySelector("svg")!.outerHTML;
+  fireEvent.click(toggle());
+  expect(toggle().querySelector("svg")!.outerHTML).toBe(expanded);
+  expect(expanded).not.toBe(chevron);
+});
+
+test("in the macOS app the title row clears the traffic lights and drags the window, and its controls do not", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
   await mount("#/");
   const header = headerRow();
-  expect(header.classList.contains(DRAG)).toBe(true);
-  expect(header.classList.contains("pl-[76px]")).toBe(true);
-  const strip = screen.getByRole("main").firstElementChild as HTMLElement;
-  expect(strip.classList.contains(DRAG)).toBe(true);
-  expect(strip.getAttribute("aria-hidden")).toBe("true");
-  const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
-  expect(regions).toEqual([header, strip]);
-  for (const control of regions.flatMap((region) => Array.from(region.querySelectorAll("a, button")))) {
-    expect(control.classList.contains(NO_DRAG)).toBe(true);
-  }
+  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(header.classList.contains(name)).toBe(true);
+  const button = screen.getByRole("button", { name: "Collapse sidebar" });
+  const home = screen.getByRole("link", { name: "holophyte" });
+  expect(button.compareDocumentPosition(home) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(home.textContent).toBe("");
+  for (const control of [button, home]) expect(control.classList.contains(NO_DRAG)).toBe(true);
 
-  fireEvent.click(within(header).getByRole("button", { name: "Collapse sidebar" }));
+  fireEvent.click(button);
+  expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
   const folded = headerRow();
-  expect(folded.classList.contains("pt-[44px]")).toBe(true);
-  expect(folded.classList.contains(DRAG)).toBe(true);
-  expect(within(folded).getByRole("link", { name: "holophyte" }).classList.contains(NO_DRAG)).toBe(true);
+  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(folded.classList.contains(name)).toBe(true);
   expect(within(folded).getByRole("button", { name: "Expand sidebar" }).classList.contains(NO_DRAG)).toBe(true);
+  expect(screen.queryByRole("link", { name: "holophyte" })).toBeNull();
 });
 
-test("in a browser nothing names a window drag region and the header keeps its usual inset", async () => {
-  await mount("#/");
+test("in the macOS app a zero-height layer drags the main pane's top 52px and no band pushes the page down", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mount("#/runs");
+  const main = screen.getByRole("main");
+  expect(main.closest("[data-app-shell]")!.getAttribute("data-app-shell")).toBe("macos");
+  const layer = main.firstElementChild as HTMLElement;
+  expect(layer.getAttribute("aria-hidden")).toBe("true");
+  expect(layer.classList.contains("h-0")).toBe(true);
+  expect(layer.children.length).toBe(1);
+  const area = layer.firstElementChild as HTMLElement;
+  for (const name of [DRAG, "absolute", "h-[52px]"]) expect(area.classList.contains(name)).toBe(true);
+  expect(main.querySelectorAll(".h-7").length).toBe(0);
+  const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
+  expect(regions).toEqual([headerRow(), area]);
+});
+
+test("in a browser nothing names a window drag region or the app shell", async () => {
+  await mount("#/runs");
   const named = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.className.includes("-webkit-app-region"));
   expect(named).toEqual([]);
-  expect(headerRow().classList.contains("pl-4")).toBe(true);
-  expect(Array.from(screen.getByRole("main").children).filter((child) => child.getAttribute("aria-hidden") === "true")).toEqual([]);
+  expect(document.querySelector("[data-app-shell]")).toBeNull();
+  expect(screen.getByRole("main").firstElementChild!.getAttribute("aria-hidden")).not.toBe("true");
+});
+
+test("theme.css lets the app's controls inside the main pane cut through its drag area", async () => {
+  const css = await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text();
+  const rule = declarations(css).find((d) => d.name === "-webkit-app-region" && d.value === "no-drag");
+  const selector = rule?.path.at(-1) ?? "";
+  expect(selector.startsWith('[data-app-shell="macos"]')).toBe(true);
+  for (const name of ["main", "a", "button"]) expect(selector).toMatch(new RegExp(`\\b${name}\\b`));
+});
+
+test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords leave it", async () => {
+  await mount("#/");
+  fireEvent.keyDown(document, { key: "\\", metaKey: true });
+  expect(screen.getByRole("button", { name: "Expand sidebar" }).getAttribute("aria-expanded")).toBe("false");
+  cleanup();
+
+  await mount("#/");
+  expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+  fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+  expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-expanded")).toBe("true");
+  for (const chord of [{}, { metaKey: true, shiftKey: true }]) {
+    fireEvent.keyDown(document, { key: "\\", ...chord });
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-expanded")).toBe("true");
+  }
+});
+
+test("each page's heading section opens on the title row's padding", async () => {
+  for (const hash of ["#/runs", "#/tickets", "#/findings", "#/settings/general"]) {
+    await mount(hash);
+    const section = document.getElementById("page-title")!.closest('section[aria-labelledby="page-title"]')!;
+    expect(section.classList.contains("pt-3.5")).toBe(true);
+    expect(section.classList.contains("py-7")).toBe(false);
+    cleanup();
+  }
 });

@@ -111,7 +111,7 @@ export function Findings() {
     },
   ];
   return (
-    <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-6 px-8 py-7">
+    <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-6 px-8 pt-3.5 pb-7">
       <header className="flex flex-col gap-2">
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Findings</h1>
         {page.answered && (
