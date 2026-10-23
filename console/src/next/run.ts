@@ -118,7 +118,7 @@ function stopsWord(phase: string, live: StatusRun | null): string {
   return phase === "reviewing" && live != null ? `${step.stage} round ${live.round + 1}` : step.doing;
 }
 
-const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
+export const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
 
 function checkFixRound(events: RunDetail["events"]): string | null {
   const ordered = orderEvents(events);
