@@ -337,7 +337,7 @@ export interface GridCell {
   note: string;
 }
 
-export interface GridColumn {
+interface GridColumn {
   label: string;
   /** The final check's column when that check did not pass. */
   failed: boolean;
