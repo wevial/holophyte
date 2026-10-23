@@ -88,7 +88,7 @@ WIP_PREFIX = "WIP: implementer "
 
 def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
            role="implement", argv=None, seconds=None, limit=None, sweep=True,
-           merges=True):
+           merges=True, paused=None):
     """Return `(output, timed_out)`; a timeout or a sweep kills the turn's group."""
     swept = sweep and role in ("implement", "trim")
     ignored = _ignored_quietly(wt) if swept else None
@@ -96,7 +96,7 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
     try:
         output, timed_out = _run_turn(project, conn, run_id, beat_s, wt,
                                       budget_min, goal, role, argv, seconds,
-                                      limit, steered=steered)
+                                      limit, steered=steered, paused=paused)
     except Exception:
         if swept:
             _sweep_quietly(project, conn, run_id, wt, "ended", merges)
@@ -104,19 +104,21 @@ def _timed(project, conn, run_id, beat_s, wt, budget_min, goal, *,
         raise
     mid_edit = False
     if swept:
-        cause = _turn_end(output, timed_out, steered=bool(steered))
+        cause = _turn_end(output, timed_out, steered=bool(steered),
+                          paused=bool(paused))
         mid_edit = _sweep_quietly(project, conn, run_id, wt, cause, merges)
         _drop_leftovers(project, conn, run_id, wt, cause, ignored,
                         mid_edit=mid_edit)
     if steered:
         left, reported = steered[0]
         return _resume_steered(project, conn, run_id, beat_s, wt, budget_min,
-                               goal, left, limit, merges, mid_edit, reported)
+                               goal, left, limit, merges, mid_edit, reported,
+                               paused=paused)
     return output, timed_out
 
 
 def _resume_steered(project, conn, run_id, beat_s, wt, budget_min, goal, left,
-                    limit, merges, mid_edit, reported):
+                    limit, merges, mid_edit, reported, *, paused=None):
     head, _, subject = sh(["git", "log", "-1", "--format=%H %s"],
                           cwd=wt).partition(" ")
     wip = head if mid_edit and subject.startswith(
@@ -139,18 +141,20 @@ def _resume_steered(project, conn, run_id, beat_s, wt, budget_min, goal, left,
         payload=json.dumps(payload))
     return _timed(project, conn, run_id, beat_s, wt, budget_min,
                   ask if argv is not None else f"{ask}\n\n{goal}", argv=argv,
-                  seconds=left, limit=limit, merges=merges)
+                  seconds=left, limit=limit, merges=merges, paused=paused)
 
 
 def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
-              seconds, limit, *, steered=None):
+              seconds, limit, *, steered=None, paused=None):
     session_role = role
     armed, limit = _armed(project, budget_min, seconds, limit)
     kill = GroupKill()
     started = retry_clock()
     before = _session_of(conn, run_id) if steered is not None else None
     with heartbeat_while(conn, run_id, beat_s, on_swept=kill,
-                         on_interrupt=None if steered is None else kill.steer):
+                         on_interrupt=None if steered is None else kill.steer,
+                         on_pause=None if paused is None else (
+                             lambda: _stop_for_pause(kill, paused, goal))):
         try:
             output = agent(project, role, goal, wt, timeout=armed,
                            on_start=kill.arm, conn=conn, run_id=run_id,
@@ -178,11 +182,16 @@ def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
             output, timed_out = partial, True
         recorded = None if kill.wanted else record_session(
             project, conn, run_id, session_role, output, wt, on_start=kill.arm)
-    if kill.steered and not timed_out:
+    if kill.steered and not timed_out and not paused:
         steered.append((max(0, armed - (retry_clock() - started)),
                         argv is not None or recorded is not None
                         or _session_of(conn, run_id) != before))
     return output, timed_out
+
+
+def _stop_for_pause(kill, paused, goal):
+    paused.append(goal)
+    kill.steer()
 
 
 def _stalled_output(project, conn, run_id, role, stalled):
@@ -267,16 +276,18 @@ def _record_implementer_output(conn, run_id, out, secrets=()):
 
 
 def _transport_timed(project, conn, run_id, beat_s, wt, budget_min, goal,
-                     argv=None, *, seconds=None, limit=None, merges=True):
+                     argv=None, *, seconds=None, limit=None, merges=True,
+                     paused=None):
     """Retry transport loss once, sharing the original turn's wall-clock cap."""
     remaining, limit = _armed(project, budget_min, seconds, limit)
     deadline = retry_clock() + remaining
     for attempt in range(2):
         out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
                                 goal, argv=argv, seconds=remaining, limit=limit,
-                                merges=merges)
+                                merges=merges, paused=paused)
         signature = transport_failure(getattr(out, "exit_code", 0), out)
-        if timed_out or signature is None or _killed_by_signal(out, timed_out):
+        if (timed_out or paused or signature is None
+                or _killed_by_signal(out, timed_out)):
             return out, timed_out
         _record_implementer_output(conn, run_id, out,
                                    known_secrets(project.config()))
@@ -300,9 +311,11 @@ def _announce(conn, run_id, kind, note):
         store.record_event(conn, run_id, kind, note)
 
 
-def _turn_end(out, timed_out, steered=False):
+def _turn_end(out, timed_out, steered=False, paused=False):
     if timed_out:
         return "stalled" if _stall_note(out) else "budget fired"
+    if paused:
+        return "paused"
     if steered:
         return "steered"
     if _killed_by_signal(out, timed_out):
@@ -395,7 +408,7 @@ def remove_entries(wt, names):
 def _drop_leftovers(project, conn, run_id, wt, cause, before, *,
                     mid_edit=False):
     if before is None or not (
-            mid_edit or cause in ("crashed", "steered", "budget fired",
+            mid_edit or cause in ("crashed", "steered", "paused", "budget fired",
                                   "stalled", "ended")):
         return
     gone = []
