@@ -50,8 +50,18 @@ class WokenFixNoteTests(MergeModeFixture):
                             Commit("thread fix"), REQUEST_CHANGES,
                             Idle("nothing asks for a change"),
                             provider=self.provider())
+        self.assertEqual(fake.roles,
+                         ["adjudicate", "implement", "review", "implement"])
+        ((resumed,),) = self.read("SELECT summary FROM runEvents WHERE kind ="
+                                  " 'pull_request' AND summary LIKE 'resuming%'")
+        candidate = resumed.split(" at ")[1].split()[0]
+        fixed = fake.turns[2].goal.split("Review commit ")[1].split()[0]
+        self.assertFalse(fixed.startswith(candidate))
+        self.assertTrue(self.read("SELECT 1 FROM runEvents WHERE summary LIKE"
+                                  f" '%Addressed in {fixed}%'"))
         goals = [turn.goal for role, turn in zip(fake.roles, fake.turns)
                  if role == "implement"]
+        self.assertTrue(goals[1].startswith("Fix the pre-merge review findings"))
         self.assertFalse([goal for goal in goals if wake in goal])
         self.assertEqual(self.read("SELECT summary FROM runEvents"
                                    " WHERE kind = 'review_fix_allowance'"), [])
