@@ -166,5 +166,27 @@ class SweepTreeTests(LoopFixture):
             self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
 
 
+    def test_a_linked_worktree_under_a_carriage_return_path_keeps_its_merge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            owner, wt = Path(tmp, "own\rer"), Path(tmp, "wt")
+            shutil.copytree(self.target, owner, symlinks=True)
+            self.git("worktree", "add", "-q", "-b", "task", str(wt), cwd=owner)
+            (wt / "README.md").write_text("task\n")
+            self.git("commit", "-qam", "task side", cwd=wt)
+            (owner / "README.md").write_text("main\n")
+            self.git("commit", "-qam", "main side", cwd=owner)
+            merged = subprocess.run(["git", "merge", "-q", "main"], cwd=wt,
+                                    capture_output=True)
+            self.assertNotEqual(merged.returncode, 0)
+            before = (self.git("rev-parse", "HEAD", cwd=wt),
+                      self.git("rev-parse", "MERGE_HEAD", cwd=wt))
+
+            swept, _ = self.sweep(wt)
+
+            self.assertFalse(swept)
+            self.assertEqual((self.git("rev-parse", "HEAD", cwd=wt),
+                              self.git("rev-parse", "MERGE_HEAD", cwd=wt)),
+                             before)
+
 if __name__ == "__main__":
     unittest.main()

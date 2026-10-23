@@ -347,11 +347,10 @@ def _sweep_tree(project, conn, run_id, wt, cause, merges):
         return False
     facts = subprocess.run(
         ["git", "rev-parse", "--git-path", "index.lock", "--git-path",
-         "MERGE_HEAD", "--verify", "--abbrev-ref", "HEAD"], cwd=wt, capture_output=True,
-        text=True)
+         "MERGE_HEAD", "--verify", "--abbrev-ref", "HEAD"], cwd=wt, capture_output=True)
     if facts.returncode:
         return False
-    lock, merge_head, branch = _sweep_facts(facts.stdout)
+    lock, merge_head, branch = _sweep_facts(os.fsdecode(facts.stdout))
     merging = Path(wt, merge_head).is_file()
     if merging and not merges:
         return False
