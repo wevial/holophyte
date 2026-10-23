@@ -45,6 +45,7 @@ import store  # noqa: E402
 import store.read  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter, maintainer_notes  # noqa: E402
+from holophyte.babysit.main_side import MainSide  # noqa: E402
 from holophyte.loop.gates import MergeParked, sh  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
 from holophyte.loop.stop import resume_babysit_fix, resume_paused  # noqa: E402
@@ -700,7 +701,7 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        repo = Path(tmp.name, "repo")
+        self.repo = repo = Path(tmp.name, "repo")
         repo.mkdir()
         self.enterContext(patch.dict(
             os.environ, {"HOLOPHYTE_HOME": str(Path(tmp.name, "home"))}))
@@ -873,6 +874,71 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
 
         self.assertEqual(cited, self.head)
         self.assertEqual(self.git("rev-parse", "HEAD"), self.head)
+
+    def parked_on(self, call):
+        with (patch.object(holophyte.pr.pullrequest, "_park_on_pr",
+                           side_effect=MergeParked("parked")) as parked,
+              self.assertRaises(MergeParked)):
+            call()
+        return parked
+
+    def test_the_operator_fix_allowance_is_spent_by_a_spec_only_fix(self):
+        self.review_fix(self.edit_spec)
+        turns = self.fix_turns
+        (self.root / "ui/page.html").write_text("<p>load</p>\n<p>more</p>\n")
+        self.git("commit", "-qam", "a later fix")
+        self.head = self.git("rev-parse", "HEAD")
+
+        parked = self.parked_on(lambda: self.review_fix(
+            lambda: self.fail("the allowance was granted again"),
+            replies=["CRITERION 1: unwitnessed — more is wrong\n"
+                     "VERDICT: REQUEST_CHANGES"]))
+
+        self.assertIn("asked for changes", parked.call_args.args[8])
+        self.assertEqual(turns + self.fix_turns, 1)
+        self.assertEqual(sum(
+            event.kind == "review_fix_allowance"
+            for event in store.read.narrative_events(
+                self.conn, self.run_id, ("review_fix_allowance",))), 1)
+
+    def test_a_spec_only_fix_after_a_merge_of_main_is_held_to_the_criteria(self):
+        self.git("remote", "add", "origin", str(self.repo))
+        self.git("fetch", "-q", "origin")
+        main = MainSide(self.git("rev-parse", "origin/main"), True, "", "true",
+                        "passes. ")
+        with (self.fakes(self.edit_spec, ["VERDICT: APPROVE"]),
+              patch.object(babysitter, "verify_detached_main", return_value=main),
+              patch.object(babysitter, "_just_pushed_state")):
+            parked = self.parked_on(lambda: babysitter._merge_origin_main(
+                self.project, self.conn, self.run_id, None, "KO-1", "task",
+                self.root, self.head, 30, CAPTURE_PULL, 10,
+                verify_cmd=f"grep -q FIXED {SPEC}", ticket=TICKET,
+                criteria=["Given the page, then it shows load"]))
+
+        self.assertIn("asked for changes", parked.call_args.args[8])
+        unwitnessed = [finding["line"] for recorded in store.read.rounds_of(
+            self.conn, self.run_id) for finding in json.loads(recorded.findings)
+            if finding.get("path") == store.CRITERIA_PATH]
+        self.assertEqual(unwitnessed, [1])
+
+    def check_fix(self, fix, answer):
+        with self.fakes(fix, answer=answer):
+            return self.parked_on(lambda: babysitter._fix_threads(
+                self.project, self.conn, self.run_id, None, "KO-1", "task",
+                self.root, self.head, 30, CAPTURE_PULL, (), None, TICKET,
+                "true", (), 10, 1, review_follows=True, goal="Fix the checks.",
+                no_commit_why="checks failure on the head commit",
+                reviewed=self.head))
+
+    def test_a_spec_only_check_fix_parks_with_no_approval(self):
+        parked = self.check_fix(self.edit_spec, "moved the capture spec")
+
+        self.assertIsNone(parked.call_args.kwargs["reviewed"])
+
+    def test_a_check_fix_that_only_answers_keeps_the_approval(self):
+        parked = self.check_fix(lambda: None, "the failure is in main")
+
+        self.assertEqual(parked.call_args.kwargs["reviewed"], self.head)
 
 
 if __name__ == "__main__":
