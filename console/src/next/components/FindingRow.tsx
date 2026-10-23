@@ -16,6 +16,11 @@ const PILL: Record<Severity, { text: string; className: string }> = {
   nit: { text: "P3", className: "bg-p3 text-p3-ink" },
 };
 
+export function SeverityPill({ severity }: { severity: Severity }) {
+  const pill = PILL[severity];
+  return <span data-pill className={`px-1.5 py-[3px] font-mono text-[11px] font-semibold leading-none ${pill.className}`}>{pill.text}</span>;
+}
+
 const lastTwo = (path: string) => path.split("/").filter(Boolean).slice(-2).join("/");
 
 const steeredFate = (ticket: string): RowFate => ({
@@ -83,7 +88,6 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
   const [open, setOpen] = useState(false);
   const { busy, done, press } = useRowAction(row.action, row.fate.line);
   const body = useId();
-  const pill = row.severity == null ? null : PILL[row.severity];
   const fate = done ?? row.fate;
   return (
     <li data-finding-row className="border-b border-rule-2">
@@ -96,7 +100,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
       >
         <span className="text-ink-3"><FoldChevron open={open} /></span>
         <span className="flex w-24 shrink-0 gap-1">
-          {pill && <span data-pill className={`px-1.5 py-[3px] font-mono text-[11px] font-semibold leading-none ${pill.className}`}>{pill.text}</span>}
+          {row.severity != null && <SeverityPill severity={row.severity} />}
           {row.tag && (
             <span
               data-tag

@@ -74,7 +74,7 @@ export function findingParts(message: string): FindingParts {
   let title: string | null = null;
   const bold = BOLD_LEAD_RE.exec(text);
   if (bold) {
-    title = bold[1]!.trim();
+    title = bold[1]!.trim().replace(SEVERITY_MARK_RE, "");
     text = text.slice(bold[0].length);
   }
   let body = text.replace(LINK_RE, (link, target) => (URL_TARGET_RE.test(String(target)) ? link : " "));

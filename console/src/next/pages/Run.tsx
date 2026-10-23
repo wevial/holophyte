@@ -165,7 +165,7 @@ export function RunPage() {
               )}
             </h2>
             <PhaseBar detail={page.detail} now={page.now} />
-            <RunActivity key={`${page.base}/${run.id}`} activity={page.activity} needsYou={page.needsYou} />
+            <RunActivity key={`${page.base}/${run.id}`} activity={page.activity} needsYou={page.needsYou} detail={page.detail} base={page.base} project={project} />
             <RawLog key={`raw ${page.base}/${run.id}`} run={run.id} lines={page.progress} />
           </section>
           <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />

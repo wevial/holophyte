@@ -1,6 +1,11 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import type { RoundCriterion, RoundFinding, RunDetail } from "../../lib/contract.gen";
+import { findingsHistory, severityOf, type Fate } from "../../lib/findings";
 import { formatClock, formatSpan } from "../../lib/format";
-import type { ActivityGroup, ActivityNow, ActivityStep, ActivityTone, RunActivity as Activity } from "../activity";
+import { criteriaGrid, type ActivityGroup, type ActivityNow, type ActivityStep, type ActivityTone, type RunActivity as Activity } from "../activity";
+import { ActivityFinding } from "./ActivityFinding";
+import { CriteriaGrid } from "./CriteriaGrid";
+import { EndCard } from "./EndCard";
 import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
 
@@ -55,9 +60,9 @@ function StepText({ step }: { step: ActivityStep }) {
   );
 }
 
-function Steps({ id, steps }: { id: string; steps: ActivityStep[] }) {
+function Steps({ steps }: { steps: ActivityStep[] }) {
   return (
-    <ol id={id} className="m-0 list-none p-0 pb-3">
+    <ol className="m-0 list-none p-0 pb-3">
       {steps.map((step, index) => (
         <li key={`${step.at}:${index}`} data-step className={`${ROW} !items-baseline py-1`}>
           <time dateTime={new Date(step.at).toISOString()} className="font-mono text-[13px] text-ink-3">
@@ -72,12 +77,29 @@ function Steps({ id, steps }: { id: string; steps: ActivityStep[] }) {
   );
 }
 
+const MARK: Record<Exclude<RoundCriterion["status"], "met">, { glyph: string; word: string; tone: string }> = {
+  not_met: { glyph: "✕", word: "not met", tone: "text-bad" },
+  unwitnessed: { glyph: "?", word: "unwitnessed", tone: "text-ask-ink" },
+};
+
+function Mark({ criterion }: { criterion: RoundCriterion }) {
+  if (criterion.status === "met") return null;
+  const mark = MARK[criterion.status];
+  return (
+    <span data-mark={criterion.status} className={`ml-3 inline-flex items-baseline gap-1.5 whitespace-nowrap font-semibold ${mark.tone}`}>
+      <span aria-hidden="true">{mark.glyph}</span>
+      {`${criterion.id} ${mark.word}`}
+    </span>
+  );
+}
+
 function Heading({ group, end }: { group: ActivityGroup; end: ReactNode }) {
   return (
     <>
       <span data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
         <b className="font-semibold text-ink">{group.title}</b>
         {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
+        {group.kind === "round" && group.marks.map((criterion) => <Mark key={criterion.id} criterion={criterion} />)}
       </span>
       <span data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
         {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
@@ -89,9 +111,34 @@ function Heading({ group, end }: { group: ActivityGroup; end: ReactNode }) {
 
 type Line = keyof typeof CONNECTOR | "none";
 
-function Group({ group, open, onToggle, line }: { group: ActivityGroup; open: boolean; onToggle: () => void; line: Line }) {
+const LISTS_FINDINGS = new Set<ActivityGroup["kind"]>(["round", "final", "threads"]);
+const RANK = { must: 0, should: 1, nit: 2 };
+
+function groupFindings(group: ActivityGroup): RoundFinding[] {
+  if (group.round == null || !LISTS_FINDINGS.has(group.kind)) return [];
+  return [...group.round.findings].sort((a, b) => RANK[severityOf(a)] - RANK[severityOf(b)]);
+}
+
+function Findings({ findings, fates }: { findings: RoundFinding[]; fates: Map<RoundFinding, Fate> }) {
+  return (
+    <ul data-findings className="m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:ml-[92px]">
+      {findings.map((finding, index) => <ActivityFinding key={index} finding={finding} fate={fates.get(finding) ?? null} />)}
+    </ul>
+  );
+}
+
+interface GroupProps {
+  group: ActivityGroup;
+  open: boolean;
+  onToggle: () => void;
+  line: Line;
+  fates: Map<RoundFinding, Fate>;
+}
+
+function Group({ group, open, onToggle, line, fates }: GroupProps) {
   const stepsId = useId();
-  const folds = !group.running && group.steps.length > 0;
+  const findings = groupFindings(group);
+  const folds = !group.running && (group.steps.length > 0 || findings.length > 0);
   return (
     <li data-group={group.kind} data-running={group.running ? "" : undefined} className="relative border-b border-rule-2">
       {line !== "none" && <span aria-hidden="true" className="absolute left-[76px] w-px bg-rule max-[720px]:left-[66px]" style={CONNECTOR[line]} />}
@@ -116,7 +163,12 @@ function Group({ group, open, onToggle, line }: { group: ActivityGroup; open: bo
           </div>
         )}
       </div>
-      {group.steps.length > 0 && (group.running || open) && <Steps id={stepsId} steps={group.steps} />}
+      {(group.running || open) && (
+        <div id={stepsId}>
+          {group.steps.length > 0 && <Steps steps={group.steps} />}
+          {findings.length > 0 && <Findings findings={findings} fates={fates} />}
+        </div>
+      )}
     </li>
   );
 }
@@ -148,11 +200,26 @@ function NowBar({ now, needsYou }: { now: ActivityNow; needsYou: boolean }) {
   );
 }
 
-/** The run's timeline: a live run's Now bar, then one row per group, each
- *  folding open to its steps. A reader's fold choice holds across polls;
- *  a group seen for the first time opens when it is the last, gone wrong,
- *  acting, or the first with marks. */
-export function RunActivity({ activity, needsYou }: { activity: Activity; needsYou: boolean }) {
+/** What became of each review finding: a later review round that no longer raises it reads fixed. */
+function reviewFates(groups: ActivityGroup[]): Map<RoundFinding, Fate> {
+  const rounds = groups.flatMap((group) => (group.round != null && (group.kind === "round" || group.kind === "final") ? [group.round] : []));
+  return new Map(findingsHistory(rounds, []).flatMap((round) => round.findings.map((each) => [each.finding as RoundFinding, each.fate] as const)));
+}
+
+interface RunActivityProps {
+  activity: Activity;
+  needsYou: boolean;
+  detail: RunDetail;
+  base: string;
+  project: string;
+}
+
+/** The run's timeline: a live run's Now bar or an ended run's end card,
+ *  the criteria by round, then one row per group, each folding open to its
+ *  steps and findings. A reader's fold choice holds across polls; a group
+ *  seen for the first time opens when it is the last, gone wrong, acting,
+ *  or the first with marks. */
+export function RunActivity({ activity, needsYou, detail, base, project }: RunActivityProps) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const firstSeen = useRef(new Map<string, boolean>());
   const { groups } = activity;
@@ -160,15 +227,19 @@ export function RunActivity({ activity, needsYou }: { activity: Activity; needsY
     const key = groupKey(group);
     if (!firstSeen.current.has(key)) firstSeen.current.set(key, openAtFirst(group, index, groups));
   });
+  const grid = useMemo(() => criteriaGrid(detail), [detail]);
+  const fates = useMemo(() => reviewFates(groups), [groups]);
   const lineOf = (index: number): Line => (groups.length < 2 ? "none" : index === 0 ? "first" : index === groups.length - 1 ? "last" : "middle");
   return (
     <>
       {activity.now != null && <NowBar now={activity.now} needsYou={needsYou} />}
+      {detail.run.outcome != null && <EndCard detail={detail} activity={activity} base={base} project={project} />}
+      {grid != null && <CriteriaGrid grid={grid} />}
       <ol aria-label="Run activity" className="m-0 mt-3 list-none border-t border-rule-2 p-0">
         {groups.map((group, index) => {
           const key = groupKey(group);
           const open = chosen[key] ?? firstSeen.current.get(key) ?? false;
-          return <Group key={key} group={group} open={open} line={lineOf(index)} onToggle={() => setChosen((was) => ({ ...was, [key]: !open }))} />;
+          return <Group key={key} group={group} open={open} line={lineOf(index)} fates={fates} onToggle={() => setChosen((was) => ({ ...was, [key]: !open }))} />;
         })}
       </ol>
     </>
