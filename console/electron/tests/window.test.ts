@@ -21,7 +21,6 @@ describe("windowOptions", () => {
     expect(options).toMatchObject(shared);
     expect(options.titleBarStyle).toBe("hiddenInset");
     expect(options.trafficLightPosition).toEqual({ x: expect.any(Number), y: expect.any(Number) });
-    expect(options.backgroundColor).toBe("#0d0a15");
     expect(options.backgroundColor).toBe(darkCanvas);
   });
 
