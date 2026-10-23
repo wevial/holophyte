@@ -7,7 +7,7 @@ import store
 import store.read
 from holophyte import failure_reason
 from holophyte.agents.fallback import failure_line
-from holophyte.agents.review_workspace import review_refs
+from holophyte.agents.review_workspace import review_base, review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import verify_config
@@ -86,6 +86,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            verify_cmd, contracts, cap, criteria=(), resume=None,
                            review_round=None):
     """No fix round follows: anything but PASS preserves the branch and stops."""
+    base_sha = review_base(wt, base_sha, sha)
     criteria = numbered(conn, run_id, criteria)
     claimed, verify_cmd = verify_cmd, adopted_verify(conn, run_id, verify_cmd)
     pending = resume if resume and resume.get("terminal") else {}

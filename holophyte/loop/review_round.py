@@ -8,7 +8,7 @@ import store.read
 import ticket_template
 from holophyte import failure_reason, leak_guard
 from holophyte.agents.fix_session import steer_turn
-from holophyte.agents.review_workspace import review_refs
+from holophyte.agents.review_workspace import review_base, review_refs
 from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
@@ -154,6 +154,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
             leaks=(), witness=""):
+    base_sha = review_base(wt, base_sha, sha)
     criteria = numbered(conn, run_id, criteria)
     round_started = int(time() * 1000)
     scope = scope_files(wt, ticket, base_sha, sha)
