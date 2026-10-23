@@ -66,10 +66,16 @@ class MergeModeBabysitThreadsTests(MentionAccountCases, TriageMentionCases,
         self.no_commit_thread_answers("secret")
 
     def test_no_commit_review_fix_without_threads_parks_with_its_answer(self):
-        phase, outcome, _, park = self.no_commit_review_fix("nothing asks for a change")
-        self.assertEqual((phase, outcome, park),
-                         ("awaiting_merge_approval", None, "fix_declined"))
+        self.resume_rejected_fix()
+        tip = self.git("rev-parse", BRANCH).strip()
+        self.loop(REQUEST_CHANGES, Idle("nothing asks for a change"),
+                  provider=self.provider())
+        self.assertEqual(self.read("SELECT phase, outcome, parkKind FROM runs"
+                                   " ORDER BY id DESC LIMIT 1"),
+                         [("awaiting_merge_approval", None, "pull_request")])
         self.assertIn("nothing asks for a change", self.question())
+        self.assertNotIn("instruction needed", self.question())
+        self.assertEqual(self.git("rev-parse", BRANCH).strip(), tip)
 
     def test_a_no_commit_fix_turn_that_returned_nothing_fails(self):
         phase, outcome, reason, _ = self.no_commit_review_fix("")

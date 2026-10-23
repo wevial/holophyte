@@ -142,6 +142,10 @@ def last_independent_verdict(conn, ticket_id):
 
 
 def babysit_note(conn, run_id):
+    if conn.execute("SELECT 1 FROM runEvents WHERE runId = ? AND kind IN"
+                    " ('ci_wake', 'conflict_wake') LIMIT 1",
+                    (run_id,)).fetchone():
+        return ""
     row = conn.execute(
         "SELECT e.summary FROM interventions i JOIN runEvents e"
         " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
