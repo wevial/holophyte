@@ -125,7 +125,7 @@ afterEach(() => {
 test("a merged run's Progress opens on its implement, verify, review and merge segments, none running, over the totals", async () => {
   await mount(runFetch(mergedDetail, false), at(17, 30));
   expect(progress().contains(bar())).toBe(true);
-  expect(bar().compareDocumentPosition(progress().querySelector("ol[aria-live]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(bar().compareDocumentPosition(progress().querySelector("ol[aria-label=\"Run activity\"]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(segments().map((item) => item.getAttribute("data-segment"))).toEqual(["implement", "verify", "review", "merge"]);
   expect(names()).toEqual(["implement 14m 00s", "verify 2m 00s", "Review · Round 1 8m 00s", "merge 2m 00s"]);
   expect(segments().filter((item) => item.hasAttribute("data-running"))).toEqual([]);

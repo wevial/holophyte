@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { RunAsks, RunDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -66,7 +66,16 @@ async function mount(fetch: Fetch) {
 }
 
 const section = () => screen.getByRole("region", { name: "Progress" });
-const items = () => Array.from(section().querySelectorAll("ol[aria-live] > li"));
+const rawLog = () => screen.getByRole("dialog", { name: "Raw log · run 12" });
+const items = () => Array.from(rawLog().querySelectorAll("ol[aria-live] > li"));
+
+/** Mounts run 12's page and opens its Raw log panel, where the lines are. */
+async function mountLog(fetch: Fetch) {
+  const queries = await mount(fetch);
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Raw log/ })));
+  return queries;
+}
+
 const line = (li: Element) => ({
   time: li.querySelector("time")!.textContent,
   kind: li.getAttribute("data-kind"),
@@ -88,7 +97,7 @@ afterEach(() => {
 });
 
 test("a changes-requested round lists its must-fix finding and is followed by the loop back to implement", async () => {
-  await mount(progressFetch({ detail: { ...liveDetail, steer_notes: [] }, asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: { ...liveDetail, steer_notes: [] }, asks: { ...asks, asks: [] } }));
   expect(items().map(line)).toEqual([
     { time: "16:36", kind: "event", text: "Run started · implementing", sub: [] },
     {
@@ -102,7 +111,7 @@ test("a changes-requested round lists its must-fix finding and is followed by th
 });
 
 test("steers and asks sit in time order among the events, each with what came of it", async () => {
-  await mount(progressFetch({ detail: liveDetail, asks }));
+  await mountLog(progressFetch({ detail: liveDetail, asks }));
   expect(items().map((li) => `${line(li).time} ${line(li).text}${line(li).sub.map((sub) => ` | ${sub}`).join("")}`)).toEqual([
     "16:36 Run started · implementing",
     "16:40 You steered: don't add a new flag; reuse --act | → the agent read it at 16:41",
@@ -117,14 +126,14 @@ test("a note an earlier run of the chain read is not in this run's Progress, whi
   const steer_notes: RunDetail["steer_notes"] = [
     { ...note, id: 5, run: 11, kind: "amendment", note: "keep the sweep idempotent", at: at(16, 0), consumed_by: 11, consumed_ms: at(16, 5) },
   ];
-  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
-  expect(section().textContent).not.toContain("keep the sweep idempotent");
+  await mountLog(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  expect(rawLog().textContent).not.toContain("keep the sweep idempotent");
   expect(line(items()[0]!).text).toBe("Run started · implementing");
 });
 
 test("a note no run has read yet, made before this run started, is listed as waiting", async () => {
   const steer_notes: RunDetail["steer_notes"] = [{ ...note, id: 6, kind: "hint", note: "the sweep runs hourly", at: at(16, 30) }];
-  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
   expect(line(items()[0]!)).toEqual({
     time: "16:30", kind: "steer", text: "You hinted: the sweep runs hourly", sub: ["→ waiting until the agent reads it"],
   });
@@ -135,7 +144,7 @@ test("a steer line names the operator for a note the maintainer did not write, a
     { ...note, author: "operator", kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 40) },
     { ...note, id: 2, kind: "hint", note: "the test lives in test_sweep", at: at(16, 50) },
   ];
-  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
   expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
     "operator steered: don't add a new flag; reuse --act",
     "You hinted: the test lives in test_sweep",
@@ -147,7 +156,7 @@ test("a steer line reads operator, not the login name, for a note recorded under
     { ...note, author: "seat-login", kind: "hint", note: "the test lives in test_sweep", at: at(16, 40) },
     { ...note, id: 2, kind: "amendment", note: "don't add a new flag; reuse --act", at: at(16, 50) },
   ];
-  await mount(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: { ...liveDetail, steer_notes }, asks: { ...asks, asks: [] } }));
   expect(items().filter((li) => li.getAttribute("data-kind") === "steer").map((li) => line(li).text)).toEqual([
     "operator hinted: the test lives in test_sweep",
     "You steered: don't add a new flag; reuse --act",
@@ -156,15 +165,15 @@ test("a steer line reads operator, not the login name, for a note recorded under
 
 test("a live run's label says live and only a line a later poll adds is marked new", async () => {
   const bodies = { detail: liveDetail, asks };
-  const queries = await mount(progressFetch(bodies));
+  const queries = await mountLog(progressFetch(bodies));
   expect(section().querySelector("h2")!.textContent).toBe("Progresslive");
-  expect(section().querySelectorAll("[data-new]")).toHaveLength(0);
+  expect(rawLog().querySelectorAll("[data-new]")).toHaveLength(0);
   bodies.detail = { ...liveDetail, events: [...liveDetail.events, { at: at(16, 52), kind: "phase_change", summary: "addressing -> verifying" }] };
   await act(async () => {
     await queries.refetchQueries();
   });
   for (let round = 0; round < 3; round += 1) await act(settle);
-  const fresh = Array.from(section().querySelectorAll("[data-new]"), (li) => li.querySelector("[data-line-text]")!.textContent);
+  const fresh = Array.from(rawLog().querySelectorAll("[data-new]"), (li) => li.querySelector("[data-line-text]")!.textContent);
   expect(fresh).toEqual(["Fix applied · verifying"]);
 });
 
@@ -175,7 +184,7 @@ test("an ended run shows no live mark and its last line names its outcome, past 
     steer_notes: [...liveDetail.steer_notes, { ...note, id: 4, kind: "amendment", note: "for the retry: keep --act", at: at(17, 0) }],
   };
   const later = { ...asks.asks[0]!, id: 5, question: "is the retry green?", asked_ms: at(17, 2), answered_ms: null, answer: null };
-  await mount(progressFetch({ detail: failed, asks: { ...asks, asks: [...asks.asks, later] } }));
+  await mountLog(progressFetch({ detail: failed, asks: { ...asks, asks: [...asks.asks, later] } }));
   expect(section().querySelector("[data-live]")).toBeNull();
   expect(section().querySelector("h2")!.textContent).toBe("Progress");
   expect(line(items().at(-1)!)).toEqual({ time: "16:55", kind: "failure", text: "Failed at verify: 2 tests red", sub: [] });
@@ -191,7 +200,7 @@ test("a passing round reads passed, and a note withdrawn after the agent read it
       { ...liveDetail.steer_notes[1]!, withdrawn: true },
     ],
   };
-  await mount(progressFetch({ detail: passed, asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: passed, asks: { ...asks, asks: [] } }));
   expect(items().map((li) => `${line(li).time} ${line(li).text}${line(li).sub.map((sub) => ` | ${sub}`).join("")}`)).toEqual([
     "16:36 Run started · implementing",
     "16:40 You steered: don't add a new flag; reuse --act | → the agent read it at 16:41",
@@ -222,7 +231,7 @@ function adjudicated(last: Partial<RunDetail["rounds"][number]>): RunDetail {
 }
 
 test("the terminal adjudication after the last review round reads as the final check, not a review round past the cap", async () => {
-  await mount(progressFetch({ detail: adjudicated({ verdict: "pass", findings: [] }), asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: adjudicated({ verdict: "pass", findings: [] }), asks: { ...asks, asks: [] } }));
   const texts = items().map((li) => `${line(li).time} ${line(li).text}`);
   expect(texts).toEqual([
     "16:36 Run started · implementing",
@@ -237,7 +246,7 @@ test("the terminal adjudication after the last review round reads as the final c
 
 test("a final check that requests changes reads failed, with its finding as the sub-line", async () => {
   const blocker = { ...finding, message: "the sweep skips expired leases", line: 88 };
-  await mount(progressFetch({ detail: adjudicated({ verdict: "changes_requested", findings: [blocker] }), asks: { ...asks, asks: [] } }));
+  await mountLog(progressFetch({ detail: adjudicated({ verdict: "changes_requested", findings: [blocker] }), asks: { ...asks, asks: [] } }));
   expect(items().map(line).filter((li) => li.kind === "round").at(-1)).toEqual({
     time: "16:53",
     kind: "round",
