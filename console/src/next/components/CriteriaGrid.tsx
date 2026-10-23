@@ -74,7 +74,7 @@ export function CriteriaGrid({ grid }: { grid: Grid }) {
           <tbody>
             {grid.rows.map((row, index) => (
               <tr key={row.id}>
-                <th scope="row" className={`${EDGE} bg-paper-2 px-3 text-left font-medium text-ink-2`}>{row.id}</th>
+                <th scope="row" className={`${EDGE} px-3 text-left font-medium text-ink-2`}>{row.id}</th>
                 {row.cells.map((cell, column) => (
                   <Cell key={grid.columns[column]!.label} cell={cell} failed={grid.columns[column]!.failed} last={index === grid.rows.length - 1} />
                 ))}
