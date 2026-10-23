@@ -60,10 +60,6 @@ class PullRequestScenario(MergeModeFixture):
         return self.recorded(), self.api_calls(), heads(started, "gh", "api")
 
 
-class Fresh(LoopFixture):
-    """A `LoopFixture` set up and torn down by the test that holds it."""
-
-
 def fixture(case, kind):
     made = kind()
     made.setUp()
@@ -91,8 +87,8 @@ class TemplateRepositoryTests(unittest.TestCase):
     def test_two_setups_start_no_git_and_share_only_the_base(self):
         template_repo()
         with spawns() as started:
-            first = fixture(self, Fresh)
-            second = fixture(self, Fresh)
+            first = fixture(self, LoopFixture)
+            second = fixture(self, LoopFixture)
 
         self.assertEqual(heads(started, "git"), [])
         self.assertEqual(first.base, second.base)
