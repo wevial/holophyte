@@ -206,6 +206,7 @@ def parse_args(argv):
 def chosen_modules(args, tests):
     """The modules to run in run order, or None after naming the problem."""
     modules = sorted(tests.glob("test_*.py"))
+    times = recorded_times(tests, modules)
     if args.modules:
         modules, unmatched = select(modules, args.modules)
         if unmatched:
@@ -216,7 +217,6 @@ def chosen_modules(args, tests):
     if not modules:
         print(f"no test_*.py module found in {tests}", flush=True)
         return None
-    times = recorded_times(tests, modules)
     if args.shard:
         modules = shard_of(modules, times, *args.shard)
         if not modules and not args.list:
