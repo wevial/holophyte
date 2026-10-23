@@ -74,6 +74,9 @@ test("review lists the old and new TOML lines in order and Keep editing preserve
   expect(confirm.getByText("Save · holophyte")).toBeTruthy();
   expect(confirm.getByText("These lines change in config.toml on writer-host.")).toBeTruthy();
   expect(dialog().textContent).toMatch(/\[loop\].*− workers = 2.*\+ workers = 3/);
+  const removed = within(dialog()).getByText("− workers = 2", { exact: false });
+  expect(removed.classList.contains("bg-bad-wash")).toBe(true);
+  expect(removed.classList.contains("text-bad-text")).toBe(true);
   expect(confirm.getByText("Applies at the next loop start.")).toBeTruthy();
   expect(confirm.getByText("Runs in flight keep the settings they started with.")).toBeTruthy();
   fireEvent.click(confirm.getByRole("button", { name: "Keep editing" }));

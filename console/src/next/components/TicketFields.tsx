@@ -8,7 +8,7 @@ import { Btn } from "./Btn";
 import { TONE_TEXT } from "./StateDot";
 import type { Tone } from "../state";
 
-export const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-act";
+export const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-focus";
 /** The 2 px bar and wash of a field whose text differs from the revision the page loaded. */
 export const CHANGED = "border-l-2 border-l-act bg-act-wash";
 type Message = { text: string; error: boolean; field: string };
@@ -67,7 +67,7 @@ const fieldId = (field: string) => field.startsWith("AC") ? `criterion-${Number(
 export function Messages({ id, messages }: { id: string; messages: Message[] }) {
   if (!messages.length) return null;
   return <ul id={id} className="mt-2 space-y-1 font-mono text-[12px] [overflow-wrap:anywhere]">
-    {messages.map((message, index) => <li key={index} className={message.error ? "text-bad" : "text-ask"}>
+    {messages.map((message, index) => <li key={index} className={message.error ? "text-bad" : "text-ask-ink"}>
       <span aria-hidden="true" className="mr-1.5">{message.error ? "×" : "!"}</span>{message.text}
     </li>)}
   </ul>;
@@ -261,12 +261,12 @@ export function CheckerPanel({ summary, marks }: { summary: { text: string; tone
     <p aria-live="polite" className={`mt-3 font-mono text-[13px] [overflow-wrap:anywhere] ${TONE_TEXT[summary.tone]}`}>{summary.text}</p>
     {messages.length > 0 && <ul aria-label="Checker messages" className="mt-3 space-y-1">{messages.map((message, index) => {
       const row = <>
-        <span aria-hidden="true" className={`mr-1.5 ${message.error ? "text-bad" : "text-ask"}`}>{message.error ? "×" : "!"}</span>
+        <span aria-hidden="true" className={`mr-1.5 ${message.error ? "text-bad" : "text-ask-ink"}`}>{message.error ? "×" : "!"}</span>
         <span className="mr-1.5 font-mono text-[12px] font-semibold text-ink">{message.field}</span>
         <span className="text-[13px] text-ink-2">{message.text}</span>
       </>;
       return <li key={index} className="[overflow-wrap:anywhere]">{message.field === WHOLE_TICKET ? <div className="py-1">{row}</div> :
-        <button type="button" className="w-full py-1 text-left hover:bg-canvas focus:outline-act" onClick={() => document.getElementById(fieldId(message.field))?.focus()}>{row}</button>}</li>;
+        <button type="button" className="w-full py-1 text-left hover:bg-canvas focus:outline-focus" onClick={() => document.getElementById(fieldId(message.field))?.focus()}>{row}</button>}</li>;
     })}</ul>}
   </section>;
 }

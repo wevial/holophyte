@@ -30,3 +30,18 @@ export function tokensUnder(decls: Declaration[], selector: string, wrapper?: st
   if (names.length === 0) throw new Error(`theme.css has no ${wrapper ? `${wrapper} ` : ""}${selector} rule`);
   return [...new Set(names)].sort();
 }
+
+export function resolveToken(decls: Declaration[], path: string[], name: string): string {
+  const key = path.join(" ");
+  const seen = new Set<string>();
+  let current = name;
+  for (;;) {
+    if (seen.has(current)) throw new Error(`theme.css has a var() cycle through ${current} under ${key}`);
+    seen.add(current);
+    const value = decls.find((d) => d.name === current && d.path.join(" ") === key)?.value;
+    if (value === undefined) throw new Error(`theme.css declares no ${current} under ${key}`);
+    const reference = /^var\((--[a-z0-9-]+)\)$/.exec(value);
+    if (!reference) return value;
+    current = reference[1]!;
+  }
+}

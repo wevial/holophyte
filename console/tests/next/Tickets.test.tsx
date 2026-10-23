@@ -219,7 +219,7 @@ test("each card's line says what its ticket waits on, why it failed, how long it
     "failed · verify failed", "question open 8h 02m", "stale · no beat 15m",
   ]);
   const glyphs = ["DEMO-8", "DEMO-11", "DEMO-4", "DEMO-6"].map((key) => [glyphOf(key).getAttribute("data-state"), toneOf(glyphOf(key))]);
-  expect(glyphs).toEqual([["on_ci", "text-wait"], ["failed", "text-bad"], ["question", "text-ask"], ["stale", "text-need"]]);
+  expect(glyphs).toEqual([["on_ci", "text-wait"], ["failed", "text-bad"], ["question", "text-ask-ink"], ["stale", "text-need"]]);
   expect(glyphOf("DEMO-8").querySelector(".state-march")).not.toBeNull();
 });
 

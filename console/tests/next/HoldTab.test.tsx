@@ -46,6 +46,9 @@ afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); se
 test("the Hold settings route shows admission, worker capacity and newest-first history with actor names", async () => {
   const view = await mount();
   expect(screen.getAllByText("Taking work").length).toBeGreaterThan(0);
+  const taking = screen.getByRole("button", { name: "Taking work" });
+  expect(taking.classList.contains("bg-live-wash")).toBe(true);
+  expect(taking.classList.contains("text-ok-ink")).toBe(true);
   expect(screen.getByText("Claims Ready tickets as its 2 workers free up.")).toBeTruthy();
   expect(screen.getByRole("group", { name: "Admission" })).toBeTruthy();
   expect(view.container.textContent).toMatch(/History.*Oct 9 18:02.*released.*Schema bump is out; back to normal\..*· you.*Oct 9 13:40.*held.*Holding for the schema bump\..*· the supervisor/);

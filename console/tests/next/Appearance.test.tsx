@@ -5,7 +5,7 @@ import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import type { Status } from "../../src/lib/types";
 import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
-import { declarations } from "../cssTokens";
+import { declarations, resolveToken } from "../cssTokens";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -124,4 +124,19 @@ test("font attributes select the promised reading stacks", async () => {
   const font = (selector: string) => css.find((entry) => entry.path.length === 1 && entry.path[0] === selector && entry.name === "--font-read")?.value;
   expect(font(':root[data-font="serif"]')).toBe('"IBM Plex Serif", Georgia, serif');
   expect(font(':root[data-font="hyperlegible"]')).toBe('"Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif');
+});
+
+test("the theme cards show the theme file's canvas, paper and action colours, Night reading deep violet", async () => {
+  const css = declarations(await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text());
+  const trio = (path: string[]) => ["--canvas", "--paper", "--act"].map((name) => resolveToken(css, path, name));
+  const night = trio([':root[data-theme="dark"]']);
+  const dawn = trio([":root"]);
+  await mount();
+  const card = (name: string) => radio("Theme", name).closest("label")!;
+  const swatches = (name: string) => Array.from(card(name).querySelectorAll<HTMLElement>("[aria-hidden] > span"), (span) => span.style.backgroundColor);
+  expect(swatches("Night")).toEqual(night);
+  expect(swatches("Dawn")).toEqual(dawn);
+  expect(swatches("System")).toEqual([night[0], dawn[0], night[1], dawn[1], night[2], dawn[2]]);
+  expect(card("Night").textContent).toContain("deep violet, pink for you");
+  expect(screen.getByRole("radiogroup", { name: "Theme" }).textContent).not.toContain("deep blue");
 });

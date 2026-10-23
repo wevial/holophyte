@@ -74,10 +74,10 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
   const error = current.error?.replace(/^\[holo2\]\s+.*?:\s*/, "");
   return <div className="mt-6 min-w-0">
     {fieldChanges > 0 && <p className="mb-4 font-mono text-[12px] text-ink-3">Save or discard the {fieldChanges} field {fieldChanges === 1 ? "change" : "changes"} before editing the raw file.</p>}
-    <div data-toml-scroller="" style={{ scrollPadding: `12px 0 12px calc(${gutterWidth} + 12px)` }} className="h-[360px] min-w-0 overflow-auto border border-rule bg-paper-2 font-mono text-[13px] focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-act">
+    <div data-toml-scroller="" style={{ scrollPadding: `12px 0 12px calc(${gutterWidth} + 12px)` }} className="h-[360px] min-w-0 overflow-auto border border-rule bg-paper-2 font-mono text-[13px] focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-focus">
       <div className="flex min-h-full w-max min-w-full">
         <div aria-hidden="true" style={{ width: gutterWidth }} className="sticky left-0 z-10 shrink-0 border-r border-rule bg-paper-2 py-3 text-right font-mono text-[13px] leading-5 text-ink-3">
-          {lines.map((_, index) => <div key={index} data-line={index + 1} data-refused={current.line === index + 1 ? "true" : undefined} className={`h-5 px-3 ${current.line === index + 1 ? "bg-bad-wash text-bad" : ""}`}>
+          {lines.map((_, index) => <div key={index} data-line={index + 1} data-refused={current.line === index + 1 ? "true" : undefined} className={`h-5 px-3 ${current.line === index + 1 ? "bg-bad-wash text-bad-text" : ""}`}>
             <span className="mr-1 inline-block w-1.5">{current.line === index + 1 ? "▪" : ""}</span>{index + 1}
           </div>)}
         </div>

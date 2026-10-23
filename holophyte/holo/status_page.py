@@ -210,6 +210,12 @@ def running_rows(who, status):
             text += f" · steer {run['steer_pending']} pending"
         if run["run"] == merging:
             text += " · merge lock"
+        if run.get("step"):
+            text += f" · {run['step']}"
+        if run.get("stop_action") == "pause":
+            text += " · pausing after this turn"
+        elif (run.get("stop_action") or "").startswith("abort"):
+            text += " · aborting"
         rows.append(Row(">", who, run["ticket"] or "", text))
     if merging is not None and merging not in [run["run"] for run in status["live"]]:
         rows.append(Row(">", who, "merge lock", f"run {merging}"))

@@ -171,7 +171,7 @@ export function FoldChevron({ open }: { open: boolean }) {
 /** A readiness fact: a check when it holds, a warning when it does not. */
 export function FactIcon({ ok }: { ok: boolean }) {
   return (
-    <Stroke className={ok ? "text-live" : "text-ask"}>
+    <Stroke className={ok ? "text-live" : "text-ask-ink"}>
       <circle cx="8" cy="8" r="6.5" />
       <path d={ok ? "M5 8.3 7.1 10.4 11 6.2" : "M8 4.8v3.6M8 11.1v.1"} />
     </Stroke>

@@ -47,7 +47,7 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       data-need={need ? "" : undefined}
       className={`${GRID} relative border-b border-rule-2 p-3 text-[14px] transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
-      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`}>
+      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
         {row.id}
       </RunRowLink>
       <span className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3 [overflow-wrap:anywhere]">

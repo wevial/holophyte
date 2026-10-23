@@ -8,6 +8,7 @@ import unittest
 import holophyte.serve.views
 import store
 import store.tickets
+from holophyte.babysit.babysit_steps import record_step
 from holophyte.config.project import Project
 from tests.phase_fixture import park_run
 from tests.serve_fixture import ServeTestCase
@@ -113,6 +114,25 @@ class PullRequestFactsTests(ServeTestCase):
                           in ("pr_url", "pr", "woke_ms")], [None, None, None])
         self.assertEqual((runs[retried]["pr_url"], runs[retried]["woke_ms"]),
                          (PULL.format(10), None))
+
+    def test_a_check_fix_round_serves_its_step_and_a_run_without_none(self):
+        fixing = self.claim(self.ticket(11))
+        idle = self.claim(self.ticket(12))
+        for run in (fixing, idle):
+            for phase in ("working", "verifying", "reviewing", "merge_gate"):
+                store.set_phase(self.conn, run, phase, now=NOW - 10_000)
+        record_step(self.conn, fixing, "checks")
+        store.record_event(
+            self.conn, fixing, "check_fix_round",
+            "check fix round 1 of 2 on https://example.invalid/org/repo/pull/9:"
+            " vitest; failing: 1 test red")
+        record_step(self.conn, fixing, "fix")
+        code, body = holophyte.serve.views.status(
+            Project.locate(self.target), now=NOW)
+        self.assertEqual(code, 200)
+        runs = {run["id"]: run for run in body["runs"]}
+        self.assertEqual(runs[fixing]["step"], "fixing checks (round 1 of 2)")
+        self.assertIsNone(runs[idle]["step"])
 
 
 if __name__ == "__main__":

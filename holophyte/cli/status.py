@@ -4,6 +4,7 @@ from collections import Counter
 from time import time
 
 import store.read
+from holophyte.babysit.babysit_steps import running_step
 from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.host.supervisor_lock import (
     pid_alive,
@@ -12,6 +13,7 @@ from holophyte.host.supervisor_lock import (
 )
 from holophyte.loop.claim_store import store_mode
 from holophyte.loop.gates import merge_lock_path, read_merge_lock
+from holophyte.loop.stop import pending_requests
 from holophyte.serve.console_build import console_state
 from holophyte.serve.serve_runs import json_host
 from holophyte.serve.server import CONSOLE_DIR
@@ -27,6 +29,7 @@ def snapshot(target, conn, now=None):
                       and note.withdrawn_by is None)
     projects = conn.execute(
         "SELECT repoPath, admission, holdNote FROM projects ORDER BY id")
+    stops = pending_requests(conn)
     return {
         "target": str(target.path),
         "schema_version": conn.execute("PRAGMA user_version").fetchone()[0],
@@ -36,7 +39,10 @@ def snapshot(target, conn, now=None):
         "live": [{"run": run.id, "ticket": run.linearIdentifier,
                   "phase": run.phase, "worker": json_host(target, run.host),
                   "heartbeat_age_s": (now - run.lastHeartbeat) // 1000,
-                  "steer_pending": pending.get(run.linearIdentifier, 0)}
+                  "steer_pending": pending.get(run.linearIdentifier, 0),
+                  "stop_action": stops.get(run.id, (None, None))[0],
+                  "step": (running_step(conn, run.id)
+                           if run.phase == "merge_gate" else None)}
                  for run in store.read.live_runs(conn, SWEEPABLE_PHASES)],
         "parked": [{"run": ticket.runId, "ticket": ticket.linearIdentifier,
                     "question": ticket.blockedQuestion}

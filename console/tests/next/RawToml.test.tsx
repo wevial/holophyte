@@ -80,7 +80,7 @@ test("typing is debounced into one check and a refused line blocks Save until a 
   expect(screen.getByText("1 error blocks saving")).toBeTruthy();
   expect(screen.getByText("line 2")).toBeTruthy();
   expect(screen.getByText(SENTENCE)).toBeTruthy();
-  expect(scroller().querySelector('[data-line="2"]')!.className).toContain("text-bad");
+  expect([...scroller().querySelector('[data-line="2"]')!.classList].filter((name) => name.includes("bad"))).toEqual(["bg-bad-wash", "text-bad-text"]);
   expect(screen.getByRole("link", { name: /Raw TOML/ }).textContent).toBe("Raw TOML1");
   expect(saveButton().disabled).toBe(true);
   change(CLEAN);
@@ -194,7 +194,7 @@ test("a save-time refusal closes the confirm and marks the line while preserving
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(editor().value).toBe(CLEAN);
   expect(screen.getByText("line 2")).toBeTruthy();
-  expect(scroller().querySelector('[data-line="2"]')!.className).toContain("text-bad");
+  expect([...scroller().querySelector('[data-line="2"]')!.classList].filter((name) => name.includes("bad"))).toEqual(["bg-bad-wash", "text-bad-text"]);
   expect(saveButton().disabled).toBe(true);
 });
 

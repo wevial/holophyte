@@ -29,7 +29,7 @@ function TokenForm({ address, onStored }: { address: string; onStored: () => voi
           aria-describedby={reason == null ? undefined : `${id}-reason`}
           value={token}
           onChange={(event) => setToken(event.currentTarget.value)}
-          className="min-h-9 border border-ink-3 bg-paper px-2.5 font-mono text-[13px] text-ink focus:outline-2 focus:outline-act focus:-outline-offset-1"
+          className="min-h-9 border border-ink-3 bg-paper px-2.5 font-mono text-[13px] text-ink focus:outline-2 focus:outline-focus focus:-outline-offset-1"
         />
         {reason != null && (
           <span id={`${id}-reason`} className="font-mono text-[12px] text-bad">
