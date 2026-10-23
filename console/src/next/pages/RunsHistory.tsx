@@ -90,7 +90,7 @@ export function RunsHistory() {
   });
   const pick = (next: number) => void navigate({ to: "/runs/history", search: { project, outcome, page: next === 1 ? undefined : next } });
   return (
-    <section aria-labelledby="page-title" className="mx-auto flex max-w-[1320px] flex-col gap-[18px] px-8 py-7 max-[720px]:px-2">
+    <section aria-labelledby="page-title" className="mx-auto flex max-w-[1320px] flex-col gap-[18px] px-8 pt-3.5 pb-7 max-[720px]:px-2">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Runs history</h1>
         <Link to="/runs" search={{ project }} className="self-start font-mono text-[12.5px] text-act underline underline-offset-2">Today and yesterday</Link>

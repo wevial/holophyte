@@ -16,16 +16,17 @@ const shared = {
 };
 
 describe("windowOptions", () => {
-  test("on macOS hides the title bar, places the traffic lights and paints the Night canvas first", () => {
+  test("on macOS hides the title bar, centres the traffic lights on the 52px title row and paints the Night canvas first", () => {
     const options = windowOptions("darwin");
     expect(options).toMatchObject(shared);
     expect(options.titleBarStyle).toBe("hiddenInset");
-    expect(options.trafficLightPosition).toEqual({ x: expect.any(Number), y: expect.any(Number) });
+    expect(options.trafficLightPosition).toEqual({ x: 14, y: 19 });
     expect(options.backgroundColor).toBe(darkCanvas);
   });
 
   test("elsewhere keeps the native title bar and default background", () => {
     const options = windowOptions("linux");
     expect(options).toEqual(shared);
+    expect(options.trafficLightPosition).toBeUndefined();
   });
 });
