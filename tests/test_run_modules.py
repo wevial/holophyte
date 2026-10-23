@@ -459,8 +459,8 @@ class RunModulesTests(unittest.TestCase):
             {"test_small.py": 3.0, "test_large.py": 0.1}))
         done = self.run_over({}, "--jobs", "1")
         self.assertEqual(done.returncode, 0, done.stdout)
-        ran = [m[1] for m in map(LINE.match, done.stdout.splitlines()) if m]
-        self.assertEqual(ran, ["test_small.py", "test_large.py"])
+        self.assertEqual(list(self.timed_lines(done)),
+                         ["test_small.py", "test_large.py"])
 
     def test_unrecorded_module_counts_as_the_median_and_ghosts_are_ignored(self):
         times = {"test_a.py": 4.0, "test_b.py": 3.0, "test_c.py": 1.0,
