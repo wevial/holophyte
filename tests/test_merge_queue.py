@@ -17,6 +17,7 @@ from loop_fixture import MergeModeFixture  # noqa: E402
 import holophyte.babysit.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
+from holophyte.babysit.maintainer_notes import PREFIX  # noqa: E402 - after the insert
 from holophyte.cli.operator import steer_ticket  # noqa: E402 - after the insert
 from holophyte.loop.gates import InfraFailure  # noqa: E402 - after the insert
 
@@ -180,6 +181,10 @@ class MergeQueueTests(MergeModeFixture):
                                       "implement"])
         self.assertIn("CHECK unit", fake.turns[3].goal)
         self.assertNotIn(note, fake.turns[3].goal)
+        ((event_id,),) = self.read(
+            "SELECT id FROM runEvents WHERE kind = 'operator_note'")
+        self.assertIn(f"{PREFIX}\noperator_note event {event_id}",
+                      fake.turns[4].goal)
         self.assertIn(note, fake.turns[4].goal)
         _, noted = self.enqueued()
         self.assertIn("apply the maintainer's note",
