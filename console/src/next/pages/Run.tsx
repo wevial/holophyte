@@ -10,7 +10,8 @@ import { AgentPanel } from "../components/AgentPanel";
 import { CriteriaList } from "../components/CriteriaList";
 import { SECTION_LABEL } from "../components/Criteria";
 import { PhaseBar } from "../components/PhaseBar";
-import { ProgressLog } from "../components/ProgressLog";
+import { RawLog } from "../components/RawLog";
+import { RunActivity } from "../components/RunActivity";
 import { RunDetails } from "../components/RunDetails";
 import { RunPullRequest } from "../components/RunPullRequest";
 import { StageChip } from "../components/StageChip";
@@ -151,9 +152,22 @@ export function RunPage() {
           )}
           <RunTicket base={page.base} ticket={run.ticket} />
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
-          <ProgressLog key={run.id} lines={page.progress} live={page.live}>
+          <section id="progress" aria-label="Progress" className="scroll-mt-4">
+            <h2 className={`m-0 ${SECTION_LABEL}`}>
+              Progress
+              {page.live && (
+                <span data-live className="inline-flex items-center gap-1.5 tracking-[.1em] text-live">
+                  <span aria-hidden="true">
+                    <StateDot state="running" hideWord tone="live" />
+                  </span>
+                  live
+                </span>
+              )}
+            </h2>
             <PhaseBar detail={page.detail} now={page.now} />
-          </ProgressLog>
+            <RunActivity key={`${page.base}/${run.id}`} activity={page.activity} needsYou={page.needsYou} />
+            <RawLog key={`raw ${page.base}/${run.id}`} run={run.id} lines={page.progress} />
+          </section>
           <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
         </div>
         <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks}>

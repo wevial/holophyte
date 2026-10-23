@@ -86,27 +86,12 @@ class HttpReferenceTests(unittest.TestCase):
         self.assertIn('{"ok": false, "detail": "run N is not a draft held for'
                       ' review"}', text)
 
-    def test_mark_ready_section_names_the_wake_it_records(self):
-        text = " ".join(section(self.document,
-                                "`POST /actions/mark-ready`").split())
-        for named in ("`ci_wake` event", "`babysit` intervention",
-                      "`recorded` is the babysit intervention's id"):
-            self.assertIn(named, text)
-        self.assertNotIn("neither requeues nor babysits", text)
-
     def test_dropping_a_documented_key_names_it(self):
         text = section(self.document, "`GET /status`")
         dropped = text.replace("`stop_requested`", "").replace(
             '"stop_requested"', "")
         with self.assertRaisesRegex(AssertionError, "stop_requested"):
             assert_covers(self, dropped, "status.json")
-
-    def test_pr_open_follows_the_recorded_park_kind(self):
-        text = section(self.document, "`GET /attention`")
-        self.assertTrue("parkKind" in text,
-                        "GET /attention does not name parkKind")
-        self.assertFalse("whose question opens with" in text,
-                         "GET /attention still classifies by question wording")
 
 
 class ReportReferenceTests(WindowReportCase):

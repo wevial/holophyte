@@ -9,6 +9,7 @@ import { AnswerError } from "../lib/poll";
 import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
+import { runActivity, type RunActivity } from "./activity";
 import type { ContractBodies } from "./fleet";
 import { failureWord } from "./history";
 import { progressLines, type ProgressLine } from "./progress";
@@ -41,6 +42,9 @@ export type RunPage =
       sentence: string;
       stage: { label: string; sub: string | null };
       progress: ProgressLine[];
+      activity: RunActivity;
+      /** Whether the header says the run waits on the maintainer. */
+      needsYou: boolean;
       /** The fleet poll's clock the page's figures are read at. */
       now: number;
       asks: ConsoleAsk[];
@@ -118,7 +122,7 @@ function stopsWord(phase: string, live: StatusRun | null): string {
   return phase === "reviewing" && live != null ? `${step.stage} round ${live.round + 1}` : step.doing;
 }
 
-const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
+export const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
 
 function checkFixRound(events: RunDetail["events"]): string | null {
   const ordered = orderEvents(events);
@@ -219,6 +223,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
   const words = stageWords({ detail, live, phase, state, item, thresholds: status.thresholds, heartbeatMs: heartbeat ?? 0, now });
   const criteria = ["running", "stale", "question", "on_ci", "parked", "ready_to_merge"].includes(state) ? criteriaClause(detail.criteria) : "";
   const sentence = [words.sentence, criteria].filter(Boolean).join(" ");
+  const runAsks = asks.data?.asks ?? [];
   const loopsBack = detail.rounds.filter((round) => round.verdict === "changes_requested").length;
   return {
     kind: "run",
@@ -241,9 +246,11 @@ export function useRunPage(project: string, run: number | null): RunPage {
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
     },
-    asks: asks.data?.asks ?? [],
+    asks: runAsks,
     agentState: agentState({ ...detail.run, phase, round: live?.round ?? detail.rounds.length }),
-    progress: progressLines(detail, asks.data?.asks ?? [], now),
+    progress: progressLines(detail, runAsks, now),
+    activity: runActivity(detail, runAsks, now),
+    needsYou,
     now,
     live: detail.run.outcome == null,
   };
