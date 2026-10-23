@@ -364,7 +364,8 @@ export function criteriaGrid(detail: RunDetail): CriteriaGrid | null {
       order: new Map(precheck.map((entry) => [entry.id, entry.n])),
     });
   }
-  const rounds = [...detail.rounds].filter((round) => round.criteria.length > 0).sort((a, b) => a.round - b.round);
+  const babysat = babysitRounds(detail, events);
+  const rounds = detail.rounds.filter((round) => round.criteria.length > 0 && !babysat.has(round)).sort((a, b) => a.round - b.round);
   for (const round of rounds) {
     const final = round.round > detail.run.max_rounds || isFinalCheck(round, events);
     judged.push({

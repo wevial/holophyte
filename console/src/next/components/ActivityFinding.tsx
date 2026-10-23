@@ -12,7 +12,7 @@ interface Outcome {
 }
 
 const CHIP = "px-2 py-0.5 font-sans text-[13px] font-medium leading-[1.4]";
-const SHA = /\b[0-9a-f]{7,40}\b/;
+const ADDRESSED_IN = /^\s*Addressed in ([0-9a-f]{7,40})\b/i;
 const CRITERION_TITLE = /^Criterion \d+ · /;
 const LEADING_PUNCTUATION = /^[\s.,;:–—-]+/;
 
@@ -21,7 +21,7 @@ const plain = (text: string) => text.replaceAll("**", "").trim();
 function threadOutcome(finding: RoundFinding): Outcome | null {
   const verdict = (finding.verdict ?? "").toUpperCase().replace(/[\s-]/g, "_");
   const reply = finding.reply ?? "";
-  if (verdict === "ADDRESS") return { word: "Addressed", tone: "bg-live-wash text-ok-ink", detail: shortSha(SHA.exec(reply)?.[0] ?? null) || null };
+  if (verdict === "ADDRESS") return { word: "Addressed", tone: "bg-live-wash text-ok-ink", detail: shortSha(ADDRESSED_IN.exec(reply)?.[1] ?? null) || null };
   if (verdict === "DECLINE") {
     const reason = reply.replace(/^\s*Declined\s*:\s*/i, "").split("\n", 1)[0]!.trim();
     return { word: "Declined", tone: "bg-rule-2 text-ink", detail: reason || null };

@@ -230,6 +230,13 @@ test("a round's finding reads its severity, plain title, that the next round no 
   }
 });
 
+test("a last review round's finding is not read as no longer raised when the failed final check after it judged only criteria", async () => {
+  await mount(failedFinal);
+  const [witness] = await openRows("Round 1");
+  expect(witness!.textContent).toContain("Witness the line-3 save refusal");
+  expect(witness!.querySelector("[data-outcome]")).toBeNull();
+});
+
 test("More shows a finding's text beyond its title and turns to Less; a finding that is only its title has no More", async () => {
   await mount(finished);
   const rows = await openRows("Round 1");

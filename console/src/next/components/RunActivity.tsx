@@ -111,6 +111,7 @@ function Heading({ group, end }: { group: ActivityGroup; end: ReactNode }) {
 
 type Line = keyof typeof CONNECTOR | "none";
 
+const PASSED = new Set(["pass", "approved"]);
 const LISTS_FINDINGS = new Set<ActivityGroup["kind"]>(["round", "final", "threads"]);
 const RANK = { must: 0, should: 1, nit: 2 };
 
@@ -200,9 +201,13 @@ function NowBar({ now, needsYou }: { now: ActivityNow; needsYou: boolean }) {
   );
 }
 
-/** What became of each review finding: a later review round that no longer raises it reads fixed. */
+const judgedFindings = (group: ActivityGroup) =>
+  group.round != null && (group.kind === "round" || (group.kind === "final" && (group.round.findings.length > 0 || PASSED.has(group.round.verdict))));
+
+/** What became of each review finding: a later review round that no longer raises it reads fixed. A failed
+ *  final check that raised no findings judged only criteria, so it says nothing of the round before it. */
 function reviewFates(groups: ActivityGroup[]): Map<RoundFinding, Fate> {
-  const rounds = groups.flatMap((group) => (group.round != null && (group.kind === "round" || group.kind === "final") ? [group.round] : []));
+  const rounds = groups.filter(judgedFindings).map((group) => group.round!);
   return new Map(findingsHistory(rounds, []).flatMap((round) => round.findings.map((each) => [each.finding as RoundFinding, each.fate] as const)));
 }
 
