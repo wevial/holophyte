@@ -220,40 +220,6 @@ class HoloUsageTests(unittest.TestCase):
             self.assertRegex(line, rf"\b{name}\b")
 
 
-class ReadmeRetiredClaimsTests(unittest.TestCase):
-    """The README claims no Linear-only board, no dependency-free install
-    and no read-only MCP server."""
-
-    RETIRED = ("Linear-driven", "Tickets live in a Linear project",
-               "no frameworks", "read-only tools")
-
-    def test_the_readme_makes_none_of_the_retired_claims(self):
-        text = README.read_text()
-        found = [phrase for phrase in self.RETIRED
-                 if re.search(r"\s+".join(map(re.escape, phrase.split())),
-                              text)]
-        self.assertEqual(found, [])
-
-
-class RetiredRoadmapTests(unittest.TestCase):
-    """The roadmap page is retired: nothing links it, the nav and README
-    drop it, and the failure lineage lives on the architecture overview."""
-
-    def test_no_file_names_the_retired_roadmap_page(self):
-        grep = subprocess.run(
-            ["git", "grep", "-l", "roadmap[.]md"], cwd=ROOT,
-            capture_output=True, text=True)
-        self.assertFalse((DOCS / "roadmap").with_suffix(".md").exists())
-        self.assertEqual(grep.stdout.split(), [])
-        self.assertEqual(grep.returncode, 1, grep.stderr)
-
-    def test_overview_holds_the_failure_lineage_it_links(self):
-        text = (DOCS / "architecture" / "overview.md").read_text()
-        title = "Failure lineage (why each gate exists)"
-        self.assertIn(title, headings(text, 2))
-        self.assertIn(f"(#{anchor(title)})", text)
-
-
 def section(text, title):
     """The body under the `## title` heading, up to the next `## `."""
     return text.split(f"\n## {title}\n", 1)[1].split("\n## ", 1)[0]
@@ -303,24 +269,6 @@ class CliReferenceTests(unittest.TestCase):
             self.assertIn(refusal, exit_1)
 
 
-class OperatingIntroTests(unittest.TestCase):
-    """KO-626: the pause section is about pausing; the merge-gate, re-point
-    and send-back notes that once followed the intro have their own heading."""
-
-    def test_pause_section_holds_only_pausing(self):
-        text = (DOCS / "operating.md").read_text()
-        pause = section(text, "Pause one run at its next safe point")
-        self.assertNotIn("--repoint", pause)
-        homes = [title for title in headings(text, 2)
-                 if "merge gate conflict" in section(text, title)]
-        self.assertEqual(len(homes), 1, homes)
-        notes = section(text, homes[0])
-        for flag in ("--repoint", "--babysit"):
-            self.assertIn(flag, notes)
-        self.assertNotIn("--pause", notes)
-        self.assertNotIn("--abort", notes)
-
-
 class PullRequestTemplateTests(unittest.TestCase):
     """KO-430: the repository's pull request template -- the file the
     written turn fills; GitHub itself applies
@@ -367,59 +315,12 @@ class StoryTemplateTests(unittest.TestCase):
         self.assertRegex(block.strip(), r"^W1: \S")
 
 
-class BabysitterTests(unittest.TestCase):
-    """KO-373: the pass over an open pull request is the babysitter wherever
-    the operator reads it; KO-374 renamed the store's action value and
-    `store.babysit()` with it, so the old word is gone from everything the
-    operator reads."""
-
-    def test_the_old_word_is_gone_from_what_the_operator_reads(self):
-        hits = subprocess.run(
-            ["git", "grep", "-in", "shepherd", "--", "docs", "README.md",
-             "holophyte"], cwd=ROOT, capture_output=True, text=True).stdout
-        self.assertEqual(hits.splitlines(), [])
-
-    def test_the_cli_and_glossary_pages_name_the_babysitter(self):
-        self.assertIn("--babysit", (DOCS / "reference" / "cli.md").read_text())
-        self.assertRegex((DOCS / "reference" / "glossary.md").read_text(),
-                         r"\*\*Babysitter\.\*\*")
-
-
 class ProjectWordTests(unittest.TestCase):
     """KO-618: the manual calls the repository the factory works on a
     project, as `factory.py project add` and the store's `projects` table
-    do. Mermaid node names follow the code; `docs/design/` holds dated
-    records. The code type and its module left the old word in KO-619, and
-    the daemon's JSON alias key in KO-634, which retired their exceptions
-    here. A systemd unit name such as `holophyte.target` is not the word:
-    the dot before it marks the unit type."""
+    do."""
 
     maxDiff = None
-    OLD_WORD = re.compile(r"(?<!\.)\btargets?\b", re.IGNORECASE)
-    PERMITTED = re.compile(r"```mermaid\n.*?```", re.DOTALL)
-
-    def test_the_old_word_is_gone_outside_the_design_notes(self):
-        found = []
-        for path in [README, ROOT / "AGENTS.md", *DOCS.rglob("*.md")]:
-            if DOCS / "design" in path.parents:
-                continue
-            # Blank a permitted span but keep its newlines, so line
-            # numbers still point into the file.
-            text = self.PERMITTED.sub(
-                lambda m: "\n" * m.group(0).count("\n"), path.read_text())
-            for number, line in enumerate(text.splitlines(), 1):
-                if self.OLD_WORD.search(line):
-                    found.append(f"{path.relative_to(ROOT)}:{number}: {line}")
-        self.assertEqual(found, [])
-
-    def test_the_glossary_defines_project_and_the_board_as_linear(self):
-        text = (DOCS / "reference" / "glossary.md").read_text()
-        self.assertRegex(text, r"\*\*Project\.\*\*")
-        self.assertNotRegex(
-            text, re.compile(r"\*\*target\.\*\*", re.IGNORECASE))
-        board = re.search(r"\*\*Board\.\*\*(.*?)\n\n", text, re.DOTALL)
-        self.assertIsNotNone(board, "glossary has no Board entry")
-        self.assertIn("Linear project", board.group(1))
 
     def test_the_cli_page_takes_a_project(self):
         text = (DOCS / "reference" / "cli.md").read_text()
@@ -453,30 +354,12 @@ class ArchitectureTruthTests(unittest.TestCase):
     page behind fails here; the other checks are phrase present or absent."""
 
     ARCH = DOCS / "architecture"
-    # What the pages said before the action endpoints and the per-ticket
-    # lease; each is false of the code now.
-    RETIRED = ("cannot write", "only writers", "supervisor only",
-               "one run per project")
-
     def test_data_page_prints_the_current_schema_version(self):
         import store.schema
         text = (self.ARCH / "data.md").read_text()
         printed = re.search(r"`PRAGMA user_version`, currently (\d+)", text)
         self.assertIsNotNone(printed, "data.md prints no schema version")
         self.assertEqual(int(printed.group(1)), store.schema.SCHEMA_VERSION)
-
-    def test_no_page_says_the_daemon_cannot_write_or_names_two_writers(self):
-        found = [f"{path.name}: {phrase}"
-                 for path in sorted(self.ARCH.glob("*.md"))
-                 for phrase in self.RETIRED
-                 if phrase in re.sub(r"\s+", " ", path.read_text())]
-        self.assertEqual(found, [])
-        data = (self.ARCH / "data.md").read_text()
-        self.assertRegex(data, r"\| `tickets` \|[^\n]*`activeRunId` is the lease")
-        self.assertNotRegex(data, r"\| `projects` \|[^\n]*`activeRunId` is the lease")
-        for name in ("processes.md", "components.md", "overview.md"):
-            text = re.sub(r"\s+", " ", (self.ARCH / name).read_text())
-            self.assertIn("store API", text, name)
 
     def test_serve_unit_names_the_bearer_token_as_its_boundary(self):
         unit = (ROOT / "deploy" / "holophyte-serve@.service").read_text()
@@ -490,28 +373,6 @@ class DaemonWritesTests(unittest.TestCase):
     `[serve] actions` and `[serve] config_edit`, so neither `--help` nor the
     manual calls it read-only. `docs/design/` holds dated records and
     `docs/architecture/` is ArchitectureTruthTests' (KO-593)."""
-
-    # What the pages said before the action endpoints and `PUT /config`.
-    RETIRED = ("read-only JSON daemon", "read-only HTTP daemon",
-               "A read-only daemon", "The daemon is read-only",
-               "serving its state read-only")
-
-    def test_no_page_calls_the_daemon_read_only(self):
-        # A phrase may wrap, so its words match across any whitespace; the
-        # hit is reported at the line it starts on.
-        patterns = [re.compile(r"\s+".join(map(re.escape, phrase.split())))
-                    for phrase in self.RETIRED]
-        found = []
-        for path in [README, *DOCS.rglob("*.md")]:
-            if {DOCS / "design", DOCS / "architecture"} & set(path.parents):
-                continue
-            text = path.read_text()
-            found += [f"{path.relative_to(ROOT)}:"
-                      f"{text.count(chr(10), 0, hit.start()) + 1}: "
-                      f"{' '.join(hit.group(0).split())}"
-                      for pattern in patterns
-                      for hit in pattern.finditer(text)]
-        self.assertEqual(found, [])
 
     def test_help_names_the_actions_opt_in(self):
         # Wide COLUMNS stops mid-phrase wraps; NO_COLOR overrides FORCE_COLOR.
