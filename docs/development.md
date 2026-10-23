@@ -1041,8 +1041,10 @@ directory (beside `console.json`; source paths only, never query strings),
 truncated once it passes 1 MB, so a blank view can be diagnosed afterwards.
 On macOS closing the window leaves the tray in place and the dock or tray
 reopens it; elsewhere closing the window quits. On macOS the window also
-hides its title bar and draws the traffic lights in the sidebar header
-(options in `console/electron/window.ts`); the seed script writes
+hides its title bar and draws the traffic lights in the new console's 52px
+title row, followed by a panel-left sidebar toggle and the lotus mark without
+the wordmark (options in `console/electron/window.ts`); ⌘\ (Ctrl+\
+elsewhere) toggles the sidebar. The seed script writes
 `holophyte.app-shell` = `macos` to the page's storage, which is how either
 console view knows to inset its header and mark the drag regions.
 

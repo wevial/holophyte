@@ -137,7 +137,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   const count = (tab: string) => SETTINGS_FIELDS.filter((field) => field.tab === tab && `${field.table}.${field.key}` in edits).length;
   return (
-    <section aria-labelledby="page-title" className="max-w-[1180px] px-5 py-7 min-[720px]:px-8">
+    <section aria-labelledby="page-title" className="max-w-[1180px] px-5 pt-3.5 pb-7 min-[720px]:px-8">
       <header className="border-b border-rule pb-5">
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Settings</h1>
         <p className="mt-2 break-words font-mono text-[13px] text-ink-2">{project} · {file} on {hostLabel}{answer?.state === "ok" ? configStamp(answer.config) : ""}</p>

@@ -29,7 +29,7 @@ export function Runs() {
   const pick = (id: RunFilter) =>
     void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch) => ({ ...previous, state: id }) });
   return (
-    <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 py-7 max-[720px]:px-2">
+    <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-2">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Runs</h1>
         <p data-count-line className="font-mono text-[13px] leading-[1.6] [overflow-wrap:anywhere] text-ink-2">
