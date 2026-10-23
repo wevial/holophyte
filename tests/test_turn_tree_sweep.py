@@ -119,13 +119,15 @@ class TurnTreeSweepTests(SweepTestCase):
                          [self.tip, self.main])
         self.assertEqual(self.git("status", "--porcelain"), "")
         self.assertEqual(self.git("show", "HEAD:a.txt"), "branch a\nmain a")
+        self.assertEqual(self.git("for-each-ref", "refs/holophyte/backup/"), "")
+
+    def half_resolve(self):
+        self.merge_main()
+        self.write("b.txt", "branch b\nmain b\n")
+        self.git("add", "b.txt")
 
     def test_a_still_conflicted_merge_is_backed_up_then_aborted(self):
-        def half_resolve():
-            self.merge_main()
-            self.write("b.txt", "branch b\nmain b\n")
-            self.git("add", "b.txt")
-        self.turn(half_resolve)
+        self.turn(self.half_resolve)
 
         self.assertFalse(self.mid_merge())
         self.assertEqual(self.git("rev-parse", "HEAD"), self.tip)
@@ -138,6 +140,19 @@ class TurnTreeSweepTests(SweepTestCase):
         self.git("cat-file", "-e", f"{backup}^{{commit}}")
         self.assertEqual(self.git("show", f"{backup}:b.txt"), "branch b\nmain b")
         self.assertIn("<<<<<<<", self.git("show", f"{backup}:a.txt"))
+
+    def test_an_aborted_merge_s_backup_survives_gc_under_the_ref_it_names(self):
+        self.turn(self.half_resolve)
+        ((_, summary),) = self.sweep_events()
+        (backup,) = re.findall(r"\b[0-9a-f]{40}\b", summary)
+        ref = f"refs/holophyte/backup/KO-1/{backup[:12]}"
+        self.assertIn(f"(ref {ref})", summary)
+
+        self.git("gc", "--prune=now", "--quiet")
+
+        self.assertEqual(self.git("rev-parse", ref), backup)
+        self.assertEqual(self.git("show", f"{backup}:b.txt"), "branch b\nmain b")
+        self.assertEqual(self.git("show", f"{backup}^3:b.txt"), "branch b\nmain b")
 
     def test_a_conflicted_merge_with_a_staged_then_re_edited_file_is_aborted(self):
         def stage_then_re_edit():

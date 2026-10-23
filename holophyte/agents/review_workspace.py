@@ -10,7 +10,11 @@ import time
 from pathlib import Path
 
 import review_runner
-from holophyte.agents.agent_output import AgentOutput
+from holophyte.agents.agent_output import (
+    AgentOutput,
+    claude_json_turn,
+    claude_marked_error,
+)
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.loop.gates import InfraFailure, run_capped, sh
 from holophyte.pr.mockup import release_review_carry, review_carry
@@ -103,7 +107,9 @@ def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
     except subprocess.TimeoutExpired:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         return AgentOutput(message, command, timed_out=True)
-    return AgentOutput(output.strip(), command, exit_code=code)
+    output = AgentOutput(output.strip(), command, exit_code=code)
+    output.is_error = claude_json_turn(cmd) and claude_marked_error(output)
+    return output
 
 
 # What `codex exec resume` prints for an id it has no rollout for.

@@ -55,7 +55,7 @@ from holophyte.loop.gates import (
     with_baseline,
 )
 from holophyte.loop.run import Run
-from holophyte.loop.runs import heartbeat_while, record_round
+from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.stop import boundary, fix_state, paused_goal, stop_if_requested
 from holophyte.pr import github, merge_queue, pr_ready, pr_status
 from holophyte.pr.missing_checks import Retrigger, unreported
@@ -355,6 +355,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     continue
                 return replace(run, sha=sha, merge_sha=merge_sha)
             except merge_queue.QueueRemoved as removed:
+                set_phase(conn, run_id, "merge_gate", "the merge queue removed"
+                          " the pull request; fixing its checks")
                 sha, pushed_state = fix_checks_or_park(
                     replace(run, sha=sha), beat_s, pull, replace(
                         state, checks="failure", failed_checks=removed.failed),
@@ -362,6 +364,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     check_fix, removed.group)
                 continue
             except github.MergeRefused as refused:
+                set_phase(conn, run_id, "merge_gate",
+                          f"GitHub refused the merge: {refused}")
                 verified = sha
                 sha, pushed_state, reviewed = _merge_origin_main(
                     project, conn, run_id, provider, task_id, branch, wt, sha,
