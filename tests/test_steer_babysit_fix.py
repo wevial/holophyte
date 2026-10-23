@@ -41,9 +41,8 @@ class RecordingTests(SteerFixture):
 
 
 class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
-    def test_a_note_steered_in_a_review_fix_turn_drives_a_fix_before_the_merge(self):
-        self.resume_rejected_fix()
-        fixture, said, phases = self, io.StringIO(), []
+    def steering_commit(self, said, phases):
+        fixture = self
 
         class SteeringCommit(Commit):
             def play(self, cwd, turn):
@@ -55,6 +54,13 @@ class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
                 except SystemExit as refused:
                     said.write(str(refused))
                 return super().play(cwd, turn)
+
+        return SteeringCommit
+
+    def test_a_note_steered_in_a_review_fix_turn_drives_a_fix_before_the_merge(self):
+        self.resume_rejected_fix()
+        said, phases = io.StringIO(), []
+        SteeringCommit = self.steering_commit(said, phases)
 
         fake, _ = self.loop(REQUEST_CHANGES, SteeringCommit("review fix"),
                             APPROVE, Idle(""),
@@ -84,3 +90,29 @@ class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
         note_fix = self.git("log", "-1", "--format=%H", "--grep",
                             "apply the maintainer's note", merged).strip()
         self.assertTrue(note_fix)
+
+    def test_a_note_steered_in_a_conflict_merge_turn_drives_a_fix_before_the_merge(
+            self):
+        review = self.conflict_refusal(conflict=True)
+        said, phases = io.StringIO(), []
+        SteeringCommit = self.steering_commit(said, phases)
+        path = "tests/test_file_sizes.py"
+
+        fake, _ = self.loop(
+            self.ratchet_work(), review, Idle(""),
+            SteeringCommit("Merge main: retain both ratchets", path=path,
+                           body="branch's line\nmain's line\n"),
+            Commit("apply the maintainer's note"), APPROVE, Idle(""),
+            provider=self.provider())
+
+        self.assertEqual(phases, ["merge_gate"])
+        self.assertIn("landing at its babysitter's next fix round",
+                      said.getvalue())
+        self.assertIn("mid-merge", fake.turns[3].goal)
+        self.assertNotIn(NOTE, fake.turns[3].goal)
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "implement", "review",
+                                      "implement"])
+        self.assertIn(NOTE, fake.turns[4].goal)
+        self.assertEqual(self.read(
+            "SELECT outcome FROM runs ORDER BY id DESC LIMIT 1"), [("merged",)])
