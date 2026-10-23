@@ -598,15 +598,20 @@ def run_files(project, run_id):
 
 def active_routes(project):
     from holophyte.agents.agent_routes import active_fallbacks, safe_command
+    from holophyte.agents.harness import PROFILES_KEY, implementer_profiles
     from holophyte.config.reader import AGENT_CONFIG_KEYS
 
     fallback = active_fallbacks(project)
     table = {key: safe_command(project, value)
              for key, value in (project.config().get("agents") or {}).items()
              if key in AGENT_CONFIG_KEYS.values() and isinstance(value, (str, dict))}
-    return {seat: seat_route(fallback, table, seat)
-            for seat in AGENT_CONFIG_KEYS.values()
-            if seat not in ("critic", "adversary", "consolidator")}
+    seats = {seat: seat_route(fallback, table, seat)
+             for seat in AGENT_CONFIG_KEYS.values()
+             if seat not in ("critic", "adversary", "consolidator")}
+    profiles = {f"{PROFILES_KEY}.{name}": safe_command(project, seat.options)
+                for name, seat in implementer_profiles(project).items()}
+    return seats | {key: seat_route(fallback, profiles, key)
+                    for key in profiles}
 
 
 def seat_route(fallback, table, seat):

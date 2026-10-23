@@ -40,6 +40,8 @@ export interface AgentRoute {
   fallbacks: { label: string; inUse: boolean }[];
 }
 
+const PROFILE_SEAT = "implementer_profiles.";
+
 function routesOf(records: Record[]): AgentRoute[] {
   const seats = [...new Set(records.flatMap((record) => Object.keys(record.status?.active_routes ?? {})))];
   return seats.flatMap((seat) => {
@@ -48,14 +50,15 @@ function routesOf(records: Record[]): AgentRoute[] {
       const status = record.status;
       if (!status) continue;
       const active = status.active_routes[seat];
-      const label = status.route_labels[seat];
+      const profile = seat.startsWith(PROFILE_SEAT) ? seat.slice(PROFILE_SEAT.length) : null;
+      const label = profile === null ? status.route_labels[seat] : status.route_labels.implementer_profiles?.[profile];
       if (!active || typeof label !== "string") continue;
       const row = rows.get(label) ?? { seat, label, projects: [], probe: null, down: false, fallbacks: [] };
       row.projects.push(record.name ?? status.project.split("/").filter(Boolean).pop() ?? status.project);
       const probe = status.route_probes[seat]?.primary;
       if (probe && (!row.probe || (row.probe.ok && !probe.ok) || (probe.ok === row.probe.ok && probe.at_ms > row.probe.at_ms))) row.probe = probe;
       row.down ||= active.down === true;
-      const fallbackLabel = status.route_labels[`${seat}_fallback`];
+      const fallbackLabel = status.route_labels[profile === null ? `${seat}_fallback` : "implementer_fallback"];
       const fallback = typeof fallbackLabel === "string" ? fallbackLabel : "none";
       const existing = row.fallbacks.find((entry) => entry.label === fallback);
       if (existing) existing.inUse ||= Boolean(active.fallback);

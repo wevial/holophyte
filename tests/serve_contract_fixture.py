@@ -140,6 +140,9 @@ def contract_answers(case):
             (unestimated_run,))
         conn.commit()
     case.null_host(unestimated_run)
+    (case.db.parent / "config.toml").write_text(
+        '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+        'model = "sonnet"\n')
     target = Project.locate(case.target)
     answers = {}
     for name, (code, body) in {
