@@ -180,7 +180,7 @@ def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
 
 def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                          sha, beat_s, pull, budget_min, command, contracts, ticket,
-                         ref, criteria=()):
+                         ref, criteria):
     from holophyte.pr.pullrequest import _park_on_pr
     ok, out = _refresh_verify(project, conn, run_id, beat_s, wt, sha, command,
                               contracts)
