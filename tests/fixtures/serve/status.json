@@ -19,6 +19,9 @@
     },
     "trimmer": {
       "command": null
+    },
+    "implementer_profiles.sonnet": {
+      "command": "claude"
     }
   },
   "route_labels": {
@@ -30,7 +33,10 @@
     "trimmer": "claude opus",
     "implementer_fallback": null,
     "adjudicator_fallback": null,
-    "trimmer_fallback": null
+    "trimmer_fallback": null,
+    "implementer_profiles": {
+      "sonnet": "claude sonnet"
+    }
   },
   "workers_on_previous_build": 0,
   "host": "writer",
@@ -169,6 +175,10 @@
       "fallback": null
     },
     "trimmer": {
+      "primary": null,
+      "fallback": null
+    },
+    "implementer_profiles.sonnet": {
       "primary": null,
       "fallback": null
     }

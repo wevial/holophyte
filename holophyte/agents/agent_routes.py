@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import MutableMapping
 from pathlib import Path
 
-from holophyte.agents.harness import route_text
+from holophyte.agents.harness import PROFILES_KEY, route_text
 from holophyte.config.reader import AGENT_CONFIG_KEYS, DEFAULT_IMPLEMENTER
 from holophyte.redact import REDACTED, known_secrets, redact_prose
 
@@ -87,6 +87,10 @@ class ActiveRoutes:
                     for role, command in commands.items()}
         if self.trimmer_failed:
             snapshot['trimmer'] = None
+        for name, (own, _) in self.profiles.items():
+            if 'implement' in own:
+                snapshot[f'{PROFILES_KEY}.{name}'] = safe_command(
+                    self.project, own['implement'])
         json.dump(snapshot, self.stream)
         self.stream.flush()
 

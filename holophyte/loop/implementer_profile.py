@@ -1,11 +1,13 @@
 import dataclasses
 import json
+import time
 
 import store
 import ticket_template
 from holophyte.agents.agent_routes import ProfileRoutes, routes
 from holophyte.agents.agent_turns import turn_label
 from holophyte.agents.harness import PROFILES_KEY, implementer_profiles
+from holophyte.agents.probe_log import record_probe
 from holophyte.agents.probes import (
     PROBE_GOAL,
     PROBE_TIMEOUT,
@@ -47,10 +49,12 @@ def profiled_run(run, task):
         why, source = f"escalated after run {earlier['run']} failed", "escalation"
     elif candidate in seats:
         view = scoped(project, candidate)
+        started = time.time()
         with heartbeat_while(conn, run_id, beat_s):
             probe = probe_launch(view, seats[candidate].turn(PROBE_GOAL),
                                  PROBE_TIMEOUT, f"{PROFILES_KEY}.{candidate}",
                                  claude=seats[candidate].name == "claude")
+        record_probe(project, probe, False, started, time.time())
         if probe.ok:
             name = candidate
             source = "classifier" if requested is None else None

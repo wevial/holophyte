@@ -693,6 +693,44 @@ class AgentFallbackTests(SweepTestCase):
         ).fetchone()[0], 0)
 
 
+PROFILE = ('[agents]\nimplementer_fallback = "codex exec"\n'
+           '[agents.implementer_profiles.sonnet]\nharness = "claude"\n'
+           'model = "sonnet"\n')
+
+
+class ProfileRouteTests(SweepTestCase):
+    def test_a_profile_switch_is_served_as_its_own_route(self):
+        from holophyte.loop.implementer_profile import scoped
+        from holophyte.serve.serve_runs import active_routes
+
+        self.configure(PROFILE)
+        self.addCleanup(reset, self.project)
+        view = scoped(self.project, 'sonnet')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertTrue(fallback.activate_fallback(
+                view, 'implement', "You've hit your limit", self.conn,
+                self.a_run(), probe=probes.ProbeResult(
+                    ['codex', 'exec'], 0, 'ready', 90)))
+        served = active_routes(self.project)
+        self.assertEqual(served['implementer_profiles.sonnet'],
+                         {'command': 'codex', 'fallback': 'codex'})
+        self.assertNotIn('fallback', served['implementer'])
+
+    def test_an_unswitched_profile_is_served_with_its_label(self):
+        from holophyte.agents.agent_turns import route_labels
+        from holophyte.serve.serve_runs import active_routes
+
+        self.configure(PROFILE)
+        self.assertEqual(active_routes(self.project)[
+            'implementer_profiles.sonnet'], {'command': 'claude'})
+        self.assertEqual(route_labels(self.project)['implementer_profiles'],
+                         {'sonnet': 'claude sonnet'})
+        self.configure('[agents]\nimplementer_fallback = "codex exec"\n')
+        self.assertEqual(route_labels(self.project)['implementer_profiles'], {})
+        self.assertEqual(set(active_routes(self.project)), {
+            'implementer', 'reviewer', 'adjudicator', 'writer', 'trimmer'})
+
+
 class ContainerReviewFallbackTests(SweepTestCase):
     PAIRS = ('[agents]\nreview_model = "gpt-6-astra"\nreview_effort = "medium"\n'
              'review_fallback_model = "gpt-5.6-sol"\n'
