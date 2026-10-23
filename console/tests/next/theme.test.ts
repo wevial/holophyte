@@ -24,7 +24,7 @@ test("Tailwind exposes every raw colour and every classic colour through a decla
   const raw = tokensUnder(decls, dawnSelector);
   const theme = new Map(decls.filter((d) => d.path.length === 1 && d.path[0] === "@theme inline")
     .map((d) => [d.name, d.value]));
-  const unexposed = /^--(?:(?:neutral|pink|red|orange|gold|yellow|green|violet|slate)-(?:1[0-2]|[1-9])|ok-ink|ask-ink|warn-ink|p1-ink|p2-ink|tag-ink|focus|bad-text|[a-z]+-on)$/;
+  const unexposed = /^--(?:(?:neutral|pink|red|orange|gold|yellow|green|violet|slate)-(?:1[0-2]|[1-9])|ok-ink|ask-ink|warn-ink|p1-ink|p2-ink|tag-ink|focus|bad-text|(?:pink|red|orange|gold|yellow|green|violet|slate)-on)$/;
   for (const name of raw.filter((name) => name !== "--card-shadow" && !unexposed.test(name))) {
     expect(theme.get(`--color-${name.slice(2)}`)).toBe(`var(${name})`);
   }
