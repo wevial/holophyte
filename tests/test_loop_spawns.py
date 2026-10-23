@@ -3,6 +3,7 @@ with a `subprocess.Popen` spy that calls through to the real one."""
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -147,6 +148,22 @@ class SweepTreeTests(LoopFixture):
             swept, _ = self.sweep(unborn)
 
             self.assertFalse(swept)
+
+    def test_a_linked_worktree_under_a_newline_path_has_its_edit_committed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            owner, wt = Path(tmp, "own\ner"), Path(tmp, "wt")
+            shutil.copytree(self.target, owner, symlinks=True)
+            self.git("worktree", "add", "-q", "-b", "task", str(wt), cwd=owner)
+            (wt / "README.md").write_text("an edit the turn never committed\n")
+
+            swept, _ = self.sweep(wt)
+
+            self.assertTrue(swept)
+            self.assertEqual(self.git("rev-parse", "task~1", cwd=wt).strip(),
+                             self.base)
+            self.assertTrue(self.git("log", "-1", "--format=%s", cwd=wt)
+                            .startswith("WIP:"))
+            self.assertEqual(self.git("status", "--porcelain", cwd=wt), "")
 
 
 if __name__ == "__main__":

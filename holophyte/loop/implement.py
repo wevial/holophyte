@@ -351,7 +351,7 @@ def _sweep_tree(project, conn, run_id, wt, cause, merges):
         text=True)
     if facts.returncode:
         return False
-    lock, merge_head, branch = facts.stdout.splitlines()
+    lock, merge_head, branch = _sweep_facts(facts.stdout)
     merging = Path(wt, merge_head).is_file()
     if merging and not merges:
         return False
@@ -362,6 +362,15 @@ def _sweep_tree(project, conn, run_id, wt, cause, merges):
         _sweep_merge(project, conn, run_id, wt, branch, task_id)
     return _commit_wip(project, conn, run_id, wt, branch, task_id,
                        cause) or merging
+
+
+def _sweep_facts(stdout):
+    paths, branch = stdout.removesuffix("\n").rsplit("\n", 1)
+    admin = paths[:(len(paths) - len("index.lock\nMERGE_HEAD")) // 2]
+    lock, merge_head = f"{admin}index.lock", f"{admin}MERGE_HEAD"
+    if paths != f"{lock}\n{merge_head}":
+        raise ValueError(f"git rev-parse printed unexpected paths: {paths!r}")
+    return lock, merge_head, branch
 
 
 SWEPT_ERRORS = (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
