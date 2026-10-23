@@ -104,10 +104,23 @@ def raw_finding(reply):
             "message": message}
 
 
+def closed_fence_flags(lines):
+    flags = [fenced for _, fenced in review_runner.fence_flags(lines)]
+    tail = len(flags)
+    while tail and flags[tail - 1]:
+        tail -= 1
+    close = review_runner.FENCE_RE.match(lines[-1]) if lines else None
+    if len(flags) - tail < 2 or not close or close[3].strip():
+        flags[tail:] = [False] * (len(flags) - tail)
+    return flags
+
+
 def finding_blocks(text):
-    blocks, current = [], []
-    for line in text.splitlines():
-        if not line.strip() or BLOCK_BREAK_RE.match(line):
+    blocks, current, lines = [], [], text.splitlines()
+    for line, fenced in zip(lines, closed_fence_flags(lines)):
+        if fenced and not current and blocks:
+            current = [blocks.pop(), ""]
+        if not fenced and (not line.strip() or BLOCK_BREAK_RE.match(line)):
             if current:
                 blocks.append("\n".join(current))
             current = [line] if line.strip() else []
@@ -116,6 +129,12 @@ def finding_blocks(text):
     if current:
         blocks.append("\n".join(current))
     return blocks
+
+
+def unfenced(block):
+    lines = block.splitlines()
+    return "\n".join(line for line, fenced
+                     in zip(lines, closed_fence_flags(lines)) if not fenced)
 
 
 REFUTED_SECTION_RE = re.compile(
@@ -131,9 +150,10 @@ def parse_findings(reply):
     findings = []
     reply = without_refuted(reply)
     # CRITERION and SCOPE lines cite paths but are accounts, not complaints.
-    accounts = SCOPE_LINE_RE.sub("", CRITERION_LINE_RE.sub("", reply))
+    accounts = SCOPE_LINE_RE.sub("", without_criteria(reply))
     for block in finding_blocks(accounts):
-        match = FINDING_PATH_RE.search(citation(block))
+        match = (FINDING_PATH_RE.search(citation(unfenced(block)))
+                 or FINDING_PATH_RE.search(citation(block)))
         listed = BLOCK_BREAK_RE.match(block) is not None
         if match is None and not listed:
             continue
@@ -198,15 +218,25 @@ def fenced_spans(reply):
     return spans
 
 
-def criteria_block(reply):
-    block, fenced = {}, fenced_spans(reply)
+def criterion_accounts(reply):
+    fenced = fenced_spans(reply)
     for match in CRITERION_LINE_RE.finditer(reply):
         bare = match[0].lstrip()[:9].upper() == "CRITERION"
-        if not bare and any(a <= match.start("n") < b for a, b in fenced):
-            continue
-        block[parse(match["n"])] = (match["status"].lower(),
-                                     match["note"])
-    return block
+        if bare or not any(a <= match.start("n") < b for a, b in fenced):
+            yield match
+
+
+def criteria_block(reply):
+    return {parse(match["n"]): (match["status"].lower(), match["note"])
+            for match in criterion_accounts(reply)}
+
+
+def without_criteria(reply):
+    kept, offset = [], 0
+    for match in criterion_accounts(reply):
+        kept.append(reply[offset:match.start()])
+        offset = match.end()
+    return "".join(kept) + reply[offset:]
 
 
 WITNESS_TEST_RE = re.compile(
