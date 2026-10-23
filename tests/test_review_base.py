@@ -10,6 +10,7 @@ from holophyte.loop import adjudicate, review_round
 from tests.host_fixture import git
 
 TICKET = "Change `src/app.py` so it greets."
+OWN = {"src/app.py"}
 MAINS = ("ci.yml", "test_other.py")
 
 
@@ -81,10 +82,14 @@ class ReviewBaseTests(unittest.TestCase):
         return self.drive(lambda common: review_round._review_rounds(
             **common, criteria=(), budget_min=10, cap=1))
 
+    def changed(self, base):
+        return set(self.git("diff", "--name-only", f"{base}..HEAD").split())
+
     def test_review_of_merged_candidate_measures_from_merged_main(self):
         self.merge_main()
         base, prompt = self.review()
         self.assertEqual(base, self.m)
+        self.assertEqual(self.changed(base), OWN)
         for name in MAINS:
             self.assertNotIn(name, prompt)
 
@@ -94,10 +99,17 @@ class ReviewBaseTests(unittest.TestCase):
             **common, task={}, cap=1))
         self.assertEqual(base, self.m)
 
-    def test_base_stays_frozen_when_main_moved_back_behind_it(self):
-        self.git("branch", "-f", "main", self.a)
-        base, _ = self.review()
-        self.assertEqual(base, self.b)
+    def test_base_stays_frozen_unless_main_moved_forward_into_candidate(self):
+        with self.subTest("main moved on but not merged"):
+            base, prompt = self.review()
+            self.assertEqual(base, self.b)
+            self.assertEqual(self.changed(base), OWN)
+            for name in MAINS:
+                self.assertNotIn(name, prompt)
+        with self.subTest("main moved back behind the frozen base"):
+            self.git("branch", "-f", "main", self.a)
+            base, _ = self.review()
+            self.assertEqual(base, self.b)
 
 
 if __name__ == "__main__":
