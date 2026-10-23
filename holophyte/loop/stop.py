@@ -347,12 +347,12 @@ def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     for number, fields, reason in saved["addressed"]:
         fields = dict(fields, replies=tuple(Comment(**r) for r in fields["replies"]))
         addressed.append((number, Thread(**fields), reason))
-    rerun = saved.get("interrupted")
+    rerun = saved.get("interrupted", False)
     fixed = _fix_threads(target, conn, run_id, provider, task_id, branch, wt,
                          saved["sha"], beat_s, pull, addressed, saved["model"], ticket,
                          verify_cmd, contracts, budget_min, saved["pass_no"],
                          review_follows=saved["review_follows"],
                          goal=_rerun_goal(saved, sha) if rerun else None,
                          resume_step=None if rerun else saved, criteria=criteria,
-                         rerun=bool(rerun))
+                         rerun=rerun)
     return fixed, True

@@ -65,9 +65,7 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None, on_interrupt=None,
         target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept,
                            partial(_fallback_heartbeat, conn, run_id, swept,
                                    stop)),
-        kwargs={name: callback for name, callback in (
-            ("on_interrupt", on_interrupt), ("on_pause", on_pause))
-            if callback is not None},
+        kwargs={"on_interrupt": on_interrupt, "on_pause": on_pause},
         name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None
@@ -164,10 +162,11 @@ def _beat(path, run_id, interval_s, stop, swept, on_swept, heartbeat,
             try:
                 alive = current_heartbeat()()
                 if alive:
-                    stopping = None if interrupted or own is None or (
-                        on_interrupt is None and on_pause is None) else (
-                        _interrupted(own, run_id, on_interrupt, on_pause))
-                    if stopping is not None:
+                    stopping = (not interrupted and own is not None
+                                and (on_interrupt or on_pause)
+                                and _interrupted(own, run_id, on_interrupt,
+                                                 on_pause))
+                    if stopping:
                         interrupted = True
                         _notify_swept(stopping)
                     # The open failure persists until the timer's own
