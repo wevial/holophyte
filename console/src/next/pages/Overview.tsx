@@ -38,15 +38,6 @@ const COLUMN = "flex min-w-0 flex-col gap-[44px] min-[1600px]:row-start-2 min-[1
 
 const counted = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
-/** "DEMO-2 is queued.", "DEMO-2 and DEMO-12 are queued.", and past three
- *  keys "DEMO-2, DEMO-3, DEMO-4 and 2 more are queued." */
-function queuedSentence(keys: string[]): string {
-  if (keys.length === 0) return "Nothing running and nothing queued.";
-  if (keys.length === 1) return `Nothing running. ${keys[0]} is queued.`;
-  const named = keys.length > 3 ? [...keys.slice(0, 3), `${keys.length - 3} more`] : keys;
-  return `Nothing running. ${named.slice(0, -1).join(", ")} and ${named.at(-1)} are queued.`;
-}
-
 function Empty({ children }: { children: ReactNode }) {
   return <p className="font-mono text-[13px] text-ink-3">{children}</p>;
 }
@@ -105,6 +96,7 @@ export function Overview() {
   const lanes = laneGroups(view.hosts, view.pullRequests, view.now);
   const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
+  const laneQueued = lanes.reduce((sum, group) => sum + (group.queued ?? []).length, 0);
   const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
   const openPrs = prLanes.reduce((sum, group) => sum + group.rows.length, 0);
   const waiting = readyToMergeCount(prLanes, view.readiness);
@@ -170,8 +162,8 @@ export function Overview() {
             id="run"
             label="Running"
             count={view.running}
-            summary={`${busy} of ${workers} workers busy · ${queued === 0 ? "nothing queued" : `${queued} queued`}`}
-            empty={queuedSentence(view.queued.map((ticket) => ticket.ticket))}
+            summary={`${busy} of ${workers} workers busy · ${laneQueued === 0 ? "nothing queued" : `${laneQueued} queued`}`}
+            empty="Nothing running and nothing queued."
             isEmpty={!lanes.some(hasWork)}
           >
             <RunningLanes groups={lanes} now={view.now} />
