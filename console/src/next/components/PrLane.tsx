@@ -19,7 +19,7 @@ type Host = HostRecord<ContractBodies>;
 
 const ROW_GRID =
   "grid min-h-[66px] grid-cols-[64px_minmax(0,1fr)_auto] items-start gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 transition-colors duration-(--motion-colour) hover:bg-paper-2 group-data-open:hover:bg-transparent max-[720px]:grid-cols-[minmax(0,1fr)]";
-export const OPEN_ROW = "data-open:bg-act-wash data-open:shadow-[inset_2px_0_0_var(--act)]";
+const OPEN_ROW = "data-open:bg-act-wash data-open:shadow-[inset_2px_0_0_var(--act)]";
 const DETAIL = "border-t border-dashed border-rule-2 py-4 pl-[calc(20px+64px+20px)] pr-5 max-[720px]:px-5";
 
 interface PrRow {

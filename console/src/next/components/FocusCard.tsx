@@ -13,7 +13,6 @@ import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
 import { STATES, stateOf } from "../state";
 import { CardActions } from "./CardActions";
-import { OPEN_ROW } from "./PrLane";
 import { StateDot } from "./StateDot";
 import { TitleText } from "./TitleText";
 
@@ -156,7 +155,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const age = ageOf(item, now);
   const prUrl = str(item.pr_url);
   return (
-    <li data-wait-row={name} data-open={open || undefined} className={`group border-rule-2 [&+&]:border-t ${OPEN_ROW}`}>
+    <li data-wait-row={name} data-open={open || undefined} className="group border-rule-2 [&+&]:border-t data-open:bg-need-wash data-open:shadow-[inset_2px_0_0_var(--need)]">
       <div className="flex items-center pr-4 hover:bg-paper-2 group-data-open:hover:bg-transparent">
         <button
           type="button"

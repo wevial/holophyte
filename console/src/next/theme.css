@@ -142,7 +142,7 @@
   --need: var(--pink-9);
   --act-ink: var(--pink-on);
   --act-wash: var(--pink-3);
-  --need-wash: var(--pink-3);
+  --need-wash: color-mix(in oklab, var(--pink-3) 50%, var(--pink-2));
   --live: var(--green-9);
   --live-wash: var(--green-3);
   --ok-ink: var(--green-11);
