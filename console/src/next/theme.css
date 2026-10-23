@@ -659,6 +659,10 @@ body {
   outline-offset: 2px;
 }
 
+[data-app-shell="macos"] main :is(a, button, input, select, textarea, summary) {
+  -webkit-app-region: no-drag;
+}
+
 @layer base {
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
