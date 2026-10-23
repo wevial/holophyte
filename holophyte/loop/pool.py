@@ -1,6 +1,7 @@
 import contextlib
 import os
 import signal
+import sqlite3
 import subprocess
 import sys
 from time import monotonic, sleep
@@ -32,6 +33,8 @@ SPAWN = subprocess.Popen
 
 WAIT_POLL_S = 0.5
 MAX_RESTARTS = 2
+STORE_SKIPS = 3
+STORE_LOCKED = ("database is locked", "locking protocol")
 
 
 def _wait_any(children, timeout):
@@ -198,52 +201,84 @@ def scheduler(target, provider, knobs):
         announce(target)
         _reconcile_at_startup(target, conn, project, provider)
         first_tick = True
+        skips = _StoreSkips(conn, knobs.tick_sec)
         while True:
-            state.check_schema(target)
-            if (pool_handoff.prepare_restart(state, target, pool)
-                    and state.may_reexec(target)):
-                pool_handoff.save(target, pool)
-                _reexec(target, conn, project, state.reason,
-                        prepared_sha=state.prepared_sha, can_ff=state.can_ff)
-                return
-            admission.reconcile_tick(target, conn, project, provider, first_tick)
-            first_tick = False
-            held = admission.held_line(conn, project)
-            if admission.held_idle(held, pool or witness.child, conn, project):
-                return 1 if state.broken else 0
-            listing = None
-            if state.spawning and not held and len(pool) < knobs.workers:
-                listing = pool_handoff.listing(target, conn, project, provider)
-                if listing is not None:
-                    # Live workers hold leases the claimable count leaves out.
-                    want = state.ceiling(
-                        len(pool), _claimable(conn, project, listing),
-                        knobs.workers)
-                    while len(pool) < want:
-                        slot = next(slots)
-                        child = _spawn_worker(target, slot)
-                        pool[child.pid] = (slot, child)
-            witness.tick(target, conn, project, state)
-            if not pool and witness.child is None and not witness.waiting:
-                if state.board_down or (listing is None and state.spawning):
-                    what = (" could not be read back at the claim"
-                            if state.board_down else "'s ready listing failed")
-                    print(f"[holo2] the board{what} and no worker is running;"
-                          " stopping. relaunch once the board answers")
-                    return 1
-                if state.restart and not state.stopped:
+            with skips:
+                state.check_schema(target)
+                if (pool_handoff.prepare_restart(state, target, pool)
+                        and state.may_reexec(target)):
+                    pool_handoff.save(target, pool)
                     _reexec(target, conn, project, state.reason,
                             prepared_sha=state.prepared_sha, can_ff=state.can_ff)
                     return
-                store.record_loop_return(conn, project)
-                if listing is not None and not store_mode(target):
-                    _park_unlisted(conn, project,
-                                   [task["id"] for task in listing])
-                print("[holo2] Linear has no ready tickets. done.")
-                return 1 if state.broken else 0
+                admission.reconcile_tick(target, conn, project, provider, first_tick)
+                first_tick = False
+                held = admission.held_line(conn, project)
+                if admission.held_idle(held, pool or witness.child, conn, project):
+                    return 1 if state.broken else 0
+                listing = None
+                if state.spawning and not held and len(pool) < knobs.workers:
+                    listing = pool_handoff.listing(target, conn, project, provider)
+                    if listing is not None:
+                        # Live workers hold leases the claimable count leaves out.
+                        want = state.ceiling(
+                            len(pool), _claimable(conn, project, listing),
+                            knobs.workers)
+                        while len(pool) < want:
+                            slot = next(slots)
+                            child = _spawn_worker(target, slot)
+                            pool[child.pid] = (slot, child)
+                witness.tick(target, conn, project, state)
+                if not pool and witness.child is None and not witness.waiting:
+                    if state.board_down or (listing is None and state.spawning):
+                        what = (" could not be read back at the claim"
+                                if state.board_down else "'s ready listing failed")
+                        print(f"[holo2] the board{what} and no worker is running;"
+                              " stopping. relaunch once the board answers")
+                        return 1
+                    if state.restart and not state.stopped:
+                        _reexec(target, conn, project, state.reason,
+                                prepared_sha=state.prepared_sha, can_ff=state.can_ff)
+                        return
+                    store.record_loop_return(conn, project)
+                    if listing is not None and not store_mode(target):
+                        _park_unlisted(conn, project,
+                                       [task["id"] for task in listing])
+                    print("[holo2] Linear has no ready tickets. done.")
+                    return 1 if state.broken else 0
             _reap(target, pool, previous, state, witness, knobs.tick_sec)
+            if skips.count >= STORE_SKIPS:
+                print("[holo2] scheduler stopping: store unavailable for"
+                      f" {STORE_SKIPS} consecutive ticks ({skips.error})")
+                return 1
     finally:
         conn.close()
+
+
+class _StoreSkips:
+    def __init__(self, conn, tick_sec):
+        self.conn = conn
+        self.tick_sec = tick_sec
+        self.count = 0
+        self.error = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, kind, exc, tb):
+        if kind is None:
+            self.count = 0
+            return False
+        if not (isinstance(exc, sqlite3.OperationalError)
+                and str(exc) in STORE_LOCKED):
+            return False
+        if self.conn.in_transaction:
+            self.conn.rollback()
+        self.count += 1
+        self.error = exc
+        print(f"[holo2] scheduler tick skipped: store unavailable ({exc});"
+              f" next tick in {self.tick_sec}s")
+        return True
 
 
 def _reap(target, pool, previous, state, witness, tick_sec):
