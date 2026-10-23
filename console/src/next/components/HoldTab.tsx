@@ -64,7 +64,7 @@ function HoldControl({ base, project, held, allowed }: { base: string; project: 
   return <>
     {held ? <Btn disabled={!allowed} title={!allowed ? ACTIONS_OFF : undefined} expanded={open} onClick={() => setOpen(true)}>Release</Btn>
       : <div role="group" aria-label="Admission" className="flex border border-rule font-mono text-[12px]">
-        <button type="button" aria-pressed="true" className="min-h-10 bg-live-wash px-3 text-live">Taking work</button>
+        <button type="button" aria-pressed="true" className="min-h-10 bg-live-wash px-3 text-ok-ink">Taking work</button>
         <button type="button" aria-pressed="false" aria-expanded={open} disabled={!allowed} title={!allowed ? ACTIONS_OFF : undefined} onClick={() => setOpen(true)} className="min-h-10 border-l border-rule px-3 text-ink-2 disabled:opacity-50">Held</button>
       </div>}
     {open && <div className="w-full border border-rule bg-paper-2 p-4">

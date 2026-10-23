@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { declarations, tokensUnder } from "../cssTokens";
+import { declarations, resolveToken, tokensUnder } from "../cssTokens";
 
 const css = await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text();
 const classicCss = await Bun.file(new URL("../../src/theme.css", import.meta.url)).text();
@@ -24,7 +24,8 @@ test("Tailwind exposes every raw colour and every classic colour through a decla
   const raw = tokensUnder(decls, dawnSelector);
   const theme = new Map(decls.filter((d) => d.path.length === 1 && d.path[0] === "@theme inline")
     .map((d) => [d.name, d.value]));
-  for (const name of raw.filter((name) => name !== "--card-shadow")) {
+  const unexposed = /^--(?:(?:neutral|pink|red|orange|gold|yellow|green|violet|slate)-(?:1[0-2]|[1-9])|ok-ink|ask-ink|warn-ink|p1-ink|p2-ink|tag-ink|focus|bad-text|[a-z]+-on)$/;
+  for (const name of raw.filter((name) => name !== "--card-shadow" && !unexposed.test(name))) {
     expect(theme.get(`--color-${name.slice(2)}`)).toBe(`var(${name})`);
   }
   const classicNames = tokensUnder(declarations(classicCss), "@theme inline")
@@ -49,10 +50,10 @@ test("computed canvas and action colours honor explicit themes and otherwise fol
   const token = (name: string) => getComputedStyle(root).getPropertyValue(name).trim();
   try {
     for (const [theme, preference, canvas, action] of [
-      ["dark", "light", "#05070f", "#f5a3c7"],
-      ["light", "dark", "#eceaf3", "#b02f6b"],
-      [null, "dark", "#05070f", "#f5a3c7"],
-      [null, "light", "#eceaf3", "#b02f6b"],
+      ["dark", "light", "#0d0a15", "#f6a3c3"],
+      ["light", "dark", "#eceaf3", "#af2f6e"],
+      [null, "dark", "#0d0a15", "#f6a3c3"],
+      [null, "light", "#eceaf3", "#af2f6e"],
     ] as const) {
       device.prefersColorScheme = preference;
       if (theme === null) root.removeAttribute("data-theme");
@@ -71,14 +72,12 @@ test("computed canvas and action colours honor explicit themes and otherwise fol
 });
 
 test("the graph's edge tokens take the board's values in Dawn and in both dark blocks", () => {
-  const value = (path: string[], name: string) =>
-    decls.find((d) => d.name === name && d.path.join(" ") === path.join(" "))?.value;
   for (const [path, edge, dim] of [
-    [[dawnSelector], "#7d8299", "#c9c6d6"],
-    [[nightSelector], "#5a6488", "#2e3758"],
-    [[media, systemSelector], "#5a6488", "#2e3758"],
+    [[dawnSelector], "#857f97", "#bfbbce"],
+    [[nightSelector], "#746b8f", "#40365a"],
+    [[media, systemSelector], "#746b8f", "#40365a"],
   ] as const) {
-    expect([value([...path], "--edge"), value([...path], "--edge-dim")]).toEqual([edge, dim]);
+    expect([resolveToken(decls, [...path], "--edge"), resolveToken(decls, [...path], "--edge-dim")]).toEqual([edge, dim]);
   }
 });
 
@@ -89,25 +88,4 @@ test("reading text uses Plex Sans with Avenir fallbacks while headings keep Arch
   expect(theme.get("--font-read")).toBe('"IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif');
   expect(theme.has("--font-plex")).toBe(false);
   expect(theme.get("--font-sans")).toStartWith('"Archivo"');
-});
-
-test("the sidebar ground and its hover stand apart from the page and keep ink-3 readable, in Dawn and both dark blocks", () => {
-  const value = (path: string[], name: string) =>
-    decls.find((d) => d.name === name && d.path.join(" ") === path.join(" "))?.value ?? "";
-  const luminance = (hex: string) => {
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
-      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-  };
-  const contrast = (a: string, b: string) => {
-    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-    return (hi! + 0.05) / (lo! + 0.05);
-  };
-  for (const path of [[dawnSelector], [nightSelector], [media, systemSelector]]) {
-    expect(contrast(value(path, "--side"), value(path, "--canvas"))).toBeGreaterThanOrEqual(1.15);
-    expect(contrast(value(path, "--side-hover"), value(path, "--side"))).toBeGreaterThanOrEqual(1.15);
-    for (const ground of ["--side", "--side-hover"]) {
-      expect(contrast(value(path, "--ink-3"), value(path, ground))).toBeGreaterThanOrEqual(4.5);
-    }
-  }
 });

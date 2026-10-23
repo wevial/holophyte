@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { declarations } from "../../tests/cssTokens.ts";
+import { declarations, resolveToken } from "../../tests/cssTokens.ts";
 import { windowOptions } from "../window.ts";
 
 const themeCss = await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text();
-const darkCanvas = declarations(themeCss).find(
-  (decl) => decl.name === "--canvas" && decl.path.length === 1 && decl.path[0] === ':root[data-theme="dark"]',
-)?.value;
+const darkCanvas = resolveToken(declarations(themeCss), [':root[data-theme="dark"]'], "--canvas");
 
 const shared = {
   width: 1280,
@@ -23,8 +21,8 @@ describe("windowOptions", () => {
     expect(options).toMatchObject(shared);
     expect(options.titleBarStyle).toBe("hiddenInset");
     expect(options.trafficLightPosition).toEqual({ x: expect.any(Number), y: expect.any(Number) });
-    expect(darkCanvas).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(options.backgroundColor).toBe(darkCanvas!);
+    expect(options.backgroundColor).toBe("#0d0a15");
+    expect(options.backgroundColor).toBe(darkCanvas);
   });
 
   test("elsewhere keeps the native title bar and default background", () => {

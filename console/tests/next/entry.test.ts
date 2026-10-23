@@ -26,7 +26,7 @@ test("one build emits the classic page and the new console's page, each with its
       const next = page === "next.html";
       for (const [preference, color] of [
         ["light", next ? "#eceaf3" : "#f4f1ea"],
-        ["dark", next ? "#05070f" : "#141210"],
+        ["dark", next ? "#0d0a15" : "#141210"],
       ]) {
         expect(document.querySelector(`meta[name="theme-color"][media="(prefers-color-scheme: ${preference})"]`)
           ?.getAttribute("content")).toBe(color);

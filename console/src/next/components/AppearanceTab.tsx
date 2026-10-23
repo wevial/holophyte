@@ -3,9 +3,9 @@ import { useDensity, useReadingFont, useTheme, type ReadingFont } from "../appea
 import type { Theme } from "../../lib/theme";
 
 const THEMES: { value: Theme; name: string; line: string; colors: string[] }[] = [
-  { value: "dark", name: "Night", line: "deep blue, pink for you", colors: ["#05070f", "#0b1020", "#f5a3c7"] },
-  { value: "light", name: "Dawn", line: "light lavender paper", colors: ["#eceaf3", "#fbfafd", "#b02f6b"] },
-  { value: "system", name: "System", line: "follows your computer", colors: ["#05070f", "#eceaf3", "#0b1020", "#fbfafd", "#f5a3c7", "#b02f6b"] },
+  { value: "dark", name: "Night", line: "deep violet, pink for you", colors: ["#0d0a15", "#16121f", "#f6a3c3"] },
+  { value: "light", name: "Dawn", line: "light lavender paper", colors: ["#eceaf3", "#fbfafd", "#af2f6e"] },
+  { value: "system", name: "System", line: "follows your computer", colors: ["#0d0a15", "#eceaf3", "#16121f", "#fbfafd", "#f6a3c3", "#af2f6e"] },
 ];
 
 const FONTS: { value: ReadingFont; name: string; line: string; face: string }[] = [
@@ -33,7 +33,7 @@ function Card({ group, name, checked, onChange, children, swatch }: {
   group: string; name: string; checked: boolean; onChange: () => void; children: ReactNode; swatch?: ReactNode;
 }) {
   return (
-    <label className={`min-w-0 cursor-pointer border p-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-act ${checked ? "border-act bg-act-wash" : "border-rule bg-paper-2 hover:border-ink-3"}`}>
+    <label className={`min-w-0 cursor-pointer border p-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus ${checked ? "border-act bg-act-wash" : "border-rule bg-paper-2 hover:border-ink-3"}`}>
       {swatch}
       <span className="flex items-center gap-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em]">
         <input type="radio" name={group} aria-label={name} checked={checked} onChange={onChange} className="size-3 shrink-0 accent-act" />

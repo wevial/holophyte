@@ -60,7 +60,7 @@ export function HostToken({ host }: { host: HostCard }) {
             placeholder="Paste the serve token"
             value={value}
             onChange={(event) => setValue(event.currentTarget.value)}
-            className="min-h-9 min-w-0 border border-ink-3 bg-paper px-2.5 font-mono text-[13px] text-ink focus:outline-2 focus:outline-act focus:-outline-offset-1"
+            className="min-h-9 min-w-0 border border-ink-3 bg-paper px-2.5 font-mono text-[13px] text-ink focus:outline-2 focus:outline-focus focus:-outline-offset-1"
           />
           <button type="submit" className="btn" data-variant="quiet" disabled={!value.trim()}>Save token</button>
         </div>
