@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import type { RoundCriterion, RunDetail } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 import { shortSha } from "../../lib/shipped";
-import type { RunActivity } from "../activity";
+import { PASSED, type RunActivity } from "../activity";
 import { failureWord, firstLine } from "../history";
 import { useTicket } from "../queries";
 import { runPage } from "../run";
@@ -27,7 +27,6 @@ const ICON: Record<Tone, { path: string; className: string }> = {
 };
 
 const HANDED_TO_BABYSITTER = /^sent back to the babysitter/;
-const PASSED = new Set(["pass", "approved"]);
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const count = (criteria: RoundCriterion[], status: RoundCriterion["status"]) => criteria.filter((criterion) => criterion.status === status).length;

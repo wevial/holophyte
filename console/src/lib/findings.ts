@@ -5,7 +5,7 @@ import type { Finding, Round } from "./types";
 
 export type Severity = "must" | "should" | "nit";
 
-const RANK: Record<Severity, number> = { must: 0, should: 1, nit: 2 };
+export const RANK: Record<Severity, number> = { must: 0, should: 1, nit: 2 };
 
 /** The store holds the reviewer's p0, p1, p2 and nit; the pill collapses
  *  them: p0 and p1 are must, p2 is should, anything else is nit. */

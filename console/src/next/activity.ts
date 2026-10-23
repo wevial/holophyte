@@ -49,7 +49,7 @@ interface Draft extends Omit<ActivityGroup, "ms" | "running"> {
 }
 
 const NEVER_STEPS = new Set(["turn_progress", "pr_seen_commits", "pr_empty_wakes", "pr_text_sha", "phase_change"]);
-const PASSED = new Set(["pass", "approved"]);
+export const PASSED = new Set(["pass", "approved"]);
 
 const WRITING = /^writing the pull request text for /;
 const PUSHING = /^pushing \S+ to \S+ and opening its pull request/;

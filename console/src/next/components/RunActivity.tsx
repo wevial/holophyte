@@ -1,8 +1,8 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { RoundCriterion, RoundFinding, RunDetail } from "../../lib/contract.gen";
-import { findingsHistory, severityOf, type Fate } from "../../lib/findings";
+import { findingsHistory, RANK, severityOf, type Fate } from "../../lib/findings";
 import { formatClock, formatSpan } from "../../lib/format";
-import { criteriaGrid, type ActivityGroup, type ActivityNow, type ActivityStep, type ActivityTone, type RunActivity as Activity } from "../activity";
+import { criteriaGrid, PASSED, type ActivityGroup, type ActivityNow, type ActivityStep, type ActivityTone, type RunActivity as Activity } from "../activity";
 import { ActivityFinding } from "./ActivityFinding";
 import { CriteriaGrid } from "./CriteriaGrid";
 import { EndCard } from "./EndCard";
@@ -111,9 +111,7 @@ function Heading({ group, end }: { group: ActivityGroup; end: ReactNode }) {
 
 type Line = keyof typeof CONNECTOR | "none";
 
-const PASSED = new Set(["pass", "approved"]);
 const LISTS_FINDINGS = new Set<ActivityGroup["kind"]>(["round", "final", "threads"]);
-const RANK = { must: 0, should: 1, nit: 2 };
 
 function groupFindings(group: ActivityGroup): RoundFinding[] {
   if (group.round == null || !LISTS_FINDINGS.has(group.kind)) return [];
