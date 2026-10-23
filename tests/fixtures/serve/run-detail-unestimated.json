@@ -57,5 +57,6 @@
     ]
   },
   "steer_notes": [],
-  "criteria": []
+  "criteria": [],
+  "precheck": null
 }

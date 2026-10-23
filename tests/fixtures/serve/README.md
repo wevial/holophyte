@@ -5,7 +5,9 @@ with writer and /repo, numeric IDs and PIDs with 1, and absolute timestamps with
 criterion IDs stay strings such as `C1`, matching the daemon and console schema;
 the builder freezes clocks, so durations remain meaningful and unchanged.
 The reviewed run's round recorded one criterion not met, so
-`run-detail.json` lists it in `criteria`.
+`run-detail.json` lists it in `criteria` and in its round's `criteria`;
+its one witness pre-check found that criterion naming no test file, so
+`precheck` marks it unwitnessed.
 The status fixture includes an unestimated run with no recorded host or
 measured work clocks; `run-detail-unestimated.json` pins the same run
 with its estimate, host, and work clocks null.

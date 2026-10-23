@@ -91,6 +91,13 @@ def contract_answers(case):
                                dict(n=1, status="not_met", note="input unvalidated",
                                     text="Given input, then it is validated")])),
                            now=NOW)
+        store.record_event(conn, case.run, "witness_precheck_results",
+                           "witness pre-check: 0 of 1 criteria witnessed",
+                           level="detail", payload=json.dumps(dict(
+                               sha="c" * 40, base="b" * 40, criteria=[
+                                   dict(criterion=1, id="C1", files=[],
+                                        named="no_file", checks=[], gaps=[])])),
+                           now=NOW)
         project = store.tickets.ensure_project(conn, "team-1", case.target)
         ticket = store.tickets.mirror_ticket(
             conn, project, linear_issue_id="issue-8", linear_identifier="KO-8",
