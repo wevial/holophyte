@@ -40,7 +40,7 @@ function Shell() {
         <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
           {macApp && (
             <div aria-hidden="true" className="sticky top-0 z-10 h-0">
-              <div className={`absolute inset-x-0 top-0 h-[52px] ${APP_DRAG}`} />
+              <div className={`pointer-events-none absolute inset-x-0 top-0 h-[52px] ${APP_DRAG}`} />
             </div>
           )}
           <TokenPrompt />
