@@ -2,6 +2,7 @@
 a removal for red Actions checks on the merge group gets the one fix turn."""
 from __future__ import annotations
 
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -16,6 +17,8 @@ from loop_fixture import MergeModeFixture  # noqa: E402
 import holophyte.babysit.babysitter  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
+from holophyte.babysit.maintainer_notes import PREFIX  # noqa: E402 - after the insert
+from holophyte.cli.operator import steer_ticket  # noqa: E402 - after the insert
 from holophyte.loop.gates import InfraFailure  # noqa: E402 - after the insert
 
 # The queue's merge commit, distinct from the REST merge's `MERGE_SHA`.
@@ -146,6 +149,48 @@ class MergeQueueTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
         self.assertFalse([c for c in self.recorded() if "rerun" in c])
+
+    def test_a_note_steered_in_the_queue_fix_turn_is_taken_and_fixed_before_requeue(
+            self):
+        fixture, said, phases = self, io.StringIO(), []
+        note = "also log the port"
+
+        class SteeringCommit(Commit):
+            def play(self, cwd, turn):
+                phases.append(fixture.read("SELECT phase FROM runs")[0][0])
+                try:
+                    steer_ticket(fixture.project, "KO-131", note,
+                                 author="maintainer", out=said)
+                except SystemExit as refused:
+                    said.write(str(refused))
+                return super().play(cwd, turn)
+
+        self.land([queue_read(), queue_read(queued=False),
+                   queue_read(queued=False, merged=True)],
+                  steps=(SteeringCommit("fix: the unit failure"),
+                         Commit("apply the maintainer's note"), APPROVE,
+                         Idle("")),
+                  groups=[[group_run("failure")]], group_runs=[UNIT])
+
+        fake = self.fake
+        self.assertEqual(phases, ["merge_gate"])
+        self.assertIn("landing at its babysitter's next fix round",
+                      said.getvalue())
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "implement", "review",
+                                      "implement"])
+        self.assertIn("CHECK unit", fake.turns[3].goal)
+        self.assertNotIn(note, fake.turns[3].goal)
+        ((event_id,),) = self.read(
+            "SELECT id FROM runEvents WHERE kind = 'operator_note'")
+        self.assertIn(f"{PREFIX}\noperator_note event {event_id}",
+                      fake.turns[4].goal)
+        self.assertIn(note, fake.turns[4].goal)
+        _, noted = self.enqueued()
+        self.assertIn("apply the maintainer's note",
+                      self.git("log", "-1", "--format=%s", noted))
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
 
     def test_a_red_merge_group_run_past_the_first_page_still_gets_the_fix(
             self):
