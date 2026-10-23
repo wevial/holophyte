@@ -61,7 +61,8 @@ class ImageFetchTests(unittest.TestCase):
         handler = type("Handler", (Images,), {})
         self.handler = handler
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.host = f"127.0.0.1:{server.server_address[1]}"

@@ -218,7 +218,7 @@ class StreamDecodingTests(StreamTurnCase):
 class QuietWatchdogTests(StreamTurnCase):
     def test_a_stalled_turn_does_not_activate_the_fallback(self):
         self.harness(f"echo '{INIT}'\nsleep 30\n",
-                     agents="turn_quiet_sec = 2\n" + self.fallback())
+                     agents="turn_quiet_sec = 1\n" + self.fallback())
         started = time.monotonic()
         output, timed_out = self.timed()
         self.assertLess(time.monotonic() - started, 15)
@@ -229,7 +229,7 @@ class QuietWatchdogTests(StreamTurnCase):
 
     def test_a_turn_that_closes_its_output_and_hangs_still_stalls(self):
         self.harness(f"echo '{INIT}'\nexec >&- 2>&-\nsleep 30\n",
-                     agents="turn_quiet_sec = 2\n")
+                     agents="turn_quiet_sec = 1\n")
         started = time.monotonic()
         output, timed_out = self.timed()
         self.assertLess(time.monotonic() - started, 15)
@@ -237,9 +237,9 @@ class QuietWatchdogTests(StreamTurnCase):
         self.assertEqual(len(self.events("turn_stalled")), 1)
         self.assertEqual(self.events("turn_timeout"), [])
 
-    def test_a_turn_printing_every_second_outlives_a_short_quiet_period(self):
-        self.harness(f"for i in 1 2 3 4 5; do echo '{STATUS}'; sleep 1; done\n"
-                     f"echo '{DONE}'\n", agents="turn_quiet_sec = 2\n")
+    def test_a_turn_printing_often_outlives_a_short_quiet_period(self):
+        self.harness(f"for i in 1 2 3 4 5; do echo '{STATUS}'; sleep 0.3; done\n"
+                     f"echo '{DONE}'\n", agents="turn_quiet_sec = 1\n")
         output, timed_out = self.timed()
         self.assertEqual((str(output), timed_out), ("finished", False))
         self.assertEqual(self.events("turn_stalled"), [])
@@ -252,9 +252,10 @@ class QuietWatchdogTests(StreamTurnCase):
         self.assertEqual(self.events("turn_stalled"), [])
 
     def test_a_zero_quiet_period_leaves_a_silent_turn_to_the_turn_cap(self):
-        self.harness(f"echo '{INIT}'\nsleep 90\n",
+        self.harness(f"echo '{INIT}'\nsleep 30\n",
                      agents="turn_quiet_sec = 0\nturn_cap_min = 1\n")
-        output, timed_out = self.timed()
+        with patch.object(holophyte.loop.implement, "turn_cap", return_value=3):
+            output, timed_out = self.timed()
         self.assertTrue(timed_out)
         self.assertEqual(len(self.events("turn_timeout")), 1)
         self.assertEqual(self.events("turn_stalled"), [])
@@ -286,11 +287,11 @@ class OpaqueImplementerTests(StreamTurnCase):
         script.write_text("#!/bin/sh\n"
                           f'printf "%s\\0" "$@" > "{self.argv_log}"\n'
                           f'echo "session id: {session}"\necho working\n'
-                          "sleep 4\necho done\n")
+                          "sleep 1.5\necho done\n")
         script.chmod(0o755)
         self.configure(f'[agents]\nimplementer = "{script}"\n'
                        "implementer_session = 'session id: (\\S+)'\n"
-                       "turn_quiet_sec = 2\n")
+                       "turn_quiet_sec = 1\n")
         self.addCleanup(reset, self.project)
         output, timed_out = self.timed()
         self.assertFalse(timed_out)

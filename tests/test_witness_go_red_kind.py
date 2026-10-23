@@ -185,13 +185,13 @@ UNITTEST_ASSERTION_RED = (
     "FAILED (failures=1)\n")
 
 
-def go_test_output(test_source):
+def go_test_output(test_source, cache):
     with tempfile.TemporaryDirectory() as tmp:
         module = Path(tmp) / "red"
         module.mkdir()
         (module / "go.mod").write_text(GO_MOD)
         (module / "red_test.go").write_text(test_source)
-        env = dict(os.environ, GOTOOLCHAIN="local", GOCACHE=str(Path(tmp) / "cache"),
+        env = dict(os.environ, GOTOOLCHAIN="local", GOCACHE=str(cache),
                    GOFLAGS="", GOWORK="off")
         done = subprocess.run([GO, "test", "-v", "-count=1", "./..."], cwd=module,
                               env=env, capture_output=True, text=True, timeout=300)
@@ -200,8 +200,16 @@ def go_test_output(test_source):
 
 @unittest.skipUnless(GO, "go is not installed")
 class RealGoTestTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cache = tempfile.TemporaryDirectory()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cache.cleanup()
+
     def test_a_failing_subtest_beside_a_passing_test_is_an_assertion_red(self):
-        code, output = go_test_output(SUBTEST_ERRORF)
+        code, output = go_test_output(SUBTEST_ERRORF, self.cache.name)
         self.assertNotEqual(code, 0, output)
         self.assertEqual(red_kind(output), "assert", output)
 
@@ -209,7 +217,7 @@ class RealGoTestTests(unittest.TestCase):
         for name, source in {"undefined function": CALLS_UNDEFINED,
                              "nil map write": WRITES_NIL_MAP}.items():
             with self.subTest(name):
-                code, output = go_test_output(source)
+                code, output = go_test_output(source, self.cache.name)
                 self.assertNotEqual(code, 0, output)
                 self.assertEqual(red_kind(output), "exception", output)
 
