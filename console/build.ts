@@ -53,6 +53,7 @@ export async function buildConsole(outdir: string = `${here}dist/`): Promise<str
     outdir,
     plugins: [tailwind, keepPublic(files)],
     minify: true,
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
     sourcemap: "linked",
   });
   if (!result.success) {
