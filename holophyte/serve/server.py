@@ -529,7 +529,7 @@ def make_server(project, host, port, console_dir=CONSOLE_DIR, token=None,
     return StatusServer(project, (host, port), console_dir, token, sock)
 
 
-class _Stopped(Exception):
+class _Stopped(BaseException):
     pass
 
 
