@@ -151,6 +151,12 @@
               "type": "null"
             }
           ]
+        },
+        "implementer_profiles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       },
       "required": [

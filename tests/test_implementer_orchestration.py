@@ -384,6 +384,14 @@ class ImplementerProfileTests(ProfileRunFixture):
         self.assertIn("probe failed (exit 1)", event["why"])
         self.assertIn("sonnet route refused", event["why"])
 
+    def test_a_passing_profile_probe_is_kept_under_its_profile_seat(self):
+        from holophyte.agents.probe_log import last_probes
+        self.configure(PROFILES)
+        self.run_ticket(implementer_line("sonnet"), APPROVE)
+        entry = last_probes(self.project)["implementer_profiles.sonnet"]
+        self.assertEqual((set(entry), entry["primary"]["ok"]),
+                         ({"primary"}, True))
+
     def test_continuation_in_a_new_process_keeps_the_profile(self):
         self.pause_on_sonnet_and_resume()
         child = subprocess.run(
