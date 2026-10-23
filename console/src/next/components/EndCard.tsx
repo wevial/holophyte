@@ -95,7 +95,7 @@ export function EndCard({ detail, activity, base, project }: { detail: RunDetail
   const nextLink = next == null ? null : <Link {...runPage(project, next)} className="font-mono underline underline-offset-2 hover:text-ink">run {next}</Link>;
   const reason = run.outcome_reason ?? "";
   const final = activity.groups.findLast((group) => group.kind === "final")?.round;
-  if (run.outcome === "failed" && final != null && final.ended_ms != null && !PASSED.has(final.verdict)) {
+  if (run.outcome === "failed" && final?.ended_ms != null && !PASSED.has(final.verdict)) {
     const review = activity.groups.findLast((group) => group.kind === "round" && (group.round?.criteria.length ?? 0) > 0)?.round ?? null;
     const parked = detail.events.some((event) => event.kind === "steer_cap_park");
     return (
