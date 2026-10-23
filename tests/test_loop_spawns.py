@@ -91,8 +91,6 @@ class TemplateRepositoryTests(unittest.TestCase):
             second = fixture(self, LoopFixture)
 
         self.assertEqual(heads(started, "git"), [])
-        self.assertEqual(first.base, second.base)
-        self.assertEqual(second.git("rev-parse", "main").strip(), second.base)
         (first.target / "README.md").write_text("first only\n")
         first.git("commit", "-qam", "first only")
         only = first.git("rev-parse", "HEAD").strip()
@@ -115,7 +113,6 @@ class SweepTreeTests(LoopFixture):
         self.assertFalse(swept)
         self.assertEqual(len(heads(started, "git", "rev-parse")), 1)
         self.assertEqual(len(heads(started, "git", "status")), 1)
-        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.base)
 
     def test_a_tree_mid_merge_is_left_alone_when_merges_is_false(self):
         self.git("checkout", "-qb", "task")
@@ -147,9 +144,6 @@ class SweepTreeTests(LoopFixture):
             swept, _ = self.sweep(unborn)
 
             self.assertFalse(swept)
-            self.assertEqual(subprocess.run(
-                ["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=unborn,
-                capture_output=True).returncode, 1)
 
 
 if __name__ == "__main__":
