@@ -10,6 +10,7 @@ from holophyte.serve.contract_routes import (
     RouteLabels,
     SeatProbes,
 )
+from holophyte.serve.contract_routes import RouteProbe as RouteProbe
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = "python3 -m holophyte.serve.contract"
