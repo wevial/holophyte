@@ -110,17 +110,19 @@ class LockedStoreSchedulerTests(LoopFixture):
         self.assertEqual(pool.reaped, [(5001, holophyte.loop.pool.WORKER_MERGED)])
         self.assertEqual(self.rc, 0)
 
-    def test_a_lock_held_through_every_pass_stops_after_three_skips(self):
-        pool = self.run_scheduler([(TICK, self.lease_and_lock),
-                                   (TICK, None), (TICK, None)])
+    def test_a_lock_held_through_every_pass_reaps_then_stops_after_three_skips(self):
+        pool = self.run_scheduler([
+            (TICK, self.lease_and_lock), (TICK, None), (TICK, None),
+            (holophyte.loop.pool.WORKER_FAILED, None)])
 
         self.assertEqual(self.out.count(SKIPPED), 3)
         lines = self.out.splitlines()
         self.assertTrue(lines[-1].endswith(
             "scheduler stopping: store unavailable for 3 consecutive ticks"
             " (database is locked)"), lines[-1])
-        self.assertIn(SKIPPED, lines[-2])
-        self.assertEqual(pool.alive, [5001])
+        self.assertNotIn(SKIPPED, "\n".join(lines[-2:]))
+        self.assertIn("worker 1 failed (exit 1)", lines[-2])
+        self.assertEqual(pool.reaped, [(5001, holophyte.loop.pool.WORKER_FAILED)])
         self.assertEqual(self.rc, 1)
 
     def test_a_clean_tick_resets_the_count_and_other_errors_raise(self):

@@ -246,9 +246,11 @@ def scheduler(target, provider, knobs):
                                        [task["id"] for task in listing])
                     print("[holo2] Linear has no ready tickets. done.")
                     return 1 if state.broken else 0
-            if skips.count >= STORE_SKIPS:
-                return 1
             _reap(target, pool, previous, state, witness, knobs.tick_sec)
+            if skips.count >= STORE_SKIPS:
+                print("[holo2] scheduler stopping: store unavailable for"
+                      f" {STORE_SKIPS} consecutive ticks ({skips.error})")
+                return 1
     finally:
         conn.close()
 
@@ -258,6 +260,7 @@ class _StoreSkips:
         self.conn = conn
         self.tick_sec = tick_sec
         self.count = 0
+        self.error = None
 
     def __enter__(self):
         return self
@@ -272,11 +275,9 @@ class _StoreSkips:
         if self.conn.in_transaction:
             self.conn.rollback()
         self.count += 1
+        self.error = exc
         print(f"[holo2] scheduler tick skipped: store unavailable ({exc});"
               f" next tick in {self.tick_sec}s")
-        if self.count >= STORE_SKIPS:
-            print("[holo2] scheduler stopping: store unavailable for"
-                  f" {STORE_SKIPS} consecutive ticks ({exc})")
         return True
 
 
