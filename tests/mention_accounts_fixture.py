@@ -1,4 +1,5 @@
 """Mention identity boundaries exercised through the fake GitHub."""
+from babysit_fixture import OperatorNotePass
 from fake_agent import APPROVE, Commit, Idle
 from loop_fixture import BRANCH
 
@@ -7,7 +8,7 @@ from holophyte.babysit import babysitter, thread_mentions
 from holophyte.config.config_tables import merge_config
 
 
-class MentionAccountCases:
+class MentionAccountCases(OperatorNotePass):
     def test_private_operator_note_is_exempt_from_mention_accounts(self):
         self.operator_note_pass(
             False, 'mention_accounts = ["github-maintainer"]\n',

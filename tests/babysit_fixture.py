@@ -512,23 +512,7 @@ class SpentCapReview:
         return self.reply.play(cwd, turn)
 
 
-class OperatorNoteCase:
-    def test_operator_note_drives_fix_without_public_posts_or_judgment(self):
-        self.operator_note_pass(False)
-
-    def test_operator_note_joins_two_judged_bot_threads(self):
-        self.operator_note_pass(True)
-
-    def test_operator_note_stays_private_when_author_is_a_configured_bot(self):
-        self.operator_note_pass(
-            False, 'bot_threads = "advisory"\nbot_logins = ["maintainer"]\n')
-
-    def test_operator_note_question_marker_keeps_fix_path(self):
-        self.operator_note_pass(False, note="@holophyte ? remove the subheader")
-
-    def test_operator_note_ask_marker_keeps_fix_path(self):
-        self.operator_note_pass(False, note="@holophyte ask: remove the subheader")
-
+class OperatorNotePass:
     def operator_note_pass(self, bots, config="", note="remove the subheader"):
         import store
         from store.operator_notes import notes, send_back
@@ -572,6 +556,24 @@ class OperatorNoteCase:
             self.assertEqual(notes(conn, current, pending=True), [])
 
         return current, note_id
+
+
+class OperatorNoteCase(OperatorNotePass):
+    def test_operator_note_drives_fix_without_public_posts_or_judgment(self):
+        self.operator_note_pass(False)
+
+    def test_operator_note_joins_two_judged_bot_threads(self):
+        self.operator_note_pass(True)
+
+    def test_operator_note_stays_private_when_author_is_a_configured_bot(self):
+        self.operator_note_pass(
+            False, 'bot_threads = "advisory"\nbot_logins = ["maintainer"]\n')
+
+    def test_operator_note_question_marker_keeps_fix_path(self):
+        self.operator_note_pass(False, note="@holophyte ? remove the subheader")
+
+    def test_operator_note_ask_marker_keeps_fix_path(self):
+        self.operator_note_pass(False, note="@holophyte ask: remove the subheader")
 
 
 class ConversationFix(Commit):

@@ -372,7 +372,8 @@ class LiveTests(unittest.TestCase):
     def test_unreachable_daemon_is_red_and_the_rest_still_render(self):
         Handler.body = json.dumps(fixture("working")).encode()
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(server.shutdown)
         dead = closed_loopback_port()
         with tempfile.TemporaryDirectory() as home:
@@ -399,7 +400,8 @@ class LiveTests(unittest.TestCase):
 
     def test_idle_daemon_is_asked_for_runs_and_a_working_one_is_not(self):
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(server.shutdown)
         url = f"http://127.0.0.1:{server.server_port}"
         Handler.body = json.dumps(fixture("idle")).encode()
@@ -418,7 +420,8 @@ class LiveTests(unittest.TestCase):
 
     def test_older_daemon_answering_404_on_attention_gets_the_local_rule(self):
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(server.shutdown)
         Handler.body = json.dumps(fixture("stale_heartbeat")).encode()
         Handler.attention_body = None
@@ -455,7 +458,8 @@ class LiveTests(unittest.TestCase):
 
     def test_daemon_answering_500_on_attention_shows_the_failure_live(self):
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(server.shutdown)
         Handler.body = json.dumps(fixture("idle")).encode()
         Handler.attention_body = b'{"error": "store busy"}'
@@ -491,7 +495,8 @@ class LiveTests(unittest.TestCase):
         Handler.do_GET = do_GET
         self.addCleanup(setattr, Handler, "do_GET", original)
         server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
         self.addCleanup(server.shutdown)
         with tempfile.TemporaryDirectory() as home:
             (Path(home) / "writer.token").write_text("tok-en\n")

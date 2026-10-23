@@ -17,7 +17,7 @@ from holophyte.loop.gates import RunFailure, run_verify
 from holophyte.loop.runs import open_store
 
 TICKET = "# A ticket\n\n## Acceptance criteria\n\n- [ ] it works\n"
-SLOW = "sleep 3"
+SLOW = "sleep 0.6"
 
 
 class TicketVerifyTimeoutTests(unittest.TestCase):
@@ -110,26 +110,26 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
         return result, out.getvalue()
 
     def test_review_round_verify_times_out_at_the_configured_cap(self):
-        result, prompts = self.review(2)
+        result, prompts = self.review(0.3)
 
         self.assertIsInstance(result, RunFailure)
-        self.assertIn("verify timed out after 2s", prompts[0])
+        self.assertIn("verify timed out after 0.3s", prompts[0])
 
     def test_review_round_verify_passes_under_a_cap_above_its_runtime(self):
-        result, prompts = self.review(5)
+        result, prompts = self.review(2)
 
         self.assertEqual(result, (self.sha, 1, True))
         self.assertNotIn("timed out", prompts[0])
 
     def test_merge_gate_verify_times_out_at_the_configured_cap(self):
-        result, out = self.merge(2)
+        result, out = self.merge(0.3)
 
         self.assertIsInstance(result, RunFailure)
         self.assertIn("verify FAILED before merge", out)
-        self.assertIn("verify timed out after 2s", out)
+        self.assertIn("verify timed out after 0.3s", out)
 
     def test_merge_gate_verify_passes_under_a_cap_above_its_runtime(self):
-        result, out = self.merge(5)
+        result, out = self.merge(2)
 
         self.assertEqual(result, (True, self.sha))
         self.assertIn("verify ok before merge", out)
@@ -140,28 +140,28 @@ class TicketVerifyTimeoutTests(unittest.TestCase):
                                           self.sha, SLOW, ())
 
     def test_babysitter_refresh_verify_times_out_at_the_configured_cap(self):
-        ok, out = self.babysitter_refresh(2)
+        ok, out = self.babysitter_refresh(0.3)
 
         self.assertFalse(ok)
-        self.assertIn("verify timed out after 2s", str(out))
+        self.assertIn("verify timed out after 0.3s", str(out))
 
     def test_babysitter_refresh_verify_passes_under_a_cap_above_its_runtime(self):
-        ok, out = self.babysitter_refresh(5)
+        ok, out = self.babysitter_refresh(2)
 
         self.assertTrue(ok)
         self.assertNotIn("timed out", str(out))
 
     def test_a_default_cap_pass_does_not_satisfy_review_under_a_shorter_cap(self):
-        result, prompts = self.review(2, after_reproduction=True)
+        result, prompts = self.review(0.3, after_reproduction=True)
 
         self.assertIsInstance(result, RunFailure)
-        self.assertIn("verify timed out after 2s", prompts[0])
+        self.assertIn("verify timed out after 0.3s", prompts[0])
 
     def test_a_default_cap_pass_does_not_satisfy_merge_under_a_shorter_cap(self):
-        result, out = self.merge(2, after_reproduction=True)
+        result, out = self.merge(0.3, after_reproduction=True)
 
         self.assertIsInstance(result, RunFailure)
-        self.assertIn("verify timed out after 2s", out)
+        self.assertIn("verify timed out after 0.3s", out)
 
 
 if __name__ == "__main__":

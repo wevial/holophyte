@@ -223,7 +223,8 @@ class DaemonTests(ReportCase):
     def serve(self, project):
         server = holophyte.serve.server.make_server(
             project, "127.0.0.1", 0, console_dir=self.target / "no-console")
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever,
+                                  kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(thread.join)

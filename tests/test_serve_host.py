@@ -119,7 +119,7 @@ class HostServeCase(HostFixture):
                                  console_dir=self.root / "no-console",
                                  read_token=read, write_token=write)
         thread = threading.Thread(target=self.server.serve_forever,
-                                  daemon=True)
+                                  kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(thread.join)

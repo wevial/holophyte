@@ -91,7 +91,8 @@ class BoardFieldsCase(HostFixture):
         self.assertTrue(server.actions)
 
     def serve(self, server):
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever,
+                                  kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(thread.join)
