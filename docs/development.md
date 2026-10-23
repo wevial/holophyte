@@ -1024,6 +1024,10 @@ babysit passes) and the live run's Now line, for the Run page's Progress.
 `console/src/next/components/RunActivity.tsx` draws them as a folding
 timeline under a pinned Now bar, and `console/src/next/components/RawLog.tsx`
 opens every Progress line, heartbeats included, in a modal side panel.
+Its `criteriaGrid` lays out the run's criteria by round for
+`console/src/next/components/CriteriaGrid.tsx`; an open group lists its
+findings as `console/src/next/components/ActivityFinding.tsx` rows, and an
+ended run shows `console/src/next/components/EndCard.tsx` where the Now bar stood.
 
 The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
