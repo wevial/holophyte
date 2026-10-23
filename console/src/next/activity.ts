@@ -62,12 +62,8 @@ const WITNESSED = /(\d+) of (\d+) criteria witnessed/;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-function phase(event: RunEvent): [string, string] | null {
-  return event.kind === "phase_change" ? edge(event.summary) : null;
-}
-
 const isEdge = (event: RunEvent, from: string | null, to: string | null) => {
-  const walked = phase(event);
+  const walked = event.kind === "phase_change" ? edge(event.summary) : null;
   return walked != null && (from == null || walked[0] === from) && (to == null || walked[1] === to);
 };
 
@@ -317,7 +313,6 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
   const notes = runNotes(detail);
   const threads = threadRounds(detail, events);
   const carried = notes.filter((note) => note.consumed_by === detail.run.id && note.at < detail.run.started_ms);
-  const before = beforeGroup(carried);
   const drafts = [
     ...implementGroup(detail, events, used),
     ...roundGroups(detail, events, threads, used),
@@ -326,7 +321,7 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
   ].sort((a, b) => a.at - b.at);
   const during = notes.filter((note) => !carried.includes(note));
   place(drafts, [...eventSteps(detail, events, used), ...during.map(noteStep), ...askSteps(detail, asks)]);
-  const all = [...before, ...drafts];
+  const all = [...beforeGroup(carried), ...drafts];
   const live = detail.run.outcome == null;
   const groups = all.map((group, index): ActivityGroup & { what?: string } => {
     const { end, ...rest } = group;
@@ -335,6 +330,5 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
     return { ...rest, ms: close == null ? null : close - group.at, running, tone: running ? "live" : group.tone };
   });
   const last = groups.at(-1);
-  const current = live && last != null ? nowLine(last, events) : null;
-  return { groups: groups.map(({ what: _what, ...group }) => group), now: current };
+  return { groups: groups.map(({ what: _what, ...group }) => group), now: live && last != null ? nowLine(last, events) : null };
 }
