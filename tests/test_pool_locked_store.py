@@ -159,10 +159,11 @@ class LockedStoreSchedulerTests(LoopFixture):
             self.assertEqual(self.rc, 0)
 
         with self.subTest("another OperationalError propagates"):
-            probe = sqlite3.OperationalError("no such table: probe")
-            with patch.object(holophyte.admission, "reconcile_tick",
-                              scripted(probe)), \
-                    self.assertRaises(sqlite3.OperationalError) as caught:
-                self.run_scheduler([])
-            self.assertIs(caught.exception, probe)
-            self.assertNotIn(SKIPPED, self.out)
+            for table in ("probe", '"database is locked"'):
+                probe = sqlite3.OperationalError(f"no such table: {table}")
+                with patch.object(holophyte.admission, "reconcile_tick",
+                                  scripted(probe)), \
+                        self.assertRaises(sqlite3.OperationalError) as caught:
+                    self.run_scheduler([])
+                self.assertIs(caught.exception, probe)
+                self.assertNotIn(SKIPPED, self.out)

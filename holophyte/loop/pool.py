@@ -270,7 +270,7 @@ class _StoreSkips:
             self.count = 0
             return False
         if not (isinstance(exc, sqlite3.OperationalError)
-                and any(message in str(exc) for message in STORE_LOCKED)):
+                and str(exc) in STORE_LOCKED):
             return False
         if self.conn.in_transaction:
             self.conn.rollback()
