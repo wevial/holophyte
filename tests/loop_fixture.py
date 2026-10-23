@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import io
 import json
 import os
@@ -27,6 +28,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     block_until_killed,
     no_agent_processes,
 )
+from fake_github import FakeGitHub  # noqa: E402 - after the sys.path insert above
 
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
@@ -36,6 +38,7 @@ import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 
 # The branch the loop cuts for the task below. Spelled out rather than derived
@@ -190,6 +193,36 @@ INVALID_BODY = VALID_BODY.replace(
     "The thing, added.", "<Describe the outcome in one or two sentences.>")
 
 
+TEMPLATE = {}
+
+
+def template_repo():
+    """The base repository every `LoopFixture` copies, built once a process:
+    its directory and its base commit."""
+    if not TEMPLATE:
+        repo = Path(tempfile.mkdtemp()) / "repo"
+        atexit.register(shutil.rmtree, repo.parent, True)
+        repo.mkdir()
+
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=repo, check=True,
+                                  capture_output=True, text=True).stdout
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "factory@example.invalid")
+        git("config", "user.name", "Factory Test")
+        (repo / "README.md").write_text("base\n")
+        # The test the scripted approvals name as their witness: the loop
+        # checks a named test exists in the worktree.
+        (repo / "tests").mkdir()
+        (repo / "tests" / "test_thing.py").write_text(
+            "def test_it_works():\n    pass\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "base")
+        TEMPLATE.update(path=repo, base=git("rev-parse", "main").strip())
+    return TEMPLATE["path"], TEMPLATE["base"]
+
+
 class LoopFixture(unittest.TestCase):
     """The real repo, worktree directory and store every loop test runs on;
     split from the tests so a suite with its own configuration reuses the
@@ -207,24 +240,13 @@ class LoopFixture(unittest.TestCase):
         root = Path(tmp.name)
         self.target = root / "repo"
         self.worktrees = root / "repo.worktrees"
-        self.target.mkdir()
+        template, self.base = template_repo()
+        shutil.copytree(template, self.target, symlinks=True)
         # Self-reexec tests run against the disposable factory checkout.
         factory_file = patch("holophyte.loop.pool_handoff.factory_checkout",
                              return_value=self.target)
         factory_file.start()
         self.addCleanup(factory_file.stop)
-        self.git("init", "-q", "-b", "main")
-        self.git("config", "user.email", "factory@example.invalid")
-        self.git("config", "user.name", "Factory Test")
-        (self.target / "README.md").write_text("base\n")
-        # The test the scripted approvals name as their witness: since KO-215
-        # the loop checks a named test exists in the worktree.
-        (self.target / "tests").mkdir()
-        (self.target / "tests" / "test_thing.py").write_text(
-            "def test_it_works():\n    pass\n")
-        self.git("add", "-A")
-        self.git("commit", "-q", "-m", "base")
-        self.base = self.git("rev-parse", "main").strip()
 
         # Where `Project.locate(self.target)` will look: the target's directory
         # under a HOLOPHYTE_HOME of this test's own, never the operator's real
@@ -523,7 +545,7 @@ class MergeModeFixture(LoopFixture):
                    comments=(), open_pr=None, close_exit=0,
                    refuse_labels=False, refuse_reactions=False,
                    refuse_rerun=False, merge_queue=None, merge_groups=(),
-                   plan_gated_rules=False, fetch_from=None):
+                   plan_gated_rules=False, fetch_from=None, gh_on_path=False):
         """Put a recording `git` and `gh` ahead of the real PATH, and give
         the target an `origin` for them to name.
 
@@ -566,6 +588,8 @@ class MergeModeFixture(LoopFixture):
         `self.push_log`: the refspec's source resolved in the pushing
         checkout at push time, which is the tip a real remote's branch
         would have received (`pushed()` reads it back).
+        The `gh api` calls are answered in-process by `fake_github`, with
+        the script's answers; `gh_on_path` sends them to the script too.
         """
         self.git("remote", "add", "origin", self.ORIGIN)
         tmp = tempfile.TemporaryDirectory()
@@ -726,6 +750,15 @@ class MergeModeFixture(LoopFixture):
                              {"PATH": f"{bindir}:{os.environ['PATH']}"})
         patcher.start()
         self.addCleanup(patcher.stop)
+        if not gh_on_path:
+            gh = patch.object(holophyte.pr.github, "_gh_run", FakeGitHub(
+                self.calls, self.api_dir, answers, queue, pages,
+                self.open_answer, self.pr_body, self.job_log, self.label_log,
+                self.target, real_git, BRANCH, self.HEAD, self.MERGE_SHA,
+                self.ENQUEUED_AT, close_exit, refuse_labels, refuse_reactions,
+                refuse_rerun, bool(merge_queue), plan_gated_rules))
+            gh.start()
+            self.addCleanup(gh.stop)
 
     def recorded(self):
         return (self.calls.read_text().splitlines()

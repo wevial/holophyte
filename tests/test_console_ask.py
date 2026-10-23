@@ -184,7 +184,7 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
     def parked(self, merge=""):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + merge
                        + f'[example]\napi_key = "{self.SECRET}"\n')
-        self.fake_route(states=[self.pr_state()])
+        self.fake_route(states=[self.pr_state()], gh_on_path=True)
         gh = self.calls.parent / "gh"
         script, posted = gh.read_text(), 'echo "{\\"id\\":$n}"'
         self.assertIn(posted, script)
