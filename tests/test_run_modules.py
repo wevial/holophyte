@@ -410,12 +410,81 @@ class RunModulesTests(unittest.TestCase):
         self.assertGreaterEqual(times["test_slow.py"], 1.2)
         self.assertGreaterEqual(times["test_middle.py"], 0.6)
         (self.tests / "module_times.json").write_text(record.read_text())
-        listed = subprocess.run(
-            [sys.executable, str(RUNNER), "--dir", str(self.tests), "--list"],
-            capture_output=True, text=True, timeout=60)
-        self.assertEqual(listed.returncode, 0, listed.stderr)
-        self.assertEqual(listed.stdout.splitlines(),
+        self.assertEqual(self.listed(),
                          sorted(times, key=times.get, reverse=True))
+
+    def listed(self, *args):
+        done = self.run_over({}, "--list", *args)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return done.stdout.splitlines()
+
+    def fixture(self, names, times):
+        for name in names:
+            (self.tests / name).write_text(PASSING)
+        (self.tests / "module_times.json").write_text(json.dumps(times))
+
+    def test_shards_of_the_real_directory_split_every_module_once(self):
+        every = {path.name for path in (ROOT / "tests").glob("test_*.py")}
+        for count in (2, 3):
+            with self.subTest(count=count):
+                shards = []
+                for index in range(1, count + 1):
+                    done = subprocess.run(
+                        [sys.executable, str(RUNNER), "--list",
+                         "--shard", f"{index}/{count}"],
+                        capture_output=True, text=True, timeout=60)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    shards.append(done.stdout.splitlines())
+                names = [name for shard in shards for name in shard]
+                self.assertEqual(len(names), len(set(names)), shards)
+                self.assertEqual(set(names), every)
+
+    def test_two_shards_balance_recorded_times_and_run_longest_first(self):
+        times = {"test_a.py": 5.0, "test_b.py": 4.0, "test_c.py": 3.0,
+                 "test_d.py": 3.0, "test_e.py": 2.0}
+        self.fixture(times, times)
+        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
+        self.assertEqual(sorted(shards[0] + shards[1]), sorted(times))
+        totals = [sum(times[name] for name in shard) for shard in shards]
+        self.assertLessEqual(abs(totals[0] - totals[1]), max(times.values()))
+        for shard in shards:
+            self.assertEqual([times[name] for name in shard],
+                             sorted((times[name] for name in shard),
+                                    reverse=True))
+
+    def test_recorded_time_not_file_size_sets_the_order(self):
+        (self.tests / "test_small.py").write_text(PASSING)
+        (self.tests / "test_large.py").write_text(PASSING + "\n# pad" * 500)
+        (self.tests / "module_times.json").write_text(json.dumps(
+            {"test_small.py": 3.0, "test_large.py": 0.1}))
+        done = self.run_over({}, "--jobs", "1")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        ran = [m[1] for m in map(LINE.match, done.stdout.splitlines()) if m]
+        self.assertEqual(ran, ["test_small.py", "test_large.py"])
+
+    def test_unrecorded_module_counts_as_the_median_and_ghosts_are_ignored(self):
+        times = {"test_a.py": 4.0, "test_b.py": 3.0, "test_c.py": 1.0,
+                 "test_d.py": 0.5}
+        self.fixture([*times, "test_new.py"],
+                     dict(times, **{"test_gone.py": 9.0}))
+        self.assertEqual(self.listed(), ["test_a.py", "test_b.py",
+                                         "test_new.py", "test_c.py",
+                                         "test_d.py"])
+        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
+        self.assertEqual([shard.count("test_new.py") for shard in shards]
+                         .count(1), 1, shards)
+        self.assertNotIn("test_gone.py", shards[0] + shards[1])
+
+    def test_malformed_or_out_of_range_shard_is_a_usage_error(self):
+        marker = self.root / "marker"
+        (self.tests / "test_marks.py").write_text(
+            WRITES_MARKER.format(marker=str(marker)))
+        for value in ("0/2", "3/2", "1/0", "x"):
+            with self.subTest(value=value):
+                done = self.run_over({}, "--shard", value)
+                self.assertEqual(done.returncode, 2, done.stdout)
+                self.assertIn("--shard", done.stderr)
+                self.assertFalse(marker.exists())
 
     @staticmethod
     def kill_survivors(pgid):
@@ -449,90 +518,6 @@ def run_script(lines):
             break
         body.append(line)
     return textwrap.dedent("\n".join(body))
-
-
-class ShardTests(unittest.TestCase):
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        self.tests = Path(temp.name) / "tests"
-        self.tests.mkdir()
-
-    def runner(self, *args, tests=None):
-        return subprocess.run(
-            [sys.executable, str(RUNNER), *(["--dir", str(tests)] if tests
-                                            else []), *args],
-            capture_output=True, text=True, timeout=120)
-
-    def listed(self, *args):
-        done = self.runner("--list", *args, tests=self.tests)
-        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        return done.stdout.splitlines()
-
-    def fixture(self, names, times):
-        for name in names:
-            (self.tests / name).write_text(PASSING)
-        (self.tests / "module_times.json").write_text(json.dumps(times))
-
-    def test_shards_of_the_real_directory_split_every_module_once(self):
-        every = {path.name for path in (ROOT / "tests").glob("test_*.py")}
-        for count in (2, 3):
-            with self.subTest(count=count):
-                shards = []
-                for index in range(1, count + 1):
-                    done = self.runner("--list", "--shard", f"{index}/{count}")
-                    self.assertEqual(done.returncode, 0, done.stderr)
-                    shards.append(done.stdout.splitlines())
-                names = [name for shard in shards for name in shard]
-                self.assertEqual(len(names), len(set(names)), shards)
-                self.assertEqual(set(names), every)
-
-    def test_two_shards_balance_recorded_times_and_run_longest_first(self):
-        times = {"test_a.py": 5.0, "test_b.py": 4.0, "test_c.py": 3.0,
-                 "test_d.py": 3.0, "test_e.py": 2.0}
-        self.fixture(times, times)
-        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
-        self.assertEqual(sorted(shards[0] + shards[1]), sorted(times))
-        totals = [sum(times[name] for name in shard) for shard in shards]
-        self.assertLessEqual(abs(totals[0] - totals[1]), max(times.values()))
-        for shard in shards:
-            self.assertEqual([times[name] for name in shard],
-                             sorted((times[name] for name in shard),
-                                    reverse=True))
-
-    def test_recorded_time_not_file_size_sets_the_order(self):
-        (self.tests / "test_small.py").write_text(PASSING)
-        (self.tests / "test_large.py").write_text(PASSING + "\n# pad" * 500)
-        (self.tests / "module_times.json").write_text(json.dumps(
-            {"test_small.py": 3.0, "test_large.py": 0.1}))
-        done = self.runner("--jobs", "1", tests=self.tests)
-        self.assertEqual(done.returncode, 0, done.stdout)
-        ran = [m[1] for m in map(LINE.match, done.stdout.splitlines()) if m]
-        self.assertEqual(ran, ["test_small.py", "test_large.py"])
-
-    def test_unrecorded_module_counts_as_the_median_and_ghosts_are_ignored(self):
-        times = {"test_a.py": 4.0, "test_b.py": 3.0, "test_c.py": 1.0,
-                 "test_d.py": 0.5}
-        self.fixture([*times, "test_new.py"],
-                     dict(times, **{"test_gone.py": 9.0}))
-        self.assertEqual(self.listed(), ["test_a.py", "test_b.py",
-                                         "test_new.py", "test_c.py",
-                                         "test_d.py"])
-        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
-        self.assertEqual([shard.count("test_new.py") for shard in shards]
-                         .count(1), 1, shards)
-        self.assertNotIn("test_gone.py", shards[0] + shards[1])
-
-    def test_malformed_or_out_of_range_shard_is_a_usage_error(self):
-        marker = self.tests.parent / "marker"
-        (self.tests / "test_marks.py").write_text(
-            WRITES_MARKER.format(marker=str(marker)))
-        for value in ("0/2", "3/2", "1/0", "x"):
-            with self.subTest(value=value):
-                done = self.runner("--shard", value, tests=self.tests)
-                self.assertEqual(done.returncode, 2, done.stdout)
-                self.assertIn("--shard", done.stderr)
-                self.assertFalse(marker.exists())
 
 
 class UnitWorkflowTests(unittest.TestCase):
