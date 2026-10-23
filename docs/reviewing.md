@@ -12,7 +12,9 @@ the review. Docker mounts that repository at `/workspace` read-only. The
 container also has a read-only root filesystem, no Linux capabilities, no
 privilege escalation, bounded memory/CPU, a pids limit of 4096 tasks
 (`PIDS_LIMIT`; on Linux it counts threads as well as processes), and no Docker
-socket or host home.
+socket or host home. The review rounds and the terminal adjudication measure
+from the run's start-of-run `main`, moved forward to the newest `main` commit
+the candidate holds once the candidate has merged `main`.
 
 Codex runs with `danger-full-access` **inside** this container because Ubuntu's
 AppArmor policy blocks its nested Bubblewrap sandbox when the previous

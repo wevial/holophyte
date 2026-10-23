@@ -16,6 +16,7 @@ from holophyte.agents.agent_output import (
     claude_marked_error,
 )
 from holophyte.config.reader import AGENT_CONFIG_KEYS
+from holophyte.files import RangeError, main_base
 from holophyte.loop.gates import InfraFailure, run_capped, sh
 from holophyte.pr.mockup import release_review_carry, review_carry
 from holophyte.redact import safe_print as print
@@ -44,6 +45,18 @@ def check_review_refs(repo, run_id, base_sha, candidate_sha):
                                 cwd=repo, capture_output=True, text=True)
         if result.returncode or result.stdout.strip() != sha:
             raise InfraFailure(f"review ref changed during turn: {ref}; expected {sha}")
+
+
+def review_base(repo, frozen, candidate):
+    try:
+        merged = main_base(repo, candidate, f"no main base for {candidate}")
+    except RangeError:
+        return frozen
+    if merged == candidate or subprocess.run(
+            ["git", "merge-base", "--is-ancestor", frozen, merged],
+            cwd=repo, capture_output=True).returncode:
+        return frozen
+    return merged
 
 
 def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
