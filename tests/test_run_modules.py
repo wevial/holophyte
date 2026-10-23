@@ -366,15 +366,27 @@ class RunModulesTests(unittest.TestCase):
         self.assertEqual(len(unlisted), 2)
         self.assertGreaterEqual(min(walls), max(unlisted))
 
+    def test_a_run_of_three_lists_all_three_as_slowest(self):
+        names = ["test_one.py", "test_two.py", "test_three.py"]
+        done = self.run_over(dict.fromkeys(names, PASSING), "--jobs", "3")
+        self.assertEqual(sorted(name for name, _ in self.slowest_block(done)[2]),
+                         sorted(names))
+
     def test_a_module_over_the_ceiling_fails_and_is_named(self):
         modules = {"test_slow.py": SLEEPS.format(seconds=1.5)}
         done = self.run_over(modules, "--max-module-sec", "1")
         self.assertNotEqual(done.returncode, 0, done.stdout)
         self.assertIn("over the 1 s ceiling",
                       self.module_lines(done)["test_slow.py"])
-        done = self.run_over(modules, "--max-module-sec", "5")
-        self.assertEqual(done.returncode, 0, done.stdout)
-        self.assertTrue(self.module_lines(done)["test_slow.py"].endswith("ok"))
+        summary = done.stdout.rstrip().splitlines()[-1]
+        self.assertIn("failed: test_slow.py", summary)
+        self.assertIn("===== test_slow.py: FAILED (ran", done.stdout)
+        for args in (("--max-module-sec", "5"), ()):
+            with self.subTest(args=args):
+                done = self.run_over(modules, *args)
+                self.assertEqual(done.returncode, 0, done.stdout)
+                self.assertTrue(
+                    self.module_lines(done)["test_slow.py"].endswith("ok"))
 
     def test_recorded_times_are_written_and_order_a_later_list(self):
         record = self.root / "times.json"
@@ -428,6 +440,15 @@ class RunModulesTests(unittest.TestCase):
                              sorted((times[name] for name in shard),
                                     reverse=True))
 
+    def test_recorded_time_not_file_size_sets_the_order(self):
+        self.fixture(["test_small.py"],
+                     {"test_small.py": 3.0, "test_large.py": 0.1})
+        (self.tests / "test_large.py").write_text(PASSING + "\n# pad" * 500)
+        done = self.run_over({}, "--jobs", "1")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertEqual(list(self.timed_lines(done)),
+                         ["test_small.py", "test_large.py"])
+
     def test_unrecorded_module_counts_as_the_median_and_ghosts_are_ignored(self):
         times = {"test_a.py": 4.0, "test_b.py": 3.0, "test_c.py": 1.0,
                  "test_d.py": 0.5}
@@ -438,9 +459,11 @@ class RunModulesTests(unittest.TestCase):
                                          "test_d.py"])
         self.assertEqual(self.listed("test_d.py", "test_new.py"),
                          ["test_new.py", "test_d.py"])
+        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
+        self.assertEqual((shards[0] + shards[1]).count("test_new.py"), 1)
 
     def test_malformed_or_out_of_range_shard_is_a_usage_error(self):
-        for value in ("0/2", "3/2", "x"):
+        for value in ("0/2", "3/2", "1/0", "x"):
             with self.subTest(value=value):
                 done = self.run_over({"test_good.py": PASSING}, "--shard", value)
                 self.assertEqual(done.returncode, 2, done.stdout)
