@@ -4,8 +4,8 @@ from holophyte.board.projection import ledger
 from holophyte.loop.gates import sh
 from holophyte.review.briefs import main_merge_base
 from holophyte.review.reply_parsing import (
-    CRITERION_LINE_RE,
     SCOPE_LINE_RE,
+    without_criteria,
     without_refuted,
 )
 
@@ -33,8 +33,8 @@ def description_findings(verdict, decision, unwitnessed):
     """The blockers, when every one of them is about the PR description."""
     if decision != "REQUEST_CHANGES" or unwitnessed:
         return []
-    reply = without_refuted(verdict)
-    for pattern in (CRITERION_LINE_RE, SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
+    reply = without_criteria(without_refuted(verdict))
+    for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
         reply = pattern.sub("", reply)
     findings = [line.strip() for line in reply.splitlines() if line.strip()]
     if findings and all(DESCRIPTION_SUBJECT_RE.match(line) for line in findings):
