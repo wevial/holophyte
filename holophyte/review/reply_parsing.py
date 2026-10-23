@@ -129,6 +129,12 @@ def finding_blocks(text):
     return blocks
 
 
+def unfenced(block):
+    lines = block.splitlines()
+    return "\n".join(line for line, fenced
+                     in zip(lines, closed_fence_flags(lines)) if not fenced)
+
+
 REFUTED_SECTION_RE = re.compile(
     rf"^[ \t]*{re.escape(REFUTED_OPEN)}[ \t\r]*$.*?"
     rf"^[ \t]*{re.escape(REFUTED_CLOSE)}[ \t\r]*$\n?", re.M | re.S)
@@ -144,7 +150,8 @@ def parse_findings(reply):
     # CRITERION and SCOPE lines cite paths but are accounts, not complaints.
     accounts = SCOPE_LINE_RE.sub("", without_criteria(reply))
     for block in finding_blocks(accounts):
-        match = FINDING_PATH_RE.search(citation(block))
+        match = (FINDING_PATH_RE.search(citation(unfenced(block)))
+                 or FINDING_PATH_RE.search(citation(block)))
         listed = BLOCK_BREAK_RE.match(block) is not None
         if match is None and not listed:
             continue
