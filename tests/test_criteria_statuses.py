@@ -200,6 +200,16 @@ class CriterionLinesInFindingsTests(unittest.TestCase):
         self.assertIn("**CRITERION 1: met** — tests/test_a.py::A::test_one",
                       finding["message"])
 
+    def test_findings_after_an_unclosed_fence_are_still_read(self):
+        reply = ("1. a/b.py:1 — x\n"
+                 "```python\n"
+                 "code\n"
+                 "2. c/d.py:2 — y\n"
+                 "VERDICT: REQUEST_CHANGES")
+        self.assertEqual([(f["path"], f.get("line"))
+                          for f in parse_findings(reply)],
+                         [("a/b.py", 1), ("c/d.py", 2)])
+
     def test_bare_criterion_lines_leave_findings_fenced_or_not(self):
         reply = ("CRITERION 2: met — tests/test_a.py::A::test_one\n"
                  "```\n"

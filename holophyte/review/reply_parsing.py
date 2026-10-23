@@ -104,9 +104,20 @@ def raw_finding(reply):
             "message": message}
 
 
+def closed_fence_flags(lines):
+    flags = [fenced for _, fenced in review_runner.fence_flags(lines)]
+    tail = len(flags)
+    while tail and flags[tail - 1]:
+        tail -= 1
+    close = review_runner.FENCE_RE.match(lines[-1]) if lines else None
+    if len(flags) - tail < 2 or not close or close[3].strip():
+        flags[tail:] = [False] * (len(flags) - tail)
+    return flags
+
+
 def finding_blocks(text):
-    blocks, current = [], []
-    for line, fenced in review_runner.fence_flags(text.splitlines()):
+    blocks, current, lines = [], [], text.splitlines()
+    for line, fenced in zip(lines, closed_fence_flags(lines)):
         if not fenced and (not line.strip() or BLOCK_BREAK_RE.match(line)):
             if current:
                 blocks.append("\n".join(current))
