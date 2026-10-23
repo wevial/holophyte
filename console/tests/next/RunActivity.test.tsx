@@ -103,9 +103,10 @@ const rows = () => Array.from(list().querySelectorAll(":scope > li"));
 const row = (li: Element) => [li.querySelector("[data-group-title]")!.textContent, li.querySelector("[data-group-span]")!.textContent];
 const rowOf = (title: string) => rows().find((li) => li.querySelector("[data-group-title]")!.textContent!.startsWith(title))!;
 const steps = (li: Element) => Array.from(li.querySelectorAll("[data-step-text]"), (step) => step.textContent);
-const toggle = async (li: Element) => act(async () => void fireEvent.click(within(li as HTMLElement).getByRole("button")));
+const fold = (li: Element) => within(li as HTMLElement).getAllByRole("button")[0]!;
+const toggle = async (li: Element) => act(async () => void fireEvent.click(fold(li)));
 const shut = async (li: Element) => {
-  if (within(li as HTMLElement).getByRole("button").getAttribute("aria-expanded") === "true") await toggle(li);
+  if (fold(li).getAttribute("aria-expanded") === "true") await toggle(li);
 };
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -154,12 +155,12 @@ test("a round the reader closed stays closed when the next poll adds an event", 
   const bodies = { detail: ended };
   const queries = await mount(runFetch(bodies));
   const first = rowOf("Round 1");
-  expect(within(first as HTMLElement).getByRole("button").getAttribute("aria-expanded")).toBe("true");
+  expect(fold(first).getAttribute("aria-expanded")).toBe("true");
   await toggle(first);
   expect(steps(rowOf("Round 1"))).toEqual([]);
   bodies.detail = { ...ended, events: [...EVENTS, { at: T + 15 * MIN + 40 * SEC, kind: "trim", summary: "Trim kept; line delta -4" }] };
   await repoll(queries);
-  expect(within(rowOf("Round 1") as HTMLElement).getByRole("button").getAttribute("aria-expanded")).toBe("false");
+  expect(fold(rowOf("Round 1")).getAttribute("aria-expanded")).toBe("false");
   expect(steps(rowOf("Round 1"))).toEqual([]);
 });
 

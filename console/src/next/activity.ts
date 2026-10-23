@@ -49,7 +49,7 @@ interface Draft extends Omit<ActivityGroup, "ms" | "running"> {
 }
 
 const NEVER_STEPS = new Set(["turn_progress", "pr_seen_commits", "pr_empty_wakes", "pr_text_sha", "phase_change"]);
-const PASSED = new Set(["pass", "approved"]);
+export const PASSED = new Set(["pass", "approved"]);
 
 const WRITING = /^writing the pull request text for /;
 const PUSHING = /^pushing \S+ to \S+ and opening its pull request/;
@@ -330,4 +330,55 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
   });
   const last = groups.at(-1);
   return { groups: groups.map(({ what: _what, ...group }) => group), now: live && last != null ? nowLine(last, events) : null };
+}
+
+export interface GridCell {
+  status: RoundCriterion["status"];
+  note: string;
+}
+
+interface GridColumn {
+  label: string;
+  /** The final check's column when that check did not pass. */
+  failed: boolean;
+}
+
+export interface CriteriaGrid {
+  columns: GridColumn[];
+  /** One row per criterion id in order, a cell per column; null where the column did not judge it. */
+  rows: { id: string; cells: (GridCell | null)[] }[];
+}
+
+/**
+ * The run's criteria by round: the witness pre-check, each review round
+ * that judged criteria, and the final check; null when none did.
+ */
+export function criteriaGrid(detail: RunDetail): CriteriaGrid | null {
+  const events = orderEvents(detail.events);
+  const judged: { column: GridColumn; cells: Map<string, GridCell>; order: Map<string, number> }[] = [];
+  const precheck = detail.precheck?.criteria ?? [];
+  if (precheck.length > 0) {
+    judged.push({
+      column: { label: "pre-check", failed: false },
+      cells: new Map(precheck.map((entry) => [entry.id, { status: entry.witnessed ? "met" : "unwitnessed", note: entry.note }])),
+      order: new Map(precheck.map((entry) => [entry.id, entry.n])),
+    });
+  }
+  const babysat = babysitRounds(detail, events);
+  const rounds = detail.rounds.filter((round) => round.criteria.length > 0 && !babysat.has(round)).sort((a, b) => a.round - b.round);
+  for (const round of rounds) {
+    const final = round.round > detail.run.max_rounds || isFinalCheck(round, events);
+    judged.push({
+      column: { label: final ? "final" : `round ${round.round}`, failed: final && round.ended_ms != null && !PASSED.has(round.verdict) },
+      cells: new Map(round.criteria.map((criterion) => [criterion.id, { status: criterion.status, note: criterion.note }])),
+      order: new Map(round.criteria.map((criterion) => [criterion.id, criterion.n])),
+    });
+  }
+  if (judged.length === 0) return null;
+  const order = new Map(judged.flatMap((each) => [...each.order]));
+  const ids = [...order.keys()].sort((a, b) => order.get(a)! - order.get(b)!);
+  return {
+    columns: judged.map((each) => each.column),
+    rows: ids.map((id) => ({ id, cells: judged.map((each) => each.cells.get(id) ?? null) })),
+  };
 }

@@ -5,7 +5,7 @@ import type { Finding, Round } from "./types";
 
 export type Severity = "must" | "should" | "nit";
 
-const RANK: Record<Severity, number> = { must: 0, should: 1, nit: 2 };
+export const RANK: Record<Severity, number> = { must: 0, should: 1, nit: 2 };
 
 /** The store holds the reviewer's p0, p1, p2 and nit; the pill collapses
  *  them: p0 and p1 are must, p2 is should, anything else is nit. */
@@ -44,9 +44,9 @@ export interface FindingParts {
 }
 
 // The reviewer's checklist line, the shape `holophyte/review/reply_parsing.py`
-// writes and reads: `CRITERION n: met|not met|unwitnessed — reason`, with the
+// writes and reads: `CRITERION Cn: met|not met|unwitnessed — reason`, with the
 // criterion's own text on the following lines.
-const CRITERION_RE = /^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b\s*(?:[-–—:]+\s*)?(.*)$/i;
+const CRITERION_RE = /^\s*CRITERION\s+[Cc]?(\d+)\s*:\s*(met|not met|unwitnessed)\b\s*(?:[-–—:]+\s*)?(.*)$/i;
 const BULLET_RE = /^\s*(?:[-*+]|\d+[.)])\s+/;
 const SEVERITY_MARK_RE =
   /^(?:[[(]\s*(?:p0|p1|p2|nit|blocker)\s*[\])]\s*[:\-–—]?|(?:p0|p1|p2|nit|blocker)\b\s*[:\-–—])\s*/i;
@@ -74,7 +74,7 @@ export function findingParts(message: string): FindingParts {
   let title: string | null = null;
   const bold = BOLD_LEAD_RE.exec(text);
   if (bold) {
-    title = bold[1]!.trim();
+    title = bold[1]!.trim().replace(SEVERITY_MARK_RE, "");
     text = text.slice(bold[0].length);
   }
   let body = text.replace(LINK_RE, (link, target) => (URL_TARGET_RE.test(String(target)) ? link : " "));
