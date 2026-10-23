@@ -8,7 +8,7 @@ export function orderEvents(events: RunEvent[]): RunEvent[] {
 }
 
 /** `FROM -> TO: detail` → `[FROM, TO]`; null when the summary is not that shape. */
-function edge(summary: string): [string, string] | null {
+export function edge(summary: string): [string, string] | null {
   const match = /^\s*([a-z_]+)\s*->\s*([a-z_]+)/.exec(summary);
   return match ? [match[1]!, match[2]!] : null;
 }

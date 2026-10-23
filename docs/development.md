@@ -1015,6 +1015,10 @@ shared run detail and asks queries.
 The Run page’s `console/src/next/components/PhaseBar.tsx` opens Progress on
 the phase timing bar, laid out by `console/src/lib/timeline.ts`.
 
+`console/src/next/activity.ts` groups a run's events into timed phases
+(implement, review rounds with their steps, final check, pull request and
+babysit passes) and the live run's Now line, for the Run page's Progress.
+
 The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
 queries in `next/queries.ts` fetch only while the fold is open.
