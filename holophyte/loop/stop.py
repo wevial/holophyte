@@ -322,6 +322,12 @@ def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows,
                 interrupted=stopped_goal is not None, goal=stopped_goal)
 
 
+def paused_goal(prompt, stopped):
+    if not stopped:
+        return None
+    return stopped[-1] if prompt in stopped[-1] else f"{stopped[-1]}\n\n{prompt}"
+
+
 def _rerun_goal(saved, preserved):
     if preserved == saved["sha"]:
         return saved["goal"]

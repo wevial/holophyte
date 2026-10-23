@@ -65,7 +65,9 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None, on_interrupt=None,
         target=_beat, args=(path, run_id, interval_s, stop, swept, on_swept,
                            partial(_fallback_heartbeat, conn, run_id, swept,
                                    stop)),
-        kwargs={"on_interrupt": on_interrupt, "on_pause": on_pause},
+        kwargs={name: callback for name, callback in (
+            ("on_interrupt", on_interrupt), ("on_pause", on_pause))
+            if callback is not None},
         name=f"heartbeat-run-{run_id}", daemon=True)
     thread.start()
     failure = None

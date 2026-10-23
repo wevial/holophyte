@@ -23,6 +23,7 @@ import holophyte.pr.github  # noqa: E402
 import holophyte.pr.pr_status  # noqa: E402
 import store  # noqa: E402
 import store.read  # noqa: E402
+import store.steer_notes  # noqa: E402
 from holophyte.loop.stop import command  # noqa: E402
 
 
@@ -140,6 +141,57 @@ class PauseFixTurnTests(cases.BabysitHelpers, MergeModeFixture):
                           if kind == "merge"], [head])
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("paused",), ("merged",)])
+
+    def test_a_pause_of_a_steered_fix_turn_keeps_the_steer_for_the_rerun(self):
+        self.red_on_first_head("FAIL: test_a (tests.test_y.Case.test_a)\n",
+                               "[supervisor]\nheartbeat_stale_min = 0.05\n")
+        fake, db, killed = FakeAgent(), self.db, []
+
+        class KilledWhile:
+            """Runs a real process group and, while it runs, steers with
+            `--now` or pauses, then waits for the heartbeat to kill it."""
+            role = PauseEdit.role
+
+            def __init__(self, act):
+                self.act = act
+
+            def play(self, cwd, turn):
+                proc = subprocess.Popen(["sh", "-c", "sleep 30 & exec sleep 30"],
+                                        start_new_session=True)
+                fake.turns[-1].on_start(proc)
+                conn = store.open(db)
+                try:
+                    (run, ticket) = conn.execute(
+                        "SELECT id, ticketId FROM runs WHERE endedAt IS NULL"
+                    ).fetchone()
+                    self.act(conn, run, ticket)
+                finally:
+                    conn.close()
+                try:
+                    proc.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                killed.append(proc.returncode)
+                return "stopped"
+
+        fake.script = [
+            Commit("the scripted work"), APPROVE, Idle(""),
+            KilledWhile(lambda conn, run, ticket: store.steer_notes.steer(
+                conn, ticket, "skip the flaky fixture", "maintainer",
+                interrupt=True)),
+            KilledWhile(lambda conn, run, ticket: store.pause(
+                conn, run, "reboot writer"))]
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(fake=fake, provider=self.provider())
+        self.assertEqual(killed, [-signal.SIGKILL] * 2)
+        command(self.project, "KO-131", "go on", resume=True)
+        with patch.object(sys, "stdout", io.StringIO()):
+            fake, _ = self.loop(Commit("fix: unit"), APPROVE, Idle(""),
+                                provider=self.provider())
+        (goal,) = [turn.goal for turn in fake.turns
+                   if turn.role == "implement" and "CHECK unit" in turn.goal]
+        self.assertIn("skip the flaky fixture", goal)
 
     def test_a_pause_during_the_rerun_wait_ends_the_run_before_its_next_nap(self):
         self.configure('[merge]\nmode = "pr"\n')

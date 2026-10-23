@@ -154,7 +154,7 @@ def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
     with heartbeat_while(conn, run_id, beat_s, on_swept=kill,
                          on_interrupt=None if steered is None else kill.steer,
                          on_pause=None if paused is None else (
-                             lambda: _stop_for_pause(kill, paused))):
+                             lambda: _stop_for_pause(kill, paused, goal))):
         try:
             output = agent(project, role, goal, wt, timeout=armed,
                            on_start=kill.arm, conn=conn, run_id=run_id,
@@ -189,8 +189,8 @@ def _run_turn(project, conn, run_id, beat_s, wt, budget_min, goal, role, argv,
     return output, timed_out
 
 
-def _stop_for_pause(kill, paused):
-    paused.append(True)
+def _stop_for_pause(kill, paused, goal):
+    paused.append(goal)
     kill.steer()
 
 
