@@ -53,27 +53,36 @@ async function mount(hash: string, demo: Status, writer: Status, details: Record
 }
 
 /** The first status is DEMO's, the second WRITER's, each later one a further
- *  daemon's; `items` are DEMO's attention items. */
+ *  daemon's; `items` are DEMO's attention items. `answerDemo` makes DEMO's
+ *  next poll answer `body` and refetches the fleet. */
 async function mountAll(hash: string, statuses: Status[], details: Record<number, RunDetail> = {}, items: Item[] = []) {
   const attention = (project: string, own: Item[]) => ({ level: own.length ? "attention" : "none", now: NOW, project, items: own });
   window.location.hash = hash;
   const bases = [DEMO, WRITER, ...statuses.slice(2).map((_, index) => `http://writer-host:${7712 + index}`)];
-  const polls = peersFetch(
-    DEMO,
-    Object.fromEntries(statuses.map((status, index) => [bases[index]!, { status, attention: attention(status.project, index === 0 ? items : []) }])),
+  const daemons = Object.fromEntries(
+    statuses.map((status, index) => [bases[index]!, { status, attention: attention(status.project, index === 0 ? items : []) }]),
   );
+  const polls = peersFetch(DEMO, daemons);
   const fetchImpl: Fetch = async (url) => {
     const detail = details[Number(/^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1])];
     return url.startsWith(`${DEMO}/runs/`) && detail ? Response.json(detail) : polls(url);
   };
   const fake = fakeDeps(fetchImpl);
   fake.clock.now = NOW;
+  const client = consoleQueryClient();
   render(
-    <QueryClientProvider client={consoleQueryClient()}>
+    <QueryClientProvider client={client}>
       <NextConsole base={DEMO} pollDeps={fake.deps} />
     </QueryClientProvider>,
   );
   for (let round = 0; round < 4; round += 1) await act(settle);
+  return {
+    answerDemo: async (body: object) => {
+      daemons[DEMO] = { ...daemons[DEMO]!, status: body as Status };
+      await act(async () => { await client.refetchQueries({ queryKey: ["fleet", DEMO] }); });
+      for (let round = 0; round < 4; round += 1) await act(settle);
+    },
+  };
 }
 
 const running = () => screen.getByRole("region", { name: "Running" });
@@ -205,6 +214,19 @@ test("with no run anywhere, a project with a queued ticket keeps its lane and an
   expect(queueButton("demo").textContent).toBe("1 queued");
   expect(head("demo")).toContain("· Nothing running.");
   expect(within(lane("demo")).queryByRole("list", { name: "demo running" })).toBeNull();
+  expect(running().querySelector("header")!.textContent).toEndWith("1 queued");
+});
+
+test("a host whose last status is kept beside a contract error draws no lane, and Running neither names nor counts its queue", async () => {
+  const demo = statusOf("/srv/dev/demo", [], { queued: [queuedOf("DEMO-2")] });
+  const page = await mountAll("#/", [demo, statusOf("/srv/dev/writer", [])]);
+  expect(lanes()).toEqual(["demo"]);
+  const { queued: _queued, ...unqueued } = demo;
+  await page.answerDemo(unqueued);
+  expect(lanes()).toEqual([]);
+  expect(running().textContent).toContain("Nothing running and nothing queued.");
+  expect(running().textContent).not.toContain("DEMO-2");
+  expect(running().querySelector("header")!.textContent).toEndWith("nothing queued");
 });
 
 test("a lane is drawn only for a project with a run or a queued ticket, while the summary still counts every worker", async () => {
