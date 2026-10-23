@@ -43,15 +43,13 @@ function Badge({ group }: { group: ActivityGroup }) {
   );
 }
 
-const stepSpan = (ms: number) => (ms < 1000 ? "<1s" : formatSpan(ms));
-
 /** A timed step reads its label bold and its duration in mono, before the rest of its text. */
 function StepText({ step }: { step: ActivityStep }) {
   if (step.ms == null) return <>{step.text}</>;
   const [label, ...rest] = step.text.split(" · ");
   return (
     <>
-      <b className="font-semibold text-ink">{label}</b> <span className="font-mono text-[13px] text-ink-2">{stepSpan(step.ms)}</span>
+      <b className="font-semibold text-ink">{label}</b> <span className="font-mono text-[13px] text-ink-2">{step.ms < 1000 ? "<1s" : formatSpan(step.ms)}</span>
       {rest.length > 0 && ` · ${rest.join(" · ")}`}
     </>
   );
@@ -94,7 +92,6 @@ type Line = keyof typeof CONNECTOR | "none";
 function Group({ group, open, onToggle, line }: { group: ActivityGroup; open: boolean; onToggle: () => void; line: Line }) {
   const stepsId = useId();
   const folds = !group.running && group.steps.length > 0;
-  const shown = group.running || (folds && open);
   return (
     <li data-group={group.kind} data-running={group.running ? "" : undefined} className="relative border-b border-rule-2">
       {line !== "none" && <span aria-hidden="true" className="absolute left-[76px] w-px bg-rule max-[720px]:left-[66px]" style={CONNECTOR[line]} />}
@@ -119,7 +116,7 @@ function Group({ group, open, onToggle, line }: { group: ActivityGroup; open: bo
           </div>
         )}
       </div>
-      {shown && group.steps.length > 0 && <Steps id={stepsId} steps={group.steps} />}
+      {group.steps.length > 0 && (group.running || open) && <Steps id={stepsId} steps={group.steps} />}
     </li>
   );
 }
