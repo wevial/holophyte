@@ -7,6 +7,7 @@ from time import time
 
 import store.criteria
 import store.read
+from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import board_mode, loop_config, sweep_config
@@ -37,6 +38,9 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
         caps = served_round_caps(conn, project, [run.id for run in runs])
         from holophyte.loop.stop import pending_requests
         stops = pending_requests(conn)
+        steps = {run.id: (running_step(conn, run.id)
+                          if run.phase == "merge_gate" else None)
+                 for run in runs}
         strikes = {run.id: store.read.strike(conn, run.id) for run in runs}
         beat = store.read.supervisor_beat(conn)
         from holophyte.admission import project_of, state
@@ -81,6 +85,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                   "phase": run.phase,
                   "stop_requested": stops.get(run.id, (None, None))[1],
                   "stop_action": stops.get(run.id, (None, None))[0],
+                  "step": steps[run.id],
                   "started_ms": chains[run.id][0].startedAt,
                   "heartbeat_age_ms": now - run.lastHeartbeat,
                   "elapsed_ms": now - chains[run.id][0].startedAt,

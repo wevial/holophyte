@@ -283,6 +283,22 @@ test("a reviewing run past its review cap names its round without the cap once, 
   expect(rowOf("DEMO-21").querySelector("[data-fixing]")).toBeNull();
 });
 
+test("a run's row names a pending pause or abort without its note, and its fixing line names a check-fix round when one runs", async () => {
+  const url = "https://github.com/example/demo/pull/2404";
+  const paused = runOf(30, "DEMO-30", "Pause it", { phase: "merge_gate", stop_requested: "reboot writer", stop_action: "pause", step: "fixing checks (round 1 of 2)", pr_url: url });
+  const aborted = runOf(31, "DEMO-31", "Abort it", { phase: "working", stop_requested: "wrong spec", stop_action: "abort", step: null, pr_url: url });
+  const closed = runOf(32, "DEMO-32", "Close it", { phase: "working", stop_requested: "duplicate", stop_action: "abort_close", step: null, pr_url: null });
+  await mount("#/", statusOf("/srv/dev/demo", [paused, aborted, closed], { workers: 3 }), statusOf("/srv/dev/writer", []));
+  const rowOf = (ticket: string) => within(lane("demo")).getByRole("link", { name: new RegExp(`^${ticket} `) }).closest("li")!;
+  expect(rowOf("DEMO-30").textContent).toContain("Pausing after this turn");
+  expect(rowOf("DEMO-30").textContent).not.toContain("Pause requested");
+  expect(rowOf("DEMO-30").textContent).not.toContain("reboot writer");
+  expect(rowOf("DEMO-31").textContent).toContain("Aborting");
+  expect(rowOf("DEMO-32").textContent).toContain("Aborting");
+  expect(rowOf("DEMO-30").querySelector("[data-fixing]")!.textContent).toBe("fixing checks (round 1 of 2) on #2404");
+  expect(rowOf("DEMO-31").querySelector("[data-fixing]")!.textContent).toBe("fixing #2404");
+});
+
 const witnessesOf = (keys: string[], elapsedMs: number) => ({ story: "DEMO-20", keys, started_ms: NOW - elapsedMs, elapsed_ms: elapsedMs });
 const witnessLine = (name: string) => lane(name).querySelector("[data-witnesses]");
 

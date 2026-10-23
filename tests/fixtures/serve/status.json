@@ -107,6 +107,7 @@
       "host": "writer",
       "stop_requested": null,
       "stop_action": null,
+      "step": null,
       "pr_url": null,
       "pr": null,
       "woke_ms": null
@@ -133,6 +134,7 @@
       "host": null,
       "stop_requested": null,
       "stop_action": null,
+      "step": null,
       "pr_url": null,
       "pr": null,
       "woke_ms": null
