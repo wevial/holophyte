@@ -43,7 +43,7 @@ function Panel({ run, lines, onClose }: { run: number; lines: ProgressLine[]; on
             </svg>
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-1">
+        <div role="region" tabIndex={0} aria-label="Raw log lines" className="min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-1">
           <ProgressLog lines={lines} />
         </div>
       </section>

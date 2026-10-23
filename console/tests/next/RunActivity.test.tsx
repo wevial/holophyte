@@ -127,6 +127,7 @@ test("Progress lists implement and the review round as timed groups, with no hea
     ["Implement", "10m 00s"],
     ["Round 1 · 3 should-fix", "5m 30s"],
   ]);
+  for (const fold of within(list()).queryAllByRole("button", { expanded: false })) await act(async () => void fireEvent.click(fold));
   expect(document.body.textContent).not.toContain("Implement turn:");
 });
 
