@@ -14,11 +14,13 @@ from pathlib import Path
 import holophyte.loop.runs
 import store
 import store.tickets
+from holophyte.babysit.description_review import description_findings
 from holophyte.review.reply_parsing import (
     MISSING_WITNESS_NOTE,
     UNWITNESSED_NOTE,
     criteria_findings,
     criteria_statuses,
+    parse_findings,
 )
 
 CRITERIA = ["Given a lease, then it is requeued",
@@ -184,6 +186,40 @@ class CriteriaEventTests(WorktreeCase):
             (self.run_id,)).fetchall()
         self.assertEqual(verdict, "error")
         self.assertEqual(self.criteria_events(), [])
+
+
+class CriterionLinesInFindingsTests(unittest.TestCase):
+    def test_decorated_criterion_quoted_in_a_fence_stays_in_the_finding(self):
+        reply = ("1. holophyte/review/reply_parsing.py:134 — the parser drops"
+                 " the quoted line:\n"
+                 "```\n"
+                 "- **CRITERION 1: met** — tests/test_a.py::A::test_one\n"
+                 "```\n"
+                 "VERDICT: REQUEST_CHANGES")
+        (finding,) = parse_findings(reply)
+        self.assertIn("**CRITERION 1: met** — tests/test_a.py::A::test_one",
+                      finding["message"])
+
+    def test_bare_criterion_lines_leave_findings_fenced_or_not(self):
+        reply = ("CRITERION 2: met — tests/test_a.py::A::test_one\n"
+                 "```\n"
+                 "CRITERION 3: not met — the row names loop\n"
+                 "```\n"
+                 "- holophyte/review/briefs.py:3 — broken\n"
+                 "VERDICT: REQUEST_CHANGES")
+        findings = parse_findings(reply)
+        self.assertFalse([f for f in findings if "CRITERION" in f["message"]],
+                         findings)
+        self.assertIn(("holophyte/review/briefs.py", 3),
+                      [(f["path"], f.get("line")) for f in findings])
+
+    def test_decorated_criterion_line_is_not_a_description_blocker(self):
+        blocker = '- path: "PR description" — the summary is stale'
+        reply = (f"{blocker}\n"
+                 "- **CRITERION 1: met** — tests/test_a.py::A::test_one\n"
+                 "VERDICT: REQUEST_CHANGES")
+        self.assertEqual(
+            description_findings(reply, "REQUEST_CHANGES", []), [blocker])
 
 
 if __name__ == "__main__":
