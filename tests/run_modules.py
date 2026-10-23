@@ -115,7 +115,7 @@ def run_module(tests, path, timeout=None):
     return path.name, time.monotonic() - started, cpu, ran, code, output
 
 
-def verdict(ran, code, timeout=None, seconds=0.0, ceiling=None):
+def verdict(ran, code, timeout, seconds, ceiling):
     if code is None:
         return f"FAILED (timed out after {timeout:g} s)"
     if code != 0 and ran:
