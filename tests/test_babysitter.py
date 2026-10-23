@@ -896,6 +896,10 @@ class CaptureOnlyBabysitFixTests(unittest.TestCase):
 
         self.assertIn("asked for changes", parked.call_args.args[8])
         self.assertEqual(turns + self.fix_turns, 1)
+        self.assertEqual(sum(
+            event.kind == "review_fix_allowance"
+            for event in store.read.narrative_events(
+                self.conn, self.run_id, ("review_fix_allowance",))), 1)
 
     def test_a_spec_only_fix_after_a_merge_of_main_is_held_to_the_criteria(self):
         self.git("remote", "add", "origin", str(self.repo))
