@@ -118,6 +118,8 @@ def closed_fence_flags(lines):
 def finding_blocks(text):
     blocks, current, lines = [], [], text.splitlines()
     for line, fenced in zip(lines, closed_fence_flags(lines)):
+        if fenced and not current and blocks:
+            current = [blocks.pop(), ""]
         if not fenced and (not line.strip() or BLOCK_BREAK_RE.match(line)):
             if current:
                 blocks.append("\n".join(current))

@@ -200,6 +200,20 @@ class CriterionLinesInFindingsTests(unittest.TestCase):
         self.assertIn("**CRITERION 1: met** — tests/test_a.py::A::test_one",
                       finding["message"])
 
+    def test_a_fence_after_a_blank_line_stays_with_its_finding(self):
+        reply = ("1. holophyte/review/reply_parsing.py:134 — the parser drops"
+                 " the quoted line:\n"
+                 "\n"
+                 "```\n"
+                 "- **CRITERION 1: met** — tests/test_a.py::A::test_one\n"
+                 "```\n"
+                 "VERDICT: REQUEST_CHANGES")
+        (finding,) = parse_findings(reply)
+        self.assertEqual((finding["path"], finding["line"]),
+                         ("holophyte/review/reply_parsing.py", 134))
+        self.assertIn("**CRITERION 1: met** — tests/test_a.py::A::test_one",
+                      finding["message"])
+
     def test_a_link_quoted_in_a_fence_does_not_anchor_the_finding(self):
         reply = ("1. holophyte/review/reply_parsing.py:134 — the parser drops"
                  " the quoted line:\n"
