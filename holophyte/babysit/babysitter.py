@@ -892,11 +892,13 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                   else babysitter.fix_brief(pull, addressed, ticket, notes))
         maintainer_notes.start_fix(conn, run_id, addressed, prompt, pull.url)
         spec = _spec_digest(project, wt, task_id, ticket)
+        stopped = []
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
-            prompt)
-        saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
-                               pass_no, review_follows), spec=spec)
+            prompt, paused=stopped)
+        saved = dict(fix_state(sha, fixes, timed_out, addressed, model, pass_no,
+                               review_follows, prompt if stopped else None),
+                     spec=spec)
     else:
         saved = dict(resume_step)
         fixes, timed_out = saved["fixes"], saved["timed_out"]
