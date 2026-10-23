@@ -854,14 +854,15 @@ def _review_spec_only_fix(project, conn, run_id, provider, task_id, branch, wt,
                     budget_min=budget_min, fix_context=str(fixes))
 
 
-def _declined_why(addressed, summaries, answer, green=False):
+def _declined_why(addressed, summaries, answer, green_head=None):
     if addressed and all(summaries.get(n) for n, _, _ in addressed):
         explained = "\n".join(f"THREAD {n} -- {where(thread)}:\n> {summaries[n]}"
                               for n, thread, _ in addressed)
     else:
         explained = answer.strip()
     return ("Fix round made no commit; "
-            + ("every check is green on the head, nothing is open:\n" if green
+            + (f"every check is green on the head {green_head[:12]} and nothing"
+               " is open:\n" if green_head
                else "operator instruction needed:\n") + explained)
 
 
@@ -878,14 +879,15 @@ def _park_no_commit(project, conn, run_id, provider, task_id, branch, wt, sha,
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     outbound(("" if green else f"{no_commit_why}; ")
                              + _declined_why(addressed, summaries, answer,
-                                             green),
+                                             green and sha),
                              known_secrets(project.config())),
                     (), reviewed=None if spec_moved else reviewed,
                     park_kind="pull_request" if green else "fix_declined")
     if not spec_moved and not _candidate_drift(wt, branch, sha):
         green = reads_green(project, conn, run_id, beat_s, pull, sha)
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                    outbound(_declined_why(addressed, summaries, answer, green),
+                    outbound(_declined_why(addressed, summaries, answer,
+                                           green and sha),
                              known_secrets(project.config())),
                     (), park_kind="pull_request" if green else "fix_declined")
 
