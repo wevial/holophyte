@@ -1,4 +1,4 @@
-import { useContext, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTheme } from "../appearance";
 import { APP_DRAG, APP_NO_DRAG, classicHref, inMacApp, writeView } from "../../lib/view";
@@ -16,6 +16,7 @@ import {
   Mark,
   MoonIcon,
   OverviewIcon,
+  PanelLeftIcon,
   RunsIcon,
   SignalIcon,
   SettingsIcon,
@@ -226,38 +227,49 @@ export function Sidebar() {
     writeFolded(!folded);
   };
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "\\" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      fold();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
   return (
     <aside
       aria-label="Console"
       data-folded={folded}
       className={`flex w-full shrink-0 flex-col border-r border-b border-rule bg-side min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
-        folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
+        folded ? (macApp ? "min-[720px]:w-[112px]" : "min-[720px]:w-[56px]") : "min-[720px]:w-[232px]"
       }`}
     >
       <div
-        className={`flex shrink-0 items-center border-b border-rule-2 ${
-          folded ? `flex-col justify-center ${macApp ? "pt-[44px] pb-2" : "py-2"}` : `h-[60px] justify-between ${macApp ? "pl-[76px]" : "pl-4"}`
-        } ${macApp ? APP_DRAG : ""}`}
+        className={`flex h-[52px] shrink-0 items-center gap-1 border-b border-rule-2 ${
+          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pl-3"
+        }`}
       >
-        <Link
-          to="/"
-          search={keepScope}
-          aria-label={folded ? "holophyte" : undefined}
-          title={folded ? "holophyte" : undefined}
-          className={`flex items-center gap-2 text-act ${folded ? "size-11 justify-center" : ""} ${macApp ? APP_NO_DRAG : ""}`}
-        >
-          <Mark />
-          {!folded && <span className="text-[16px] font-semibold tracking-[0.02em] text-ink">holophyte</span>}
-        </Link>
         <button
           type="button"
           aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!folded}
           onClick={fold}
-          className={`flex size-11 items-center justify-center text-ink-3 hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+          className={`flex size-7 items-center justify-center text-ink-3 hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
         >
-          <ChevronIcon folded={folded} />
+          <PanelLeftIcon />
         </button>
+        {!folded && (
+          <Link
+            to="/"
+            search={keepScope}
+            aria-label="holophyte"
+            title="holophyte"
+            className={`flex size-7 items-center justify-center text-act ${macApp ? APP_NO_DRAG : ""}`}
+          >
+            <Mark />
+          </Link>
+        )}
       </div>
 
       <ProjectSwitcher rows={rows} folded={folded} />

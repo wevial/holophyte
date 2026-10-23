@@ -3,7 +3,7 @@ import { keepScope } from "../scope";
 
 export function NotFound() {
   return (
-    <section className="flex flex-col gap-3 px-8 py-7">
+    <section className="flex flex-col gap-3 px-8 pt-3.5 pb-7">
       <p className="text-[14px] text-ink-2">There is no page here.</p>
       <Link
         to="/"
