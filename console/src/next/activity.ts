@@ -178,7 +178,7 @@ function roundGroup(detail: RunDetail, events: RunEvent[], round: Round, opened:
   const marks = round.criteria.filter((criterion) => criterion.status !== "met");
   if (final) return draft("final", opened, "Final check", { ...finalWords(round), steps: [verify, review], round, marks, end: round.ended_ms });
   const loop = events.find((event) => isEdge(event, "reviewing", "addressing") && event.at >= round.started_ms && event.at < nextStart);
-  const fixed = loop == null ? undefined : events.find((event) => isEdge(event, "addressing", null) && event.at >= loop.at);
+  const fixed = loop == null ? undefined : events.find((event) => isEdge(event, "addressing", "verifying") && event.at >= loop.at);
   const fix: ActivityStep[] = loop == null ? [] : [{ at: loop.at, text: "Fix", ms: span(loop.at, fixed?.at), quiet: false }];
   const end = loop == null ? round.ended_ms : (fixed?.at ?? null);
   return draft("round", opened, `Round ${round.round}`, { ...reviewWords(round), steps: [verify, review, ...fix], round, marks, end });
