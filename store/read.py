@@ -46,6 +46,7 @@ from store.run_reads import (  # noqa: F401
     run_snapshot,
     stranded_runs,
     toil_since,
+    witness_prechecks,
 )
 
 _lock_wait = ContextVar("read_lock_wait", default=None)

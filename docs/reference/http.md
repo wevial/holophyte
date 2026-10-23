@@ -441,10 +441,18 @@ with an `error` naming the parameter. An `until` at or before `since` is
                      "outcome": "changed", "reply": "Validation retained"}],
    "operator_notes": [{"note": "Keep validation", "author": "operator",
                        "kind": "operator_note", "event_id": 7, "consumed": true,
-                       "run_id": 52, "round": 1}]},
+                       "run_id": 52, "round": 1}],
+   "criteria": [{"id": "C1", "n": 1, "status": "not_met",
+                 "note": "the expired lease stays claimed"},
+                {"id": "C2", "n": 2, "status": "met",
+                 "note": "tests/test_lease.py::test_requeue_is_ledgered"}]},
   {"round": 2, "started_ms": 1788451061675, "ended_ms": 1788451181675,
    "verdict": "pass", "reviewer_model": "reviewer-model", "findings": [],
-   "instructions": [], "operator_notes": []}
+   "instructions": [], "operator_notes": [],
+   "criteria": [{"id": "C1", "n": 1, "status": "met",
+                 "note": "tests/test_lease.py::test_expired_lease_requeues"},
+                {"id": "C2", "n": 2, "status": "met",
+                 "note": "tests/test_lease.py::test_requeue_is_ledgered"}]}
  ],
  "findings": [{"tone": "advisory", "message": "https://github.com/example/repo/pull/2170#discussion_r3: Consider a cache"}],
  "events": [
@@ -478,7 +486,11 @@ with an `error` naming the parameter. An `until` at or before `since` is
   {"n": 2, "id": "C2", "text": "Given a requeue, then the ledger names it",
    "status": "met", "note": "tests/test_lease.py::test_requeue_is_ledgered",
    "run": 52, "round": 2}
- ]}
+ ],
+ "precheck": {"sha": "9f3c2a1b0e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b",
+              "criteria": [{"id": "C1", "n": 1, "witnessed": true, "note": ""},
+                           {"id": "C2", "n": 2, "witnessed": false,
+                            "note": "names no test file"}]}}
 ```
 
 One run in full, by id: what the console shows when a run is expanded.
@@ -568,6 +580,22 @@ its `text`, its `status` (`met`,
 criterion names its witness; `run` and `round` name the review that
 judged it. Older events without an id serve `C` plus `n` as their `id`.
 `[]` until a round of the chain has judged them.
+
+Each of run N's `rounds` carries its own `criteria`, in criterion order,
+each with `id`, `n`, `status` and `note`: for a review round, the newest
+judgement run N recorded for that round; for the final check (the
+terminal adjudication, recorded as the round numbered one past
+`max_rounds`), each criterion one of its `criteria` findings names takes
+that finding's status and note, and every other criterion of run N's
+newest judgement reads `met` with note `""`; `[]` for a final check whose
+`verdict` is `error` and for a round with no judgement (a babysit review,
+or a round recorded before criteria were kept).
+
+`precheck` is run N's first witness pre-check, null when it recorded
+none: its `sha`, the candidate it checked, and `criteria`, each with
+`id`, `n`, `witnessed` (true when the criterion names a test file and the
+check found no gaps) and `note`, its gaps joined by `; `, else
+`names no test file` when it names none, else `""`.
 
 ## `GET /runs/N/files`
 

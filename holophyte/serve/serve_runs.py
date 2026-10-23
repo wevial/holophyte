@@ -274,14 +274,17 @@ def run_detail(project, run_id, now=None):
         return failed
     conn = store.read.open_readonly(project.store_path)
     try:
-        rounds = run_rounds(conn, project, run.id)
+        chain = chain_detail(conn, project, run.id, now)
+        judgements = store.read.criteria_events(
+            conn, [link["id"] for link in chain["runs"]])
+        rounds = run_rounds(conn, project, run.id, judgements)
         events = store.read.narrative_events(
             conn, run.id,
             detail_kinds=("implementer_output", "operator_note_consumed",
                           "crash"))
-        chain = chain_detail(conn, project, run.id, now)
         steered = chain_notes(conn, run.ticketId, chain["started_ms"])
-        criteria = chain_criteria(conn, [link["id"] for link in chain["runs"]])
+        criteria = chain_criteria(judgements)
+        precheck = served_precheck(store.read.witness_prechecks(conn, run.id))
     finally:
         conn.close()
     live = run.endedAt is None
@@ -319,11 +322,12 @@ def run_detail(project, run_id, now=None):
                          "interrupt": n.interrupt, "withdrawn": n.withdrawn}
                         for n in steered],
         "criteria": criteria,
+        "precheck": precheck,
     }
 
 
-def chain_criteria(conn, run_ids):
-    newest = next(iter(store.read.criteria_events(conn, run_ids)), None)
+def chain_criteria(judgements):
+    newest = next(iter(judgements), None)
     if newest is None:
         return []
     return [{"n": c["n"], "id": c.get("id", f"C{c['n']}"),
@@ -333,15 +337,62 @@ def chain_criteria(conn, run_ids):
             for c in sorted(newest.payload["criteria"], key=lambda c: c["n"])]
 
 
-def run_rounds(conn, project, run_id):
+def run_rounds(conn, project, run_id, judgements=None):
     merge = merge_config(project)
     bot_logins = merge.bot_authors + merge.bot_logins
+    if judgements is None:
+        judgements = store.read.criteria_events(conn, [run_id])
+    judged = {}
+    for event in judgements:
+        if event.runId == run_id:
+            judged.setdefault(event.payload["round"], event.payload["criteria"])
+    cap = served_round_caps(conn, project, [run_id])[run_id]
     return [{"round": r.round, "started_ms": r.startedAt,
              "ended_ms": r.endedAt, "verdict": r.verdict,
              "reviewer_model": r.reviewerModel,
              **split_instructions(json.loads(r.findings), bot_logins),
-             "operator_notes": round_notes(conn, run_id, r.round)}
+             "operator_notes": round_notes(conn, run_id, r.round),
+             "criteria": (final_criteria(r, judged) if r.round > cap
+                          else round_criteria(judged.get(r.round, [])))}
             for r in store.read.rounds_of(conn, run_id)]
+
+
+def round_criteria(entries):
+    return [{"id": c.get("id", f"C{c['n']}"), "n": c["n"],
+             "status": c["status"], "note": c["note"]}
+            for c in sorted(entries, key=lambda c: c["n"])]
+
+
+CRITERION_FINDING = re.compile(r"^CRITERION C(\d+): (.+?) \u2014 (.*)")
+
+
+def final_criteria(final, judged):
+    if final.verdict == "error":
+        return []
+    newest = next(iter(judged.values()), [])
+    verdicts = {c["n"]: dict(c, status="met", note="")
+                for c in round_criteria(newest)}
+    for finding in json.loads(final.findings):
+        found = (CRITERION_FINDING.match(finding.get("message", ""))
+                 if finding.get("path") == store.CRITERIA_PATH else None)
+        if found is not None:
+            n = int(found[1])
+            verdicts[n] = {"id": f"C{n}", "n": n,
+                           "status": found[2].replace(" ", "_"),
+                           "note": found[3]}
+    return [verdicts[n] for n in sorted(verdicts)]
+
+
+def served_precheck(prechecks):
+    if not prechecks:
+        return None
+    first = prechecks[0]
+    return {"sha": first["sha"], "criteria": [
+        {"id": c["id"], "n": c["criterion"],
+         "witnessed": bool(c["files"]) and not c["gaps"],
+         "note": ("; ".join(c["gaps"]) if c["gaps"]
+                  else "" if c["files"] else "names no test file")}
+        for c in first["criteria"]]}
 
 
 def advisories(events):
