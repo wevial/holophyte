@@ -534,7 +534,7 @@ class UnitWorkflowTests(unittest.TestCase):
         self.assertEqual(re.findall(r"\d+", entries), ["1", "2"])
         step = next(line for line in jobs[python]
                     if "tests/run_modules.py" in line)
-        self.assertIn("--jobs 8", step)
+        self.assertIn("--jobs 4", step)
         self.assertIn(f"--shard ${{{{ matrix.{axis} }}}}/2", step)
         self.assertIn("--max-module-sec 90", step)
         console_steps = "\n".join(jobs[console])

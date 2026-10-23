@@ -2,8 +2,7 @@ name: unit
 
 # Runs every Python test module as a pull request check, one process per
 # module, through tests/run_modules.py in two shards balanced by
-# tests/module_times.json, eight modules at a time on each (the suite is about
-# half idle, so a four-vCPU runner holds more than four). The console's
+# tests/module_times.json, four modules at a time on each. The console's
 # typecheck, lint and bun tests run in a job beside them. The required check
 # is the job named `unit`, which passes only when all three pass, since a
 # matrix job reports as `python (1)` and `python (2)`. Ruff and the console
@@ -38,7 +37,7 @@ jobs:
       - run: |
           git config --global user.name "unit check"
           git config --global user.email "unit-check@example.com"
-      - run: python3 tests/run_modules.py --jobs 8 --shard ${{ matrix.shard }}/2 --max-module-sec 90
+      - run: python3 tests/run_modules.py --jobs 4 --shard ${{ matrix.shard }}/2 --max-module-sec 90
 
   console:
     runs-on: ubuntu-latest
