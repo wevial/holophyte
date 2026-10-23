@@ -464,8 +464,8 @@ class ShardTests(unittest.TestCase):
                                             else []), *args],
             capture_output=True, text=True, timeout=120)
 
-    def listed(self, *args, tests=None):
-        done = self.runner("--list", *args, tests=tests or self.tests)
+    def listed(self, *args):
+        done = self.runner("--list", *args, tests=self.tests)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         return done.stdout.splitlines()
 

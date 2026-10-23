@@ -171,7 +171,7 @@ def shard_arg(value):
     if not match:
         raise argparse.ArgumentTypeError(f"{value!r} is not I/N")
     index, count = int(match[1]), int(match[2])
-    if count < 1 or not 1 <= index <= count:
+    if not 1 <= index <= count:
         raise argparse.ArgumentTypeError(
             f"{value!r} needs 1 <= I <= N and N >= 1")
     return index, count
