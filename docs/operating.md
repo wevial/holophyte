@@ -21,8 +21,11 @@ reports `stop_requested` with the note, and the console run card shows
 and names its outcome. Repeating a pending request keeps the original note.
 
 The loop checks before each phase, after implementation, verification and
-review, after a fix turn, and between babysit passes and polling steps. A pause
-never freezes or kills a streaming turn. The stop stages work using the same
+review, after a fix turn, and between babysit passes and polling steps.
+A pause stops a running merge-gate fix turn at the worker's next heartbeat: it
+kills the turn's process group and commits the turn's edits, and resuming reruns
+that fix turn on the preserved commit. Every other turn still finishes first; a
+pause never freezes or kills it. The stop stages work using the same
 environment exclusions as worktree reclaim, commits remaining edits as WIP,
 preserves the worktree and branch, and ends the run with outcome `paused` and
 its next phase in `resumePhase`. The ticket is `blocked_on_operator` with the

@@ -83,6 +83,7 @@ class StatusRun(TypedDict):
     phase: str
     stop_requested: str | None
     stop_action: Literal["pause", "abort", "abort_close"] | None
+    step: str | None
     started_ms: int
     heartbeat_age_ms: int
     elapsed_ms: int

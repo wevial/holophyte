@@ -109,6 +109,7 @@ export const statusRunSchema = z.looseObject({
   phase: z.string(),
   stop_requested: z.string().nullable(),
   stop_action: z.enum(["pause", "abort", "abort_close"]).nullable(),
+  step: z.string().nullable(),
   started_ms: z.int(),
   heartbeat_age_ms: z.int(),
   elapsed_ms: z.int(),

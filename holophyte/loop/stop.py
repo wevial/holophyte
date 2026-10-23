@@ -15,7 +15,7 @@ ABORTS = ("abort", "abort_close")
 
 
 def stop_if_requested(conn, run_id, phase):
-    """End a marked run at its next phase; never kill a turn."""
+    """End a marked run at its next phase; only a fix turn's heartbeat kills."""
     if conn is None or run_id is None:
         return
     row = conn.execute(
@@ -74,6 +74,13 @@ def abort_requested(conn, run_id):
         "SELECT 1 FROM runs r JOIN interventions i ON i.id = r.stopRequested"
         " WHERE r.id = ? AND r.endedAt IS NULL"
         " AND i.action IN ('abort', 'abort_close')",
+        (run_id,)).fetchone() is not None
+
+
+def pause_requested(conn, run_id):
+    return conn.execute(
+        "SELECT 1 FROM runs r JOIN interventions i ON i.id = r.stopRequested"
+        " WHERE r.id = ? AND r.endedAt IS NULL AND i.action = 'pause'",
         (run_id,)).fetchone() is not None
 
 
@@ -306,11 +313,26 @@ def pending_requests(conn):
         " JOIN interventions i ON i.id = r.stopRequested WHERE r.endedAt IS NULL")}
 
 
-def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows):
+def fix_state(sha, fixes, timed_out, addressed, model, pass_no, review_follows,
+              stopped_goal=None):
     return dict(step="babysit_fix", sha=sha, fixes=str(fixes), timed_out=timed_out,
                 addressed=[(n, asdict(thread), reason)
                            for n, thread, reason in addressed],
-                model=model, pass_no=pass_no, review_follows=review_follows, posted=0)
+                model=model, pass_no=pass_no, review_follows=review_follows, posted=0,
+                interrupted=stopped_goal is not None, goal=stopped_goal)
+
+
+def paused_goal(prompt, stopped):
+    if not stopped:
+        return None
+    return stopped[-1] if prompt in stopped[-1] else f"{stopped[-1]}\n\n{prompt}"
+
+
+def _rerun_goal(saved, preserved):
+    if preserved == saved["sha"]:
+        return saved["goal"]
+    return (f"{saved['goal']}\n\nThe maintainer paused your previous turn on this"
+            f" fix. Commit {preserved} holds the edits it had made; build on it.")
 
 
 def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
@@ -331,9 +353,12 @@ def resume_babysit_fix(target, conn, run_id, provider, task_id, branch, wt, sha,
     for number, fields, reason in saved["addressed"]:
         fields = dict(fields, replies=tuple(Comment(**r) for r in fields["replies"]))
         addressed.append((number, Thread(**fields), reason))
+    rerun = saved.get("interrupted", False)
     fixed = _fix_threads(target, conn, run_id, provider, task_id, branch, wt,
                          saved["sha"], beat_s, pull, addressed, saved["model"], ticket,
                          verify_cmd, contracts, budget_min, saved["pass_no"],
-                         review_follows=saved["review_follows"], resume_step=saved,
-                         criteria=criteria)
+                         review_follows=saved["review_follows"],
+                         goal=_rerun_goal(saved, sha) if rerun else None,
+                         resume_step=None if rerun else saved, criteria=criteria,
+                         rerun=rerun)
     return fixed, True

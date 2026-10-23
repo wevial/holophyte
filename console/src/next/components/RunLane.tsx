@@ -93,7 +93,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
   const title = run.title ?? "";
   const chip = { phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds };
   const round = reviewRound(chip);
-  const stop = run.stop_requested ? `${run.stop_action?.startsWith("abort") ? "Abort" : "Pause"} requested: ${run.stop_requested}` : null;
+  const stop = run.stop_requested ? (run.stop_action?.startsWith("abort") ? "Aborting" : "Pausing after this turn") : null;
   return (
     <li className="border-rule-2 transition-colors duration-(--motion-colour) hover:bg-paper-2 [&+&]:border-t">
       <Link
@@ -126,7 +126,7 @@ function RunLaneRow({ run, project, sinceMs }: { run: StatusRun; project: string
       </Link>
       {run.pr_url && (
         <p data-fixing className={FIXING_LINE}>
-          fixing{" "}
+          {run.step ? `${run.step} on` : "fixing"}{" "}
           <a className="border-b border-rule text-ink-2 hover:border-ink hover:text-ink" href={run.pr_url} target="_blank" rel="noreferrer">
             {bareNumber(run.pr_url)}
           </a>

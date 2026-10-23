@@ -81,7 +81,7 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
      "verify_started_ms": null,
      "time_box_ms": 1500000, "round": 0, "max_rounds": 2, "strikes": 0,
      "host": "writer-1",
-     "stop_requested": null, "stop_action": null,
+     "stop_requested": null, "stop_action": null, "step": null,
      "pr_url": null, "pr": null, "woke_ms": null}
   ],
   "queued": [
@@ -129,7 +129,9 @@ multiples of that box, so a time-box bar can draw it. `stop_requested` is
 the note of a pause or abort the operator has asked of the run and the
 loop has not yet acted on, and `stop_action` that request's action
 (`pause`, `abort` or `abort_close`); both
-are null when none is pending.
+are null when none is pending. `step` names the turn a `merge_gate` run
+is in when that turn fixes failing checks, `fixing checks (round N of
+M)`, and is null otherwise.
 `pr_url` is the pull request the run opened or carries (`runs.prUrl`),
 null when it has none; `pr` is that pull request's `number`, `checks`,
 `review`, `threads`, `open_threads`, `title`, `state`, `additions`,
