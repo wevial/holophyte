@@ -134,7 +134,8 @@ class HttpCase(unittest.TestCase):
                 self.requests.append((handler.command, handler.path))
             return parsed
         self.enterContext(patch.object(HostHandler, "parse_request", recorded))
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread = threading.Thread(target=self.server.serve_forever,
+                                  kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(thread.join)

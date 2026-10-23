@@ -113,7 +113,8 @@ class ServeTestCase(unittest.TestCase):
         server = holophyte.serve.server.make_server(self.project, host, 0,
                                              console_dir=console_dir,
                                              token=token)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread = threading.Thread(target=server.serve_forever,
+                                  kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         self.addCleanup(server.server_close)
         self.addCleanup(thread.join)

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_serve  # noqa: E402 - after the insert; the SLACK tolerance
-from babysit_fixture import OperatorNoteCase  # noqa: E402
+from babysit_fixture import OperatorNotePass  # noqa: E402
 from bot_thread_fixture import BotFindingCases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
@@ -89,7 +89,7 @@ class LivePullRequestTests(MergeModeFixture):
         self.assertEqual(run["pr_url"], self.URL)
 
 
-class OperatorNoteDetailTests(OperatorNoteCase, MergeModeFixture):
+class OperatorNoteDetailTests(OperatorNotePass, MergeModeFixture):
     def test_consuming_round_lists_private_note_and_report_cites_event(self):
         run_id, event_id = self.operator_note_pass(False)
         code, body = holophyte.serve.serve_runs.run_detail(self.project, str(run_id))

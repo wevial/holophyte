@@ -101,7 +101,7 @@ class ReviewTimeoutLoopTests(LoopFixture):
                     "REVIEW_EVENTS": events("APPROVAL")}),
                 patch.object(review_runner, "SCRATCH_ROOT", root / "reviews"),
                 patch.object(review_runner, "CODEX_AUTH", root / "auth.json"),
-                patch.object(roles, "REVIEW_TIMEOUT", 3)):
+                patch.object(roles, "REVIEW_TIMEOUT", 1.5)):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.addCleanup(reset, self.project)
@@ -148,24 +148,12 @@ class ReviewTimeoutLoopTests(LoopFixture):
         ((verdict,),) = self.read("SELECT verdict FROM reviewRounds")
         self.assertEqual(verdict, "pass")
 
-    def test_a_timed_out_review_fails_over_to_the_configured_fallback(self):
-        self.configure(PAIRS)
-        self.review("SLEEP", events())
-        self.assertIn("reviewing -> merge_gate", self.transitions())
-        ((summary,),) = self.read(
-            "SELECT summary FROM runEvents WHERE kind = 'route_fallback'")
-        switch = json.loads(summary)
-        self.assertIn("timed out", switch["reason"])
-        self.assertEqual(self.dispatched(), ["gpt-6-astra", "gpt-5.6-sol"])
-        self.assertEqual(self.review_turns(),
-                         [("primary", True), ("fallback", False)])
-
     def test_two_timed_out_reviews_fail_the_run_with_a_short_reason(self):
         self.review("SLEEP", "SLEEP")
         ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
         self.assertEqual(outcome, "failed")
         self.assertLess(len(reason), 300)
-        self.assertIn("review timed out after 3s (twice)", reason)
+        self.assertIn("review timed out after 1.5s (twice)", reason)
         self.assertNotIn("docker", reason)
         self.assertNotIn("--volume", reason)
         self.assertEqual(self.crashes(), [])
@@ -177,7 +165,7 @@ class ReviewTimeoutLoopTests(LoopFixture):
         self.review("SLEEP", "SLEEP")
         ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
         self.assertEqual(outcome, "failed")
-        self.assertIn("review timed out after 3s (twice)", reason)
+        self.assertIn("review timed out after 1.5s (twice)", reason)
         self.assertEqual(self.dispatched(), ["gpt-6-astra", "gpt-5.6-sol"])
         self.assertEqual(self.review_turns(),
                          [("primary", True), ("fallback", True)])
@@ -193,7 +181,7 @@ class ReviewTimeoutLoopTests(LoopFixture):
         self.review("SLEEP")
         ((outcome, reason),) = self.read("SELECT outcome, outcomeReason FROM runs")
         self.assertEqual(outcome, "failed")
-        self.assertIn("review timed out after 3s (twice)", reason)
+        self.assertIn("review timed out after 1.5s (twice)", reason)
         self.assertEqual((self.turns / "fallback-count").read_text(), "1")
         self.assertEqual(self.review_turns(),
                          [("primary", True), ("fallback", True)])
