@@ -25,10 +25,6 @@ def _reply_quote(comment):
     return match[1] if match else None
 
 
-def console_ask_mark(event_id):
-    return f"{ASK_REPLY_MARKER}\n<!-- holophyte:console-ask {event_id} -->"
-
-
 def console_answers(comments):
     answers = {}
     for comment in comments:

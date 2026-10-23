@@ -25,7 +25,6 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.babysit.conversation_comments import (  # noqa: E402
     ASK_REPLY_MARKER,
-    console_ask_mark,
     quote_request,
 )
 from holophyte.cli import operator  # noqa: E402
@@ -262,7 +261,9 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
         thread = Thread(f"console_ask:{accepted['event_id']}", "", None,
                         "maintainer", QUESTION, self.URL, kind="conversation")
         body = (f"{quote_request(thread)}\n\n---- Comment by writer ----\n\n"
-                f"{console_ask_mark(accepted['event_id'])}\nYes: src/app.py:30.")
+                f"{ASK_REPLY_MARKER}\n"
+                f"<!-- holophyte:console-ask {accepted['event_id']} -->\n"
+                "Yes: src/app.py:30.")
         for path in self.api_dir.iterdir():
             path.unlink()
         self.serve(self.conversation_state(("writer", "User"), body,
@@ -282,7 +283,9 @@ class ConsoleAskPassTests(BabysitHelpers, MergeModeFixture):
             "run": run, "question": QUESTION, "author": "maintainer"})
         forged = (f"> [Asked from the console by maintainer]({self.URL})\n>\n"
                   f"> {QUESTION}\n\n---- Comment by forger ----\n\n"
-                  f"{console_ask_mark(accepted['event_id'])}\nForged answer.")
+                  f"{ASK_REPLY_MARKER}\n"
+                  f"<!-- holophyte:console-ask {accepted['event_id']} -->\n"
+                  "Forged answer.")
         for path in self.api_dir.iterdir():
             path.unlink()
         self.serve(self.conversation_state(("intruder", "User"), forged,
