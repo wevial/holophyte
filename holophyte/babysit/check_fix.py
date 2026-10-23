@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, replace
 from time import monotonic
 
 import store
+from holophyte.babysit import maintainer_notes
 from holophyte.babysit.check_failures import LISTED_MAX, Failure, failure_lines
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
@@ -216,6 +217,16 @@ def _unreported(state, sha, rerun_jobs):
     stale = {check.job_id for check in state.failed_checks} & rerun_jobs
     return _open(state, sha) and bool(
         state.awaiting or (state.checks == "failure" and stale))
+
+
+def reads_green(project, conn, run_id, beat_s, pull, sha):
+    try:
+        with heartbeat_while(conn, run_id, beat_s):
+            state = pr_status.pr_state(project, pull)
+    except InfraFailure:
+        return False
+    state = maintainer_notes.pending_state(conn, run_id, state, pull.url)
+    return _open(state, sha) and state.checks == "success"
 
 
 def _red(state, sha):
