@@ -5,6 +5,7 @@ from typing import Literal, NotRequired, TypedDict
 
 from holophyte.serve.contract_emit import check, render, write
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
+from holophyte.serve.contract_run import Precheck, Round
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = "python3 -m holophyte.serve.contract"
@@ -394,83 +395,6 @@ class RunDetailRun(TypedDict):
     max_rounds: int
 
 
-class InstructionTriage(TypedDict):
-    decision: Literal["fix", "question", "unclear"]
-    confidence: float | None
-    route: Literal["fix", "answer"]
-    reason: str
-
-
-InstructionOutcome = Literal["changed", "kept", "asked"]
-
-
-class FindingFingerprint(TypedDict):
-    path: str
-    line: NotRequired[int | None]
-    severity: str
-
-
-class RoundFinding(TypedDict):
-    path: str
-    line: NotRequired[int | None]
-    severity: str
-    criterion: NotRequired[str | None]
-    title: NotRequired[str]
-    message: str
-    evidence_only: NotRequired[bool]
-    evidence: NotRequired[Literal["reproduced", "traced", "concern"]]
-    reviewer: NotRequired[str]
-    stale_approval: NotRequired[str]
-    fingerprint: NotRequired[FindingFingerprint]
-    kind: NotRequired[Literal["thread", "finding"]]
-    author: NotRequired[str]
-    author_kind: NotRequired[str]
-    verdict: NotRequired[str]
-    summary: NotRequired[str]
-    raw: NotRequired[str]
-    url: NotRequired[str]
-    request: NotRequired[str]
-    triage: NotRequired[InstructionTriage]
-    outcome: NotRequired[InstructionOutcome]
-    reply: NotRequired[str]
-
-
-class RoundInstruction(TypedDict):
-    kind: Literal["instruction"]
-    path: str
-    line: int | None
-    author: str
-    request: str
-    url: str
-    severity: NotRequired[str]
-    message: NotRequired[str]
-    triage: NotRequired[InstructionTriage]
-    outcome: NotRequired[InstructionOutcome]
-    reply: NotRequired[str]
-
-
-class OperatorNote(TypedDict):
-    kind: Literal["operator_note"]
-    event_id: int
-    note: str
-    author: str
-    hint: NotRequired[bool]
-    consumed: bool
-    run_id: int
-    round: int
-
-
-class Round(TypedDict):
-    round: int
-    started_ms: int
-    ended_ms: int | None
-    verdict: str
-    reviewer_model: str | None
-    findings: list[RoundFinding]
-    instructions: list[RoundInstruction]
-    operator_notes: list[OperatorNote]
-
-
 class AdvisoryFinding(TypedDict):
     tone: Literal["advisory"]
     message: str
@@ -544,6 +468,7 @@ class RunDetail(TypedDict):
     chain: NotRequired[RunChain]
     steer_notes: list[SteerNote]
     criteria: list[RunCriterion]
+    precheck: Precheck | None
 
 
 class MergeFact(TypedDict):

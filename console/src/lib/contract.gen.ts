@@ -509,6 +509,14 @@ export const operatorNoteSchema = z.looseObject({
 });
 export type OperatorNote = z.infer<typeof operatorNoteSchema>;
 
+export const roundCriterionSchema = z.looseObject({
+  id: z.string(),
+  n: z.int(),
+  status: z.enum(["met", "not_met", "unwitnessed"]),
+  note: z.string(),
+});
+export type RoundCriterion = z.infer<typeof roundCriterionSchema>;
+
 export const roundSchema = z.looseObject({
   round: z.int(),
   started_ms: z.int(),
@@ -518,6 +526,7 @@ export const roundSchema = z.looseObject({
   findings: z.array(roundFindingSchema),
   instructions: z.array(roundInstructionSchema),
   operator_notes: z.array(operatorNoteSchema),
+  criteria: z.array(roundCriterionSchema),
 });
 export type Round = z.infer<typeof roundSchema>;
 
@@ -593,6 +602,20 @@ export const runCriterionSchema = z.looseObject({
 });
 export type RunCriterion = z.infer<typeof runCriterionSchema>;
 
+export const precheckCriterionSchema = z.looseObject({
+  id: z.string(),
+  n: z.int(),
+  witnessed: z.boolean(),
+  note: z.string(),
+});
+export type PrecheckCriterion = z.infer<typeof precheckCriterionSchema>;
+
+export const precheckSchema = z.looseObject({
+  sha: z.string(),
+  criteria: z.array(precheckCriterionSchema),
+});
+export type Precheck = z.infer<typeof precheckSchema>;
+
 export const runDetailSchema = z.looseObject({
   run: runDetailRunSchema,
   rounds: z.array(roundSchema),
@@ -601,6 +624,7 @@ export const runDetailSchema = z.looseObject({
   chain: runChainSchema.optional(),
   steer_notes: z.array(steerNoteSchema),
   criteria: z.array(runCriterionSchema),
+  precheck: precheckSchema.nullable(),
 });
 export type RunDetail = z.infer<typeof runDetailSchema>;
 
