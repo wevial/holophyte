@@ -35,10 +35,14 @@ function Shell() {
   const [macApp] = useState(inMacApp);
   return (
     <ToastProvider>
-      <div className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
+      <div data-app-shell={macApp ? "macos" : undefined} className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
         <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
-          {macApp && <div aria-hidden="true" className={`sticky top-0 z-10 h-7 bg-canvas ${APP_DRAG}`} />}
+          {macApp && (
+            <div aria-hidden="true" className="sticky top-0 z-10 h-0">
+              <div className={`absolute inset-x-0 top-0 h-[52px] ${APP_DRAG}`} />
+            </div>
+          )}
           <TokenPrompt />
           <Outlet />
         </main>

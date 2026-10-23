@@ -85,7 +85,7 @@ export function Story() {
   const missing = story === null || (host == null && peers.polls > 0);
   const nodes = story != null && host != null ? storyNodes(story, host, peers.now, readiness) : null;
   return (
-    <div className="flex w-full flex-col px-8 py-7">
+    <div className="flex w-full flex-col px-8 pt-3.5 pb-7">
       {story != null && host != null && nodes != null && (
         <>
           <section aria-labelledby="page-title">
@@ -140,7 +140,7 @@ export function StoriesIndex() {
     void navigate({ to: "/stories/$project/$key", params: { project: firstProject, key: firstKey }, search: keepScope, replace: true });
   }, [answered, firstProject, firstKey, navigate]);
   return (
-    <div className="mx-auto flex w-full max-w-[1320px] flex-col px-8 py-7">
+    <div className="mx-auto flex w-full max-w-[1320px] flex-col px-8 pt-3.5 pb-7">
       {answered && first == null && <NoStories project={project} />}
     </div>
   );
