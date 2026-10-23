@@ -91,6 +91,9 @@ class TemplateRepositoryTests(unittest.TestCase):
             second = fixture(self, LoopFixture)
 
         self.assertEqual(heads(started, "git"), [])
+        base = first.git("rev-parse", "main").strip()
+        self.assertEqual(second.git("rev-parse", "main").strip(), base)
+        self.assertEqual([first.base, second.base], [base, base])
         (first.target / "README.md").write_text("first only\n")
         first.git("commit", "-qam", "first only")
         only = first.git("rev-parse", "HEAD").strip()
