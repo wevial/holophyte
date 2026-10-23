@@ -84,3 +84,39 @@ class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
         note_fix = self.git("log", "-1", "--format=%H", "--grep",
                             "apply the maintainer's note", merged).strip()
         self.assertTrue(note_fix)
+
+    def test_a_note_steered_in_a_conflict_merge_turn_drives_a_fix_before_the_merge(
+            self):
+        review = self.conflict_refusal(conflict=True)
+        fixture, said, phases = self, io.StringIO(), []
+        path = "tests/test_file_sizes.py"
+
+        class SteeringCommit(Commit):
+            def play(self, cwd, turn):
+                phases.append(fixture.read(
+                    "SELECT phase FROM runs ORDER BY id DESC LIMIT 1")[0][0])
+                try:
+                    steer_ticket(fixture.project, "KO-131", NOTE,
+                                 author="maintainer", out=said)
+                except SystemExit as refused:
+                    said.write(str(refused))
+                return super().play(cwd, turn)
+
+        fake, _ = self.loop(
+            self.ratchet_work(), review, Idle(""),
+            SteeringCommit("Merge main: retain both ratchets", path=path,
+                           body="branch's line\nmain's line\n"),
+            Commit("apply the maintainer's note"), APPROVE, Idle(""),
+            provider=self.provider())
+
+        self.assertEqual(phases, ["merge_gate"])
+        self.assertIn("landing at its babysitter's next fix round",
+                      said.getvalue())
+        self.assertIn("mid-merge", fake.turns[3].goal)
+        self.assertNotIn(NOTE, fake.turns[3].goal)
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "implement", "review",
+                                      "implement"])
+        self.assertIn(NOTE, fake.turns[4].goal)
+        self.assertEqual(self.read(
+            "SELECT outcome FROM runs ORDER BY id DESC LIMIT 1"), [("merged",)])
