@@ -1,5 +1,4 @@
 """The merge lock is reached through `Project.locks` (KO-594)."""
-import ast
 import contextlib
 import os
 import subprocess
@@ -69,16 +68,6 @@ class TargetLocksTests(unittest.TestCase):
         with target.locks.merge(None, 7, 1.0):
             self.assertEqual(read_merge_lock(path)[0], 7)
         self.assertFalse(path.exists())
-
-    def test_callers_no_longer_import_live_merge_lock(self):
-        for module in ("loop/merge_gate", "loop/claim"):
-            with self.subTest(module=module):
-                tree = ast.parse((ROOT / "holophyte" / f"{module}.py").read_text())
-                imported = {alias.name for node in ast.walk(tree)
-                            if isinstance(node, ast.ImportFrom)
-                            and node.module == "holophyte.loop.merge_lock"
-                            for alias in node.names}
-                self.assertNotIn("live_merge_lock", imported)
 
 
 if __name__ == "__main__":

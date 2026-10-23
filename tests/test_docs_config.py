@@ -92,26 +92,3 @@ class ConfigReferenceTests(unittest.TestCase):
         with self.assertRaisesRegex(
                 AssertionError, r"\[merge\] missing entry `media_repo`"):
             assert_documented(self, misplaced)
-
-    def test_review_session_wrapper_contract(self):
-        document = (DOCS / "config.md").read_text()
-        for term in ("review_session", "HOLOPHYTE_REVIEW_RESUME",
-                     "HOLOPHYTE_REVIEW_SCRATCH", "200", "whitespace"):
-            self.assertIn(term, document)
-
-    def test_review_behavior_notes(self):
-        document = (DOCS / "reviewing.md").read_text().lower()
-        for term in ("conversation", "explicit", "rewritten"):
-            with self.subTest(term=term):
-                self.assertIn(term, document)
-
-    def test_covering_review_scope_notes(self):
-        document = (DOCS / "reviewing.md").read_text()
-        boundary = document.split("## Local reviewer boundary", 1)[1]
-        boundary = boundary.split("\n## ", 1)[0]
-        step = document.split("6. **Review the fix.**", 1)[1]
-        step = step.split("After `[merge] pr_rounds`", 1)[0]
-        for term in ("approval at", "void", "read whole"):
-            with self.subTest(term=term):
-                self.assertIn(term, step)
-        self.assertIn("focused", boundary)

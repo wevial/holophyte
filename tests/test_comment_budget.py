@@ -152,7 +152,7 @@ PINNED = {
 
     "holophyte/isolation/__init__.py": 0,
     "holophyte/isolation/isolation_clone.py": 5,
-    "holophyte/isolation/isolation_git.py": 4,
+    "holophyte/isolation/isolation_git.py": 3,
     "holophyte/isolation/isolation_return.py": 2,
     "holophyte/isolation/launcher.py": 1,
 
