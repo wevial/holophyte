@@ -47,7 +47,7 @@ function DayRow({ row, since }: { row: DayRun; since: number }) {
   const detail = reason(row);
   return (
     <li data-run={row.id} className={`${GRID} relative min-h-[52px] border-b border-rule-2 p-3 transition-colors duration-(--motion-colour) hover:bg-paper-2`}>
-      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${STATES[row.state].word}${took}, ended ${ended}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-act`}>
+      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${STATES[row.state].word}${took}, ended ${ended}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
         {row.id}
       </RunRowLink>
       <span className="font-mono text-[11.5px] text-ink-3 [overflow-wrap:anywhere]">{row.ticket}</span>

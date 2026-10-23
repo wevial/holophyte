@@ -11,8 +11,8 @@ import { useToast } from "./Toast";
 import { TitleText } from "./TitleText";
 
 const PILL: Record<Severity, { text: string; className: string }> = {
-  must: { text: "P1", className: "bg-p1 text-[#171a2c]" },
-  should: { text: "P2", className: "bg-p2 text-[#171a2c]" },
+  must: { text: "P1", className: "bg-p1 text-p1-ink" },
+  should: { text: "P2", className: "bg-p2 text-p2-ink" },
   nit: { text: "P3", className: "bg-p3 text-p3-ink" },
 };
 
@@ -100,7 +100,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
           {row.tag && (
             <span
               data-tag
-              className={`px-1.5 py-[3px] font-mono text-[11px] font-medium leading-none ${row.tag.filled ? "bg-tag text-[#171a2c]" : "text-ink-2 shadow-[inset_0_0_0_1px_var(--rule)]"}`}
+              className={`px-1.5 py-[3px] font-mono text-[11px] font-medium leading-none ${row.tag.filled ? "bg-tag text-tag-ink" : "text-ink-2 shadow-[inset_0_0_0_1px_var(--rule)]"}`}
             >
               {row.tag.text}
             </span>

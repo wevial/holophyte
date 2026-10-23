@@ -23,6 +23,7 @@ import store.steer_notes
 import store.stories
 import store.tickets
 import tests.test_holo_results as results_tests
+from holophyte.babysit.babysit_steps import record_step
 from holophyte.cli.status import host_snapshot
 from holophyte.config.project import Project
 from holophyte.holo import cli as holo_cli
@@ -42,6 +43,7 @@ REASON = "review asked for changes; sent back"
 SHA = "92ef2b0c4d5e6f708192a3b4c5d6e7f8091a2b3c"
 ESCAPE = "\x1b"
 PR_URL = "https://example.invalid/org/repo/pull/2281"
+GATE = ("working", "verifying", "reviewing", "merge_gate")
 
 
 def on_tty(argv, env):
@@ -171,6 +173,49 @@ class PageOrderTests(StatusPageTests):
             "working · heartbeat 20 s ago · steer 2 pending"), twenty)
         self.assertTrue(twenty_one.endswith("working · heartbeat 30 s ago"),
                         twenty_one)
+
+    def live_run(self, key, phases=("working",)):
+        run = store.claim(self.conn, self.project_id, self.ticket(key),
+                          now=NOW - 20_000)
+        for phase in phases:
+            store.set_phase(self.conn, run, phase, now=NOW - 20_000)
+        return run
+
+    def running_line(self, key):
+        lines = self.page()
+        heading = next(line for line in lines if line.startswith("Running ("))
+        running = lines[lines.index(heading) + 1:lines.index("Quiet")]
+        (line,) = [line for line in running if key in line]
+        return line
+
+    def test_a_pending_pause_or_abort_ends_the_live_row(self):
+        store.pause(self.conn, self.live_run("ALPHA-20"), "reboot the writer")
+        store.abort(self.conn, self.live_run("ALPHA-21"), "wrong spec")
+
+        self.assertTrue(self.running_line("ALPHA-20").endswith(
+            "working · heartbeat 20 s ago · pausing after this turn"),
+            self.running_line("ALPHA-20"))
+        self.assertTrue(self.running_line("ALPHA-21").endswith(
+            "working · heartbeat 20 s ago · aborting"),
+            self.running_line("ALPHA-21"))
+
+    def test_a_check_fix_turn_names_its_round_and_a_thread_fix_names_none(self):
+        checks = self.live_run("ALPHA-20", GATE)
+        record_step(self.conn, checks, "checks")
+        store.record_event(
+            self.conn, checks, "check_fix_round",
+            "check fix round 1 of 2 on https://example.invalid/org/repo/pull/9:"
+            " vitest; failing: 1 test red")
+        record_step(self.conn, checks, "fix")
+        threads = self.live_run("ALPHA-21", GATE)
+        record_step(self.conn, threads, "checks")
+        record_step(self.conn, threads, "fix")
+
+        self.assertTrue(self.running_line("ALPHA-20").endswith(
+            "merge_gate · heartbeat 20 s ago · fixing checks (round 1 of 2)"),
+            self.running_line("ALPHA-20"))
+        self.assertTrue(self.running_line("ALPHA-21").endswith(
+            "merge_gate · heartbeat 20 s ago"), self.running_line("ALPHA-21"))
 
     def test_the_client_zone_shows_clock_time_and_the_stranded_wait(self):
         (self.home / "client.toml").write_text('timezone = "America/Los_Angeles"\n')

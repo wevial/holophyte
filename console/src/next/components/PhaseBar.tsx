@@ -14,13 +14,13 @@ import {
 } from "../../lib/timeline";
 
 const FILLS: Record<SegmentKind, string> = {
-  implement: "bg-act text-paper",
-  verify: "bg-live text-paper",
-  review: "bg-wait text-paper",
-  fix: "bg-ask text-paper",
+  implement: "bg-act text-act-ink",
+  verify: "bg-live text-green-on",
+  review: "bg-wait text-violet-on",
+  fix: "bg-ask text-gold-on",
   merge: "bg-ink-2 text-paper",
   wait: "bg-rule text-ink",
-  parked: "bg-fact-warn text-paper",
+  parked: "bg-fact-warn text-orange-on",
 };
 
 /** Where the run's time went: one segment per phase, each as wide as its

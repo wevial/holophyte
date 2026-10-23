@@ -140,6 +140,22 @@ test("open rows read worst first, then the higher round first even when it ended
   expect(group("Open").querySelector("[data-project]")).toBeNull();
 });
 
+test("each severity pill and a filled tag pair their fill with that fill's own ink", async () => {
+  const nit = runOf(12, "DEMO-12", [round(1, [finding("Trailing space in the log", "p3")])]);
+  const tagged = followUp(1, "DEMO-7", "Guard the lease clock.", { run: 7, kind: "guardrail", state: "pending", created_ms: AT });
+  await mount("#/findings", fleet({ runs: [demo11, writer3, nit], live: reviewing7, followUps: [tagged] }));
+  const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);
+  expect(pills.map((pill) => [pill.textContent, [...pill.classList].filter((name) => /^(bg|text)-p\d/.test(name))])).toEqual([
+    ["P1", ["bg-p1", "text-p1-ink"]],
+    ["P2", ["bg-p2", "text-p2-ink"]],
+    ["P3", ["bg-p3", "text-p3-ink"]],
+  ]);
+  const tag = rowsOf("Follow-ups")[0]!.querySelector("[data-tag]")!;
+  expect(tag.textContent).toBe("guardrail");
+  expect(tag.classList.contains("bg-tag")).toBe(true);
+  expect(tag.classList.contains("text-tag-ink")).toBe(true);
+});
+
 test("a row folds open from its tag, title and path to its place and a link to its run", async () => {
   await mount("#/findings", fleet({ runs: [demo7], live: reviewing7 }));
   const [row] = rowsOf("Open");
@@ -165,7 +181,7 @@ test("an open row's fate says who is fixing it, or why nobody is", async () => {
   expect(iconOf(fixing!).getAttribute("data-state")).toBe("running");
   expect(fateOf(idle!).textContent).toBe("open · the run failed, so nobody is fixing it");
   expect(iconOf(idle!).getAttribute("data-state")).toBe("needs_you");
-  expect(fateOf(idle!).classList.contains("text-ask")).toBe(true);
+  expect(fateOf(idle!).classList.contains("text-ask-ink")).toBe(true);
 });
 
 test("settled rows say what became of each finding, under a quiet icon", async () => {
