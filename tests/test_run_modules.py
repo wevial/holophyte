@@ -1,5 +1,7 @@
 """KO-639: the per-module parallel runner and the `unit` workflow that runs it."""
+import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -112,6 +114,28 @@ class CommitWithoutRepacking(unittest.TestCase):
                 self.assertEqual(packs, [], "automatic maintenance wrote pack files")
                 time.sleep(0.01)
 """
+
+SLEEPS = """
+import time
+import unittest
+
+class Sleeps(unittest.TestCase):
+    def test_sleeps(self):
+        time.sleep({seconds})
+"""
+
+BUSY = """
+import time
+import unittest
+
+class Busy(unittest.TestCase):
+    def test_keeps_the_cpu_busy(self):
+        started = time.process_time()
+        while time.process_time() - started < 0.5:
+            pass
+"""
+
+LINE = re.compile(r"^(test_\S+\.py)\s+([0-9.]+)s\s+([0-9.]+)s cpu\s")
 
 CHECKS_GIT_CONFIG = """
 import subprocess
@@ -302,6 +326,150 @@ class RunModulesTests(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(live_members(pgid), [], f"child {child} survived")
 
+    def timed_lines(self, done):
+        return {m[1]: (float(m[2]), float(m[3]))
+                for m in map(LINE.match, done.stdout.splitlines()) if m}
+
+    def test_each_line_reports_the_module_cpu_seconds_beside_its_wall(self):
+        done = self.run_over({"test_busy.py": BUSY,
+                              "test_sleep.py": SLEEPS.format(seconds=1)},
+                             "--jobs", "2")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        lines = self.timed_lines(done)
+        self.assertGreaterEqual(lines["test_busy.py"][1], 0.4, done.stdout)
+        wall, cpu = lines["test_sleep.py"]
+        self.assertGreaterEqual(wall, 1.0, done.stdout)
+        self.assertLess(cpu, wall / 2, done.stdout)
+
+    def slowest_block(self, done):
+        lines = done.stdout.rstrip().splitlines()
+        heading = next(i for i, line in enumerate(lines) if "slowest" in line)
+        block = [line.split() for line in lines[heading + 1:-1] if line]
+        return heading, lines, [(name, float(wall.rstrip("s")))
+                                for name, wall in block]
+
+    def test_the_ten_slowest_modules_follow_the_failures_longest_first(self):
+        modules = {f"test_m{n:02d}.py": SLEEPS.format(seconds=n / 20)
+                   for n in range(11)}
+        modules["test_bad.py"] = FAILING
+        done = self.run_over(modules, "--jobs", "12")
+        heading, lines, block = self.slowest_block(done)
+        report = next(i for i, line in enumerate(lines)
+                      if line.startswith("===== test_bad.py"))
+        self.assertLess(report, heading)
+        self.assertRegex(lines[-1], r"^12 modules, ")
+        self.assertEqual(len(block), 10, done.stdout)
+        walls = [wall for _, wall in block]
+        self.assertEqual(walls, sorted(walls, reverse=True))
+        timed = {name: wall for name, (wall, _) in self.timed_lines(done).items()}
+        unlisted = [timed[name] for name in set(timed) - {n for n, _ in block}]
+        self.assertEqual(len(unlisted), 2)
+        self.assertGreaterEqual(min(walls), max(unlisted))
+
+    def test_a_run_of_three_lists_all_three_as_slowest(self):
+        names = ["test_one.py", "test_two.py", "test_three.py"]
+        done = self.run_over(dict.fromkeys(names, PASSING), "--jobs", "3")
+        self.assertEqual(sorted(name for name, _ in self.slowest_block(done)[2]),
+                         sorted(names))
+
+    def test_a_module_over_the_ceiling_fails_and_is_named(self):
+        modules = {"test_slow.py": SLEEPS.format(seconds=1.5)}
+        done = self.run_over(modules, "--max-module-sec", "1")
+        self.assertNotEqual(done.returncode, 0, done.stdout)
+        self.assertIn("over the 1 s ceiling",
+                      self.module_lines(done)["test_slow.py"])
+        summary = done.stdout.rstrip().splitlines()[-1]
+        self.assertIn("failed: test_slow.py", summary)
+        self.assertIn("===== test_slow.py: FAILED (ran", done.stdout)
+        for args in (("--max-module-sec", "5"), ()):
+            with self.subTest(args=args):
+                done = self.run_over(modules, *args)
+                self.assertEqual(done.returncode, 0, done.stdout)
+                self.assertTrue(
+                    self.module_lines(done)["test_slow.py"].endswith("ok"))
+
+    def test_recorded_times_are_written_and_order_a_later_list(self):
+        record = self.root / "times.json"
+        done = self.run_over({"test_fast.py": PASSING,
+                              "test_slow.py": SLEEPS.format(seconds=1.2)},
+                             "--jobs", "2", "--record", str(record))
+        self.assertEqual(done.returncode, 0, done.stdout)
+        times = json.loads(record.read_text())
+        self.assertEqual(sorted(times), ["test_fast.py", "test_slow.py"])
+        self.assertGreaterEqual(times["test_slow.py"], 1.2)
+        (self.tests / "module_times.json").write_text(record.read_text())
+        self.assertEqual(self.listed(),
+                         sorted(times, key=times.get, reverse=True))
+
+    def listed(self, *args):
+        done = self.run_over({}, "--list", *args)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return done.stdout.splitlines()
+
+    def fixture(self, names, times):
+        for name in names:
+            (self.tests / name).write_text(PASSING)
+        (self.tests / "module_times.json").write_text(json.dumps(times))
+
+    def test_shards_of_the_real_directory_split_every_module_once(self):
+        every = {path.name for path in (ROOT / "tests").glob("test_*.py")}
+        for count in (2, 3):
+            with self.subTest(count=count):
+                shards = []
+                for index in range(1, count + 1):
+                    done = subprocess.run(
+                        [sys.executable, str(RUNNER), "--list",
+                         "--shard", f"{index}/{count}"],
+                        capture_output=True, text=True, timeout=60)
+                    self.assertEqual(done.returncode, 0, done.stderr)
+                    shards.append(done.stdout.splitlines())
+                names = [name for shard in shards for name in shard]
+                self.assertEqual(len(names), len(set(names)), shards)
+                self.assertEqual(set(names), every)
+
+    def test_two_shards_balance_recorded_times_and_run_longest_first(self):
+        times = {"test_a.py": 5.0, "test_b.py": 4.0, "test_c.py": 3.0,
+                 "test_d.py": 3.0, "test_e.py": 2.0}
+        self.fixture(times, times)
+        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
+        self.assertEqual(sorted(shards[0] + shards[1]), sorted(times))
+        totals = [sum(times[name] for name in shard) for shard in shards]
+        self.assertLessEqual(abs(totals[0] - totals[1]), max(times.values()))
+        for shard in shards:
+            self.assertEqual([times[name] for name in shard],
+                             sorted((times[name] for name in shard),
+                                    reverse=True))
+
+    def test_recorded_time_not_file_size_sets_the_order(self):
+        self.fixture(["test_small.py"],
+                     {"test_small.py": 3.0, "test_large.py": 0.1})
+        (self.tests / "test_large.py").write_text(PASSING + "\n# pad" * 500)
+        done = self.run_over({}, "--jobs", "1")
+        self.assertEqual(done.returncode, 0, done.stdout)
+        self.assertEqual(list(self.timed_lines(done)),
+                         ["test_small.py", "test_large.py"])
+
+    def test_unrecorded_module_counts_as_the_median_and_ghosts_are_ignored(self):
+        times = {"test_a.py": 4.0, "test_b.py": 3.0, "test_c.py": 1.0,
+                 "test_d.py": 0.5}
+        self.fixture([*times, "test_new.py"],
+                     dict(times, **{"test_gone.py": 9.0}))
+        self.assertEqual(self.listed(), ["test_a.py", "test_b.py",
+                                         "test_new.py", "test_c.py",
+                                         "test_d.py"])
+        self.assertEqual(self.listed("test_d.py", "test_new.py"),
+                         ["test_new.py", "test_d.py"])
+        shards = [self.listed("--shard", f"{index}/2") for index in (1, 2)]
+        self.assertEqual((shards[0] + shards[1]).count("test_new.py"), 1)
+
+    def test_malformed_or_out_of_range_shard_is_a_usage_error(self):
+        for value in ("0/2", "3/2", "1/0", "x"):
+            with self.subTest(value=value):
+                done = self.run_over({"test_good.py": PASSING}, "--shard", value)
+                self.assertEqual(done.returncode, 2, done.stdout)
+                self.assertIn("--shard", done.stderr)
+                self.assertEqual(self.module_lines(done), {}, done.stdout)
+
     @staticmethod
     def kill_survivors(pgid):
         for pid in live_members(pgid):
@@ -311,26 +479,104 @@ class RunModulesTests(unittest.TestCase):
                 pass
 
 
+def job_blocks(text):
+    """Each job id under `jobs:` in workflow `text`, mapped to its lines."""
+    jobs, current = {}, None
+    for line in text[text.index("\njobs:"):].splitlines()[2:]:
+        match = re.fullmatch(r"  ([\w-]+):", line)
+        if match:
+            current = jobs.setdefault(match[1], [])
+        elif current is not None:
+            current.append(line)
+    return jobs
+
+
+def run_script(lines):
+    """The body of the block-scalar `run: |` in a job's `lines`, dedented."""
+    start = next(i for i, line in enumerate(lines)
+                 if line.strip() == "run: |")
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = []
+    for line in lines[start + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body))
+
+
 class UnitWorkflowTests(unittest.TestCase):
-    def test_unit_job_runs_the_runner_on_pull_requests_merge_groups_and_main(self):
+    def test_triggers_stay_pull_requests_merge_groups_and_main(self):
         text = WORKFLOW.read_text()
         on = text[text.index("\non:"):text.index("\njobs:")]
         self.assertIn("pull_request", on)
         # A merge queue waits for its required checks on the merge group.
         self.assertRegex(on, r"\n  merge_group:\n")
         self.assertRegex(on, r"push:\s*\n\s+branches: \[main\]")
-        jobs = text[text.index("\njobs:"):]
-        self.assertRegex(jobs, r"\n  unit:\n")
-        self.assertIn('python-version: "3.14"', jobs)
-        self.assertIn("pip install -r requirements.txt", jobs)
-        self.assertIn("python3 tests/run_modules.py", jobs)
 
-    def test_unit_job_is_capped_at_thirty_minutes(self):
-        unit = block_scalars(WORKFLOW.read_text(), "jobs", "unit")
-        self.assertEqual(unit.get("runs-on"), "ubuntu-latest", unit)
-        self.assertRegex(unit["timeout-minutes"], r"^[0-9]+$")
-        self.assertLessEqual(int(unit["timeout-minutes"]), 30)
+    def test_two_python_shards_a_console_job_and_a_unit_job_over_both(self):
+        text = WORKFLOW.read_text()
+        jobs = job_blocks(text)
+        self.assertEqual(len(jobs), 3, sorted(jobs))
+        unit = block_scalars(text, "jobs", "unit")
+        needs = re.findall(r"[\w-]+", unit["needs"])
+        self.assertEqual(len(needs), 2, unit)
+        self.assertEqual(set(needs) | {"unit"}, set(jobs))
+        self.assertEqual(unit["if"], "always()")
+        python = next(job for job in needs
+                      if "tests/run_modules.py" in "\n".join(jobs[job]))
+        console = next(job for job in needs if job != python)
+        strategy = block_scalars(text, "jobs", python, "strategy")
+        self.assertEqual(strategy.get("fail-fast"), "false")
+        matrix = block_scalars(text, "jobs", python, "strategy", "matrix")
+        self.assertEqual(len(matrix), 1, matrix)
+        (axis, entries), = matrix.items()
+        self.assertEqual(re.findall(r"\d+", entries), ["1", "2"])
+        step = next(line for line in jobs[python]
+                    if "tests/run_modules.py" in line)
+        self.assertIn("--jobs 4", step)
+        self.assertIn(f"--shard ${{{{ matrix.{axis} }}}}/2", step)
+        self.assertIn("--max-module-sec 90", step)
+        console_steps = "\n".join(jobs[console])
+        for command in ("install --frozen-lockfile", "run typecheck",
+                        "run lint", "run test"):
+            self.assertIn(f"bun --cwd=console {command}", console_steps)
 
+    def test_only_the_aggregating_job_is_named_unit_and_jobs_are_capped(self):
+        text = WORKFLOW.read_text()
+        for job in job_blocks(text):
+            with self.subTest(job=job):
+                fields = block_scalars(text, "jobs", job)
+                if job != "unit":
+                    self.assertNotEqual(fields.get("name", job), "unit")
+                self.assertEqual(fields.get("runs-on"), "ubuntu-latest")
+                self.assertRegex(fields["timeout-minutes"], r"^[0-9]+$")
+                self.assertLessEqual(int(fields["timeout-minutes"]), 30)
+
+    def test_unit_step_passes_only_when_both_needed_jobs_succeed(self):
+        text = WORKFLOW.read_text()
+        script = run_script(job_blocks(text)["unit"])
+        env = block_scalars(text, "jobs", "unit", "steps", "env")
+        variables = {re.fullmatch(r"\$\{\{ needs\.([\w-]+)\.result \}\}",
+                                  value)[1]: name for name, value in env.items()}
+        first, second = re.findall(
+            r"[\w-]+", block_scalars(text, "jobs", "unit")["needs"])
+        for results, passes in ((("success", "success"), True),
+                                (("failure", "success"), False),
+                                (("success", "cancelled"), False),
+                                (("skipped", "success"), False)):
+            with self.subTest(results=results):
+                given = dict(zip((first, second), results))
+                done = subprocess.run(
+                    ["sh", "-c", script], capture_output=True, text=True,
+                    env=dict(os.environ, **{variables[job]: result
+                                            for job, result in given.items()}))
+                self.assertEqual(done.returncode == 0, passes, done.stdout)
+                for job, result in given.items():
+                    if result != "success":
+                        self.assertIn(f"{job} did not pass: {result}",
+                                      done.stdout)
+                    else:
+                        self.assertNotIn(job, done.stdout)
 
 if __name__ == "__main__":
     unittest.main()

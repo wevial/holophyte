@@ -1,12 +1,14 @@
 name: unit
 
 # Runs every Python test module as a pull request check, one process per
-# module and four at a time (GitHub-hosted runners for public repositories
-# have four vCPUs), through tests/run_modules.py, followed by the console's
-# typecheck, lint and bun tests. Ruff and console build stay in local verify.
-# The merge_group trigger lets a
-# merge queue require this check; it takes no filters, since a queue entry
-# waits on every required check it names.
+# module, through tests/run_modules.py in two shards balanced by
+# tests/module_times.json, four modules at a time on each. The console's
+# typecheck, lint and bun tests run in a job beside them. The required check
+# is the job named `unit`, which passes only when all three pass, since a
+# matrix job reports as `python (1)` and `python (2)`. Ruff and the console
+# build stay in local verify. The merge_group trigger lets a merge queue
+# require this check; it takes no filters, since a queue entry waits on every
+# required check it names.
 
 on:
   pull_request:
@@ -18,9 +20,13 @@ permissions:
   contents: read
 
 jobs:
-  unit:
+  python:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,7 +37,13 @@ jobs:
       - run: |
           git config --global user.name "unit check"
           git config --global user.email "unit-check@example.com"
-      - run: python3 tests/run_modules.py --jobs 4
+      - run: python3 tests/run_modules.py --jobs 4 --shard ${{ matrix.shard }}/2 --max-module-sec 90
+
+  console:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: console/.bun-version
@@ -43,3 +55,25 @@ jobs:
         run: bun --cwd=console run lint
       - name: Console tests
         run: bun --cwd=console run test
+
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [python, console]
+    if: always()
+    steps:
+      - name: Require the Python shards and the console job to pass
+        env:
+          PYTHON: ${{ needs.python.result }}
+          CONSOLE: ${{ needs.console.result }}
+        run: |
+          status=0
+          if [ "$PYTHON" != success ]; then
+            echo "python did not pass: $PYTHON"
+            status=1
+          fi
+          if [ "$CONSOLE" != success ]; then
+            echo "console did not pass: $CONSOLE"
+            status=1
+          fi
+          exit "$status"
