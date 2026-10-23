@@ -41,9 +41,8 @@ class RecordingTests(SteerFixture):
 
 
 class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
-    def test_a_note_steered_in_a_review_fix_turn_drives_a_fix_before_the_merge(self):
-        self.resume_rejected_fix()
-        fixture, said, phases = self, io.StringIO(), []
+    def steering_commit(self, said, phases):
+        fixture = self
 
         class SteeringCommit(Commit):
             def play(self, cwd, turn):
@@ -55,6 +54,13 @@ class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
                 except SystemExit as refused:
                     said.write(str(refused))
                 return super().play(cwd, turn)
+
+        return SteeringCommit
+
+    def test_a_note_steered_in_a_review_fix_turn_drives_a_fix_before_the_merge(self):
+        self.resume_rejected_fix()
+        said, phases = io.StringIO(), []
+        SteeringCommit = self.steering_commit(said, phases)
 
         fake, _ = self.loop(REQUEST_CHANGES, SteeringCommit("review fix"),
                             APPROVE, Idle(""),
@@ -88,19 +94,9 @@ class SteerBabysitFixTests(BabysitHelpers, MergeModeFixture):
     def test_a_note_steered_in_a_conflict_merge_turn_drives_a_fix_before_the_merge(
             self):
         review = self.conflict_refusal(conflict=True)
-        fixture, said, phases = self, io.StringIO(), []
+        said, phases = io.StringIO(), []
+        SteeringCommit = self.steering_commit(said, phases)
         path = "tests/test_file_sizes.py"
-
-        class SteeringCommit(Commit):
-            def play(self, cwd, turn):
-                phases.append(fixture.read(
-                    "SELECT phase FROM runs ORDER BY id DESC LIMIT 1")[0][0])
-                try:
-                    steer_ticket(fixture.project, "KO-131", NOTE,
-                                 author="maintainer", out=said)
-                except SystemExit as refused:
-                    said.write(str(refused))
-                return super().play(cwd, turn)
 
         fake, _ = self.loop(
             self.ratchet_work(), review, Idle(""),
