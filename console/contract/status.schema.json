@@ -534,6 +534,16 @@
             }
           ]
         },
+        "step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "started_ms": {
           "type": "integer"
         },
@@ -664,6 +674,7 @@
         "phase",
         "stop_requested",
         "stop_action",
+        "step",
         "started_ms",
         "heartbeat_age_ms",
         "elapsed_ms",
