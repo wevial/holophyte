@@ -115,9 +115,8 @@ def _change(finding):
 
 
 def _allowance_spent(conn, run_id):
-    return conn is not None and any(
-        event.kind == ALLOWANCE_KIND for event in
-        store.read.narrative_events(conn, run_id, (ALLOWANCE_KIND,)))
+    return conn is not None and store.read.latest_event_summary(
+        conn, run_id, ALLOWANCE_KIND) is not None
 
 
 def _covering_findings(conn, run_id, rnd):
