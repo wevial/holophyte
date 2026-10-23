@@ -93,7 +93,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         run is parked alive in `awaiting_merge_approval` with its lease
         released -- the `approve = "human"` park, with a URL."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
-        self.fake_route()
+        self.fake_route(gh_on_path=True)
         provider = self.provider()
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             provider=provider)
@@ -247,7 +247,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         green checks and no threads and parks "ready to merge"."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         adopted = "https://github.com/example/repo/pull/2177"
-        self.fake_route(open_pr=adopted)
+        self.fake_route(open_pr=adopted, gh_on_path=True)
         provider = self.provider()
         with patch.object(holophyte.pr.github, "SLEEP") as sleep:
             fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
@@ -373,7 +373,7 @@ class MergeModePullRequestTests(MergeModeFixture):
         is found and adopted."""
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         adopted = "https://github.com/example/repo/pull/2177"
-        self.fake_route(open_pr=adopted)
+        self.fake_route(open_pr=adopted, gh_on_path=True)
         self.git("remote", "set-url", "origin",
                  "https://github.com/example/repo/")
 

@@ -37,7 +37,7 @@ from holophyte.environment_git import (
 )
 from holophyte.leak_guard import register_matches
 from holophyte.loop import contradiction, escalation, steering
-from holophyte.loop.claim import conflict_brief, mid_merge, unmerged_paths
+from holophyte.loop.claim import conflict_brief, unmerged_paths
 from holophyte.loop.gates import GroupKill, InfraFailure, RunFailure, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import boundary
@@ -343,16 +343,21 @@ def _sweep_quietly(project, conn, run_id, wt, cause, merges):
 
 
 def _sweep_tree(project, conn, run_id, wt, cause, merges):
-    if not Path(wt).is_dir() or subprocess.run(
-            ["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=wt,
-            capture_output=True).returncode or (mid_merge(wt) and not merges):
+    if not Path(wt).is_dir():
+        return False
+    facts = subprocess.run(
+        ["git", "rev-parse", "--git-path", "index.lock", "--git-path",
+         "MERGE_HEAD", "--verify", "--abbrev-ref", "HEAD"], cwd=wt, capture_output=True,
+        text=True)
+    if facts.returncode:
+        return False
+    lock, merge_head, branch = facts.stdout.splitlines()
+    merging = Path(wt, merge_head).is_file()
+    if merging and not merges:
         return False
     # The turn's process group is reaped, so a lock here is the dead turn's.
-    lock = Path(wt, sh(["git", "rev-parse", "--git-path", "index.lock"], cwd=wt))
-    lock.unlink(missing_ok=True)
-    branch = sh(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=wt)
+    Path(wt, lock).unlink(missing_ok=True)
     task_id = _task_key(conn, run_id, branch)
-    merging = mid_merge(wt)
     if merging:
         _sweep_merge(project, conn, run_id, wt, branch, task_id)
     return _commit_wip(project, conn, run_id, wt, branch, task_id,

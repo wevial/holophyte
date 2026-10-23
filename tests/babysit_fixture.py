@@ -226,7 +226,7 @@ class BabysitHelpers:
         """GitHub refuses the first merge after main moves under the PR."""
         import test_babysitter
         self.configure('[merge]\nmode = "pr"\n')
-        self.fake_route()
+        self.fake_route(gh_on_path=True)
         gh = self.calls.parent / "gh"
         text = gh.read_text()
         answer = f"    echo '{{\"sha\":\"{self.MERGE_SHA}\",\"merged\":true}}'"
