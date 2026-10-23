@@ -9,6 +9,7 @@ from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.review.reply_parsing import UNPARSED_PATH
 
 ROUND_KIND = "covering_fix_round"
+ALLOWANCE_KIND = "review_fix_allowance"
 
 LEAD_RE = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
                      r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
@@ -23,7 +24,11 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
     findings = f"; not merged. Reviewer findings:\n{verdict}"
     if not unwitnessed and decision != "REQUEST_CHANGES":
         return None, asked + findings
-    if fix_note is not None:
+    if fix_note is not None and not _allowance_spent(conn, run_id):
+        if conn is not None:
+            store.record_event(conn, run_id, ALLOWANCE_KIND,
+                               f"operator review fix allowance after round {rnd}",
+                               level="detail")
         ledger(conn, run_id, task_id, "round",
                f"Babysit review fix allowance after round {rnd}: one fix and"
                " recorded re-review, even if reviewRoundCap is spent.", provider)
@@ -107,6 +112,11 @@ def _change(finding):
     rest = re.sub(rf"^[`*\"']*{re.escape(path)}(?::\d+)?[`*\"']*\s*[:,\u2014-]?\s*",
                   "", rest, count=1)
     return f"Fix {path}{f':{line}' if line else ''} \u2014 {rest}"
+
+
+def _allowance_spent(conn, run_id):
+    return conn is not None and store.read.latest_event_summary(
+        conn, run_id, ALLOWANCE_KIND) is not None
 
 
 def _covering_findings(conn, run_id, rnd):

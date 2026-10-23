@@ -335,7 +335,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "run_chains",
                                                     "run_snapshot",
                                                     "stranded_runs",
-                                                    "toil_since"]),
+                                                    "toil_since",
+                                                    # HOLO-495: `/runs/N`'s
+                                                    # witness pre-check.
+                                                    "witness_prechecks"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",

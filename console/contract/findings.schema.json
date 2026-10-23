@@ -267,6 +267,34 @@
       ],
       "additionalProperties": true
     },
+    "RoundCriterion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "met",
+            "not_met",
+            "unwitnessed"
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "n",
+        "status",
+        "note"
+      ],
+      "additionalProperties": true
+    },
     "Round": {
       "type": "object",
       "properties": {
@@ -316,6 +344,12 @@
           "items": {
             "$ref": "#/$defs/OperatorNote"
           }
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RoundCriterion"
+          }
         }
       },
       "required": [
@@ -326,7 +360,8 @@
         "reviewer_model",
         "findings",
         "instructions",
-        "operator_notes"
+        "operator_notes",
+        "criteria"
       ],
       "additionalProperties": true
     },

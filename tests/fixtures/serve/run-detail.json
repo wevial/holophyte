@@ -76,6 +76,14 @@
           "run_id": 1,
           "round": 1
         }
+      ],
+      "criteria": [
+        {
+          "id": "C1",
+          "n": 1,
+          "status": "not_met",
+          "note": "input unvalidated"
+        }
       ]
     }
   ],
@@ -143,5 +151,16 @@
       "round": 1,
       "id": "C1"
     }
-  ]
+  ],
+  "precheck": {
+    "sha": "cccccccccccccccccccccccccccccccccccccccc",
+    "criteria": [
+      {
+        "id": "C1",
+        "n": 1,
+        "witnessed": false,
+        "note": "names no test file"
+      }
+    ]
+  }
 }
