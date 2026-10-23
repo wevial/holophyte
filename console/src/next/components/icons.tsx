@@ -99,6 +99,15 @@ export function ChevronIcon({ folded }: { folded: boolean }) {
   );
 }
 
+export function PanelLeftIcon() {
+  return (
+    <Stroke>
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <path d="M6 2.5v11" />
+    </Stroke>
+  );
+}
+
 export function ClassicIcon() {
   return (
     <Stroke>

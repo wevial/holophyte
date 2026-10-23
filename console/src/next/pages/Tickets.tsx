@@ -89,7 +89,7 @@ export function Tickets() {
     <p className="mt-4 font-mono text-[13px] text-ink-3">{view.project == null ? "No open tickets." : `No open tickets in ${view.project}.`}</p>
   );
   return (
-    <section aria-labelledby="page-title" className="flex flex-col px-8 py-7 min-[720px]:h-full">
+    <section aria-labelledby="page-title" className="flex flex-col px-8 pt-3.5 pb-7 min-[720px]:h-full">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
         <div className="flex items-center justify-between gap-3">
           <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Tickets</h1>
