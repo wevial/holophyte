@@ -459,6 +459,49 @@ class AgentFallbackTests(SweepTestCase):
             "SELECT count(*) FROM interventions WHERE action='route_fallback'"
         ).fetchone()[0], 2)
 
+    def claude_reviewer(self, document):
+        self.routes(probe_fails=False)
+        claude = self.root / 'claude-bin' / 'claude'
+        claude.parent.mkdir()
+        claude.write_text(
+            f'#!{sys.executable}\nimport sys\n'
+            f'with open({str(self.calls)!r}, "a") as f:\n'
+            ' f.write("claude " + sys.argv[-1] + "\\n")\n'
+            f'print({json.dumps(document)!r})\n')
+        claude.chmod(0o755)
+        self.configure(f'[agents]\nreviewer = "{claude} -p --output-format json"\n'
+                       f'reviewer_fallback = "{self.fallback}"\n')
+        self.addCleanup(reset, self.project)
+        sha = self.reviewer_repository()
+        return roles.agent(self.project, 'review', 'judge this', self.target,
+                           base_sha=sha, candidate_sha=sha,
+                           conn=self.conn, run_id=self.a_run())
+
+    def route_fallbacks(self):
+        return self.conn.execute(
+            "SELECT count(*) FROM interventions WHERE action='route_fallback'"
+        ).fetchone()[0]
+
+    def test_configured_claude_reviewer_error_result_dispatches_fallback(self):
+        output = self.claude_reviewer(
+            {"type": "result", "is_error": True,
+             "result": "You've hit your limit · resets tomorrow"})
+        self.assertEqual(output, 'turn completed')
+        self.assertEqual(roles.agent_route(self.project, 'review'), self.fallback)
+        self.assertEqual(self.route_fallbacks(), 1)
+        self.assertEqual(self.calls.read_text().splitlines(), [
+            'claude judge this', 'devin-fallback ' + probes.REVIEW_PROBE_GOAL,
+            'devin-fallback judge this'])
+
+    def test_configured_claude_reviewer_success_result_is_its_reply(self):
+        document = {"type": "result", "is_error": False,
+                    "result": "Looks right.\nVERDICT: APPROVE"}
+        output = self.claude_reviewer(document)
+        self.assertEqual(output, json.dumps(document))
+        self.assertEqual(self.calls.read_text().splitlines(),
+                         ['claude judge this'])
+        self.assertEqual(self.route_fallbacks(), 0)
+
     def reviewer_repository(self):
         from holophyte.loop.gates import sh
 
