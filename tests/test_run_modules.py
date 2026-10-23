@@ -441,10 +441,9 @@ class RunModulesTests(unittest.TestCase):
                                     reverse=True))
 
     def test_recorded_time_not_file_size_sets_the_order(self):
-        (self.tests / "test_small.py").write_text(PASSING)
+        self.fixture(["test_small.py"],
+                     {"test_small.py": 3.0, "test_large.py": 0.1})
         (self.tests / "test_large.py").write_text(PASSING + "\n# pad" * 500)
-        (self.tests / "module_times.json").write_text(json.dumps(
-            {"test_small.py": 3.0, "test_large.py": 0.1}))
         done = self.run_over({}, "--jobs", "1")
         self.assertEqual(done.returncode, 0, done.stdout)
         self.assertEqual(list(self.timed_lines(done)),
