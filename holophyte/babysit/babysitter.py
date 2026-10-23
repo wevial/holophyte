@@ -87,7 +87,7 @@ from holophyte.review.stale_approval import stale_again, stale_rereview
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                        sha, beat_s, pull, budget_min, reviewed=None, refusal=None,
                        previous=None, refresh=None, verify_cmd=None, contracts=(),
-                       ticket=""):
+                       ticket="", criteria=()):
     from holophyte.loop.claim import merge_conflicts
     from holophyte.loop.implement import _timed
     from holophyte.loop.merge_gate import _is_ancestor, _merge_ref, merge_conflict_goal
@@ -144,7 +144,7 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
             store.record_ledger(conn, run_id, "note", note)
     merged = _verify_main_refresh(
         project, conn, run_id, provider, task_id, branch, wt, merged, beat_s,
-        pull, budget_min, verify_cmd, contracts, ticket, ref)
+        pull, budget_min, verify_cmd, contracts, ticket, ref, criteria)
     state = _just_pushed_state(project, conn, run_id, provider, task_id, branch,
                                merged, beat_s, pull, reviewed)
     if merged != sha and before == _diff_identity(wt, ref):
@@ -180,7 +180,7 @@ def _refresh_verify(project, conn, run_id, beat_s, wt, sha, command, contracts):
 
 def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                          sha, beat_s, pull, budget_min, command, contracts, ticket,
-                         ref):
+                         ref, criteria=()):
     from holophyte.pr.pullrequest import _park_on_pr
     ok, out = _refresh_verify(project, conn, run_id, beat_s, wt, sha, command,
                               contracts)
@@ -204,7 +204,7 @@ def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                         beat_s, pull, (), None, ticket, command, contracts,
                         budget_min, _next_round(conn, run_id),
                         review_follows=_fixes_reviewed(merge_config(project)),
-                        goal=goal)
+                        goal=goal, criteria=criteria)
 
 
 def _diff_identity(wt, ref):
@@ -293,7 +293,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             sha, pushed_state, reviewed, refreshes = _resettle(
                 run, sha, beat_s, pull, state, reviewed, refreshes, refresh=refresh,
                 verify_cmd=verify_cmd, contracts=contracts, ticket=ticket,
-                previous=state if state is answered else None)
+                previous=state if state is answered else None, criteria=criteria)
             pass_no -= 1
             continue
         rnd = _next_round(conn, run_id)
@@ -367,7 +367,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                     project, conn, run_id, provider, task_id, branch, wt, sha,
                     beat_s, pull, budget_min, reviewed=reviewed,
                     refusal=refused, previous=state, refresh=refresh,
-                    verify_cmd=verify_cmd, contracts=contracts, ticket=ticket)
+                    verify_cmd=verify_cmd, contracts=contracts, ticket=ticket,
+                    criteria=criteria)
                 pass_no, refreshes = pass_no - 1, refreshes + 1
                 continue
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
@@ -871,7 +872,8 @@ def _park_no_commit(project, conn, run_id, provider, task_id, branch, wt, sha,
                     outbound(f"{no_commit_why}; "
                              + _declined_why(addressed, summaries, answer),
                              known_secrets(project.config())),
-                    (), reviewed=reviewed, park_kind="fix_declined")
+                    (), reviewed=None if spec_moved else reviewed,
+                    park_kind="fix_declined")
     if not spec_moved and not _candidate_drift(wt, branch, sha):
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     outbound(_declined_why(addressed, summaries, answer),
