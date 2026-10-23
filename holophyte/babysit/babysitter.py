@@ -56,7 +56,7 @@ from holophyte.loop.gates import (
 )
 from holophyte.loop.run import Run
 from holophyte.loop.runs import heartbeat_while, record_round
-from holophyte.loop.stop import boundary, fix_state, stop_if_requested
+from holophyte.loop.stop import boundary, fix_state, paused_goal, stop_if_requested
 from holophyte.pr import github, merge_queue, pr_ready, pr_status
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
@@ -883,20 +883,23 @@ def _fix_threads(project, conn, run_id, provider, task_id, branch, wt, sha,
                  beat_s, pull, addressed, model, ticket, verify_cmd,
                  contracts, budget_min, pass_no, *, review_follows, goal=None,
                  resume_step=None, no_commit_why=None, reviewed=None,
-                 criteria=(), reviewed_by_caller=False, notes=()):
+                 criteria=(), reviewed_by_caller=False, notes=(), rerun=False):
     from holophyte.loop.branch_sync import _candidate_drift, onto_pushed
     from holophyte.loop.implement import _record_implementer_output, _transport_timed
     if resume_step is None:
         record_step(conn, run_id, "fix")
         prompt = (goal + note_context(notes) if goal
                   else babysitter.fix_brief(pull, addressed, ticket, notes))
-        maintainer_notes.start_fix(conn, run_id, addressed, prompt, pull.url)
+        if not rerun:
+            maintainer_notes.start_fix(conn, run_id, addressed, prompt, pull.url)
         spec = _spec_digest(project, wt, task_id, ticket)
+        stopped = []
         fixes, timed_out = _transport_timed(
             project, conn, run_id, beat_s, wt, budget_min,
-            prompt)
-        saved = dict(fix_state(sha, fixes, timed_out, addressed, model,
-                               pass_no, review_follows), spec=spec)
+            prompt, paused=stopped)
+        saved = dict(fix_state(sha, fixes, timed_out, addressed, model, pass_no,
+                               review_follows, paused_goal(prompt, stopped)),
+                     spec=spec)
     else:
         saved = dict(resume_step)
         fixes, timed_out = saved["fixes"], saved["timed_out"]
