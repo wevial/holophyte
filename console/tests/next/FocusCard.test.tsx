@@ -238,13 +238,13 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("an open Waiting on you row and an open Pull requests row carry data-open and the same opened style", async () => {
+test("an open Waiting on you row opens on the needs-you wash and an open Pull requests row on the act wash", async () => {
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR), park], details: { 1: { ...detail, events: [] }, 9: { ...detail, events: [] } } }));
   const prRow = document.querySelector<HTMLElement>("li[data-pr-row]")!;
   fireEvent.click(within(prRow).getByRole("button", { expanded: false }));
-  for (const li of [row("A-1"), prRow]) {
+  for (const [li, wash, rule] of [[row("A-1"), "need-wash", "need"], [prRow, "act-wash", "act"]] as const) {
     expect(li.hasAttribute("data-open")).toBe(true);
-    expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining(["data-open:bg-act-wash", "data-open:shadow-[inset_2px_0_0_var(--act)]"]));
+    expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining([`data-open:bg-${wash}`, `data-open:shadow-[inset_2px_0_0_var(--${rule})]`]));
   }
   expect(row("B-2").hasAttribute("data-open")).toBe(false);
 });
