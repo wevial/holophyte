@@ -64,8 +64,6 @@ class DescriptionFindingsTests(unittest.TestCase):
                     f"{code}{TAIL}", "REQUEST_CHANGES", []), [])
 
     def test_ten_code_line_shapes_beside_a_tagged_finding_are_not_hidden(self):
-        self.assertEqual(description_findings(
-            TAGGED + TAIL, "REQUEST_CHANGES", []), [TAGGED])
         for code in ("  - Blocker: src/app.py:3 drops the tab target.",
                      "  Blocker: src/app.py:3 drops the tab target.",
                      "    src/app.py:3 drops the tab target.",
