@@ -207,7 +207,7 @@ function roundGroups(detail: RunDetail, events: RunEvent[], threads: Map<Round, 
 /** The pull request's writing, push and opening as one group, and a resumed run's pickup. */
 function pullRequestGroups(events: RunEvent[], used: Set<RunEvent>): Draft[] {
   const groups: Draft[] = [];
-  let open: { group: Draft; words: string[]; last: number; done: boolean } | null = null;
+  let open: { group: Draft; words: string[]; done: boolean } | null = null;
   for (const event of events.filter((event) => event.kind === "pull_request")) {
     const resumed = RESUMING.exec(event.summary);
     if (resumed) {
@@ -221,16 +221,15 @@ function pullRequestGroups(events: RunEvent[], used: Set<RunEvent>): Draft[] {
     if (word == null) continue;
     used.add(event);
     if (open == null || open.done) {
-      open = { group: draft("pull_request", event.at, "Pull request"), words: [], last: event.at, done: false };
+      open = { group: draft("pull_request", event.at, "Pull request"), words: [], done: false };
       groups.push(open.group);
     }
     open.words.push(word);
-    open.last = event.at;
     if (opened) {
       open.group.title = prLabel(opened[1]!).replace(/^PR\b/, "Pull request");
       open.done = true;
     }
-    open.group.steps = [{ at: open.group.at, text: open.words.join(" · "), ms: open.done ? open.last - open.group.at : null, quiet: false }];
+    open.group.steps = [{ at: open.group.at, text: open.words.join(" · "), ms: open.done ? event.at - open.group.at : null, quiet: false }];
   }
   return groups;
 }
