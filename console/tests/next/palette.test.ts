@@ -72,6 +72,7 @@ describe("the Hybrid palette", () => {
   });
 
   test("next components take their colours from theme tokens, leaving only the Appearance swatches as hex", async () => {
+    expect(colourHits('className="bg-p1 text-[#171a2c]"')).toEqual(["#171a2c"]);
     const root = new URL("../../src/next/", import.meta.url).pathname;
     const hits: Record<string, string[]> = {};
     for await (const file of new Glob("**/*.{ts,tsx}").scan(root)) {
