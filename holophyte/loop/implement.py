@@ -468,11 +468,11 @@ def _sweep_merge(project, conn, run_id, wt, branch, task_id):
                       tree)
     added = _listed(wt, "diff", "--cached", "--name-only", "--no-renames",
                     "--diff-filter=A", "-z", "HEAD") - brought
-    backup = _backup_resolution(project, wt, task_id)
+    backup, ref = _backup_resolution(project, wt, task_id)
     _announce(conn, run_id, "merge_aborted",
               f"the turn left the merge on {branch} unresolved in"
               f" {', '.join(unresolved)}; aborted it, its attempted resolution"
-              f" backed up at {backup}" + _only_in_backup(added))
+              f" backed up at {backup} (ref {ref})" + _only_in_backup(added))
     _unwind_merge(wt, brought | added | conflicted | set(unresolved))
 
 
@@ -593,9 +593,12 @@ def _backup_resolution(project, wt, task_id):
     staged_commit = sh(["git", *identity, "commit-tree", staged_tree, "-p",
                         "HEAD", "-m", f"backup: staged merge resolution"
                         f" ({task_id})"], cwd=wt)
-    return sh(["git", *identity, "commit-tree", tree, "-p", "HEAD",
-               "-p", "MERGE_HEAD", "-p", staged_commit, "-m",
-               f"backup: abandoned merge resolution ({task_id})"], cwd=wt)
+    backup = sh(["git", *identity, "commit-tree", tree, "-p", "HEAD",
+                 "-p", "MERGE_HEAD", "-p", staged_commit, "-m",
+                 f"backup: abandoned merge resolution ({task_id})"], cwd=wt)
+    ref = f"refs/holophyte/backup/{task_id}/{backup[:12]}"
+    sh(["git", "update-ref", ref, backup], cwd=wt)
+    return backup, ref
 
 
 def _killed_by_signal(out, timed_out):
