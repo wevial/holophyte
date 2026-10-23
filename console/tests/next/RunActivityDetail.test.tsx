@@ -35,6 +35,7 @@ const KEYBOARD = finding(
   "- **[P2] Preserve keyboard paging** — [TomlEditor.tsx:88](/home/reviewer/candidate/console/src/next/components/TomlEditor.tsx:88). Reproduced in Chromium.",
 );
 const EXPORT = finding("p2", "console/src/next/tomlTokens.ts", 92, "- **[P2] Restore the `tomlTokens(line)` export** — the trim removed it.", { criterion: "C1" });
+const UNWITNESSED_C3 = finding("p2", "criteria", 3, "CRITERION C3: unwitnessed — no test names the refusal\nGiven a refused save, then the editor keeps the draft");
 const WITNESS = finding("p2", "console/tests/next/RawToml.test.tsx", 213, "Witness the line-3 save refusal");
 
 const base: RunDetail = {
@@ -97,7 +98,7 @@ const failedFinal: RunDetail = {
     { at: at(16, 25), kind: "steer_cap_park", summary: "the review rounds are used up after an amendment" },
   ],
   rounds: [
-    round(1, [16, 11], [16, 14], { findings: [WITNESS], criteria: [criterion(1, "met"), criterion(2, "met"), criterion(3, "not_met")] }),
+    round(1, [16, 11], [16, 14], { findings: [WITNESS, UNWITNESSED_C3], criteria: [criterion(1, "met"), criterion(2, "met"), criterion(3, "not_met")] }),
     round(2, [16, 21], [16, 24], { reviewer_model: "claude-adjudicate", criteria: allOf("unwitnessed") }),
   ],
 };
@@ -235,6 +236,14 @@ test("a last review round's finding is not read as no longer raised when the fai
   const [witness] = await openRows("Round 1");
   expect(witness!.textContent).toContain("Witness the line-3 save refusal");
   expect(witness!.querySelector("[data-outcome]")).toBeNull();
+});
+
+test("a criterion finding in the reviewer's CRITERION Cn form reads its criterion and status, with no file location", async () => {
+  await mount(failedFinal);
+  const criterionRow = (await openRows("Round 1")).find((row) => row.textContent!.includes("Criterion 3"))!;
+  expect(criterionRow.querySelector("[data-finding-title]")!.textContent).toBe("Criterion 3 · unwitnessed");
+  expect(criterionRow.querySelector("[data-location]")).toBeNull();
+  expect(criterionRow.textContent).not.toContain("criteria:3");
 });
 
 test("More shows a finding's text beyond its title and turns to Less; a finding that is only its title has no More", async () => {

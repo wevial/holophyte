@@ -11,7 +11,7 @@ interface Outcome {
   detail: string | null;
 }
 
-const CHIP = "px-2 py-0.5 font-sans text-[13px] font-medium leading-[1.4]";
+const CHIP = "rounded px-2 py-0.5 font-sans text-[13px] font-medium leading-[1.4]";
 const ADDRESSED_IN = /^\s*Addressed in ([0-9a-f]{7,40})\b/i;
 const CRITERION_TITLE = /^Criterion \d+ · /;
 const LEADING_PUNCTUATION = /^[\s.,;:–—-]+/;

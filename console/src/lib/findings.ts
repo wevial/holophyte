@@ -44,9 +44,9 @@ export interface FindingParts {
 }
 
 // The reviewer's checklist line, the shape `holophyte/review/reply_parsing.py`
-// writes and reads: `CRITERION n: met|not met|unwitnessed — reason`, with the
+// writes and reads: `CRITERION Cn: met|not met|unwitnessed — reason`, with the
 // criterion's own text on the following lines.
-const CRITERION_RE = /^\s*CRITERION\s+(\d+)\s*:\s*(met|not met|unwitnessed)\b\s*(?:[-–—:]+\s*)?(.*)$/i;
+const CRITERION_RE = /^\s*CRITERION\s+[Cc]?(\d+)\s*:\s*(met|not met|unwitnessed)\b\s*(?:[-–—:]+\s*)?(.*)$/i;
 const BULLET_RE = /^\s*(?:[-*+]|\d+[.)])\s+/;
 const SEVERITY_MARK_RE =
   /^(?:[[(]\s*(?:p0|p1|p2|nit|blocker)\s*[\])]\s*[:\-–—]?|(?:p0|p1|p2|nit|blocker)\b\s*[:\-–—])\s*/i;
