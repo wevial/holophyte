@@ -838,7 +838,8 @@ class RouteLabelsTests(ServeTestCase):
                 "reviewer_fallback": None,
                 "adjudicator": "codex gpt-6-astra",
                 "writer": "claude-implement opus",
-                "trimmer": "claude-implement opus"})
+                "trimmer": "claude-implement opus",
+                "implementer_profiles": {}})
 
     def test_configured_seats_show_their_command_and_model(self):
         self.assertEqual(self.labels(
@@ -858,7 +859,8 @@ class RouteLabelsTests(ServeTestCase):
                 "reviewer_fallback": "devin swe-1",
                 "adjudicator": "codex-adjudicate gpt-6-astra",
                 "writer": "claude-write sonnet",
-                "trimmer": "claude-trim haiku"})
+                "trimmer": "claude-trim haiku",
+                "implementer_profiles": {}})
 
 
 class MigrationFeedTests(ServeTestCase):

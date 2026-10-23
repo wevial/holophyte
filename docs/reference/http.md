@@ -42,19 +42,23 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
                     "reviewer": {"command": "claude", "fallback": "claude"},
                     "adjudicator": {"command": "codex"},
                     "writer": {"command": null},
-                    "trimmer": {"command": null}},
+                    "trimmer": {"command": null},
+                    "implementer_profiles.sonnet": {"command": "claude"}},
   "route_probes": {"implementer": {"primary": {"ok": false,
                      "at_ms": 1788450354491, "duration_ms": 1800,
                      "why": "exit 1", "age_ms": 180000}, "fallback": null},
                    "reviewer": {"primary": null, "fallback": null},
                    "adjudicator": {"primary": null, "fallback": null},
                    "writer": {"primary": null, "fallback": null},
-                   "trimmer": {"primary": null, "fallback": null}},
+                   "trimmer": {"primary": null, "fallback": null},
+                   "implementer_profiles.sonnet": {"primary": null,
+                     "fallback": null}},
   "route_labels": {"implementer": "claude opus", "implementer_fallback": null,
                    "reviewer": "codex gpt-5.6-sol",
                    "reviewer_fallback": null, "adjudicator": "codex gpt-5.6-sol",
                    "adjudicator_fallback": null, "writer": "claude opus",
-                   "trimmer": "claude opus", "trimmer_fallback": null},
+                   "trimmer": "claude opus", "trimmer_fallback": null,
+                   "implementer_profiles": {"sonnet": "claude sonnet"}},
   "workers_on_previous_build": 0,
   "host": "writer-1",
   "now": 1788450534491,
@@ -178,7 +182,10 @@ to run, labelled as a recorded turn is: the command's first word plus its
 dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset
 fallback label null. `implementer_fallback`, `reviewer_fallback`,
 `adjudicator_fallback` and `trimmer_fallback` name the configured fallback
-using the same label format. `route_probes` holds each seat’s latest `primary`
+using the same label format. `implementer_profiles` maps each configured
+`[agents.implementer_profiles.NAME]` profile's name, such as `sonnet`, to
+its label, the label its turns record; it is `{}` for a project with no
+profile, and an older daemon leaves it out. `route_probes` holds each seat’s latest `primary`
 and `fallback` probe, each null when absent or the probe file is unreadable.
 An entry carries `ok`, the end time `at_ms` in epoch milliseconds,
 `duration_ms`, and `age_ms` (`now` minus `at_ms`). `why` is null on success,
@@ -194,7 +201,15 @@ a seat left unset in `[agents]`; while a running loop has switched the seat
 to its fallback, `command` is the fallback's and the entry also carries
 `fallback`, naming it. A configured `trimmer` that a running loop turned
 off, its probe and `trimmer_fallback` both failed, shows `command` null and
-`down` true, unlike an unset one's bare null. `workers_on_previous_build` counts the workers a
+`down` true, unlike an unset one's bare null. Each configured implementer
+profile has its own entry, keyed `implementer_profiles.NAME` (as
+`implementer_profiles.sonnet`), shaped like a seat's: `command` is the
+profile's executable, and while a running loop has switched that profile's
+own implementer to `implementer_fallback`, `command` and `fallback` name the
+fallback's. A profile's switch leaves `implementer` as it is, and the
+default implementer's switch leaves a profile's entry as it is. The claim's
+probe of a ticket's profile is kept under the same key, so `route_probes`
+reports it like a seat's. `workers_on_previous_build` counts the workers a
 restarted loop inherited from the build it replaced and still owns, 0
 when there are none. `toil` is the operator's hand work per merge over
 the last `24h` and the last `7d` before `now`, the same windows as

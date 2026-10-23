@@ -10,6 +10,7 @@ from holophyte.agents.agent_output import (
     killed_by_signal,
 )
 from holophyte.agents.agent_routes import routes
+from holophyte.agents.harness import implementer_profiles
 from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.reader import DEFAULT_IMPLEMENTER, IMPL_MODEL
 from holophyte.redact import known_secrets, outbound, redact_prose
@@ -69,7 +70,10 @@ def route_labels(project):
             "adjudicator_fallback": label("adjudicate", fallback=True),
             "writer": seat_or_implementer("write"),
             "trimmer": seat_or_implementer("trim"),
-            "trimmer_fallback": label("trim", fallback=True)}
+            "trimmer_fallback": label("trim", fallback=True),
+            "implementer_profiles": {
+                name: outbound(argv_label(seat.turn("")[:-1]), secrets)
+                for name, seat in implementer_profiles(project).items()}}
 
 
 def recorded_turn(project, role, routed_role, conn, run_id, launch,

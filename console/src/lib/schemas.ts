@@ -44,7 +44,8 @@ export const statusSchema = z.looseObject({
   active_routes: z.record(z.string(), z.looseObject({
     command: z.string().nullable(), fallback: z.string().optional(),
   })).optional(),
-  route_labels: z.record(z.string(), z.string().nullable()).optional(),
+  route_labels: z.object({ implementer_profiles: z.record(z.string(), z.string()).optional() })
+    .catchall(z.string().nullable()).optional(),
   toil: z.looseObject({ "24h": toilWindowSchema, "7d": toilWindowSchema }).optional(),
   supervisor: supervisorSchema,
   thresholds: z.looseObject({ heartbeat_stale_ms: z.number(), strikes: z.number() }),

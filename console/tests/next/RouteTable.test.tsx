@@ -156,3 +156,20 @@ test.each(["passing", "absent"])("a disabled route with a %s primary probe makes
   expect(screen.getByText("1 route down · reviewer has no fallback")).toBeTruthy();
   expect(screen.queryByText("Healthy")).toBeNull();
 });
+
+test("an implementer profile draws its own row and tags the implementer fallback only while it runs on it", async () => {
+  const switched = status("alpha");
+  switched.route_labels = { ...switched.route_labels, implementer_fallback: "codex", implementer_profiles: { sonnet: "claude sonnet" } };
+  switched.active_routes["implementer_profiles.sonnet"] = { command: "codex", fallback: "codex" };
+  await mount([switched]);
+  const profile = row("implementer_profiles.sonnet");
+  expect(profile.getByText("claude sonnet")).toBeTruthy();
+  expect(profile.getByText("codex")).toBeTruthy();
+  expect(profile.getByText("in use · recorded")).toBeTruthy();
+  cleanup();
+  const healthy = structuredClone(switched);
+  healthy.active_routes["implementer_profiles.sonnet"] = { command: "claude" };
+  await mount([healthy]);
+  expect(row("implementer_profiles.sonnet").getByText("codex")).toBeTruthy();
+  expect(row("implementer_profiles.sonnet").queryByText("in use · recorded")).toBeNull();
+});

@@ -33,6 +33,7 @@ export const routeLabelsSchema = z.looseObject({
   writer: z.string(),
   trimmer: z.string(),
   trimmer_fallback: z.string().nullable(),
+  implementer_profiles: z.record(z.string(), z.string()).optional(),
 });
 export type RouteLabels = z.infer<typeof routeLabelsSchema>;
 
