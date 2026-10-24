@@ -99,7 +99,8 @@ def seed_scouts(conn, project):
     and a run's."""
     done = create_scout(conn, project, "Why does the retry spin?", "bug", 20,
                         lead_route="A", helper_route="C", swarm=2,
-                        helper_turns=6, waves=2, now=NOW - 600_000)
+                        helper_turns=6, waves=2, subject=("ticket", "ALPHA-1"),
+                        now=NOW - 600_000)
     move_scout(conn, done, "planning", base_sha="a" * 40, host="writer",
                now=NOW - 590_000)
     record_scout_event(conn, done, "scout_planned", "the lead planned 3 tasks",

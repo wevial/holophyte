@@ -15,7 +15,8 @@
       "started_ms": null,
       "ended_ms": null,
       "elapsed_ms": null,
-      "heartbeat_age_ms": null
+      "heartbeat_age_ms": null,
+      "subject": null
     },
     {
       "id": 1,
@@ -32,7 +33,8 @@
       "started_ms": 1750000000000,
       "ended_ms": null,
       "elapsed_ms": 290000,
-      "heartbeat_age_ms": 290000
+      "heartbeat_age_ms": 290000,
+      "subject": null
     },
     {
       "id": 1,
@@ -49,7 +51,11 @@
       "started_ms": 1750000000000,
       "ended_ms": 1750000000000,
       "elapsed_ms": 530000,
-      "heartbeat_age_ms": null
+      "heartbeat_age_ms": null,
+      "subject": {
+        "kind": "ticket",
+        "ref": "ALPHA-1"
+      }
     }
   ],
   "limit": 20,

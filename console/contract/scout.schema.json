@@ -4,6 +4,27 @@
   "description": "GET /scouts/ID",
   "$ref": "#/$defs/ScoutDetail",
   "$defs": {
+    "ScoutSubject": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "run",
+            "defect",
+            "ticket",
+            "pr"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "additionalProperties": true
+    },
     "ScoutBudget": {
       "type": "object",
       "properties": {
@@ -155,6 +176,16 @@
             }
           ]
         },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScoutSubject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "base_sha": {
           "anyOf": [
             {
@@ -224,6 +255,7 @@
         "ended_ms",
         "elapsed_ms",
         "heartbeat_age_ms",
+        "subject",
         "base_sha",
         "host",
         "budget",

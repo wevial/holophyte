@@ -341,7 +341,8 @@ class Route(NamedTuple):
     local: tuple = ()
 
 
-SCOUT_BODY = ("ask", "kind", "lead", "helper", "swarm", "minutes", "author")
+SCOUT_BODY = ("ask", "kind", "lead", "helper", "swarm", "minutes", "subject",
+              "author")
 SCOUT_MESSAGE_BODY = ("scout", "mode", "text", "answers", "author")
 HTTP_ROUTES = {
     ("report",): Route("GET", "/report"),

@@ -1,14 +1,18 @@
 import io
 import json
+import re
 from pathlib import Path
 
 import store
+import store.read
 from holophyte.admission import project_row
 from holophyte.host.registry import Host, HostError, registered_at, settings
+from holophyte.host.supervisor import SWEEP_EVENT
 from holophyte.loop.runs import open_store
 from holophyte.scout.scout_config import scout_config
+from holophyte.serve.serve_findings import CONTRADICTION, stop_kind
 from holophyte.serve.serve_levers import console_author
-from holophyte.serve.serve_runs import no_store
+from holophyte.serve.serve_runs import SQLITE_MAX_INT, no_store
 from store.scouts import ENDED, QUEUED, create_scout, record_scout_event, scout
 
 SCOUT_ACTION = "scout"
@@ -16,6 +20,14 @@ KINDS = ("bug", "research", "recon")
 ROUTES = (("lead", "leads"), ("helper", "helpers"))
 COUNTS = (("swarm", "swarm"), ("minutes", "budget_min"))
 VIA_DAEMON = "POST /actions/scout"
+RUN_NUMBER = re.compile(r"^[1-9][0-9]*$")
+SUBJECT_REFS = {
+    "run": (RUN_NUMBER.match, "a positive integer"),
+    "defect": (RUN_NUMBER.match, "a positive integer"),
+    "ticket": (str.strip, "non-blank"),
+    "pr": (lambda ref: ref.startswith(("http://", "https://")),
+           "a URL starting http:// or https://"),
+}
 
 
 def refusal(body):
@@ -31,7 +43,70 @@ def refusal(body):
         value = body.get(field)
         if field in body and (type(value) is not int or value < 1):
             return f"{field} must be a positive integer"
+    return subject_refusal(body)
+
+
+def subject_refusal(body):
+    if "subject" not in body:
+        return None
+    subject = body["subject"]
+    if not isinstance(subject, str) or ":" not in subject:
+        return "subject must be KIND:REF text"
+    kind, ref = subject.split(":", 1)
+    if kind not in SUBJECT_REFS:
+        return f"subject's kind must be one of {', '.join(SUBJECT_REFS)}"
+    valid, shape = SUBJECT_REFS[kind]
+    if not ref.strip() or not valid(ref):
+        return f"subject's {kind} ref must be {shape}"
     return None
+
+
+def held_run(conn, ref):
+    number = int(ref)
+    return number <= SQLITE_MAX_INT and conn.execute(
+        "SELECT 1 FROM runs WHERE id = ?", (number,)).fetchone() is not None
+
+
+def run_subject(conn, ref):
+    if not held_run(conn, ref):
+        return None, f"run {ref} is not in this project's store"
+    return str(int(ref)), None
+
+
+def defect_subject(conn, ref):
+    stops = conn.execute(
+        "SELECT kind, summary FROM runEvents WHERE runId = ?"
+        " AND kind IN (?, ?)", (int(ref), CONTRADICTION, SWEEP_EVENT)
+    ).fetchall() if held_run(conn, ref) else []
+    if not any(stop_kind(kind, summary) for kind, summary in stops):
+        return None, f"run {ref} has no stop on its ticket's wording"
+    return str(int(ref)), None
+
+
+def ticket_subject(conn, ref):
+    ticket = store.read.ticket_by_identifier(conn, ref.strip())
+    if ticket is None:
+        return None, f"ticket {ref} is not in this project's store"
+    return ticket.linearIdentifier, None
+
+
+def pr_subject(conn, ref):
+    if conn.execute("SELECT id FROM runs WHERE prUrl = ? ORDER BY id DESC"
+                    " LIMIT 1", (ref,)).fetchone() is None:
+        return None, f"no run of this project opened {ref}"
+    return ref, None
+
+
+SUBJECTS = {"run": run_subject, "defect": defect_subject,
+            "ticket": ticket_subject, "pr": pr_subject}
+
+
+def resolved(conn, subject):
+    if subject is None:
+        return None, None
+    kind, ref = subject.split(":", 1)
+    stored, unheld = SUBJECTS[kind](conn, ref)
+    return (None if unheld else (kind, stored)), unheld
 
 
 def chosen(body, config):
@@ -59,19 +134,24 @@ def record(project, body, picked, config, via):
     conn = open_store(project)
     try:
         with store.transaction(conn):
+            subject, unheld = resolved(conn, body.get("subject"))
+            if unheld is not None:
+                return None, unheld
             scout_id = create_scout(
                 conn, project_row(conn, project), body["ask"], body["kind"],
                 picked["minutes"], lead_route=picked["lead"],
                 helper_route=picked["helper"], swarm=picked["swarm"],
-                helper_turns=config.helper_turns, waves=config.waves)
+                helper_turns=config.helper_turns, waves=config.waves,
+                subject=subject)
             record_scout_event(
                 conn, scout_id, "scout_queued",
                 f"{body['kind']} scout queued by {console_author(body)} ({via})",
                 level="detail",
-                payload=json.dumps({"author": console_author(body), "via": via}))
+                payload=json.dumps({"author": console_author(body), "via": via,
+                                    "subject": body.get("subject")}))
     finally:
         conn.close()
-    return scout_id
+    return scout_id, None
 
 
 def entry_name(entry):
@@ -122,7 +202,9 @@ def launch(project, body, via=VIA_DAEMON):
     picked, declined = chosen(body, config)
     if declined is not None:
         return 200, {"ok": False, "detail": declined}
-    scout_id = record(project, body, picked, config, via)
+    scout_id, unheld = record(project, body, picked, config, via)
+    if unheld is not None:
+        return 200, {"ok": False, "detail": unheld}
     ran, said = start(project, scout_id)
     phase, reason = phase_of(project, scout_id)
     if phase == QUEUED:
