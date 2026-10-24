@@ -22,9 +22,9 @@ def scout_routes(config):
             yield f"{kind}:{name}", seat
 
 
-def probe_scout_route(project, name, seat, timeout=None):
+def probe_scout_route(project, name, seat):
     cmd = seat.turn(PROBE_GOAL)
-    cap = PROBE_TIMEOUT if timeout is None else timeout
+    cap = PROBE_TIMEOUT
     started = time.time()
     try:
         with critic_workspace(project) as checkout:
