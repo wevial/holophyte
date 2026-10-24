@@ -1283,12 +1283,25 @@ export const actionBlockSchema = z.looseObject({
 });
 export type ActionBlock = z.infer<typeof actionBlockSchema>;
 
+export const proposalChoiceSchema = z.looseObject({
+  label: z.string(),
+  mode: z.enum(["ask", "steer"]),
+});
+export type ProposalChoice = z.infer<typeof proposalChoiceSchema>;
+
+export const proposalBlockSchema = z.looseObject({
+  type: z.literal("proposal"),
+  question: z.string(),
+  choices: z.array(proposalChoiceSchema),
+});
+export type ProposalBlock = z.infer<typeof proposalBlockSchema>;
+
 export const threadMessageSchema = z.looseObject({
   id: z.int(),
   author: z.string(),
   mode: z.enum(["ask", "steer", "answer"]),
   text: z.string(),
-  blocks: z.array(z.union([findingBlockSchema, actionBlockSchema])),
+  blocks: z.array(z.union([findingBlockSchema, actionBlockSchema, proposalBlockSchema])),
   answers: z.int().nullable(),
   at: z.int(),
   consumed_by: z.int().nullable(),
