@@ -46,7 +46,7 @@ def stop_reason(conn, scout_id):
     row = conn.execute(
         "SELECT payload FROM runEvents WHERE scoutId = ? AND kind = ?"
         " ORDER BY seq DESC LIMIT 1", (scout_id, REQUESTED)).fetchone()
-    if row is None or row[0] is None:
+    if row is None:
         return BY_SIGNAL
     asked = json.loads(row[0])
     return stopped_by(asked["author"], asked["note"])

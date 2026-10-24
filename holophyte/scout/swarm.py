@@ -155,10 +155,10 @@ def capped_turn(argv, checkout, cap, on_start, stopping):
 class Swarm:
     """Runs a scout's helper turns, one wave at a time, until it is closed."""
 
-    def __init__(self, conn, project, row, config, deadline, stopping=None):
+    def __init__(self, conn, project, row, config, deadline, stopping):
         self.conn, self.project, self.row = conn, project, row
         self.deadline = deadline
-        self.stopping = stopping or Stopping()
+        self.stopping = stopping
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
         self.size = row.swarm or config.swarm

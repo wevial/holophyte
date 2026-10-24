@@ -18,7 +18,7 @@ from holophyte.scout.report import (
 )
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
-from holophyte.scout.swarm import Stopping, Swarm, turn_answer
+from holophyte.scout.swarm import Swarm, turn_answer
 from store.enums import ScoutKind, ScoutTaskMode
 from store.scouts import (
     SWARMING,
@@ -268,7 +268,7 @@ def checked_report(lead, report):
     return report, report_problems(report, lead.row.kind)
 
 
-def run_lead(conn, project, row, worktree, budget_s, stopping=None):
+def run_lead(conn, project, row, worktree, budget_s, stopping):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
     name = row.lead_route or config.lead
@@ -278,7 +278,6 @@ def run_lead(conn, project, row, worktree, budget_s, stopping=None):
     probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat)
     if not probe.ok:
         return "failed", f"lead route {name} is down: {probe.reason()}"
-    stopping = stopping or Stopping()
     lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
     turn = lead.plan(limit, budget_s)
