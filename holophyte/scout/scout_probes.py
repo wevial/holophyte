@@ -16,10 +16,9 @@ from holophyte.scout.scout_config import scout_config
 
 
 def scout_routes(config):
-    for kind, seats in (("scout-lead", config.leads),
-                        ("scout-helper", config.helpers)):
+    for seats in (config.leads, config.helpers):
         for name, seat in seats.items():
-            yield f"{kind}:{name}", seat
+            yield f"{seat.role}:{name}", seat
 
 
 def probe_scout_route(project, name, seat):
