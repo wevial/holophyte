@@ -1783,7 +1783,9 @@ and `additionalProperties`, false. Every tool takes an optional `project`,
 a `[serve]` name or a repository path; `report` also takes `since`, `runs`
 `limit`, `run` the `run` id and its `view`, `ticket` the `key`, and the
 writes their own `ticket`, `run` or `body` and the required `note` and
-`author`, `steer` also its `hint` and `now` booleans. `annotations` holds `readOnlyHint`, true for a read, and
+`author`, `steer` also its `hint` and `now` booleans, and `scout` its
+required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
+the note its ask. `annotations` holds `readOnlyHint`, true for a read, and
 `destructiveHint`, false for every tool served today, so a client that
 asks a person before a destructive write asks here as on stdio. A tool
 call's `result` holds `content`, a list of one object whose `type` is

@@ -156,6 +156,10 @@ Each module, one line:
   of a role.
 - `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
+- `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
+  the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
+  recorded `queued` with its `scout_queued` event, then started by the host
+  sweep's scout step when a host scout slot is free.
 - `holophyte/scout/lead.py` — the scout's lead: its route probe, a plan
   turn under the scout's time budget, the helper waves with a synthesis turn
   between them, and a report turn resuming its session.
@@ -167,7 +171,8 @@ Each module, one line:
   process, its lead worktree with pushes refused, its heartbeat and its end.
 - `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
   scouts whose heartbeat is stale and starts queued ones under `[scout]
-  max_parallel`.
+  max_parallel` and a host-wide lock, putting a scout whose spawn failed
+  back in `queued` for the next pass.
 - `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.

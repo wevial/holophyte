@@ -55,6 +55,12 @@ NOTES = Flag("--notes")
 WATCH = Flag("--watch", "SECONDS", const="5")
 SINCE = Flag("--since", "AGO")
 EVERY = Flag("--every", "SECONDS")
+KIND = Flag("--kind", "bug|research|recon")
+LEAD = Flag("--lead", "NAME")
+HELPER_ROUTE = Flag("--helper", "NAME")
+SWARM = Flag("--swarm", "N")
+MINUTES = Flag("--minutes", "M")
+SCOUT_FLAGS = (LEAD, HELPER_ROUTE, SWARM, MINUTES, AUTHOR)
 
 REQUIRED, OPTIONAL = "required", "optional"
 NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")
@@ -131,6 +137,13 @@ COMMANDS = (
             "run an open story's witnesses at main's tip", takes=("KEY",)),
     Command(("story", "decide"), "--decide", "answer a parked story's decision",
             takes=("KEY", "ID", "[OPTION]"), note=REQUIRED, records=("decide",)),
+    Command(("scout", "launch"), None,
+            "launch a scout on an ask: a bug, research or recon",
+            note=REQUIRED, flags=(KIND, *SCOUT_FLAGS), records=()),
+    Command(("bug",), None, "launch a bug scout on an ask",
+            note=REQUIRED, flags=SCOUT_FLAGS, records=()),
+    Command(("idea",), None, "launch a research scout on an ask",
+            note=REQUIRED, flags=SCOUT_FLAGS, records=()),
     Command(("supervise",), "--supervise", "the acting sweep on a timer",
             flags=(ONCE,)),
     Command(("serve",), "--serve", "the JSON daemon and the console",
@@ -167,6 +180,8 @@ MCP = Command(("mcp",), None,
               flags=(MCP_HTTP,))
 
 SHOW = "show"
+LAUNCH = "launch"
+SCOUT_KINDS = {("bug",): "bug", ("idea",): "research"}
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
 
 NOT_EXPOSED = {"--worker": "internal: the loop's pool spawns it",
@@ -188,6 +203,7 @@ GROUPS = {
     "story": "a story's modes",
     "ticket": "holo ticket KEY: one ticket's detail; ticket VERB is holo VERB",
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
+    "scout": "holo scout ASK --kind K: launch a scout on an ask",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"
@@ -291,10 +307,22 @@ def _late_positionals(extra):
     return extra[:cut] + extra[cut + 1:]
 
 
+def _verbs(group):
+    return {words[1] for words, _, _ in _rows() if words[0] == group}
+
+
+def _launched(argv):
+    if argv[:1] != ["scout"] or not argv[1:]:
+        return argv
+    if argv[1] in _verbs("scout") or argv[1] in ("-h", "--help"):
+        return argv
+    return ["scout", LAUNCH, *argv[1:]]
+
+
 def _shown(argv):
     if not argv or argv[0] not in SHOWN:
-        return argv
-    verbs = {words[1] for words, _, _ in _rows() if words[0] == argv[0]}
+        return _launched(argv)
+    verbs = _verbs(argv[0])
     keyed = canonical_read(argv[0]).takes
     second = argv[1] if argv[1:] else None
     if second in verbs or second in ("-h", "--help") or (

@@ -454,6 +454,68 @@
           "additionalProperties": false
         },
         "name": "hold"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "launch a scout, the note its ask; queued while the host's scout slots are full (holo scout launch --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "kind": {
+              "enum": [
+                "bug",
+                "research",
+                "recon"
+              ],
+              "description": "what the scout does: find a bug, research an idea, or map code"
+            },
+            "lead": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a [scout.leads.NAME] route; default [scout] lead"
+            },
+            "helper": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a [scout.helpers.NAME] route; default [scout] helper"
+            },
+            "swarm": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "helpers at once; default [scout] swarm"
+            },
+            "minutes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the wall-clock budget; default [scout] budget_min"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "kind",
+            "note",
+            "author"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "scout"
       }
     ]
   }

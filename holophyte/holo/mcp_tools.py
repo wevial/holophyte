@@ -82,6 +82,27 @@ NOW = Field("now", {
     "description": "stop a running implementer turn to read the note now"},
     lambda value: ["--now"] * bool(value))
 
+KIND = Field("kind", {
+    "enum": ["bug", "research", "recon"],
+    "description": "what the scout does: find a bug, research an idea, or"
+                   " map code"}, option("--kind"))
+LEAD = Field("lead", {
+    "type": "string", "minLength": 1,
+    "description": "a [scout.leads.NAME] route; default [scout] lead"},
+    option("--lead"))
+HELPER = Field("helper", {
+    "type": "string", "minLength": 1,
+    "description": "a [scout.helpers.NAME] route; default [scout] helper"},
+    option("--helper"))
+SWARM = Field("swarm", {
+    "type": "integer", "minimum": 1,
+    "description": "helpers at once; default [scout] swarm"},
+    option("--swarm"))
+MINUTES = Field("minutes", {
+    "type": "integer", "minimum": 1,
+    "description": "the wall-clock budget; default [scout] budget_min"},
+    option("--minutes"))
+
 
 def signed(author):
     return f"{author} {VIA}"
@@ -140,6 +161,10 @@ WRITES = (
          required=("ticket",), tier=WRITE, signs=in_note),
     Tool("hold", "stop the project admitting new tickets (holo hold --json)",
          ("hold",), (PROJECT,), tier=WRITE, signs=in_note),
+    Tool("scout", "launch a scout, the note its ask; queued while the"
+         " host's scout slots are full (holo scout launch --json)",
+         ("scout", "launch"), (PROJECT, KIND, LEAD, HELPER, SWARM, MINUTES),
+         required=("kind",), tier=WRITE, signs=by_author),
 )
 
 TOOLS = READS + WRITES

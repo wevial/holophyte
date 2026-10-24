@@ -20,6 +20,7 @@ from holophyte.config.serve_settings import console_config, serve_config
 from holophyte.holo.report_page import DEFAULT_SINCE, FORMS, report, window_ms
 from holophyte.host.supervisor import factory_revision
 from holophyte.loop.reexec import reexec_self
+from holophyte.scout.launch import SCOUT_ACTION, launch
 from holophyte.serve.serve_actions import (
     ACTIONS,
     ACTIONS_PREFIX,
@@ -396,6 +397,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return merge_action(project, body)
         if action == ASK_ACTION:
             return ask_action(project, body)
+        if action == SCOUT_ACTION:
+            return launch(project, body)
         if action in LEVERS:
             return LEVERS[action](project, body)
         return unit_action(project, action, scope.unit_name)

@@ -14,7 +14,7 @@ ENDED = (ScoutPhase.DONE.value, ScoutPhase.FAILED.value,
          ScoutPhase.STOPPED.value)
 EDGES = {
     QUEUED: (PLANNING,),
-    PLANNING: (SWARMING, SYNTHESIZING),
+    PLANNING: (SWARMING, SYNTHESIZING, QUEUED),
     SWARMING: (SYNTHESIZING,),
     SYNTHESIZING: (SWARMING,),
 }
@@ -92,6 +92,14 @@ def create_scout(conn, project_id, ask, kind, budget_min, *, links=(),
              QUEUED, _now(now))).lastrowid
 
 
+def _unclaimed(conn, scout_id, phase):
+    (owner,) = conn.execute("SELECT pid FROM scouts WHERE id = ?",
+                            (scout_id,)).fetchone()
+    if owner is not None:
+        raise ScoutRefused(scout_id, phase,
+                           f"its process (pid {owner}) has claimed it")
+
+
 def move_scout(conn, scout_id, phase, *, base_sha=None, host=None, now=None):
     with _transaction(conn):
         current = _live(conn, scout_id)
@@ -100,7 +108,13 @@ def move_scout(conn, scout_id, phase, *, base_sha=None, host=None, now=None):
                                f"no move from {current} to {phase}")
         if phase == PLANNING and not base_sha:
             raise ValueError("a scout moves to planning with a base sha")
-        if phase == PLANNING:
+        if phase == QUEUED:
+            _unclaimed(conn, scout_id, current)
+            conn.execute(
+                "UPDATE scouts SET phase = ?, baseSha = NULL, startedAt = NULL,"
+                " heartbeatAt = NULL, host = NULL WHERE id = ?",
+                (phase, scout_id))
+        elif phase == PLANNING:
             now = _now(now)
             conn.execute(
                 "UPDATE scouts SET phase = ?, baseSha = ?, startedAt = ?,"
