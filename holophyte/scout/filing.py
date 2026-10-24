@@ -2,6 +2,7 @@ import fcntl
 import json
 
 import store.board
+import ticket_header
 import ticket_template
 from holophyte.admission import project_row
 from holophyte.loop.runs import open_store
@@ -89,7 +90,18 @@ def filed_text(item, named):
         raise Answered(200, {"ok": False, **named,
                              "detail": f"{where} has no title: its body has"
                                        " no H1 and its title is blank"})
-    return f"# {title.strip()}\n\n{text}"
+    return titled(text, f"# {title.strip()}\n\n")
+
+
+def titled(text, h1):
+    lines = text.splitlines(keepends=True)
+    fences = [index for index, line in enumerate(lines)
+              if line.rstrip("\r\n") == ticket_header.FENCE]
+    if len(fences) < 2:
+        return h1 + text
+    head = "".join(lines[:fences[1] + 1]).rstrip("\r\n")
+    rest = "".join(lines[fences[1] + 1:]).lstrip("\r\n")
+    return f"{head}\n\n{h1}{rest}"
 
 
 def recorded(project, scout_id, position, key):

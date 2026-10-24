@@ -21,6 +21,7 @@ import holophyte.cli.entry
 import store
 import store.board
 import store.tickets
+import ticket_template
 from holophyte.board.native_board import NativeBoard
 from holophyte.config.project import Project
 from holophyte.holo.cli import main as holo_main
@@ -167,6 +168,30 @@ class DaemonScoutFileTests(ScoutFileCase):
             self.assertEqual(conn.execute(
                 "SELECT title, body FROM tickets").fetchall(),
                 [(TITLED, filed_body)])
+
+    def test_a_headed_body_without_an_h1_keeps_its_estimate_and_depends_on(self):
+        def headed(depends):
+            return {"title": TITLED, "why": "the scout found it",
+                    "kind": "fix", "body": "+++\nestimate = 45\n"
+                    f"depends_on = {json.dumps(depends)}\n+++\n{FREE_TEXT}"}
+        with self.store("native") as (conn, project):
+            scout_id = create_scout(conn, project, "Headed items", "recon", 30)
+            move_scout(conn, scout_id, "planning", base_sha="a" * 40)
+            move_scout(conn, scout_id, "swarming")
+            record_scout_actions(conn, scout_id, 1,
+                                 [headed(["NAT-9"]), headed([])])
+            end_scout(conn, scout_id, "done", "answered")
+        self.start_host()
+        status, refused = self.file({"scout": scout_id, "item": 1})
+        self.assertEqual((status, refused["ok"]), (200, False), refused)
+        self.assertIn(DEPENDS_PROBLEM, refused["problems"])
+        status, answer = self.file({"scout": scout_id, "item": 2})
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        with self.store("native") as (conn, _):
+            (stored,), = conn.execute("SELECT body FROM tickets").fetchall()
+        filed = ticket_template.parse(stored)
+        self.assertEqual((filed.title, filed.estimate_min, filed.depends_on),
+                         (TITLED, 45, []))
 
     def test_an_item_with_no_h1_and_a_blank_title_is_refused_unwritten(self):
         self.start_host()

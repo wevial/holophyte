@@ -376,7 +376,8 @@ key it was filed as, and `detail` `scout 14 item 2 is already filed as
 KEY`; nothing is checked or written. A project with no `[board]` is
 `ok: false`. A blank `body` is `ok: false`, and so is a body with no H1
 whose item has a blank `title`; nothing is written. A body with no H1 is
-filed as `# TITLE` (the item's `title`) and a blank line before it, and
+filed as `# TITLE` (the item's `title`) and a blank line before it,
+placed after a leading `+++` header so the header keeps its fields, and
 that filed text is what the checker judges, so a free-text body is never
 refused for its missing title.
 
