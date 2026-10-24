@@ -470,10 +470,10 @@ def _checked_witnesses(references, root):
             continue
         reason, classes = ((f"no file {path}", []) if not file.is_file()
                            else _witness_reason(file, ref, imported.get(ref)))
-        module = citations.dotted_module(ref)
-        others = [other for other in classes if other != cls]
         if reason is None:
             continue
+        others = [other for other in classes if other != cls]
+        module = citations.dotted_module(ref)
         if len(others) == 1:
             corrected[ref] = ((path, others[0], name), "other class")
         elif module and (found := _inside(root, module)) and found.is_file():
@@ -485,7 +485,7 @@ def _checked_witnesses(references, root):
 
 
 def _witness_reason(file, ref, found):
-    path, cls, name = ref
+    _, cls, name = ref
     if found is True:
         return None, []
     if isinstance(found, list):
@@ -560,8 +560,8 @@ def _checked_approval(note, references, root, approved_range, corrected):
             continue
         if name and path.endswith(".py") and citations.test_unchanged(
                 _shown(root, approved, path), _shown(root, sha, path), cls, name):
-            kept.append((_spec(path, cls, name), _spec(path, cls, name),
-                         "unchanged since approval"))
+            spec = _spec(path, cls, name)
+            kept.append((spec, spec, "unchanged since approval"))
         else:
             stale.append(f"{path} (changed since approval at {approved})")
     return stale, kept
