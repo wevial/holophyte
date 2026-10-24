@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import holophyte.scout.scout_sweep as scout_sweep
+import holophyte.scout.stop as stop
 from holophyte.config.project import Project
 from holophyte.host.registry import Host
 from holophyte.scout.answer import (
@@ -454,6 +455,26 @@ class StoppedAnswerTests(AnswerCase):
             "SELECT summary FROM runEvents WHERE scoutId = ? AND kind = ?",
             (scout_id, "scout_answer_stopped"))]
         self.assertIn("no scout process was running", summary)
+
+    def test_a_stop_whose_process_ended_leaves_a_newer_answer_running(self):
+        scout_id = self.answering()
+        beat_scout(self.store_conn, scout_id, os.getpid())
+        first = current_ask(self.store_conn, scout_id)
+
+        def old_process_gone_and_next_ask_taken(_pid, _signal):
+            fail_answer(self.store_conn, scout_id, first, "the turn ended")
+            take_message(self.store_conn, self.ask(scout_id, "And the loop?"))
+            raise ProcessLookupError
+
+        with patch.object(stop, "runs_scout", return_value=True), \
+                patch.object(stop.os, "kill",
+                             old_process_gone_and_next_ask_taken):
+            status, reply = stop.stop(self.target, {
+                "scout": scout_id, "note": "asked the wrong scout"})
+        self.assertEqual((status, reply["ok"]), (200, False), reply)
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "answering")
+        self.assertNotEqual(current_ask(self.store_conn, scout_id), first)
+        self.assertEqual(self.payloads(scout_id, "scout_answer_stopped"), [])
 
 
 class LabelTests(unittest.TestCase):
