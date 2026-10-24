@@ -1,0 +1,108 @@
+from dataclasses import dataclass
+
+from holophyte.agents.harness import (
+    PROFILE_NAME,
+    SCOUT_HELPER,
+    SCOUT_LEAD,
+    TABLE_KEYS,
+    Seat,
+    harness_binary,
+    route_adapter,
+)
+from holophyte.config.reader import config_table
+
+DEFAULT_LEADS = {
+    "opus": {"harness": "claude", "model": "opus", "effort": "high"},
+    "sol": {"harness": "codex", "model": "gpt-6.1-sol", "effort": "high"},
+}
+DEFAULT_HELPERS = {
+    "luna": {"harness": "codex", "model": "gpt-6-luna", "effort": "low"},
+    "haiku": {"harness": "claude", "model": "haiku", "effort": "low"},
+}
+DEFAULT_LEAD = "opus"
+DEFAULT_HELPER = "luna"
+COUNTS = {"budget_min": 30, "swarm": 4, "helper_turns": 12}
+WAVES = (1, 2)
+DEFAULT_WAVES = 2
+
+
+@dataclass(frozen=True)
+class ScoutConfig:
+    leads: dict
+    helpers: dict
+    lead: str
+    helper: str
+    budget_min: int
+    swarm: int
+    helper_turns: int
+    waves: int
+
+
+def scout_config(project):
+    table = config_table(project, "scout")
+    where = f"[holo2] {project.config_path}"
+    leads = route_seats(project, where, table, "leads", DEFAULT_LEADS,
+                        SCOUT_LEAD)
+    helpers = route_seats(project, where, table, "helpers", DEFAULT_HELPERS,
+                          SCOUT_HELPER)
+    lead = default_route(where, table, "lead", DEFAULT_LEAD, "leads", leads)
+    helper = default_route(where, table, "helper", DEFAULT_HELPER, "helpers",
+                           helpers)
+    counts = {key: count(where, table, key, default)
+              for key, default in COUNTS.items()}
+    if counts["swarm"] > counts["helper_turns"]:
+        raise SystemExit(
+            f"{where}: [scout] swarm: {counts['swarm']} helpers at once is "
+            f"more than helper_turns = {counts['helper_turns']}")
+    waves = table.get("waves", DEFAULT_WAVES)
+    if type(waves) is not int or waves not in WAVES:
+        raise SystemExit(
+            f"{where}: [scout] waves must be 1 or 2, got {waves!r}")
+    return ScoutConfig(leads, helpers, lead, helper, waves=waves, **counts)
+
+
+def route_seats(project, where, table, key, defaults, role):
+    routes = table.get(key, defaults)
+    if not isinstance(routes, dict):
+        raise SystemExit(
+            f"{where}: [scout] {key}: write each route as a "
+            f"[scout.{key}.NAME] table")
+    seats = {}
+    for name, route in routes.items():
+        label = f"[scout.{key}.{name}]"
+        if not PROFILE_NAME.fullmatch(name):
+            raise SystemExit(
+                f"{where}: {label}: a route name takes only letters, digits, "
+                f"_ and -")
+        if not isinstance(route, dict):
+            raise SystemExit(
+                f"{where}: {label}: write it as a table with harness, model "
+                f"and effort")
+        adapter = route_adapter(where, label, route, role, TABLE_KEYS)
+        for option in ("model", "effort"):
+            if option not in route:
+                raise SystemExit(
+                    f"{where}: {label} {option} must be a non-empty string, "
+                    f"got nothing")
+        seats[name] = Seat(adapter, harness_binary(project, where, adapter),
+                           route, role)
+    return seats
+
+
+def default_route(where, table, key, default, routes_key, seats):
+    name = table.get(key, default)
+    if name not in seats:
+        raise SystemExit(
+            f"{where}: [scout] {key}: {name!r} names no route in "
+            f"[scout.{routes_key}]; the routes are "
+            f"{', '.join(sorted(seats)) or 'none'}")
+    return name
+
+
+def count(where, table, key, default):
+    value = table.get(key, default)
+    if type(value) is not int or value < 1:
+        raise SystemExit(
+            f"{where}: [scout] {key} must be an integer of at least 1, got "
+            f"{value!r}")
+    return value

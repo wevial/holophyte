@@ -13,6 +13,8 @@ from ticket_template import ORCHESTRATION_MODES
 TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",
                "adversary")
 WRITING_ROLES = ("implementer", "trimmer")
+SCOUT_LEAD = "scout-lead"
+SCOUT_HELPER = "scout-helper"
 TABLE_KEYS = ("harness", "model", "effort")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 SHADOW_KEY = "implementer_shadow"
@@ -52,19 +54,25 @@ class Adapter:
 
 class Claude(Adapter):
     name = "claude"
-    roles = frozenset({"implementer", "trimmer", "critic"})
+    roles = frozenset({"implementer", "trimmer", "critic", SCOUT_LEAD,
+                       SCOUT_HELPER})
     orchestrations = frozenset({"subagents", "workflow"})
 
     def turn(self, binary, options, role):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
-                *self.route(options), *self.output_format(role)]
+                *self.subagents(role), *self.route(options),
+                *self.output_format(role)]
 
     def session(self, argv):
         return argv[argv.index("--session-id") + 1]
 
     def resume(self, binary, options, session, role):
-        return [binary, "-p", "--resume", session, *self.route(options),
-                *self.output_format(role)]
+        return [binary, "-p", "--resume", session, *self.subagents(role),
+                *self.route(options), *self.output_format(role)]
+
+    @staticmethod
+    def subagents(role):
+        return ["--disallowedTools", "Agent", "Task"] if role == SCOUT_LEAD else []
 
     @staticmethod
     def output_format(role):
@@ -82,7 +90,7 @@ class Codex(Adapter):
     """The sandbox fails under PrivateTmp; a throwaway checkout bounds writes."""
     name = "codex"
     roles = frozenset({"implementer", "trimmer", "reviewer", "adjudicator",
-                       "critic", "adversary"})
+                       "critic", "adversary", SCOUT_LEAD, SCOUT_HELPER})
     efforts = review_runner.EFFORTS
     orchestrations = frozenset({"subagents"})
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
@@ -92,7 +100,7 @@ class Codex(Adapter):
     def turn(self, binary, options, role):
         if role in WRITING_ROLES:
             return [binary, "exec", *self.IMPLEMENTER, *self.route(options)]
-        return [binary, "exec", *self.route(options),
+        return [binary, "exec", *self.route(options), *self.subagents(role),
                 "--dangerously-bypass-approvals-and-sandbox"]
 
     def session(self, argv):
@@ -103,7 +111,12 @@ class Codex(Adapter):
             return [binary, "exec", "resume", session, *self.IMPLEMENTER,
                     *self.route(options)]
         return [binary, "exec", "resume", *self.route(options),
+                *self.subagents(role),
                 "--dangerously-bypass-approvals-and-sandbox", session]
+
+    @staticmethod
+    def subagents(role):
+        return ["--disable", "multi_agent"] if role == SCOUT_LEAD else []
 
     def reported_session(self, binary, output, role, run):
         """An implementer's id must be a UUID for a resume to name it."""
@@ -237,43 +250,52 @@ def parse_role(where, key, table):
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
     accepted = IMPLEMENTER_KEYS if key == "implementer" or profile else TABLE_KEYS
+    adapter = route_adapter(where, f"[agents.{key}]", table, role, accepted,
+                            shown=key, listed=TABLE_ROLES)
+    check_orchestration(where, table, adapter, key)
+    return adapter
+
+
+def route_adapter(where, label, table, role, accepted, *, shown=None,
+                  listed=None):
     for option in table:
         if option not in accepted:
             raise SystemExit(
-                f"{where}: [agents.{key}] {option}: unknown key; "
-                f"[agents.{key}] accepts: {', '.join(accepted)}")
+                f"{where}: {label} {option}: unknown key; "
+                f"{label} accepts: {', '.join(accepted)}")
     name = table.get("harness")
     adapter = ADAPTERS.get(name) if isinstance(name, str) else None
     if adapter is None:
         raise SystemExit(
-            f"{where}: [agents.{key}] harness must be one of "
+            f"{where}: {label} harness must be one of "
             f"{', '.join(sorted(ADAPTERS))}, got {name!r}")
     if role not in adapter.roles:
+        supported = sorted(each for each in adapter.roles
+                           if listed is None or each in listed)
         raise SystemExit(
-            f"{where}: [agents.{key}] harness: {name!r} supports "
-            f"{', '.join(sorted(adapter.roles))}, not {key}")
+            f"{where}: {label} harness: {name!r} supports "
+            f"{', '.join(supported)}, not {shown or role}")
     for option in ("model", "effort"):
         value = table.get(option)
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise SystemExit(
-                f"{where}: [agents.{key}] {option} must be a non-empty string, "
+                f"{where}: {label} {option} must be a non-empty string, "
                 f"got {value!r}")
     missing = sorted(adapter.requires - table.keys())
     if missing:
         raise SystemExit(
-            f"{where}: [agents.{key}] {missing[0]} is required for harness "
+            f"{where}: {label} {missing[0]} is required for harness "
             f"{name!r}")
     refused = sorted(adapter.refuses & table.keys())
     if refused:
         raise SystemExit(
-            f"{where}: [agents.{key}] {refused[0]}: harness {name!r} takes no "
+            f"{where}: {label} {refused[0]}: harness {name!r} takes no "
             f"{refused[0]} -- drop {refused[0]}")
     effort = table.get("effort")
     if adapter.efforts and effort is not None and effort not in adapter.efforts:
         raise SystemExit(
-            f"{where}: [agents.{key}] effort must be one of "
+            f"{where}: {label} effort must be one of "
             f"{', '.join(adapter.efforts)}, got {effort!r}")
-    check_orchestration(where, table, adapter, key)
     return adapter
 
 
@@ -415,16 +437,20 @@ def implementer_profiles(target):
 
 
 def table_seat(target, where, key, table, role, *, launched):
-    from holophyte.config.reader import config_table
     adapter = parse_role(where, key, table)
     from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     # A container implementer's binary comes from the image, not `[harnesses]`.
     if not launched or route_for(target).backend != "container":
-        paths = config_table(target, "harnesses")
-        check_paths(where, paths)
-        binary = paths.get(adapter.name, binary)
+        binary = harness_binary(target, where, adapter)
     return Seat(adapter, binary, table, role)
+
+
+def harness_binary(target, where, adapter):
+    from holophyte.config.reader import config_table
+    paths = config_table(target, "harnesses")
+    check_paths(where, paths)
+    return paths.get(adapter.name, adapter.binary)
 
 
 def critic_table(where, table):
