@@ -163,8 +163,8 @@ def entry(repo, prior, base_sha):
 
 
 def offered_findings(priors):
-    return {prior.scout: min(len(prior.report.get("findings") or ()),
-                             FINDINGS_SHOWN) for prior in priors}
+    return {prior.scout: len(prior.report.get("findings") or ())
+            for prior in priors}
 
 
 def prior_section(repo, priors, base_sha):

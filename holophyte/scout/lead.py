@@ -304,11 +304,16 @@ def run_waves(conn, lead, swarm, tasks, waves):
             return
 
 
+def unoffered(report, offered):
+    if offered is not None:
+        return report
+    return {key: value for key, value in report.items() if key != "prior"}
+
+
 def checked_report(lead, report, offered=None):
-    if offered is None:
-        report = {key: value for key, value in report.items() if key != "prior"}
     check = partial(report_problems, kind=lead.row.kind,
                     subject=subject_of(lead.row), offered=offered)
+    report = unoffered(report, offered)
     problems = check(report)
     if not problems:
         return report, []
@@ -317,6 +322,7 @@ def checked_report(lead, report, offered=None):
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
+    report = unoffered(report, offered)
     return report, check(report)
 
 

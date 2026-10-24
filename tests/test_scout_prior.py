@@ -9,8 +9,10 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_prior.py' -v
 """
 import re
 import unittest
+from types import SimpleNamespace
 
 from holophyte.config.project import Project
+from holophyte.scout.lead import checked_report
 from holophyte.scout.report import report_problems
 from store.scouts import (
     create_scout,
@@ -198,6 +200,17 @@ class PriorJudgementTests(PriorCase):
             self.assertEqual(answer["scout"]["phase"], "done")
             self.assertEqual(answer["reports"][0]["report"]["prior"], prior)
 
+    def test_a_finding_past_the_eight_shown_may_still_be_judged(self):
+        self.earlier([finding(f"finding {n}", "app/save.py", 1)
+                      for n in range(1, 10)])
+        scout_id = self.run_scout("Why does app/save.py drop the title?",
+                                  dict(EMPTY, prior=[dict(JUDGED[0],
+                                                          finding=9)]))
+        self.assertIn("(1 more findings not shown)", self.plan_goal())
+        (phase,) = self.db.execute("SELECT phase FROM scouts WHERE id = ?",
+                                   (scout_id,)).fetchone()
+        self.assertEqual(phase, "done")
+
 
 class PriorCheckTests(unittest.TestCase):
     def test_each_judgement_problem_names_its_field(self):
@@ -212,6 +225,17 @@ class PriorCheckTests(unittest.TestCase):
                     offered={1: 2})
                 self.assertEqual(len(problems), 1, problems)
                 self.assertTrue(problems[0].startswith(field), problems)
+
+    def test_a_pass_offered_nothing_drops_prior_from_its_repaired_report(self):
+        row = SimpleNamespace(kind="research", subject_kind=None,
+                              subject_ref=None)
+        repaired = SimpleNamespace(answer=fenced(dict(EMPTY, prior=JUDGED)))
+        lead = SimpleNamespace(row=row, session="lead-session",
+                               resume=lambda goal, cap: repaired)
+        report, problems = checked_report(
+            lead, dict(EMPTY, summary=" ", prior=JUDGED))
+        self.assertEqual(problems, [])
+        self.assertNotIn("prior", report)
 
 
 if __name__ == "__main__":
