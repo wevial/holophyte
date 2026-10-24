@@ -1453,7 +1453,11 @@ offered, those whose reports or sub-tasks named the same paths, each its
 `unchecked`, and `why`. An evidence item is one of a file item, `file`,
 `line`, `verified` (whether the file and line resolve in the base commit)
 and `why` it did not (null when it did); a command item, `command` and
-`output`; or a `url`.
+`output`; a `url`; or a `text` item, `text`. A report stored before the
+report check serves inside these fields: a finding's free-text `evidence`
+serves as one `text` item holding the string as stored, a `status` outside
+the three above serves `unconfirmed`, and a report action's `kind` outside
+those `actions` lists serves `investigate`.
 
 `actions` are the scout's action items by `position`, which counts across
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,

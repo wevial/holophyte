@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -7,6 +8,8 @@ LOOP_UNIT = "holophyte-loop@"
 SUPERVISOR_UNIT = "holophyte-supervise@"
 SWEEP_UNIT = "holophyte-sweep.service"
 SYSTEMCTL_TIMEOUT = 20
+SYSTEMD_UNIT_VARS = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID",
+                     "NOTIFY_SOCKET", "MANAGERPID")
 
 
 def reexec_command():
@@ -45,3 +48,29 @@ def start_loop(unit_name):
     unit = LOOP_UNIT + unit_name
     ok, detail = systemctl_user("start", unit)
     return unit, ok, detail
+
+
+def systemd_runner():
+    return os.environ.get("INVOCATION_ID") and shutil.which("systemd-run")
+
+
+def _escape(match):
+    return "".join(f"_{byte:02x}" for byte in match.group().encode())
+
+
+def transient_unit(kind, name, ident):
+    return f"holophyte-{kind}-{re.sub(r'[^A-Za-z0-9.]', _escape, name)}-{ident}"
+
+
+def start_transient_unit(runner, unit, log, argv):
+    ran = subprocess.run(
+        [runner, "--user", "--collect", "--quiet", "--unit", unit,
+         f"--working-directory={os.getcwd()}",
+         f"--property=StandardOutput=append:{log}",
+         f"--property=StandardError=append:{log}",
+         *(f"--setenv={key}" for key in os.environ if key not in SYSTEMD_UNIT_VARS),
+         *argv],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    if ran.returncode != 0:
+        raise OSError(f"systemd-run exited {ran.returncode}:"
+                      f" {ran.stderr.strip()}")

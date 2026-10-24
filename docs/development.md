@@ -215,6 +215,8 @@ Each module, one line:
 - `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.
+- `holophyte/scout/telemetry.py` — `turn_cost`: a scout turn's cost, the
+  CLI's reported one or its tokens at the route's `usd_per_mtok`.
 - `holophyte/scout/thread_action.py` — `POST /actions/scout-message`,
   `holo scout ask` and `steer` and the `holo mcp` `scout_ask` and
   `scout_steer` tools: an ask or a steer, optionally answering a card,
@@ -776,7 +778,9 @@ Each module, one line:
   `[loop] workers > 1`, `worker()` as one child, the spawn and wait
   seams, the claimable count and the `[holo2 wN]` line prefixing.
 - `holophyte/loop/reexec.py` — `reexec_self`, the shared self re-exec the loop
-  and the supervisor both restart themselves through.
+  and the supervisor both restart themselves through, and
+  `start_transient_unit`, the `systemd-run --user --collect` start a scout and
+  a shadow each run as their own transient user unit through.
 
 The store is its own package:
 
