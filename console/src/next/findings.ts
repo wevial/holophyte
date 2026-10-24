@@ -13,6 +13,7 @@ import { classicHref } from "../lib/view";
 import { reviewRound } from "./components/StageChip";
 import type { ContractBodies } from "./fleet";
 import { useFindings, weekSince } from "./queries";
+import type { ScoutTarget } from "./scouts";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State, type Tone } from "./state";
 
@@ -56,6 +57,8 @@ export interface FindingRowView {
   /** The classic run view, on finding rows only. */
   href: string | null;
   action: RowAction | null;
+  /** On open findings and follow-ups only. */
+  scout: ScoutTarget | null;
 }
 
 interface TaggedFinding {
@@ -91,6 +94,7 @@ interface CleanReview {
 export interface DefectView extends TicketDefect {
   project: string;
   base: string;
+  actions: boolean;
 }
 
 export interface FindingsPage {
@@ -236,7 +240,16 @@ function findingRow(project: string, base: string, run: FindingsRun, found: Entr
     fate,
     href: classicHref(`#run=${run.run}&daemon=${encodeURIComponent(base)}`),
     action: null,
+    scout: null,
   };
+}
+
+/** A scout on the run that raised the finding or follow-up of `ticket`
+ *  titled `title`, asked with its path and line when it has a path. */
+function findingScout(project: string, ticket: string, run: number, row: { title: string; path: string | null; line: number | null | undefined }, actions: boolean): ScoutTarget {
+  const where = !row.path ? "" : ` (${placeOf(row.path, row.line)})`;
+  const ask = `Check this finding from ${ticket}: ${row.title}${where}`;
+  return { project, about: `run:${run}`, kind: "bug", ask, off: actions ? null : ACTIONS_OFF };
 }
 
 /** Steering an open finding hands it, as it stands, to its ticket's next run as an amendment. */
@@ -253,19 +266,22 @@ function sourceOf(row: FollowUpRow, run: FindingsRun | undefined): Finding | und
   return findings.find((finding) => findingPath(finding) === row.path && (row.line == null || finding.line === row.line));
 }
 
-function followUpRow(project: string, base: string, row: FollowUpRow, run: FindingsRun | undefined): FindingRowView {
+function followUpRow(project: string, base: string, row: FollowUpRow, run: FindingsRun | undefined, actions: boolean): FindingRowView {
   const source = sourceOf(row, run);
+  const { title, text } = titled(row.text);
   return {
     key: `${base} follow-up ${row.id}`,
     severity: source == null ? null : severityOf(source),
     tag: { text: row.kind, filled: true },
-    ...titled(row.text),
+    title,
+    text,
     project,
     path: row.path,
     place: row.path == null ? row.ticket : `${placeOf(row.path, row.line)} · ${row.ticket}`,
     fate: followUpFate(row, run),
     href: null,
     action: null,
+    scout: findingScout(project, row.ticket, row.run, { title, path: row.path, line: row.line }, actions),
   };
 }
 
@@ -293,6 +309,7 @@ function advisoryRow(project: string, base: string, run: FindingsRun, advisory: 
     fate: { state: "queued", word: "advisory", line: "noted, not acted on", tone: "wait" },
     href: null,
     action: { kind: "file", base, body: threadTicket(run, advisory.message), off },
+    scout: null,
   };
 }
 
@@ -323,6 +340,7 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
         const fixing = live.find((each) => each.state === "running")?.run;
         const row = findingRow(project, host.base, run, found, openFate(idle, fixing));
         if (idle != null) row.action = steerAction(host.base, run.ticket, found, actions);
+        row.scout = findingScout(project, run.ticket, run.run, { title: row.title, path: row.path, line: entry.finding.line }, actions);
         page.open.push({ ...tagged, idle, row });
       } else {
         page.settled.push({ ...tagged, row: findingRow(project, host.base, run, found, settledFate(found, merged)) });
@@ -334,10 +352,10 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
   }
   for (const row of answer.follow_ups) {
     const run = answer.runs.find((each) => each.run === row.run);
-    page.followUps.push({ pending: row.state === "pending", at: row.created_ms, row: followUpRow(project, host.base, row, run) });
+    page.followUps.push({ pending: row.state === "pending", at: row.created_ms, row: followUpRow(project, host.base, row, run, actions) });
     if (row.kind === "feature" && row.state === "pending") page.drafts += 1;
   }
-  for (const defect of answer.ticket_defects) page.defects.push({ ...defect, project, base: host.base });
+  for (const defect of answer.ticket_defects) page.defects.push({ ...defect, project, base: host.base, actions });
 }
 
 function useSortedPage(hosts: Host[], now: number, project: string | undefined): FindingsPage {
