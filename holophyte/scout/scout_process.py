@@ -169,7 +169,7 @@ def _end(conn, scout_id, phase, kind, summary, reason):
 @contextmanager
 def stop_on_sigterm(stopping):
     def on_term(_signum, _frame):
-        if stopping.stop():
+        if stopping.stop() and not stopping.starting:
             raise ScoutStopped()
 
     if threading.current_thread() is not threading.main_thread():

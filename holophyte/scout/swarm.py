@@ -98,9 +98,10 @@ def kill_group(proc):
 class Stopping:
     def __init__(self):
         self.lock, self.procs, self.stopped = threading.RLock(), set(), False
+        self.starting = False
 
     def run_capped(self, argv, cwd, cap, on_start=None):
-        mine = []
+        mine, main = [], threading.current_thread() is threading.main_thread()
 
         def start(proc):
             with self.lock:
@@ -108,14 +109,24 @@ class Stopping:
                 self.procs.add(proc)
                 if self.stopped:
                     kill_group(proc)
+            if main:
+                self.started()
             if on_start is not None:
                 on_start(proc)
 
+        if main:
+            self.starting = True
         try:
             return run_capped(argv, cwd, cap, on_start=start)
         finally:
             with self.lock:
                 self.procs.difference_update(mine)
+            if main and self.starting:
+                self.started()
+
+    def started(self):
+        self.starting = False
+        self.check()
 
     def stop(self):
         with self.lock:
