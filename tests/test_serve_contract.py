@@ -25,6 +25,7 @@ from holophyte.serve.contract import (
     BoardTicket,
     Findings,
     FollowUpRow,
+    History,
     PrOpenItem,
     PullRequestFacts,
     Round,
@@ -304,6 +305,24 @@ class PinnedAnswerTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                         AssertionError, rf"^{where}\.{key}: undeclared$"):
                     walk(body, narrower, where)
+
+    def test_history_rows_may_omit_resumed_as_or_carry_an_integer_or_null(self):
+        body = pinned("history")
+        older = {**body, "rows": [{key: item for key, item in row.items()
+                                   if key != "resumed_as"}
+                                  for row in body["rows"]]}
+        walk(older, History, "history")
+        walk({**body, "rows": [{**body["rows"][0], "resumed_as": 8}]},
+             History, "history")
+        with self.assertRaisesRegex(
+                AssertionError, r"^history\.rows\.0\.resumed_as: "):
+            walk({**body, "rows": [{**body["rows"][0], "resumed_as": "8"}]},
+                 History, "history")
+        row = json.loads((ROOT / SCHEMA_DIR / "history.schema.json")
+                         .read_text())["$defs"]["HistoryRow"]
+        self.assertEqual(row["properties"]["resumed_as"],
+                         {"anyOf": [{"type": "integer"}, {"type": "null"}]})
+        self.assertNotIn("resumed_as", row["required"])
 
 
 if __name__ == "__main__":
