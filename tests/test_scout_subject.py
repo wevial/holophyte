@@ -208,7 +208,7 @@ class RefusedSubjectTests(SubjectCase):
         self.assertEqual(self.spawned, [])
 
     def test_a_subject_the_store_does_not_hold_is_declined(self):
-        for subject, ref in (("run:999", "999"),
+        for subject, ref in (("run:999", "999"), ("run:" + "9" * 5000, "999"),
                              (f"defect:{self.run_r}", str(self.run_r)),
                              ("ticket:NAT-9", "NAT-9"),
                              ("pr:https://github.com/acme/demo/pull/99",

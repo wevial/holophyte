@@ -12,7 +12,7 @@ from holophyte.loop.runs import open_store
 from holophyte.scout.scout_config import scout_config
 from holophyte.serve.serve_findings import CONTRADICTION, stop_kind
 from holophyte.serve.serve_levers import console_author
-from holophyte.serve.serve_runs import SQLITE_MAX_INT, no_store
+from holophyte.serve.serve_runs import SQLITE_MAX_DIGITS, SQLITE_MAX_INT, no_store
 from store.scouts import ENDED, QUEUED, create_scout, record_scout_event, scout
 
 SCOUT_ACTION = "scout"
@@ -20,7 +20,7 @@ KINDS = ("bug", "research", "recon")
 ROUTES = (("lead", "leads"), ("helper", "helpers"))
 COUNTS = (("swarm", "swarm"), ("minutes", "budget_min"))
 VIA_DAEMON = "POST /actions/scout"
-RUN_NUMBER = re.compile(r"^[1-9][0-9]*$")
+RUN_NUMBER = re.compile(r"[1-9][0-9]*\Z")
 SUBJECT_REFS = {
     "run": (RUN_NUMBER.match, "a positive integer"),
     "defect": (RUN_NUMBER.match, "a positive integer"),
@@ -62,9 +62,10 @@ def subject_refusal(body):
 
 
 def held_run(conn, ref):
-    number = int(ref)
-    return number <= SQLITE_MAX_INT and conn.execute(
-        "SELECT 1 FROM runs WHERE id = ?", (number,)).fetchone() is not None
+    if len(ref) > SQLITE_MAX_DIGITS or int(ref) > SQLITE_MAX_INT:
+        return False
+    return conn.execute("SELECT 1 FROM runs WHERE id = ?",
+                        (int(ref),)).fetchone() is not None
 
 
 def run_subject(conn, ref):
