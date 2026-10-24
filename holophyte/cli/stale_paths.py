@@ -71,7 +71,7 @@ def _stale(root, ref, sha, entries):
 def stale_paths(project):
     root = Path(project.path).resolve()
     entries = _entries(project)
-    if not root.is_dir() or not any(values for _, values in entries):
+    if not any(values for _, values in entries):
         return []
     try:
         ref = main_ref(root)
