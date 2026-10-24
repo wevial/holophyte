@@ -19,6 +19,7 @@ from holophyte.agents.probe_log import record_probe
 from holophyte.agents.probes import PROBE_WORD, ProbeResult
 from holophyte.config.project import Project
 from holophyte.host.registry import Host, settings
+from holophyte.scout.scout_contract import ScoutDetail
 from holophyte.scout.views import scout_detail, scout_routes, scouts
 from holophyte.serve.serve_host import HostServer
 from store.scout_thread import post_message, take_message
@@ -35,6 +36,7 @@ from store.scouts import (
 )
 from tests.serve_contract_fixture import NOW, normalize_contract
 from tests.test_holo_mcp import McpCase
+from tests.test_serve_contract import walk
 
 FIXTURES = Path(__file__).parent / "fixtures" / "serve"
 TOKEN = "scout-read-token"
@@ -291,6 +293,43 @@ class DetailTests(ScoutCase):
         self.assertEqual(code, 200, body)
         self.assertEqual((body["scout"]["phase"], body["scout"]["started_ms"],
                           body["scout"]["base_sha"]), ("queued", None, None))
+
+    def test_a_report_stored_before_the_report_check_serves_in_contract(self):
+        evidence = ("No KillMode in deploy/*.service; "
+                    "holophyte-loop@.service:13-17 sets Type=simple")
+        action = {"title": "Probe the unit", "why": "the loop may orphan",
+                  "kind": "probe", "body": "Stop the unit and list children."}
+        conn = store.open(str(self.store_path))
+        try:
+            project = store.tickets.ensure_project(conn, "native:ALPHA",
+                                                   self.alpha)
+            old = create_scout(conn, project, "Why do helpers linger?", "bug",
+                               20, lead_route="A", helper_route="C", swarm=1,
+                               helper_turns=6, waves=1, now=NOW - 9_000)
+            move_scout(conn, old, "planning", base_sha="d" * 40,
+                       host="writer", now=NOW - 8_000)
+            move_scout(conn, old, "synthesizing")
+            record_scout_report(conn, old, 1, {
+                "summary": "Helpers outlive the loop.",
+                "findings": [{"title": "No KillMode", "status": "confirmed",
+                              "evidence": evidence}],
+                "actions": [action], "cut": []}, now=NOW - 7_000)
+            end_scout(conn, old, "done", "the lead wrote its report",
+                      now=NOW - 6_000)
+        finally:
+            conn.close()
+        port = self.serve(self.project)
+        code, body = self.get(port, f"/scouts/{old}")
+        self.assertEqual(code, 200, body)
+        report = body["reports"][0]["report"]
+        (finding,) = report["findings"]
+        self.assertEqual(finding["evidence"], [{"text": evidence}])
+        self.assertEqual(finding["status"], "unconfirmed")
+        self.assertEqual(report["actions"],
+                         [{**action, "kind": "investigate"}])
+        self.assertEqual((report["reproduction"], report["prior"],
+                          report["cut"]), (None, None, []))
+        walk(body, ScoutDetail, "scout")
 
 
 class RoutesTests(ScoutCase):

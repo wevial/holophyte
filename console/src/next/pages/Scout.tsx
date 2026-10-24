@@ -91,6 +91,9 @@ export function ScoutPage() {
   const notice = (text: string) => <Notice label={label} text={text} back={{ to: "/scouts", search: { project } }} backLabel="Back to Scouts" />;
   if (page.kind === "unknown_project") return notice(`No project named ${project} answers this console.`);
   if (page.kind === "not_found") return notice(`${project} has no scout ${shown}.`);
+  if (page.kind === "failed") {
+    return notice(`${project} could not read scout ${shown}${page.status == null ? "" : ` (answered ${page.status})`}.`);
+  }
   if (page.kind === "loading") {
     return (
       <Page label={label}>

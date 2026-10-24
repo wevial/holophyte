@@ -447,6 +447,18 @@
       ],
       "additionalProperties": true
     },
+    "TextEvidence": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
     "ScoutFinding": {
       "type": "object",
       "properties": {
@@ -472,6 +484,9 @@
               },
               {
                 "$ref": "#/$defs/UrlEvidence"
+              },
+              {
+                "$ref": "#/$defs/TextEvidence"
               }
             ]
           }
