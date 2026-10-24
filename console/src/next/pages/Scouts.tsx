@@ -114,7 +114,7 @@ function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: bo
       <Link
         to="/scouts"
         search={(previous: ScopeSearch) => ({ ...keepScope(previous), scout: scoutKey(row) })}
-        className={`grid grid-cols-[16px_20px_minmax(0,1fr)] gap-x-3 px-3.5 py-[13px] no-underline transition-colors duration-(--motion-colour) ${current ? "" : "hover:bg-paper-2"}`}
+        className={`grid grid-cols-[16px_20px_minmax(0,1fr)] gap-x-2.5 px-3.5 py-[13px] no-underline transition-colors duration-(--motion-colour) ${current ? "" : "hover:bg-paper-2"}`}
       >
         <span className="mt-[15px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span data-cell="id" className={`${MONO} pt-0.5 text-ink-2`}>{row.id}</span>

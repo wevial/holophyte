@@ -103,7 +103,7 @@ function NumberField({ id, label, value, least, most, onChange }: {
 }
 
 function Band({ column, children }: { column: boolean; children: ReactNode }) {
-  return <div className="border-b border-rule-2 p-5 last:border-b-0 max-[720px]:p-4">{column ? <div className="max-w-[712px]">{children}</div> : children}</div>;
+  return <div className={`border-b border-rule-2 last:border-b-0 max-[720px]:p-4 ${column ? "px-6 py-5" : "p-5"}`}>{column ? <div className="max-w-[712px]">{children}</div> : children}</div>;
 }
 
 /** The New scout form: the ask, its kind and project, and one disclosure
@@ -158,12 +158,12 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
       }}
       className={pane ? "" : "mb-4 border border-rule bg-paper"}
     >
-      {pane && <h2 className="m-0 px-5 pt-6 font-sans text-[20px] font-semibold leading-[1.25] text-ink">New scout</h2>}
+      {pane && <h2 className="m-0 px-6 pt-6 font-sans text-[20px] font-semibold leading-[1.25] text-ink">New scout</h2>}
       <Band column={pane}>
         {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
         <label htmlFor="scout-ask" className="flex flex-col">
           <span className={LABEL}>Ask</span>
-          <textarea id="scout-ask" ref={askRef} rows={pane ? 3 : 2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans`} />
+          <textarea id="scout-ask" ref={askRef} rows={pane ? 3 : 2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans ${pane ? "min-h-[86px]" : ""}`} />
         </label>
       </Band>
       <Band column={pane}>
