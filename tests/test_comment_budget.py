@@ -234,6 +234,7 @@ PINNED = {
     "holophyte/review/witness_precheck.py": 4,
 
     "holophyte/scout/__init__.py": 0,
+    "holophyte/scout/lead.py": 1,
     "holophyte/scout/scout_config.py": 0,
     "holophyte/scout/scout_probes.py": 0,
     "holophyte/scout/scout_process.py": 3,
