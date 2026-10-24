@@ -194,12 +194,13 @@ def fields_shape(fields):
     return ",\n".join(f' "{key}": {shown(field)}' for key, field in fields.items())
 
 
-def offers_revise(subject):
-    return subject is not None and subject[0] == DEFECT
+def offers_revise(subject, parked=False):
+    return subject is not None and (subject[0] == DEFECT
+                                    or parked and subject[0] == "ticket")
 
 
-def offered_fields(subject, guardrails=False):
-    kinds = KINDS + ((REVISE,) if offers_revise(subject) else ())
+def offered_fields(subject, guardrails=False, parked=False):
+    kinds = KINDS + ((REVISE,) if offers_revise(subject, parked) else ())
     action = dict(FIELDS["actions"].item, kind=one_of(*kinds))
     if guardrails:
         action.update(kind=one_of(*GUARDRAIL_KINDS), layer=LAYER,
@@ -214,14 +215,14 @@ def untitled(body):
                     if line.strip()).startswith("# ")
 
 
-def revise_problems(actions, subject):
+def revise_problems(actions, subject, parked=False):
     revising = [(index, action) for index, action in enumerate(actions)
                 if isinstance(action, dict) and action.get("kind") == REVISE]
     problems = []
     for count, (index, action) in enumerate(revising):
-        if not offers_revise(subject):
+        if not offers_revise(subject, parked):
             problems.append(f"actions[{index}].kind: revise needs a"
-                            " ticket-defect subject")
+                            " ticket-defect subject or a parked ticket")
         if count:
             problems.append(f"actions[{index}].kind: at most one revise item")
         if untitled(action.get("body")):
@@ -277,7 +278,7 @@ def cited_problems(findings, scout, tasks):
 
 
 def report_problems(report, kind, subject=None, *, offered=None, scout=None,
-                    tasks=(), digest=None):
+                    tasks=(), digest=None, parked=False):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
@@ -285,7 +286,7 @@ def report_problems(report, kind, subject=None, *, offered=None, scout=None,
     problems = walk(report, fields, "")
     actions = report.get("actions") if isinstance(report, dict) else None
     if isinstance(actions, list):
-        problems += revise_problems(actions, subject)
+        problems += revise_problems(actions, subject, parked)
         problems += [problem for index, action in enumerate(actions)
                      if isinstance(action, dict)
                      for problem in guardrail_problems(index, action, digest)]

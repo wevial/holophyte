@@ -16,6 +16,7 @@ from holophyte.scout.lead import (
     fenced_json,
     lead_seat,
     offered_rows,
+    parked_subject,
     report_goal,
     run_waves,
     scout_tasks,
@@ -116,6 +117,7 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
     lead.session = row.lead_session
     deadline = monotonic() + budget_s
     rows = offered_rows(conn, row)
+    parked = parked_subject(conn, row)
     goal = pass_plan_goal(row, steer, card, number, *stored(conn, row.id),
                           config.steer_helpers, lead.session is None)
     turn = (lead.resume(goal, budget_s) if lead.session
@@ -127,14 +129,14 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
         turn = lead.resume(report_goal(row, swarm, problem,
                                        lead.session is None,
                                        pass_scope(steer, number),
-                                       digest=rows),
+                                       digest=rows, parked=parked),
                            REPORT_TURN_S)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return PassOutcome(number, message, failure=NO_REPORT)
         report, problems = checked_report(lead, report,
                                           tasks=scout_tasks(conn, row.id),
-                                          digest=rows)
+                                          digest=rows, parked=parked)
         if problems:
             return PassOutcome(number, message,
                                failure=f"{MALFORMED}: {problems[0]}")
