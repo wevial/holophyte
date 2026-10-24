@@ -189,7 +189,8 @@ class Swarm:
         else:
             probe = probe_scout_route(
                 self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
-                min(PROBE_TIMEOUT, self.remaining_s()))
+                min(PROBE_TIMEOUT, self.remaining_s()),
+                self.stopping.run_capped)
             if probe.ok:
                 return True
             why = probe.reason()

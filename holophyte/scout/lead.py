@@ -8,6 +8,7 @@ from typing import NamedTuple
 import store
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
+from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.report import (
     FIELDS,
@@ -275,7 +276,8 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     seat, limit = config.leads.get(name), row.helper_turns or config.helper_turns
     if seat is None:
         return "failed", f"lead route {name} is down: no [scout.leads.{name}]"
-    probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat)
+    probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat,
+                              PROBE_TIMEOUT, stopping.run_capped)
     if not probe.ok:
         return "failed", f"lead route {name} is down: {probe.reason()}"
     lead = Lead(conn, project, row, seat, worktree, stopping)

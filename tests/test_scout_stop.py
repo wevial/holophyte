@@ -190,6 +190,28 @@ class RunningScoutStopTests(StopCase):
         self.assertEqual((payload["note"], payload["author"], payload["pid"]),
                          ("wrong project", "maintainer", proc.pid))
 
+    def test_a_stop_during_the_lead_route_probe_kills_it_and_ends_the_scout(self):
+        pid_file = self.child("probe-child")
+        self.stubs.answer(probe_sleep=600, probe_pid_file=str(pid_file),
+                          plan=fenced({"tasks": []}), report=fenced(REPORT))
+        self.start_host()
+        scout_id = self.planning()
+        proc = self.spawn_scout(scout_id)
+        child = self.pid_of(pid_file)
+
+        status, answer = self.stop(scout_id)
+        self.assertEqual((status, answer["ok"], answer["pid"]),
+                         (200, True, proc.pid), answer)
+        self.assertEqual(proc.wait(timeout=WAIT_S), 0)
+        row = scout(self.store_conn, scout_id)
+        self.assertEqual((row.phase, row.reason),
+                         ("stopped", "stopped by maintainer: wrong project"))
+        self.assertTrue(wait_for(lambda: not running(child)))
+        self.assertEqual([call["turn"] for call in self.stubs.calls()],
+                         ["probe"])
+        self.assertIn("scout_stopped",
+                      [kind for kind, _ in self.events(scout_id)])
+
     def test_a_stop_while_swarming_stops_both_helpers_and_their_children(self):
         pid_files = [self.child(f"helper-{n}") for n in (1, 2)]
         self.stubs.answer(
