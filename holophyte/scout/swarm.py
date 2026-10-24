@@ -32,7 +32,6 @@ TOKENS_USED = re.compile(r"tokens used\D{0,4}([\d,]+)", re.IGNORECASE)
 
 class Planned(NamedTuple):
     id: int
-    wave: int
     question: str
     paths: list
     mode: str
@@ -72,7 +71,7 @@ def store_wave(conn, scout_id, wave, tasks, route):
     ids = record_scout_tasks(conn, scout_id, 1, wave, [
         {"question": task["question"], "mode": task["mode"], "route": route}
         for task in tasks])
-    return [Planned(task_id, wave, task["question"], list(task["paths"]),
+    return [Planned(task_id, task["question"], list(task["paths"]),
                     task["mode"]) for task_id, task in zip(ids, tasks)]
 
 
@@ -113,7 +112,7 @@ class Swarm:
                               conn.execute("PRAGMA database_list")
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
-        self.probed, self.scratch = None, None
+        self.scratch = None
         self.stack, self.worktree_lock = ExitStack(), threading.Lock()
 
     def __enter__(self):
@@ -129,11 +128,6 @@ class Swarm:
         return self.launched < self.total and self.remaining_s() > 0
 
     def ready(self):
-        if self.probed is None:
-            self.probed = self.probe()
-        return self.probed
-
-    def probe(self):
         if self.seat is None:
             why = f"no [scout.helpers.{self.route}]"
         else:
