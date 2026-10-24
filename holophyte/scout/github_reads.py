@@ -122,7 +122,7 @@ def playwright_rows(report, suites=None, titles=()):
                        "duration_ms": results[-1].get("duration", 0),
                        "status": PLAYWRIGHT_STATUS.get(test.get("status"),
                                                        "failed"),
-                       "retries": max(0, len(test.get("results") or []) - 1)}
+                       "retries": len(results) - 1}
         yield from playwright_rows(report, suite.get("suites", []), within)
 
 
