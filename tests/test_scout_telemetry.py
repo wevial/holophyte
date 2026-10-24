@@ -153,10 +153,6 @@ class ScoutReportLinesTests(ReportStoreCase):
         end_scout(self.conn, b, "failed", "the lead's report is malformed",
                   now=T0 + 5 * MINUTE)
 
-    def test_the_ended_scouts_line_sums_their_time_and_every_turns_cost(self):
-        self.seed()
-        self.assertIn(SCOUTS, scout_report_lines(self.conn))
-
     def test_each_lead_and_helper_route_has_its_line_in_name_order(self):
         self.seed()
         self.assertEqual(scout_report_lines(self.conn), [SCOUTS, OPUS, SOL, LUNA])
