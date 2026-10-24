@@ -58,8 +58,12 @@ def _names(line, path):
     spellings = ((path, r"[\w-]"),
                  (path.removesuffix(".py").replace("/", "."), r"[\w-]"),
                  (stem, r"[\w/.-]"))
+    patterns = [token for token in re.findall(r"[^\s'\"=]+", line)
+                if GLOB.search(token)]
     return any(re.search(rf"(?<!{before}){re.escape(spelling)}(?![\w-])", line)
-               for spelling, before in spellings)
+               for spelling, before in spellings) or any(
+        fnmatchcase(path, token) or fnmatchcase(Path(path).name, token)
+        for token in patterns)
 
 
 def _commands(verify_cmd):
@@ -69,7 +73,7 @@ def _commands(verify_cmd):
                             or text.lstrip().startswith("#")):
             continue
         pending += text
-        if pending.endswith("\\"):
+        if pending.endswith("\\") or not _complete(pending):
             pending += "\n"
         else:
             commands.append(pending)
@@ -77,8 +81,8 @@ def _commands(verify_cmd):
     return commands + ([pending.rstrip("\n")] if pending else [])
 
 
-def _complete(lines):
-    return subprocess.run(["bash", "-n"], input="\n".join(lines), text=True,
+def _complete(text):
+    return subprocess.run(["bash", "-n"], input=text, text=True,
                           capture_output=True).returncode == 0
 
 
@@ -86,7 +90,7 @@ def lines_for(verify_cmd, files):
     commands = _commands(verify_cmd)
     for end, command in enumerate(commands, 1):
         if any(_names(command, path) for path in files):
-            return commands[:end] if _complete(commands[:end]) else commands
+            return commands[:end]
     return commands
 
 
@@ -104,11 +108,12 @@ def _blobs(wt, sha, files):
     return blobs
 
 
-def _stopped(command, files, failure):
+def _stopped(command, files, failure, output):
     stopped = (failure or {}).get("command") or ""
-    naming = [line for line in command.splitlines()
-              if any(_names(line, path) for path in files)]
-    if naming and not any(_names(stopped, path) for path in files):
+    names = any(_names(line, path) for line in command.splitlines()
+                for path in files)
+    witness = stopped if names else output
+    if not any(_names(witness, path) for path in files):
         return {"stopped_at": stopped}
     return {}
 
@@ -140,7 +145,7 @@ def _run(project, conn, run_id, beat_s, wt, base, sha, files, command):
     status = 0 if ok else (failure or {}).get("exit_status")
     return {"ran": True, "passed": ok, "exit_status": status,
             "output": str(out)[-OUTPUT_TAIL:],
-            **({} if ok else _stopped(command, files, failure))}
+            **({} if ok else _stopped(command, files, failure, str(out)))}
 
 
 def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):

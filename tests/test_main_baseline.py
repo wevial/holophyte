@@ -202,17 +202,39 @@ class BaselineRuns(unittest.TestCase):
                                           f"  -v\nsh '{later}'"))
         self.assertEqual(log.read_text(), "tests/test_app.py -v\n")
 
+    def test_a_multiline_test_command_ends_the_run(self):
+        verify = ("python3 -c '\nimport unittest\n"
+                  "unittest.main(module=\"tests.test_app\",\n"
+                  "              exit=True)'\n"
+                  "echo later-command")
+        _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
+        self.assertNotEqual(result["exit_status"], 0)
+        self.assertIn("AssertionError", result["output"])
+        self.assertNotIn("later-command", result["command"])
+        self.assertIsNone(main_baseline.gap(result))
+
     def test_a_base_run_stopped_before_the_test_line_is_not_its_witness(self):
         lint = self.root / "lint.sh"
         lint.write_text("echo lint-failed; exit 4\n")
-        _, _, (result,) = self.baselines([ON_MAIN],
-                                         verify=f"sh '{lint}'\n{VERIFY}")
-        entry = main_baseline.brief([result])
-        self.assertEqual(result["exit_status"], 4)
-        self.assertIn(f"It stopped at `sh '{lint}'` with exit status 4 before "
-                      "tests/test_app.py ran", entry)
-        self.assertNotIn("This run is the run C1's", entry)
-        self.assertIsNone(main_baseline.gap(result))
+        for check in (VERIFY,
+                      "python3 -m unittest discover -s tests -p 'test_*.py'",
+                      "python3 -m unittest discover -s tests"):
+            with self.subTest(check=check):
+                _, _, (result,) = self.baselines(
+                    [ON_MAIN], verify=f"sh '{lint}'\n{check}")
+                entry = main_baseline.brief([result])
+                self.assertEqual(result["exit_status"], 4)
+                self.assertIn(f"It stopped at `sh '{lint}'` with exit status 4"
+                              " before tests/test_app.py ran", entry)
+                self.assertNotIn("This run is the run C1's", entry)
+                self.assertIsNone(main_baseline.gap(result))
+
+    def test_a_failing_block_naming_no_file_witnesses_by_its_output(self):
+        _, _, (result,) = self.baselines(
+            [ON_MAIN], verify="python3 -m unittest discover -s tests")
+        self.assertNotEqual(result["exit_status"], 0)
+        self.assertNotIn("stopped_at", result)
+        self.assertIn("This run is the run C1's", main_baseline.brief([result]))
 
     def test_a_named_file_pattern_runs_with_its_matches(self):
         criterion = ON_MAIN.replace("tests/test_app.py", "tests/test_*.py")
