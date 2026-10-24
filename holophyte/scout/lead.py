@@ -216,7 +216,7 @@ def repair_goal(row, problems, fresh, offered=None):
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping,
-              price=None):
+              price):
     label = outbound(argv_label(argv), known_secrets(project.config()))
     payload = dict(role=SCOUT_LEAD, label=label, route="primary",
                    exit_status=None, timed_out=False)
@@ -240,8 +240,7 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping,
 
 
 class Lead:
-    def __init__(self, conn, project, row, seat, worktree, stopping,
-                 price=None):
+    def __init__(self, conn, project, row, seat, worktree, stopping, price):
         self.conn, self.project, self.row = conn, project, row
         self.seat, self.worktree, self.stopping = seat, worktree, stopping
         self.price = price

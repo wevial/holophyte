@@ -68,7 +68,7 @@ class HelperTurn(NamedTuple):
     output: str
 
 
-def turn_answer(seat, output, price=None):
+def turn_answer(seat, output, price):
     answer, usage = reported_answer(seat, output)
     if usage is not None:
         usage["cost_usd"] = turn_cost(price, usage_tokens(usage),
