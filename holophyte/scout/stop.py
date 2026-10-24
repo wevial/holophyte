@@ -10,6 +10,7 @@ import store
 from holophyte.loop.runs import open_store
 from holophyte.scout.answer import current_ask, stop_answer
 from holophyte.scout.filing import ROW_ID_LIMIT
+from holophyte.scout.follow_up import current_pass, stop_pass
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from store.scouts import (
@@ -61,11 +62,16 @@ def stop_reason(conn, scout_id):
 
 
 def end_unrun(conn, scout_id, phase, ask, reason, author, note):
-    if phase != ANSWERING:
-        end_scout(conn, scout_id, "stopped", reason)
-        return f"scout {scout_id} stopped"
-    stop_answer(conn, scout_id, ask, reason, author, note)
-    return f"scout {scout_id}'s answer stopped; it is done again"
+    if phase == ANSWERING:
+        stop_answer(conn, scout_id, ask, reason, author, note)
+        return f"scout {scout_id}'s answer stopped; it is done again"
+    steered = current_pass(conn, scout_id)
+    if steered is not None:
+        stop_pass(conn, scout_id, steered["pass"], reason, author, note)
+        return (f"scout {scout_id}'s pass {steered['pass']} stopped;"
+                " it is done again")
+    end_scout(conn, scout_id, "stopped", reason)
+    return f"scout {scout_id} stopped"
 
 
 def runs_scout(pid, scout_id, project_path):
@@ -98,10 +104,13 @@ def requested(conn, project, scout_id, author, note, via):
     running = live and row.pid and runs_scout(row.pid, scout_id, project.path)
     pid = row.pid if running else None
     ask = current_ask(conn, scout_id) if row.phase == ANSWERING else None
+    steered = (current_pass(conn, scout_id)
+               if live and row.phase != ANSWERING else None)
     record_scout_event(
         conn, scout_id, REQUESTED, f"stop asked by {author} ({via}): {note}",
-        level="detail", payload=json.dumps({"author": author, "note": note,
-                                            "via": via, "pid": pid, "ask": ask}))
+        level="detail", payload=json.dumps({
+            "author": author, "note": note, "via": via, "pid": pid,
+            "ask": ask, "pass": steered and steered["pass"]}))
     if pid is None:
         reason = stopped_by(author, note)
         said = end_unrun(conn, scout_id, row.phase, ask,

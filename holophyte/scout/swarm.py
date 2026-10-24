@@ -169,14 +169,16 @@ def capped_turn(turn, stopping, failures=(OSError,)):
 class Swarm:
     """Runs a scout's helper turns, one wave at a time, until it is closed."""
 
-    def __init__(self, conn, project, row, config, deadline, stopping):
+    def __init__(self, conn, project, row, config, deadline, stopping,
+                 pass_number=1, total=None):
         self.conn, self.project, self.row = conn, project, row
         self.deadline = deadline
         self.stopping = stopping
+        self.pass_number = pass_number
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
-        self.size = row.swarm or config.swarm
-        self.total = row.helper_turns or config.helper_turns
+        self.total = total or row.helper_turns or config.helper_turns
+        self.size = min(row.swarm or config.swarm, self.total)
         self.secrets = known_secrets(project.config())
         (self.store_path,) = [path for _, name, path in
                               conn.execute("PRAGMA database_list")
@@ -237,9 +239,10 @@ class Swarm:
             return self.downs[key]
 
     def plan(self, wave, tasks):
-        ids = record_scout_tasks(self.conn, self.row.id, 1, wave, [
-            {"question": task["question"], "mode": task["mode"],
-             "route": self.route} for task in tasks])
+        ids = record_scout_tasks(
+            self.conn, self.row.id, self.pass_number, wave,
+            [{"question": task["question"], "mode": task["mode"],
+              "route": self.route} for task in tasks])
         planned = [Planned(task_id, task["question"], list(task["paths"]),
                            task["mode"]) for task_id, task in zip(ids, tasks)]
         self.tasks.extend(planned)

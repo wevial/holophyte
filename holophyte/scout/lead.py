@@ -159,13 +159,13 @@ def report_ending(row):
         f"```json\n{report_shape(row)}\n```\n")
 
 
-def report_goal(row, swarm, problem, fresh):
+def report_goal(row, swarm, problem, fresh, scope=""):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
         answers = f"- none: no plan was stored, because {problem}"
     return (
         f"{REPORT_OPENING}\n\n"
-        + (f"{asked(row)}\n\n" if fresh else "")
+        + (f"{asked(row)}\n\n" if fresh else "") + scope
         + "The plan's sub-tasks, each with its phase and the end of its "
         "helper's output (a queued one never ran, a stopped one was cut at "
         f"the time budget):\n\n{answers}\n\n"
@@ -226,7 +226,10 @@ class Lead:
                          self.worktree, cap, self.stopping)
 
     def plan(self, limit, cap):
-        argv = self.seat.turn(outbound(plan_goal(self.row, limit), self.secrets))
+        return self.start(plan_goal(self.row, limit), cap)
+
+    def start(self, goal, cap):
+        argv = self.seat.turn(outbound(goal, self.secrets))
         self.remember(self.seat.session(argv))
         turn = self.turn(argv, cap)
         if self.session is None:
@@ -281,19 +284,27 @@ def checked_report(lead, report):
     return report, report_problems(report, lead.row.kind)
 
 
-def run_lead(conn, project, row, worktree, budget_s, stopping):
-    """Returns the phase the scout ends in and the reason it ends there."""
-    config = scout_config(project)
+def lead_seat(project, row, config, stopping):
     name = row.lead_route or config.lead
-    seat, limit = config.leads.get(name), row.helper_turns or config.helper_turns
+    seat = config.leads.get(name)
     if seat is None:
-        return "failed", f"lead route {name} is down: no [scout.leads.{name}]"
+        return None, f"lead route {name} is down: no [scout.leads.{name}]"
     probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat,
                               PROBE_TIMEOUT,
                               partial(in_critic_workspace,
                                       run=stopping.run_capped))
     if not probe.ok:
-        return "failed", f"lead route {name} is down: {probe.reason()}"
+        return None, f"lead route {name} is down: {probe.reason()}"
+    return seat, None
+
+
+def run_lead(conn, project, row, worktree, budget_s, stopping):
+    """Returns the phase the scout ends in and the reason it ends there."""
+    config = scout_config(project)
+    limit = row.helper_turns or config.helper_turns
+    seat, down = lead_seat(project, row, config, stopping)
+    if down is not None:
+        return "failed", down
     lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
     turn = lead.plan(limit, budget_s)
