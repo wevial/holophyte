@@ -295,7 +295,7 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
-            if runs(self.row, task):
+            if runs(task):
                 self.run_helper(conn, task, mine)
                 return
             if self.route_down(conn, "host", self.host_probe) is not None:

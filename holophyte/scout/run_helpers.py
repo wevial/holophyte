@@ -45,7 +45,7 @@ LAUNCH_FAILURES = (OSError, RuntimeError, RunFailure)
 PRE_PUSH = "#!/bin/sh\necho 'a scout run helper does not push' >&2\nexit 1\n"
 
 
-def runs(row, task):
+def runs(task):
     return task.mode == ScoutTaskMode.RUN.value
 
 
@@ -101,7 +101,7 @@ def reproduced(row, swarm, report):
     if (row.kind != ScoutKind.BUG.value or not isinstance(reproduction, dict)
             or reproduction.get("level") not in CLAIMED):
         return report
-    if any(runs(row, task)
+    if any(runs(task)
            and swarm.answered(task).phase == ScoutTaskPhase.DONE.value
            for task in swarm.tasks):
         return report
