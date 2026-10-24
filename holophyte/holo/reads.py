@@ -139,14 +139,16 @@ def ticket_lines(body):
             + [f"  verify: {line}" for line in body["verification_commands"]])
 
 
+def scout_line(row):
+    return f"scout {row['id']}  {row['kind']}  {row['phase']}  {row['ask']}"
+
+
 def scouts_lines(body):
-    return [f"scout {row['id']}  {row['kind']}  {row['phase']}  {row['ask']}"
-            for row in body["scouts"]]
+    return [scout_line(row) for row in body["scouts"]]
 
 
 def scout_lines(body):
-    row = body["scout"]
-    lines = [f"scout {row['id']}  {row['kind']}  {row['phase']}  {row['ask']}"]
+    lines = [scout_line(body["scout"])]
     lines += [f"  task {task['id']}  pass {task['pass']} wave {task['wave']}"
               f"  {task['phase']}  {task['question']}" for task in body["tasks"]]
     lines += [f"  report pass {entry['pass']}: {entry['report']['summary']}"
