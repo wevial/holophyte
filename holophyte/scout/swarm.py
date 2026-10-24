@@ -80,6 +80,8 @@ def helper_goal(row, task):
 
 
 def capped_turn(argv, checkout, cap):
+    if cap <= 0:
+        return HelperTurn(STOPPED, None, "")
     try:
         code, output = run_capped(argv, checkout, cap)
     except subprocess.TimeoutExpired as expired:
@@ -105,7 +107,7 @@ class Swarm:
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
         self.scratch = None
-        self.stack, self.worktree_lock = ExitStack(), threading.Lock()
+        self.stack = ExitStack()
 
     def __enter__(self):
         return self
@@ -154,35 +156,48 @@ class Swarm:
         if self.scratch is None:
             self.scratch = self.stack.enter_context(
                 review_scratch(self.project.path))
+        starts = [threading.Event() for _ in launch]
         with ThreadPoolExecutor(max_workers=self.size) as pool:
-            list(pool.map(self.helper, launch))
+            list(pool.map(self.helper, launch, [None] + starts[:-1], starts))
 
     def checkout(self, task):
         from holophyte.scout.scout_process import refuse_push
 
         repo, path = self.project.path, self.scratch / f"helper-{task.id}"
         env = scratch_git_environment()
-        with self.worktree_lock:
-            sh(["git", "worktree", "add", "--detach", "--quiet", str(path),
-                self.row.base_sha], cwd=repo, env=env)
-            refuse_push(repo, path, self.scratch / "hooks", env)
+        sh(["git", "worktree", "add", "--detach", "--quiet", str(path),
+            self.row.base_sha], cwd=repo, env=env)
+        refuse_push(repo, path, self.scratch / "hooks", env)
         return path
 
-    def helper(self, task):
-        if self.remaining_s() <= 0:
-            return
-        conn = store.open(self.store_path)
+    def started_in_plan_order(self, conn, task, previous, mine):
         try:
-            checkout = self.checkout(task)
+            if previous is not None:
+                previous.wait()
             if self.remaining_s() <= 0:
-                return
-            start_scout_task(conn, task.id)
+                return None
+            checkout = self.checkout(task)
             argv = self.seat.turn(outbound(helper_goal(self.row, task),
                                            self.secrets))
+            if self.remaining_s() <= 0:
+                return None
+            start_scout_task(conn, task.id)
+            return argv, checkout
+        finally:
+            mine.set()
+
+    def helper(self, task, previous, mine):
+        conn = store.open(self.store_path)
+        try:
+            launch = self.started_in_plan_order(conn, task, previous, mine)
+            if launch is None:
+                return
+            argv, checkout = launch
             started = monotonic()
             turn = capped_turn(argv, checkout, self.remaining_s())
             self.record(conn, task, argv, turn, monotonic() - started)
         finally:
+            mine.set()
             conn.close()
 
     def record(self, conn, task, argv, turn, seconds):
