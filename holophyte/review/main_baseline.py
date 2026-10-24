@@ -137,6 +137,21 @@ def _check_ran(output, files):
     return False
 
 
+def _stopped_output(failure, output):
+    stopped, status = failure.get("command") or "", failure.get("exit_status")
+    head = re.search(rf"^\[verify\]   (?:failing|running) clause: "
+                     rf"{re.escape(stopped)}\n", output, re.M)
+    if head is None:
+        return output
+    rest = output[head.end():]
+    own = (f"[verify]   --- clause {failure.get('command_index')} "
+           f"({'timed out' if status is None else f'exit {status}'}): "
+           f"{stopped}\n")
+    if own in rest:
+        rest = rest.rsplit(own, 1)[1]
+    return rest.split("\n[verify]   not executed: clause ", 1)[0]
+
+
 def _attribution(command, files, failure, output):
     stopped = (failure or {}).get("command") or ""
     naming = [line for line in _commands(command)
@@ -144,7 +159,7 @@ def _attribution(command, files, failure, output):
     if naming and stopped and stopped != command and stopped not in naming:
         return {"unattributed": f"it stopped at `{stopped}`, before the "
                                 f"line that names {', '.join(files)}"}
-    if not _check_ran(output, files):
+    if not _check_ran(_stopped_output(failure or {}, output), files):
         return {"unattributed": NO_CHECK_OUTPUT}
     return {}
 

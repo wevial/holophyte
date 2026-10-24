@@ -242,9 +242,18 @@ class BaselineRuns(unittest.TestCase):
                 self.assertIsNone(main_baseline.gap(result))
 
     def test_a_failure_whose_output_shows_no_check_run_is_unattributed(self):
+        (self.repo / "tests").mkdir()
+        (self.repo / "tests" / "test_setup.py").write_text(
+            "import unittest\n\n\nclass Setup(unittest.TestCase):\n"
+            "    def test_setup(self):\n        pass\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "setup check")
+        git(self.wt, "merge", "-q", "--no-edit", "main")
         self.commit({"candidate-marker": "candidate only\n"})
         for verify in (
                 f"echo setup\ntest -f candidate-marker && {VERIFY}",
+                "python3 -m unittest discover -s tests -p 'test_setup.py'\n"
+                f"test -f candidate-marker && {VERIFY}",
                 "set -e\ntest -f candidate-marker\n"
                 + VERIFY.replace(" -p", " \\\n  -p")):
             with self.subTest(verify=verify):
