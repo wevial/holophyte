@@ -364,7 +364,7 @@ not started; `recorded` is null.
 ```
 
 A body that is not a JSON object, a missing or blank `ask`, a `kind`
-outside the three, a `lead` or `helper` that is not a string, or a `swarm`
+outside the four, a `lead` or `helper` that is not a string, or a `swarm`
 or `minutes` that is not a positive integer is 400 naming the field. So is a
 `subject` that is not a string, has no colon, has a kind outside the four,
 a blank ref, a `run` or `defect` ref that is not a positive integer, or a
