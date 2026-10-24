@@ -147,10 +147,13 @@ class ResolveEvidenceTests(unittest.TestCase):
             cited = [{"file": "tracked", "line": 3},
                      {"file": "tracked", "line": 4},
                      {"file": "added", "line": 1},
-                     {"file": "../repo/tracked", "line": 1}]
+                     {"file": "../repo/tracked", "line": 1},
+                     {"file": "tracked", "line": 2, "why": "a lead's own"},
+                     {"file": "tracked\x00", "line": 1}]
             report = changed(("findings", 0, "evidence"), cited)
             resolved = resolve_evidence(repo, base, report)
-        verified, past, absent, outside = resolved["findings"][0]["evidence"]
+        (verified, past, absent, outside, stale,
+         nul) = resolved["findings"][0]["evidence"]
         self.assertEqual(verified, {"file": "tracked", "line": 3,
                                     "verified": True})
         self.assertEqual((past["verified"], past["why"]),
@@ -159,6 +162,10 @@ class ResolveEvidenceTests(unittest.TestCase):
         self.assertTrue(absent["why"].startswith("not in the base commit"))
         self.assertEqual((outside["verified"], outside["why"]),
                          (False, "outside the repository"))
+        self.assertEqual(stale, {"file": "tracked", "line": 2,
+                                 "verified": True})
+        self.assertIs(nul["verified"], False)
+        self.assertTrue(nul["why"].startswith("not in the base commit"))
         self.assertEqual(report["findings"][0]["evidence"], cited)
 
 

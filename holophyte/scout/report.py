@@ -142,7 +142,7 @@ def line_count(repo, spec):
     try:
         if sh(["git", "cat-file", "-t", spec], cwd=repo) != "blob":
             return None
-    except RuntimeError:
+    except (RuntimeError, ValueError):
         return None
     content = subprocess.run(["git", "show", spec], cwd=repo,
                              capture_output=True, check=True).stdout
@@ -170,6 +170,7 @@ def resolve_evidence(repo, base_sha, report):
     for finding in resolved.get("findings", ()):
         for item in finding.get("evidence", ()):
             if "file" in item:
+                item.pop("why", None)
                 item.update(resolution(repo, base_sha, item["file"],
                                        item["line"], counts))
     return resolved
