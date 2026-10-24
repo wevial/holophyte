@@ -9,6 +9,11 @@ ScoutPhase = Literal["queued", "planning", "swarming", "synthesizing",
 TaskPhase = Literal["queued", "running", "done", "failed", "stopped"]
 
 
+class ScoutSubject(TypedDict):
+    kind: Literal["run", "defect", "ticket", "pr"]
+    ref: str
+
+
 class ScoutRow(TypedDict):
     id: int
     ask: str
@@ -25,6 +30,7 @@ class ScoutRow(TypedDict):
     ended_ms: int | None
     elapsed_ms: int | None
     heartbeat_age_ms: int | None
+    subject: ScoutSubject | None
 
 
 class Scouts(TypedDict):
@@ -131,12 +137,23 @@ class ActionBlock(TypedDict):
     position: int
 
 
+class ProposalChoice(TypedDict):
+    label: str
+    mode: Literal["ask", "steer"]
+
+
+class ProposalBlock(TypedDict):
+    type: Literal["proposal"]
+    question: str
+    choices: list[ProposalChoice]
+
+
 class ThreadMessage(TypedDict):
     id: int
     author: str
     mode: Literal["ask", "steer", "answer"]
     text: str
-    blocks: list[FindingBlock | ActionBlock]
+    blocks: list[FindingBlock | ActionBlock | ProposalBlock]
     answers: int | None
     at: int
     consumed_by: int | None

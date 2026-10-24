@@ -12,7 +12,9 @@ import { SECTION_LABEL } from "../components/Criteria";
 import { RawLog } from "../components/RawLog";
 import { RunActivity } from "../components/RunActivity";
 import { RunDetails } from "../components/RunDetails";
+import { ACTIONS_OFF_LINE } from "../components/CardActions";
 import { RunPullRequest } from "../components/RunPullRequest";
+import { ScoutThis } from "../components/ScoutThis";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
 import { TitleText } from "../components/TitleText";
@@ -91,7 +93,14 @@ export function RunPage() {
         </nav>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 className="m-0 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink"><TitleText>{run.title}</TitleText></h1>
-          <RunActions key={`${page.base}/${run.id}`} page={page} project={project} />
+          <div className="flex flex-wrap items-start justify-end gap-2">
+            <RunActions key={`${page.base}/${run.id}`} page={page} project={project} />
+            {run.outcome === "failed" && (
+              <ScoutThis
+                target={{ project, about: `run:${run.id}`, kind: "bug", ask: `Why did run ${run.id} of ${run.ticket} fail?`, off: page.actions ? null : ACTIONS_OFF_LINE }}
+              />
+            )}
+          </div>
         </div>
         <p data-run-facts className="m-0 mt-3 font-mono text-[12px] leading-[1.7] text-ink-3 [overflow-wrap:anywhere]">
           <span className={STRONG}>{run.ticket}</span>

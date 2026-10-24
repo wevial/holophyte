@@ -261,6 +261,13 @@ class ScoutKind(str, Enum):
     RECON = 'recon'
 
 
+class ScoutSubject(str, Enum):
+    RUN = 'run'
+    DEFECT = 'defect'
+    TICKET = 'ticket'
+    PR = 'pr'
+
+
 class ScoutPhase(str, Enum):
     QUEUED = 'queued'
     PLANNING = 'planning'
@@ -337,6 +344,7 @@ CONSTRAINED_COLUMNS = {
     ('steerNotes', 'kind'): SteerKind,
     ('scouts', 'kind'): ScoutKind,
     ('scouts', 'phase'): ScoutPhase,
+    ('scouts', 'subjectKind'): ScoutSubject,
     ('scoutTasks', 'mode'): ScoutTaskMode,
     ('scoutTasks', 'phase'): ScoutTaskPhase,
     ('threadMessages', 'mode'): ThreadMode,

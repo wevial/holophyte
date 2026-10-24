@@ -95,10 +95,10 @@ def walk_object(value, annotation, where):
 
 
 def walk_union(value, args, where):
-    kinds = {typing.get_args(kind)[0]: arg for arg in args
+    kinds = {tag: arg for arg in args
              if typing.is_typeddict(arg) and typing.get_origin(
                  kind := typing.get_type_hints(arg).get("kind"))
-             is typing.Literal}
+             is typing.Literal for tag in typing.get_args(kind)}
     if kinds and isinstance(value, dict):
         assert value.get("kind") in kinds, f"{where}.kind: undeclared kind"
         return walk(value, kinds[value["kind"]], where)

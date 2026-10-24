@@ -1136,6 +1136,9 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
 `console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
 `console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
+A failed run's page, open findings, follow-ups and ticket defect rows on Findings, and a ticket's actions each carry a
+Scout button (`console/src/next/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
+and `ask`, which the Scouts page reads into a filled New scout form whose launch sends `about` as `subject`.
 The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
 `console/src/next/scout.ts`, which also groups it into Plan, waves, Synthesis and Report, then an Answer
 or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
@@ -1150,6 +1153,8 @@ with `POST /actions/scout-file`; a checker refusal opens New ticket with the ite
 composer cannot send; `console/src/next/components/ScoutThread.tsx` draws them as the Scout page's Thread
 with its Ask and Steer composer, posting `POST /actions/scout-message`, and
 `console/src/next/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
+`console/src/next/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
+choice posts it as the card's answer, and Type an answer points the composer at the card.
 
 ### Desktop wrapper
 
