@@ -156,6 +156,10 @@ Each module, one line:
   of a role.
 - `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
+- `holophyte/scout/answer.py` — a finished scout's answer turn: the taken
+  ask, its report labelled `F1`, `F2` and `A1` on, the lead's session
+  resumed in the lead worktree, and the answer posted to the thread, or the
+  failure recorded, as the scout returns to `done`.
 - `holophyte/scout/filing.py` — `POST /actions/scout-file`, `holo scout
   file` and the `holo mcp` `scout_file` tool: a done scout's action item
   judged by the ticket checker for Backlog, filed to Backlog through the
@@ -183,11 +187,12 @@ Each module, one line:
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
   scout route in a detached checkout of main, recorded in `route-probes.json`.
 - `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
-  process, its lead worktree with pushes refused, its heartbeat and its end.
+  process, its lead worktree with pushes refused, its heartbeat and its end,
+  or an `answering` scout's answer turn.
 - `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
-  scouts whose heartbeat is stale and starts queued ones under `[scout]
-  max_parallel` and a host-wide lock, putting a scout whose spawn failed
-  back in `queued` for the next pass.
+  scouts whose heartbeat is stale and starts queued ones and waiting asks
+  under `[scout] max_parallel` and a host-wide lock, putting a scout whose
+  spawn failed back in `queued` for the next pass.
 - `holophyte/scout/stop.py` — `POST /actions/scout-stop`, `holo scout
   stop` and the `holo mcp` `scout_stop` tool: a stop recorded as the
   scout's `scout_stop_requested` event, then a queued scout ended at once
