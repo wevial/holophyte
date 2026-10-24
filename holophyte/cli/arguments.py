@@ -360,6 +360,12 @@ def build_parser():
         help="probe each [scout] lead and helper route once in a detached "
              "checkout of main, print each probe's line and record it in "
              "route-probes.json; exit 0 when every route passed, else 1")
+    modes.add_argument(
+        "--scout", metavar="ID", type=int,
+        help="internal: run scout ID of the project's store in this process "
+             "-- its lead worktree, its heartbeat and its end -- and exit 0 "
+             "when it ends done, else 1; spawned by the host sweep, not "
+             "meant to be typed")
     parser.add_argument(
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "

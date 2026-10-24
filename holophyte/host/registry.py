@@ -15,11 +15,13 @@ from holophyte.redact import values_held
 HOST_FILE = "host.toml"
 # Any other key is refused, so a typo is not a knob the operator believes set.
 HOST_KEYS = {"serve": {"bind", "machine_token_file", "actions"},
-             "supervisor": {"sweep_sec"}, "console": {"daemons"}}
+             "supervisor": {"sweep_sec"}, "console": {"daemons"},
+             "scout": {"max_parallel"}}
 SWEEP_SEC = 60
+SCOUT_MAX_PARALLEL = 2
 HostSettings = collections.namedtuple(
     "HostSettings", ("bind", "machine_token_file", "actions", "sweep_sec",
-                     "daemons"))
+                     "daemons", "scout_max_parallel"))
 # A crash mid-write is the one way another writer's temporary file stays.
 WRITE_WAIT_SEC = 10
 WRITE_POLL_SEC = 0.05
@@ -148,8 +150,12 @@ def settings(host):
     if isinstance(sweep, bool) or not isinstance(sweep, int) or sweep <= 0:
         raise HostError(f"[holo2] {host.path}: [supervisor] sweep_sec must be"
                         f" a positive whole number of seconds, got {sweep!r}")
+    scouts = table.get("scout", {}).get("max_parallel", SCOUT_MAX_PARALLEL)
+    if type(scouts) is not int or scouts < 1:
+        raise HostError(f"[holo2] {host.path}: [scout] max_parallel must be"
+                        f" an integer of at least 1, got {scouts!r}")
     return HostSettings(bind, token, actions, sweep,
-                        _daemons(table.get("console", {}), host.path))
+                        _daemons(table.get("console", {}), host.path), scouts)
 
 
 def _daemons(table, source):

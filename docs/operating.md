@@ -165,6 +165,18 @@ run then:
    rest; the cut project keeps its progress through its throttles and comes
    around again.
 
+Between the two, once per run, the scout step visits every registered
+project with a store. It ends `failed` each scout in `planning`,
+`swarming`, `synthesizing` or `answering` whose heartbeat is older than its
+project's `[supervisor] heartbeat_stale_min`, the reason starting
+"heartbeat stale". It then counts the scouts in those phases across the
+host and, while the count is under `host.toml`'s `[scout] max_parallel`,
+moves the oldest `queued` scout to `planning` at its project's `main` and
+starts `factory.py --scout ID PROJECT` for it in its own session, its
+output appended to `scouts/ID/scout.log` in the project's state directory.
+Each start and each end prints one line; one project's failure there is a
+line and never stops the step.
+
 What a run must remember between runs and no store column holds lives in
 `HOLOPHYTE_HOME/sweep.json`, rewritten whole after every project: when the
 run started and ended, its pid, revision and exit, each project's outcome
@@ -472,6 +484,11 @@ sweep_sec = 60
 [console]
 # Other hosts' daemons the console fans out to, as HOST:PORT strings.
 daemons = []
+
+[scout]
+# How many scouts run at once on this host, across every project; an
+# integer of at least 1. Separate from any project's `[loop] workers`.
+max_parallel = 2
 
 [[project]]
 path = "/path/to/holophyte"
