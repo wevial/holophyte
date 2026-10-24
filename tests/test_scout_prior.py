@@ -138,6 +138,23 @@ class PlanGoalTests(PriorCase):
         self.run_scout("Why does app/form.py lose focus?")
         self.assertEqual(self.listed(self.plan_goal()), [tasked])
 
+    def test_a_bracketed_path_is_named_and_diffed_literally(self):
+        for path in ("app/[id]/page.tsx", "app/i/page.tsx"):
+            (self.path / path).parent.mkdir(parents=True)
+            (self.path / path).write_text("page\n")
+        git(self.path, "add", "app")
+        git(self.path, "commit", "-q", "-m", "pages")
+        pages = git(self.path, "rev-parse", "HEAD")
+        (self.path / "app/i/page.tsx").write_text("changed\n")
+        git(self.path, "commit", "-q", "-am", "only the look-alike")
+        cited = self.earlier([finding("page reloads", "app/[id]/page.tsx", 1)],
+                             base=pages)
+        self.run_scout("Investigate app/[id]")
+        goal = self.plan_goal()
+        self.assertEqual(self.listed(goal), [cited])
+        self.assertIn("Changed since its base: none of its paths changed",
+                      self.entry(goal, cited))
+
     def test_a_task_path_of_a_later_pass_matches(self):
         tasked = self.earlier([], task_paths=["app/save.py"], task_pass=2)
         self.run_scout("Why does app/save.py drop the title?")

@@ -52,8 +52,7 @@ def object_type(repo, base_sha, path):
         return None
 
 
-def named_path(repo, base_sha, word):
-    word = LINE_TAIL.sub("", word.strip(EDGES).rstrip(".:"))
+def candidate_path(repo, base_sha, word):
     path = cleaned(word)
     if path is None:
         return None
@@ -61,6 +60,16 @@ def named_path(repo, base_sha, word):
     if "/" in word or EXTENSION.search(word):
         return path if found in ("blob", "tree") else None
     return path if found == "tree" else None
+
+
+def named_path(repo, base_sha, word):
+    literal = LINE_TAIL.sub("", word)
+    stripped = LINE_TAIL.sub("", word.strip(EDGES).rstrip(".:"))
+    for candidate in dict.fromkeys((literal, stripped)):
+        path = candidate_path(repo, base_sha, candidate)
+        if path is not None:
+            return path
+    return None
 
 
 def scout_paths(repo, scout, pack_paths):
@@ -126,8 +135,9 @@ def changed_line(repo, prior, base_sha):
     if not is_commit(repo, prior.base_sha):
         return (f"Changed since its base: its base {prior.base_sha[:12]} is"
                 " not in this repository")
-    changed = sh(["git", "diff", "--name-only", prior.base_sha, base_sha,
-                  "--", *prior.matched], cwd=repo).split()
+    changed = sh(["git", "--literal-pathspecs", "diff", "--name-only",
+                  prior.base_sha, base_sha, "--", *prior.matched],
+                 cwd=repo).splitlines()
     return ("Changed since its base: "
             + (", ".join(changed) or "none of its paths changed"))
 
