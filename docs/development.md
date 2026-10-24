@@ -173,6 +173,10 @@ Each module, one line:
   the pass's own small budget, and the pass's report and action items
   appended after the earlier passes', or the failure or stop recorded, as
   the scout returns to `done`.
+- `holophyte/scout/guardrails.py` — a guardrails scout's findings digest:
+  the last 30 days of review findings, guardrail follow-ups and ticket
+  defects from the findings view, each with an id, clustered by path and
+  ranked, for the lead's plan goal.
 - `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
   the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
   recorded `queued` with its `scout_queued` event, then started by the host
@@ -216,7 +220,9 @@ Each module, one line:
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.
 - `holophyte/scout/telemetry.py` — `turn_cost`: a scout turn's cost, the
-  CLI's reported one or its tokens at the route's `usd_per_mtok`.
+  CLI's reported one or its tokens at the route's `usd_per_mtok`;
+  `usage_tokens`, a turn's tokens; `scout_report_lines`, the ended scouts'
+  time, tokens, cost and cited helper tasks per route for `--report`.
 - `holophyte/scout/thread_action.py` — `POST /actions/scout-message`,
   `holo scout ask` and `steer` and the `holo mcp` `scout_ask` and
   `scout_steer` tools: an ask or a steer, optionally answering a card,

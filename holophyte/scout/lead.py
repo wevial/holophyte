@@ -3,7 +3,7 @@ import re
 import subprocess
 from functools import partial
 from pathlib import PurePosixPath
-from time import monotonic
+from time import monotonic, time
 from typing import NamedTuple
 
 import store
@@ -12,6 +12,7 @@ from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.context import context_pack
+from holophyte.scout.guardrails import findings_digest
 from holophyte.scout.prior import (
     offered_findings,
     prior_reports,
@@ -52,6 +53,7 @@ REPAIR_OPENING = "Scout report repair turn"
 SYNTHESIS_OPENING = "Scout synthesis turn"
 NO_REPORT = "the lead's report turn returned no JSON object"
 MALFORMED = "the lead's report is malformed"
+EMPTY_DIGEST = "the findings digest is empty"
 CONTEXT_SLOT = "\x00context\x00"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
@@ -130,11 +132,22 @@ def plan_goal(row, limit, context, prior=""):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
-def answered_tasks(swarm):
+def labelled(tasks):
     return "\n\n".join(
-        f"### [{swarm.answered(task).phase}] {task.question}\n"
-        f"{swarm.answered(task).excerpt.strip() or 'no output'}"
-        for task in swarm.tasks)
+        f"### T{task_id} [{phase}] {question}\n"
+        f"{(excerpt or '').strip() or 'no output'}"
+        for task_id, phase, question, excerpt in tasks)
+
+
+def answered_tasks(swarm):
+    return labelled((task.id, swarm.answered(task).phase, task.question,
+                     swarm.answered(task).excerpt) for task in swarm.tasks)
+
+
+def scout_tasks(conn, scout_id):
+    return conn.execute(
+        "SELECT id, phase, question, excerpt FROM scoutTasks"
+        " WHERE scoutId = ? ORDER BY id", (scout_id,)).fetchall()
 
 
 def synthesis_goal(row, swarm, fresh):
@@ -142,7 +155,8 @@ def synthesis_goal(row, swarm, fresh):
         f"{SYNTHESIS_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
         + "Your helpers have answered a wave of the plan. Each sub-task so "
-        "far, with its phase and the end of its output:\n\n"
+        "far, labelled T and its id, with its phase and the end of its "
+        "output:\n\n"
         f"{answered_tasks(swarm)}\n\n"
         "Merge what they found. If one more wave of sub-tasks would settle "
         "what is still open, plan it as at most "
@@ -182,8 +196,10 @@ def report_ending(row, offered=None):
         "ticket keys it waits on.\n\n"
         f"{ticket_skeleton()}\n\n" + revise_rule(row) +
         "Do not edit files, commit or push. End your answer with one fenced "
-        "json block in this shape, TEXT, PATH and URL standing for strings "
-        "and N for a line number from 1:\n\n"
+        "json block in this shape, TEXT, PATH and URL standing for strings, "
+        "N for a line number from 1 and ID for a sub-task's id, the number "
+        "after its T. A finding's tasks lists the sub-tasks its evidence "
+        "came from and may be left out:\n\n"
         f"```json\n{report_shape(row, offered)}\n```\n")
 
 
@@ -196,22 +212,25 @@ def report_goal(row, swarm, problem, fresh, scope="", context="",
         f"{REPORT_OPENING}\n\n"
         + (f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}" if fresh
            else "") + scope
-        + "The plan's sub-tasks, each with its phase and the end of its "
-        "helper's output (a queued one never ran, a stopped one was cut at "
-        f"the time budget):\n\n{answers}\n\n"
+        + "The plan's sub-tasks, each labelled T and its id, with its phase "
+        "and the end of its helper's output (a queued one never ran, a "
+        f"stopped one was cut at the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take.\n\n"
         + report_ending(row, offered))
 
 
-def repair_goal(row, problems, fresh, offered=None):
+def repair_goal(row, problems, fresh, offered=None, tasks=()):
     listed = "\n".join(f"- {problem}" for problem in problems)
     return (
         f"{REPAIR_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
         + "The report you wrote does not fit its shape. Each problem names the "
         f"field and what it must be:\n\n{listed}\n\n"
-        "Write the whole report again with these fixed.\n\n"
+        + ("The scout's sub-tasks, each labelled T and its id, with its phase "
+           f"and the end of its helper's output:\n\n{labelled(tasks)}\n\n"
+           if tasks else "")
+        + "Write the whole report again with these fixed.\n\n"
         + report_ending(row, offered))
 
 
@@ -312,15 +331,16 @@ def unoffered(report, offered):
     return {key: value for key, value in report.items() if key != "prior"}
 
 
-def checked_report(lead, report, offered=None):
+def checked_report(lead, report, offered=None, tasks=()):
     check = partial(report_problems, kind=lead.row.kind,
-                    subject=subject_of(lead.row), offered=offered)
+                    subject=subject_of(lead.row), offered=offered,
+                    scout=lead.row.id, tasks={task[0] for task in tasks})
     report = unoffered(report, offered)
     problems = check(report)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems, lead.session is None,
-                                   offered), REPORT_TURN_S)
+                                   offered, tasks), REPORT_TURN_S)
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
@@ -387,10 +407,29 @@ def scout_prior(conn, project, row, pack_paths):
             offered_findings(priors))
 
 
+def scout_digest(conn, row, project):
+    if row.kind != ScoutKind.GUARDRAILS.value:
+        return ""
+    digest = findings_digest(project, row, int(time() * 1000))
+    if digest is None:
+        record_scout_event(conn, row.id, "scout_digest", "digest: empty")
+        return None
+    record_scout_event(conn, row.id, "scout_digest", digest.summary,
+                       level="detail", payload=json.dumps({
+                           "since": digest.since, "clusters": [
+                               {"label": cluster.label,
+                                "rows": [each.id for each in cluster.newest()]}
+                               for cluster in digest.clusters]}))
+    return digest.text
+
+
 def run_lead(conn, project, row, worktree, budget_s, stopping):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
     limit = row.helper_turns or config.helper_turns
+    digest = scout_digest(conn, row, project)
+    if digest is None:
+        return "done", EMPTY_DIGEST
     seat, down = lead_seat(project, row, config, stopping)
     if down is not None:
         return "failed", down
@@ -399,7 +438,8 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     deadline = monotonic() + budget_s
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
-    turn = lead.start(plan_goal(row, limit, context, prior), budget_s, context)
+    turn = lead.start(plan_goal(row, limit, context, prior + digest), budget_s,
+                      context)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
@@ -410,7 +450,8 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
-        report, problems = checked_report(lead, report, offered)
+        report, problems = checked_report(lead, report, offered,
+                                          scout_tasks(conn, row.id))
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
         report = reproduced(row, swarm, resolve_evidence(project.path,

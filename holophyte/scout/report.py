@@ -26,6 +26,9 @@ LINE = Rule(lambda value: type(value) is int and value > 0,
 URL = Rule(lambda value: isinstance(value, str)
            and value.startswith(("http://", "https://")),
            "a URL starting http:// or https://", "URL")
+TASK_IDS = Rule(lambda value: isinstance(value, list)
+                and all(type(item) is int for item in value),
+                "a list of task ids", "[ID, ...]")
 
 
 def one_of(*choices):
@@ -37,6 +40,10 @@ def one_of(*choices):
 class Each(NamedTuple):
     item: object
     nonempty: bool = False
+
+
+class Omittable(NamedTuple):
+    rule: object
 
 
 class Either(NamedTuple):
@@ -79,7 +86,8 @@ FIELDS = {
     "summary": TEXT,
     "findings": Each({"title": TEXT,
                       "status": one_of(*STATUSES),
-                      "evidence": Each(EVIDENCE, nonempty=True)}),
+                      "evidence": Each(EVIDENCE, nonempty=True),
+                      "tasks": Omittable(TASK_IDS)}),
     "actions": Each({"title": TEXT, "why": TEXT,
                      "kind": one_of(*KINDS, REVISE), "body": TEXT}),
 }
@@ -122,6 +130,7 @@ def walk_fields(value, rule, path):
     if not isinstance(value, dict):
         return [f"{path}: must be an object"]
     return [problem for key, field in rule.items()
+            if key in value or not isinstance(field, Omittable)
             for problem in walk(value.get(key), field,
                                 f"{path}.{key}" if path else key)]
 
@@ -151,13 +160,15 @@ def walk_rule(value, rule, path):
 
 
 WALKERS = {dict: walk_fields, Each: walk_each, Either: walk_either,
-           Checked: walk_checked, Rule: walk_rule}
+           Checked: walk_checked, Rule: walk_rule,
+           Omittable: lambda value, rule, path: walk(value, rule.rule, path)}
 SHOWN = {
     dict: lambda rule: "{" + ", ".join(f'"{key}": {shown(field)}'
                                        for key, field in rule.items()) + "}",
     Each: lambda rule: f"[{shown(rule.item)}, ...]",
     Either: lambda rule: " or ".join(map(shown, rule.forms.values())),
     Checked: lambda rule: shown(rule.fields),
+    Omittable: lambda rule: shown(rule.rule),
     Rule: lambda rule: rule.shown,
 }
 
@@ -229,7 +240,15 @@ def prior_problems(prior, offered):
             for problem in judgement_problems(index, judgement, offered or {})]
 
 
-def report_problems(report, kind, subject=None, *, offered=None):
+def cited_problems(findings, scout, tasks):
+    return [f"findings[{index}].tasks: scout {scout} has no task {task}"
+            for index, finding in enumerate(findings)
+            if isinstance(finding, dict) and TASK_IDS.check(finding.get("tasks"))
+            for task in finding["tasks"] if task not in tasks]
+
+
+def report_problems(report, kind, subject=None, *, offered=None, scout=None,
+                    tasks=()):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
@@ -240,6 +259,9 @@ def report_problems(report, kind, subject=None, *, offered=None):
         problems += revise_problems(actions, subject)
     if isinstance(report, dict) and report.get("prior") is not None:
         problems += prior_problems(report["prior"], offered)
+    findings = report.get("findings") if isinstance(report, dict) else None
+    if isinstance(findings, list):
+        problems += cited_problems(findings, scout, tasks)
     return problems
 
 
