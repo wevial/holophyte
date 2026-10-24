@@ -122,7 +122,7 @@ holo attention [--json] [-p NAME|PATH]           # what waits on the operator, a
 holo board [--json] | ticket KEY [--json] -p NAME|PATH # the board's columns or one ticket's detail, as GET /board and /tickets/KEY
 holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; --json prints GET /scouts's body
 holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
-holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, a refusal printing each problem; see docs/reference/daemon.md#post-actionsscout-file
+holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, as a draft when the checker reports problems, printing each problem; see docs/reference/daemon.md#post-actionsscout-file
 holo scout stop ID "note" [--author NAME] [--json] -p NAME|PATH # stop a scout: a queued one ends at once, a running one's process is signalled to end it stopped; see docs/reference/daemon.md#post-actionsscout-stop
 ```
 

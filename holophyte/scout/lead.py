@@ -17,6 +17,7 @@ from holophyte.scout.report import (
     fields_shape,
     report_problems,
     resolve_evidence,
+    ticket_skeleton,
 )
 from holophyte.scout.run_helpers import reproduced
 from holophyte.scout.scout_config import scout_config
@@ -32,6 +33,7 @@ from store.scouts import (
     record_scout_report,
     set_scout_session,
 )
+from ticket_template import MAX_ESTIMATE_MIN
 
 REPORT_TURN_S = 600
 PLAN_OPENING = "Scout plan turn"
@@ -144,6 +146,19 @@ def report_shape(row):
                            else "") + "}"
 
 
+def report_ending(row):
+    return (
+        "Write each action's body as a ticket draft in this skeleton, "
+        "replacing each <...> with the ticket's text: estimate is whole "
+        f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
+        "ticket keys it waits on.\n\n"
+        f"{ticket_skeleton()}\n\n"
+        "Do not edit files, commit or push. End your answer with one fenced "
+        "json block in this shape, TEXT, PATH and URL standing for strings "
+        "and N for a line number from 1:\n\n"
+        f"```json\n{report_shape(row)}\n```\n")
+
+
 def report_goal(row, swarm, problem, fresh):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
@@ -155,11 +170,8 @@ def report_goal(row, swarm, problem, fresh):
         "helper's output (a queued one never ran, a stopped one was cut at "
         f"the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
-        "which part was cut and why, and the actions you would take. Do not "
-        "edit files, commit or push. End your answer with one fenced json "
-        "block in this shape, TEXT, PATH and URL standing for strings and N "
-        "for a line number from 1:\n\n"
-        f"```json\n{report_shape(row)}\n```\n")
+        "which part was cut and why, and the actions you would take.\n\n"
+        + report_ending(row))
 
 
 def repair_goal(row, problems, fresh):
@@ -169,10 +181,8 @@ def repair_goal(row, problems, fresh):
         + (f"{asked(row)}\n\n" if fresh else "")
         + "The report you wrote does not fit its shape. Each problem names the "
         f"field and what it must be:\n\n{listed}\n\n"
-        "Write the whole report again with these fixed. Do not edit files, "
-        "commit or push. End your answer with one fenced json block in this "
-        "shape, TEXT, PATH and URL standing for strings and N for a line "
-        f"number from 1:\n\n```json\n{report_shape(row)}\n```\n")
+        "Write the whole report again with these fixed.\n\n"
+        + report_ending(row))
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping):

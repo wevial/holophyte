@@ -59,7 +59,7 @@ def run_write(args, resolve):
     if args.json:
         print(json.dumps(result))
     elif result["ok"]:
-        print(human_line(result, lines, colour_on(sys.stdout)))
+        print(human_text(result, lines, colour_on(sys.stdout)))
     elif not from_stderr:
         print(human_line(result, lines, colour_on(sys.stderr)), file=sys.stderr)
     return code
@@ -212,7 +212,10 @@ def scout_file(args, target):
     if code == 400:
         args.leaf.error(reply["error"])
     if code == 200 and reply["ok"]:
-        print(PREFIX + reply["detail"])
+        args.answered = {key: reply[key]
+                         for key in ("detail", "ticket", "problems")}
+        for line in [reply["detail"], *reply["problems"]]:
+            print(PREFIX + line)
         return 0
     said = reply.get("problems") or [reply.get("detail") or reply["error"]]
     for line in said[:-1]:
@@ -323,7 +326,13 @@ def build_result(args, code, lines, row):
         result["ticket"] = ticket
     if run is not None or recorded_run is not None:
         result["run"] = recorded_run if run is None else run
-    return result
+    return {**result, **getattr(args, "answered", {})}
+
+
+def human_text(result, lines, colour=False):
+    problems = (result.get("problems") or []) if result["ok"] else []
+    head = lines[:len(lines) - len(problems)] if problems else lines
+    return "\n".join([human_line(result, head, colour), *problems])
 
 
 def human_line(result, lines, colour=False):

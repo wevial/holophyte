@@ -598,6 +598,24 @@ CREATE TABLE IF NOT EXISTS scoutActions (
     filedAt   INTEGER,
     UNIQUE (scoutId, position)
 );
+
+-- threadMessages: one message of a scout's thread; consumption is recorded
+-- beside it, as on steerNotes.
+CREATE TABLE IF NOT EXISTS threadMessages (
+    id         INTEGER PRIMARY KEY,
+    projectId  INTEGER NOT NULL REFERENCES projects (id),
+    scoutId    INTEGER REFERENCES scouts (id),
+    author     TEXT    NOT NULL,
+    mode       TEXT    NOT NULL
+        {_enums.check_clause('mode', _enums.ThreadMode)},
+    text       TEXT    NOT NULL,
+    blocks     TEXT    NOT NULL DEFAULT '[]'
+        CHECK (json_type(blocks) = 'array'),  -- JSON object[]
+    answersId  INTEGER REFERENCES threadMessages (id),
+    at         INTEGER NOT NULL,
+    consumedBy INTEGER REFERENCES runEvents (id),
+    consumedAt INTEGER
+);
 """
 
 
@@ -633,4 +651,5 @@ CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 CREATE INDEX IF NOT EXISTS tickets_parentTicketId ON tickets (parentTicketId);
 CREATE INDEX IF NOT EXISTS runEvents_scoutId ON runEvents (scoutId);
 CREATE INDEX IF NOT EXISTS scoutTasks_scoutId ON scoutTasks (scoutId, pass, wave);
+CREATE INDEX IF NOT EXISTS threadMessages_scoutId ON threadMessages (scoutId);
 """

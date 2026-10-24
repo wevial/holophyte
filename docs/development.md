@@ -159,7 +159,8 @@ Each module, one line:
 - `holophyte/scout/filing.py` — `POST /actions/scout-file`, `holo scout
   file` and the `holo mcp` `scout_file` tool: a done scout's action item
   judged by the ticket checker for Backlog, filed to Backlog through the
-  project's board, and its filed key recorded on the item.
+  project's board (as a draft whose first note lists the checker's
+  problems, when it has any), and its filed key recorded on the item.
 - `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
   the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
   recorded `queued` with its `scout_queued` event, then started by the host
@@ -796,6 +797,11 @@ The store is its own package:
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper
   tasks and action items, its `runEvents` rows, and `scout()`/`scouts()`.
+- `store/scout_thread.py` — a scout's thread in `threadMessages`:
+  `post_message()` records an ask, steer or answer, `take_message()` takes
+  a waiting ask or steer and moves its `done` scout to `answering` or
+  `planning` with its event, `messages()` and `waiting_messages()` read
+  them, and `ThreadRefused` names a write they refuse.
 - `store/stories.py` — `file_story()` writes a story's rows for a parent
   and its children, `story()` reads one back from either, `approve_story()`
   freezes its plan with one open story per project, and `abandon_story()`

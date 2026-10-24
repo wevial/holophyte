@@ -154,6 +154,8 @@ DOCUMENTED_COLUMNS = {
                    "tokens", "costUsd", "excerpt"},
     "scoutActions": {"id", "scoutId", "pass", "position", "item", "ticketKey",
                      "filedAt"},
+    "threadMessages": {"id", "projectId", "scoutId", "author", "mode", "text",
+                       "blocks", "answersId", "at", "consumedBy", "consumedAt"},
 }
 
 

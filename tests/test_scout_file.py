@@ -21,6 +21,7 @@ import holophyte.cli.entry
 import store
 import store.board
 import store.tickets
+import ticket_template
 from holophyte.board.native_board import NativeBoard
 from holophyte.config.project import Project
 from holophyte.holo.cli import main as holo_main
@@ -33,6 +34,9 @@ from tests.test_serve_ticket_check import body
 
 FILE = "/projects/native/actions/scout-file"
 DEPENDS_PROBLEM = "'Depends on' names no ticket of this project: NAT-9"
+TITLED = "Split the threads test module"
+FREE_TEXT = "Move the mention cases into one module."
+DRAFTED = "Filed from scout {} item {} as a Backlog draft"
 
 
 def without_verify():
@@ -48,12 +52,15 @@ def items():
             for title, kind, text in (
                 ("Add export endpoint", "fix", body()),
                 ("Unverifiable item", "test", without_verify()),
-                ("Unknown dependency", "fix", body(depends="NAT-9")))]
+                ("Unknown dependency", "fix", body(depends="NAT-9")),
+                (TITLED, "fix", FREE_TEXT),
+                (" ", "decide", FREE_TEXT))]
 
 
 def done_scout(conn, project_id):
-    """A done scout whose items 1-3 are a clean body, a body without a
-    verify section and a body depending on a ticket that does not exist."""
+    """A done scout whose items 1-5 are a clean body, a body without a
+    verify section, a body depending on a ticket that does not exist, and
+    a free-text body with no H1 under a title and under a blank title."""
     scout_id = create_scout(conn, project_id, "Map the merge gate", "recon",
                             30)
     move_scout(conn, scout_id, "planning", base_sha="a" * 40)
@@ -77,12 +84,14 @@ def written(conn, project_id, scout_id):
     return tickets, seq, actions
 
 
-def first_note(conn, key):
-    row = conn.execute(
+def notes(conn, key):
+    return [text for (text,) in conn.execute(
         "SELECT n.text FROM ticketNotes n JOIN tickets t ON t.id = n.ticketId"
-        " WHERE t.linearIdentifier = ? ORDER BY n.at, n.id LIMIT 1",
-        (key,)).fetchone()
-    return None if row is None else row[0]
+        " WHERE t.linearIdentifier = ? ORDER BY n.at, n.id", (key,))]
+
+
+def first_note(conn, key):
+    return next(iter(notes(conn, key)), None)
 
 
 class ScoutFileCase(ServeBoardCase):
@@ -121,21 +130,104 @@ class DaemonScoutFileTests(ScoutFileCase):
         self.assertEqual(tickets, [("NAT-1", "backlog", body())])
         self.assertEqual(actions[0], (1, "NAT-1", 1))
 
-    def test_a_body_without_verify_answers_the_check_routes_problems(self):
-        self.start_host()
-        before = self.state()
+    def checked(self, text):
         status, checked, _ = self.request(
             "POST", "/projects/native/tickets/check",
-            {"body": without_verify(), "column": "backlog"}, revision=None)
-        self.assertEqual(status, 200)
-        self.assertTrue(checked["problems"])
+            {"body": text, "column": "backlog"}, revision=None)
+        self.assertEqual(status, 200, checked)
+        return checked["problems"]
+
+    def test_a_body_without_verify_files_a_draft_noting_the_check_routes_problems(self):
+        self.start_host()
+        problems = self.checked(without_verify())
+        self.assertGreater(len(problems), 1)
         status, answer = self.file({"scout": self.scout, "item": 2})
         self.assertEqual(status, 200, answer)
+        self.assertEqual((answer["ok"], answer["ticket"]), (True, "NAT-1"))
+        self.assertEqual(answer["problems"], problems)
+        tickets, _, actions = self.state()
+        self.assertEqual(tickets, [("NAT-1", "backlog", without_verify())])
+        self.assertEqual(actions[1], (2, "NAT-1", 1))
+        with self.store("native") as (conn, _):
+            first = first_note(conn, "NAT-1")
+        self.assertTrue(first.startswith(DRAFTED.format(self.scout, 2)), first)
+        self.assertEqual(first.splitlines()[1:],
+                         [f"- {problem}" for problem in problems])
+
+    def test_a_body_without_an_h1_is_filed_under_the_items_title(self):
+        self.start_host()
+        filed_body = f"# {TITLED}\n\n{FREE_TEXT}"
+        problems = self.checked(filed_body)
+        status, answer = self.file({"scout": self.scout, "item": 4})
+        self.assertEqual(status, 200, answer)
+        self.assertIs(answer["ok"], True)
+        self.assertEqual(answer["problems"], problems)
+        self.assertFalse([problem for problem in problems
+                          if "missing H1" in problem])
+        with self.store("native") as (conn, _):
+            self.assertEqual(conn.execute(
+                "SELECT title, body FROM tickets").fetchall(),
+                [(TITLED, filed_body)])
+
+    def test_a_headed_body_without_an_h1_keeps_its_estimate_and_depends_on(self):
+        def headed(depends):
+            return {"title": TITLED, "why": "the scout found it",
+                    "kind": "fix", "body": "+++\nestimate = 45\n"
+                    f"depends_on = {json.dumps(depends)}\n+++\n{FREE_TEXT}"}
+        with self.store("native") as (conn, project):
+            scout_id = create_scout(conn, project, "Headed items", "recon", 30)
+            move_scout(conn, scout_id, "planning", base_sha="a" * 40)
+            move_scout(conn, scout_id, "swarming")
+            record_scout_actions(conn, scout_id, 1,
+                                 [headed(["NAT-9"]), headed([])])
+            end_scout(conn, scout_id, "done", "answered")
+        self.start_host()
+        status, refused = self.file({"scout": scout_id, "item": 1})
+        self.assertEqual((status, refused["ok"]), (200, False), refused)
+        self.assertIn(DEPENDS_PROBLEM, refused["problems"])
+        status, answer = self.file({"scout": scout_id, "item": 2})
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        with self.store("native") as (conn, _):
+            (stored,), = conn.execute("SELECT body FROM tickets").fetchall()
+        filed = ticket_template.parse(stored)
+        self.assertEqual((filed.title, filed.estimate_min, filed.depends_on),
+                         (TITLED, 45, []))
+
+    def test_an_item_with_no_h1_and_a_blank_title_is_refused_unwritten(self):
+        self.start_host()
+        before = self.state()
+        status, answer = self.file({"scout": self.scout, "item": 5})
+        self.assertEqual(status, 200, answer)
         self.assertIs(answer["ok"], False)
-        self.assertEqual(answer["problems"], checked["problems"])
+        self.assertIn("has no title", answer["detail"])
         self.assertEqual(self.state(), before)
-        self.assertEqual(before[0], [])
-        self.assertEqual(before[2][1], (2, None, 0))
+        self.assertEqual((before[0], before[1], before[2][4]),
+                         ([], 0, (5, None, 0)))
+
+    def test_the_callers_note_follows_the_problems_note_and_alone_on_a_clean_item(self):
+        self.start_host()
+        note = {"note": "from the recon", "author": "ko"}
+        for item in (2, 1):
+            status, answer = self.file({"scout": self.scout, "item": item,
+                                        **note})
+            self.assertEqual((status, answer["ok"]), (200, True), answer)
+        with self.store("native") as (conn, _):
+            drafted, clean = notes(conn, "NAT-1"), notes(conn, "NAT-2")
+        self.assertEqual(len(drafted), 2)
+        self.assertTrue(drafted[0].startswith(DRAFTED.format(self.scout, 2)))
+        self.assertEqual(drafted[1], "ko: from the recon")
+        self.assertEqual(clean, ["ko: from the recon"])
+
+    def test_an_unposted_problems_note_leaves_the_draft_filed_and_recorded(self):
+        def refused(board, key, text):
+            raise RuntimeError("the board is read-only")
+        self.enterContext(patch.object(NativeBoard, "comment", refused))
+        self.start_host()
+        status, answer = self.file({"scout": self.scout, "item": 2})
+        self.assertEqual(status, 200, answer)
+        self.assertEqual((answer["ok"], answer["ticket"]), (True, "NAT-1"))
+        self.assertIn("problems note was not posted", answer["detail"])
+        self.assertEqual(self.state()[2][1], (2, "NAT-1", 1))
 
     def test_an_unknown_dependency_is_refused_and_nothing_is_written(self):
         self.start_host()
@@ -282,18 +374,30 @@ class HoloScoutFileTests(ScoutFileCase):
             self.assertEqual(first_note(conn, "NAT-1"),
                              "ko: from the merge gate recon")
 
-    def test_holo_prints_each_problem_of_a_refused_item_and_exits_1(self):
+    def problems(self):
         with self.store("native") as (conn, project):
             problems = store.board.check_ticket(
                 conn, project, without_verify(), column="backlog")["problems"]
         self.assertGreater(len(problems), 1)
-        before = self.state()
+        return problems
+
+    def test_holo_files_a_draft_and_prints_each_problem_after_the_detail(self):
+        problems = self.problems()
         code, out, err = self.holo("scout", "file", str(self.scout), "2",
                                    "-p", str(self.paths["native"]))
-        self.assertEqual(code, 1)
-        for problem in problems:
-            self.assertIn(problem, out + err)
-        self.assertEqual(self.state(), before)
+        self.assertEqual(code, 0, err)
+        detail, *listed = out.splitlines()
+        self.assertIn("filed as NAT-1 in Backlog", detail)
+        self.assertEqual(listed, problems)
+
+    def test_holo_json_answers_the_draft_ticket_and_its_problems(self):
+        problems = self.problems()
+        code, out, err = self.holo("scout", "file", str(self.scout), "2",
+                                   "--json", "-p", str(self.paths["native"]))
+        self.assertEqual(code, 0, err)
+        answer = json.loads(out)
+        self.assertEqual((answer["ok"], answer["ticket"], answer["problems"]),
+                         (True, "NAT-1", problems))
 
 
 class McpScoutFileTests(McpCase):
