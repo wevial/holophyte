@@ -31,16 +31,15 @@ class Outcome(NamedTuple):
 
 def labels(reports, actions):
     """Maps F1, F2... across passes in pass order, and A plus each item's
-    position, to the labelled title and its thread block."""
+    position, to the labelled item's thread block."""
     labelled, number = {}, 0
     for pass_number, report in reports:
-        for index, finding in enumerate(report["findings"], 1):
+        for index in range(1, len(report["findings"]) + 1):
             number += 1
-            labelled[f"F{number}"] = (finding["title"], {
-                "type": "finding", "pass": pass_number, "index": index})
-    for position, item in actions:
-        labelled[f"A{position}"] = (item["title"], {"type": "action",
-                                                    "position": position})
+            labelled[f"F{number}"] = {"type": "finding", "pass": pass_number,
+                                      "index": index}
+    for position, _ in actions:
+        labelled[f"A{position}"] = {"type": "action", "position": position}
     return labelled
 
 
@@ -158,7 +157,7 @@ def settle(conn, scout_id, outcome):
         f"; unknown labels: {', '.join(unknown)}" if unknown else "")
     with store.transaction(conn):
         posted = post_message(conn, scout_id, "scout", ANSWER, outcome.text,
-                              blocks=[labelled[ref][1] for ref in outcome.refs
+                              blocks=[labelled[ref] for ref in outcome.refs
                                       if ref in labelled],
                               answers_id=outcome.ask)
         record_scout_event(conn, scout_id, ANSWERED, summary, level="detail",

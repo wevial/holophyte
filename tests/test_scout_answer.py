@@ -391,7 +391,7 @@ class LabelTests(unittest.TestCase):
         second = {"findings": [{"title": "a third finding"}]}
         labelled = labels([(1, REPORT), (2, second)], [(1, ACTIONS[0])])
         self.assertEqual(list(labelled), ["F1", "F2", "F3", "A1"])
-        self.assertEqual(labelled["F3"], ("a third finding", {
-            "type": "finding", "pass": 2, "index": 1}))
-        self.assertEqual(labelled["F2"][1],
+        self.assertEqual(labelled["F3"],
+                         {"type": "finding", "pass": 2, "index": 1})
+        self.assertEqual(labelled["F2"],
                          {"type": "finding", "pass": 1, "index": 2})
