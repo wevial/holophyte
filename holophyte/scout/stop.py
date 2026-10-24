@@ -1,8 +1,10 @@
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
+from pathlib import Path
 
 import store
 from holophyte.loop.runs import open_store
@@ -52,13 +54,12 @@ def stop_reason(conn, scout_id):
     return stopped_by(asked["author"], asked["note"])
 
 
-def runs_scout(pid, scout_id):
+def runs_scout(pid, scout_id, project_path):
     ran = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
                          capture_output=True, text=True, timeout=PS_TIMEOUT_S)
-    words = ran.stdout.split()
-    return ran.returncode == 0 and any(
-        words[at:at + 2] == ["--scout", str(scout_id)]
-        for at in range(len(words) - 1))
+    named = re.search(rf"(?:^|\s)--scout {scout_id} (.+)$", ran.stdout.strip())
+    return (ran.returncode == 0 and named is not None
+            and Path(named.group(1)).resolve() == Path(project_path).resolve())
 
 
 def refused_phase(row, here):
@@ -70,7 +71,7 @@ def refused_phase(row, here):
     return None
 
 
-def requested(conn, scout_id, author, note, via):
+def requested(conn, project, scout_id, author, note, via):
     named = {"scout": scout_id, "pid": None}
     row = scout(conn, scout_id) if scout_id < ROW_ID_LIMIT else None
     if row is None:
@@ -80,7 +81,8 @@ def requested(conn, scout_id, author, note, via):
     if declined is not None:
         return 200, {"ok": False, **named, "detail": declined}
     live = row.phase != QUEUED
-    pid = row.pid if live and row.pid and runs_scout(row.pid, scout_id) else None
+    running = live and row.pid and runs_scout(row.pid, scout_id, project.path)
+    pid = row.pid if running else None
     record_scout_event(
         conn, scout_id, REQUESTED, f"stop asked by {author} ({via}): {note}",
         level="detail", payload=json.dumps(
@@ -104,7 +106,7 @@ def stop(project, body, via=VIA_DAEMON):
     conn = open_store(project)
     try:
         with store.transaction(conn):
-            code, reply = requested(conn, scout_id, author, note, via)
+            code, reply = requested(conn, project, scout_id, author, note, via)
     except ScoutRefused as ended:
         return 200, {"ok": False, "scout": scout_id, "pid": None,
                      "detail": str(ended)}

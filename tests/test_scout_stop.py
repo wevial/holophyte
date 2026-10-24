@@ -289,19 +289,40 @@ class DirectStopTests(StopCase):
         self.assertTrue(row.reason.endswith("no scout process was running"),
                         row.reason)
 
+    def test_another_projects_scout_with_the_same_id_is_not_signalled(self):
+        scout_id = self.planning()
+        other = self.root / "other project"
+        other.mkdir()
+        named = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(600)",
+             "--scout", str(scout_id), str(other)])
+        self.addCleanup(named.wait)
+        self.addCleanup(named.kill)
+        claim_scout(self.store_conn, scout_id, named.pid)
+        move_scout(self.store_conn, scout_id, "swarming")
+        self.start_host()
+        status, answer = self.stop(scout_id)
+        self.assertEqual((status, answer["ok"], answer["pid"]),
+                         (200, True, None), answer)
+        time.sleep(0.5)
+        self.assertIsNone(named.poll())
+        self.assertTrue(scout(self.store_conn, scout_id).reason.endswith(
+            "no scout process was running"))
+
     def test_a_scout_process_gone_before_the_signal_ends_the_scout_stopped(self):
         scout_id = self.planning()
         named = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(600)",
-             "--scout", str(scout_id)])
+             "--scout", str(scout_id),
+             str(self.path)])
         self.addCleanup(named.wait)
         self.addCleanup(named.kill)
         claim_scout(self.store_conn, scout_id, named.pid)
         move_scout(self.store_conn, scout_id, "swarming")
         real = stop_module.runs_scout
 
-        def exits_after_the_check(pid, checked_id):
-            running_scout = real(pid, checked_id)
+        def exits_after_the_check(pid, checked_id, project_path):
+            running_scout = real(pid, checked_id, project_path)
             named.kill()
             named.wait()
             return running_scout
@@ -321,7 +342,8 @@ class DirectStopTests(StopCase):
         scout_id = self.planning()
         named = subprocess.Popen(
             [sys.executable, "-c", "import time; time.sleep(600)",
-             "--scout", str(scout_id)])
+             "--scout", str(scout_id),
+             str(self.path)])
         self.addCleanup(named.wait)
         self.addCleanup(named.kill)
         claim_scout(self.store_conn, scout_id, named.pid)
