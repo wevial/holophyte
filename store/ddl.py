@@ -265,6 +265,7 @@ CREATE TABLE IF NOT EXISTS runEvents (
     summary TEXT    NOT NULL,  -- human-readable, always present
     payload TEXT,              -- JSON, detail level only
     at      INTEGER NOT NULL,
+    scoutId INTEGER REFERENCES scouts (id),  -- a scout's event, runId NULL
     CHECK (runId IS NOT NULL OR projectId IS NOT NULL),
     UNIQUE (runId, seq)
 );
@@ -525,6 +526,78 @@ CREATE TABLE IF NOT EXISTS steerNotes (
     interrupt      INTEGER,
     withdrawnBy    INTEGER REFERENCES interventions (id)
 );
+
+-- scouts: one scout run, an ask answered by a lead and its helpers beside
+-- the loop. `swarm` is helpers at once, `helperTurns` helpers in all.
+CREATE TABLE IF NOT EXISTS scouts (
+    id          INTEGER PRIMARY KEY,
+    projectId   INTEGER NOT NULL REFERENCES projects (id),
+    ask         TEXT    NOT NULL,
+    kind        TEXT    NOT NULL
+        {_enums.check_clause('kind', _enums.ScoutKind)},
+    links       TEXT    NOT NULL DEFAULT '[]',  -- JSON string[]
+    leadRoute   TEXT,
+    leadSession TEXT,
+    helperRoute TEXT,
+    swarm       INTEGER,
+    helperTurns INTEGER,
+    waves       INTEGER,
+    budgetMin   INTEGER NOT NULL,
+    phase       TEXT    NOT NULL
+        {_enums.check_clause('phase', _enums.ScoutPhase)},
+    reason      TEXT,
+    baseSha     TEXT,
+    host        TEXT,
+    pid         INTEGER,
+    createdAt   INTEGER NOT NULL,
+    startedAt   INTEGER,
+    heartbeatAt INTEGER,
+    endedAt     INTEGER,
+    totals      TEXT  -- JSON
+);
+
+-- scoutReports: a scout pass's report, at most one per pass.
+CREATE TABLE IF NOT EXISTS scoutReports (
+    id      INTEGER PRIMARY KEY,
+    scoutId INTEGER NOT NULL REFERENCES scouts (id),
+    pass    INTEGER NOT NULL CHECK (pass > 0),
+    report  TEXT    NOT NULL,  -- JSON
+    at      INTEGER NOT NULL,
+    UNIQUE (scoutId, pass)
+);
+
+-- scoutTasks: a helper's sub-task in one wave of a scout pass.
+CREATE TABLE IF NOT EXISTS scoutTasks (
+    id         INTEGER PRIMARY KEY,
+    scoutId    INTEGER NOT NULL REFERENCES scouts (id),
+    pass       INTEGER NOT NULL CHECK (pass > 0),
+    wave       INTEGER NOT NULL CHECK (wave > 0),
+    question   TEXT    NOT NULL,
+    paths      TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] the lead gave
+    mode       TEXT    NOT NULL
+        {_enums.check_clause('mode', _enums.ScoutTaskMode)},
+    route      TEXT,
+    phase      TEXT    NOT NULL
+        {_enums.check_clause('phase', _enums.ScoutTaskPhase)},
+    startedAt  INTEGER,
+    endedAt    INTEGER,
+    durationMs INTEGER,
+    tokens     INTEGER,
+    costUsd    REAL,
+    excerpt    TEXT
+);
+
+-- scoutActions: a scout's action item; `position` counts across passes.
+CREATE TABLE IF NOT EXISTS scoutActions (
+    id        INTEGER PRIMARY KEY,
+    scoutId   INTEGER NOT NULL REFERENCES scouts (id),
+    pass      INTEGER NOT NULL CHECK (pass > 0),
+    position  INTEGER NOT NULL CHECK (position > 0),
+    item      TEXT    NOT NULL,  -- JSON
+    ticketKey TEXT,
+    filedAt   INTEGER,
+    UNIQUE (scoutId, position)
+);
 """
 
 
@@ -558,4 +631,8 @@ CREATE INDEX IF NOT EXISTS reviewRounds_runId ON reviewRounds (runId);
 CREATE INDEX IF NOT EXISTS runEvents_runId ON runEvents (runId);
 CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 CREATE INDEX IF NOT EXISTS tickets_parentTicketId ON tickets (parentTicketId);
+CREATE INDEX IF NOT EXISTS runEvents_scoutId ON runEvents (scoutId);
+CREATE INDEX IF NOT EXISTS scoutReports_scoutId ON scoutReports (scoutId);
+CREATE INDEX IF NOT EXISTS scoutTasks_scoutId ON scoutTasks (scoutId, pass, wave);
+CREATE INDEX IF NOT EXISTS scoutActions_scoutId ON scoutActions (scoutId);
 """

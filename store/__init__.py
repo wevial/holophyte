@@ -252,7 +252,7 @@ def run_phase(conn, run_id):
 EVENT_LEVELS = tuple(e.value for e in _enums.EventLevel)
 
 
-def _append_event(conn, run_id, level, kind, summary, at, payload=None):
+def _redact_event(summary, payload):
     summary = _redact_values(summary)
     if payload is not None:
         try:
@@ -261,6 +261,11 @@ def _append_event(conn, run_id, level, kind, summary, at, payload=None):
             payload = _redact_values(payload)
         else:
             payload = json.dumps(_redact_document(document))
+    return summary, payload
+
+
+def _append_event(conn, run_id, level, kind, summary, at, payload=None):
+    summary, payload = _redact_event(summary, payload)
     (seq,) = conn.execute(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents WHERE runId = ?",
         (run_id,),

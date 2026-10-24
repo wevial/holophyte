@@ -734,6 +734,10 @@ The store is its own package:
   `open_proposals()` reads a story's open proposals, `story_duplicate()`
   finds the child or proposal a follow-up repeats, and `accept_proposal()`
   and `reject_proposal()` answer one with its `decide` intervention.
+- `store/scouts.py` — a scout run's record: `create_scout()`,
+  `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
+  `ScoutRefused` for a move they do not allow, a pass's report, its helper
+  tasks and action items, its `runEvents` rows, and `scout()`/`scouts()`.
 - `store/stories.py` — `file_story()` writes a story's rows for a parent
   and its children, `story()` reads one back from either, `approve_story()`
   freezes its plan with one open story per project, and `abandon_story()`
