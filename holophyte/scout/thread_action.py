@@ -60,7 +60,7 @@ def message_action(project, body):
     scout_id = body["scout"]
     code, message = record(project, scout_id, body["mode"], body["text"],
                            console_author(body))
-    if code != 200 or isinstance(message, dict):
+    if isinstance(message, dict):
         return code, message
     ran, said = start(project, scout_id)
     consumed, phase = taken(project, scout_id, message)
