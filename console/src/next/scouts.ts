@@ -146,14 +146,13 @@ export type ScoutOutcome = { kind: "counts"; parts: OutcomePart[] } | { kind: "b
 
 export function scoutOutcome(row: ScoutRow): ScoutOutcome {
   if (row.phase === "failed") return { kind: "failed", text: firstLine(row.reason) };
-  const parts: OutcomePart[] = [
+  if (row.findings === 0 && row.tasks_total > 0) return { kind: "back", text: `${row.tasks_done} of ${row.tasks_total} back` };
+  return { kind: "counts", parts: [
     { count: row.findings, words: row.findings === 1 ? "finding" : "findings" },
     { count: row.actions, words: row.actions === 1 ? "action" : "actions" },
     { count: row.filed, words: "filed" },
     ...(row.phase === "done" ? [{ count: row.to_file, words: "to file", toFile: true }] : []),
-  ].filter((part) => part.count > 0);
-  if (row.findings === 0 && row.tasks_total > 0) return { kind: "back", text: `${row.tasks_done} of ${row.tasks_total} back` };
-  return { kind: "counts", parts };
+  ].filter((part) => part.count > 0) };
 }
 
 /** What a Scout button opens the form about: `about` is the launch's
