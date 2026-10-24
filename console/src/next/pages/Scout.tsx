@@ -5,6 +5,7 @@ import { formatClock, formatSettled } from "../../lib/format";
 import { shortSha } from "../../lib/shipped";
 import { SECTION_LABEL } from "../components/Criteria";
 import { ScoutActivity } from "../components/ScoutActivity";
+import { ScoutActions } from "../components/ScoutActions";
 import { ScoutReport } from "../components/ScoutReport";
 import { ScoutStop } from "../components/ScoutStop";
 import { StageChip } from "../components/StageChip";
@@ -129,6 +130,7 @@ export function ScoutPage() {
           <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)} />
         </section>
         <ScoutReport key={`${page.base}/${scout.id}`} reports={page.detail.reports} baseSha={scout.base_sha} />
+        <ScoutActions items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />
       </div>
     </Page>
   );

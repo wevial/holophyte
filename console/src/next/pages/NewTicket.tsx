@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { fileTicket } from "../../lib/boardWrites";
 import { formatClock } from "../../lib/format";
@@ -34,18 +34,30 @@ function readDraft(project: string) {
     if (!draft || typeof draft.body !== "string" || typeof draft.savedAt !== "number" ||
       !Number.isFinite(new Date(draft.savedAt).getTime()) ||
       !(draft.priority === null || (Number.isInteger(draft.priority) && draft.priority >= 0 && draft.priority <= 4))) return null;
-    const form = parseBody(draft.body);
-    const values = emptyValues();
-    for (const field of FIELDS) {
-      const value = fieldOf(form, field);
-      values[field] = Array.isArray(value) ? value.join("\n") : field === "notes" ? value.replace(/^- /gm, "") : value;
-    }
-    const proseStart = form.sections.findIndex(section => section.name === "What / Why / How");
-    const proseEnd = form.sections.map(section => section.name).lastIndexOf("In scope");
-    const proseSections = proseStart < 0 ? [] : form.sections.slice(proseStart, proseEnd < 0 ? undefined : proseEnd);
-    const prose = proseSections.map((section, index) => (index ? section.heading : "") + section.text).join("");
-    restoreProse(prose, values);
-    return { form, values, priority: draft.priority as number | null, savedAt: draft.savedAt as number };
+    return { ...draftOf(draft.body), priority: draft.priority as number | null, savedAt: draft.savedAt as number | null };
+  } catch {
+    return null;
+  }
+}
+
+function draftOf(body: string) {
+  const form = parseBody(body);
+  const values = emptyValues();
+  for (const field of FIELDS) {
+    const value = fieldOf(form, field);
+    values[field] = Array.isArray(value) ? value.join("\n") : field === "notes" ? value.replace(/^- /gm, "") : value;
+  }
+  const proseStart = form.sections.findIndex(section => section.name === "What / Why / How");
+  const proseEnd = form.sections.map(section => section.name).lastIndexOf("In scope");
+  const proseSections = proseStart < 0 ? [] : form.sections.slice(proseStart, proseEnd < 0 ? undefined : proseEnd);
+  const prose = proseSections.map((section, index) => (index ? section.heading : "") + section.text).join("");
+  restoreProse(prose, values);
+  return { form, values };
+}
+
+function handedDraft(body: string) {
+  try {
+    return { ...draftOf(body), priority: 2, savedAt: null };
   } catch {
     return null;
   }
@@ -128,9 +140,10 @@ export function NewTicket() {
     setApprovedNote(fieldOf(form, "mockupNote") || approval?.[2] || "");
     setEvidence(fieldOf(form, "evidence"));
   };
+  const handed = useLocation({ select: location => location.state.draft });
   useEffect(() => {
-    restore(readDraft(project));
-  }, [project]);
+    restore(handed == null ? readDraft(project) : handedDraft(handed));
+  }, [project, handed]);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   const navigate = useNavigate();
