@@ -214,6 +214,25 @@ test("a failed try at pass 2 and its retry read as two Pass 2 groups, each holdi
   expect(starts).toEqual(["pass 2 · luna ×1 · 14:44", "pass 2 · luna ×1 · 14:50"]);
 });
 
+test("a live retry of pass 3 holds its own unstarted helpers, not those its stopped try left queued", async () => {
+  const numbered = (id: number, each: ScoutTask): ScoutTask => ({ ...each, id });
+  const ran = numbered(10, task("Does the nightly export hold the lock?", 3, "stopped", at(15, 0, 30), at(15, 1)));
+  const left = numbered(11, task("Does the backup job hold the lock?", 3, "queued", null));
+  const running = numbered(12, task("Does the nightly export hold the lock across a vacuum?", 3, "running", at(15, 5, 30)));
+  const waiting = numbered(13, task("Does the vacuum take the lock?", 3, "queued", null));
+  const retry: ScoutDetail = {
+    ...done,
+    scout: { ...done.scout, phase: "swarming" },
+    tasks: [...done.tasks, ran, left, running, waiting],
+    events: [...done.events, event(5, "scout_pass_started", PASS_THREE), event(6, "scout_pass_stopped", at(15, 1)), event(7, "scout_pass_started", at(15, 5))],
+  };
+  await mount(retry, at(15, 7));
+  const live = groups().at(-1)!;
+  expect(row(live)[0]).toBe("Pass 3 · luna ×2 · 0 of 2 back");
+  expect(helpers(live)).toEqual([running.question, waiting.question]);
+  expect(status()).toBe("Pass 3: 1 of 2 helpers are running, and 1 waits for a slot.");
+});
+
 test("an answer turn still running reads now, and one stopped takes the wait tone", async () => {
   const asking = (kinds: string[], phase: ScoutDetail["scout"]["phase"]): ScoutDetail => ({
     ...done, scout: { ...done.scout, phase }, tasks: [FIRST], reports: [report(1, at(14, 35), 4, 4)],
