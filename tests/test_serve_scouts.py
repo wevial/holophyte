@@ -9,7 +9,9 @@ import json
 import subprocess
 import threading
 from pathlib import Path
+from unittest import mock
 
+import holophyte.scout.views
 import holophyte.serve.server
 import store
 import store.tickets
@@ -251,6 +253,26 @@ class DetailTests(ScoutCase):
         empty = self.serve(self.bare("beta"))
         code, body = self.get(empty, "/scouts")
         self.assertEqual((code, body["error"]), (503, "no store"))
+
+    def test_a_scout_that_starts_mid_read_is_served_from_one_moment(self):
+        read_row = holophyte.scout.views.scout
+
+        def row_then_start(conn, scout_id):
+            row = read_row(conn, scout_id)
+            writer = store.open(str(self.store_path))
+            try:
+                move_scout(writer, scout_id, "planning", base_sha="c" * 40,
+                           host="writer", now=NOW)
+            finally:
+                writer.close()
+            return row
+
+        with mock.patch.object(holophyte.scout.views, "scout",
+                               row_then_start):
+            code, body = scout_detail(self.project, str(self.queued), now=NOW)
+        self.assertEqual(code, 200, body)
+        self.assertEqual((body["scout"]["phase"], body["scout"]["started_ms"],
+                          body["scout"]["base_sha"]), ("queued", None, None))
 
 
 class RoutesTests(ScoutCase):

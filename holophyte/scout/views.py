@@ -157,6 +157,7 @@ def scout_detail(project, text, now=None):
     now = now_ms(now)
     conn = store.read.open_readonly(project.store_path)
     try:
+        conn.execute("BEGIN")
         row = scout(conn, scout_id)
         if row is None:
             return 404, {"error": "no such scout", "scout": scout_id}
