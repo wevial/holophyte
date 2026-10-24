@@ -15,9 +15,18 @@ from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.config.config_tables import sweep_config
 from holophyte.host.registry import home
 from holophyte.loop.gates import sh
+from holophyte.scout.answer import ANSWER_FAILED, return_done
 from holophyte.scout.scout_process import scout_dir
 from store.enums import ScoutPhase
+from store.scout_thread import (
+    ASK,
+    Message,
+    ThreadRefused,
+    take_message,
+    waiting_messages,
+)
 from store.scouts import (
+    ANSWERING,
     PLANNING,
     QUEUED,
     ScoutRefused,
@@ -44,6 +53,17 @@ def _project_scouts(conn, target, phases):
     return [row for row in scouts(conn, phases) if row.project_id == project]
 
 
+def _end_one_stale(conn, row, reason, now):
+    if scout(conn, row.id).heartbeat_at != row.heartbeat_at:
+        return None
+    if row.phase != ANSWERING:
+        end_scout(conn, row.id, "failed", reason, now=now)
+        return "ended failed"
+    return_done(conn, row.id, ANSWER_FAILED, f"answer failed: {reason}",
+                {"message": None, "reason": reason})
+    return "answer failed, back to done"
+
+
 def end_stale(name, target, conn, now, out):
     stale_ms = sweep_config(target).heartbeat_stale_ms
     for row in _project_scouts(conn, target, LIVE):
@@ -54,13 +74,12 @@ def end_stale(name, target, conn, now, out):
                   f" past [supervisor] heartbeat_stale_min")
         try:
             with store.transaction(conn):
-                if scout(conn, row.id).heartbeat_at != row.heartbeat_at:
-                    continue
-                end_scout(conn, row.id, "failed", reason, now=now)
+                ended = _end_one_stale(conn, row, reason, now)
         except ScoutRefused:
             continue
-        print(f"[holo2] {name}: scout {row.id} ended failed: {reason}",
-              file=out)
+        if ended is not None:
+            print(f"[holo2] {name}: scout {row.id} {ended}: {reason}",
+                  file=out)
 
 
 def _escape(match):
@@ -80,10 +99,13 @@ def _private_tmp_spawn():
         "systemd-run")
 
 
+SANDBOXLESS = ("systemd-run is missing under a systemd unit, so the scout would"
+               " inherit its PrivateTmp, where Codex read-only turns cannot"
+               " start")
+
+
 def _fail_sandboxless(conn, scout_id):
-    reason = ("systemd-run is missing under a systemd unit, so the scout would"
-              " inherit its PrivateTmp, where Codex read-only turns cannot"
-              " start")
+    reason = SANDBOXLESS
     with store.transaction(conn):
         record_scout_event(conn, scout_id, SANDBOX_UNAVAILABLE, reason)
         end_scout(conn, scout_id, "failed", reason)
@@ -149,6 +171,43 @@ def _start(name, target, row, out):
     return True
 
 
+def _answer_failed(conn, message, reason):
+    return_done(conn, message.scout_id, ANSWER_FAILED,
+                f"answer failed: {reason}",
+                {"message": message.id, "reason": reason})
+
+
+def _start_answer(name, target, message, out):
+    conn = store.open(str(target.store_path))
+    try:
+        take_message(conn, message.id, host=socket.gethostname())
+        if _private_tmp_spawn():
+            _answer_failed(conn, message, SANDBOXLESS)
+            print(f"[holo2] {name}: scout {message.scout_id} answer failed:"
+                  f" {SANDBOXLESS}", file=out)
+            return False
+        try:
+            started = start_scout(name, target, message.scout_id)
+        except OSError as bad:
+            _answer_failed(conn, message, f"could not start: {bad}")
+            raise
+    except ThreadRefused:
+        return False
+    finally:
+        conn.close()
+    print(f"[holo2] {name}: started scout {message.scout_id} answering message"
+          f" {message.id} as {started}", file=out)
+    return True
+
+
+def _waiting(conn, target):
+    project = project_of(conn, target)
+    asks = [(message.at, message) for message in waiting_messages(conn)
+            if message.mode == ASK and message.project_id == project]
+    return [(row.created_at, row) for row in
+            _project_scouts(conn, target, (QUEUED,))] + asks
+
+
 def _account(name, entry, conn, now, out, queued):
     admits = entry.error is None
     try:
@@ -158,8 +217,8 @@ def _account(name, entry, conn, now, out, queued):
         print(f"[holo2] {name}: stale scout check failed: {bad}", file=out)
         admits = False
     if admits and admission_state(conn, entry.target)[0] == "enabled":
-        queued += [(name, entry.target, row) for row in
-                   _project_scouts(conn, entry.target, (QUEUED,))]
+        queued += [(at, name, entry.target, row)
+                   for at, row in _waiting(conn, entry.target)]
     return len(_project_scouts(conn, entry.target, LIVE))
 
 
@@ -197,14 +256,16 @@ def _start_queued(entries, limit, out, key, now):
         print("[holo2] no scout starts this pass: a store's live scouts could"
               " not be counted", file=out)
         return live, started
-    queued.sort(key=lambda item: (item[2].created_at, item[2].id))
-    for name, target, row in queued:
+    queued.sort(key=lambda item: (item[0], item[3].id))
+    for _, name, target, row in queued:
         if live >= limit:
             break
+        answers = isinstance(row, Message)
         try:
-            if _start(name, target, row, out):
+            if (_start_answer if answers else _start)(name, target, row, out):
                 live += 1
-                started.append((target.path, row.id))
+                started.append((target.path,
+                                row.scout_id if answers else row.id))
         except (Exception, SystemExit) as bad:  # noqa: BLE001 - the project boundary
             print(f"[holo2] {name}: scout start failed: {bad}", file=out)
     return live, started

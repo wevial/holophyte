@@ -2,8 +2,8 @@
 
 Each stub logs its argv, working directory and the scouts' recorded lead
 sessions at launch, then answers by the goal's opening line: `ready` to a
-probe, and the test's own text to a plan, synthesis, report, repair or
-helper turn.
+probe, and the test's own text to a plan, synthesis, report, repair,
+helper or answer turn.
 """
 import json
 import os
@@ -21,7 +21,8 @@ goal, binary = sys.argv[-1], Path(sys.argv[0]).name
 turn = next((name for opening, name in (
     ("Scout plan turn", "plan"), ("Scout report turn", "report"),
     ("Scout report repair turn", "repair"),
-    ("Scout synthesis turn", "synthesis"), ("Scout helper turn", "helper"))
+    ("Scout synthesis turn", "synthesis"), ("Scout helper turn", "helper"),
+    ("Scout answer turn", "answer"))
     if goal.startswith(opening)), "probe")
 sessions = None
 if answers.get("store"):
@@ -66,8 +67,8 @@ if turn == "helper":
 
 
 class LeadStubs:
-    """`answers` maps `probe`, `plan`, `synthesis`, `report`, `repair` and
-    `helper` to the printed text, or `BINARY_TURN` to one binary's text;
+    """`answers` maps `probe`, `plan`, `synthesis`, `report`, `repair`,
+    `helper` and `answer` to the printed text, or `BINARY_TURN` to one binary's text;
     `TURN_sleep` to seconds slept after it; `TURN_pid_file` to a file a child of that
     turn writes its pid to; `TURN_shared` to a directory the turn holds a
     file in while it sleeps, logging how many files it saw there;
