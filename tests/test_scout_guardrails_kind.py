@@ -1,11 +1,16 @@
 """The `guardrails` scout kind: a store at the version before it carries its
-scouts over and takes the kind, and `holo scout` launches it.
+scouts over, the store accepts the kind, `POST /actions/scout`, `holo scout`
+and the `holo mcp` `scout` tool launch it, a run helper of it only reads, and
+`GET /scouts` and `GET /scouts/ID` serve it.
 
 Run: python3 -m unittest discover -s tests -p 'test_scout_guardrails_kind.py' -v
 """
 import contextlib
+import http.client
 import io
+import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,10 +30,16 @@ from store.scouts import (
     scout,
 )
 from store.tickets import ensure_project
-from tests.test_scout_launch import LaunchCase, scout_rows
+from tests.host_fixture import git
+from tests.scout_stubs import fenced
+from tests.test_holo_mcp import McpCase
+from tests.test_scout_launch import TOKEN, LaunchCase, scout_rows, slots
+from tests.test_scout_lead import REPORT as LEAD_REPORT
+from tests.test_scout_run_helpers import LOOK, READ_ONLY, SETUP_RAN, plan
 from tests.test_serve_scouts import ACTIONS, REPORT
 
 ASK = "Mine the findings"
+RUN_Q = "Which review findings recur?"
 OLD_KINDS = "CHECK (kind IN ('bug', 'research', 'recon'))"
 
 
@@ -100,6 +111,17 @@ class StoreTests(unittest.TestCase):
         added = create_scout(conn, project, ASK, "guardrails", 20)
         self.assertEqual(scout(conn, added).kind, "guardrails")
 
+    def test_a_fresh_store_records_guardrails_and_refuses_guardrail(self):
+        conn = store.open(self.path)
+        self.addCleanup(conn.close)
+        project = ensure_project(conn, "native:ALPHA", "/repo")
+        scout_id = create_scout(conn, project, ASK, "guardrails", 20)
+        self.assertEqual(scout(conn, scout_id).kind, "guardrails")
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO scouts (projectId, ask, kind, budgetMin,"
+                         " phase, createdAt) VALUES (?, ?, 'guardrail', 20,"
+                         " 'queued', 1)", (project, ASK))
+
 
 def holo(*argv):
     out, err = io.StringIO(), io.StringIO()
@@ -112,6 +134,23 @@ def holo(*argv):
 
 
 class LaunchTests(LaunchCase):
+    def test_the_daemon_launches_guardrails_and_refuses_guardrail(self):
+        path = self.project("alpha")
+        server = self.serve(path)
+        code, reply = self.post(server, "/actions/scout",
+                                {"ask": ASK, "kind": "guardrails"})
+        self.assertEqual(code, 200, reply)
+        self.assertIs(reply["ok"], True)
+        (row,) = scout_rows(path)
+        self.assertEqual((row.id, row.ask, row.kind),
+                         (reply["scout"], ASK, "guardrails"))
+        code, reply = self.post(server, "/actions/scout",
+                                {"ask": ASK, "kind": "guardrail"})
+        self.assertEqual(code, 400, reply)
+        self.assertIn("kind", reply["error"])
+        self.assertIn("guardrails", reply["error"])
+        self.assertEqual([row.id for row in scout_rows(path)], [row.id])
+
     def test_holo_scout_takes_kind_guardrails_and_refuses_triage(self):
         self.enterContext(patch.dict(os.environ, {"HOLO_TRANSPORT": "local"}))
         path = self.project("alpha")
@@ -124,6 +163,89 @@ class LaunchTests(LaunchCase):
         self.assertEqual(code, 2)
         self.assertIn("argument --kind", err)
         self.assertEqual([each.id for each in scout_rows(path)], [row.id])
+
+
+class McpTests(McpCase):
+    def test_the_scout_tool_lists_and_queues_guardrails(self):
+        conn = store.open(str(self.store_path))
+        try:
+            (project,) = conn.execute("SELECT id FROM projects").fetchone()
+            live = create_scout(conn, project, "a live scout", "recon", 30)
+            move_scout(conn, live, "planning", base_sha="a" * 40)
+        finally:
+            conn.close()
+        slots(1)
+
+        async def use(client, _):
+            return (await client.list_tools()).tools
+        (tool,) = [tool for tool in self.session(use) if tool.name == "scout"]
+        self.assertEqual(
+            set(tool.input_schema["properties"]["kind"]["enum"]),
+            {"bug", "research", "recon", "guardrails"})
+
+        result = self.call("scout", {"project": "alpha", "note": ASK,
+                                     "kind": "guardrails",
+                                     "author": "test seat"})
+        self.assertIs(result.is_error, False, result.content)
+        conn = store.open(str(self.store_path))
+        try:
+            row = scout(conn, conn.execute(
+                "SELECT max(id) FROM scouts").fetchone()[0])
+        finally:
+            conn.close()
+        self.assertEqual((row.ask, row.kind, row.phase),
+                         (ASK, "guardrails", "queued"))
+
+
+class RunTests(LaunchCase):
+    def run_guardrails(self):
+        path = self.project("alpha", SETUP_RAN)
+        info = Path(git(path, "rev-parse", "--path-format=absolute",
+                        "--git-common-dir")) / "info"
+        info.mkdir(exist_ok=True)
+        (info / "exclude").write_text("setup-ran\n")
+        conn = self.conn(path)
+        (project,) = conn.execute("SELECT id FROM projects").fetchone()
+        scout_id = create_scout(conn, project, ASK, "guardrails", 30)
+        move_scout(conn, scout_id, "planning",
+                   base_sha=git(path, "rev-parse", "main"))
+        self.stubs.answer(plan=plan((RUN_Q, "run")),
+                          report=fenced(LEAD_REPORT), helper_sh=[LOOK])
+        code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 0, printed)
+        return path, scout_id
+
+    def get(self, server, route):
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", server.server_address[1], timeout=30)
+        try:
+            connection.request("GET", route,
+                               headers={"Authorization": f"Bearer {TOKEN}"})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    def test_a_guardrails_scout_runs_its_run_task_as_a_read_task(self):
+        self.run_guardrails()
+        (helper,) = [helper for helper in self.stubs.helpers()
+                     if helper["question"] == RUN_Q]
+        self.assertEqual(helper["sh"], [[0, "absent"]])
+        (turn,) = self.stubs.turns("helper")
+        self.assertIn(READ_ONLY, turn["argv"][-1])
+
+    def test_the_scout_reads_serve_the_done_guardrails_scout(self):
+        path, scout_id = self.run_guardrails()
+        self.assertEqual(scout(self.conn(path), scout_id).phase, "done")
+        server = self.serve(path)
+        code, listed = self.get(server, "/scouts")
+        self.assertEqual(code, 200, listed)
+        self.assertEqual([(row["id"], row["kind"]) for row in listed["scouts"]],
+                         [(scout_id, "guardrails")])
+        code, detail = self.get(server, f"/scouts/{scout_id}")
+        self.assertEqual(code, 200, detail)
+        self.assertEqual((detail["scout"]["id"], detail["scout"]["kind"]),
+                         (scout_id, "guardrails"))
 
 
 if __name__ == "__main__":
