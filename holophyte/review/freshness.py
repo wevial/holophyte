@@ -317,14 +317,11 @@ def _recheck_one(target, conn, project_id, provider, row):
             return None
     with lease_turn(target), store.transaction(conn):
         _still_parked(conn, project_id, row, ("ready",))
-        if body is None:
-            moved_landmarks.record(conn, row[0], note)
-            return None
-        revision, status = _rederive(target, conn, project_id, row, row[2],
-                                     body)
+        outcome = None if body is None else _rederive(
+            target, conn, project_id, row, row[2], body)
         if note is not None:
             moved_landmarks.record(conn, row[0], note)
-    return revision, status
+    return outcome
 
 
 def recheck_stale(target, conn, project_id, provider):
