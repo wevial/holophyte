@@ -3,7 +3,7 @@ import re
 import subprocess
 from functools import partial
 from pathlib import PurePosixPath
-from time import monotonic
+from time import monotonic, time
 from typing import NamedTuple
 
 import store
@@ -12,6 +12,7 @@ from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.context import context_pack
+from holophyte.scout.guardrails import findings_digest
 from holophyte.scout.prior import (
     offered_findings,
     prior_reports,
@@ -52,6 +53,7 @@ REPAIR_OPENING = "Scout report repair turn"
 SYNTHESIS_OPENING = "Scout synthesis turn"
 NO_REPORT = "the lead's report turn returned no JSON object"
 MALFORMED = "the lead's report is malformed"
+EMPTY_DIGEST = "the findings digest is empty"
 CONTEXT_SLOT = "\x00context\x00"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
@@ -405,10 +407,29 @@ def scout_prior(conn, project, row, pack_paths):
             offered_findings(priors))
 
 
+def scout_digest(conn, row, project):
+    if row.kind != ScoutKind.GUARDRAILS.value:
+        return ""
+    digest = findings_digest(project, row, int(time() * 1000))
+    if digest is None:
+        record_scout_event(conn, row.id, "scout_digest", "digest: empty")
+        return None
+    record_scout_event(conn, row.id, "scout_digest", digest.summary,
+                       level="detail", payload=json.dumps({
+                           "since": digest.since, "clusters": [
+                               {"label": cluster.label,
+                                "rows": [each.id for each in cluster.newest()]}
+                               for cluster in digest.clusters]}))
+    return digest.text
+
+
 def run_lead(conn, project, row, worktree, budget_s, stopping):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
     limit = row.helper_turns or config.helper_turns
+    digest = scout_digest(conn, row, project)
+    if digest is None:
+        return "done", EMPTY_DIGEST
     seat, down = lead_seat(project, row, config, stopping)
     if down is not None:
         return "failed", down
@@ -417,7 +438,8 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     deadline = monotonic() + budget_s
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
-    turn = lead.start(plan_goal(row, limit, context, prior), budget_s, context)
+    turn = lead.start(plan_goal(row, limit, context, prior + digest), budget_s,
+                      context)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
