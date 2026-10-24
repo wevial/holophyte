@@ -143,7 +143,10 @@ def _account(name, entry, conn, now, out, queued):
 
 
 def sweep_scouts(entries, limit, now, out, key=str, home_dir=None):
-    start_queued(entries, limit, out, key, now, home_dir)
+    try:
+        start_queued(entries, limit, out, key, now, home_dir)
+    except OSError as bad:
+        print(f"[holo2] no scout starts this pass: {bad}", file=out)
 
 
 def start_queued(entries, limit, out, key=str, now=None, home_dir=None):

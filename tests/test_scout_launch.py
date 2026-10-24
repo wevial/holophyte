@@ -22,6 +22,7 @@ from host_fixture import git  # noqa: E402
 import holophyte.scout.scout_sweep as scout_sweep  # noqa: E402
 import holophyte.serve.server  # noqa: E402
 import store  # noqa: E402
+from holophyte.cli.status import load_sweep_state  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
 from holophyte.holo.cli import main as holo_main  # noqa: E402
 from holophyte.host.registry import Host, settings  # noqa: E402
@@ -272,6 +273,15 @@ class DaemonLaunchTests(LaunchCase):
         self.assertIn(str(lock), reply["detail"])
         self.assertEqual(scout(self.conn(path), reply["scout"]).phase,
                          "queued")
+        self.assertEqual(self.spawned, [])
+
+    def test_a_start_lock_that_cannot_be_opened_lets_the_host_sweep_end(self):
+        self.project("alpha")
+        lock = Host.locate().home / scout_sweep.START_LOCK
+        lock.mkdir(parents=True)
+        said = self.sweep_pass()
+        self.assertIn(str(lock), said)
+        self.assertIn("ended", load_sweep_state(Host.locate().home))
         self.assertEqual(self.spawned, [])
 
     def test_a_scout_another_pass_started_answers_started(self):
