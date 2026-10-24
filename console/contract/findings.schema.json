@@ -713,7 +713,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/TicketDefect"
-          }
+          },
+          "default": []
         }
       },
       "required": [

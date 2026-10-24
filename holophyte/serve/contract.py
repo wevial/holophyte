@@ -1,9 +1,9 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
-from holophyte.serve.contract_emit import check, render, write
+from holophyte.serve.contract_emit import ClientDefault, check, render, write
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
 from holophyte.serve.contract_routes import (
     ActiveRoute,
@@ -696,7 +696,7 @@ class Findings(TypedDict):
     limit: int
     runs: list[FindingsRun]
     follow_ups: list[FollowUpRow]
-    ticket_defects: list[TicketDefect]
+    ticket_defects: Annotated[list[TicketDefect], ClientDefault([])]
 
 
 class BoardTicket(TypedDict):

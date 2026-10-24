@@ -84,6 +84,12 @@ test("a follow-up state outside the follow-up states fails at its path", () => {
   expect(firstIssuePath(findingsSchema.safeParse(dropped))).toStartWith("follow_ups.0.state");
 });
 
+test("a findings answer from an older peer without ticket_defects keeps its findings and lists no defects", () => {
+  const { ticket_defects: _, ...older } = findings;
+  expect(older.runs.length + older.follow_ups.length).toBeGreaterThan(0);
+  expect<unknown>(findingsSchema.parse(older)).toEqual({ ...older, ticket_defects: [] });
+});
+
 test("a ticket claimed by an older build carries its claim-time snapshot and parses", () => {
   // The daemon answers this only for a run claimed before revisions were recorded; no pin holds one.
   const claimed = { revision: null, title: ticket.title, acceptance_criteria: ticket.acceptance_criteria, verification_commands: ticket.verification_commands };

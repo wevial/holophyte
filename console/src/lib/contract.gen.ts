@@ -912,7 +912,7 @@ export const findingsSchema = z.looseObject({
   limit: z.int(),
   runs: z.array(findingsRunSchema),
   follow_ups: z.array(followUpRowSchema),
-  ticket_defects: z.array(ticketDefectSchema),
+  ticket_defects: z.array(ticketDefectSchema).default([]),
 });
 export type Findings = z.infer<typeof findingsSchema>;
 

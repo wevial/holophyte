@@ -18,6 +18,10 @@ class ContractError(ValueError):
     pass
 
 
+class ClientDefault(typing.NamedTuple):
+    value: object
+
+
 def json_schema(body, description):
     defs = {}
     root = _schema(body, defs, body.__name__)
@@ -54,7 +58,7 @@ def _kinded(members):
 def _object(body, defs):
     name = body.__name__
     hints = typing.get_type_hints(body, include_extras=True)
-    properties = {key: _schema(_bare(hint), defs, f"{name}.{key}")
+    properties = {key: _property(_bare(hint), defs, f"{name}.{key}")
                   for key, hint in hints.items()}
     shape = {"type": "object", "properties": properties,
              "required": [key for key in hints
@@ -63,6 +67,14 @@ def _object(body, defs):
     if defs.setdefault(name, shape) != shape:
         raise ContractError(f"$defs/{name} names two shapes")
     return {"$ref": f"#/$defs/{name}"}
+
+
+def _property(hint, defs, where):
+    if typing.get_origin(hint) is typing.Annotated:
+        inner, *marks = typing.get_args(hint)
+        if len(marks) == 1 and isinstance(marks[0], ClientDefault):
+            return {**_schema(inner, defs, where), "default": marks[0].value}
+    return _schema(hint, defs, where)
 
 
 def _bare(hint):
@@ -156,6 +168,9 @@ def _key(key):
 
 
 def _zod(shape):
+    if "default" in shape:
+        rest = {key: value for key, value in shape.items() if key != "default"}
+        return f"{_zod(rest)}.default({json.dumps(shape['default'])})"
     if "$ref" in shape:
         return _const(shape["$ref"].rsplit("/", 1)[1])
     if "const" in shape:

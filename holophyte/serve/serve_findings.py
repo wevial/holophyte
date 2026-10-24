@@ -53,9 +53,13 @@ def findings(project, query):
 def ticket_defects(conn, since, limit):
     stops = conn.execute(
         "SELECT e.runId, e.kind, e.summary, e.payload, e.at, r.ticketId,"
-        " r.revision, t.linearIdentifier FROM runEvents e"
-        " JOIN runs r ON r.id = e.runId JOIN tickets t ON t.id = r.ticketId"
-        " WHERE e.kind IN (?, ?) AND e.at >= ? AND r.revision IS NOT NULL"
+        " r.revision, t.linearIdentifier FROM runs r"
+        " CROSS JOIN runEvents e ON e.runId = r.id"
+        " JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.revision IS NOT NULL AND EXISTS (SELECT 1 FROM"
+        " ticketRevisions v WHERE v.ticketId = r.ticketId"
+        " AND v.revision > r.revision)"
+        " AND e.kind IN (?, ?) AND e.at >= ?"
         " ORDER BY e.at DESC, e.id DESC", (CONTRADICTION, SWEEP_EVENT, since))
     defects, seen = [], set()
     for run_id, event, summary, payload, at, ticket_id, claimed, ticket in stops:
