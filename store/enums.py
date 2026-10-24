@@ -285,6 +285,12 @@ class ScoutTaskPhase(str, Enum):
     STOPPED = 'stopped'
 
 
+class ThreadMode(str, Enum):
+    ASK = 'ask'
+    STEER = 'steer'
+    ANSWER = 'answer'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -333,6 +339,7 @@ CONSTRAINED_COLUMNS = {
     ('scouts', 'phase'): ScoutPhase,
     ('scoutTasks', 'mode'): ScoutTaskMode,
     ('scoutTasks', 'phase'): ScoutTaskPhase,
+    ('threadMessages', 'mode'): ThreadMode,
 }
 
 

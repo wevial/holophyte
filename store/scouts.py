@@ -10,14 +10,16 @@ from .schema import _transaction
 
 QUEUED, PLANNING = ScoutPhase.QUEUED.value, ScoutPhase.PLANNING.value
 SWARMING, SYNTHESIZING = ScoutPhase.SWARMING.value, ScoutPhase.SYNTHESIZING.value
-ENDED = (ScoutPhase.DONE.value, ScoutPhase.FAILED.value,
-         ScoutPhase.STOPPED.value)
+ANSWERING, DONE = ScoutPhase.ANSWERING.value, ScoutPhase.DONE.value
+ENDED = (DONE, ScoutPhase.FAILED.value, ScoutPhase.STOPPED.value)
 EDGES = {
     QUEUED: (PLANNING,),
-    PLANNING: (SWARMING, SYNTHESIZING, QUEUED),
-    SWARMING: (SYNTHESIZING,),
-    SYNTHESIZING: (SWARMING,),
+    PLANNING: (SWARMING, SYNTHESIZING, QUEUED, DONE),
+    SWARMING: (SYNTHESIZING, DONE),
+    SYNTHESIZING: (SWARMING, DONE),
+    ANSWERING: (DONE,),
 }
+PASS_STARTED = "scout_pass_started"
 TASK_ENDED = (ScoutTaskPhase.DONE.value, ScoutTaskPhase.FAILED.value,
               ScoutTaskPhase.STOPPED.value)
 COLUMNS = ("id", "projectId", "ask", "kind", "links", "leadRoute",
@@ -100,12 +102,21 @@ def _unclaimed(conn, scout_id, phase):
                            f"its process (pid {owner}) has claimed it")
 
 
+def _steered(conn, scout_id):
+    return conn.execute("SELECT 1 FROM runEvents WHERE scoutId = ?"
+                        " AND kind = ?", (scout_id, PASS_STARTED)).fetchone()
+
+
 def move_scout(conn, scout_id, phase, *, base_sha=None, host=None, now=None):
     with _transaction(conn):
         current = _live(conn, scout_id)
         if phase not in EDGES.get(current, ()):
             raise ScoutRefused(scout_id, current,
                                f"no move from {current} to {phase}")
+        if phase == DONE and current != ANSWERING and not _steered(
+                conn, scout_id):
+            raise ScoutRefused(scout_id, current,
+                               "a first run ends only through end_scout")
         if phase == PLANNING and not base_sha:
             raise ValueError("a scout moves to planning with a base sha")
         if phase == QUEUED:
@@ -124,6 +135,12 @@ def move_scout(conn, scout_id, phase, *, base_sha=None, host=None, now=None):
         else:
             conn.execute("UPDATE scouts SET phase = ? WHERE id = ?",
                          (phase, scout_id))
+
+
+def _reopen_scout(conn, scout_id, phase, host, now):
+    conn.execute("UPDATE scouts SET phase = ?, pid = NULL, host = ?,"
+                 " heartbeatAt = ? WHERE id = ?",
+                 (phase, host or socket.gethostname(), _now(now), scout_id))
 
 
 def beat_scout(conn, scout_id, pid=None, now=None):
