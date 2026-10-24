@@ -7,8 +7,10 @@ from time import time
 
 import store
 import store.tickets
+from holophyte.serve.contract import History
 from tests.phase_fixture import advance_phase, finish_run, park_run
 from tests.serve_fixture import MIN, ServeTestCase
+from tests.test_serve_contract import walk
 
 DAY = 24 * 60 * MIN
 
@@ -191,6 +193,58 @@ class HistoryTests(ServeTestCase):
                 code, _, body = self.request("GET", path)
                 self.assertEqual(code, 400)
                 self.assertIn("since", body["error"])
+
+    def test_a_paused_run_names_the_next_run_of_its_ticket_in_both_forms(self):
+        from holophyte.loop.stop import stop_if_requested
+        now = int(time() * 1000)
+        since, until = now - 3 * 60 * MIN, now - 2 * 60 * MIN
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project = store.tickets.ensure_project(conn, "team-1", self.target)
+
+        def claim(key, at, resumed=False):
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id=f"issue-{key}",
+                linear_identifier=key, title=f"ticket {key}",
+                acceptance_criteria=[f"Given {key}, then it is worked"],
+                verification_commands=["echo ok"])
+            steps = ("blocked_on_deps", "ready") if resumed else ()
+            for status in (*steps, "in_flight"):
+                store.tickets.transition(conn, ticket, status)
+            return ticket, store.claim(conn, project, ticket, now=at)
+
+        def pause(run):
+            store.pause(conn, run, "reboot the writer")
+            with self.assertRaises(store.RunEnded):
+                stop_if_requested(conn, run, "working")
+
+        _, r1 = claim("KO-1", since + MIN)
+        pause(r1)
+        _, r3 = claim("KO-2", since + 2 * MIN)
+        pause(r3)
+        _, merged = claim("KO-3", since + 3 * MIN)
+        finish_run(conn, merged, "merged", now=since + 4 * MIN)
+        _, r2 = claim("KO-1", now - MIN, resumed=True)
+        self.assertGreater(r2, r3)
+        self.start()
+        code, _, body = self.request("GET", f"/history?since={since}")
+        self.assertEqual(code, 200)
+        walk(body, History, "history")
+        rows = {row["id"]: row for row in body["rows"]}
+        self.assertEqual((rows[r1]["outcome"], rows[r3]["outcome"]),
+                         ("paused", "paused"))
+        self.assertEqual(
+            {run: rows[run].get("resumed_as", "absent")
+             for run in (r1, r3, r2, merged)},
+            {r1: r2, r3: None, r2: None, merged: None})
+        code, _, body = self.request(
+            "GET", f"/history?since={since}&until={until}")
+        self.assertEqual(code, 200)
+        walk(body, History, "history")
+        rows = {row["id"]: row for row in body["rows"]}
+        self.assertNotIn(r2, rows)
+        self.assertEqual(rows[r1].get("resumed_as", "absent"), r2)
 
 
 if __name__ == "__main__":

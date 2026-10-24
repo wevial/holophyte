@@ -65,4 +65,5 @@ def history_row(project, run, now, max_rounds, origin):
             "commit_url": commit_url(project, run.mergeSha, origin),
             "additions": run.prSeenAdditions,
             "deletions": run.prSeenDeletions,
+            "resumed_as": run.resumedAs,
             "pr_url": run.prUrl, "host": json_host(project, run.host)}

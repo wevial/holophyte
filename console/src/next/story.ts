@@ -28,6 +28,7 @@ const KIND: Record<State, NodeKind> = {
   todo: "ready",
   merged: "done",
   abandoned: "backlog",
+  resumed: "backlog",
   backlog: "backlog",
 };
 

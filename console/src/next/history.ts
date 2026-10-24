@@ -65,6 +65,8 @@ function stageWord(row: HostedRun, item: AttentionItem | null, now: number): str
       return withDetail("asks", firstLine(item?.question), "asks you");
     case "paused":
       return withDetail("paused", firstLine(item?.note));
+    case "resumed":
+      return `paused · resumed as run ${row.resumed_as}`;
     case "merged":
       return row.ended_ms != null && row.ended_ms >= localMidnight(now) ? `merged ${formatClock(row.ended_ms)}` : "merged";
     case "failed":
@@ -127,6 +129,8 @@ export function validateRunsSearch({ state }: Record<string, unknown>): RunsSear
   return { state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined };
 }
 
-export function stateGroup(state: State): RunGroup {
+/** A paused run that a later run resumed is "superseded": only All lists it. */
+export function stateGroup(state: State): RunGroup | "superseded" {
+  if (state === "resumed") return "superseded";
   return state === "merged" || state === "failed" || state === "abandoned" ? state : "active";
 }

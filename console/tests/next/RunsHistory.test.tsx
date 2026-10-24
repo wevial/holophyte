@@ -358,6 +358,20 @@ test("history explains failed and abandoned outcomes and prefixes an end on a la
   expect(dayCells(210)[ENDED]!.textContent).toBe("Thu 00:20");
 });
 
+test("history greys a paused run a later run resumed and names that run under it, leaving a paused run with no later run as it was", async () => {
+  await mount("#/runs/history", fleet([
+    { ...run(220, "paused", 10, 30), phase: "paused", resumed_as: 224 },
+    { ...run(222, "paused", 10, 30), phase: "paused", resumed_as: null },
+  ], []).fetch);
+  const resumed = dayCells(220)[OUTCOME]!;
+  expect(within(resumed).getByText("paused").className).toContain("text-ink-3");
+  expect(within(resumed).getByText(/^resumed as/).textContent).toBe("resumed as run 224");
+  expect(within(resumed).getByRole("link", { name: "run 224" }).getAttribute("href")).toEndWith("#/runs/demo/224");
+  const waiting = dayCells(222)[OUTCOME]!;
+  expect(within(waiting).getByText("paused").className).toContain("text-ask-ink");
+  expect(waiting.textContent).not.toContain("resumed as");
+});
+
 const onDay = (row: HistoryRow, date: string): HistoryRow => ({
   ...row, started_ms: midnight(date) + row.id * MINUTE, ended_ms: midnight(date) + (row.id + 60) * MINUTE,
 });
