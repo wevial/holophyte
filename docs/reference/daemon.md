@@ -503,7 +503,8 @@ nothing, and answers `ok: true` with `task`, `pid` null and `detail`
 most two seconds apart while a wave runs: a running task has its turn's
 process group killed (a read helper's turn, or a run helper's setup step
 or turn), a queued one is never launched, and either way the task ends
-`stopped`, its excerpt what its turn printed before it was killed. The
+`stopped`, its excerpt what its turn printed before it was killed (empty
+for one never launched or killed in its setup step). The
 other helpers run on, and the lead reads the stopped task as any other.
 Refusals write nothing: a task that is not the scout's is 404 `no such
 task`; a task already ended is `ok: false` naming its phase; a scout not
@@ -518,8 +519,8 @@ false` with `detail` `scout N has no running process to stop task T`.
 
 A body that is not a JSON object, a `scout` or `task` that is not a
 positive integer is 400 naming the field; without `task` a `note` missing
-or blank is 400 `note must say why`, and an `author` that is not text is
-400. A project with no store is 503.
+or blank is 400 `note must say why`, with it a `note` that is not text is
+400, and an `author` that is not text is 400. A project with no store is 503.
 
 ## `POST /actions/scout-message`
 
