@@ -6,17 +6,29 @@ from typing import NamedTuple
 from holophyte.loop.gates import sh
 from store.enums import ScoutKind
 
-TEXT = (lambda value: isinstance(value, str) and bool(value.strip()),
-        "non-empty text")
-ANY_TEXT = (lambda value: isinstance(value, str), "text")
-LINE = (lambda value: type(value) is int and value > 0, "a positive integer")
-URL = (lambda value: isinstance(value, str)
-       and value.startswith(("http://", "https://")),
-       "a URL starting http:// or https://")
+
+class Rule(NamedTuple):
+    check: object
+    must: str
+    shown: str
+    choices: tuple = ()
+
+
+TEXT = Rule(lambda value: isinstance(value, str) and bool(value.strip()),
+            "non-empty text", "TEXT")
+PATH = TEXT._replace(shown="PATH")
+ANY_TEXT = Rule(lambda value: isinstance(value, str), "text", "TEXT")
+LINE = Rule(lambda value: type(value) is int and value > 0,
+            "a positive integer", "N")
+URL = Rule(lambda value: isinstance(value, str)
+           and value.startswith(("http://", "https://")),
+           "a URL starting http:// or https://", "URL")
 
 
 def one_of(*choices):
-    return (lambda value: value in choices, f"one of {', '.join(choices)}")
+    return Rule(lambda value: value in choices,
+                f"one of {', '.join(choices)}",
+                " or ".join(f'"{choice}"' for choice in choices), choices)
 
 
 class Each(NamedTuple):
@@ -24,68 +36,105 @@ class Each(NamedTuple):
     nonempty: bool = False
 
 
-EVIDENCE_SHAPES = {
-    "file": {"file": TEXT, "line": LINE},
+class Either(NamedTuple):
+    forms: dict
+
+
+class Checked(NamedTuple):
+    fields: dict
+    extra: object
+
+
+def needs_hypothesis(value, path):
+    if (isinstance(value, dict) and value.get("level") == "not_reproduced"
+            and value.get("hypotheses") == []):
+        return [f"{path}.hypotheses: must hold at least one hypothesis at"
+                " level not_reproduced"]
+    return []
+
+
+EVIDENCE = Either({
+    "file": {"file": PATH, "line": LINE},
     "command": {"command": TEXT, "output": ANY_TEXT},
     "url": {"url": URL},
-}
-
-
-def evidence_problems(item, path):
-    if not isinstance(item, dict):
-        return [f"{path}: must be an object"]
-    kinds = [kind for kind in EVIDENCE_SHAPES if kind in item]
-    if len(kinds) != 1:
-        return [f"{path}: must hold exactly one of file, command and url"]
-    return walk(item, EVIDENCE_SHAPES[kinds[0]], path)
-
-
-HYPOTHESIS = {"hypothesis": TEXT, "separates": TEXT,
-              "verdict": one_of("supported", "ruled_out", "open")}
+})
 FIELDS = {
     "summary": TEXT,
     "findings": Each({"title": TEXT,
                       "status": one_of("shown", "likely", "unconfirmed"),
-                      "evidence": Each(evidence_problems, nonempty=True)}),
-    "actions": Each({"title": TEXT, "why": TEXT, "body": TEXT,
-                     "kind": one_of("fix", "test", "investigate", "decide")}),
+                      "evidence": Each(EVIDENCE, nonempty=True)}),
+    "actions": Each({"title": TEXT, "why": TEXT,
+                     "kind": one_of("fix", "test", "investigate", "decide"),
+                     "body": TEXT}),
+}
+REPRODUCTION = Checked({
+    "level": one_of("test", "real_tool", "not_reproduced"),
+    "hypotheses": Each({"hypothesis": TEXT, "separates": TEXT,
+                        "verdict": one_of("supported", "ruled_out", "open")}),
+}, needs_hypothesis)
+
+
+def walk_fields(value, rule, path):
+    if not isinstance(value, dict):
+        return [f"{path}: must be an object"]
+    return [problem for key, field in rule.items()
+            for problem in walk(value.get(key), field,
+                                f"{path}.{key}" if path else key)]
+
+
+def walk_each(value, rule, path):
+    if not isinstance(value, list) or (rule.nonempty and not value):
+        return [f"{path}: must be a {'non-empty ' * rule.nonempty}list"]
+    return [problem for index, item in enumerate(value)
+            for problem in walk(item, rule.item, f"{path}[{index}]")]
+
+
+def walk_either(value, rule, path):
+    if not isinstance(value, dict):
+        return [f"{path}: must be an object"]
+    keys = [key for key in rule.forms if key in value]
+    if len(keys) != 1:
+        return [f"{path}: must hold exactly one of {', '.join(rule.forms)}"]
+    return walk(value, rule.forms[keys[0]], path)
+
+
+def walk_checked(value, rule, path):
+    return walk(value, rule.fields, path) + rule.extra(value, path)
+
+
+def walk_rule(value, rule, path):
+    return [] if rule.check(value) else [f"{path}: must be {rule.must}"]
+
+
+WALKERS = {dict: walk_fields, Each: walk_each, Either: walk_either,
+           Checked: walk_checked, Rule: walk_rule}
+SHOWN = {
+    dict: lambda rule: "{" + ", ".join(f'"{key}": {shown(field)}'
+                                       for key, field in rule.items()) + "}",
+    Each: lambda rule: f"[{shown(rule.item)}, ...]",
+    Either: lambda rule: " or ".join(map(shown, rule.forms.values())),
+    Checked: lambda rule: shown(rule.fields),
+    Rule: lambda rule: rule.shown,
 }
 
 
-def reproduction_problems(value, path):
-    problems = walk(value, {"level": one_of("test", "real_tool",
-                                            "not_reproduced"),
-                            "hypotheses": Each(HYPOTHESIS)}, path)
-    if (isinstance(value, dict) and value.get("level") == "not_reproduced"
-            and value.get("hypotheses") == []):
-        problems.append(f"{path}.hypotheses: must hold at least one"
-                        " hypothesis at level not_reproduced")
-    return problems
-
-
 def walk(value, rule, path):
-    if callable(rule):
-        return rule(value, path)
-    if isinstance(rule, dict):
-        if not isinstance(value, dict):
-            return [f"{path}: must be an object"]
-        return [problem for key, field in rule.items()
-                for problem in walk(value.get(key), field,
-                                    f"{path}.{key}" if path else key)]
-    if isinstance(rule, Each):
-        if not isinstance(value, list) or (rule.nonempty and not value):
-            return [f"{path}: must be a {'non-empty ' * rule.nonempty}list"]
-        return [problem for index, item in enumerate(value)
-                for problem in walk(item, rule.item, f"{path}[{index}]")]
-    check, must = rule
-    return [] if check(value) else [f"{path}: must be {must}"]
+    return WALKERS[type(rule)](value, rule, path)
+
+
+def shown(rule):
+    return SHOWN[type(rule)](rule)
+
+
+def fields_shape(fields):
+    return ",\n".join(f' "{key}": {shown(field)}' for key, field in fields.items())
 
 
 def report_problems(report, kind):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
-        fields["reproduction"] = reproduction_problems
+        fields["reproduction"] = REPRODUCTION
     return walk(report, fields, "")
 
 

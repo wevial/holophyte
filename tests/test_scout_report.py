@@ -10,8 +10,16 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from holophyte.scout.report import report_problems, resolve_evidence
+from holophyte.scout.lead import report_goal
+from holophyte.scout.report import (
+    FIELDS,
+    REPRODUCTION,
+    Rule,
+    report_problems,
+    resolve_evidence,
+)
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
@@ -50,6 +58,15 @@ def changed(path, value):
     else:
         holder[last] = value
     return report
+
+
+def enumerated(rule):
+    if isinstance(rule, Rule):
+        return list(rule.choices)
+    parts = rule.values() if isinstance(rule, dict) else rule
+    if isinstance(parts, str) or not hasattr(parts, "__iter__"):
+        return []
+    return [choice for part in parts for choice in enumerated(part)]
 
 
 def starts(problems):
@@ -97,6 +114,22 @@ class ReportProblemsTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertEqual(starts(report_problems(
                     changed(path, value), "bug")), [field])
+
+
+class ReportGoalTests(unittest.TestCase):
+    def test_the_report_goal_names_every_value_the_check_allows(self):
+        choices = enumerated([FIELDS, REPRODUCTION])
+        self.assertEqual(sorted(choices), sorted([
+            "shown", "likely", "unconfirmed", "fix", "test", "investigate",
+            "decide", "test", "real_tool", "not_reproduced", "supported",
+            "ruled_out", "open"]))
+        goal = report_goal(SimpleNamespace(kind="bug"),
+                           SimpleNamespace(tasks=[]), None, False)
+        self.assertEqual([choice for choice in choices
+                          if f'"{choice}"' not in goal], [])
+        for form in ('{"file": PATH, "line": N}',
+                     '{"command": TEXT, "output": TEXT}', '{"url": URL}'):
+            self.assertIn(form, goal)
 
 
 class ResolveEvidenceTests(unittest.TestCase):

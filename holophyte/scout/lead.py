@@ -10,7 +10,13 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.loop.gates import run_capped
 from holophyte.redact import known_secrets, outbound
-from holophyte.scout.report import report_problems, resolve_evidence
+from holophyte.scout.report import (
+    FIELDS,
+    REPRODUCTION,
+    fields_shape,
+    report_problems,
+    resolve_evidence,
+)
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
 from holophyte.scout.swarm import Swarm, turn_answer
@@ -37,19 +43,8 @@ FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
 PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
-REPORT_SHAPE = (
-    '{"summary": TEXT,\n'
-    ' "findings": [{"title": TEXT,'
-    ' "status": "shown" or "likely" or "unconfirmed",\n'
-    '   "evidence": [{"file": PATH, "line": N} or'
-    ' {"command": TEXT, "output": TEXT} or {"url": URL}, ...]}, ...],\n'
-    ' "actions": [{"title": TEXT, "why": TEXT,'
-    ' "kind": "fix" or "test" or "investigate" or "decide", "body": TEXT},'
-    ' ...]')
-REPRODUCTION_SHAPE = (
-    ',\n "reproduction": {"level": "test" or "real_tool" or "not_reproduced",'
-    '\n   "hypotheses": [{"hypothesis": TEXT, "separates": TEXT,'
-    ' "verdict": "supported" or "ruled_out" or "open"}, ...]}')
+REPORT_SHAPE = "{" + fields_shape(FIELDS).lstrip()
+REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
 
 
 class LeadTurn(NamedTuple):
