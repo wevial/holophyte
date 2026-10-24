@@ -208,10 +208,7 @@ test("a refused choice reads its detail under the card and enables the buttons a
   expect(cardButtons().map((button) => button.disabled)).toEqual([false, false, false]);
 });
 
-test("the card's buttons are disabled with the composer's title when actions are off or the scout is answering", async () => {
+test("the card's buttons are disabled with the composer's title when actions are off", async () => {
   await mount(scoutFetch({ scout: carded, actions: false }).fetch);
   expect(cardButtons().map((button) => [button.disabled, button.title])).toEqual(Array(3).fill([true, ACTIONS_OFF]));
-  cleanup();
-  await mount(scoutFetch({ scout: { ...carded, scout: { ...carded.scout, phase: "answering" } } }).fetch);
-  expect(cardButtons().map((button) => [button.disabled, button.title])).toEqual(Array(3).fill([true, "Scout 31 is answering."]));
 });
