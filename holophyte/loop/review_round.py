@@ -35,7 +35,7 @@ from holophyte.loop.steering import pending as steer_pending
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary, consolidate
+from holophyte.review import adversary, consolidate, main_baseline
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     criteria_brief,
@@ -262,7 +262,9 @@ def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
                      contracts, rnd)
     ok, out = checks()
     if rnd != 1:
-        return sha, ok, out, ""
+        return sha, ok, out, main_baseline.brief(main_baseline.baselines(
+            project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
+            verify_cmd, ok))
     return witness_turns.before_review(
         project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
         ticket, verify_cmd, criteria, budget_min, ok, out, checks)
