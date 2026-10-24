@@ -1,22 +1,22 @@
 """A scout's thread: a person's asks and steers, and the scout's answers."""
 import json
-import time
 from typing import NamedTuple
 
 from holophyte.redact import redact_document, redact_values
 
-from .enums import ScoutPhase, ThreadMode
+from .enums import ThreadMode
 from .schema import _transaction
 from .scouts import (
     ANSWERING,
+    DONE,
     PASS_STARTED,
     PLANNING,
+    _now,
     _reopen_scout,
     record_scout_event,
 )
 
 ASK, STEER, ANSWER = (mode.value for mode in ThreadMode)
-DONE = ScoutPhase.DONE.value
 BLOCK_TYPES = ("finding", "action", "proposal")
 ANSWER_STARTED = "scout_answer_started"
 COLUMNS = ("id", "projectId", "scoutId", "author", "mode", "text", "blocks",
@@ -41,10 +41,6 @@ class Message(NamedTuple):
     at: int
     consumed_by: int | None
     consumed_at: int | None
-
-
-def _now(now):
-    return int(time.time() * 1000) if now is None else now
 
 
 def _waiting(conn, scout_id):
@@ -119,22 +115,18 @@ def take_message(conn, message_id, host=None, now=None):
         if phase != DONE:
             raise ThreadRefused(subject, f"scout {scout_id} is {phase}, not done")
         if mode == ASK:
-            _reopen_scout(conn, scout_id, ANSWERING, host, now)
-            payload = {"message": message_id}
-            seq = record_scout_event(
-                conn, scout_id, ANSWER_STARTED,
-                f"answering message {message_id}", level="detail",
-                payload=json.dumps(payload), now=now)
+            to, kind, payload = ANSWERING, ANSWER_STARTED, {"message": message_id}
+            summary = f"answering message {message_id}"
         else:
             (last,) = conn.execute(
                 "SELECT COALESCE(MAX(pass), 0) FROM scoutReports"
                 " WHERE scoutId = ?", (scout_id,)).fetchone()
-            _reopen_scout(conn, scout_id, PLANNING, host, now)
+            to, kind = PLANNING, PASS_STARTED
             payload = {"message": message_id, "pass": last + 1}
-            seq = record_scout_event(
-                conn, scout_id, PASS_STARTED,
-                f"pass {last + 1} steered by message {message_id}",
-                level="detail", payload=json.dumps(payload), now=now)
+            summary = f"pass {last + 1} steered by message {message_id}"
+        _reopen_scout(conn, scout_id, to, host, now)
+        seq = record_scout_event(conn, scout_id, kind, summary, level="detail",
+                                 payload=json.dumps(payload), now=now)
         (event_id,) = conn.execute(
             "SELECT id FROM runEvents WHERE scoutId = ? AND seq = ?",
             (scout_id, seq)).fetchone()
