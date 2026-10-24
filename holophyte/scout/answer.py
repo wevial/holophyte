@@ -213,7 +213,7 @@ def settle(conn, scout_id, outcome):
                            payload=json.dumps({
                                "message": outcome.ask, "answer": posted,
                                "unknown_refs": unknown, "cards": cards,
-                               "dropped_proposals": list(outcome.dropped)}))
+                               "dropped_proposals": outcome.dropped}))
         move_scout(conn, scout_id, DONE)
     print(f"[holo2] scout {scout_id} {summary}", flush=True)
     return 0

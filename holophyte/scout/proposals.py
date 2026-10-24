@@ -67,14 +67,8 @@ def proposals_goal():
             f"{{{PROPOSALS_SHAPE}}}\n")
 
 
-def answered_card(thread, message):
-    if message.answers_id is None:
-        return None
-    return next((earlier.text for earlier in thread
-                 if earlier.id == message.answers_id), None)
-
-
 def card_line(thread, message):
-    question = answered_card(thread, message)
+    question = next((earlier.text for earlier in thread
+                     if earlier.id == message.answers_id), None)
     return ("" if question is None
             else f"It answers your earlier question: {question}\n\n")
