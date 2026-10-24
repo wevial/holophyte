@@ -209,6 +209,45 @@ test("a scout the project lacks and a project the console lacks each read their 
   expect(screen.getByText("No project named nope answers this console.")).toBeTruthy();
 });
 
+/** DEMO answering `/scouts/1` with `respond()`, asked at each request, and everything else as `scoutFetch` does. */
+function scoutOneFetch(respond: () => Response | Promise<Response>): Fetch {
+  const { fetch } = scoutFetch({});
+  return async (url, init) => (url === `${DEMO}/scouts/1` ? respond() : fetch(url, init));
+}
+
+const failure = () => Response.json({ error: "TypeError: string indices must be integers, not 'str'" }, { status: 500 });
+
+test("a scout read the daemon answers 500 or the schema refuses reads its notice, with Back to Scouts and no Asking", async () => {
+  await mount("#/scouts/demo/1", scoutOneFetch(failure));
+  expect(screen.getByText("demo could not read scout 1 (answered 500).")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Back to Scouts" }).getAttribute("href")).toBe("/next.html#/scouts?project=demo");
+  expect(document.body.textContent).not.toContain("Asking");
+  cleanup();
+  const { scout: _, ...refused } = { ...live, scout: { ...live.scout, id: 1 } };
+  await mount("#/scouts/demo/1", scoutOneFetch(() => Response.json(refused)));
+  expect(screen.getByText("demo could not read scout 1.")).toBeTruthy();
+});
+
+test("a scout read not yet answered reads Asking and no failure", async () => {
+  await mount("#/scouts/demo/1", scoutOneFetch(() => new Promise<Response>(() => {})));
+  expect(screen.getByText("Asking demo for scout 1…")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("could not read");
+});
+
+test("a failed scout read gives way to the scout once the daemon answers again", async () => {
+  let respond = failure;
+  const queries = await mount("#/scouts/demo/1", scoutOneFetch(() => respond()));
+  expect(screen.getByText("demo could not read scout 1 (answered 500).")).toBeTruthy();
+  const done = { ...twoWaves, scout: { ...twoWaves.scout, id: 1 } };
+  respond = () => Response.json(done);
+  await act(async () => {
+    await queries.refetchQueries();
+  });
+  await settled();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
+  expect(document.body.textContent).not.toContain("could not read");
+});
+
 test("a live scout's activity reads Plan, the running wave and the pending Synthesis, with only the wave open", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
   expect(groups().map(row)).toEqual([

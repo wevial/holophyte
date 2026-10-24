@@ -2,10 +2,12 @@
 import json
 import re
 import time
+from typing import get_args
 
 import store.read
 from holophyte.agents.harness import SCOUT_HELPER, SCOUT_LEAD
 from holophyte.scout.scout_config import scout_config
+from holophyte.scout.scout_contract import ActionKind, FindingStatus
 from holophyte.serve.serve_runs import (
     SQLITE_MAX_DIGITS,
     SQLITE_MAX_INT,
@@ -40,6 +42,8 @@ TASK_KEYS = ("id", "pass", "wave", "question", "paths", "mode", "route",
 ACTION_KEYS = ("title", "why", "kind", "body")
 HYPOTHESIS_KEYS = ("hypothesis", "separates", "verdict")
 PRIOR_KEYS = ("scout", "finding", "verdict", "why")
+FINDING_STATUSES = get_args(FindingStatus)
+ACTION_KINDS = get_args(ActionKind)
 
 
 def now_ms(now):
@@ -90,6 +94,8 @@ def parse_scout_id(text):
 
 
 def served_evidence(item):
+    if isinstance(item, str):
+        return {"text": item}
     if "file" in item:
         verified = item.get("verified") is True
         return {"file": item["file"], "line": item["line"],
@@ -97,7 +103,24 @@ def served_evidence(item):
                 "why": None if verified else item.get("why")}
     if "command" in item:
         return {"command": item["command"], "output": item["output"]}
-    return {"url": item["url"]}
+    if "url" in item:
+        return {"url": item["url"]}
+    return {"text": item["text"]}
+
+
+def served_evidence_list(evidence):
+    items = [evidence] if isinstance(evidence, str) else evidence
+    return [served_evidence(item) for item in items]
+
+
+def served_status(status):
+    return status if status in FINDING_STATUSES else "unconfirmed"
+
+
+def served_report_action(action):
+    kind = action["kind"]
+    return {**{key: action[key] for key in ACTION_KEYS},
+            "kind": kind if kind in ACTION_KINDS else "investigate"}
 
 
 def served_reproduction(reproduction):
@@ -111,11 +134,11 @@ def served_reproduction(reproduction):
 def served_report(report):
     return {"summary": report["summary"],
             "findings": [{"title": finding["title"],
-                          "status": finding["status"],
-                          "evidence": [served_evidence(item)
-                                       for item in finding["evidence"]]}
+                          "status": served_status(finding["status"]),
+                          "evidence": served_evidence_list(
+                              finding["evidence"])}
                          for finding in report["findings"]],
-            "actions": [{key: action[key] for key in ACTION_KEYS}
+            "actions": [served_report_action(action)
                         for action in report["actions"]],
             "reproduction": served_reproduction(report.get("reproduction")),
             "cut": report.get("cut"),

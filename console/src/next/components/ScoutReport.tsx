@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import type { CommandEvidence, FileEvidence, Hypothesis, Reproduction, ScoutFinding, ScoutReportPass } from "../../lib/contract.gen";
+import type { CommandEvidence, FileEvidence, Hypothesis, Reproduction, ScoutFinding, ScoutReportPass, TextEvidence } from "../../lib/contract.gen";
 import { shortSha } from "../../lib/shipped";
 import { numberFindings, type NumberedFinding } from "../scout";
 import { SECTION_LABEL } from "./Criteria";
@@ -32,6 +32,7 @@ const LEVELS: Record<Reproduction["level"], string> = {
 
 const isFile = (item: Evidence): item is FileEvidence => "file" in item;
 const isCommand = (item: Evidence): item is CommandEvidence => "command" in item;
+const isText = (item: Evidence): item is TextEvidence => "text" in item;
 
 function FileItem({ item, base }: { item: FileEvidence; base: string }) {
   const place = `${item.file}:${item.line}`;
@@ -91,6 +92,7 @@ function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: stri
                   </button>
                 );
               }
+              if (isText(item)) return <span key={index} data-text className={`${MONO} text-ink-2`}>{item.text}</span>;
               return <UrlItem key={index} url={item.url} />;
             })}
           </div>

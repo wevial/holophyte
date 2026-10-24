@@ -77,12 +77,12 @@ const unreported = (id: number, phase: ScoutDetail["scout"]["phase"]): ScoutDeta
 
 const scouts: Record<number, ScoutDetail> = { 31: bug, 32: research, 33: twoPasses, 34: marked, 35: unreported(35, "swarming"), 36: unreported(36, "failed") };
 
-function scoutFetch(): Fetch {
+function scoutFetch(shown: Record<number, ScoutDetail>): Fetch {
   const polls = fleet({ items: [] }, { items: [] });
   return async (url) => {
     const id = new RegExp(`^${DEMO}/scouts/(\\d+)$`).exec(url)?.[1];
     if (id != null) {
-      const detail = scouts[Number(id)];
+      const detail = shown[Number(id)];
       return detail ? Response.json(detail) : Response.json({ error: "no such scout" }, { status: 404 });
     }
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: [] });
@@ -90,9 +90,9 @@ function scoutFetch(): Fetch {
   };
 }
 
-async function mount(id: number) {
+async function mount(id: number, shown = scouts) {
   window.location.hash = `#/scouts/demo/${id}`;
-  const fake = fakeDeps(scoutFetch());
+  const fake = fakeDeps(scoutFetch(shown));
   fake.clock.now = NOW;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
@@ -219,4 +219,23 @@ test("a finding title reads as plain text, never markdown", async () => {
   const [row] = findingRows();
   expect(row!.querySelector("[data-finding-title]")!.textContent).toBe("**Bold** and `code`");
   expect(row!.querySelector("strong, code")).toBeNull();
+});
+
+test("a text evidence item reads as plain text with no link or button, beside file and url items that read as before", async () => {
+  const text = "No KillMode in deploy/*.service; holophyte-loop@.service:13-17 sets Type=simple";
+  const mixed: ScoutDetail = {
+    ...bug,
+    reports: [pass(1, [
+      finding("Helpers outlive the loop.", "unconfirmed", [{ text }]),
+      finding("The unit sets no KillMode.", "shown", [file("deploy/holophyte-loop@.service", 13), { url: "https://example.com/systemd/kill" }]),
+    ], null)],
+  };
+  await mount(31, { 31: mixed });
+  const [f1, f2] = findingRows();
+  const evidence = f1!.querySelector("[data-evidence]") as HTMLElement;
+  expect(evidence.textContent).toBe(text);
+  expect(within(evidence).queryByRole("link")).toBeNull();
+  expect(within(evidence).queryByRole("button")).toBeNull();
+  expect(within(f2!).getByText("deploy/holophyte-loop@.service:13")).toBeTruthy();
+  expect(within(f2!).getByRole("link", { name: "example.com/systemd/kill" }).getAttribute("href")).toBe("https://example.com/systemd/kill");
 });

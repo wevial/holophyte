@@ -76,10 +76,17 @@ class UrlEvidence(TypedDict):
     url: str
 
 
+class TextEvidence(TypedDict):
+    text: str
+
+
+FindingStatus = Literal["shown", "likely", "unconfirmed"]
+
+
 class ScoutFinding(TypedDict):
     title: str
-    status: Literal["shown", "likely", "unconfirmed"]
-    evidence: list[FileEvidence | CommandEvidence | UrlEvidence]
+    status: FindingStatus
+    evidence: list[FileEvidence | CommandEvidence | UrlEvidence | TextEvidence]
 
 
 ActionKind = Literal["fix", "test", "investigate", "decide", "revise"]
