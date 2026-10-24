@@ -319,10 +319,10 @@ class Swarm:
     def cut_short(self, task):
         return self.stopping.stopped or task.id in self.halted
 
-    def skip(self, conn, task, mine):
+    def end_unrun(self, conn, task, mine, phase, excerpt):
         start_scout_task(conn, task.id)
         mine.set()
-        self.end(conn, task, STOPPED, "")
+        self.end(conn, task, phase, excerpt)
 
     def checkout(self, task):
         path = self.scratch / f"helper-{task.id}"
@@ -356,7 +356,7 @@ class Swarm:
             if previous is not None:
                 previous.wait()
             if task.id in self.halted:
-                self.skip(conn, task, mine)
+                self.end_unrun(conn, task, mine, STOPPED, "")
                 return
             if runs(task):
                 self.run_helper(conn, task, mine)
@@ -384,10 +384,8 @@ class Swarm:
             checkout = run_clone(self.project, self.row.id, task.id,
                                  self.row.base_sha)
         except (RuntimeError, OSError) as error:
-            start_scout_task(conn, task.id)
-            mine.set()
-            self.end(conn, task, FAILED,
-                     redact_prose(str(error), self.secrets)[:EXCERPT_CHARS])
+            self.end_unrun(conn, task, mine, FAILED, redact_prose(
+                str(error), self.secrets)[:EXCERPT_CHARS])
             return
         try:
             self.run_in(conn, task, mine, checkout)

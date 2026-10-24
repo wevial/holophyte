@@ -132,7 +132,7 @@ def requested(conn, project, scout_id, author, note, via):
                  }, (ask, steered)
 
 
-def refused_task(conn, row, task_id):
+def refused_task(row, task_id, phase):
     if row.phase != SWARMING:
         return (f"scout {row.id} is {row.phase}, not swarming;"
                 " it has no helper task to stop")
@@ -140,8 +140,6 @@ def refused_task(conn, row, task_id):
     if row.host not in (None, here):
         return (f"scout {row.id} runs on {row.host}, not on {here};"
                 f" stop its task from {row.host}'s daemon")
-    (phase,) = conn.execute("SELECT phase FROM scoutTasks WHERE id = ?",
-                            (task_id,)).fetchone()
     if phase not in TASK_LIVE:
         return f"task {task_id} is {phase}; nothing to stop"
     return None
@@ -153,13 +151,13 @@ def task_requested(conn, project, scout_id, task_id, author, note, via):
     if row is None:
         return 404, {"error": "no such scout", **named,
                      "detail": f"no scout {scout_id}"}
-    owner = (conn.execute("SELECT scoutId FROM scoutTasks WHERE id = ?",
-                          (task_id,)).fetchone()
-             if task_id < ROW_ID_LIMIT else None)
-    if owner is None or owner[0] != scout_id:
+    task = (conn.execute("SELECT scoutId, phase FROM scoutTasks WHERE id = ?",
+                         (task_id,)).fetchone()
+            if task_id < ROW_ID_LIMIT else None)
+    if task is None or task[0] != scout_id:
         return 404, {"error": "no such task", **named,
                      "detail": f"scout {scout_id} has no task {task_id}"}
-    declined = refused_task(conn, row, task_id)
+    declined = refused_task(row, task_id, task[1])
     if declined is None and not (row.pid and runs_scout(row.pid, scout_id,
                                                         project.path)):
         declined = (f"scout {scout_id} has no running process to stop"
