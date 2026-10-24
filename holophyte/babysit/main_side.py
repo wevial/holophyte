@@ -36,10 +36,24 @@ def verify_detached_main(project, conn, run_id, beat_s, wt, ref, command,
                             " which only this branch adds. ")
         ok, out = refresh_verify(project, conn, run_id, beat_s, detached, sha,
                                  side.command, contracts)
+        expected = (drop_candidate_modules(failing, wt, detached, sha).command
+                    if failing in side.trimmed else failing)
+    other = _other_clause(ok, out, failing, expected)
+    if other:
+        return MainSide(sha, None, out, side.command,
+                        f"fails a different command, {other}, not the one the"
+                        " merged tree fails. ")
     trimmed = side.trimmed.get(failing)
     state = (f"passes without {', '.join(trimmed)}, which only this branch"
              " adds. " if trimmed else "passes. ")
     return MainSide(sha, ok, out, side.command, state)
+
+
+def _other_clause(ok, out, failing, expected):
+    clause = (getattr(out, "failure", None) or {}).get("command", "").strip()
+    if ok or not failing or not clause:
+        return None
+    return None if clause.split() == expected.split() else clause
 
 
 def _record_skipped(conn, run_id, sha, side):

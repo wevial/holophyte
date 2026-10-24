@@ -772,6 +772,14 @@ keep, and the reason goes to the ticket as a comment. The table's shape is
 checked at startup with the `[agents]` commands; the commands themselves are not
 run there, since the worktree they are written against does not exist yet.
 
+Setup reruns, every entry, in the task worktree after a merge of main that
+brought in commits: at the merge gate, when an approved candidate resumes there,
+and when the babysitter merges main into a conflicting pull request. What setup
+generated from the old inputs would otherwise be judged stale by the merged
+tree's verify, so its commands must be safe to rerun. A failing command then is
+recorded as a `merge_gate` run event, `worktree setup rerun after merging main`
+with `FAILED` and its report, and the verify still runs on the merged tree.
+
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the project's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
