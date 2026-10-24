@@ -119,12 +119,15 @@ class DaemonSteerTests(ActionCase):
         server = self.serve(path)
         before = self.thread(path, scout_id)
 
-        code, reply = self.post(server, "/actions/scout-message",
-                                {"scout": scout_id, "mode": "ask",
-                                 "text": "Fold into A1", "answers": "3"})
-        self.assertEqual(code, 400, reply)
-        self.assertIn("answers", reply["error"])
-        for named in (asked, answered, other_card, taken_card):
+        for given in ("3", None):
+            with self.subTest(answers=given):
+                code, reply = self.post(server, "/actions/scout-message",
+                                        {"scout": scout_id, "mode": "ask",
+                                         "text": "Fold into A1",
+                                         "answers": given})
+                self.assertEqual(code, 400, reply)
+                self.assertIn("answers", reply["error"])
+        for named in (asked, answered, other_card, taken_card, 2**63):
             with self.subTest(answers=named):
                 code, reply = self.post(server, "/actions/scout-message",
                                         {"scout": scout_id, "mode": "ask",

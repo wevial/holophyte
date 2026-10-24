@@ -5,6 +5,7 @@ from typing import NamedTuple
 from holophyte.redact import redact_document, redact_values
 
 from .enums import ThreadMode
+from .run_reads import SQLITE_INT64_MAX
 from .schema import _transaction
 from .scouts import (
     ANSWERING,
@@ -66,8 +67,9 @@ def _blocks(scout_id, blocks):
 
 
 def _answered(conn, scout_id, answers_id):
-    row = conn.execute("SELECT scoutId, mode, blocks FROM threadMessages"
-                       " WHERE id = ?", (answers_id,)).fetchone()
+    row = None if answers_id > SQLITE_INT64_MAX else conn.execute(
+        "SELECT scoutId, mode, blocks FROM threadMessages WHERE id = ?",
+        (answers_id,)).fetchone()
     if row is None or row[0] != scout_id:
         raise ThreadRefused(f"message {answers_id}",
                             f"not a message of scout {scout_id}")

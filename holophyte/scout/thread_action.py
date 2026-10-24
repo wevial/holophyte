@@ -20,8 +20,8 @@ def refusal(body):
     text = body.get("text")
     if not isinstance(text, str) or not text.strip():
         return "text must be non-blank text"
-    answers = body.get("answers")
-    if answers is not None and (type(answers) is not int or answers < 1):
+    answers = body.get("answers", 1)
+    if type(answers) is not int or answers < 1:
         return "answers must be a positive integer: the card's message id"
     return None
 
