@@ -52,7 +52,7 @@ const live: ScoutDetail = {
   tasks: waveOne,
   reports: [],
   actions: [],
-  events: [{ at: at(11, 47), kind: "agent_turn", summary: "scout-lead turn ended" }],
+  events: [{ id: 1, at: at(11, 47), kind: "agent_turn", summary: "scout-lead turn ended" }],
 };
 
 /** `live` with the first done task's tokens, so its row reads them. */
@@ -250,8 +250,8 @@ test("a scout with no tasks ends Plan on the lead's first turn, and Report's ste
     tasks: [],
     reports: [report("Nothing to scout.")],
     events: [
-      { at: at(11, 2), kind: "agent_turn", summary: "scout-lead turn ended" },
-      { at: at(11, 2, 5), kind: "scout_helpers", summary: "helper route luna is down: probe failed" },
+      { id: 2, at: at(11, 2), kind: "agent_turn", summary: "scout-lead turn ended" },
+      { id: 3, at: at(11, 2, 5), kind: "scout_helpers", summary: "helper route luna is down: probe failed" },
     ],
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: bare } }).fetch);
@@ -306,7 +306,7 @@ test("a swarming second wave ends the first on its last helper back, past one ne
 
 test("a wave whose helpers never started leaves the lead's turn after it to Synthesis, then to Report", async () => {
   const refused = { ...waveOne[9]!, question: "Does the digest open its own connection?" };
-  const turn = { at: at(11, 47), kind: "agent_turn", summary: "scout-lead turn ended" };
+  const turn = { id: 4, at: at(11, 47), kind: "agent_turn", summary: "scout-lead turn ended" };
   const synthesizing: ScoutDetail = { ...live, scout: { ...live.scout, phase: "synthesizing" }, tasks: [refused], events: [turn] };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: synthesizing } }).fetch);
   expect(groups().map((group) => [row(group).title, row(group).span])).toEqual([
@@ -326,7 +326,7 @@ test("a done scout's wave ends on its last helper back, past one never started, 
     scout: { ...live.scout, phase: "done", ended_ms: at(11, 55) },
     tasks: [back(waveOne[0]!.question, { ended_ms: at(11, 50, 12) }), waveOne[9]!],
     reports: [report("Capped at one helper.")],
-    events: [{ at: at(11, 52), kind: "scout_report", summary: "the lead wrote its report" }],
+    events: [{ id: 5, at: at(11, 52), kind: "scout_report", summary: "the lead wrote its report" }],
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: done } }).fetch);
   expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 12s"], ["Wave 1", "3m 00s"], ["Report", "4m 48s"]]);
@@ -339,7 +339,7 @@ test("a running Plan shows its steps open, with no control to fold them", async 
     ...live,
     scout: { ...live.scout, phase: "planning" },
     tasks: [],
-    events: [{ at: at(11, 50), kind: "scout_planning", summary: "the lead reads the repository" }],
+    events: [{ id: 6, at: at(11, 50), kind: "scout_planning", summary: "the lead reads the repository" }],
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: planning } }).fetch);
   const plan = groupTitled("Plan");
