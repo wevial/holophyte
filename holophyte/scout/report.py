@@ -160,12 +160,12 @@ def fields_shape(fields):
     return ",\n".join(f' "{key}": {shown(field)}' for key, field in fields.items())
 
 
-def offers_revise(subject):
-    return subject is not None and subject[0] == DEFECT
+def offers_revise(subject_kind):
+    return subject_kind == DEFECT
 
 
-def offered_fields(subject):
-    kinds = KINDS + ((REVISE,) if offers_revise(subject) else ())
+def offered_fields(subject_kind):
+    kinds = KINDS + ((REVISE,) if offers_revise(subject_kind) else ())
     action = dict(FIELDS["actions"].item, kind=one_of(*kinds))
     return dict(FIELDS, actions=Each(action))
 
@@ -177,12 +177,12 @@ def untitled(body):
                     if line.strip()).startswith("# ")
 
 
-def revise_problems(actions, subject):
+def revise_problems(actions, subject_kind):
     revising = [(index, action) for index, action in enumerate(actions)
                 if isinstance(action, dict) and action.get("kind") == REVISE]
     problems = []
     for count, (index, action) in enumerate(revising):
-        if not offers_revise(subject):
+        if not offers_revise(subject_kind):
             problems.append(f"actions[{index}].kind: revise needs a"
                             " ticket-defect subject")
         if count:
@@ -193,7 +193,7 @@ def revise_problems(actions, subject):
     return problems
 
 
-def report_problems(report, kind, subject=None):
+def report_problems(report, kind, subject_kind=None):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
@@ -201,7 +201,7 @@ def report_problems(report, kind, subject=None):
     problems = walk(report, fields, "")
     actions = report.get("actions") if isinstance(report, dict) else None
     if isinstance(actions, list):
-        problems += revise_problems(actions, subject)
+        problems += revise_problems(actions, subject_kind)
     return problems
 
 

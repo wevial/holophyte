@@ -38,26 +38,27 @@ EMPTY_PLAN = fenced({"tasks": []})
 NATIVE = '[board]\nkind = "native"\nprefix = "NAT"\n'
 
 
-def checked(actions, subject):
+def checked(actions, subject_kind):
     return report_problems({"summary": "found", "findings": [],
-                            "actions": actions}, "research", subject)
+                            "actions": actions}, "research", subject_kind)
 
 
 class ReportCheckTests(unittest.TestCase):
     def test_a_revise_item_passes_only_on_a_ticket_defect_subject(self):
-        self.assertEqual(checked([REVISE], ("defect", "12")), [])
-        for subject in (("run", "12"), ("ticket", "NAT-3"), None):
-            with self.subTest(subject=subject):
-                problems = [problem for problem in checked([REVISE], subject)
+        self.assertEqual(checked([REVISE], "defect"), [])
+        for subject_kind in ("run", "ticket", None):
+            with self.subTest(subject_kind=subject_kind):
+                problems = [problem for problem
+                            in checked([REVISE], subject_kind)
                             if problem.startswith("actions[0].kind:")]
                 self.assertEqual(len(problems), 1, problems)
                 self.assertIn("ticket-defect", problems[0])
 
     def test_a_second_revise_item_and_an_untitled_revision_are_problems(self):
-        twice = checked([REVISE, REVISE], ("defect", "12"))
+        twice = checked([REVISE, REVISE], "defect")
         self.assertIn("actions[1].kind: at most one revise item", twice)
         untitled = checked([dict(REVISE, body=REVISION.removeprefix("# "))],
-                           ("defect", "12"))
+                           "defect")
         self.assertTrue(any(problem.startswith("actions[0].body:")
                             for problem in untitled), untitled)
 
