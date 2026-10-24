@@ -11,6 +11,7 @@ import io
 import json
 import os
 import stat
+import struct
 import sys
 import unittest
 import zipfile
@@ -322,19 +323,24 @@ class TestsTests(GithubCase):
         result = json.loads(answer.text)
         self.assertEqual((result["total"], result["failed"]), (2, 1))
 
-    def test_a_report_member_past_the_member_cap_is_skipped_unread(self):
+    def test_a_report_member_declaring_past_the_member_cap_is_skipped(self):
         path = self.github_project()
-        padded = JUNIT.replace("</testsuites>", " " * GITHUB_MEMBER_BYTES
-                               + "</testsuites>")
         archive = io.BytesIO()
-        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as writer:
-            writer.writestr("junit/huge.xml", padded)
+        with zipfile.ZipFile(archive, "w") as writer:
+            writer.writestr("junit/huge.xml", JUNIT)
             writer.writestr("junit/results.xml", JUNIT)
+        data = bytearray(archive.getvalue())
+        entry = data.index(b"PK\x01\x02")
+        self.assertEqual(data[entry + 46:entry + 60], b"junit/huge.xml")
+        data[entry + 24:entry + 28] = struct.pack("<I", GITHUB_MEMBER_BYTES + 1)
+        with zipfile.ZipFile(io.BytesIO(data)) as reread:
+            self.assertEqual(reread.getinfo("junit/huge.xml").file_size,
+                             GITHUB_MEMBER_BYTES + 1)
         self.gh.answer(ARTIFACTS, json.dumps({"artifacts": [
-            {"id": 12, "name": "junit",
-             "size_in_bytes": len(archive.getvalue()), "expired": False}]}))
+            {"id": 12, "name": "junit", "size_in_bytes": len(data),
+             "expired": False}]}))
         self.gh.answer("repos/example/repo/actions/artifacts/12/zip",
-                       archive.getvalue())
+                       bytes(data))
         target = self.target(path)
         answer = github_tests(target, origin_repo(target), 7)
         self.assertFalse(answer.error, answer.text)

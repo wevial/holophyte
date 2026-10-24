@@ -16,7 +16,7 @@ from store.scouts import ScoutRefused, record_scout_event
 
 GITHUB_ANSWER_CHARS = 40000
 GITHUB_ARTIFACT_BYTES = 50 * 1024 * 1024
-GITHUB_MEMBER_BYTES = 64 * 1024 * 1024
+GITHUB_MEMBER_BYTES = 256 * 1024 * 1024
 GITHUB_TEST_ROWS = 300
 OK, FAILED, REFUSED = "ok", "failed", "refused"
 ALLOWED = re.compile(
@@ -170,9 +170,11 @@ def member_rows(name, data):
 
 
 def zip_rows(data):
-    rows = []
+    rows, total = [], 0
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         for member in archive.infolist():
+            if total > GITHUB_MEMBER_BYTES:
+                break
             if (not member.filename.endswith((".xml", ".json"))
                     or member.file_size > GITHUB_MEMBER_BYTES):
                 continue
@@ -181,6 +183,7 @@ def zip_rows(data):
             except (RuntimeError, NotImplementedError, zlib.error, EOFError,
                     zipfile.BadZipFile):
                 continue
+            total += len(data)
             rows += member_rows(member.filename, data)
     return rows
 
