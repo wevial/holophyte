@@ -24,11 +24,8 @@ function messageHead(message: ThreadMessage): string {
   return `${message.author === "maintainer" ? "You" : message.author} · ${message.mode}`;
 }
 
-const proposalOf = (message: ThreadMessage) =>
-  message.author === "scout" ? message.blocks.find((block): block is ProposalBlock => block.type === "proposal") : undefined;
-
 function messageRow(detail: ScoutDetail, message: ThreadMessage, index: number): ThreadRow {
-  const proposal = proposalOf(message);
+  const proposal = message.author === "scout" ? message.blocks.find((block): block is ProposalBlock => block.type === "proposal") : undefined;
   if (proposal == null) {
     return { kind: "message", key: `message-${index}`, head: messageHead(message), at: message.at, text: message.text, agent: message.mode === "answer" };
   }
