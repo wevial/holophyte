@@ -87,13 +87,16 @@ def scout_heartbeat(conn, scout_id, interval_s):
 
 
 def clear_lead(repo, path, env):
-    if any(listed.resolve() == path.resolve()
+    if path.is_symlink():
+        path.unlink()
+    path = path.parent.resolve() / path.name
+    if any(listed.resolve() == path
            for listed in review_worktrees(repo, env=env)):
         sh(["git", "worktree", "remove", "--force", "--force", str(path)],
            cwd=repo, env=env)
-    if path.is_dir() and not path.is_symlink():
+    if path.is_dir():
         shutil.rmtree(path)
-    elif path.exists() or path.is_symlink():
+    elif path.exists():
         path.unlink()
     sh(["git", "worktree", "prune"], cwd=repo, env=env)
 

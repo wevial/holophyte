@@ -134,6 +134,23 @@ class ScoutProcessTests(ScoutFixture):
                 self.assertEqual(git(lead, "status", "--porcelain"), "")
                 self.assertEqual(len(self.listed(path, lead)), 1)
 
+    def test_a_symlink_at_the_lead_path_spares_the_worktree_it_names(self):
+        path = self.project("alpha")
+        other = self.root / "other"
+        git(path, "worktree", "add", "--detach", "-q", str(other), "main~1")
+        (other / "keep.txt").write_text("not the scout's")
+        scout_id = self.a_scout(path, "planning")
+        lead = self.lead(path, scout_id)
+        lead.parent.mkdir(parents=True)
+        lead.symlink_to(other)
+        code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 0, printed)
+        self.assertEqual((other / "keep.txt").read_text(), "not the scout's")
+        self.assertEqual(len(self.listed(path, other)), 1)
+        self.assertFalse(lead.is_symlink())
+        self.assertEqual(git(lead, "rev-parse", "HEAD"),
+                         git(path, "rev-parse", "main"))
+
     def test_a_push_from_the_lead_is_refused_and_the_checkout_still_pushes(self):
         path = self.project("alpha")
         scout_id = self.a_scout(path, "planning")
