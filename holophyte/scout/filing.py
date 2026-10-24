@@ -7,7 +7,7 @@ from holophyte.admission import project_row
 from holophyte.loop.runs import open_store
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
-from provider import board_for
+from provider import FiledWithoutBlockers, board_for
 from store.enums import ScoutPhase
 from store.scouts import ScoutRefused, file_scout_action, scout
 
@@ -132,7 +132,12 @@ def filed(project, body):
         return 200, {"ok": False, **named, "problems": list(refused.problems),
                      "advisories": list(advisories),
                      "detail": refused.problems[0]}
-    missed = recorded(project, scout_id, position, key)
+    except FiledWithoutBlockers as unblocked:
+        key = unblocked.identifier
+        missed = (recorded(project, scout_id, position, key)
+                  + f"; {unblocked}")
+    else:
+        missed = recorded(project, scout_id, position, key)
     detail = f"scout {scout_id} item {position} filed as {key} in {BACKLOG}"
     return 200, {"ok": not missed, **named, "ticket": key,
                  "advisories": list(advisories),

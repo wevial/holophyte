@@ -24,6 +24,7 @@ import store.tickets
 from holophyte.board.native_board import NativeBoard
 from holophyte.config.project import Project
 from holophyte.holo.cli import main as holo_main
+from provider import FiledWithoutBlockers
 from store.scouts import create_scout, end_scout, move_scout, record_scout_actions
 from tests.host_fixture import HostFixture
 from tests.test_holo_mcp import McpCase
@@ -180,6 +181,23 @@ class DaemonScoutFileTests(ScoutFileCase):
         self.assertEqual(([key for key, _, _ in tickets], seq),
                          (["NAT-1"], 1))
         self.assertEqual(actions[0], (1, "NAT-1", 1))
+
+    def test_a_ticket_filed_without_its_blockers_is_recorded_on_the_item(self):
+        real = NativeBoard.file
+
+        def unblocked(board, *args, **kwargs):
+            key = real(board, *args, **kwargs)
+            raise FiledWithoutBlockers(key, RuntimeError("blocker refused"))
+        self.enterContext(patch.object(NativeBoard, "file", unblocked))
+        self.start_host()
+        status, answer = self.file({"scout": self.scout, "item": 1})
+        self.assertEqual(status, 200, answer)
+        self.assertEqual((answer["ok"], answer["ticket"]), (False, "NAT-1"))
+        self.assertIn("without all its blockers", answer["detail"])
+        self.assertEqual(self.state()[2][0], (1, "NAT-1", 1))
+        again = self.file({"scout": self.scout, "item": 1})[1]
+        self.assertIn("already filed as NAT-1", again["detail"])
+        self.assertEqual(len(self.state()[0]), 1)
 
     def failed_scout(self):
         with self.store("native") as (conn, project):
