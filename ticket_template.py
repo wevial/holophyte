@@ -555,23 +555,6 @@ def _unittest_modules(tokens):
             yield arg
 
 
-def _discovers_whole_suite(tokens):
-    args = _unittest_args(tokens) or []
-    if "discover" not in args:
-        return False
-    return not any(arg.startswith(("-p", "--pattern"))
-                   for arg in args[args.index("discover") + 1:])
-
-
-def _suite_advisories(t):
-    return [f"{ADVISORY_PREFIX}{WHOLE_SUITE_ADVISORY}; "
-            f"name the focused test modules (discover -s tests -p "
-            f"'test_x.py') — the full suite runs as a pull request check: "
-            f"{cmd}"
-            for cmd in t.verify_commands
-            if any(_discovers_whole_suite(c) for c in _shell_commands(cmd))]
-
-
 def _schema_version_advisories(t):
     return [f"{ADVISORY_PREFIX}{SCHEMA_VERSION_ADVISORY} in '{section}'; "
             f"say 'one above main's SCHEMA_VERSION' — another ticket may bump "
@@ -899,7 +882,8 @@ def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at 
                      f".venv/bin/{token} if the project has one): {cmd}")
     p.extend(_blank_template_problems(t))
     p.extend(_fence_advisories(t))
-    p.extend(_suite_advisories(t))
+    import ticket_advisories
+    p.extend(ticket_advisories.advisories(t, repo))
     p.extend(_schema_version_advisories(t))
     p.extend(_operator_witness_advisories(t))
     p.extend(_ui_change_problems(t))
