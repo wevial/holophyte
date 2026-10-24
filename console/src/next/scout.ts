@@ -72,8 +72,9 @@ interface Wave {
   end: number | null;
 }
 
-/** Pass 1's tasks by wave, in wave order, each in plan order. */
-function wavesOf(tasks: ScoutTask[]): Wave[] {
+/** Pass 1's tasks by wave, in wave order, each in plan order. A wave of an
+ *  ended scout (`endedMs`) whose tasks never all ended ends with the scout. */
+function wavesOf(tasks: ScoutTask[], endedMs: number | null = null): Wave[] {
   const byWave = new Map<number, ScoutTask[]>();
   for (const task of tasks) {
     if (task.pass !== 1) continue;
@@ -83,18 +84,15 @@ function wavesOf(tasks: ScoutTask[]): Wave[] {
     .sort(([a], [b]) => a - b)
     .map(([wave, each]) => {
       const starts = each.flatMap((task) => (task.started_ms == null ? [] : [task.started_ms]));
-      const ended = each.every((task) => ENDED.has(task.phase) && task.ended_ms != null);
-      return {
-        wave,
-        tasks: each,
-        start: starts.length ? Math.min(...starts) : null,
-        end: ended ? Math.max(...each.map((task) => task.ended_ms!)) : null,
-      };
+      const ends = each.flatMap((task) => (ENDED.has(task.phase) && task.ended_ms != null ? [task.ended_ms] : []));
+      const end = ends.length === each.length ? Math.max(...ends) : endedMs;
+      return { wave, tasks: each, start: starts.length ? Math.min(...starts) : null, end };
     });
 }
 
 function waveTone(tasks: ScoutTask[], running: boolean): ActivityTone {
-  if (running || tasks.some((task) => task.phase === "running")) return "live";
+  if (running) return "live";
+  if (tasks.some((task) => !ENDED.has(task.phase))) return "wait";
   if (tasks.some((task) => task.phase === "stopped")) return "wait";
   if (tasks.some((task) => task.phase === "failed")) return "bad";
   return "ok";
@@ -138,7 +136,7 @@ export function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   if (scout.started_ms == null) return [];
   const live = isLive(scout.phase);
   const lead = scout.lead == null ? [] : [scout.lead];
-  const waves = wavesOf(detail.tasks);
+  const waves = wavesOf(detail.tasks, live ? null : scout.ended_ms);
   const firstTurn = events.find((event) => event.kind === "agent_turn" && event.at >= scout.started_ms!)?.at ?? null;
   const planEnd = waves[0]?.start ?? waves[0]?.end ?? (scout.phase === "planning" ? null : (firstTurn ?? scout.ended_ms));
   const firstWave = waves[0]?.tasks.length ?? 0;
@@ -161,7 +159,7 @@ export function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   const tail = last == null ? planEnd : last.end;
   const wavesLeft = waves.length < (scout.budget.waves ?? 1);
   if (tail != null && (synthesizing || (!live && scout.ended_ms != null && scout.ended_ms > tail))) {
-    const synthesis = synthesizing && wavesLeft;
+    const synthesis = synthesizing && waves.length > 0 && wavesLeft;
     spans.push({
       key: synthesis ? `synthesis:${last?.wave ?? 0}` : "report",
       kind: synthesis ? "synthesis" : "report",

@@ -261,6 +261,16 @@ test("a scout with no tasks ends Plan on the lead's first turn, and Report's ste
   expect(steps).toContain("helper route luna is down: probe failed");
 });
 
+test("a scout stopped mid-wave ends that wave at the stop, cut short rather than live", async () => {
+  const stopped = { ...live, scout: { ...live.scout, phase: "stopped" as const, reason: "wrong project", ended_ms: at(11, 57, 12) } };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: stopped } }).fetch);
+  const wave = groupTitled("Wave");
+  expect(row(wave).span).toBe("10m 00s");
+  expect(wave.querySelector("[data-badge]")!.getAttribute("data-badge")).toBe("wait");
+  await click(fold(wave)!);
+  expect(helpers(wave).map(helperRow)[5]!.took).toBe("10m 00s");
+});
+
 test("a wave the reader closed stays closed when the next poll brings a helper back", async () => {
   const bodies = { 31: live };
   const queries = await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies }).fetch);
