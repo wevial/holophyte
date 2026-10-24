@@ -17,6 +17,7 @@ from holophyte.scout.lead import (
     lead_seat,
     report_goal,
     run_waves,
+    scout_tasks,
     stamped,
     wave_tasks,
 )
@@ -128,7 +129,8 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return PassOutcome(number, message, failure=NO_REPORT)
-        report, problems = checked_report(lead, report)
+        report, problems = checked_report(lead, report,
+                                          tasks=scout_tasks(conn, row.id))
         if problems:
             return PassOutcome(number, message,
                                failure=f"{MALFORMED}: {problems[0]}")

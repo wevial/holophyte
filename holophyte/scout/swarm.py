@@ -35,7 +35,7 @@ from holophyte.scout.run_helpers import (
     task_fields,
 )
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
-from holophyte.scout.telemetry import turn_cost
+from holophyte.scout.telemetry import turn_cost, usage_tokens
 from store.enums import ScoutKind, ScoutTaskPhase
 from store.scouts import (
     end_scout_task,
@@ -83,16 +83,6 @@ def reported_answer(seat, output):
     counts = TOKENS_USED.findall(output)
     usage = {"total_tokens": int(counts[-1].replace(",", ""))} if counts else None
     return output, usage
-
-
-def usage_tokens(usage):
-    if usage is None:
-        return None
-    if "total_tokens" in usage:
-        return usage["total_tokens"]
-    counts = [usage.get(key) for key in ("input_tokens", "output_tokens")]
-    counts = [count for count in counts if isinstance(count, int)]
-    return sum(counts) if counts else None
 
 
 def helper_goal(row, task):

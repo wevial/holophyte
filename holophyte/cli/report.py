@@ -9,6 +9,7 @@ import store.schema
 from holophyte.cli.complexity_report import complexity_lines
 from holophyte.cli.shadow_report import shadow_lines
 from holophyte.config.config_tables import report_config
+from holophyte.scout.telemetry import scout_report_lines
 from holophyte.story.story_views import story_report_lines
 from store.gap_layers import gap_finder_counts, gap_layer_counts
 from store.working import agent_work, effective_work, verify_work
@@ -264,6 +265,7 @@ def report_lines(conn, target=None):
         live += adversary_lines(conn)
         live += consolidation_lines(conn)
         live += question_lines(conn)
+        live += scout_report_lines(conn)
         live += toil_lines(conn, now)
         live.append("gap layers: " + ", ".join(
             f"{layer} {count}"
