@@ -91,14 +91,13 @@ export function ScoutLaunch({ projects, draft, onDraft, onCancel, onLaunched }: 
   const project = projects.find((each) => each.base === draft.base) ?? projects[0]!;
   const { data: routes } = useScoutRoutes(project.base);
   const action = useAction();
-  const answered = routes !== undefined;
   const leads = routes?.leads ?? [];
   const helperRoutes = routes?.helpers ?? [];
   const picks: ScoutPicks | null = draft.picks?.base === project.base ? draft.picks : routes ? defaultPicks(routes) : null;
   const turns = routes?.defaults.helper_turns ?? 1;
   const swarm = picks ? wholeIn(picks.swarm, 1, turns) : null;
   const minutes = picks ? wholeIn(picks.minutes, 1) : null;
-  const missing = !answered ? null : leads.length === 0 ? "lead" : helperRoutes.length === 0 ? "helper" : null;
+  const missing = routes === undefined ? null : leads.length === 0 ? "lead" : helperRoutes.length === 0 ? "helper" : null;
   const ready = draft.ask.trim() !== "" && picks?.lead != null && picks.helper != null && swarm != null && minutes != null && missing == null;
   const refusal = action.data && !action.data.ok ? action.data.detail : null;
   const set = (change: Partial<ScoutDraft>) => onDraft({ ...draft, ...change });
