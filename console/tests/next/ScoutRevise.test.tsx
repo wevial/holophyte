@@ -36,7 +36,7 @@ const scout = (subject: ScoutSubject | null): ScoutDetail => ({
   actions: items,
 });
 
-const ticket = (revision: number): TicketDetail => ({
+const ticket = (revision: number, current: string): TicketDetail => ({
   ...servedTicket,
   ticket: "DEMO-7",
   title: "Retry a locked write",
@@ -44,8 +44,8 @@ const ticket = (revision: number): TicketDetail => ({
   run: null,
   runs: [],
   steers: [],
-  body: CURRENT,
-  current: { ...servedTicket.current!, revision, body: CURRENT, priority: 2, column: "backlog" },
+  body: current,
+  current: { ...servedTicket.current!, revision, body: current, priority: 2, column: "backlog" },
 });
 
 const board = (revision: number): Board => ({
@@ -59,10 +59,11 @@ interface Daemon {
   subject?: ScoutSubject | null;
   revision?: number;
   actions?: boolean;
+  current?: string;
 }
 
 /** DEMO answering scout 31 and DEMO-7 at `daemon.revision`, a save of DEMO-7 with the next revision; every request is kept. */
-function demo({ subject = { kind: "defect", ref: "812" }, revision = 2, actions = true }: Daemon = {}) {
+function demo({ subject = { kind: "defect", ref: "812" }, revision = 2, actions = true, current = CURRENT }: Daemon = {}) {
   const seen: { url: string; method: string; ifMatch: string | null; body: unknown }[] = [];
   const polls = fleet({ items: [] }, { items: [] });
   const fetch: Fetch = async (url, init) => {
@@ -70,7 +71,7 @@ function demo({ subject = { kind: "defect", ref: "812" }, revision = 2, actions 
     seen.push({ url, method, ifMatch: new Headers(init?.headers).get("if-match"), body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
     if (url === `${DEMO}/scouts/31`) return Response.json(scout(subject));
     if (url === `${DEMO}/tickets/DEMO-7` && method === "PUT") return Response.json({ ticket: "DEMO-7", revision: revision + 1 });
-    if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticket(revision));
+    if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticket(revision, current));
     if (url === `${DEMO}/board`) return Response.json(board(revision));
     if (url === `${DEMO}/tickets/check`) return Response.json({ problems: [], advisories: [], blocks: false });
     const answer = await polls(url);
@@ -171,6 +172,15 @@ test("Save on the handed draft posts it at revision 2, toasts revision 3 and ope
   expect(edits.map((each) => [each.ifMatch, (each.body as { body: string }).body])).toEqual([["2", A2_DRAFT]]);
   expect(toast()).toBe("Saved DEMO-7 as revision 3.");
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-7");
+});
+
+test("a draft that drops a stored section shows it removed and counts it among the changes", async () => {
+  await mount(demo({ current: `${CURRENT}\n## Open questions\n\nShould a writer back off?\n` }).fetch);
+  await click(reviseButton());
+  const removed = screen.getByText("Should a writer back off?").closest<HTMLElement>("[data-changed]")!;
+  expect(removed.textContent).toContain("Open questions");
+  expect(removed.textContent).toContain("removed on save");
+  expect(screen.getByText(/^3 changes · Title, Summary, Open questions removed ·/)).toBeTruthy();
 });
 
 test("a reload of the edit page drops the handed draft and shows DEMO-7 as stored", async () => {

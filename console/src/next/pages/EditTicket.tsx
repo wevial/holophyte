@@ -11,7 +11,7 @@ import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { pickedBody, pickedSide, priorityPart, sectionParts, type Part, type Pick } from "../sectionPicks";
 import { useTicketPage } from "../ticket";
-import { changedNames, composeEdit, hasHeader, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
+import { changedNames, composeEdit, hasHeader, hasMockup, loadEdit, otherText, rawParts, removedOthers, same, type EditFields } from "../ticketEdit";
 import { clampEstimate } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
@@ -194,6 +194,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
   const [refusal, setRefusal] = useState<string[]>([]);
   const body = composeEdit(read.body, read.fields, fields);
   const named = changedNames(origin.fields, fields);
+  const removed = removedOthers(origin.fields, fields);
   const changes = named.length || body === origin.body ? named
     : sectionParts(origin.body, origin.body, body).filter(part => part.side === "mine").map(part => part.name);
   const newer = loaded.revision > origin.revision;
@@ -324,15 +325,18 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
           {read.header && <EvidenceField evidence={fields.evidence} onChange={next => set("evidence", next)} marks={checked}
             changed={index => !same(fields.evidence[index], origin.fields.evidence[index])} />}
           {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
-          {fields.others.length > 0 && <div>
-            <details open={read.raw.size > 0}>
+          {fields.others.length + removed.length > 0 && <div>
+            <details open={read.raw.size > 0 || removed.length > 0}>
               <summary className="cursor-pointer font-mono text-[11px] font-medium uppercase tracking-[.12em] text-ink-2">
-                Other sections <span className="normal-case tracking-[.04em] text-ink-3">{fields.others.map(other => other.name).join(" · ")}</span>
+                Other sections <span className="normal-case tracking-[.04em] text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">
-                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== origin.fields.others[at]?.text}>
+                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(origin.fields, other.name)}>
                   <textarea id={`new-${other.name}`} rows={3} className={`${INPUT} resize-y font-sans`} value={other.text}
                     onChange={event => set("others", fields.others.map((each, index) => index === at ? { ...each, text: event.target.value } : each))} />
+                </Field>)}
+                {removed.map(other => <Field key={other.index} label={other.name} optional changed extra=" · removed on save">
+                  <p id={`new-${other.name}`} className="mt-2 whitespace-pre-wrap text-[14px] text-ink-3 line-through [overflow-wrap:anywhere]">{other.text}</p>
                 </Field>)}
               </div>
             </details>

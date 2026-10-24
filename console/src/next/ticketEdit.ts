@@ -173,10 +173,14 @@ const differs = (loaded: EditFields, edited: EditFields, field: keyof Omit<EditF
   !same(loaded[field], edited[field]) || (field === "criteria" && (!same(loaded.criteriaFrom, edited.criteriaFrom) || !same(loaded.criteriaDetail, edited.criteriaDetail)));
 
 /** The names of the fields `edited` holds differently from `loaded`. */
+export const otherText = (fields: EditFields, name: string) => fields.others.find(other => other.name === name)?.text;
+
+export const removedOthers = (loaded: EditFields, edited: EditFields) => loaded.others.filter(other => otherText(edited, other.name) === undefined);
+
 export function changedNames(loaded: EditFields, edited: EditFields): string[] {
   const fields = FIELD_NAMES.filter(([field]) => differs(loaded, edited, field)).map(([, name]) => name);
-  const others = edited.others.filter((other, at) => other.text !== loaded.others[at]?.text).map(other => other.name);
-  return [...fields, ...others];
+  const others = edited.others.filter(other => other.text !== otherText(loaded, other.name)).map(other => other.name);
+  return [...fields, ...others, ...removedOthers(loaded, edited).map(other => `${other.name} removed`)];
 }
 
 const lines = (text: string) => (text ? text.split("\n") : []);
