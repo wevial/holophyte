@@ -12,7 +12,6 @@ from store.scouts import ScoutRefused, file_scout_action, scout
 
 SCOUT_FILE_ACTION = "scout-file"
 BACKLOG = "Backlog"
-DONE = ScoutPhase.DONE.value
 
 
 class Answered(Exception):
@@ -46,7 +45,7 @@ def judged(project, scout_id, position):
         if row is None:
             raise Answered(404, {"error": "no such scout", **named,
                                  "detail": f"no scout {scout_id}"})
-        if row.phase != DONE:
+        if row.phase != ScoutPhase.DONE.value:
             raise Answered(200, {"ok": False, **named,
                                  "detail": f"scout {scout_id} is {row.phase};"
                                            " only a done scout's items file"})
