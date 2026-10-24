@@ -126,13 +126,17 @@
             "title": "Back off between retries",
             "why": "the loop spins",
             "kind": "fix",
-            "body": "Sleep between attempts in app/retry.py."
+            "body": "Sleep between attempts in app/retry.py.",
+            "layer": null,
+            "covers": null
           },
           {
             "title": "Pin the retry cap",
             "why": "the cap is untested",
             "kind": "test",
-            "body": "Add a test that stops at the cap."
+            "body": "Add a test that stops at the cap.",
+            "layer": null,
+            "covers": null
           }
         ],
         "reproduction": {
@@ -167,6 +171,8 @@
       "why": "the loop spins",
       "kind": "fix",
       "body": "Sleep between attempts in app/retry.py.",
+      "layer": null,
+      "covers": null,
       "revises": null,
       "ticket": null,
       "filed_ms": null
@@ -178,6 +184,8 @@
       "why": "the cap is untested",
       "kind": "test",
       "body": "Add a test that stops at the cap.",
+      "layer": null,
+      "covers": null,
       "revises": null,
       "ticket": null,
       "filed_ms": null

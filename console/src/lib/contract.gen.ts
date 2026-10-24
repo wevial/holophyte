@@ -1221,8 +1221,10 @@ export type ScoutFinding = z.infer<typeof scoutFindingSchema>;
 export const scoutReportActionSchema = z.looseObject({
   title: z.string(),
   why: z.string(),
-  kind: z.enum(["fix", "test", "investigate", "decide", "revise"]),
+  kind: z.enum(["fix", "test", "investigate", "decide", "revise", "guardrail"]),
   body: z.string(),
+  layer: z.enum(["impossible", "static", "witness", "guidance", "review"]).nullable(),
+  covers: z.array(z.string()).nullable(),
 });
 export type ScoutReportAction = z.infer<typeof scoutReportActionSchema>;
 
@@ -1275,8 +1277,10 @@ export const scoutActionSchema = z.looseObject({
   pass: z.int(),
   title: z.string(),
   why: z.string(),
-  kind: z.enum(["fix", "test", "investigate", "decide", "revise"]),
+  kind: z.enum(["fix", "test", "investigate", "decide", "revise", "guardrail"]),
   body: z.string(),
+  layer: z.enum(["impossible", "static", "witness", "guidance", "review"]).nullable(),
+  covers: z.array(z.string()).nullable(),
   revises: revisesSchema.nullable(),
   ticket: z.string().nullable(),
   filed_ms: z.int().nullable(),

@@ -326,7 +326,8 @@ class DetailTests(ScoutCase):
         self.assertEqual(finding["evidence"], [{"text": evidence}])
         self.assertEqual(finding["status"], "confirmed")
         self.assertEqual(report["actions"],
-                         [{**action, "kind": "investigate"}])
+                         [{**action, "kind": "investigate", "layer": None,
+                           "covers": None}])
         self.assertEqual((report["reproduction"], report["prior"],
                           report["cut"]), (None, None, []))
         walk(body, ScoutDetail, "scout")

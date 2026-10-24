@@ -20,6 +20,8 @@ from holophyte.scout.prior import (
     scout_paths,
 )
 from holophyte.scout.report import (
+    GUARDRAIL,
+    LAYERS,
     PRIOR,
     REPRODUCTION,
     REVISE,
@@ -171,8 +173,9 @@ def subject_of(row):
             else (row.subject_kind, row.subject_ref))
 
 
-def report_shape(row, offered=None):
-    return ("{" + fields_shape(offered_fields(subject_of(row))).lstrip()
+def report_shape(row, offered=None, digest=None):
+    fields = offered_fields(subject_of(row), digest is not None)
+    return ("{" + fields_shape(fields).lstrip()
             + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value else "")
             + (PRIOR_SHAPE if offered else "") + "}")
 
@@ -188,23 +191,38 @@ def revise_rule(row):
         "why names the wording that caused the stop.\n\n")
 
 
-def report_ending(row, offered=None):
+def guardrail_rule(digest):
+    if digest is None:
+        return ""
+    return (
+        f"This is a guardrails scout, so each action is of kind "
+        f"\"{GUARDRAIL}\" or \"decide\". Write one {GUARDRAIL} item per "
+        "mechanism, merging the clusters one guard would catch. Its layer "
+        "is the first layer of the ladder (" + ", ".join(LAYERS) + ") that "
+        "would have caught every row it covers, and its covers lists the "
+        "ids of the findings digest's rows it answers, at least one, ROW "
+        "standing for such an id. Write a decide item, with no layer or "
+        "covers, for a cluster no guard should answer.\n\n")
+
+
+def report_ending(row, offered=None, digest=None):
     return (
         "Write each action's body as a ticket draft in this skeleton, "
         "replacing each <...> with the ticket's text: estimate is whole "
         f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
         "ticket keys it waits on.\n\n"
-        f"{ticket_skeleton()}\n\n" + revise_rule(row) +
+        f"{ticket_skeleton()}\n\n" + revise_rule(row)
+        + guardrail_rule(digest) +
         "Do not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT, PATH and URL standing for strings, "
         "N for a line number from 1 and ID for a sub-task's id, the number "
         "after its T. A finding's tasks lists the sub-tasks its evidence "
         "came from and may be left out:\n\n"
-        f"```json\n{report_shape(row, offered)}\n```\n")
+        f"```json\n{report_shape(row, offered, digest)}\n```\n")
 
 
 def report_goal(row, swarm, problem, fresh, scope="", context="",
-                offered=None):
+                offered=None, digest=None):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
         answers = f"- none: no plan was stored, because {problem}"
@@ -217,10 +235,10 @@ def report_goal(row, swarm, problem, fresh, scope="", context="",
         f"stopped one was cut at the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take.\n\n"
-        + report_ending(row, offered))
+        + report_ending(row, offered, digest))
 
 
-def repair_goal(row, problems, fresh, offered=None, tasks=()):
+def repair_goal(row, problems, fresh, offered=None, tasks=(), digest=None):
     listed = "\n".join(f"- {problem}" for problem in problems)
     return (
         f"{REPAIR_OPENING}\n\n"
@@ -231,7 +249,7 @@ def repair_goal(row, problems, fresh, offered=None, tasks=()):
            f"and the end of its helper's output:\n\n{labelled(tasks)}\n\n"
            if tasks else "")
         + "Write the whole report again with these fixed.\n\n"
-        + report_ending(row, offered))
+        + report_ending(row, offered, digest))
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping,
@@ -331,16 +349,17 @@ def unoffered(report, offered):
     return {key: value for key, value in report.items() if key != "prior"}
 
 
-def checked_report(lead, report, offered=None, tasks=()):
+def checked_report(lead, report, offered=None, tasks=(), digest=None):
     check = partial(report_problems, kind=lead.row.kind,
                     subject=subject_of(lead.row), offered=offered,
-                    scout=lead.row.id, tasks={task[0] for task in tasks})
+                    scout=lead.row.id, tasks={task[0] for task in tasks},
+                    digest=digest)
     report = unoffered(report, offered)
     problems = check(report)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems, lead.session is None,
-                                   offered, tasks), REPORT_TURN_S)
+                                   offered, tasks, digest), REPORT_TURN_S)
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
@@ -409,25 +428,25 @@ def scout_prior(conn, project, row, pack_paths):
 
 def scout_digest(conn, row, project):
     if row.kind != ScoutKind.GUARDRAILS.value:
-        return ""
+        return "", None
     digest = findings_digest(project, row, int(time() * 1000))
     if digest is None:
         record_scout_event(conn, row.id, "scout_digest", "digest: empty")
-        return None
+        return None, None
     record_scout_event(conn, row.id, "scout_digest", digest.summary,
                        level="detail", payload=json.dumps({
                            "since": digest.since, "clusters": [
                                {"label": cluster.label,
                                 "rows": [each.id for each in cluster.newest()]}
                                for cluster in digest.clusters]}))
-    return digest.text
+    return digest.text, digest.row_ids()
 
 
 def run_lead(conn, project, row, worktree, budget_s, stopping):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
     limit = row.helper_turns or config.helper_turns
-    digest = scout_digest(conn, row, project)
+    digest, rows = scout_digest(conn, row, project)
     if digest is None:
         return "done", EMPTY_DIGEST
     seat, down = lead_seat(project, row, config, stopping)
@@ -445,13 +464,13 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
                                        lead.session is None, context=context,
-                                       offered=offered),
+                                       offered=offered, digest=rows),
                            REPORT_TURN_S, context)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
         report, problems = checked_report(lead, report, offered,
-                                          scout_tasks(conn, row.id))
+                                          scout_tasks(conn, row.id), rows)
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
         report = reproduced(row, swarm, resolve_evidence(project.path,

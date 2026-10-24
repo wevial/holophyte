@@ -6,7 +6,7 @@ from typing import NamedTuple, get_args
 import ticket_header
 import ticket_template
 from holophyte.loop.gates import sh
-from holophyte.scout.scout_contract import FindingStatus
+from holophyte.scout.scout_contract import FindingStatus, Layer
 from store.enums import ScoutKind
 
 
@@ -76,6 +76,14 @@ def read_status(status):
 KINDS = ("fix", "test", "investigate", "decide")
 VERDICTS = ("holds", "fixed", "unchecked")
 REVISE = "revise"
+GUARDRAIL = "guardrail"
+GUARDRAIL_KINDS = (GUARDRAIL, "decide")
+LAYERS = get_args(Layer)
+LAYER = one_of(*LAYERS)
+COVERS = Rule(lambda value: isinstance(value, list) and bool(value)
+              and all(isinstance(item, str) and item.strip()
+                      for item in value),
+              "a non-empty list of digest row ids", "[ROW, ...]")
 DEFECT = "defect"
 EVIDENCE = Either({
     "file": {"file": PATH, "line": LINE},
@@ -89,7 +97,8 @@ FIELDS = {
                       "evidence": Each(EVIDENCE, nonempty=True),
                       "tasks": Omittable(TASK_IDS)}),
     "actions": Each({"title": TEXT, "why": TEXT,
-                     "kind": one_of(*KINDS, REVISE), "body": TEXT}),
+                     "kind": one_of(*KINDS, REVISE, GUARDRAIL),
+                     "body": TEXT}),
 }
 PRIOR = Each({"scout": LINE, "finding": LINE, "verdict": one_of(*VERDICTS),
               "why": TEXT})
@@ -189,9 +198,12 @@ def offers_revise(subject):
     return subject is not None and subject[0] == DEFECT
 
 
-def offered_fields(subject):
+def offered_fields(subject, guardrails=False):
     kinds = KINDS + ((REVISE,) if offers_revise(subject) else ())
     action = dict(FIELDS["actions"].item, kind=one_of(*kinds))
+    if guardrails:
+        action.update(kind=one_of(*GUARDRAIL_KINDS), layer=LAYER,
+                      covers=COVERS)
     return dict(FIELDS, actions=Each(action))
 
 
@@ -215,6 +227,23 @@ def revise_problems(actions, subject):
         if untitled(action.get("body")):
             problems.append(f'actions[{index}].body: a revision starts with'
                             ' its "# " title line')
+    return problems
+
+
+def guardrail_problems(index, action, digest):
+    kind, path = action.get("kind"), f"actions[{index}]"
+    if digest is None:
+        return ([f"{path}.kind: {GUARDRAIL} needs a guardrails scout"]
+                if kind == GUARDRAIL else [])
+    if kind not in GUARDRAIL_KINDS:
+        return [f"{path}.kind: a guardrails scout's items are {GUARDRAIL}"
+                " or decide"]
+    if kind != GUARDRAIL:
+        return []
+    problems = walk(action, {"layer": LAYER, "covers": COVERS}, path)
+    if COVERS.check(action.get("covers")):
+        problems += [f"{path}.covers: {row} was not in the digest"
+                     for row in action["covers"] if row not in digest]
     return problems
 
 
@@ -248,7 +277,7 @@ def cited_problems(findings, scout, tasks):
 
 
 def report_problems(report, kind, subject=None, *, offered=None, scout=None,
-                    tasks=()):
+                    tasks=(), digest=None):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
@@ -257,6 +286,9 @@ def report_problems(report, kind, subject=None, *, offered=None, scout=None,
     actions = report.get("actions") if isinstance(report, dict) else None
     if isinstance(actions, list):
         problems += revise_problems(actions, subject)
+        problems += [problem for index, action in enumerate(actions)
+                     if isinstance(action, dict)
+                     for problem in guardrail_problems(index, action, digest)]
     if isinstance(report, dict) and report.get("prior") is not None:
         problems += prior_problems(report["prior"], offered)
     findings = report.get("findings") if isinstance(report, dict) else None

@@ -1,6 +1,9 @@
+import json
 from typing import NamedTuple
 
+import store.read
 from holophyte.redact import known_secrets, outbound
+from holophyte.scout.report import GUARDRAIL, LAYERS
 from holophyte.scout.scout_config import scout_config
 from holophyte.serve.serve_findings import FINDINGS_CAP, findings
 
@@ -11,7 +14,6 @@ SECTION_CHARS = 24000
 SECTION_CUT = f"(digest cut at {SECTION_CHARS} characters)"
 NO_PATH = "follow-ups with no path"
 GUARDRAIL_STATES = ("pending", "ledger")
-LADDER = ("impossible", "static", "witness", "guidance", "review")
 
 
 class Row(NamedTuple):
@@ -41,6 +43,10 @@ class Digest(NamedTuple):
     clusters: list
     summary: str
     since: int
+
+    def row_ids(self):
+        return {row.id for cluster in self.clusters
+                for row in cluster.newest()[:SHOWN_ROWS]}
 
 
 class DigestUnavailable(RuntimeError):
@@ -118,7 +124,7 @@ def cluster_block(number, cluster, secrets):
 def instruction():
     return ("Plan one \"read\" task per cluster below. Each asks which "
             "protection on main already covers the cluster's rows, if any, "
-            "and the first layer of the ladder (" + ", ".join(LADDER)
+            "and the first layer of the ladder (" + ", ".join(LAYERS)
             + ") that would have caught them. Cite rows by their ids.")
 
 
@@ -156,9 +162,30 @@ def window_rows(project, since):
             + defect_rows(body["ticket_defects"]))
 
 
+def filed_covers(project, scout):
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        items = conn.execute(
+            "SELECT a.item FROM scoutActions a JOIN scouts s"
+            " ON s.id = a.scoutId WHERE s.projectId = ? AND s.id != ?"
+            " AND a.ticketKey IS NOT NULL",
+            (scout.project_id, scout.id)).fetchall()
+    finally:
+        conn.close()
+    covered = set()
+    for (item,) in items:
+        action = json.loads(item)
+        if action.get("kind") == GUARDRAIL and isinstance(
+                action.get("covers"), list):
+            covered.update(action["covers"])
+    return covered
+
+
 def findings_digest(project, scout, now):
     since = now - WINDOW_MS
-    ranked = clusters_of(window_rows(project, since))
+    covered = filed_covers(project, scout)
+    ranked = clusters_of([row for row in window_rows(project, since)
+                          if row.id not in covered])
     if not ranked:
         return None
     limit = scout.helper_turns or scout_config(project).helper_turns

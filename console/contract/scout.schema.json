@@ -515,18 +515,50 @@
             "test",
             "investigate",
             "decide",
-            "revise"
+            "revise",
+            "guardrail"
           ]
         },
         "body": {
           "type": "string"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "enum": [
+                "impossible",
+                "static",
+                "witness",
+                "guidance",
+                "review"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "covers": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "title",
         "why",
         "kind",
-        "body"
+        "body",
+        "layer",
+        "covers"
       ],
       "additionalProperties": true
     },
@@ -727,11 +759,41 @@
             "test",
             "investigate",
             "decide",
-            "revise"
+            "revise",
+            "guardrail"
           ]
         },
         "body": {
           "type": "string"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "enum": [
+                "impossible",
+                "static",
+                "witness",
+                "guidance",
+                "review"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "covers": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "revises": {
           "anyOf": [
@@ -771,6 +833,8 @@
         "why",
         "kind",
         "body",
+        "layer",
+        "covers",
         "revises",
         "ticket",
         "filed_ms"
