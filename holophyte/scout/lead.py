@@ -149,13 +149,11 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
             payload["exit_status"], output = run_capped(argv, worktree, cap)
         except subprocess.TimeoutExpired as expired:
             output = expired.output or ""
-            if isinstance(output, bytes):
-                output = output.decode(errors="replace")
             payload["timed_out"] = True
-        answer, usage = turn_answer(seat, output or "")
+        answer, usage = turn_answer(seat, output)
         if usage is not None:
             payload["usage"] = usage
-        return LeadTurn(output or "", answer, payload["timed_out"])
+        return LeadTurn(output, answer, payload["timed_out"])
     finally:
         payload["seconds"] = monotonic() - started
         record_scout_event(conn, scout_id, "agent_turn",
