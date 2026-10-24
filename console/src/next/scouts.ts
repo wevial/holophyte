@@ -5,9 +5,10 @@ import { scoutRoutesSchema, scoutsSchema, type ScoutRoute, type ScoutRow, type S
 import { projectName } from "../lib/derive";
 import type { HostRecord } from "../lib/hosts";
 import { POLL_INTERVAL_MS } from "../lib/poll";
+import { prLabel } from "../lib/shipped";
 import type { ContractBodies } from "./fleet";
 import { routeKey, routeOrNone } from "./queries";
-import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "./scope";
 
 export interface ScoutListRow extends ScoutRow {
   base: string;
@@ -103,4 +104,64 @@ export function sentence(detail: string): string {
   if (text === "") return text;
   const capital = text[0]!.toUpperCase() + text.slice(1);
   return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+}
+
+export type ScoutKind = ScoutRow["kind"];
+
+const SCOUT_KINDS: ScoutKind[] = ["bug", "research", "recon"];
+
+/** The Scouts page's search: `new` opens the New scout form for that
+ *  project, filled from `about`, `kind` and `ask`. */
+export interface ScoutsSearch {
+  new?: string;
+  about?: string;
+  kind?: ScoutKind;
+  ask?: string;
+}
+
+const text = (value: unknown) => (typeof value === "string" ? value : undefined);
+
+export function validateScoutsSearch(search: Record<string, unknown>): ScoutsSearch {
+  const kind = SCOUT_KINDS.find((each) => each === search.kind);
+  return { new: text(search.new), about: text(search.about), kind, ask: text(search.ask) };
+}
+
+/** What a Scout button opens the form about: `about` is the launch's
+ *  `subject`, `off` the title of a button drawn disabled. */
+export interface ScoutTarget {
+  project: string;
+  about: string;
+  kind: ScoutKind;
+  ask: string;
+  off: string | null;
+}
+
+/** The link to the Scouts page with its form filled for `target`, keeping the scope. */
+export function scoutThis(target: ScoutTarget) {
+  const { project, about, kind, ask } = target;
+  return {
+    to: "/scouts",
+    search: (previous: ScopeSearch) => ({ project: previous.project, new: projectName(project), about, kind, ask }),
+  } as const;
+}
+
+/** The subject `about` names, in words: "run 812", "the defect in run 812",
+ *  "DEMO-7" or a pull request's label; null for a subject of no known kind. */
+export function aboutWords(about: string): string | null {
+  const split = about.indexOf(":");
+  if (split < 0) return null;
+  const ref = about.slice(split + 1);
+  if (ref === "") return null;
+  switch (about.slice(0, split)) {
+    case "run":
+      return `run ${ref}`;
+    case "defect":
+      return `the defect in run ${ref}`;
+    case "ticket":
+      return ref;
+    case "pr":
+      return prLabel(ref);
+    default:
+      return null;
+  }
 }

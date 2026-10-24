@@ -1136,6 +1136,9 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
 `console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
 `console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
+A failed run's page, open findings, follow-ups and ticket defect rows on Findings, and a ticket's actions each carry a
+Scout button (`console/src/next/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
+and `ask`, which the Scouts page reads into a filled New scout form whose launch sends `about` as `subject`.
 The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
 `console/src/next/scout.ts`, which also groups it into Plan, waves, Synthesis and Report;
 `console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
