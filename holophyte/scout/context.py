@@ -263,11 +263,19 @@ PACKS = {"run": lambda pack, ref: run_pack(pack, int(ref)),
          "defect": defect_pack, "ticket": ticket_pack, "pr": pr_pack}
 
 
-def capped(text, pack):
-    if len(text) <= PACK_CAP:
+def capped(text, pack, secrets):
+    if len(outbound(text, secrets)) <= PACK_CAP:
         return text
     pack.note(f"cut at {PACK_CAP}")
-    return text[:PACK_CAP - len(CUT_LINE) - 1] + "\n" + CUT_LINE
+    end = PACK_CAP - len(CUT_LINE) - 1
+    while True:
+        line_end = text.rfind("\n", 0, end + 1)
+        head = text[:line_end if line_end > 0 else end]
+        cut = f"{head}\n{CUT_LINE}"
+        over = len(outbound(cut, secrets)) - PACK_CAP
+        if over <= 0 or not head:
+            return cut
+        end = max(len(head) - over, 0)
 
 
 def context_pack(project, scout):
@@ -275,6 +283,6 @@ def context_pack(project, scout):
         return None
     pack = Pack(project)
     PACKS[scout.subject_kind](pack, scout.subject_ref)
-    text = capped(outbound("\n".join(pack.lines),
-                           known_secrets(project.config())), pack)
+    text = capped("\n".join(pack.lines), pack,
+                  known_secrets(project.config()))
     return ContextPack(text, pack.paths(), "context: " + " · ".join(pack.notes))
