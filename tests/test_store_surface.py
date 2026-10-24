@@ -415,10 +415,13 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # posted, taken and read.
                                  # HOLO-524: `release_message`, an ask
                                  # whose answer could not start, waiting again.
+                                 # HOLO-552: `take_steer`, a running scout's
+                                 # steer taken at its next synthesis turn.
                                  (store.scout_thread, ["messages",
                                                        "post_message",
                                                        "release_message",
                                                        "take_message",
+                                                       "take_steer",
                                                        "waiting_messages"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.

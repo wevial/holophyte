@@ -516,6 +516,19 @@ for an ask the scout goes to `answering` and its lead's session is
 resumed to answer; for a steer the scout goes to `planning` and runs its
 next pass. A message not taken waits for the sweep's next pass.
 
+A running scout (`queued`, `planning`, `swarming`, `synthesizing` or
+`answering`) takes a message too. The route records it and starts nothing:
+the reply is `ok: true`, `queued: true` and `detail` `scout N is PHASE;
+message M waits for its next wave or its end`. A steer waiting when the
+lead's synthesis turn begins, the lead turn after a wave that plans the
+next one, is taken there without moving the scout's phase: a
+`scout_steer_taken` event, at the detail level, with payload
+`{"message": M, "wave": W}` and summary `steer taken for wave W`, consumes
+it; the synthesis turn reads the steer and plans wave W to follow it, and
+the report turn reads it and says what it changed. An ask, and a steer
+that arrives with no synthesis turn left, waits until the scout is `done`
+and is then taken as a message to a done scout is.
+
 An answer turn's ANSWER and a pass's REPORT may end with a `proposals`
 list, each `{"question": "...", "choices": [{"label": "...", "mode":
 "ask"}, {"label": "...", "mode": "steer"}]}` with two to four choices,
@@ -531,8 +544,9 @@ card: a client posts a choice as its label with that choice's mode, and a
 typed answer as its text; the daemon does not match the text to a label. The turn that takes the message reads the card's question
 beside it.
 
-An unknown scout is 404 `no such scout`. A scout not `done` is 200 with
-`ok: false`, `reason` `not_done` and `detail` naming its phase; a scout
+An unknown scout is 404 `no such scout`. A `failed` or `stopped` scout is
+200 with `ok: false`, `reason` `not_done` and `detail` naming its phase; a
+scout
 with an ask or steer still waiting is 200 with `ok: false`, `reason`
 `ask_waiting` and `detail` naming the waiting message's id. An `answers`
 that is not a card of this scout, or a card a person's message already
@@ -541,8 +555,9 @@ naming the card's id; the store holds that rule, so two messages cannot
 both answer one card. None of these writes anything. The reply adds
 `scout`, `message`, the new message's id, and `queued`, true when the
 message was not taken and waits for a scout slot; `detail` is `scout N is
-answering message M`, `scout N runs pass P for message M` or `message M
-waits for a scout slot: ...`, and `recorded` is null.
+answering message M`, `scout N runs pass P for message M`, `message M
+waits for a scout slot: ...` or, on a running scout, `scout N is PHASE;
+message M waits for its next wave or its end`, and `recorded` is null.
 
 ```json
 {"action": "scout-message", "ok": true, "scout": 14, "message": 3,

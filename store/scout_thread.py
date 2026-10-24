@@ -10,6 +10,7 @@ from .schema import _transaction
 from .scouts import (
     ANSWERING,
     DONE,
+    ENDED,
     PASS_STARTED,
     PLANNING,
     _now,
@@ -22,6 +23,7 @@ ASK, STEER, ANSWER = (mode.value for mode in ThreadMode)
 BLOCK_TYPES = ("finding", "action", "proposal")
 ANSWER_STARTED = "scout_answer_started"
 START_FAILED = "scout_start_failed"
+STEER_TAKEN = "scout_steer_taken"
 COLUMNS = ("id", "projectId", "scoutId", "author", "mode", "text", "blocks",
            "answersId", "at", "consumedBy", "consumedAt")
 SELECT = f"SELECT {', '.join(COLUMNS)} FROM threadMessages"
@@ -47,11 +49,11 @@ class Message(NamedTuple):
     consumed_at: int | None
 
 
-def _waiting(conn, scout_id):
+def _waiting(conn, scout_id, modes=(ASK, STEER)):
     row = conn.execute(
-        "SELECT id FROM threadMessages WHERE scoutId = ? AND mode IN (?, ?)"
-        " AND consumedBy IS NULL ORDER BY at, id LIMIT 1",
-        (scout_id, ASK, STEER)).fetchone()
+        "SELECT id FROM threadMessages WHERE scoutId = ? AND mode IN"
+        f" ({', '.join('?' * len(modes))}) AND consumedBy IS NULL"
+        " ORDER BY at, id LIMIT 1", (scout_id, *modes)).fetchone()
     return None if row is None else row[0]
 
 
@@ -104,8 +106,9 @@ def _card(conn, scout_id, answers_id):
 
 
 def _person(conn, scout_id, phase, answers_id):
-    if phase != DONE:
-        raise ThreadRefused(f"scout {scout_id}", f"it is {phase}, not done")
+    if phase in ENDED and phase != DONE:
+        raise ThreadRefused(f"scout {scout_id}",
+                            f"it is {phase}, not done or running")
     if answers_id is not None:
         _card(conn, scout_id, answers_id)
     waiting = _waiting(conn, scout_id)
@@ -169,14 +172,36 @@ def take_message(conn, message_id, host=None, now=None):
             payload = {"message": message_id, "pass": last + 1}
             summary = f"pass {last + 1} steered by message {message_id}"
         _reopen_scout(conn, scout_id, to, host, now)
-        seq = record_scout_event(conn, scout_id, kind, summary, level="detail",
-                                 payload=json.dumps(payload), now=now)
-        (event_id,) = conn.execute(
-            "SELECT id FROM runEvents WHERE scoutId = ? AND seq = ?",
-            (scout_id, seq)).fetchone()
-        conn.execute("UPDATE threadMessages SET consumedBy = ?, consumedAt = ?"
-                     " WHERE id = ?", (event_id, now, message_id))
-        return event_id
+        return _consume(conn, scout_id, message_id, kind, summary, payload,
+                        now)
+
+
+def _consume(conn, scout_id, message_id, kind, summary, payload, now):
+    seq = record_scout_event(conn, scout_id, kind, summary, level="detail",
+                             payload=json.dumps(payload), now=now)
+    (event_id,) = conn.execute(
+        "SELECT id FROM runEvents WHERE scoutId = ? AND seq = ?",
+        (scout_id, seq)).fetchone()
+    conn.execute("UPDATE threadMessages SET consumedBy = ?, consumedAt = ?"
+                 " WHERE id = ?", (event_id, now, message_id))
+    return event_id
+
+
+def take_steer(conn, scout_id, wave, now=None):
+    now = _now(now)
+    with _transaction(conn):
+        row = conn.execute("SELECT phase FROM scouts WHERE id = ?",
+                           (scout_id,)).fetchone()
+        if row is None or row[0] in ENDED:
+            return None
+        message_id = _waiting(conn, scout_id, (STEER,))
+        if message_id is None:
+            return None
+        _consume(conn, scout_id, message_id, STEER_TAKEN,
+                 f"steer taken for wave {wave}",
+                 {"message": message_id, "wave": wave}, now)
+        return _message(conn.execute(f"{SELECT} WHERE id = ?",
+                                     (message_id,)).fetchone())
 
 
 def release_message(conn, message_id, reason, now=None):

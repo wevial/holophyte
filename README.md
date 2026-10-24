@@ -124,8 +124,8 @@ holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; 
 holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
 holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, as a draft when the checker reports problems, printing each problem; see docs/reference/daemon.md#post-actionsscout-file
 holo scout stop ID "note" [--author NAME] [--json] -p NAME|PATH # stop a scout: a queued one ends at once, a running one's process is signalled to end it stopped; see docs/reference/daemon.md#post-actionsscout-stop
-holo scout ask ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # ask a done scout about its report: its lead answers in the thread, the ask waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the ask answers; see docs/reference/daemon.md#post-actionsscout-message
-holo scout steer ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # steer a done scout to look further: it runs one more pass on the steer, waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the steer answers
+holo scout ask ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # ask a scout about its report: its lead answers in the thread once the scout is done, the ask waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the ask answers; see docs/reference/daemon.md#post-actionsscout-message
+holo scout steer ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # steer a scout: a running one takes the steer at its lead's next synthesis turn, else once done it runs one more pass on the steer, waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the steer answers
 holo scout thread ID [--json] -p NAME|PATH       # a scout's thread, oldest first: one line per message, a waiting ask or steer marked waiting, and under a card each choice with its mode; --json prints {"scout", "thread"}
 ```
 

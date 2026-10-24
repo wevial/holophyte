@@ -19,6 +19,7 @@ from holophyte.scout.prior import (
     prior_section,
     scout_paths,
 )
+from holophyte.scout.proposals import card_line
 from holophyte.scout.report import (
     GUARDRAIL,
     LAYERS,
@@ -37,6 +38,7 @@ from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
 from holophyte.scout.swarm import Swarm, turn_answer
 from store.enums import ScoutKind, ScoutTaskMode
+from store.scout_thread import messages, take_steer
 from store.scouts import (
     SWARMING,
     SYNTHESIZING,
@@ -157,15 +159,29 @@ def scout_tasks(conn, scout_id):
         " WHERE scoutId = ? ORDER BY id", (scout_id,)).fetchall()
 
 
-def synthesis_goal(row, swarm, fresh):
+def live_steer(steer, card):
+    if steer is None:
+        return ""
+    return ("A person steers this scout while it runs:\n\n"
+            f"Steer: {steer.text}\n\n{card}"
+            "Plan the next wave so that it follows the steer.\n\n")
+
+
+def steered_scope(steers):
+    return "".join(
+        f"A person steered this scout while it ran: {steer.text}\n"
+        "Say in the report what the steer changed.\n\n" for steer in steers)
+
+
+def synthesis_goal(row, swarm, fresh, steer=None, card=""):
     return (
         f"{SYNTHESIS_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
         + "Your helpers have answered a wave of the plan. Each sub-task so "
         "far, labelled T and its id, with its phase and the end of its "
         "output:\n\n"
-        f"{answered_tasks(swarm)}\n\n"
-        "Merge what they found. If one more wave of sub-tasks would settle "
+        f"{answered_tasks(swarm)}\n\n" + live_steer(steer, card)
+        + "Merge what they found. If one more wave of sub-tasks would settle "
         "what is still open, plan it as at most "
         f"{swarm.total - swarm.launched} sub-tasks; otherwise list none. Do "
         "not edit files, commit or push. End your answer with one fenced "
@@ -339,21 +355,27 @@ def wave_tasks(conn, swarm, turn, wave, cut):
 
 
 def run_waves(conn, lead, swarm, tasks, waves):
+    steers = []
     if not (tasks and swarm.left() and swarm.ready()):
         move_scout(conn, lead.row.id, SYNTHESIZING)
-        return
+        return steers
     for wave in range(1, waves + 1):
         move_scout(conn, lead.row.id, SWARMING)
         swarm.run(tasks)
         move_scout(conn, lead.row.id, SYNTHESIZING)
         if wave == waves or not swarm.left():
-            return
+            return steers
+        steer = take_steer(conn, lead.row.id, wave + 1)
+        card = "" if steer is None else card_line(
+            messages(conn, lead.row.id), steer)
+        steers += [] if steer is None else [steer]
         turn = lead.resume(synthesis_goal(lead.row, swarm,
-                                          lead.session is None),
+                                          lead.session is None, steer, card),
                            swarm.remaining_s())
         tasks, _ = wave_tasks(conn, swarm, turn, wave + 1, "synthesis")
         if not tasks:
-            return
+            return steers
+    return steers
 
 
 def unoffered(report, offered):
@@ -502,9 +524,10 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
                       context)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
-        run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
+        steers = run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
-                                       lead.session is None, context=context,
+                                       lead.session is None,
+                                       steered_scope(steers), context=context,
                                        offered=offered, digest=rows,
                                        parked=parked),
                            REPORT_TURN_S, context)
