@@ -296,7 +296,6 @@ class Lead:
         self.price = price
         self.secrets = known_secrets(project.config())
         self.session = None
-        self.parked = False
 
     def remember(self, session):
         if session is not None:
@@ -363,17 +362,18 @@ def unoffered(report, offered):
     return {key: value for key, value in report.items() if key != "prior"}
 
 
-def checked_report(lead, report, offered=None, tasks=(), digest=None):
+def checked_report(lead, report, offered=None, tasks=(), digest=None,
+                   parked=False):
     check = partial(report_problems, kind=lead.row.kind,
                     subject=subject_of(lead.row), offered=offered,
                     scout=lead.row.id, tasks={task[0] for task in tasks},
-                    digest=digest, parked=lead.parked)
+                    digest=digest, parked=parked)
     report = unoffered(report, offered)
     problems = check(report)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems, lead.session is None,
-                                   offered, tasks, digest, lead.parked),
+                                   offered, tasks, digest, parked),
                        REPORT_TURN_S)
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
@@ -495,7 +495,7 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     lead = Lead(conn, project, row, seat, worktree, stopping,
                 config.lead_prices.get(row.lead_route or config.lead))
     deadline = monotonic() + budget_s
-    lead.parked = parked_subject(conn, row)
+    parked = parked_subject(conn, row)
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
     turn = lead.start(plan_goal(row, limit, context, prior + digest), budget_s,
@@ -506,13 +506,14 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         turn = lead.resume(report_goal(row, swarm, problem,
                                        lead.session is None, context=context,
                                        offered=offered, digest=rows,
-                                       parked=lead.parked),
+                                       parked=parked),
                            REPORT_TURN_S, context)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
         report, problems = checked_report(lead, report, offered,
-                                          scout_tasks(conn, row.id), rows)
+                                          scout_tasks(conn, row.id), rows,
+                                          parked)
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
         report = reproduced(row, swarm, resolve_evidence(project.path,
