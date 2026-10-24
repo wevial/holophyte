@@ -162,11 +162,12 @@ def scout_body(args):
     kind = SCOUT_KINDS.get(args.command.words) or last(args, "kind")
     if kind is None:
         args.leaf.error("holo scout needs --kind bug|research|recon")
-    return {"ask": note, "kind": kind, "lead": last(args, "lead"),
+    body = {"ask": note, "kind": kind, "lead": last(args, "lead"),
             "helper": last(args, "helper"),
             "swarm": counted(last(args, "swarm")),
             "minutes": counted(last(args, "minutes")),
             "author": last(args, "author")}
+    return {key: value for key, value in body.items() if value is not None}
 
 
 def scout(args, target):
@@ -175,7 +176,7 @@ def scout(args, target):
     body = scout_body(args)
     if not target:
         args.leaf.error("holo scout needs its project: -p NAME|PATH")
-    signed = (body["author"] or "").endswith(f" {VIA}")
+    signed = body.get("author", "").endswith(f" {VIA}")
     code, reply = launch(located(target), body,
                          "holo mcp" if signed else "holo scout")
     if code == 400:

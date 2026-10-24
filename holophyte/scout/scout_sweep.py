@@ -1,9 +1,11 @@
+import fcntl
 import os
 import re
 import shutil
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 import store
 from holophyte.admission import project_of
@@ -11,6 +13,7 @@ from holophyte.admission import state as admission_state
 from holophyte.agents.review_workspace import scratch_git_environment
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.config.config_tables import sweep_config
+from holophyte.host.registry import home
 from holophyte.loop.gates import sh
 from holophyte.scout.scout_process import scout_dir
 from store.enums import ScoutPhase
@@ -28,6 +31,7 @@ LIVE = tuple(phase.value for phase in (
     ScoutPhase.PLANNING, ScoutPhase.SWARMING, ScoutPhase.SYNTHESIZING,
     ScoutPhase.ANSWERING))
 SPAWN = subprocess.Popen
+START_LOCK = "scout-start.lock"
 SYSTEMD_UNIT_VARS = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID",
              "NOTIFY_SOCKET", "MANAGERPID")
 
@@ -129,11 +133,19 @@ def _account(name, entry, conn, now, out, queued):
     return len(_project_scouts(conn, entry.target, LIVE))
 
 
-def sweep_scouts(entries, limit, now, out, key=str):
-    start_queued(entries, limit, out, key, now)
+def sweep_scouts(entries, limit, now, out, key=str, home_dir=None):
+    start_queued(entries, limit, out, key, now, home_dir)
 
 
-def start_queued(entries, limit, out, key=str, now=None):
+def start_queued(entries, limit, out, key=str, now=None, home_dir=None):
+    lock = Path(home_dir or home()) / START_LOCK
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        return _start_queued(entries, limit, out, key, now)
+
+
+def _start_queued(entries, limit, out, key, now):
     live, queued, unknown, started = 0, [], False, []
     for entry in entries:
         if not entry.target.store_path.exists():

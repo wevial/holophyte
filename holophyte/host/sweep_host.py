@@ -345,7 +345,7 @@ def run_pass(host, stop=None, out=None, clock=None, revision=None):
         save_state(home, state)
     if not stop.is_set():
         sweep_scouts(entries, knobs.scout_max_parallel, clock(), out,
-                     key=entry_key)
+                     key=entry_key, home_dir=host.home)
     errors = reconcile_all(swept, state, home, stop, sweep_sec, now, out)
     state["projects"].update(errors)
     if stop.is_set():

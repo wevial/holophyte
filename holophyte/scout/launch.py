@@ -25,11 +25,11 @@ def refusal(body):
     if body.get("kind") not in KINDS:
         return f"kind must be one of {', '.join(KINDS)}"
     for field, _ in ROUTES:
-        if body.get(field) is not None and not isinstance(body[field], str):
+        if field in body and not isinstance(body[field], str):
             return f"{field} must name a route"
     for field, _ in COUNTS:
         value = body.get(field)
-        if value is not None and (type(value) is not int or value < 1):
+        if field in body and (type(value) is not int or value < 1):
             return f"{field} must be a positive integer"
     return None
 
@@ -89,7 +89,7 @@ def start(project, scout_id):
             return False, (f"{host.path} does not register {project.path},"
                            " so no host sweep starts it")
         live, started = start_queued(host.projects(), limit, out,
-                                     key=entry_name)
+                                     key=entry_name, home_dir=host.home)
     except HostError as bad:
         return False, str(bad).removeprefix("[holo2] ")
     if (Path(project.path).resolve(), scout_id) in started:

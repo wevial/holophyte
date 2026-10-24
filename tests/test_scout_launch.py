@@ -185,6 +185,39 @@ class DaemonLaunchTests(LaunchCase):
                          "queued")
         self.assertEqual(self.spawned, [])
 
+    def test_two_launches_at_once_start_no_more_scouts_than_the_slots(self):
+        path = self.project("alpha")
+        slots(1)
+        server = self.serve(path)
+        real, first = scout_sweep.sh, threading.Event()
+
+        def slow_base(argv, **options):
+            if not first.is_set():
+                first.set()
+                for _ in range(100):
+                    if len(scout_rows(path)) == 2:
+                        break
+                    threading.Event().wait(0.02)
+            return real(argv, **options)
+
+        replies = []
+
+        def post():
+            replies.append(self.post(server, "/actions/scout",
+                                     {"ask": ASK, "kind": "bug"}))
+
+        with patch.object(scout_sweep, "sh", slow_base):
+            threads = [threading.Thread(target=post) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(sorted(reply["queued"] for _, reply in replies),
+                         [False, True])
+        self.assertEqual(len(self.spawned), 1)
+        self.assertEqual(sorted(row.phase for row in scout_rows(path)),
+                         ["planning", "queued"])
+
     def test_a_spawn_that_fails_answers_not_ok_with_the_scout_failed(self):
         path = self.project("alpha")
         server = self.serve(path)
@@ -209,7 +242,9 @@ class DaemonLaunchTests(LaunchCase):
                ({"ask": "  ", "kind": "bug"}, "ask"),
                ({"ask": ASK, "kind": "triage"}, "kind"),
                ({"ask": ASK, "kind": "bug", "swarm": 0}, "swarm"),
-               ({"ask": ASK, "kind": "bug", "minutes": "30"}, "minutes"))
+               ({"ask": ASK, "kind": "bug", "minutes": "30"}, "minutes"),
+               *(({"ask": ASK, "kind": "bug", field: None}, field)
+                 for field in ("lead", "helper", "swarm", "minutes")))
         for body, field in bad:
             with self.subTest(body=body):
                 code, reply = self.post(server, "/actions/scout", body)
