@@ -10,6 +10,7 @@ import store
 from holophyte.loop.runs import open_store
 from holophyte.scout.answer import current_ask, stop_answer
 from holophyte.scout.filing import ROW_ID_LIMIT
+from holophyte.scout.follow_up import current_pass, stop_pass
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from store.scouts import (
@@ -60,12 +61,19 @@ def stop_reason(conn, scout_id):
     return stopped_by(asked["author"], asked["note"])
 
 
-def end_unrun(conn, scout_id, phase, ask, reason, author, note):
-    if phase != ANSWERING:
-        end_scout(conn, scout_id, "stopped", reason)
-        return f"scout {scout_id} stopped"
-    stop_answer(conn, scout_id, ask, reason, author, note)
-    return f"scout {scout_id}'s answer stopped; it is done again"
+def end_unrun(conn, scout_id, phase, ask, steered, reason, author, note):
+    if phase == ANSWERING:
+        stop_answer(conn, scout_id, ask, reason, author, note)
+        return f"scout {scout_id}'s answer stopped; it is done again"
+    if steered is None and current_pass(conn, scout_id) is not None:
+        raise ScoutRefused(scout_id, phase,
+                           "its first run ended; a later pass runs now")
+    if steered is not None:
+        stop_pass(conn, scout_id, steered, reason, author, note)
+        return (f"scout {scout_id}'s pass {steered['pass']} stopped;"
+                " it is done again")
+    end_scout(conn, scout_id, "stopped", reason)
+    return f"scout {scout_id} stopped"
 
 
 def runs_scout(pid, scout_id, project_path):
@@ -90,26 +98,30 @@ def requested(conn, project, scout_id, author, note, via):
     row = scout(conn, scout_id) if scout_id < ROW_ID_LIMIT else None
     if row is None:
         return 404, {"error": "no such scout", **named,
-                     "detail": f"no scout {scout_id}"}, None
+                     "detail": f"no scout {scout_id}"}, (None, None)
     declined = refused_phase(row, socket.gethostname())
     if declined is not None:
-        return 200, {"ok": False, **named, "detail": declined}, None
+        return 200, {"ok": False, **named, "detail": declined}, (None, None)
     live = row.phase != QUEUED
     running = live and row.pid and runs_scout(row.pid, scout_id, project.path)
     pid = row.pid if running else None
     ask = current_ask(conn, scout_id) if row.phase == ANSWERING else None
+    steered = (current_pass(conn, scout_id) if row.phase != ANSWERING
+               else None)
     record_scout_event(
         conn, scout_id, REQUESTED, f"stop asked by {author} ({via}): {note}",
-        level="detail", payload=json.dumps({"author": author, "note": note,
-                                            "via": via, "pid": pid, "ask": ask}))
+        level="detail", payload=json.dumps({
+            "author": author, "note": note, "via": via, "pid": pid,
+            "ask": ask, "steer": steered and steered["message"]}))
     if pid is None:
         reason = stopped_by(author, note)
-        said = end_unrun(conn, scout_id, row.phase, ask,
+        said = end_unrun(conn, scout_id, row.phase, ask, steered,
                          f"{reason}; {NO_PROCESS}" if live else reason,
                          author, note)
-        return 200, {"ok": True, **named, "detail": said}, ask
+        return 200, {"ok": True, **named, "detail": said}, (ask, steered)
     return 200, {"ok": True, **named, "pid": pid,
-                 "detail": f"stop sent to scout {scout_id}'s process {pid}"}, ask
+                 "detail": f"stop sent to scout {scout_id}'s process {pid}"
+                 }, (ask, steered)
 
 
 def stop(project, body, via=VIA_DAEMON):
@@ -122,8 +134,8 @@ def stop(project, body, via=VIA_DAEMON):
     conn = open_store(project)
     try:
         with store.transaction(conn):
-            code, reply, ask = requested(conn, project, scout_id, author,
-                                         note, via)
+            code, reply, target = requested(conn, project, scout_id, author,
+                                            note, via)
     except ScoutRefused as ended:
         return 200, {"ok": False, "scout": scout_id, "pid": None,
                      "detail": str(ended)}
@@ -134,7 +146,7 @@ def stop(project, body, via=VIA_DAEMON):
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
-            return gone(project, scout_id, ask, author, note)
+            return gone(project, scout_id, *target, author, note)
         except PermissionError as denied:
             return 200, {**reply, "ok": False,
                          "detail": f"scout {scout_id}'s process {pid} was not"
@@ -142,7 +154,7 @@ def stop(project, body, via=VIA_DAEMON):
     return code, reply
 
 
-def gone(project, scout_id, ask, author, note):
+def gone(project, scout_id, ask, steered, author, note):
     named = {"scout": scout_id, "pid": None}
     reason = f"{stopped_by(author, note)}; {NO_PROCESS}"
     conn = open_store(project)
@@ -150,8 +162,8 @@ def gone(project, scout_id, ask, author, note):
         with store.transaction(conn):
             phase = scout(conn, scout_id).phase
             if phase not in ENDED:
-                said = end_unrun(conn, scout_id, phase, ask, reason, author,
-                                 note)
+                said = end_unrun(conn, scout_id, phase, ask, steered, reason,
+                                 author, note)
                 return 200, {"ok": True, **named, "detail": said}
     except ScoutRefused as moved:
         return 200, {"ok": False, **named,

@@ -1407,8 +1407,15 @@ One scout whole: what the console's Scout page draws.
    "cut": []}}],
  "actions": [{"position": 1, "pass": 1, "title": "…", "why": "…",
               "kind": "fix", "body": "…", "ticket": null, "filed_ms": null}],
- "events": [{"at": 1791568800000, "kind": "scout_queued",
-             "summary": "bug scout queued by maintainer (holo scout)"}]}
+ "events": [{"id": 1, "at": 1791568800000, "kind": "scout_queued",
+             "summary": "bug scout queued by maintainer (holo scout)"}],
+ "thread": [{"id": 1, "author": "maintainer", "mode": "ask", "text": "…",
+             "blocks": [], "answers": null, "at": 1791569100000,
+             "consumed_by": 6, "consumed_ms": 1791569110000},
+            {"id": 2, "author": "scout", "mode": "answer", "text": "…",
+             "blocks": [{"type": "finding", "pass": 1, "index": 1}],
+             "answers": 1, "at": 1791569200000, "consumed_by": null,
+             "consumed_ms": null}]}
 ```
 
 `scout` holds the `GET /scouts` row's keys, `id`, `ask`, `kind`, `phase`,
@@ -1441,8 +1448,17 @@ and `why` it did not (null when it did); a command item, `command` and
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
 `investigate` or `decide`) and `body`, the `ticket` key it was filed as
 and `filed_ms`, both null until it is filed. `events` holds this scout's
-events in the order written, each its `at`, `kind` and `summary`, as
-`GET /runs/N` serves a run's.
+events in the order written, each its `id`, `at`, `kind` and `summary`,
+as `GET /runs/N` serves a run's.
+
+`thread` holds the scout's messages oldest first: the asks
+[`POST /actions/scout-message`](daemon.md#post-actionsscout-message)
+records and the lead's answers. Each carries its `id`, `author`, `mode`
+(`ask`, `steer` or `answer`), `text`, `blocks`, `answers` (the id of the message it
+answers, or null), `at`, and `consumed_by` and `consumed_ms`, the id of
+the event that took it and when, both null while it waits. A block is a
+finding of the report, `{"type": "finding", "pass", "index"}`, or an
+action item, `{"type": "action", "position"}`.
 
 An id that is not a positive integer is 400 with an `error`. An id the
 store does not hold is 404 with `error` `no such scout`; a project with no
@@ -1921,7 +1937,8 @@ the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run`
 required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
 the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
-`scout_stop` its required `project` and `scout` id, the note its reason. `annotations` holds `readOnlyHint`, true for a read, and
+`scout_stop` its required `project` and `scout` id, the note its reason,
+and `scout_ask` its required `project` and `scout` id, the note its ask. `annotations` holds `readOnlyHint`, true for a read, and
 `destructiveHint`, false for every tool served today, so a client that
 asks a person before a destructive write asks here as on stdio. A tool
 call's `result` holds `content`, a list of one object whose `type` is

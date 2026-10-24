@@ -13,6 +13,7 @@ from holophyte.holo.grammar import (
     ALIASES,
     COMMANDS,
     LAUNCH,
+    SCOUT_ASK,
     SCOUT_FILE,
     SCOUT_KINDS,
     SCOUT_STOP,
@@ -114,6 +115,8 @@ def call(args, target):
         return scout_file(args, target)
     if args.command.words == SCOUT_STOP:
         return scout_stop(args, target)
+    if args.command.words == SCOUT_ASK:
+        return scout_ask(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -236,6 +239,22 @@ def scout_stop(args, target):
     from holophyte.scout.stop import stop
     return scout_action(args, target, scout_stop_body(args), stop,
                         "holo scout stop")
+
+
+def scout_ask_body(args):
+    values, note = arguments(args, args.command)
+    if note is None or not note.strip():
+        args.leaf.error("holo scout ask needs the ask's text (non-blank)")
+    body = {"scout": counted(values[0]), "mode": "ask", "text": note,
+            "author": last(args, "author")}
+    return {key: value for key, value in body.items() if value is not None}
+
+
+def scout_ask(args, target):
+    from holophyte.scout.thread_action import message_action
+    return scout_action(args, target, scout_ask_body(args),
+                        lambda project, body, _: message_action(project, body),
+                        "holo scout ask")
 
 
 def located(target):

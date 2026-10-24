@@ -5,6 +5,7 @@ import stat
 import subprocess
 import threading
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 
 import store
@@ -21,7 +22,16 @@ from holophyte.scout.answer import (
     settle,
     stop_answer,
 )
+from holophyte.scout.follow_up import (
+    PassOutcome,
+    current_pass,
+    held_pass,
+    run_pass,
+    settle_pass,
+    stop_pass,
+)
 from holophyte.scout.lead import run_lead
+from holophyte.scout.scout_config import scout_config
 from holophyte.scout.stop import BY_SIGNAL, stop_reason, stop_request, stopped_by
 from holophyte.scout.swarm import ScoutStopped, Stopping
 from store.scouts import (
@@ -31,6 +41,7 @@ from store.scouts import (
     beat_scout,
     claim_scout,
     end_scout,
+    holding_scout,
     record_scout_event,
     scout,
 )
@@ -233,6 +244,20 @@ def answered(conn, project, row, ask, stopping):
         return Outcome(ask, failure=str(bad).strip() or type(bad).__name__)
 
 
+def held_answer_run(conn, project, row, ask, stopping, interval_s):
+    with scout_heartbeat(conn, row.id, interval_s):
+        outcome = answered(conn, project, row, ask, stopping)
+    try:
+        return settle(conn, row.id, outcome)
+    except ScoutRefused:
+        raise
+    except Exception as bad:
+        if conn.in_transaction:
+            conn.rollback()
+        reason = str(bad).strip() or type(bad).__name__
+        return settle(conn, row.id, outcome._replace(failure=reason))
+
+
 def answer_mode(conn, project, row, ask, stopping):
     scout_id = row.id
     interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
@@ -243,20 +268,92 @@ def answer_mode(conn, project, row, ask, stopping):
         owner = scout(conn, scout_id).pid
         if owner != os.getpid():
             raise ScoutRefused(scout_id, ANSWERING, f"pid {owner} answers it")
-        with scout_heartbeat(conn, scout_id, interval_s):
-            outcome = answered(conn, project, row, ask, stopping)
-        try:
-            return settle(conn, scout_id, outcome)
-        except ScoutRefused:
-            raise
-        except Exception as bad:
-            if conn.in_transaction:
-                conn.rollback()
-            reason = str(bad).strip() or type(bad).__name__
-            return settle(conn, scout_id, outcome._replace(failure=reason))
+        with holding_scout(conn, scout_id, owner):
+            return held_answer_run(conn, project, row, ask, stopping,
+                                   interval_s)
     except (ScoutEnded, ScoutRefused) as ended:
         print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
         return 1
+
+
+def pass_stopped(conn, scout_id, steered):
+    if conn.in_transaction:
+        conn.rollback()
+    number = steered["pass"]
+    asked = stop_request(conn, scout_id)
+    if asked is not None and asked.get("steer") != steered["message"]:
+        asked = None
+    reason = BY_SIGNAL if asked is None else stopped_by(asked["author"],
+                                                        asked["note"])
+    try:
+        stop_pass(conn, scout_id, steered, reason, asked and asked["author"],
+                  asked and asked["note"])
+    except ScoutRefused as ended:
+        print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
+        return 1
+    print(f"[holo2] scout {scout_id} pass {number} stopped: {reason}",
+          flush=True)
+    return 0
+
+
+def passed(conn, project, row, steered, stopping):
+    try:
+        budget_s = scout_config(project).steer_budget_min * 60
+        worktree = make_lead(project, row.id, row.base_sha)
+        return run_pass(conn, project, row, steered, worktree, budget_s,
+                        stopping)
+    except ScoutRefused:
+        raise
+    except (Exception, SystemExit) as bad:
+        return PassOutcome(steered["pass"], steered["message"],
+                           failure=str(bad).strip() or type(bad).__name__)
+
+
+def held_pass_run(conn, project, row, steered, stopping, interval_s):
+    with scout_heartbeat(conn, row.id, interval_s):
+        outcome = passed(conn, project, row, steered, stopping)
+    try:
+        return settle_pass(conn, row.id, outcome)
+    except ScoutRefused:
+        raise
+    except Exception as bad:
+        if conn.in_transaction:
+            conn.rollback()
+        reason = str(bad).strip() or type(bad).__name__
+        return settle_pass(conn, row.id, outcome._replace(failure=reason))
+
+
+def pass_mode(conn, project, row, steered, stopping):
+    scout_id = row.id
+    interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
+    try:
+        with store.transaction(conn):
+            held_pass(conn, scout_id, steered)
+            claim_scout(conn, scout_id, os.getpid())
+    except ScoutRefused as lost:
+        print(f"[holo2] scout {scout_id} was claimed elsewhere: {lost}",
+              flush=True)
+        return 1
+    try:
+        with holding_scout(conn, scout_id, os.getpid()):
+            return held_pass_run(conn, project, row, steered, stopping,
+                                 interval_s)
+    except (ScoutEnded, ScoutRefused) as ended:
+        print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
+        return 1
+
+
+def modes(conn, project, row, stopping):
+    if row.phase == ANSWERING:
+        ask = current_ask(conn, row.id)
+        return (partial(answer_mode, conn, project, row, ask, stopping),
+                partial(answer_stopped, conn, row.id, ask))
+    steered = current_pass(conn, row.id)
+    if steered is not None:
+        return (partial(pass_mode, conn, project, row, steered, stopping),
+                partial(pass_stopped, conn, row.id, steered))
+    return (partial(run_scout, conn, project, row, stopping),
+            partial(end_stopped, conn, row.id))
 
 
 def scout_mode(project, scout_id):
@@ -268,17 +365,12 @@ def scout_mode(project, scout_id):
             print(refused, flush=True)
             return 1
         stopping = Stopping()
-        answering = row.phase == ANSWERING
-        ask = current_ask(conn, scout_id) if answering else None
+        run, stopped = modes(conn, project, row, stopping)
         with stop_on_sigterm(stopping):
             try:
-                if answering:
-                    return answer_mode(conn, project, row, ask, stopping)
-                return run_scout(conn, project, row, stopping)
+                return run()
             except ScoutStopped:
-                if answering:
-                    return answer_stopped(conn, scout_id, ask)
-                return end_stopped(conn, scout_id)
+                return stopped()
     finally:
         conn.close()
 

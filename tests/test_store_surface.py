@@ -395,10 +395,14 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # The scout process, its swarm, its reads and
                                  # its filing write and read a scout's record
                                  # through these.
+                                 # HOLO-525: `holding_scout`, a pass process's
+                                 # writes refused once it no longer holds the
+                                 # scout's pid.
                                  (store.scouts, ["beat_scout", "claim_scout",
                                                  "create_scout",
                                                  "end_scout", "end_scout_task",
                                                  "file_scout_action",
+                                                 "holding_scout",
                                                  "move_scout",
                                                  "record_scout_actions",
                                                  "record_scout_event",
@@ -409,8 +413,11 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "start_scout_task"]),
                                  # HOLO-522: a scout's thread, its messages
                                  # posted, taken and read.
+                                 # HOLO-524: `release_message`, an ask
+                                 # whose answer could not start, waiting again.
                                  (store.scout_thread, ["messages",
                                                        "post_message",
+                                                       "release_message",
                                                        "take_message",
                                                        "waiting_messages"]),
                                  # HOLO-175: a story child's follow-up proposed

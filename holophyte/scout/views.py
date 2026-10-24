@@ -14,6 +14,7 @@ from holophyte.serve.serve_runs import (
     parse_limit,
 )
 from holophyte.serve.views import route_probe_view
+from store.scout_thread import messages
 from store.scouts import ENDED, QUEUED, TASK_ENDED, scout
 
 SCOUTS_PATH = "/scouts"
@@ -117,6 +118,14 @@ def served_report(report):
             "cut": report.get("cut")}
 
 
+def served_message(message):
+    return {"id": message.id, "author": message.author, "mode": message.mode,
+            "text": message.text, "blocks": message.blocks,
+            "answers": message.answers_id, "at": message.at,
+            "consumed_by": message.consumed_by,
+            "consumed_ms": message.consumed_at}
+
+
 def scout_parts(conn, scout_id):
     tasks = conn.execute(
         f"SELECT {', '.join(TASK_COLUMNS)} FROM scoutTasks WHERE scoutId = ?"
@@ -128,7 +137,7 @@ def scout_parts(conn, scout_id):
         "SELECT position, pass, item, ticketKey, filedAt FROM scoutActions"
         " WHERE scoutId = ? ORDER BY position", (scout_id,)).fetchall()
     events = conn.execute(
-        "SELECT at, kind, summary FROM runEvents WHERE scoutId = ?"
+        "SELECT id, at, kind, summary FROM runEvents WHERE scoutId = ?"
         " ORDER BY seq", (scout_id,)).fetchall()
     return {
         "tasks": [{**dict(zip(TASK_KEYS, task)), "paths": json.loads(task[4])}
@@ -140,8 +149,11 @@ def scout_parts(conn, scout_id):
                      **{key: json.loads(item)[key] for key in ACTION_KEYS},
                      "ticket": ticket, "filed_ms": filed}
                     for position, number, item, ticket, filed in actions],
-        "events": [{"at": at, "kind": kind, "summary": summary}
-                   for at, kind, summary in events],
+        "events": [{"id": event_id, "at": at, "kind": kind,
+                    "summary": summary}
+                   for event_id, at, kind, summary in events],
+        "thread": [served_message(message)
+                   for message in messages(conn, scout_id)],
     }
 
 

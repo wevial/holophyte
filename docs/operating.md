@@ -171,18 +171,23 @@ project with a store. It ends `failed` each scout in `planning`,
 `[supervisor] heartbeat_stale_min`, the reason starting "heartbeat stale",
 unless a beat lands before the end is written; a stale `answering` scout
 goes back to `done` instead, its report kept, with a
-`scout_answer_failed` event giving that reason. It then counts the scouts
+`scout_answer_failed` event giving that reason, and a stale scout in a
+steered pass goes back to `done` with a `scout_pass_failed` event giving it,
+its running helper tasks ended `stopped`. It then counts the scouts
 in those phases across the host and, while the count is under
 `host.toml`'s `[scout] max_parallel`, takes the oldest waiting work: a
-`queued` scout, moved to `planning` at its project's `main`, or the ask
-waiting on a `done` scout, taken so the scout is `answering`. Either way it
+`queued` scout, moved to `planning` at its project's `main`, the ask
+waiting on a `done` scout, taken so the scout is `answering`, or the steer
+waiting on a `done` scout, taken so the scout is in `planning` for its next
+pass: one wave of helpers under `[scout] steer_budget_min` and
+`steer_helpers`, its report appended as that pass. Each way it
 starts `factory.py --scout ID PROJECT` for it, its output appended to
 `scouts/ID/scout.log` in the project's state directory. Under systemd (the
 sweep's `INVOCATION_ID` is set and `systemd-run` is on `PATH`) the scout
 starts as its own transient user unit, `holophyte-scout-PROJECT-ID`, so it
 outlives the oneshot sweep; otherwise it starts detached in its own
 session. Only a project whose admission is enabled and whose stale check
-succeeded supplies queued scouts and asks, though every project's live scouts
+succeeded supplies queued scouts, asks and steers, though every project's live scouts
 count, and a pass in which any store's live scouts cannot be counted starts
 none. Each start and each end prints one line; one project's failure there
 is a line and never stops the step.

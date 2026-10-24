@@ -24,6 +24,8 @@ DEFAULT_HELPER = "luna"
 COUNTS = {"budget_min": 30, "swarm": 4, "helper_turns": 12}
 WAVES = (1, 2)
 DEFAULT_WAVES = 2
+STEER_BUDGET_MIN = 10
+STEER_HELPERS = 4
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,8 @@ class ScoutConfig:
     swarm: int
     helper_turns: int
     waves: int
+    steer_budget_min: int
+    steer_helpers: int
 
 
 def scout_config(project):
@@ -58,7 +62,17 @@ def scout_config(project):
     if type(waves) is not int or waves not in WAVES:
         raise SystemExit(
             f"{where}: [scout] waves must be 1 or 2, got {waves!r}")
-    return ScoutConfig(leads, helpers, lead, helper, waves=waves, **counts)
+    steer_budget_min = count(where, table, "steer_budget_min",
+                             STEER_BUDGET_MIN)
+    steer_helpers = count(where, table, "steer_helpers", STEER_HELPERS)
+    if steer_helpers > counts["helper_turns"]:
+        raise SystemExit(
+            f"{where}: [scout] steer_helpers: {steer_helpers} helpers for a "
+            f"steered pass is more than helper_turns = "
+            f"{counts['helper_turns']}")
+    return ScoutConfig(leads, helpers, lead, helper, waves=waves,
+                       steer_budget_min=steer_budget_min,
+                       steer_helpers=steer_helpers, **counts)
 
 
 def route_seats(project, where, table, key, defaults, role):

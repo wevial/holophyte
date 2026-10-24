@@ -67,8 +67,10 @@ shas `BASE_SHA` and `HEAD_SHA`.
 `tests/test_serve_scouts.py` from a store seeded through the scout writers
 at a frozen clock: three scouts (queued, swarming with two of three tasks
 ended, done with one report pass and two action items), and leads A and B
-and helpers C and D, A and C probed green, B red and D never; every scout
-and task `id` becomes 1.
+and helpers C and D, A and C probed green, B red and D never. The done
+scout's thread holds an answered ask, its answer with one finding block,
+and a later ask still waiting. Every scout, task, event and message `id`
+becomes 1.
 
 `mcp-tools-list.json` pins `holo mcp --http`'s reply to `tools/list` with
 `[serve] actions` true, reads and writes, as served on loopback; nothing in

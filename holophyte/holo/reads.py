@@ -78,6 +78,15 @@ def scout_answer(args, project):
     return f"GET /scouts/{args.arg0}", scout_detail(project, args.arg0)
 
 
+def thread_body(body):
+    return {"scout": body["scout"]["id"], "thread": body["thread"]}
+
+
+def thread_answer(args, project):
+    route, (code, body) = scout_answer(args, project)
+    return route, (code, thread_body(body) if code == 200 else body)
+
+
 def runs_lines(body):
     return [f"{row['ticket']}  run {row['run']}  {row['outcome']}"
             f"  ended {when(row['ended_ms'])}"
@@ -158,13 +167,22 @@ def scout_lines(body):
     return lines
 
 
+def thread_lines(body):
+    return [f"message {message['id']}  {message['author']}  {message['mode']}"
+            f"  {message['text']}"
+            + ("  waiting" if message["mode"] != "answer"
+               and message["consumed_by"] is None else "")
+            for message in body["thread"]]
+
+
 READS = {("runs",): (runs_answer, runs_lines),
          ("run",): (run_answer, None),
          ("attention",): (attention_answer, attention_lines),
          ("board",): (board_answer, board_lines),
          ("ticket",): (ticket_answer, ticket_lines),
          ("scouts",): (scouts_answer, scouts_lines),
-         ("scout", "show"): (scout_answer, scout_lines)}
+         ("scout", "show"): (scout_answer, scout_lines),
+         ("scout", "thread"): (thread_answer, thread_lines)}
 RUN_LISTINGS = {"files": files_lines, "ledger": ledger_lines,
                 "turns": turns_lines}
 

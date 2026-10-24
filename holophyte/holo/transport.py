@@ -20,9 +20,11 @@ from holophyte.holo.grammar import (
     LAUNCH,
     READS,
     REQUIRED,
+    SCOUT_ASK,
     SCOUT_FILE,
     SCOUT_KINDS,
     SCOUT_STOP,
+    SCOUT_THREAD,
     SHOW,
     arguments,
 )
@@ -46,6 +48,7 @@ from holophyte.holo.results import (
     human_line,
     human_text,
     parse_run,
+    scout_ask_body,
     scout_body,
     scout_file_body,
     scout_stop_body,
@@ -347,6 +350,7 @@ HTTP_ROUTES = {
     ("ticket",): Route("GET", "/tickets/{KEY}"),
     ("scouts",): Route("GET", "/scouts"),
     ("scout", SHOW): Route("GET", "/scouts/{N}"),
+    SCOUT_THREAD: Route("GET", "/scouts/{N}"),
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note", "force")),
     ("send-back",): Route("POST", "/actions/send-back",
                           ("run", "note", "author")),
@@ -364,6 +368,8 @@ HTTP_ROUTES = {
     SCOUT_FILE: Route("POST", "/actions/scout-file",
                       ("scout", "item", "note", "author")),
     SCOUT_STOP: Route("POST", "/actions/scout-stop", ("scout", "note", "author")),
+    SCOUT_ASK: Route("POST", "/actions/scout-message",
+                     ("scout", "mode", "text", "author")),
 }
 
 
@@ -473,6 +479,8 @@ def fields(args, route):
         return scout_file_body(args)
     if route.path == HTTP_ROUTES[SCOUT_STOP].path:
         return scout_stop_body(args)
+    if route.path == HTTP_ROUTES[SCOUT_ASK].path:
+        return scout_ask_body(args)
     if note is not None and "note" not in route.body:
         args.leaf.error(f"{route.method} {route.path} takes no note; a hold"
                         " is released over http with holo release NOTE")
@@ -506,7 +514,7 @@ def read_over(args, daemon, prefix, route, timezone):
     parts = [part for part in RUN_PARTS if getattr(args, part, False)]
     if len(parts) > 1:
         args.leaf.error("give at most one of --files, --ledger and --turns")
-    if args.command.words == ("scout", SHOW):
+    if args.command.words in (("scout", SHOW), SCOUT_THREAD):
         from holophyte.scout.views import parse_scout_id
         try:
             parse_scout_id(args.arg0)
@@ -519,6 +527,9 @@ def read_over(args, daemon, prefix, route, timezone):
              if (values := getattr(args, name, None))}
     query = f"?{urlencode(given)}" if given else ""
     code, body = daemon.call("GET", prefix + path + query)
+    if code == 200 and args.command.words == SCOUT_THREAD:
+        from holophyte.holo.reads import thread_body
+        body = thread_body(body)
     if code == 200:
         body.update(route.local)
     if code == 200 and run_page(args):

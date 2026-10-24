@@ -29,7 +29,7 @@ from tests.test_holo_http import ROOT, HttpCase
 from tests.test_holo_mcp import MINUTE, NOW, TOOLS, McpCase
 
 WRITES = {"file_ticket", "send_back", "babysit", "steer", "requeue", "hold",
-          "scout", "scout_file", "scout_stop"}
+          "scout", "scout_file", "scout_stop", "scout_ask"}
 URL = "https://example.test/pull/7"
 AUTHOR = "test seat"
 SIGNED = "test seat via MCP"
@@ -162,7 +162,7 @@ class WriteCase(McpCase):
 
 
 class ListingTests(WriteCase):
-    def test_the_reads_and_nine_writes_each_write_signed_and_not_read_only(self):
+    def test_the_reads_and_ten_writes_each_write_signed_and_not_read_only(self):
         async def use(client, _):
             return (await client.list_tools()).tools
         tools = self.session(use)
