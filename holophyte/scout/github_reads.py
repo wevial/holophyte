@@ -168,7 +168,7 @@ def zip_rows(data):
     rows = []
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         for member in archive.infolist():
-            if member.file_size > GITHUB_ARTIFACT_BYTES:
+            if not member.filename.endswith((".xml", ".json")):
                 continue
             try:
                 data = archive.read(member)
