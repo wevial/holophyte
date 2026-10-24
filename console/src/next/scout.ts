@@ -254,16 +254,16 @@ const ANSWER_TONE: Record<string, ActivityTone> = { scout_answered: "ok", scout_
 
 /** Pass `run`'s tasks: those of its pass that started inside its span, and
  *  while it runs, those not yet started. An earlier try at the same pass can
- *  leave tasks that never started, and helpers start in id order, so after a
- *  retry an unstarted task is the run's only above its first started task;
- *  before one starts, no id tells the retry's from an earlier try's. */
+ *  leave tasks that never started, and helpers start in id order, so once a
+ *  retry's first task starts, an unstarted task is the run's only above it;
+ *  before one starts, the live run holds every unstarted task of its pass. */
 function passTasks(detail: ScoutDetail, run: FollowUp, running: boolean): ScoutTask[] {
   const inside = (started: number) => started >= run.started.at && (run.end != null ? started <= run.end.at : started < (run.until ?? Infinity));
   const own = detail.tasks.filter((task) => task.pass === run.pass);
   const started = own.filter((task) => task.started_ms != null && inside(task.started_ms));
   if (!running) return started;
   const retry = followUps(detail).some((each) => each.kind === "pass" && each.pass === run.pass && each.started.at < run.started.at);
-  const floor = retry ? Math.min(Infinity, ...started.map((task) => task.id)) : -Infinity;
+  const floor = retry && started.length ? Math.min(...started.map((task) => task.id)) : -Infinity;
   return own.filter((task) => (task.started_ms == null ? task.id > floor : started.includes(task)));
 }
 

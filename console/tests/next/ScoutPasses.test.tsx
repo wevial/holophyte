@@ -233,9 +233,9 @@ test("a live retry of pass 3 holds its own unstarted helpers, not those its stop
   expect(status()).toBe("Pass 3: 1 of 2 helpers are running, and 1 waits for a slot.");
 });
 
-test("a live retry of pass 3 holds no queued helper before its first starts, then only those from it on", async () => {
+test("a live retry of pass 3 holds every queued helper before its first starts, and its failed try none of them", async () => {
   const numbered = (id: number, each: ScoutTask): ScoutTask => ({ ...each, id });
-  const ran = numbered(10, task("Does the nightly export hold the lock?", 3, "stopped", at(15, 0, 30), at(15, 1)));
+  const ran = numbered(10, task("Does the nightly export hold the lock?", 3, "failed", at(15, 0, 30), at(15, 1)));
   const left = numbered(11, task("Does the backup job hold the lock?", 3, "queued", null));
   const first = numbered(12, task("Does the nightly export hold the lock across a vacuum?", 3, "queued", null));
   const second = numbered(13, task("Does the vacuum take the lock?", 3, "queued", null));
@@ -243,12 +243,14 @@ test("a live retry of pass 3 holds no queued helper before its first starts, the
     ...done,
     scout: { ...done.scout, phase: "swarming" },
     tasks: [...done.tasks, ran, left, ...tasks],
-    events: [...done.events, event(5, "scout_pass_started", PASS_THREE), event(6, "scout_pass_stopped", at(15, 1)), event(7, "scout_pass_started", at(15, 5))],
+    events: [...done.events, event(5, "scout_pass_started", PASS_THREE), event(6, "scout_pass_failed", at(15, 1)), event(7, "scout_pass_started", at(15, 5))],
   });
   const { queries, bodies } = await mount(retry([first, second]), at(15, 7));
-  expect(row(groups().at(-1)!)[0]).toBe("Pass 3");
-  expect(within(groups().at(-1)!).queryByRole("list", { name: "Helpers" })).toBeNull();
-  expect(status()).toBe("Pass 3: the lead is handing out sub-tasks.");
+  const [failedTry, live] = titled("Pass 3");
+  expect(row(live!)[0]).toBe("Pass 3 · luna ×3 · 0 of 3 back");
+  expect(helpers(live!)).toEqual([left.question, first.question, second.question]);
+  expect(helpers(failedTry!)).toEqual([ran.question]);
+  expect(status()).toBe("Pass 3: 3 of 3 helpers wait for a slot.");
   bodies.scout = retry([{ ...first, phase: "running", started_ms: at(15, 6) }, second]);
   await act(async () => {
     await queries.refetchQueries();
@@ -256,7 +258,6 @@ test("a live retry of pass 3 holds no queued helper before its first starts, the
   await settled();
   expect(row(groups().at(-1)!)[0]).toBe("Pass 3 · luna ×2 · 0 of 2 back");
   expect(helpers(groups().at(-1)!)).toEqual([first.question, second.question]);
-  expect(status()).toBe("Pass 3: 1 of 2 helpers are running, and 1 waits for a slot.");
 });
 
 test("an answer turn still running reads now, and one stopped takes the wait tone", async () => {
