@@ -8,9 +8,11 @@ import { ScoutActivity } from "../components/ScoutActivity";
 import { ScoutActions } from "../components/ScoutActions";
 import { ScoutReport } from "../components/ScoutReport";
 import { ScoutStop } from "../components/ScoutStop";
+import { ScoutThread } from "../components/ScoutThread";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
 import { backCount, SCOUT_DOTS, stoppedCount, tokenWords, useScoutPage } from "../scout";
+import { hasThread } from "../scoutThread";
 import { CRUMB_LINK, Notice, Page, zoneName } from "./runShared";
 
 const STRONG = "font-medium text-ink-2";
@@ -60,6 +62,7 @@ export function ScoutPage() {
   const page = useScoutPage(project, id);
   const heading = useRef<HTMLHeadingElement>(null);
   const stopSent = useRef(false);
+  const composeRef = useRef<HTMLTextAreaElement>(null);
   const stoppable = page.kind === "scout" && page.stoppable;
   useEffect(() => {
     if (stoppable || !stopSent.current) return;
@@ -82,6 +85,7 @@ export function ScoutPage() {
   }
   const { scout } = page.detail;
   const dot = SCOUT_DOTS[page.state];
+  const thread = hasThread(page.detail);
   return (
     <Page label={label}>
       <header className="border-b border-rule pb-3">
@@ -108,29 +112,37 @@ export function ScoutPage() {
           </p>
         </div>
         <div className="mt-[18px] flex flex-wrap items-center gap-x-3 gap-y-2.5">
+          {thread && scout.phase === "done" && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
+            event.preventDefault();
+            composeRef.current?.focus();
+            composeRef.current?.scrollIntoView({ block: "nearest" });
+          }}>Ask or steer</a>}
           <span className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">Stage</span>
           <span role="group" aria-label="Stage">
             <StageChip label={page.stage.label} state={dot} sub={page.stage.sub} />
           </span>
         </div>
       </header>
-      <div data-scout-body className="mt-3.5 border border-rule bg-paper px-8 pb-8 pt-[22px] max-[720px]:px-4">
-        <section aria-label="Progress">
-          <h2 className={`m-0 ${SECTION_LABEL}`}>
-            Progress
-            {page.live && (
-              <span data-live className="inline-flex items-center gap-1.5 tracking-[.1em] text-live">
-                <span aria-hidden="true">
-                  <StateDot state="running" hideWord tone="live" />
+      <div data-scout-body className="@container mt-3.5 flex flex-wrap border border-rule bg-paper">
+        <div className={`min-w-0 flex-[999_1_560px] px-8 pb-8 pt-[22px] max-[720px]:px-4 ${thread ? "@[1000px]:border-r @[1000px]:border-rule" : ""}`}>
+          <section aria-label="Progress">
+            <h2 className={`m-0 ${SECTION_LABEL}`}>
+              Progress
+              {page.live && (
+                <span data-live className="inline-flex items-center gap-1.5 tracking-[.1em] text-live">
+                  <span aria-hidden="true">
+                    <StateDot state="running" hideWord tone="live" />
+                  </span>
+                  live
                 </span>
-                live
-              </span>
-            )}
-          </h2>
-          <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)} />
-        </section>
-        <ScoutReport key={`${page.base}/${scout.id}`} reports={page.detail.reports} baseSha={scout.base_sha} />
-        <ScoutActions key={`${page.base}/${scout.id}/actions`} items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />
+              )}
+            </h2>
+            <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)} />
+          </section>
+          <ScoutReport key={`${page.base}/${scout.id}`} reports={page.detail.reports} baseSha={scout.base_sha} />
+          <ScoutActions key={`${page.base}/${scout.id}/actions`} items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />
+        </div>
+        {thread && <ScoutThread key={`${page.base}/${scout.id}/thread`} base={page.base} detail={page.detail} actions={page.actions} ref={composeRef} />}
       </div>
     </Page>
   );
