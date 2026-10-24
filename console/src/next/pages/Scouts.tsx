@@ -10,7 +10,7 @@ import { scopedHosts, useConsolePeers } from "../scope";
 import { countScouts, scoutState, useScouts, type ScoutListRow, type ScoutState } from "../scouts";
 import type { State } from "../state";
 
-const GRID = "min-[720px]:grid min-[720px]:grid-cols-[20px_44px_minmax(0,1fr)_76px_minmax(0,96px)_minmax(0,64px)_minmax(0,112px)_48px] min-[720px]:items-start min-[720px]:gap-3";
+const GRID = "min-[720px]:grid min-[720px]:grid-cols-[16px_40px_minmax(0,1fr)_76px_92px_52px_88px_56px] min-[720px]:items-start min-[720px]:gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 
