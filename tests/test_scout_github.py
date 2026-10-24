@@ -16,6 +16,7 @@ import sys
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 import anyio
 from mcp import ClientSession, StdioServerParameters, stdio_client
@@ -28,6 +29,7 @@ from holophyte.scout.github_reads import (
     github_get,
     github_tests,
     origin_repo,
+    zip_rows,
 )
 from holophyte.scout.scout_config import scout_config
 from store.scouts import create_scout, end_scout, move_scout, scout
@@ -346,6 +348,20 @@ class TestsTests(GithubCase):
         self.assertFalse(answer.error, answer.text)
         result = json.loads(answer.text)
         self.assertEqual((result["total"], result["failed"]), (2, 1))
+
+    def test_members_failing_their_crc_still_spend_the_read_budget(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as writer:
+            for number in range(4):
+                writer.writestr(f"junit/results-{number}.xml", JUNIT)
+        data = archive.getvalue()
+        corrupt = data.replace(b"<testsuites", b"<testsuitez", 3)
+        self.assertEqual(corrupt.count(b"<testsuites"), 1)
+        cap = len(JUNIT.encode()) + 1
+        with mock.patch("holophyte.scout.github_reads.GITHUB_MEMBER_BYTES",
+                        cap):
+            self.assertEqual(len(zip_rows(data)), 4)
+            self.assertEqual(zip_rows(corrupt), [])
 
 
 class EventTests(GithubCase):

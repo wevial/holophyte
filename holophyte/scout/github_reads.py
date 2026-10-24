@@ -178,12 +178,12 @@ def zip_rows(data):
             if (not member.filename.endswith((".xml", ".json"))
                     or member.file_size > GITHUB_MEMBER_BYTES):
                 continue
+            total += member.file_size
             try:
                 data = archive.read(member)
             except (RuntimeError, NotImplementedError, zlib.error, EOFError,
                     zipfile.BadZipFile):
                 continue
-            total += len(data)
             rows += member_rows(member.filename, data)
     return rows
 
