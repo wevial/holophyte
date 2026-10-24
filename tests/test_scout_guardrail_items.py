@@ -144,6 +144,32 @@ class GuardrailItemTests(GuardrailItemCase):
         self.assertEqual(column, "backlog")
 
 
+class CutDigestTests(DigestCase):
+    def test_a_row_cut_from_the_digest_text_is_not_in_the_digest(self):
+        self.store_for()
+        long = "the save is not atomic " * 14
+        for cluster in range(12):
+            for n in (100 + 2 * cluster, 101 + 2 * cluster):
+                self.run_of(n, [([finding(f"app/p{cluster:02}.py", line, long)
+                                  for line in range(1, 5)], self.now - DAY)])
+        (run,) = self.db.execute(
+            "SELECT r.id FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " WHERE t.linearIdentifier = 'NAT-123'").fetchone()
+        unseen = f"F{run}.1.1"
+        covering = fenced(dict(NOTHING, actions=[dict(GUARD,
+                                                      covers=[unseen])]))
+        self.stubs.answer(report=covering, repair=covering)
+        scout_id = self.a_scout(helper_turns=12)
+        code, printed = self.cli("--scout", str(scout_id), str(self.path))
+        goal = self.plan_goal()
+        self.assertIn("(digest cut at", goal)
+        self.assertNotIn(unseen, goal)
+        self.assertEqual(code, 1, printed)
+        self.assertEqual(scout(self.db, scout_id).reason,
+                         "the lead's report is malformed: actions[0].covers:"
+                         f" {unseen} was not in the digest")
+
+
 class CoverageTests(GuardrailItemCase):
     def test_a_filed_items_rows_leave_the_next_digest_and_an_unfiled_ones_stay(
             self):

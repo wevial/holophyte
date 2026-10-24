@@ -46,7 +46,8 @@ class Digest(NamedTuple):
 
     def row_ids(self):
         return {row.id for cluster in self.clusters
-                for row in cluster.newest()[:SHOWN_ROWS]}
+                for row in cluster.newest()[:SHOWN_ROWS]
+                if f"- {row.id} · " in self.text}
 
 
 class DigestUnavailable(RuntimeError):
