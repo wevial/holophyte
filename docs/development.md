@@ -170,6 +170,10 @@ Each module, one line:
 - `holophyte/scout/report.py` — a scout report's shape checked field by
   field, and each `file`/`line` evidence item resolved against the base
   commit.
+- `holophyte/scout/run_helpers.py` — a bug scout's `run` helpers: the
+  helper's own shared clone of the project, the project's `[worktree] setup`
+  in it, the run goal, the turn launched under `implementer_isolation`, the
+  refs the turn changed in its clone and the stored reproduction level.
 - `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's
   lead and helper routes, each a harness `Seat`, their defaults and budget.
 - `holophyte/scout/scout_contract.py` — the TypedDicts of `GET /scouts`,

@@ -57,7 +57,11 @@ class ScoutConfigTests(ScoutFixture):
             config.helpers["luna"].turn("GOAL"),
             ["codex", "exec", "-m", "gpt-6-luna", "-c",
              "model_reasoning_effort=low",
-             "--dangerously-bypass-approvals-and-sandbox", "GOAL"])
+             "--sandbox", "read-only", "GOAL"])
+        self.assertEqual(
+            config.helpers["luna"].resume("S"),
+            ["codex", "exec", "--sandbox", "read-only", "resume", "-m",
+             "gpt-6-luna", "-c", "model_reasoning_effort=low", "S"])
         self.assertIn("--model opus --effort high",
                       shlex.join(config.leads["opus"].turn("GOAL")))
 
@@ -67,14 +71,12 @@ class ScoutConfigTests(ScoutFixture):
         for name, seat in seats.items():
             for argv in (seat.turn("GOAL"), seat.resume("S")):
                 with self.subTest(route=name, argv=argv):
-                    claude = "--disallowedTools" in argv
                     codex = shlex.join(argv).count("--disable multi_agent")
-                    self.assertEqual(claude, name == "opus")
                     self.assertEqual(codex, int(name == "sol"))
-                    if claude:
+                    if seat.name == "claude":
                         at = argv.index("--disallowedTools")
-                        self.assertEqual(argv[at + 1:at + 3], ["Agent", "Task"])
-                        self.assertTrue(argv[at + 3].startswith("--"), argv)
+                        self.assertEqual(argv[at + 1:at + 3] == ["Agent", "Task"],
+                                         name == "opus")
 
     def test_a_configured_leads_table_replaces_the_built_in_leads(self):
         config = scout_config(self.project(

@@ -10,24 +10,29 @@ from holophyte.agents.probes import (
     probe_diagnostic,
 )
 from holophyte.agents.review_workspace import critic_workspace
-from holophyte.loop.gates import run_capped
+from holophyte.loop.gates import RunFailure, run_capped
 from holophyte.redact import safe_print as print
 from holophyte.scout.scout_config import scout_config
 
 
-def probe_scout_route(project, name, seat, timeout=PROBE_TIMEOUT):
+def in_critic_workspace(project, cmd, timeout):
+    with critic_workspace(project) as checkout:
+        return run_capped(cmd, checkout, timeout)
+
+
+def probe_scout_route(project, name, seat, timeout=PROBE_TIMEOUT,
+                      run=in_critic_workspace):
     cmd = seat.turn(PROBE_GOAL)
     started = time.time()
     try:
-        with critic_workspace(project) as checkout:
-            code, out = run_capped(cmd, checkout, timeout)
+        code, out = run(project, cmd, timeout)
         probe = ProbeResult(cmd, code, out or "", timeout, seat=name)
     except subprocess.TimeoutExpired as expired:
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode(errors="replace")
         probe = ProbeResult(cmd, None, partial, timeout, seat=name)
-    except (OSError, RuntimeError) as failed:
+    except (OSError, RuntimeError, RunFailure) as failed:
         probe = ProbeResult(cmd, None, "", timeout,
                             launch_error=launch_failure_reason(failed),
                             launch_diagnostic=str(failed), seat=name)

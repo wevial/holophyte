@@ -17,6 +17,7 @@ from holophyte.scout.report import (
     report_problems,
     resolve_evidence,
 )
+from holophyte.scout.run_helpers import reproduced
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
 from holophyte.scout.swarm import Swarm, turn_answer
@@ -291,7 +292,8 @@ def run_lead(conn, project, row, worktree, budget_s):
         report, problems = checked_report(lead, report)
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
-        report = resolve_evidence(project.path, row.base_sha, report)
+        report = reproduced(row, swarm, resolve_evidence(project.path,
+                                                         row.base_sha, report))
         with store.transaction(conn):
             record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))
             record_scout_actions(conn, row.id, 1, report["actions"])

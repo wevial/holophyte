@@ -191,8 +191,8 @@ def return_turn(worktree, clone, root, old, project, merge_state, carry):
         ) from error
     if project is not None:
         refuse_environment_history(
-            project, sha, action="import container commits", commit=sha
-        )
+            project, sha, action="import container commits", commit=sha,
+            repo=worktree)
     if git(worktree, "rev-parse", "HEAD") != old:
         raise InfraFailure(
             "task branch changed during container turn; refusing fast-forward"

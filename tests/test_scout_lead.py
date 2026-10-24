@@ -36,6 +36,9 @@ REPORT = {"summary": "the retry loop never backs off",
           "reproduction": {"level": "test", "hypotheses": [
               {"hypothesis": "no sleep", "separates": "the loop's timing",
                "verdict": "supported"}]}}
+UNSHOWN = dict(REPORT, reproduction=dict(
+    REPORT["reproduction"], level="not_reproduced", claimed_level="test",
+    why="no run helper finished"))
 SECRET = "sk-scout-lead-0123456789abcdef"
 
 
@@ -114,7 +117,8 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(scout(conn, scout_id).lead_session, session)
         (report,) = self.stubs.turns("report")
         self.assertEqual(Path(report["argv"][0]).name, "codex")
-        self.assertEqual(report["argv"][1:3], ["exec", "resume"])
+        self.assertEqual(report["argv"][1:5],
+                         ["exec", "--sandbox", "read-only", "resume"])
         self.assertIn(session, report["argv"])
 
     def test_a_plan_turn_past_the_budget_is_killed_and_the_report_still_runs(self):
@@ -138,7 +142,7 @@ class ScoutLeadTests(ScoutFixture):
         while running(pid) and time.monotonic() < deadline:
             time.sleep(0.1)
         self.assertFalse(running(pid))
-        self.assertEqual(self.report(conn, scout_id), [dict(REPORT, cut=[])])
+        self.assertEqual(self.report(conn, scout_id), [dict(UNSHOWN, cut=[])])
         self.assertEqual(scout(conn, scout_id).phase, "done")
         self.assertLess(elapsed, 30)
 
@@ -155,7 +159,7 @@ class ScoutLeadTests(ScoutFixture):
         self.assertIn("question", summary)
         self.assertEqual(self.tasks(conn, scout_id), [])
         self.assertEqual(len(self.stubs.turns("report")), 1)
-        self.assertEqual(self.report(conn, scout_id), [dict(REPORT, cut=[])])
+        self.assertEqual(self.report(conn, scout_id), [dict(UNSHOWN, cut=[])])
 
     def test_a_report_turn_with_no_json_block_ends_the_scout_failed(self):
         path, conn, scout_id = self.bug_scout()
