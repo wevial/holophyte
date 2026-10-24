@@ -144,6 +144,7 @@
   --act-ink: var(--pink-on);
   --act-wash: var(--pink-3);
   --need-wash: color-mix(in oklab, var(--pink-3) 50%, var(--pink-2));
+  --row-selected: color-mix(in oklab, var(--act-wash) 55%, var(--paper));
   --live: var(--green-9);
   --live-wash: var(--green-3);
   --ok-ink: var(--green-11);
@@ -320,6 +321,7 @@
   --act-ink: var(--pink-on);
   --act-wash: var(--pink-4);
   --need-wash: var(--pink-3);
+  --row-selected: var(--act-wash);
   --live: var(--green-9);
   --live-wash: var(--green-3);
   --ok-ink: var(--green-11);
@@ -497,6 +499,7 @@
     --act-ink: var(--pink-on);
     --act-wash: var(--pink-4);
     --need-wash: var(--pink-3);
+    --row-selected: var(--act-wash);
     --live: var(--green-9);
     --live-wash: var(--green-3);
     --ok-ink: var(--green-11);
@@ -640,6 +643,7 @@
   --color-rail: var(--canvas);
   --color-rail-fg: var(--ink);
   --color-rail-selected: var(--act-wash);
+  --color-row-selected: var(--row-selected);
   --color-badge-text: var(--act-ink);
 
   --shadow-card: var(--card-shadow);

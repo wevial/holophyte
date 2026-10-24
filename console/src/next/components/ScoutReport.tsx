@@ -134,8 +134,9 @@ function Hypotheses({ hypotheses }: { hypotheses: Hypothesis[] }) {
   );
 }
 
-/** A done scout's report: every pass's findings numbered F1… with their evidence, and the newest pass's hypotheses. */
-export function ScoutReport({ reports, baseSha }: { reports: ScoutReportPass[]; baseSha: string | null }) {
+/** A done scout's report: every pass's findings numbered F1… with their evidence, and the newest pass's hypotheses
+ *  unless `hypotheses` is false. */
+export function ScoutReport({ reports, baseSha, hypotheses: showHypotheses = true }: { reports: ScoutReportPass[]; baseSha: string | null; hypotheses?: boolean }) {
   if (reports.length === 0) return null;
   const passes = [...reports].sort((a, b) => a.pass - b.pass);
   const newest = passes.at(-1)!.report;
@@ -159,7 +160,7 @@ export function ScoutReport({ reports, baseSha }: { reports: ScoutReportPass[]; 
           {findings.map((each) => <FindingItem key={each.id} numbered={each} base={base} />)}
         </ol>
       )}
-      {hypotheses.length > 0 && <Hypotheses hypotheses={hypotheses} />}
+      {showHypotheses && hypotheses.length > 0 && <Hypotheses hypotheses={hypotheses} />}
     </section>
   );
 }

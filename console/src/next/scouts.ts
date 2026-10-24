@@ -7,6 +7,7 @@ import type { HostRecord } from "../lib/hosts";
 import { POLL_INTERVAL_MS } from "../lib/poll";
 import { prLabel } from "../lib/shipped";
 import type { ContractBodies } from "./fleet";
+import { firstLine } from "./history";
 import { routeKey, routeOrNone } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 
@@ -111,19 +112,48 @@ type ScoutKind = ScoutRow["kind"];
 const SCOUT_KINDS: ScoutKind[] = ["bug", "research", "recon"];
 
 /** The Scouts page's search: `new` opens the New scout form for that
- *  project, filled from `about`, `kind` and `ask`. */
+ *  project, filled from `about`, `kind` and `ask`; `scout`, as
+ *  `PROJECT/ID`, is the scout the wide page's pane shows. */
 export interface ScoutsSearch {
   new?: string;
   about?: string;
   kind?: ScoutKind;
   ask?: string;
+  scout?: string;
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
 
+const SELECTION = /^[^/]+\/\d+$/;
+
 export function validateScoutsSearch(search: Record<string, unknown>): ScoutsSearch {
   const kind = SCOUT_KINDS.find((each) => each === search.kind);
-  return { new: text(search.new), about: text(search.about), kind, ask: text(search.ask) };
+  const scout = text(search.scout);
+  return { new: text(search.new), about: text(search.about), kind, ask: text(search.ask), scout: scout != null && SELECTION.test(scout) ? scout : undefined };
+}
+
+/** A row's `scout` search value. */
+export const scoutKey = (row: { project: string; id: number }) => `${row.project}/${row.id}`;
+
+export interface OutcomePart {
+  count: number;
+  words: string;
+  toFile?: boolean;
+}
+
+/** What a scout found, as the wide list's row reads it: its counts, its helpers back before a report, or why it failed. */
+export type ScoutOutcome = { kind: "counts"; parts: OutcomePart[] } | { kind: "back"; text: string } | { kind: "failed"; text: string };
+
+export function scoutOutcome(row: ScoutRow): ScoutOutcome {
+  if (row.phase === "failed") return { kind: "failed", text: firstLine(row.reason) };
+  const parts: OutcomePart[] = [
+    { count: row.findings, words: row.findings === 1 ? "finding" : "findings" },
+    { count: row.actions, words: row.actions === 1 ? "action" : "actions" },
+    { count: row.filed, words: "filed" },
+    ...(row.phase === "done" ? [{ count: row.to_file, words: "to file", toFile: true }] : []),
+  ].filter((part) => part.count > 0);
+  if (row.findings === 0 && row.tasks_total > 0) return { kind: "back", text: `${row.tasks_done} of ${row.tasks_total} back` };
+  return { kind: "counts", parts };
 }
 
 /** What a Scout button opens the form about: `about` is the launch's
