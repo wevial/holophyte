@@ -171,7 +171,7 @@ Each module, one line:
 - `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
   scouts whose heartbeat is stale and starts queued ones under `[scout]
   max_parallel` and a host-wide lock, putting a scout whose spawn failed
-  back in `queued` up to its third attempt.
+  back in `queued` for the next pass.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
 - `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a

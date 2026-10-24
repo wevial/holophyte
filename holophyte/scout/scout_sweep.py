@@ -34,7 +34,6 @@ LIVE = tuple(phase.value for phase in (
 SPAWN = subprocess.Popen
 START_LOCK = "scout-start.lock"
 START_FAILED = "scout_start_failed"
-START_ATTEMPTS = 3
 SYSTEMD_UNIT_VARS = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID",
              "NOTIFY_SOCKET", "MANAGERPID")
 
@@ -102,18 +101,10 @@ def start_scout(name, target, scout_id):
 
 
 def _start_failed(conn, scout_id, bad):
-    (tries,) = conn.execute(
-        "SELECT COUNT(*) FROM runEvents WHERE scoutId = ? AND kind = ?",
-        (scout_id, START_FAILED)).fetchone()
-    reason = f"could not start: {bad}"
     with store.transaction(conn):
         record_scout_event(conn, scout_id, START_FAILED,
-                           f"attempt {tries + 1} of {START_ATTEMPTS}: {reason}")
-        if tries + 1 < START_ATTEMPTS:
-            move_scout(conn, scout_id, QUEUED)
-        else:
-            end_scout(conn, scout_id, "failed",
-                      f"{reason}, {START_ATTEMPTS} attempts")
+                           f"could not start: {bad}; queued for the next pass")
+        move_scout(conn, scout_id, QUEUED)
 
 
 def _start(name, target, row, out):

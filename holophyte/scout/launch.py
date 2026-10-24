@@ -90,7 +90,7 @@ def start(project, scout_id):
                            " so no host sweep starts it")
         live, started = start_queued(host.projects(), limit, out,
                                      key=entry_name, home_dir=host.home)
-    except HostError as bad:
+    except (HostError, OSError) as bad:
         return False, str(bad).removeprefix("[holo2] ")
     if (Path(project.path).resolve(), scout_id) in started:
         return True, f"scout {scout_id} started"

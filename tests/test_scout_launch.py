@@ -240,7 +240,7 @@ class DaemonLaunchTests(LaunchCase):
         self.assertEqual((phase, base),
                          ("planning", git(path, "rev-parse", "main")))
 
-    def test_a_scout_whose_spawn_keeps_failing_ends_failed(self):
+    def test_a_scout_whose_spawn_keeps_failing_stays_queued_for_a_retry(self):
         path = self.project("alpha")
         server = self.serve(path)
 
@@ -250,14 +250,29 @@ class DaemonLaunchTests(LaunchCase):
         with patch.object(scout_sweep, "SPAWN", refused):
             code, reply = self.post(server, "/actions/scout",
                                     {"ask": ASK, "kind": "bug"})
-            for _ in range(scout_sweep.START_ATTEMPTS - 1):
+            for _ in range(3):
                 self.sweep_pass()
-        row = scout(self.conn(path), reply["scout"])
-        self.assertEqual(row.phase, "failed")
-        self.assertIn("no such interpreter", row.reason)
+        self.assertEqual(scout(self.conn(path), reply["scout"]).phase,
+                         "queued")
         self.assertEqual(
-            self.events(path, reply["scout"]).count("scout_start_failed"),
-            scout_sweep.START_ATTEMPTS)
+            self.events(path, reply["scout"]).count("scout_start_failed"), 4)
+        self.sweep_pass()
+        (argv, phase, _), = self.spawned
+        self.assertEqual((argv[-2], phase), (str(reply["scout"]), "planning"))
+
+    def test_a_start_lock_that_cannot_be_opened_answers_queued(self):
+        path = self.project("alpha")
+        server = self.serve(path)
+        lock = Host.locate().home / scout_sweep.START_LOCK
+        lock.mkdir(parents=True)
+        code, reply = self.post(server, "/actions/scout",
+                                {"ask": ASK, "kind": "bug"})
+        self.assertEqual(code, 200, reply)
+        self.assertEqual((reply["ok"], reply["queued"]), (True, True))
+        self.assertIn(str(lock), reply["detail"])
+        self.assertEqual(scout(self.conn(path), reply["scout"]).phase,
+                         "queued")
+        self.assertEqual(self.spawned, [])
 
     def test_a_scout_another_pass_started_answers_started(self):
         path = self.project("alpha")
