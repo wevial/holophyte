@@ -319,14 +319,26 @@ looks into; links, ticket keys and pull request URLs go in its text),
 `[scout.helpers.NAME]` route; default `[scout] helper`), `swarm` (optional
 positive integer, helpers at once; default `[scout] swarm`), `minutes`
 (optional positive integer, the wall-clock budget; default `[scout]
-budget_min`) and `author` (optional, default `maintainer`). The helper
+budget_min`), `subject` (optional, `KIND:REF`: what the scout is about)
+and `author` (optional, default `maintainer`). The helper
 total and the wave count are always the config's `helper_turns` and
 `waves`. `holo scout "ASK" --kind K`, `holo bug`, `holo idea` and the
-`holo mcp` `scout` tool are the same launch.
+`holo mcp` `scout` tool are the same launch; `--about KIND:REF` and the
+tool's `subject` send `subject`.
+
+`subject` names one thing the project's store holds: `run:N`, run N;
+`defect:N`, run N stopped on its ticket's wording, by a `contradiction`
+event or a supervisor sweep that failed it as a stuck criterion or a stuck
+review, as the Findings page counts it; `ticket:KEY`, a ticket, recorded
+under the store's key for it; or `pr:URL`, a pull request one of the
+project's runs opened, the URL compared and recorded as given. The scout
+records it as `subjectKind` and `subjectRef`, and the scout reads serve it
+as `subject`.
 
 One transaction records the scout in phase `queued` with its ask, kind,
-routes, swarm, helper total, waves and budget, and its first event,
-`scout_queued` (detail level, payload `{"author", "via"}`, `via` being
+routes, swarm, helper total, waves, budget and subject, and its first
+event, `scout_queued` (detail level, payload `{"author", "via",
+"subject"}`, `subject` the string as given or null, `via` being
 `POST /actions/scout`, `holo scout` or `holo mcp`). After that commit the
 daemon runs the start half of the host sweep's scout step once: while the
 host's live scouts are fewer than `host.toml`'s `[scout] max_parallel`, it
@@ -353,10 +365,15 @@ not started; `recorded` is null.
 
 A body that is not a JSON object, a missing or blank `ask`, a `kind`
 outside the three, a `lead` or `helper` that is not a string, or a `swarm`
-or `minutes` that is not a positive integer is 400 naming the field. A
+or `minutes` that is not a positive integer is 400 naming the field. So is a
+`subject` that is not a string, has no colon, has a kind outside the four,
+a blank ref, a `run` or `defect` ref that is not a positive integer, or a
+`pr` ref that does not start `http://` or `https://`. A
 `lead` or `helper` the config does not define (`detail` names the
-`[scout.leads]` or `[scout.helpers]` table) and a `swarm` above the
-config's `helper_turns` are 200 with `ok: false`. None of these writes
+`[scout.leads]` or `[scout.helpers]` table), a `swarm` above the
+config's `helper_turns`, and a `subject` the store does not hold (a run or
+ticket it lacks, a `defect` run with no such stop, a URL no run opened;
+`detail` names its ref) are 200 with `ok: false`. None of these writes
 anything. A project with no store is 503.
 
 ## `POST /actions/scout-file`

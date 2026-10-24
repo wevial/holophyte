@@ -27,7 +27,8 @@ TASK_ENDED = (ScoutTaskPhase.DONE.value, ScoutTaskPhase.FAILED.value,
 COLUMNS = ("id", "projectId", "ask", "kind", "links", "leadRoute",
            "leadSession", "helperRoute", "swarm", "helperTurns", "waves",
            "budgetMin", "phase", "reason", "baseSha", "host", "pid",
-           "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals")
+           "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals",
+           "subjectKind", "subjectRef")
 SELECT = f"SELECT {', '.join(COLUMNS)} FROM scouts"
 _HOLDS, _HOLDING = {}, threading.Lock()
 
@@ -61,6 +62,8 @@ class Scout(NamedTuple):
     heartbeat_at: int | None
     ended_at: int | None
     totals: dict | None
+    subject_kind: str | None
+    subject_ref: str | None
 
 
 def _now(now):
@@ -114,17 +117,19 @@ def holding_scout(conn, scout_id, pid):
 
 def create_scout(conn, project_id, ask, kind, budget_min, *, links=(),
                  lead_route=None, helper_route=None, swarm=None,
-                 helper_turns=None, waves=None, now=None):
+                 helper_turns=None, waves=None, subject=None, now=None):
     if not isinstance(ask, str) or not ask.strip():
         raise ValueError("ask must be non-blank text")
+    subject_kind, subject_ref = (None, None) if subject is None else subject
     with _transaction(conn):
         return conn.execute(
             "INSERT INTO scouts (projectId, ask, kind, links, leadRoute,"
             " helperRoute, swarm, helperTurns, waves, budgetMin, phase,"
-            " createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " createdAt, subjectKind, subjectRef)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (project_id, ask.strip(), kind, json.dumps(list(links)),
              lead_route, helper_route, swarm, helper_turns, waves, budget_min,
-             QUEUED, _now(now))).lastrowid
+             QUEUED, _now(now), subject_kind, subject_ref)).lastrowid
 
 
 def _unclaimed(conn, scout_id, phase):

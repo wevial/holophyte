@@ -24,7 +24,7 @@ SCOUT_ID = re.compile(r"^0*([1-9][0-9]*)$")
 LIMIT, LIMIT_CAP = 20, 200
 ROW_COLUMNS = ("id", "ask", "kind", "phase", "reason", "leadRoute",
                "helperRoute", "swarm", "createdAt", "startedAt", "endedAt",
-               "heartbeatAt")
+               "heartbeatAt", "subjectKind", "subjectRef")
 ENDED_MARKS = ", ".join("?" * len(TASK_ENDED))
 ROWS = (f"SELECT {', '.join(f's.{column}' for column in ROW_COLUMNS)},"
         " (SELECT COUNT(*) FROM scoutTasks t WHERE t.scoutId = s.id"
@@ -47,7 +47,7 @@ def now_ms(now):
 
 def scout_row(row, now):
     (scout_id, ask, kind, phase, reason, lead, helper, swarm, created,
-     started, ended, beat, done, total) = row
+     started, ended, beat, subject_kind, subject_ref, done, total) = row
     live = phase != QUEUED and phase not in ENDED and beat is not None
     return {"id": scout_id, "ask": ask, "kind": kind, "phase": phase,
             "reason": reason, "lead": lead, "helper": helper, "swarm": swarm,
@@ -55,7 +55,9 @@ def scout_row(row, now):
             "started_ms": started, "ended_ms": ended,
             "elapsed_ms": (None if started is None
                            else (now if ended is None else ended) - started),
-            "heartbeat_age_ms": now - beat if live else None}
+            "heartbeat_age_ms": now - beat if live else None,
+            "subject": (None if subject_kind is None
+                        else {"kind": subject_kind, "ref": subject_ref})}
 
 
 def scouts(project, query, now=None):
