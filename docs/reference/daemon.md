@@ -374,26 +374,46 @@ action item`. A scout not `done` is 200 with `ok: false` naming its
 phase, and nothing is checked or written. An item already filed is 200 with `ok: false`, `ticket` the
 key it was filed as, and `detail` `scout 14 item 2 is already filed as
 KEY`; nothing is checked or written. A project with no `[board]` is
-`ok: false`. Otherwise the item's `body` is judged by the checker
-[`POST /tickets/check`](http.md#post-ticketscheck) answers with, for the
-`backlog` column, and any problem refuses the filing, even one Backlog
-would save as a draft elsewhere: 200 with `ok: false`, `problems` (every
-problem, in the checker's order), `advisories`, and `detail`, the first
-problem. Nothing is filed then, and the item stays unfiled.
+`ok: false`. A blank `body` is `ok: false`, and so is a body with no H1
+whose item has a blank `title`; nothing is written. A body with no H1 is
+filed as `# TITLE` (the item's `title`) and a blank line before it,
+placed after a leading `+++` header so the header keeps its fields, and
+that filed text is what the checker judges, so a free-text body is never
+refused for its missing title.
 
-A body the checker passes is filed to Backlog through the project's
-board, with the title, estimate and `Depends on` read from it, and the
-item records the filed key and time. A project's filings run one at a
-time, from check to record, so two posts of one item file it once. With a `note`, the filed ticket's
-first board note reads `AUTHOR: NOTE`; a note that cannot be posted
-leaves `ok: true` and `detail` says so. The reply adds `scout`, `item`,
-`ticket`, the new key, and `advisories`; `recorded` is null.
+The filed text is judged by the checker
+[`POST /tickets/check`](http.md#post-ticketscheck) answers with, for the
+`backlog` column. Only what refuses a Backlog filing on the board refuses
+it: the check's `blocks` (a `Depends on` key the project does not hold, or
+text the leak guard keeps out of the store), or the board refusing it.
+Then the answer is 200 with `ok: false`, `problems` (every problem, in the
+checker's order), `advisories`, and `detail`, the first problem; nothing
+is filed, and the item stays unfiled.
+
+Otherwise the text is filed to Backlog through the project's board, with
+the title, estimate and `Depends on` read from it, and the item records
+the filed key and time. Any other problem files it as a Backlog draft:
+its first board note opens `Filed from scout 14 item 2 as a Backlog
+draft; the ticket checker reports:` with each problem on its own `- `
+line, in the checker's order. A problems note that cannot be posted
+leaves `ok: true` and `detail` says so. A project's filings run one at a
+time, from check to note, so two posts of one item file it once. With a
+`note`, the filed ticket's next board note (its first, on an item with
+no problems) reads `AUTHOR: NOTE`; a note that cannot be posted leaves
+`ok: true` and `detail` says so. The reply adds `scout`, `item`,
+`ticket`, the new key, `problems` (empty for a clean item) and
+`advisories`; `recorded` is null.
 
 ```json
 {"action": "scout-file", "ok": true, "scout": 14, "item": 2,
- "ticket": "KO-412", "advisories": [],
+ "ticket": "KO-412", "problems": [], "advisories": [],
  "detail": "scout 14 item 2 filed as KO-412 in Backlog", "recorded": null}
 ```
+
+A draft's `detail` reads `scout 14 item 2 filed as KO-412 in Backlog as
+a draft; the checker's problems are its first note`, and its `problems`
+are every problem, in the checker's order. `holo scout file` exits 0 and
+prints the `detail`, then each problem.
 
 A body that is not a JSON object, a `scout` or `item` that is not a
 positive integer, or a `note` or `author` that is not text is 400 naming

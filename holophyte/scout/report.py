@@ -3,6 +3,8 @@ import subprocess
 from pathlib import PurePosixPath
 from typing import NamedTuple
 
+import ticket_header
+import ticket_template
 from holophyte.loop.gates import sh
 from store.enums import ScoutKind
 
@@ -72,6 +74,32 @@ REPRODUCTION = Checked({
     "hypotheses": Each({"hypothesis": TEXT, "separates": TEXT,
                         "verdict": one_of("supported", "ruled_out", "open")}),
 }, needs_hypothesis)
+
+HEADER = {"ui_change": '"none"', "estimate": "30", "depends_on": "[]"}
+PLACEHOLDERS = {
+    "Summary": "<the outcome in one or two sentences>",
+    "What / Why / How": "**What:** <the behavior delivered>\n\n"
+                        "**Why:** <the problem it solves>\n\n"
+                        "**How:** <the technical direction>",
+    "In scope": "- <a behavior, surface or file the ticket changes>",
+    "Out of scope": "- <adjacent work left out>",
+    "Acceptance criteria": "- [ ] Given <...>, when <...>, then <...>.",
+    "Verify command(s)": "```\n<a command that exits 0 when the ticket"
+                         " holds>\n```",
+    "Implementation notes": "- <a constraint or code landmark>",
+    "Open questions": "- <each open question, or None alone>",
+}
+
+
+def ticket_skeleton():
+    header = [f"{field} = {HEADER[field]}" for field in ticket_header.FIELDS
+              if field in HEADER]
+    sections = [f"## {name}\n\n{PLACEHOLDERS.get(name, '<...>')}"
+                for name in ticket_template.SECTION_ORDER
+                if name != ticket_template.ESTIMATE]
+    fence = ticket_header.FENCE
+    return "\n\n".join([f"{fence}\n" + "\n".join(header) + f"\n{fence}\n"
+                          "# <title>", *sections]) + "\n"
 
 
 def walk_fields(value, rule, path):
