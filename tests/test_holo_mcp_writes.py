@@ -162,7 +162,7 @@ class WriteCase(McpCase):
 
 
 class ListingTests(WriteCase):
-    def test_the_reads_and_nine_writes_each_write_signed_and_not_read_only(self):
+    def test_the_reads_and_ten_writes_each_write_signed_and_not_read_only(self):
         async def use(client, _):
             return (await client.list_tools()).tools
         tools = self.session(use)
