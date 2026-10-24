@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScoutRoutes",
+  "description": "GET /scouts/routes",
+  "$ref": "#/$defs/ScoutRoutes",
+  "$defs": {
+    "RouteProbe": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "at_ms": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "age_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ok",
+        "at_ms",
+        "duration_ms",
+        "why",
+        "age_ms"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutRoute": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RouteProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "harness",
+        "model",
+        "default",
+        "probe"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutDefaults": {
+      "type": "object",
+      "properties": {
+        "lead": {
+          "type": "string"
+        },
+        "helper": {
+          "type": "string"
+        },
+        "swarm": {
+          "type": "integer"
+        },
+        "minutes": {
+          "type": "integer"
+        },
+        "helper_turns": {
+          "type": "integer"
+        },
+        "waves": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "lead",
+        "helper",
+        "swarm",
+        "minutes",
+        "helper_turns",
+        "waves"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutRoutes": {
+      "type": "object",
+      "properties": {
+        "leads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutRoute"
+          }
+        },
+        "helpers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutRoute"
+          }
+        },
+        "defaults": {
+          "$ref": "#/$defs/ScoutDefaults"
+        }
+      },
+      "required": [
+        "leads",
+        "helpers",
+        "defaults"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

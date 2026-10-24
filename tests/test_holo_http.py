@@ -56,6 +56,8 @@ COVERED = {
     ("attention",): ["attention"],
     ("board",): ["board"],
     ("ticket",): ["ticket", "HOLO-1"],
+    ("scouts",): ["scouts"],
+    ("scout", "show"): ["scout", "show", "1"],
     ("requeue",): ["requeue", "HOLO-1", "rerun"],
     ("send-back",): ["send-back", "1", "fix the test"],
     ("steer",): ["steer", "HOLO-1", "-n", "log the port"],
@@ -229,15 +231,36 @@ class ReadTests(HttpCase):
         self.assertEqual(self.requests, [("GET", "/projects/alpha/report")] * 2)
         self.assertFalse(self.record.exists())
 
+    def test_scouts_and_scout_show_over_http_read_the_scout_routes(self):
+        scout = store.scouts.create_scout(self.conn, self.project_id,
+                                          "Map the merge gate", "recon", 10)
+        listed = self.holo("scouts", "-p", "alpha")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertIn("Map the merge gate", listed.stdout)
+        shown = self.holo("scout", "show", str(scout), "--json", "-p", "alpha")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertEqual(json.loads(shown.stdout)["scout"]["id"], scout)
+        self.assertEqual(self.requests, [
+            ("GET", "/projects/alpha/scouts"),
+            ("GET", f"/projects/alpha/scouts/{scout}")])
+        refused = self.holo("scout", "show", "routes", "-p", "alpha")
+        self.assertEqual(refused.returncode, 2, refused.stderr)
+        self.assertIn("scout id must be a positive integer", refused.stderr)
+        self.assertEqual(len(self.requests), 2)
+
     def test_every_route_table_row_is_one_the_running_daemon_serves(self):
         run = self.failed_run("HOLO-1")
+        scout = store.scouts.create_scout(self.conn, self.project_id,
+                                          "Map the merge gate", "recon", 10)
         for words, route in HTTP_ROUTES.items():
             with self.subTest(words=words):
                 if route.method == "POST":
                     self.assertIn(route.path.removeprefix("/actions/"),
                                   self.server.action_names)
                     continue
-                path = route.path.format(N=run, KEY="HOLO-1")
+                path = route.path.format(
+                    N=scout if words == ("scout", "show") else run,
+                    KEY="HOLO-1")
                 for tail in ("", "/files", "/ledger", "/turns")[
                         :4 if words == ("run",) else 1]:
                     connection = http.client.HTTPConnection(

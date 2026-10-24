@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from holophyte.scout.scout_contract import ScoutDetail, ScoutRoutes, Scouts
 from holophyte.serve.contract_emit import ClientDefault, check, render, write
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
 from holophyte.serve.contract_routes import (
@@ -891,6 +892,9 @@ ROUTES = {
     "ticket": (TicketDetail, "GET /tickets/KEY"),
     "ticket-check": (TicketCheck, "POST /tickets/check"),
     "story": (StoryDetail, "GET /stories/KEY"),
+    "scouts": (Scouts, "GET /scouts"),
+    "scout": (ScoutDetail, "GET /scouts/ID"),
+    "scout-routes": (ScoutRoutes, "GET /scouts/routes"),
 }
 
 

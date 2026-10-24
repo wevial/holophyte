@@ -26,7 +26,8 @@ and `GET /attention`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board` and
-`GET /tickets/KEY`, and of `POST /tickets/check`: one
+`GET /tickets/KEY`, of the scout reads `GET /scouts`, `GET /scouts/ID`
+and `GET /scouts/routes`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -1346,6 +1347,139 @@ child the decision is about, null for the whole story, and `answer`,
 the store has never mirrored, or one that is not a story's parent (a
 child's included), is 404 with an empty object.
 
+## `GET /scouts`
+
+A project's scouts, newest first by id: what the console's Scouts list
+draws. `GET /scouts?limit=N` reads at most `N`.
+
+```json
+{"scouts": [{"id": 3, "ask": "Why does the retry spin?", "kind": "bug",
+             "phase": "swarming", "reason": null, "lead": "opus",
+             "helper": "luna", "swarm": 4, "tasks_done": 2, "tasks_total": 3,
+             "created_ms": 1791568800000, "started_ms": 1791568810000,
+             "ended_ms": null, "elapsed_ms": 95000,
+             "heartbeat_age_ms": 4000}],
+ "limit": 20, "truncated": false}
+```
+
+Each row carries the scout's `id`, its `ask`, its `kind` (`bug`,
+`research` or `recon`), its `phase` and the `reason` it ended (null until
+it does), the `lead` and `helper` route names it runs on and its `swarm`,
+helpers at once. `tasks_done` counts its helper tasks that have ended and
+`tasks_total` all of them, over every pass. `created_ms`, `started_ms` and
+`ended_ms` are epoch milliseconds, each null until it happens;
+`elapsed_ms` runs from the start to the end, or to now while the scout
+runs, and is null while it is queued. `heartbeat_age_ms` is the age of a
+running scout's last heartbeat, null while it is queued or once it ended.
+
+`limit` defaults to 20 and is capped at 200. The body echoes the applied
+`limit`; `truncated` is true when more scouts exist than it returns. There
+is no paging past `limit` and no filter. A non-positive or non-integer
+`limit` is 400 with an `error` naming `limit`. A store with no scouts
+answers an empty `scouts`; a project with no store answers 503. On a host
+daemon this route is `GET /projects/NAME/scouts`. `holo scouts [--limit N]
+[--json]` prints it, and the `holo mcp` `scouts` tool answers it.
+
+## `GET /scouts/ID`
+
+One scout whole: what the console's Scout page draws.
+
+```json
+{"scout": {"id": 3, "ask": "Why does the retry spin?", "kind": "bug",
+           "phase": "done", "...": "the GET /scouts row's keys",
+           "base_sha": "a1b2…", "host": "writer",
+           "budget": {"minutes": 30, "helper_turns": 12, "waves": 2},
+           "totals": null},
+ "tasks": [{"id": 7, "pass": 1, "wave": 1, "question": "Where does the loop sleep?",
+            "paths": ["app/retry.py"], "mode": "read", "route": "luna",
+            "phase": "done", "started_ms": 1791568820000,
+            "ended_ms": 1791568900000, "duration_ms": 80000, "tokens": 5100,
+            "cost_usd": 0.02, "excerpt": "…"}],
+ "reports": [{"pass": 1, "at": 1791569000000, "report": {
+   "summary": "…",
+   "findings": [{"title": "…", "status": "shown", "evidence": [
+     {"file": "app/retry.py", "line": 12, "verified": true, "why": null},
+     {"command": "python3 -m unittest tests.test_retry", "output": "…"},
+     {"url": "https://example.test/issues/7"}]}],
+   "actions": [{"title": "…", "why": "…", "kind": "fix", "body": "…"}],
+   "reproduction": {"level": "test", "hypotheses": [
+     {"hypothesis": "…", "separates": "…", "verdict": "supported"}]},
+   "cut": []}}],
+ "actions": [{"position": 1, "pass": 1, "title": "…", "why": "…",
+              "kind": "fix", "body": "…", "ticket": null, "filed_ms": null}],
+ "events": [{"at": 1791568800000, "kind": "scout_queued",
+             "summary": "bug scout queued by maintainer (holo scout)"}]}
+```
+
+`scout` holds the `GET /scouts` row's keys, `id`, `ask`, `kind`, `phase`,
+`reason`, `lead`, `helper`, `swarm`, `tasks_done`, `tasks_total`,
+`created_ms`, `started_ms`, `ended_ms`, `elapsed_ms` and
+`heartbeat_age_ms`, plus the `base_sha` it planned
+at and the `host` it ran on (each null while queued), its `budget` of
+`minutes`, `helper_turns` and `waves`, and its `totals` as recorded, or
+null.
+
+`tasks` are its helper tasks ordered by `pass`, `wave` and `id`. Each
+carries the lead's `question` and `paths`, its `mode` (`read` or `run`),
+the helper `route`, its `phase` (`queued`, `running`, `done`, `failed` or
+`stopped`), `started_ms`, `ended_ms` and `duration_ms`, and the `tokens`,
+`cost_usd` and answer `excerpt` it recorded, each null until it does.
+
+`reports` holds one entry per stored pass, its `pass`, the `at` it was
+stored and the `report`. A `report` serves only the fields the report check
+defines, and a key a lead added beside them is left out: its `summary`;
+its `findings`, each a `title`, a `status` of `shown`, `likely` or
+`unconfirmed`, and its `evidence`; its `actions`; its `reproduction`, a
+`level` and `hypotheses`, each with its `hypothesis`, what it `separates`
+and its `verdict`, or null; and `cut`, the helper questions cut at the
+time budget, or null. An evidence item is one of a file item, `file`,
+`line`, `verified` (whether the file and line resolve in the base commit)
+and `why` it did not (null when it did); a command item, `command` and
+`output`; or a `url`.
+
+`actions` are the scout's action items by `position`, which counts across
+passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
+`investigate` or `decide`) and `body`, the `ticket` key it was filed as
+and `filed_ms`, both null until it is filed. `events` holds this scout's
+events in the order written, each its `at`, `kind` and `summary`, as
+`GET /runs/N` serves a run's.
+
+An id that is not a positive integer is 400 with an `error`. An id the
+store does not hold is 404 with `error` `no such scout`; a project with no
+store answers 503. On a host daemon this route is
+`GET /projects/NAME/scouts/ID`. `holo scout show ID [--json]` prints it,
+and the `holo mcp` `scout_show` tool answers it.
+
+## `GET /scouts/routes`
+
+The launch form's pickers: the configured scout routes a launch can name,
+and the `[scout]` defaults.
+
+```json
+{"leads": [{"name": "opus", "harness": "claude", "model": "opus",
+            "default": true,
+            "probe": {"ok": true, "at_ms": 1791568800000,
+                      "duration_ms": 9000, "why": null, "age_ms": 60000}}],
+ "helpers": [{"name": "luna", "harness": "codex", "model": "gpt-6-luna",
+              "default": true, "probe": null}],
+ "defaults": {"lead": "opus", "helper": "luna", "swarm": 4, "minutes": 30,
+              "helper_turns": 12, "waves": 2}}
+```
+
+`leads` and `helpers` list each `[scout.leads.NAME]` and
+`[scout.helpers.NAME]` route by its `name`, with its `harness` and `model`,
+and `default` true for the `[scout]` `lead` or `helper`. `probe` is the
+route's last recorded probe, the `primary` entry of seat
+`scout-lead:NAME` or `scout-helper:NAME` in `route-probes.json`, shaped as
+`/status`'s `route_probes`: `ok`, `at_ms`, `duration_ms`, `why` and
+`age_ms`. A route whose last probe failed is left out; a route never
+probed is listed with `probe` null, so a fresh host still offers its
+defaults. `defaults` holds the config's `lead`, `helper`, `swarm`,
+`minutes` (`[scout] budget_min`), `helper_turns` and `waves`, whatever
+their probes say. The route reads config and the probe snapshot only, so
+a project with no store still answers it. On a host daemon this route is
+`GET /projects/NAME/scouts/routes`.
+
 ## `POST /actions/steer`
 
 Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
@@ -1780,9 +1914,9 @@ reply is a JSON-RPC 2.0 object, `jsonrpc` and the request's `id` beside
 a JSON Schema object: `type`, `properties` (each a `type`, `minLength` or
 `minimum`, an `enum` and its `default`, and a `description`), `required`
 and `additionalProperties`, false. Every tool takes an optional `project`,
-a `[serve]` name or a repository path; `report` also takes `since`, `runs`
-`limit`, `run` the `run` id and its `view`, `ticket` the `key`, and the
-writes their own `ticket`, `run` or `body` and the required `note` and
+a `[serve]` name or a repository path; `report` also takes `since`,
+`runs` and `scouts` `limit`, `run` the `run` id and its `view`, `ticket`
+the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run` or `body` and the required `note` and
 `author`, `steer` also its `hint` and `now` booleans, and `scout` its
 required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
 the note its ask. `annotations` holds `readOnlyHint`, true for a read, and

@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scouts",
+  "description": "GET /scouts",
+  "$ref": "#/$defs/Scouts",
+  "$defs": {
+    "ScoutRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ask": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "bug",
+            "research",
+            "recon"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "queued",
+            "planning",
+            "swarming",
+            "synthesizing",
+            "answering",
+            "done",
+            "failed",
+            "stopped"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "helper": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "swarm": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tasks_done": {
+          "type": "integer"
+        },
+        "tasks_total": {
+          "type": "integer"
+        },
+        "created_ms": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "ask",
+        "kind",
+        "phase",
+        "reason",
+        "lead",
+        "helper",
+        "swarm",
+        "tasks_done",
+        "tasks_total",
+        "created_ms",
+        "started_ms",
+        "ended_ms",
+        "elapsed_ms",
+        "heartbeat_age_ms"
+      ],
+      "additionalProperties": true
+    },
+    "Scouts": {
+      "type": "object",
+      "properties": {
+        "scouts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutRow"
+          }
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scouts",
+        "limit",
+        "truncated"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
