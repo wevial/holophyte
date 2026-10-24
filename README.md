@@ -83,7 +83,7 @@ holo --version                                   # the package version and the c
 holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but --scout-probe and the internal --worker, --witness-step, --shadow and --scout has a holo command
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
-holo mcp                                         # an MCP server on stdio: tools for the holo reads and ten signed writes (file_ticket, send_back, babysit, steer, requeue, hold, scout, scout_file, scout_stop, scout_ask); see docs/reference/cli.md#holo
+holo mcp                                         # an MCP server on stdio: tools for the holo reads and eleven signed writes (file_ticket, send_back, babysit, steer, requeue, hold, scout, scout_file, scout_stop, scout_ask, scout_steer); see docs/reference/cli.md#holo
 holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp when [serve] actions = true, else the reads only; behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
 holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
 holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
@@ -93,7 +93,7 @@ holo send-back RUN "note" -p NAME|PATH           # the console's send-back of ru
 holo steer KEY "note" [--hint] [--withdraw] [--author NAME] [--now] -p NAME|PATH # amend a ticket, or a live run before its pull request at its next implementer turn, or one babysitting its pull request at its next fix round (--hint: advice for its next implement turn alone; --now: stop the live implementer turn and resume its session with the note), or send its run parked on a pull request back; --withdraw drops the ticket's amendments; no factory.py equivalent
 holo start ["note"] [--foreground] -p NAME|PATH  # start the project's loop unit and return; the note releases a hold
 holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
-holo scout "ASK" --kind bug|research|recon [--lead NAME] [--helper NAME] [--swarm N] [--minutes M] [--author NAME] -p NAME|PATH # launch a scout on the ask, queued while the host's [scout] max_parallel slots are full; holo scout launch "ASK" is the same, and an ask that starts with a scout verb (show, file, stop, ask, thread) must be written that way; see docs/reference/daemon.md#post-actionsscout
+holo scout "ASK" --kind bug|research|recon [--lead NAME] [--helper NAME] [--swarm N] [--minutes M] [--author NAME] -p NAME|PATH # launch a scout on the ask, queued while the host's [scout] max_parallel slots are full; holo scout launch "ASK" is the same, and an ask that starts with a scout verb (show, file, stop, ask, steer, thread) must be written that way; see docs/reference/daemon.md#post-actionsscout
 holo bug "ASK" [--lead NAME] ... -p NAME|PATH     # holo scout "ASK" --kind bug; and holo idea "ASK", --kind research
 holo sweep [--act] | board diff | board import -p NAME|PATH
 holo store import PATH --dry-run -p NAME|PATH     # factory.py --import-store PATH --dry-run
@@ -124,8 +124,9 @@ holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; 
 holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
 holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, as a draft when the checker reports problems, printing each problem; see docs/reference/daemon.md#post-actionsscout-file
 holo scout stop ID "note" [--author NAME] [--json] -p NAME|PATH # stop a scout: a queued one ends at once, a running one's process is signalled to end it stopped; see docs/reference/daemon.md#post-actionsscout-stop
-holo scout ask ID "TEXT" [--author NAME] [--json] -p NAME|PATH # ask a done scout about its report: its lead answers in the thread, the ask waiting while the host's [scout] max_parallel slots are full; see docs/reference/daemon.md#post-actionsscout-message
-holo scout thread ID [--json] -p NAME|PATH       # a scout's thread, oldest first: one line per message, a waiting ask marked waiting; --json prints {"scout", "thread"}
+holo scout ask ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # ask a done scout about its report: its lead answers in the thread, the ask waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the ask answers; see docs/reference/daemon.md#post-actionsscout-message
+holo scout steer ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # steer a done scout to look further: it runs one more pass on the steer, waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the steer answers
+holo scout thread ID [--json] -p NAME|PATH       # a scout's thread, oldest first: one line per message, a waiting ask or steer marked waiting, and under a card each choice with its mode; --json prints {"scout", "thread"}
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,

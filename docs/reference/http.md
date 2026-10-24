@@ -1938,7 +1938,10 @@ required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
 the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
 `scout_stop` its required `project` and `scout` id, the note its reason,
-and `scout_ask` its required `project` and `scout` id, the note its ask. `annotations` holds `readOnlyHint`, true for a read, and
+`scout_ask` its required `project` and `scout` id, the note its ask, and
+`scout_steer` its required `project` and `scout` id, the note its steer,
+each of the two an optional `answers`, the id of the scout's card it
+answers. `annotations` holds `readOnlyHint`, true for a read, and
 `destructiveHint`, false for every tool served today, so a client that
 asks a person before a destructive write asks here as on stdio. A tool
 call's `result` holds `content`, a list of one object whose `type` is

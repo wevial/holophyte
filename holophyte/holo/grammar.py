@@ -42,6 +42,7 @@ UPDATE = Flag("--update", "KEY")
 REVISION = Flag("--revision", "N")
 LABELS = Flag("--labels", "a,b")
 AUTHOR = Flag("--author", "NAME")
+ANSWERS = Flag("--answers", "MSG")
 CARRIED_BY = Flag("--carried-by", "KEY")
 FOUND_BY = Flag("--found-by", "F")
 BASELINE_GREEN = Flag("--baseline-green", "W")
@@ -148,7 +149,10 @@ COMMANDS = (
             takes=("ID",), note=REQUIRED, flags=(AUTHOR,), records=()),
     Command(("scout", "ask"), None,
             "ask a done scout about its report; its lead answers in the thread",
-            takes=("ID",), note=REQUIRED, flags=(AUTHOR,), records=()),
+            takes=("ID",), note=REQUIRED, flags=(ANSWERS, AUTHOR), records=()),
+    Command(("scout", "steer"), None,
+            "steer a done scout to look further; it runs one more pass",
+            takes=("ID",), note=REQUIRED, flags=(ANSWERS, AUTHOR), records=()),
     Command(("bug",), None, "launch a bug scout on an ask",
             note=REQUIRED, flags=SCOUT_FLAGS, records=()),
     Command(("idea",), None, "launch a research scout on an ask",
@@ -201,6 +205,7 @@ LAUNCH = "launch"
 SCOUT_FILE = ("scout", "file")
 SCOUT_STOP = ("scout", "stop")
 SCOUT_ASK = ("scout", "ask")
+SCOUT_STEER = ("scout", "steer")
 SCOUT_THREAD = ("scout", "thread")
 SCOUT_KINDS = {("bug",): "bug", ("idea",): "research"}
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
@@ -226,7 +231,7 @@ GROUPS = {
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
     "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
              " show ID: one scout's detail; holo scout ask ID TEXT: ask a"
-             " done scout",
+             " done scout; holo scout steer ID TEXT: steer one",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"

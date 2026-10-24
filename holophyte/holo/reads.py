@@ -167,12 +167,19 @@ def scout_lines(body):
     return lines
 
 
+def choice_lines(message):
+    return [f"    {choice['label']}  ({choice['mode']})"
+            for block in message["blocks"] if block["type"] == "proposal"
+            for choice in block["choices"]]
+
+
 def thread_lines(body):
-    return [f"message {message['id']}  {message['author']}  {message['mode']}"
-            f"  {message['text']}"
-            + ("  waiting" if message["mode"] != "answer"
-               and message["consumed_by"] is None else "")
-            for message in body["thread"]]
+    return [line for message in body["thread"] for line in [
+        f"message {message['id']}  {message['author']}  {message['mode']}"
+        f"  {message['text']}"
+        + ("  waiting" if message["mode"] != "answer"
+           and message["consumed_by"] is None else ""),
+        *choice_lines(message)]]
 
 
 READS = {("runs",): (runs_answer, runs_lines),

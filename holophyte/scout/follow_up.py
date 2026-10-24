@@ -19,6 +19,12 @@ from holophyte.scout.lead import (
     run_waves,
     wave_tasks,
 )
+from holophyte.scout.proposals import (
+    card_line,
+    post_cards,
+    proposals_goal,
+    read_proposals,
+)
 from holophyte.scout.report import resolve_evidence
 from holophyte.scout.run_helpers import reproduced
 from holophyte.scout.scout_config import scout_config
@@ -63,17 +69,17 @@ def current_pass(conn, scout_id):
 
 
 def steer_text(conn, scout_id, message_id):
-    (text,) = [message.text for message in messages(conn, scout_id)
-               if message.id == message_id]
-    return text
+    thread = messages(conn, scout_id)
+    (steer,) = [message for message in thread if message.id == message_id]
+    return steer.text, card_line(thread, steer)
 
 
-def pass_plan_goal(row, steer, number, reports, actions, total, fresh):
+def pass_plan_goal(row, steer, card, number, reports, actions, total, fresh):
     return (
         f"{PASS_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
         + "Your scout has finished, and a person steers it to look further:"
-        f"\n\nSteer: {steer}\n\n"
+        f"\n\nSteer: {steer}\n\n{card}"
         f"This is pass {number}. You may read and search the checkout, but "
         "do not edit files, commit or push.\n\n"
         "The scout's reports so far, oldest pass first, findings labelled "
@@ -91,7 +97,8 @@ def pass_plan_goal(row, steer, number, reports, actions, total, fresh):
 def pass_scope(steer, number):
     return (f"This is pass {number}, steered by: {steer}\n"
             "Report only what this pass found: the earlier passes' findings "
-            "and action items stay as they are, so do not repeat them.\n\n")
+            "and action items stay as they are, so do not repeat them.\n"
+            + proposals_goal() + "\n")
 
 
 def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
@@ -100,11 +107,11 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
     seat, down = lead_seat(project, row, config, stopping)
     if down is not None:
         return PassOutcome(number, message, failure=down)
-    steer = steer_text(conn, row.id, message)
+    steer, card = steer_text(conn, row.id, message)
     lead = Lead(conn, project, row, seat, worktree, stopping)
     lead.session = row.lead_session
     deadline = monotonic() + budget_s
-    goal = pass_plan_goal(row, steer, number, *stored(conn, row.id),
+    goal = pass_plan_goal(row, steer, card, number, *stored(conn, row.id),
                           config.steer_helpers, lead.session is None)
     turn = (lead.resume(goal, budget_s) if lead.session
             else lead.start(goal, budget_s))
@@ -187,10 +194,14 @@ def settle_pass(conn, scout_id, outcome):
         found = [label for label, block in labels(*stored(conn, scout_id))
                  .items() if block["type"] == "finding"
                  and block["pass"] == number]
+        proposals, dropped = read_proposals(outcome.report)
+        cards = post_cards(conn, scout_id, outcome.message, proposals)
         record_scout_event(
             conn, scout_id, PASS_DONE, f"pass {number} done", level="detail",
             payload=json.dumps({"pass": number, "message": outcome.message,
-                                "findings": found, "actions": positions}))
+                                "findings": found, "actions": positions,
+                                "cards": cards,
+                                "dropped_proposals": dropped}))
         move_scout(conn, scout_id, DONE)
     print(f"[holo2] scout {scout_id} pass {number} done", flush=True)
     return 0

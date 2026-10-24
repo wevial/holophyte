@@ -16,6 +16,7 @@ from holophyte.holo.grammar import (
     SCOUT_ASK,
     SCOUT_FILE,
     SCOUT_KINDS,
+    SCOUT_STEER,
     SCOUT_STOP,
     arguments,
     canonical,
@@ -115,8 +116,8 @@ def call(args, target):
         return scout_file(args, target)
     if args.command.words == SCOUT_STOP:
         return scout_stop(args, target)
-    if args.command.words == SCOUT_ASK:
-        return scout_ask(args, target)
+    if args.command.words in (SCOUT_ASK, SCOUT_STEER):
+        return scout_message(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -241,20 +242,23 @@ def scout_stop(args, target):
                         "holo scout stop")
 
 
-def scout_ask_body(args):
+def scout_message_body(args):
     values, note = arguments(args, args.command)
+    mode = args.command.words[1]
     if note is None or not note.strip():
-        args.leaf.error("holo scout ask needs the ask's text (non-blank)")
-    body = {"scout": counted(values[0]), "mode": "ask", "text": note,
+        args.leaf.error(f"holo scout {mode} needs the {mode}'s text"
+                        " (non-blank)")
+    body = {"scout": counted(values[0]), "mode": mode, "text": note,
+            "answers": counted(last(args, "answers")),
             "author": last(args, "author")}
     return {key: value for key, value in body.items() if value is not None}
 
 
-def scout_ask(args, target):
+def scout_message(args, target):
     from holophyte.scout.thread_action import message_action
-    return scout_action(args, target, scout_ask_body(args),
+    return scout_action(args, target, scout_message_body(args),
                         lambda project, body, _: message_action(project, body),
-                        "holo scout ask")
+                        f"holo scout {args.command.words[1]}")
 
 
 def located(target):

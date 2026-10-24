@@ -23,6 +23,7 @@ from holophyte.holo.grammar import (
     SCOUT_ASK,
     SCOUT_FILE,
     SCOUT_KINDS,
+    SCOUT_STEER,
     SCOUT_STOP,
     SCOUT_THREAD,
     SHOW,
@@ -48,9 +49,9 @@ from holophyte.holo.results import (
     human_line,
     human_text,
     parse_run,
-    scout_ask_body,
     scout_body,
     scout_file_body,
+    scout_message_body,
     scout_stop_body,
 )
 
@@ -341,6 +342,7 @@ class Route(NamedTuple):
 
 
 SCOUT_BODY = ("ask", "kind", "lead", "helper", "swarm", "minutes", "author")
+SCOUT_MESSAGE_BODY = ("scout", "mode", "text", "answers", "author")
 HTTP_ROUTES = {
     ("report",): Route("GET", "/report"),
     ("runs",): Route("GET", "/runs"),
@@ -368,8 +370,8 @@ HTTP_ROUTES = {
     SCOUT_FILE: Route("POST", "/actions/scout-file",
                       ("scout", "item", "note", "author")),
     SCOUT_STOP: Route("POST", "/actions/scout-stop", ("scout", "note", "author")),
-    SCOUT_ASK: Route("POST", "/actions/scout-message",
-                     ("scout", "mode", "text", "author")),
+    SCOUT_ASK: Route("POST", "/actions/scout-message", SCOUT_MESSAGE_BODY),
+    SCOUT_STEER: Route("POST", "/actions/scout-message", SCOUT_MESSAGE_BODY),
 }
 
 
@@ -480,7 +482,7 @@ def fields(args, route):
     if route.path == HTTP_ROUTES[SCOUT_STOP].path:
         return scout_stop_body(args)
     if route.path == HTTP_ROUTES[SCOUT_ASK].path:
-        return scout_ask_body(args)
+        return scout_message_body(args)
     if note is not None and "note" not in route.body:
         args.leaf.error(f"{route.method} {route.path} takes no note; a hold"
                         " is released over http with holo release NOTE")

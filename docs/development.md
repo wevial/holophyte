@@ -177,6 +177,10 @@ Each module, one line:
 - `holophyte/scout/lead.py` — the scout's lead: its route probe, a plan
   turn under the scout's time budget, the helper waves with a synthesis turn
   between them, and a report turn resuming its session.
+- `holophyte/scout/proposals.py` — a scout's proposal cards: the
+  `proposals` an answer turn's ANSWER or a pass's REPORT ends with, each
+  read as a question with two to four choices and at most `MAX_PROPOSALS`
+  kept, then posted to the thread as cards answering the taken message.
 - `holophyte/scout/report.py` — a scout report's shape checked field by
   field, and each `file`/`line` evidence item resolved against the base
   commit.
@@ -206,9 +210,10 @@ Each module, one line:
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.
 - `holophyte/scout/thread_action.py` — `POST /actions/scout-message`,
-  `holo scout ask` and the `holo mcp` `scout_ask` tool: an ask recorded on
-  a done scout's thread, then the host sweep's scout step started once to
-  take it while a host scout slot is free.
+  `holo scout ask` and `steer` and the `holo mcp` `scout_ask` and
+  `scout_steer` tools: an ask or a steer, optionally answering a card,
+  recorded on a done scout's thread, then the host sweep's scout step
+  started once to take it while a host scout slot is free.
 - `holophyte/scout/views.py` — the daemon's scout reads: `GET /scouts`,
   `GET /scouts/ID` with its tasks, served report, action items, events and
   thread, and `GET /scouts/routes`, the launch pickers less any route whose

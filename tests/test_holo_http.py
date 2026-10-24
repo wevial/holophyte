@@ -77,6 +77,7 @@ COVERED = {
     ("scout", "stop"): ["scout", "stop", "1", "not needed"],
     ("scout", "thread"): ["scout", "thread", "1"],
     ("scout", "ask"): ["scout", "ask", "1", "Go on"],
+    ("scout", "steer"): ["scout", "steer", "1", "Go on", "--answers", "7"],
 }
 
 
@@ -451,6 +452,25 @@ class WriteTests(HttpCase):
         self.assertEqual(self.requests, [
             ("POST", "/projects/alpha/actions/scout-message"),
             ("GET", f"/projects/alpha/scouts/{scout_id}")])
+
+    def test_scout_steer_over_http_posts_the_steer_and_the_card_it_answers(self):
+        import holophyte.serve.server as server
+        scout_id = self.done_scout()
+        bodies, message_action = [], server.message_action
+
+        def recorded(project, body):
+            bodies.append(body)
+            return message_action(project, body)
+        with patch.object(server, "message_action", recorded):
+            self.holo("scout", "steer", str(scout_id), "Go on", "--answers",
+                      "7", "-p", "alpha")
+        (body,) = bodies
+        self.assertEqual({key: body.get(key) for key in
+                          ("scout", "mode", "text", "answers")},
+                         {"scout": scout_id, "mode": "steer", "text": "Go on",
+                          "answers": 7})
+        self.assertEqual(self.requests,
+                         [("POST", "/projects/alpha/actions/scout-message")])
 
 
 class RefusalTests(HttpCase):
