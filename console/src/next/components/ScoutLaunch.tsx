@@ -21,7 +21,7 @@ export interface LaunchProject {
 
 /** What the reader has typed and picked; `picks` hold for the project at
  *  `picks.base` only, so another project starts from its own defaults. */
-export interface ScoutDraft {
+interface ScoutDraft {
   ask: string;
   kind: Kind;
   base: string | null;

@@ -22,7 +22,7 @@ export function scoutState(phase: ScoutRow["phase"]): ScoutState {
 
 /** Every answer's scouts, tagged with their host's base and project,
  *  newest first and then by id. */
-export function scoutRows(answers: { host: HostRecord<ContractBodies>; scouts: Scouts }[]): ScoutListRow[] {
+function scoutRows(answers: { host: HostRecord<ContractBodies>; scouts: Scouts }[]): ScoutListRow[] {
   return answers
     .flatMap(({ host, scouts }) => {
       const project = projectName(host.status?.project ?? host.project ?? host.label);
@@ -69,7 +69,7 @@ export function useScoutRoutes(base: string | null) {
 }
 
 /** The route `named` when `routes` lists it, else the first listed. */
-export function pickRoute(routes: ScoutRoute[], named: string): string | null {
+function pickRoute(routes: ScoutRoute[], named: string): string | null {
   return (routes.find((route) => route.name === named) ?? routes[0])?.name ?? null;
 }
 
