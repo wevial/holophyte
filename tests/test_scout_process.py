@@ -14,9 +14,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.scout_stubs import LeadStubs, fenced
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from host_fixture import HostFixture, git  # noqa: E402
-from scout_stubs import LeadStubs, fenced  # noqa: E402
 
 import holophyte.scout.scout_process as scout_process  # noqa: E402
 import holophyte.scout.scout_sweep as scout_sweep  # noqa: E402

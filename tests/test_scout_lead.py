@@ -6,22 +6,19 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_lead.py' -v
 """
 import json
 import os
-import sys
 import time
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from host_fixture import git  # noqa: E402
-from scout_stubs import fenced  # noqa: E402
-from test_scout_process import ScoutFixture  # noqa: E402
-
-import holophyte.scout.lead as lead  # noqa: E402
-import holophyte.scout.scout_process as scout_process  # noqa: E402
-from holophyte.config.project import Project  # noqa: E402
-from store.scouts import create_scout, move_scout, scout  # noqa: E402
+import holophyte.scout.lead as lead
+import holophyte.scout.scout_process as scout_process
+from holophyte.config.project import Project
+from store.scouts import create_scout, move_scout, scout
+from tests.host_fixture import git
+from tests.scout_stubs import fenced
+from tests.test_scout_process import ScoutFixture
 
 CLAUDE_LEAD = ('[scout]\nlead = "opus"\n[scout.leads.opus]\nharness = "claude"\n'
                'model = "opus"\neffort = "high"\n')
