@@ -13,6 +13,7 @@ import sys
 import unittest
 
 from holophyte.scout.report import report_problems
+from store.scout_thread import post_message, take_message
 from store.scouts import scout
 from tests.host_fixture import REPO
 from tests.scout_stubs import fenced
@@ -142,6 +143,33 @@ class GuardrailItemTests(GuardrailItemCase):
             "SELECT boardColumn FROM tickets WHERE linearIdentifier = ?",
             (answer["ticket"],)).fetchone()
         self.assertEqual(column, "backlog")
+
+
+class FollowUpPassTests(GuardrailItemCase):
+    def steered_pass(self, scout_id, action):
+        report = fenced(dict(NOTHING, actions=[action]))
+        self.stubs.answer(pass_plan=fenced({"tasks": []}), report=report,
+                          repair=report)
+        take_message(self.db, post_message(self.db, scout_id, "maintainer",
+                                           "steer", "Look at the loader."))
+        return self.cli("--scout", str(scout_id), str(self.path))
+
+    def test_a_follow_up_pass_keeps_a_guardrails_scouts_item_rules(self):
+        scout_id = self.first_scout(self.ids[:1])
+        code, printed = self.steered_pass(scout_id,
+                                          dict(GUARD, covers=self.ids[1:]))
+        self.assertEqual(code, 0, printed)
+        goal = self.stubs.turns("report")[-1]["argv"][-1]
+        self.assertIn('"guardrail" or "decide"', goal)
+        (item,) = self.db.execute(
+            "SELECT item FROM scoutActions WHERE scoutId = ? AND pass = 2",
+            (scout_id,)).fetchone()
+        self.assertEqual(json.loads(item)["covers"], self.ids[1:])
+        code, printed = self.steered_pass(scout_id, FIX)
+        self.assertEqual(code, 1, printed)
+        self.assertIn("actions[0].kind: a guardrails scout's items are"
+                      " guardrail or decide",
+                      self.stubs.turns("repair")[-1]["argv"][-1])
 
 
 class CutDigestTests(DigestCase):

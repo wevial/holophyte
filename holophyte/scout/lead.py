@@ -438,8 +438,20 @@ def scout_digest(conn, row, project):
                            "since": digest.since, "clusters": [
                                {"label": cluster.label,
                                 "rows": [each.id for each in cluster.newest()]}
-                               for cluster in digest.clusters]}))
+                               for cluster in digest.clusters],
+                           "offered": sorted(digest.row_ids())}))
     return digest.text, digest.row_ids()
+
+
+def offered_rows(conn, row):
+    if row.kind != ScoutKind.GUARDRAILS.value:
+        return None
+    found = conn.execute(
+        "SELECT payload FROM runEvents WHERE scoutId = ?"
+        " AND kind = 'scout_digest' ORDER BY seq DESC LIMIT 1",
+        (row.id,)).fetchone()
+    payload = json.loads(found[0]) if found and found[0] else {}
+    return set(payload.get("offered", ()))
 
 
 def run_lead(conn, project, row, worktree, budget_s, stopping):
