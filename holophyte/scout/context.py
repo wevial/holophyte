@@ -52,7 +52,8 @@ class Pack:
 def answered(read, *args):
     try:
         return read(*args)
-    except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError):
+    except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError,
+            KeyError, TypeError, ValueError, AttributeError):
         return FAILED_READ
 
 
@@ -253,7 +254,8 @@ def pr_pack(pack, url):
     except (OSError, sqlite3.Error):
         row = None
     if row is None:
-        pack.note("run unreadable")
+        pack.note("no run")
+        pack.add("No run of this project is recorded as opening it.")
         return
     run_pack(pack, row[0])
 

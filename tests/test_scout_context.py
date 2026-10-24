@@ -127,14 +127,14 @@ class RunContextTests(ContextCase):
         self.start()
         run = self.failed_run(self.mirror("NAT-3"), ledger=[
             f"ledger entry #{n:02d}" for n in range(1, 32)])
-        self.red_round(run, "MARKER-HEAD\n" + "x" * 4_988)
+        self.red_round(run, "MARKER-HEAD\n" + "x" * 4_976 + "\nMARKER-TAIL")
         text = self.pack(("run", str(run))).text
         self.assertIn("Ledger (20 of 31):\n", text)
         for n in range(12, 32):
             self.assertIn(f"ledger entry #{n:02d}", text)
         for n in range(1, 12):
             self.assertNotIn(f"ledger entry #{n:02d}", text)
-        self.assertIn("x" * 1_900, text)
+        self.assertIn("MARKER-TAIL", text)
         self.assertNotIn("MARKER-HEAD", text)
 
     def test_the_context_event_precedes_the_plan_turn_and_names_the_files(self):
