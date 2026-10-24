@@ -32,7 +32,15 @@ ENDED_MARKS = ", ".join("?" * len(TASK_ENDED))
 ROWS = (f"SELECT {', '.join(f's.{column}' for column in ROW_COLUMNS)},"
         " (SELECT COUNT(*) FROM scoutTasks t WHERE t.scoutId = s.id"
         f" AND t.phase IN ({ENDED_MARKS})),"
-        " (SELECT COUNT(*) FROM scoutTasks t WHERE t.scoutId = s.id)"
+        " (SELECT COUNT(*) FROM scoutTasks t WHERE t.scoutId = s.id),"
+        " (SELECT COALESCE(SUM(json_array_length(r.report, '$.findings')), 0)"
+        " FROM scoutReports r WHERE r.scoutId = s.id),"
+        " (SELECT COUNT(*) FROM scoutActions a WHERE a.scoutId = s.id),"
+        " (SELECT COUNT(a.ticketKey) FROM scoutActions a"
+        " WHERE a.scoutId = s.id),"
+        " (SELECT COUNT(*) FROM scoutActions a WHERE a.scoutId = s.id"
+        " AND a.ticketKey IS NULL"
+        " AND json_extract(a.item, '$.kind') IS NOT 'revise')"
         " FROM scouts s")
 TASK_COLUMNS = ("id", "pass", "wave", "question", "paths", "mode", "route",
                 "phase", "startedAt", "endedAt", "durationMs", "tokens",
@@ -52,11 +60,14 @@ def now_ms(now):
 
 def scout_row(row, now):
     (scout_id, ask, kind, phase, reason, lead, helper, swarm, created,
-     started, ended, beat, subject_kind, subject_ref, done, total) = row
+     started, ended, beat, subject_kind, subject_ref, done, total, findings,
+     actions, filed, to_file) = row
     live = phase != QUEUED and phase not in ENDED and beat is not None
     return {"id": scout_id, "ask": ask, "kind": kind, "phase": phase,
             "reason": reason, "lead": lead, "helper": helper, "swarm": swarm,
-            "tasks_done": done, "tasks_total": total, "created_ms": created,
+            "tasks_done": done, "tasks_total": total, "findings": findings,
+            "actions": actions, "filed": filed, "to_file": to_file,
+            "created_ms": created,
             "started_ms": started, "ended_ms": ended,
             "elapsed_ms": (None if started is None
                            else (now if ended is None else ended) - started),

@@ -1356,6 +1356,7 @@ draws. `GET /scouts?limit=N` reads at most `N`.
 {"scouts": [{"id": 3, "ask": "Why does the retry spin?", "kind": "bug",
              "phase": "swarming", "reason": null, "lead": "opus",
              "helper": "luna", "swarm": 4, "tasks_done": 2, "tasks_total": 3,
+             "findings": 0, "actions": 0, "filed": 0, "to_file": 0,
              "created_ms": 1791568800000, "started_ms": 1791568810000,
              "ended_ms": null, "elapsed_ms": 95000,
              "heartbeat_age_ms": 4000,
@@ -1367,7 +1368,12 @@ Each row carries the scout's `id`, its `ask`, its `kind` (`bug`,
 `research`, `recon` or `guardrails`), its `phase` and the `reason` it ended (null until
 it does), the `lead` and `helper` route names it runs on and its `swarm`,
 helpers at once. `tasks_done` counts its helper tasks that have ended and
-`tasks_total` all of them, over every pass. `created_ms`, `started_ms` and
+`tasks_total` all of them, over every pass. `findings` counts the
+findings over every stored report pass, 0 before the first report.
+`actions` counts the scout's stored action items, `filed` those with a
+ticket key, and `to_file` those with no ticket key whose `kind` is not
+`revise`; a report's own `actions` with no stored items count 0.
+`created_ms`, `started_ms` and
 `ended_ms` are epoch milliseconds, each null until it happens;
 `elapsed_ms` runs from the start to the end, or to now while the scout
 runs, and is null while it is queued. `heartbeat_age_ms` is the age of a
@@ -1427,7 +1433,7 @@ One scout whole: what the console's Scout page draws.
 
 `scout` holds the `GET /scouts` row's keys, `id`, `ask`, `kind`, `phase`,
 `reason`, `lead`, `helper`, `swarm`, `tasks_done`, `tasks_total`,
-`created_ms`, `started_ms`, `ended_ms`, `elapsed_ms`,
+`findings`, `actions`, `filed`, `to_file`, `created_ms`, `started_ms`, `ended_ms`, `elapsed_ms`,
 `heartbeat_age_ms` and `subject` (its `kind` and `ref`, or null), plus the `base_sha` it planned
 at and the `host` it ran on (each null while queued), its `budget` of
 `minutes`, `helper_turns` and `waves`, and its `totals` as recorded, or
