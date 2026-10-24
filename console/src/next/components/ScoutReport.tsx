@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import type { CommandEvidence, FileEvidence, Hypothesis, Reproduction, ScoutFinding, ScoutReportPass } from "../../lib/contract.gen";
 import { shortSha } from "../../lib/shipped";
+import { numberFindings, type NumberedFinding } from "../scout";
 import { SECTION_LABEL } from "./Criteria";
 
 type Evidence = ScoutFinding["evidence"][number];
@@ -29,12 +30,6 @@ const LEVELS: Record<Reproduction["level"], string> = {
   not_reproduced: "not reproduced",
 };
 
-interface Numbered {
-  id: string;
-  pass: number;
-  finding: ScoutFinding;
-}
-
 const isFile = (item: Evidence): item is FileEvidence => "file" in item;
 const isCommand = (item: Evidence): item is CommandEvidence => "command" in item;
 
@@ -59,7 +54,7 @@ function UrlItem({ url }: { url: string }) {
   );
 }
 
-function FindingItem({ numbered, base }: { numbered: Numbered; base: string }) {
+function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: string }) {
   const { id, pass, finding } = numbered;
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const outputId = useId();
@@ -142,8 +137,7 @@ export function ScoutReport({ reports, baseSha }: { reports: ScoutReportPass[]; 
   if (reports.length === 0) return null;
   const passes = [...reports].sort((a, b) => a.pass - b.pass);
   const newest = passes.at(-1)!.report;
-  const findings: Numbered[] = passes.flatMap(({ pass, report }) => report.findings.map((finding) => ({ pass, finding })))
-    .map((each, index) => ({ ...each, id: `F${index + 1}` }));
+  const findings = numberFindings(passes);
   const base = shortSha(baseSha);
   const meta = [
     newest.reproduction == null ? null : LEVELS[newest.reproduction.level],
