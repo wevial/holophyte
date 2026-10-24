@@ -149,6 +149,7 @@ test("each wide row reads its kind, project, time taken and start, then what it 
     row(30, { phase: "done", ...counts, findings: 11 }),
     row(29, { phase: "stopped", ...counts, findings: 2, actions: 2, to_file: 2 }),
     row(28, { phase: "swarming", ...counts, tasks_done: 5, tasks_total: 10 }),
+    row(27, { phase: "done", ...counts, actions: 2, filed: 1, to_file: 1, tasks_done: 10, tasks_total: 10 }),
   ].map((each) => ({ ...each, lead: "opus", helper: "luna" }));
   const facts = (id: number) => rowOf(id).querySelector("[data-scout-row-facts]")!.textContent;
   const outcome = (id: number) => rowOf(id).querySelector("[data-scout-outcome]")!.textContent;
@@ -160,6 +161,7 @@ test("each wide row reads its kind, project, time taken and start, then what it 
   expect(outcome(29)).toBe("2 findings · 2 actions");
   expect(rowOf(29).querySelector("[data-to-file]")).toBeNull();
   expect(outcome(28)).toBe("5 of 10 back");
+  expect(outcome(27)).toBe("2 actions · 1 filed · 1 to file");
   expect(list().textContent).not.toMatch(/opus|luna/);
   expect(screen.queryByText("Helpers")).toBeNull();
   expect(screen.queryByText("Took")).toBeNull();

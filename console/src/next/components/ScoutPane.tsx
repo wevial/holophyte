@@ -55,7 +55,7 @@ export function ScoutPane({ project, id }: { project: string; id: number }) {
   const thread = hasThread(page.detail);
   const key = `${page.base}/${scout.id}`;
   return (
-    <section aria-label={label} className="px-8 pb-8 pt-[22px]">
+    <section aria-label={label} className="max-w-[960px] px-8 pb-8 pt-[22px]">
       <header>
         <div className="flex items-start justify-between gap-x-6 gap-y-2">
           <h2 className="m-0 max-w-[76ch] font-sans text-[17px] font-semibold leading-[1.4] text-ink [overflow-wrap:anywhere]">{scout.ask}</h2>

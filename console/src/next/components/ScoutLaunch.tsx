@@ -163,7 +163,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
         {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
         <label htmlFor="scout-ask" className="flex flex-col">
           <span className={LABEL}>Ask</span>
-          <textarea id="scout-ask" ref={askRef} rows={2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans`} />
+          <textarea id="scout-ask" ref={askRef} rows={pane ? 3 : 2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans`} />
         </label>
       </Band>
       <Band column={pane}>
