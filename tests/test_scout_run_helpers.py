@@ -1,7 +1,8 @@
-"""A bug scout's `run` helpers: a clone of their own, setup before the turn,
-the run goal, the project's isolation, the refs left untouched, the read-only
-tool profile of every other turn and the stored reproduction level, run by
-`factory.py --scout ID PROJECT` against stub CLIs over a real git repository.
+"""A scout's `run` helpers: a clone of their own, setup before the turn, the
+run goal of each kind, the project's isolation, the refs left untouched,
+the read-only tool profile of every other turn and the stored reproduction
+level, run by `factory.py --scout ID PROJECT` against stub CLIs over a real
+git repository.
 
 Run: python3 -m unittest discover -s tests -p 'test_scout_run_helpers.py' -v
 """
@@ -18,8 +19,9 @@ from unittest.mock import patch
 from holophyte.agents.probes import PROBE_GOAL
 from holophyte.config.project import Project
 from holophyte.isolation import launcher
+from holophyte.scout.lead import plan_goal
 from holophyte.scout.scout_process import lead_path
-from store.scouts import create_scout, move_scout
+from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
 from tests.test_scout_lead import CODEX_LEAD, REPORT
@@ -31,6 +33,20 @@ SETUP_FAILS = '[worktree]\nsetup = ["echo broken >&2; exit 3"]\n'
 LOOK = "test -e setup-ran && echo present || echo absent"
 READ_ONLY = "Read and search only: do not edit files, commit or push."
 WRITE_TOOLS = {"Bash", "Edit", "Write", "NotebookEdit"}
+MEASURE_PERMISSION = (
+    "You help a scout measure this checkout, your own worktree. You may run "
+    "the project's setup, tests, builds and timing or profiling commands "
+    "here, and may write scratch files in this worktree or a temporary "
+    "directory. Edit a tracked file only to take a measurement, and report "
+    "no edit as a fix. You must not commit to, create or move any branch, "
+    "and must not push.")
+MEASURE_REPORT = ("Report each command you ran with its exit status, its wall "
+                  "time and an excerpt of its output.")
+MEASURE_SENTENCE = (
+    'A "run" helper measures: it runs the project\'s setup, tests, builds '
+    "and timing commands in its own worktree and reports each command's "
+    "exit status, wall time and output.")
+VITEST = "vitest run: exit 0, 41.2s"
 DOCKER = """#!{python}
 import json, subprocess, sys
 with open({log!r}, "a") as log:
@@ -215,24 +231,111 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertEqual(git(path, "rev-parse", "task/holo-1-landed"),
                          landed["main"])
 
-    def test_a_research_scout_runs_its_run_task_as_a_read_task(self):
-        path, conn, scout_id = self.scout("research", SETUP_RAN)
+    def fresh_calls(self):
+        for log in ("calls.jsonl", "helpers.jsonl"):
+            (self.stubs.directory / log).unlink(missing_ok=True)
+
+    def task_id(self, conn, scout_id, question):
+        (task_id,) = conn.execute("SELECT id FROM scoutTasks WHERE scoutId = ?"
+                                  " AND question = ?",
+                                  (scout_id, question)).fetchone()
+        return task_id
+
+    def test_every_other_kind_s_run_task_measures_in_its_own_set_up_clone(self):
+        for kind in ("research", "recon", "guardrails"):
+            with self.subTest(kind=kind):
+                self.fresh_calls()
+                path, conn, scout_id = self.scout(kind, SETUP_RAN, kind)
+                self.stubs.answer(plan=plan((RUN_Q, "run")),
+                                  report=fenced(REPORT), helper_sh=[LOOK])
+                self.run_scout(path, scout_id)
+                project = Project.locate(path, adopt=False)
+                clone = (project.holo_dir / "scouts" / str(scout_id)
+                         / f"run-{self.task_id(conn, scout_id, RUN_Q)}")
+                helper = self.helper(RUN_Q)
+                self.assertEqual(Path(helper["cwd"]).resolve(), clone.resolve())
+                self.assertEqual(helper["sh"], [[0, "present"]])
+                self.assertFalse((path / "setup-ran").exists())
+                self.assertFalse(
+                    (lead_path(project, scout_id) / "setup-ran").exists())
+                (turn,) = self.stubs.turns("helper")
+                goal = turn["argv"][-1]
+                self.assertIn(MEASURE_PERMISSION, goal)
+                self.assertIn(MEASURE_REPORT, goal)
+                self.assertNotIn("reproduce a bug", goal)
+                self.assertNotIn("reproduction level", goal)
+                self.assertNotIn(("--sandbox", "read-only"),
+                                 list(zip(turn["argv"], turn["argv"][1:])))
+                self.assertNotIn("--disallowedTools", turn["argv"])
+                self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+
+    def test_a_measure_helper_s_command_report_reaches_the_lead_s_report_goal(self):
+        path, conn, scout_id = self.scout("recon", SETUP_RAN)
         self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
-                          helper_sh=[LOOK])
+                          helper=VITEST)
         self.run_scout(path, scout_id)
-        self.assertEqual(self.helper(RUN_Q)["sh"], [[0, "absent"]])
+        phase, excerpt = self.task(conn, scout_id, RUN_Q)
+        self.assertEqual(phase, "done")
+        self.assertIn(VITEST, excerpt)
+        (report,) = self.stubs.turns("report")
+        task_id = self.task_id(conn, scout_id, RUN_Q)
+        section = report["argv"][-1].split(
+            f"### T{task_id} [done] {RUN_Q}\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn(VITEST, section)
+
+    def test_a_measure_helper_leaves_the_project_s_refs_and_cannot_push(self):
+        path, conn, scout_id = self.scout("recon")
+        listed = git(path, "for-each-ref", "refs/heads", "refs/tags")
+        remote = self.root / "remote.git"
+        git(self.root, "init", "-q", "--bare", str(remote))
+        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
+                          helper_sh=[
+                              "echo edited >> notes.txt",
+                              "git -c user.name=h -c user.email=h@test"
+                              " commit -qam edit",
+                              "git branch helper-branch",
+                              "git update-ref refs/heads/main HEAD",
+                              f"git push -q {remote} HEAD:refs/heads/pushed"])
+        self.run_scout(path, scout_id)
+        statuses = [status for status, _ in self.helper(RUN_Q)["sh"]]
+        self.assertEqual(statuses[:4], [0, 0, 0, 0])
+        self.assertNotEqual(statuses[4], 0)
+        self.assertEqual(git(path, "for-each-ref", "refs/heads", "refs/tags"),
+                         listed)
+        self.assertEqual(git(remote, "for-each-ref"), "")
+        summaries = " ".join(summary for (summary,) in conn.execute(
+            "SELECT summary FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_refs'", (scout_id,)))
+        self.assertIn("refs/heads/helper-branch", summaries)
+        self.assertIn("refs/heads/main", summaries)
+
+    def test_a_bug_scout_s_run_helper_keeps_the_reproduce_goal(self):
+        path, conn, scout_id = self.scout("bug", SETUP_RAN)
+        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT))
+        self.run_scout(path, scout_id)
         (turn,) = self.stubs.turns("helper")
-        self.assertIn(READ_ONLY, turn["argv"][-1])
-        self.assertNotIn("may edit files", turn["argv"][-1])
+        goal = turn["argv"][-1]
+        for text in ("reproduce a bug", "test (a failing test", "real_tool",
+                     "not_reproduced"):
+            self.assertIn(text, goal)
+        self.assertNotIn(MEASURE_PERMISSION, goal)
+
+    def test_only_a_non_bug_scout_s_plan_goal_says_a_run_helper_measures(self):
+        for kind, measures in (("recon", True), ("bug", False)):
+            with self.subTest(kind=kind):
+                path, conn, scout_id = self.scout(kind, name=kind)
+                goal = plan_goal(scout(conn, scout_id), 4, "")
+                self.assertEqual(MEASURE_SENTENCE in goal, measures)
+                self.assertIn('(mode "run")', goal)
 
     def container_scout(self, probe="ready", probe_exit=0, config="",
-                        helper_sh=None):
-        """A container bug scout with one run task, run against a stub
+                        helper_sh=None, kind="bug"):
+        """A container scout of `kind` with one run task, run against a stub
         `docker` that answers the helper probe with `probe` and
         `probe_exit`, and with `helper_sh` runs the stub helper in the
         mounted workspace; each `docker run` argv it logged, and the scout."""
         path, conn, scout_id = self.scout(
-            "bug", '[agents]\nimplementer_isolation = "container"\n' + config,
+            kind, '[agents]\nimplementer_isolation = "container"\n' + config,
             helper_route="haiku")
         git(path, "config", "user.name", "scout-test")
         git(path, "config", "user.email", "scout@test")
@@ -320,6 +423,15 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertEqual(reproduction["level"], "test")
         self.assertNotIn("claimed_level", reproduction)
 
+    def test_a_container_measure_helper_runs_when_the_host_helper_is_missing(self):
+        _, conn, scout_id, _, goals = self.container_scout(
+            config=CODEX_LEAD
+            + f'[harnesses]\nclaude = "{self.root / "missing" / "claude"}"\n',
+            kind="recon")
+        self.assertEqual(len(goals), 1)
+        self.assertIn(MEASURE_PERMISSION, goals[0][-1])
+        self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+
     def test_a_setup_that_cannot_launch_fails_its_task_and_the_report_is_stored(self):
         path, conn, scout_id = self.scout(
             "bug", '[agents]\nimplementer_isolation = "container"\n'
@@ -357,16 +469,20 @@ class ScoutRunHelperTests(ScoutFixture):
                           reproduction["why"]),
                          ("not_reproduced", "test", "no run helper finished"))
 
-    def test_only_a_bug_scout_s_run_helper_gets_write_tools(self):
+    def test_every_kind_s_run_helper_gets_write_tools_and_no_other_turn_does(self):
         both = [(READ_Q, "read"), (RUN_Q, "run")]
-        scouts = (("recon", CODEX_LEAD, "haiku", [(READ_Q, "read")]),
-                  ("bug", "", "luna", both), ("bug", CODEX_LEAD, "haiku", both))
-        for number, (kind, config, helper, tasks) in enumerate(scouts):
+        scouts = (("recon", "", "luna", "codex"),
+                  ("recon", CODEX_LEAD, "haiku", "claude"),
+                  ("bug", "", "luna", "codex"),
+                  ("bug", CODEX_LEAD, "haiku", "claude"))
+        for number, (kind, config, helper, binary) in enumerate(scouts):
             with self.subTest(kind=kind, helper=helper):
-                (self.stubs.directory / "calls.jsonl").unlink(missing_ok=True)
+                self.fresh_calls()
                 path, conn, scout_id = self.scout(
-                    kind, config, f"scout{number}", helper_route=helper)
-                self.stubs.answer(plan=plan(*tasks), report=fenced(REPORT))
+                    kind, SETUP_RAN + config, f"scout{number}",
+                    helper_route=helper)
+                self.stubs.answer(plan=plan(*both), report=fenced(REPORT),
+                                  helper_sh=[LOOK])
                 self.run_scout(path, scout_id)
                 leads = [call for call in self.stubs.calls()
                          if call["turn"] in ("plan", "synthesis", "report")]
@@ -375,8 +491,9 @@ class ScoutRunHelperTests(ScoutFixture):
                     self.assertTrue(read_only(call["argv"]), call["argv"])
                 helpers = {call["question"]: call["argv"]
                            for call in self.stubs.turns("helper")}
-                self.assertEqual(set(helpers), {question for question, _ in tasks})
+                self.assertEqual(set(helpers), {READ_Q, RUN_Q})
+                self.assertEqual(Path(helpers[READ_Q][0]).name, binary)
                 self.assertTrue(read_only(helpers[READ_Q]), helpers[READ_Q])
-                if RUN_Q in helpers:
-                    self.assertNotIn("--sandbox", helpers[RUN_Q])
-                    self.assertNotIn("--disallowedTools", helpers[RUN_Q])
+                self.assertEqual(self.helper(READ_Q)["sh"], [[0, "absent"]])
+                self.assertNotIn("--sandbox", helpers[RUN_Q])
+                self.assertNotIn("--disallowedTools", helpers[RUN_Q])

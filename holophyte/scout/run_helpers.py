@@ -29,6 +29,15 @@ RUN_REPORT = (
     "output, and the reproduction level you reached: test (a failing test "
     "shows the bug), real_tool (a command shows the bad behaviour) or "
     "not_reproduced.\n")
+MEASURE_PERMISSION = (
+    "You help a scout measure this checkout, your own worktree. You may run "
+    "the project's setup, tests, builds and timing or profiling commands "
+    "here, and may write scratch files in this worktree or a temporary "
+    "directory. Edit a tracked file only to take a measurement, and report "
+    "no edit as a fix. You must not commit to, create or move any branch, "
+    "and must not push.")
+MEASURE_REPORT = ("Report each command you ran with its exit status, its wall "
+                  "time and an excerpt of its output.\n")
 CLAIMED = ("test", "real_tool")
 NO_RUN_FINISHED = "no run helper finished"
 REF_KINDS = ("refs/heads", "refs/tags")
@@ -37,8 +46,7 @@ PRE_PUSH = "#!/bin/sh\necho 'a scout run helper does not push' >&2\nexit 1\n"
 
 
 def runs(row, task):
-    return (row.kind == ScoutKind.BUG.value
-            and task.mode == ScoutTaskMode.RUN.value)
+    return task.mode == ScoutTaskMode.RUN.value
 
 
 def task_fields(row, task):
@@ -48,8 +56,11 @@ def task_fields(row, task):
 
 
 def run_goal(row, task):
-    return (f"{HELPER_OPENING}\n\n{RUN_PERMISSION}\n\n"
-            f"{task_fields(row, task)}{RUN_REPORT}")
+    permission, report = ((RUN_PERMISSION, RUN_REPORT)
+                          if row.kind == ScoutKind.BUG.value
+                          else (MEASURE_PERMISSION, MEASURE_REPORT))
+    return (f"{HELPER_OPENING}\n\n{permission}\n\n"
+            f"{task_fields(row, task)}{report}")
 
 
 def run_seat(project, seat):

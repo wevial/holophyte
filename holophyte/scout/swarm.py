@@ -36,7 +36,7 @@ from holophyte.scout.run_helpers import (
 )
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
 from holophyte.scout.telemetry import turn_cost, usage_tokens
-from store.enums import ScoutKind, ScoutTaskPhase
+from store.enums import ScoutTaskPhase
 from store.scouts import (
     end_scout_task,
     record_scout_event,
@@ -215,8 +215,7 @@ class Swarm:
     def stranded(self):
         if not self.downs.get("host"):
             return False
-        return (not (self.row.kind == ScoutKind.BUG.value and self.contained())
-                or bool(self.downs.get("container")))
+        return not self.contained() or bool(self.downs.get("container"))
 
     def host_probe(self):
         probe = probe_scout_route(

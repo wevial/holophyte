@@ -35,7 +35,7 @@ from tests.scout_stubs import fenced
 from tests.test_holo_mcp import McpCase
 from tests.test_scout_launch import TOKEN, LaunchCase, scout_rows, slots
 from tests.test_scout_lead import REPORT as LEAD_REPORT
-from tests.test_scout_run_helpers import LOOK, READ_ONLY, SETUP_RAN, plan
+from tests.test_scout_run_helpers import LOOK, SETUP_RAN, plan
 from tests.test_serve_scouts import ACTIONS, REPORT
 
 ASK = "Mine the findings"
@@ -225,14 +225,6 @@ class RunTests(LaunchCase):
             return response.status, json.loads(response.read())
         finally:
             connection.close()
-
-    def test_a_guardrails_scout_runs_its_run_task_as_a_read_task(self):
-        self.run_guardrails()
-        (helper,) = [helper for helper in self.stubs.helpers()
-                     if helper["question"] == RUN_Q]
-        self.assertEqual(helper["sh"], [[0, "absent"]])
-        (turn,) = self.stubs.turns("helper")
-        self.assertIn(READ_ONLY, turn["argv"][-1])
 
     def test_the_scout_reads_serve_the_done_guardrails_scout(self):
         path, scout_id = self.run_guardrails()
