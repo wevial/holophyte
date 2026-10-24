@@ -5,7 +5,7 @@ import { formatClock, formatSpan } from "../../lib/format";
 import { criteriaGrid, PASSED, type ActivityGroup, type ActivityStep, type ActivityTone, type RunActivity as Activity } from "../activity";
 import { ActivityFinding } from "./ActivityFinding";
 import { CriteriaGrid } from "./CriteriaGrid";
-import { CURRENT_TINT, EndFacts, endingOf, type EndTone } from "./EndFacts";
+import { CURRENT_TINT, EndFacts, endingOf } from "./EndFacts";
 import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
 
@@ -126,6 +126,8 @@ function Findings({ findings, fates }: { findings: RoundFinding[]; fates: Map<Ro
   );
 }
 
+type Current = keyof typeof CURRENT_TINT | null;
+
 interface GroupProps {
   group: ActivityGroup;
   open: boolean;
@@ -133,7 +135,7 @@ interface GroupProps {
   line: Line;
   fates: Map<RoundFinding, Fate>;
   /** The current group's tone; null for every other group. */
-  current: EndTone | "live" | null;
+  current: Current;
   /** What ends the current group's body: a live run's newest progress, or how the run ended. */
   tail: ReactNode;
 }
@@ -221,12 +223,12 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
   const fates = useMemo(() => reviewFates(groups), [groups]);
   const ending = detail.run.outcome == null ? null : endingOf(detail, activity);
   const lineOf = (index: number): Line => (groups.length < 2 ? "none" : index === 0 ? "first" : index === groups.length - 1 ? "last" : "middle");
-  const currentOf = (group: ActivityGroup, index: number): EndTone | "live" | null => {
+  const currentOf = (group: ActivityGroup, index: number): Current => {
     if (index !== groups.length - 1) return null;
     if (group.running) return "live";
     return ending?.tone ?? null;
   };
-  const tailOf = (group: ActivityGroup, current: EndTone | "live" | null): ReactNode => {
+  const tailOf = (group: ActivityGroup, current: Current): ReactNode => {
     if (current == null) return null;
     if (group.running) {
       const text = activity.now?.detail;

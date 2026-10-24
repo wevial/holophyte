@@ -10,10 +10,8 @@ import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { FoldChevron } from "./icons";
 
-export type EndTone = "bad" | "wait" | "ok" | "neutral";
-
 /** The current group's wash and 4px left stripe: a live run's, or the tone its end took. */
-export const CURRENT_TINT: Record<EndTone | "live", string> = {
+export const CURRENT_TINT: Record<Ending["tone"] | "live", string> = {
   live: "bg-live-wash shadow-[inset_4px_0_0_var(--live)]",
   bad: "bg-bad-wash shadow-[inset_4px_0_0_var(--bad)]",
   wait: "bg-wait-wash shadow-[inset_4px_0_0_var(--wait)]",
