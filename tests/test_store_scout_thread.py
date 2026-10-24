@@ -233,9 +233,10 @@ class TakeTests(ThreadCase):
         self.refused(lambda: thread.post_message(
             self.conn, scout_id, "scout", "answer", "wrong thread",
             answers_id=other_ask), f"message {other_ask}")
-        self.refused(lambda: thread.post_message(
+        chart = self.refused(lambda: thread.post_message(
             self.conn, scout_id, "scout", "answer", "a chart",
             blocks=[{"type": "chart"}], answers_id=asked), "chart")
+        self.assertEqual(chart.subject, f"scout {scout_id}")
         scouts.move_scout(self.conn, scout_id, "done")
         self.refused(lambda: thread.take_message(self.conn, answer),
                      "an answer is not taken")

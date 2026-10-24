@@ -52,12 +52,13 @@ def _waiting(conn, scout_id):
     return None if row is None else row[0]
 
 
-def _blocks(blocks):
+def _blocks(scout_id, blocks):
     blocks = list(blocks)
     for block in blocks:
         kind = block.get("type") if isinstance(block, dict) else None
         if kind not in BLOCK_TYPES:
-            raise ThreadRefused("block", f"type {kind!r} is not one of"
+            raise ThreadRefused(f"scout {scout_id}",
+                                f"block type {kind!r} is not one of"
                                 f" {', '.join(BLOCK_TYPES)}")
     return blocks
 
@@ -69,7 +70,7 @@ def post_message(conn, scout_id, author, mode, text, *, blocks=(),
             raise ValueError(f"{name} must be non-blank text")
     if mode not in (ASK, STEER, ANSWER):
         raise ValueError(f"unknown thread mode {mode!r}")
-    blocks = json.dumps(redact_document(_blocks(blocks)))
+    blocks = json.dumps(redact_document(_blocks(scout_id, blocks)))
     with _transaction(conn):
         row = conn.execute("SELECT projectId, phase FROM scouts WHERE id = ?",
                            (scout_id,)).fetchone()
