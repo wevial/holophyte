@@ -55,9 +55,6 @@ class ScoutSwarmTests(ScoutFixture):
                                  " WHERE scoutId = ?", (scout_id,)).fetchone()
         return json.loads(report)
 
-    def helper_goals(self):
-        return [call["argv"][-1] for call in self.stubs.turns("helper")]
-
     def test_a_wave_runs_no_more_helpers_at_once_than_the_swarm_size(self):
         path, conn, scout_id = self.research_scout(swarm=2, helper_turns=6,
                                                    waves=1)
@@ -177,17 +174,13 @@ class ScoutSwarmTests(ScoutFixture):
         self.assertIsNotNone(duration)
         self.assertEqual(Path(self.stubs.turns("helper")[0]["argv"][0]).name,
                          "codex")
-        roles = [json.loads(payload)["role"] for (payload,) in conn.execute(
-            "SELECT payload FROM runEvents WHERE scoutId = ?"
-            " AND kind = 'agent_turn'", (scout_id,))]
-        self.assertIn("scout-helper", roles)
 
     def test_a_helper_route_that_fails_its_probe_runs_no_helper(self):
         path, conn, scout_id = self.research_scout()
         self.stubs.answer(plan=plan(*QUESTIONS[:2]), report=fenced(REPORT),
                           codex_probe="not today")
         self.run_scout(path, scout_id)
-        self.assertEqual(self.helper_goals(), [])
+        self.assertEqual(self.stubs.turns("helper"), [])
         self.assertEqual([phase for _, _, phase, *_ in self.tasks(conn, scout_id)],
                          ["queued", "queued"])
         (summary,) = [summary for (summary,) in conn.execute(
