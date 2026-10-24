@@ -208,7 +208,8 @@ GROUPS = {
     "story": "a story's modes",
     "ticket": "holo ticket KEY: one ticket's detail; ticket VERB is holo VERB",
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
-    "scout": "holo scout ASK --kind K: launch a scout on an ask",
+    "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
+             " show ID: one scout's detail",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"

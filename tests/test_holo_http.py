@@ -243,6 +243,10 @@ class ReadTests(HttpCase):
         self.assertEqual(self.requests, [
             ("GET", "/projects/alpha/scouts"),
             ("GET", f"/projects/alpha/scouts/{scout}")])
+        refused = self.holo("scout", "show", "routes", "-p", "alpha")
+        self.assertEqual(refused.returncode, 2, refused.stderr)
+        self.assertIn("scout id must be a positive integer", refused.stderr)
+        self.assertEqual(len(self.requests), 2)
 
     def test_every_route_table_row_is_one_the_running_daemon_serves(self):
         run = self.failed_run("HOLO-1")
