@@ -32,11 +32,11 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
       said: (_detail, answer) => `Filed ${answer.ticket} in ${project} Backlog.`,
     });
     if (result.ok) return;
-    if (result.problems != null) {
+    if (result.ticket != null) {
+      void client.invalidateQueries({ queryKey: ["route", base] });
+    } else if (result.problems != null) {
       toast(`The checker refused ${id}: ${result.detail}`);
       void navigate({ to: "/tickets/$project/new", params: { project }, search: {}, state: { draft: item.body } });
-    } else if (result.ticket != null) {
-      void client.invalidateQueries({ queryKey: ["route", base] });
     }
   };
   return (
@@ -57,7 +57,7 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
       </div>
       <div className="justify-self-end max-[720px]:col-start-2 max-[720px]:mt-2 max-[720px]:justify-self-start">
         {item.ticket == null ? (
-          <Btn variant="primary" busy={action.isPending} busyLabel="Filing…" disabled={!actions} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
+          <Btn variant="primary" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
             File
           </Btn>
         ) : (

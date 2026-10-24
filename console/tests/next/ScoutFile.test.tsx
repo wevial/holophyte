@@ -134,7 +134,7 @@ test("File posts the scout and item, reads Filing… while out, toasts the key a
   await mount(fetch);
   const before = reads(seen);
   await click(fileOf("A1"));
-  expect(fileOf("A1").textContent).toBe("Filing…");
+  expect([fileOf("A1").textContent, fileOf("A1").disabled]).toEqual(["Filing…", true]);
   expect(posts(seen).map((each) => each.body)).toEqual([{ scout: 31, item: 1 }]);
 
   daemon.scout = done(items.map((each) => (each.position === 1 ? { ...each, ticket: "DEMO-214", filed_ms: at(11, 59) } : each)));
@@ -184,7 +184,7 @@ test("an item's title opens New ticket with its draft and files nothing", async 
 
 test("an already-filed answer reads under the row and reads the scout again on the Scout page", async () => {
   const detail = "scout 31 item 1 is already filed as DEMO-214";
-  const { fetch, seen } = scoutFetch({ scout: done(), file: () => Response.json({ ok: false, ticket: "DEMO-214", detail }) });
+  const { fetch, seen } = scoutFetch({ scout: done(), file: () => Response.json({ ok: false, ticket: "DEMO-214", problems: [], advisories: [], detail }) });
   await mount(fetch);
   const before = reads(seen);
   await click(fileOf("A1"));
