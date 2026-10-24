@@ -537,6 +537,7 @@ supplies the binary; review roles run on the host and keep their path.
 | `fix_session` | Default: `"fresh"` | `fresh`, `resume`, or `alternate`; alternate resumes odd run ids and starts even run ids fresh. |
 | `tick_sec` | Default: `120` seconds | Integer at least 10; change how soon a pool with spare slots notices new work, and how often a pool re-checks its parked pull requests. |
 | `critic_after_hours` | Default: `12` hours | Integer at least 0; a ticket filed longer ago than this, or one whose named files changed on `main` since it was filed, is put to `[agents.critic]` before it is claimed. Lower it to ask sooner; 0 asks of every ticket. Without a critic seat it does nothing. |
+| `refresh_moved_landmarks` | Default: `true` | Boolean; on a native board, a ticket parked stale because a path it names is not on `main` is rewritten when main's first-parent history since the body was written shows each such path renamed to exactly one path main holds: the factory writes a revision authored `factory` that replaces each backticked span naming the old path (or the old path followed by `::`) and each verify-block token naming it or its `-m unittest` module, records a `relandmark` note giving each old path, its new path and the renaming commit, and re-derives the ticket's status. A deleted path, one that went to more than one place, or one with no rename keeps the park, and a `relandmark` note names it. Set `false` to keep every stale park for a hand edit. |
 
 Configured reviewer wrappers may write their session id to
 `$HOLOPHYTE_REVIEW_SCRATCH/session` before exiting. The file must contain an
@@ -582,6 +583,9 @@ tick_sec = 120
 # How old a ticket may be before the critic seat is asked whether it is still
 # relevant. Optional; the default is twelve hours.
 critic_after_hours = 12
+# Whether a stale park whose missing paths main's history renamed is rewritten
+# to name the new paths and re-queued. Optional; the default is true.
+refresh_moved_landmarks = true   # false: leave every stale park for a hand edit
 ```
 
 By default one failed run ends the process after its close-out, with a nonzero

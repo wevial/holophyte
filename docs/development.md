@@ -456,7 +456,19 @@ Each module, one line:
   `requeue` intervention for either kind. A move to Ready of a ticket already
   in Ready is refused naming its status (`KEY-n is already in ready at status
   ready; nothing changed`). A native park keeps its column, and its note
-  names `--file-ticket --update` and `--move KEY-n ready`.
+  names `--file-ticket --update` and `--move KEY-n ready`. When reasons
+  remain, `recheck_stale()` asks `holophyte/review/moved_landmarks.py` for a
+  body naming where main renamed the missing paths, writes it through
+  `_rederive()` and records a `relandmark` note (`[loop]
+  refresh_moved_landmarks`).
+- `holophyte/review/moved_landmarks.py` — a stale park's renamed paths:
+  `renames_since()` reads `git log --first-parent -M -C --name-status` from
+  the newest first-parent commit dated at or before the current body was
+  first recorded; `map_landmarks()` follows each missing path, and each
+  missing `-m unittest` module's file, through those rows, refusing a
+  deletion, a path with two destinations in one commit, or a final path not
+  on main; `rewrite()` replaces exact backticked spans (or `path::`) and
+  whole verify tokens, leaving the TOML header alone.
 - `holophyte/review/landmarks.py` — what counts as a lost landmark:
   `MainTree` caches main's file list, blobs and `git grep` holders for one
   check; `path_findings()` and `symbol_findings()` split a ticket's misses
