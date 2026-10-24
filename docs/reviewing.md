@@ -469,7 +469,13 @@ One pass:
    of any of them is void: that criterion must be witnessed afresh. The
    gate holds the reply to the same rule -- a citation that does not name
    the approved sha, names no test, or names a test file changed in the
-   range leaves its criterion unwitnessed, and the run parks. So a
+   range leaves its criterion unwitnessed, and the run parks. For a
+   Python test the gate is narrower than the prompt: it compares the file
+   at the approved sha with the candidate's, and the citation is void when
+   the cited test, a class or helper it shares, or an import the approved
+   file had changed, or when the file no longer parses. Added tests and
+   added imports binding new names leave it standing (a plain `import a.b`
+   beside an approved `import a` counts as new). So a
    covering approval is only as good as the earlier review of each test
    it cites, and only while that test is unchanged. When the last review
    of the candidate asked for changes there is no approval to cite, and
