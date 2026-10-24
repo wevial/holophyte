@@ -34,6 +34,7 @@ from tests.loop_fixture import BRANCH, LoopFixture, StubProvider, a_task
 
 ROOT = Path(__file__).resolve().parents[1]
 SHADOW = '[agents.implementer_shadow]\nharness = "claude"\nmodel = "sonnet"\n'
+NAMED_SHADOW = f'{SHADOW}[serve]\nname = "alpha"\n'
 T0 = 1_700_000_000_000
 
 
@@ -59,6 +60,26 @@ class Spawn:
 
 
 class ShadowStartTests(LoopFixture):
+    def setUp(self):
+        super().setUp()
+        environ = patch.dict(os.environ)
+        environ.start()
+        self.addCleanup(environ.stop)
+        os.environ.pop("INVOCATION_ID", None)
+
+    def systemd_run_stub(self, body):
+        stubs = self.db.parent / "bin"
+        stubs.mkdir()
+        stub = stubs / "systemd-run"
+        stub.write_text(f"#!/bin/sh\n{body}\n")
+        stub.chmod(0o755)
+        os.environ["PATH"] = f"{stubs}{os.pathsep}{os.environ['PATH']}"
+
+    def started(self):
+        [(payload,)] = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
+        return json.loads(payload)
+
     def shadow_loop(self, *script, config=SHADOW, spawn=None, task=None):
         self.configure(config)
         spawn = spawn or Spawn()
@@ -89,11 +110,9 @@ class ShadowStartTests(LoopFixture):
         self.assertEqual(fields["goal"], fake.turns[0].goal)
         self.assertEqual(fields["base_sha"], self.base)
         self.assertEqual(fields["branch"], BRANCH)
-        [(payload,)] = self.read(
-            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
-        self.assertEqual(json.loads(payload), {
+        self.assertEqual(self.started(), {
             "pid": NeverExits.pid, "branch": "shadow/ko-131-add-a-thing",
-            "route": "claude sonnet", "error": None})
+            "route": "claude sonnet", "unit": None, "error": None})
 
     def test_a_shadow_that_never_exits_leaves_the_runs_review_rounds_alone(self):
         def script(n):
@@ -114,20 +133,66 @@ class ShadowStartTests(LoopFixture):
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE)
         self.assertEqual(self.last_outcome(), "merged")
         self.assertEqual(spawn.calls, [])
-        [(payload,)] = self.read(
-            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
-        self.assertIn("Permission denied", json.loads(payload)["error"])
+        self.assertIn("Permission denied", self.started()["error"])
 
     def test_a_spawn_that_raises_is_recorded_and_the_run_still_merges(self):
         self.shadow_loop(Commit("the thing"), APPROVE,
                          spawn=Spawn(OSError("spawn refused")))
         self.assertEqual(self.last_outcome(), "merged")
-        [(payload,)] = self.read(
-            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
-        started = json.loads(payload)
+        started = self.started()
         self.assertIsNone(started["pid"])
         self.assertIn("spawn refused", started["error"])
         self.assertEqual(list(self.db.parent.glob("shadows/*.json")), [])
+
+    def test_under_systemd_the_shadow_starts_as_its_own_user_unit(self):
+        record = self.db.parent / "systemd-run.argv"
+        self.systemd_run_stub(f'printf "%s\\n" "$@" > "{record}"')
+        os.environ["INVOCATION_ID"] = "loop-run"
+        spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE,
+                                    config=NAMED_SHADOW)
+        self.assertEqual(self.last_outcome(), "merged")
+        self.assertEqual(spawn.calls, [])
+        [(run_id,)] = self.read("SELECT id FROM runs")
+        unit = f"holophyte-shadow-alpha-{run_id}"
+        argv = record.read_text().splitlines()
+        self.assertEqual(argv[:5], ["--user", "--collect", "--quiet", "--unit",
+                                    unit])
+        brief = self.db.parent / "shadows" / f"{run_id}.json"
+        log = brief.with_suffix(".log")
+        self.assertIn(f"--property=StandardOutput=append:{log}", argv)
+        self.assertIn("--setenv=PATH", argv)
+        self.assertNotIn("--setenv=INVOCATION_ID", argv)
+        self.assertEqual(argv[-3:], ["--shadow", str(brief), str(self.target)])
+        self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+        started = self.started()
+        self.assertEqual((started["pid"], started["unit"], started["error"]),
+                         (None, unit, None))
+
+    def test_a_unit_start_that_fails_is_recorded_and_the_run_still_merges(self):
+        self.systemd_run_stub("echo 'Unit holophyte-shadow-alpha-1.service"
+                              " already exists.' >&2\nexit 1")
+        os.environ["INVOCATION_ID"] = "loop-run"
+        spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE,
+                                    config=NAMED_SHADOW)
+        self.assertEqual(self.last_outcome(), "merged")
+        self.assertEqual(spawn.calls, [])
+        started = self.started()
+        self.assertIn("systemd-run exited 1", started["error"])
+        self.assertIn("Unit holophyte-shadow-alpha-1.service already exists.",
+                      started["error"])
+        self.assertIsNone(started["unit"])
+        self.assertEqual(list(self.db.parent.glob("shadows/*.json")), [])
+
+    def test_outside_systemd_the_shadow_spawns_though_systemd_run_is_present(self):
+        self.systemd_run_stub(f'touch "{self.db.parent / "ran"}"')
+        spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE,
+                                    config=NAMED_SHADOW)
+        self.assertEqual(self.last_outcome(), "merged")
+        [(_, kwargs)] = spawn.calls
+        self.assertTrue(kwargs["start_new_session"])
+        self.assertFalse((self.db.parent / "ran").exists())
+        started = self.started()
+        self.assertEqual((started["pid"], started["unit"]), (NeverExits.pid, None))
 
     def test_no_shadow_without_the_key(self):
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE, config="")

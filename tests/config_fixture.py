@@ -50,12 +50,18 @@ class ConfigTestCase(unittest.TestCase):
         Every test that reaches the loop path goes through here: the real
         one would leave a detached `--supervise` running against the
         throwaway home after the test. `self.popen` records the calls, so a
-        test about the spawn reads what would have been started.
+        test about the spawn reads what would have been started. It also
+        drops `INVOCATION_ID`, so a suite run inside a systemd unit does not
+        start a real supervisor unit; a test about that path sets it back.
         """
         patcher = patch.object(holophyte.cli.host_modes, "SPAWN",
                                return_value=FakeChild())
         self.popen = patcher.start()
         self.addCleanup(patcher.stop)
+        environ = patch.dict(os.environ)
+        environ.start()
+        self.addCleanup(environ.stop)
+        os.environ.pop("INVOCATION_ID", None)
 
     def set_home(self, home):
         """Point HOLOPHYTE_HOME at a throwaway directory for this test.

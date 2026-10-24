@@ -1,3 +1,5 @@
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -6,9 +8,11 @@ from holophyte.cli.board_verbs import require_board
 from holophyte.cli.operator import report
 from holophyte.cli.status import host_status_report, status_report
 from holophyte.cli.store_import import dry_run
+from holophyte.config.serve_settings import serve_config
 from holophyte.host.registry import watched_line
 from holophyte.host.supervisor import supervise, supervisor_liveness_line
 from holophyte.host.supervisor_lock import SupervisorHeld, supervisor_running
+from holophyte.loop.reexec import SUPERVISOR_UNIT, systemctl_user
 from holophyte.serve.server import serve
 
 # By path, so the supervisor runs the checkout of the loop that spawned it.
@@ -56,6 +60,23 @@ def _supervise_project(target, board):
             f"{held}\n{supervisor_liveness_line(target)}") from None
 
 
+def _under_systemd():
+    return bool(os.environ.get("INVOCATION_ID")) and bool(
+        shutil.which("systemctl"))
+
+
+def _start_supervisor_unit(target, out):
+    unit = SUPERVISOR_UNIT + serve_config(target).name
+    ok, detail = systemctl_user("start", unit)
+    if ok:
+        print(f"[holo2] started a supervisor for {target.path} as unit {unit}",
+              file=out, flush=True)
+    else:
+        print(f"[holo2] could not start {unit}: {detail}", file=out,
+              flush=True)
+    return ok
+
+
 def start_supervisor(target, out=None):
     """Two loops starting at once both spawn; the second exits at the lock."""
     out = sys.stdout if out is None else out
@@ -67,6 +88,8 @@ def start_supervisor(target, out=None):
     if pid is not None:
         print(f"[holo2] supervisor pid {pid} is watching {target.path}",
               file=out, flush=True)
+        return None
+    if _under_systemd() and _start_supervisor_unit(target, out):
         return None
     target.holo_dir.mkdir(parents=True, exist_ok=True)
     with open(target.holo_dir / "supervisor.log", "ab") as log:
