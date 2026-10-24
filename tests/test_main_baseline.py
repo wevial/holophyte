@@ -275,6 +275,9 @@ class BaselineRuns(unittest.TestCase):
                 f"echo setup\ntest -f candidate-marker && {VERIFY}",
                 "python3 -m unittest discover -s tests -p 'test_setup.py'\n"
                 f"test -f candidate-marker && {VERIFY}",
+                "echo setup\nsh -c \"python3 -m unittest discover -s tests -p "
+                "test_setup.py && test -f candidate-marker && python3 -m "
+                "unittest discover -s tests -p test_app.py\"",
                 "set -e\ntest -f candidate-marker\n"
                 + VERIFY.replace(" -p", " \\\n  -p"),
                 "set -e\npython3 -m unittest discover -s tests -p "

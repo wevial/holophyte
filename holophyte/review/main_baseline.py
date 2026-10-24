@@ -23,7 +23,6 @@ HEADING = "Baseline at the merge base"
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
 VERIFY_FAILED = "verify failed at the candidate"
 WORD_END = " \t\n;&|<>()"
-UNITTEST_RAN = re.compile(r"^Ran \d+ tests? in ", re.M)
 NO_CHECK_OUTPUT = "its output shows no run of the named check"
 
 
@@ -168,18 +167,10 @@ def _execution_output(output, command):
                      if not line.startswith("[verify]") and line not in shown)
 
 
-def _check_ran(output, files, own):
-    if own and UNITTEST_RAN.search(output):
-        return True
-    for path in files:
-        name = re.escape(Path(path).name)
-        stem = re.escape(Path(path).name.rsplit(".", 1)[0])
-        if re.search(rf"^(?:FAIL|ERROR): \w+ \((?:[\w.]*\.)?{stem}\.", output,
-                     re.M) or re.search(rf"{name}:\d+", output) or re.search(
-                rf"^(?:FAILED |ERROR )?{re.escape(path)}(?:::|\s|$)", output,
-                re.M):
-            return True
-    return False
+def _check_ran(output, files):
+    return any(re.search(rf"(?<![\w-]){re.escape(stem)}(?![\w-])", output)
+               for stem in (Path(path).name.rsplit(".", 1)[0]
+                            for path in files))
 
 
 def _stopped_output(failure, output):
@@ -207,7 +198,7 @@ def _attribution(command, files, failure, output):
                                 f"line that names {', '.join(files)}"}
     own = _stopped_output(failure or {}, output)
     if not _check_ran(_execution_output(output if own is None else own,
-                                        command), files, own is not None):
+                                        command), files):
         return {"unattributed": NO_CHECK_OUTPUT}
     return {}
 
