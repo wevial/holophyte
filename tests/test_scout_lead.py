@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from host_fixture import git  # noqa: E402
-from scout_stubs import LeadStubs, fenced  # noqa: E402
+from scout_stubs import fenced  # noqa: E402
 from test_scout_process import ScoutFixture  # noqa: E402
 
 import holophyte.scout.lead as lead  # noqa: E402
@@ -52,9 +52,7 @@ def running(pid):
 class ScoutLeadTests(ScoutFixture):
     def setUp(self):
         super().setUp()
-        self.stubs = LeadStubs(self.root / "stubs", plan=fenced(PLAN),
-                               report=fenced(REPORT))
-        self.stubs.on_path()
+        self.stubs.answer(plan=fenced(PLAN), report=fenced(REPORT))
 
     def bug_scout(self, config=CLAUDE_LEAD, ask="why does the retry spin?"):
         path = self.project("alpha", config)
