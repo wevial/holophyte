@@ -381,7 +381,8 @@ problem. Nothing is filed then, and the item stays unfiled.
 
 A body the checker passes is filed to Backlog through the project's
 board, with the title, estimate and `Depends on` read from it, and the
-item records the filed key and time. With a `note`, the filed ticket's
+item records the filed key and time. A project's filings run one at a
+time, from check to record, so two posts of one item file it once. With a `note`, the filed ticket's
 first board note reads `AUTHOR: NOTE`; a note that cannot be posted
 leaves `ok: true` and `detail` says so. The reply adds `scout`, `item`,
 `ticket`, the new key, and `advisories`; `recorded` is null.

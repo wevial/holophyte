@@ -1,3 +1,4 @@
+import fcntl
 import json
 
 import store.board
@@ -12,6 +13,7 @@ from store.scouts import ScoutRefused, file_scout_action, scout
 
 SCOUT_FILE_ACTION = "scout-file"
 BACKLOG = "Backlog"
+FILING_LOCK = "scout-file.lock"
 
 
 class Answered(Exception):
@@ -103,6 +105,12 @@ def file_action(project, body):
         return 400, {"error": refused}
     if not project.store_path.exists():
         return 503, no_store(project)
+    with open(project.store_path.with_name(FILING_LOCK), "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        return filed(project, body)
+
+
+def filed(project, body):
     scout_id, position = body["scout"], body["item"]
     named = {"scout": scout_id, "item": position}
     try:

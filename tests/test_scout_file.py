@@ -12,6 +12,8 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +21,7 @@ import holophyte.cli.entry
 import store
 import store.board
 import store.tickets
+from holophyte.board.native_board import NativeBoard
 from holophyte.config.project import Project
 from holophyte.holo.cli import main as holo_main
 from store.scouts import create_scout, end_scout, move_scout, record_scout_actions
@@ -152,6 +155,31 @@ class DaemonScoutFileTests(ScoutFileCase):
         self.assertIn("already filed as NAT-1", answer["detail"])
         self.assertEqual(self.state(), after)
         self.assertEqual(len(after[0]), 1)
+
+    def test_two_posts_at_once_file_the_item_as_one_ticket(self):
+        real = NativeBoard.file
+
+        def slow(board, *args, **kwargs):
+            time.sleep(0.3)
+            return real(board, *args, **kwargs)
+        self.enterContext(patch.object(NativeBoard, "file", slow))
+        self.start_host()
+        answers = []
+
+        def post():
+            answers.append(self.file({"scout": self.scout, "item": 1}))
+        posts = [threading.Thread(target=post) for _ in range(2)]
+        for thread in posts:
+            thread.start()
+        for thread in posts:
+            thread.join()
+        self.assertEqual(sorted((code, reply["ok"], reply["ticket"])
+                                for code, reply in answers),
+                         [(200, False, "NAT-1"), (200, True, "NAT-1")])
+        tickets, seq, actions = self.state()
+        self.assertEqual(([key for key, _, _ in tickets], seq),
+                         (["NAT-1"], 1))
+        self.assertEqual(actions[0], (1, "NAT-1", 1))
 
     def test_an_item_of_a_scout_that_did_not_finish_done_files_nothing(self):
         with self.store("native") as (conn, project):
