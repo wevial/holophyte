@@ -23,6 +23,7 @@ from holophyte.config.project import Project
 from holophyte.scout.github_mcp import NO_ORIGIN, called, scout_server
 from holophyte.scout.github_reads import (
     GITHUB_ARTIFACT_BYTES,
+    GITHUB_MEMBER_BYTES,
     github_get,
     github_tests,
     origin_repo,
@@ -310,6 +311,25 @@ class TestsTests(GithubCase):
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as writer:
             writer.writestr("junit/results.xml", padded)
         self.assertLess(len(archive.getvalue()), GITHUB_ARTIFACT_BYTES)
+        self.gh.answer(ARTIFACTS, json.dumps({"artifacts": [
+            {"id": 12, "name": "junit",
+             "size_in_bytes": len(archive.getvalue()), "expired": False}]}))
+        self.gh.answer("repos/example/repo/actions/artifacts/12/zip",
+                       archive.getvalue())
+        target = self.target(path)
+        answer = github_tests(target, origin_repo(target), 7)
+        self.assertFalse(answer.error, answer.text)
+        result = json.loads(answer.text)
+        self.assertEqual((result["total"], result["failed"]), (2, 1))
+
+    def test_a_report_member_past_the_member_cap_is_skipped_unread(self):
+        path = self.github_project()
+        padded = JUNIT.replace("</testsuites>", " " * GITHUB_MEMBER_BYTES
+                               + "</testsuites>")
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as writer:
+            writer.writestr("junit/huge.xml", padded)
+            writer.writestr("junit/results.xml", JUNIT)
         self.gh.answer(ARTIFACTS, json.dumps({"artifacts": [
             {"id": 12, "name": "junit",
              "size_in_bytes": len(archive.getvalue()), "expired": False}]}))
