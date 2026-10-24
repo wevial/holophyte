@@ -66,7 +66,8 @@ function Helpers({ tasks, now }: { tasks: ScoutTask[]; now: number }) {
 
 function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number }) {
   const bodyId = useId();
-  const folds = group.kind === "wave" ? group.tasks.length > 0 : !group.running && group.steps.length > 0;
+  const helpers = group.kind === "wave" || group.kind === "pass";
+  const folds = helpers ? group.tasks.length > 0 : !group.running && group.steps.length > 0;
   const shown = folds ? open : group.running && group.steps.length > 0;
   return (
     <li data-group={group.kind} data-running={group.running ? "" : undefined} className="relative border-b border-rule-2">
@@ -82,7 +83,7 @@ function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: 
       </GroupHead>
       {shown && (
         <div id={bodyId}>
-          {group.kind === "wave" ? <Helpers tasks={group.tasks} now={now} /> : <Steps steps={group.steps} />}
+          {helpers ? <Helpers tasks={group.tasks} now={now} /> : <Steps steps={group.steps} />}
         </div>
       )}
     </li>
@@ -92,13 +93,14 @@ function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: 
 const troubled = (group: ScoutGroup) => group.tasks.some((task) => task.phase === "stopped" || task.phase === "failed");
 
 /** The scout's timeline, one row per group. A group the reader has not
- *  toggled is open while it runs or holds a stopped or failed helper. */
+ *  toggled is open while it runs, holds a stopped or failed helper, or is the newest pass. */
 export function ScoutActivity({ groups, now }: { groups: ScoutGroup[]; now: number }) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
+  const newestPass = groups.findLast((group) => group.kind === "pass")?.key;
   return (
     <ol aria-label="Scout activity" className="m-0 mt-4 list-none border-t border-rule-2 p-0">
       {groups.map((group, index) => {
-        const open = chosen[group.key] ?? (group.running || troubled(group));
+        const open = chosen[group.key] ?? (group.running || troubled(group) || group.key === newestPass);
         return (
           <Group
             key={group.key}
