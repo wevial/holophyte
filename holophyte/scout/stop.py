@@ -175,11 +175,10 @@ def task_requested(conn, project, scout_id, task_id, author, note, via):
 
 def stop_task(project, body, via):
     note = (body.get("note") or "").strip() or None
-    scout_id, task_id = body["scout"], body["task"]
     conn = open_store(project)
     try:
         with store.transaction(conn):
-            return task_requested(conn, project, scout_id, task_id,
+            return task_requested(conn, project, body["scout"], body["task"],
                                   console_author(body), note, via)
     finally:
         conn.close()
