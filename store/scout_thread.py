@@ -136,9 +136,8 @@ def take_message(conn, message_id, host=None, now=None):
 
 
 def _message(row):
-    values = dict(zip(COLUMNS, row))
-    values["blocks"] = json.loads(values["blocks"])
-    return Message(*values.values())
+    message = Message(*row)
+    return message._replace(blocks=json.loads(message.blocks))
 
 
 def messages(conn, scout_id):
