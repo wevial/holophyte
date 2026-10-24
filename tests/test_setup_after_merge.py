@@ -188,6 +188,21 @@ class BabysitterMergeTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.assertEqual(fake.roles, [])
         self.assertIn(f"main is red at {moved}", self.question())
 
+    def test_main_failing_the_and_line_left_after_a_dropped_line_is_red(self):
+        verify = ("python3 -m unittest tests.test_new\n"
+                  "python3 -m unittest tests.test_shared && test -e README.md")
+        self.parked(verify, None, Commit(
+            "candidate", path="tests/test_new.py",
+            body="import unittest\n\n\nclass New(unittest.TestCase):\n"
+                 "    def test_new(self):\n        pass\n"))
+        moved = self.conflicting(
+            "tests/test_shared.py",
+            "import unittest\n\n\nclass Shared(unittest.TestCase):\n"
+            "    def test_shared(self):\n        self.fail('red')\n")
+        fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}", self.question())
+
 
 if __name__ == "__main__":
     unittest.main()

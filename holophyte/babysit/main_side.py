@@ -38,7 +38,7 @@ def verify_detached_main(project, conn, run_id, beat_s, wt, ref, command,
                                  side.command, contracts)
         expected = (drop_candidate_modules(failing, wt, detached, sha).command
                     if failing else failing)
-    other = _other_clause(ok, out, failing, expected)
+    other = _other_clause(ok, out, failing, expected, side.command)
     if other:
         return MainSide(sha, None, out, side.command,
                         f"fails a different command, {other}, not the one the"
@@ -49,11 +49,15 @@ def verify_detached_main(project, conn, run_id, beat_s, wt, ref, command,
     return MainSide(sha, ok, out, side.command, state)
 
 
-def _other_clause(ok, out, failing, expected):
+def _other_clause(ok, out, failing, expected, command):
     clause = (getattr(out, "failure", None) or {}).get("command", "").strip()
     if ok or not failing or not clause:
         return None
-    return None if clause.split() == expected.split() else clause
+    lines = [text for text in command.splitlines()
+             if text.strip() and not text.lstrip().startswith("#")]
+    ran = lines if len(lines) == 1 else []
+    same = any(text.split() == expected.split() for text in [clause, *ran])
+    return None if same else clause
 
 
 def _record_skipped(conn, run_id, sha, side):
