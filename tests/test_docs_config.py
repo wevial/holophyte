@@ -80,6 +80,17 @@ class ConfigReferenceTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term, row.group())
 
+    def test_refresh_moved_landmarks_row_gives_its_default_and_off_switch(self):
+        loop = sections((DOCS / "config.md").read_text())["loop"]
+        row = re.search(r"^\| `refresh_moved_landmarks` \|.*$", loop,
+                        re.MULTILINE)
+        self.assertIsNotNone(row, "[loop] needs a key row: refresh_moved_landmarks")
+        self.assertIs(LOOP_KEYS["refresh_moved_landmarks"], True)
+        for term in ("Default: `true`", "rewritten", "backticked span",
+                     "Set `false`"):
+            with self.subTest(term=term):
+                self.assertIn(term, row.group())
+
     def test_removed_entry_names_missing_key_even_if_mentioned_elsewhere(self):
         document = (DOCS / "config.md").read_text()
         removed, count = re.subn(r"^\| `media_repo` \|.*\n", "", document,
