@@ -15,27 +15,20 @@ from holophyte.redact import safe_print as print
 from holophyte.scout.scout_config import scout_config
 
 
-def scout_routes(config):
-    for seats in (config.leads, config.helpers):
-        for name, seat in seats.items():
-            yield f"{seat.role}:{name}", seat
-
-
 def probe_scout_route(project, name, seat):
     cmd = seat.turn(PROBE_GOAL)
-    cap = PROBE_TIMEOUT
     started = time.time()
     try:
         with critic_workspace(project) as checkout:
-            code, out = run_capped(cmd, checkout, cap)
-        probe = ProbeResult(cmd, code, out or "", cap, seat=name)
+            code, out = run_capped(cmd, checkout, PROBE_TIMEOUT)
+        probe = ProbeResult(cmd, code, out or "", PROBE_TIMEOUT, seat=name)
     except subprocess.TimeoutExpired as expired:
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode(errors="replace")
-        probe = ProbeResult(cmd, None, partial, cap, seat=name)
+        probe = ProbeResult(cmd, None, partial, PROBE_TIMEOUT, seat=name)
     except (OSError, RuntimeError) as failed:
-        probe = ProbeResult(cmd, None, "", cap,
+        probe = ProbeResult(cmd, None, "", PROBE_TIMEOUT,
                             launch_error=launch_failure_reason(failed),
                             launch_diagnostic=str(failed), seat=name)
     record_probe(project, probe, False, started, time.time())
@@ -43,9 +36,11 @@ def probe_scout_route(project, name, seat):
 
 
 def scout_probe_mode(project):
+    config = scout_config(project)
     passed = True
-    for name, seat in scout_routes(scout_config(project)):
-        probe = probe_scout_route(project, name, seat)
-        print(probe_diagnostic(project, probe))
-        passed = passed and probe.ok
+    for seats in (config.leads, config.helpers):
+        for name, seat in seats.items():
+            probe = probe_scout_route(project, f"{seat.role}:{name}", seat)
+            print(probe_diagnostic(project, probe))
+            passed = passed and probe.ok
     return 0 if passed else 1
