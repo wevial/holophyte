@@ -232,7 +232,10 @@ removed with it on every exit, as
 `codex exec -m M -c model_reasoning_effort=E
 --dangerously-bypass-approvals-and-sandbox PROMPT`: Codex's read-only sandbox
 cannot start under a systemd user unit with PrivateTmp, so the throwaway
-checkout is the write boundary. The id from Codex's first `session id:` line
+checkout is the write boundary. Scouts run Codex with `--sandbox read-only`
+instead, so each scout starts as its own transient `systemd-run --user` unit
+without PrivateTmp, and a scout that would inherit a PrivateTmp unit (no
+`systemd-run` there) ends `failed` before any turn. The id from Codex's first `session id:` line
 is written to `$HOLOPHYTE_REVIEW_SCRATCH/session`, and when
 `HOLOPHYTE_REVIEW_RESUME` is set (see `[loop] review_session`) the turn is
 `codex exec resume` with the same options, the id and the prompt; a resume
