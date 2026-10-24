@@ -86,18 +86,18 @@ class LeadStubs:
     def on_path(self):
         os.environ["PATH"] = f"{self.directory}{os.pathsep}{os.environ['PATH']}"
 
-    def calls(self):
-        log = self.directory / "calls.jsonl"
+    def logged(self, name):
+        log = self.directory / f"{name}.jsonl"
         if not log.exists():
             return []
         return [json.loads(line) for line in log.read_text().splitlines()]
 
+    def calls(self):
+        return self.logged("calls")
+
     def helpers(self):
         """What each helper turn that ran to its end logged."""
-        log = self.directory / "helpers.jsonl"
-        if not log.exists():
-            return []
-        return [json.loads(line) for line in log.read_text().splitlines()]
+        return self.logged("helpers")
 
     def turns(self, turn):
         return [call for call in self.calls() if call["turn"] == turn]
