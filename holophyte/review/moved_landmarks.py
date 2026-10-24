@@ -6,10 +6,10 @@ from pathlib import Path
 import store
 import ticket_header
 import ticket_template
-from holophyte.review.landmarks import SPAN_RE, MainTree
+from holophyte.review.landmarks import SPAN_RE, MainTree, declared_new
 
 VERIFY_HEADING = "## Verify command(s)"
-TOKEN_RE = re.compile(r"\S+")
+TOKEN_RE = re.compile(r"[^\s;&|()'\"]+")
 DOTTED_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 
 
@@ -19,10 +19,11 @@ class Chain:
         self.hops = []
         self.deleted = None
         self.split = None
+        self.copied = False
 
     @property
     def touched(self):
-        return bool(self.hops) or self.deleted or self.split
+        return bool(self.hops or self.copied) or self.deleted or self.split
 
     def follow(self, commit, rows):
         sources = [row for row in rows if row[1] == self.path]
@@ -34,6 +35,7 @@ class Chain:
             self.path = moves[0][2]
         elif any(row[0] == "D" for row in sources):
             self.deleted = commit
+        self.copied = self.copied or bool(moves)
         return self.deleted is None and self.split is None
 
 
@@ -84,19 +86,23 @@ def _module_file(module, commits):
     return Chain(module.replace(".", "/") + ".py"), []
 
 
-def _missing_module(tree, module):
+def _missing_module(tree, module, declarations):
     parts = module.split(".")
-    return not any("/".join(parts[:end]) + ".py" in tree.files
-                   for end in range(len(parts), 0, -1)) and (
-        "/".join(parts) + "/__init__.py" not in tree.files)
+    files = ["/".join(parts[:end]) + ".py" for end in range(len(parts), 0, -1)]
+    files.append("/".join(parts) + "/__init__.py")
+    return not any(f in tree.files or declared_new(f, declarations)
+                   for f in files)
 
 
 def stale_modules(body, tree):
+    t = ticket_template.parse(body)
+    declarations = ticket_template._new_paths(t)
     modules = []
-    for command in ticket_template.parse(body).verify_commands:
+    for command in t.verify_commands:
         for tokens in ticket_template._shell_commands(command):
             for module in ticket_template._unittest_modules(tokens):
-                if module not in modules and _missing_module(tree, module):
+                if (module not in modules
+                        and _missing_module(tree, module, declarations)):
                     modules.append(module)
     return modules
 
@@ -203,7 +209,9 @@ def refresh(repo, conn, parked, paths, still_stale):
     if not unmapped:
         new = rewrite(body, spans, tokens)
         unmapped = [f"after the rewrite, {reason}"
-                    for reason in still_stale(new)]
+                    for reason in still_stale(new)] + [
+            f"after the rewrite, `{module}` is still not on main"
+            for module in stale_modules(new, tree)]
         if not unmapped:
             return new, (f"Refreshed {identifier} from main's rename history"
                          " since the body was written; each landmark it"

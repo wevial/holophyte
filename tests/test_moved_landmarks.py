@@ -40,8 +40,10 @@ NAMING_OLD = (VALID_BODY
               .replace("## Implementation notes\n\n* None.\n",
                        f"## Implementation notes\n\n* Extend `{OLD}` with the"
                        f" thing, near `{OLD}:2`; plain {OLD} says so.\n"))
-WITH_MODULE = NAMING_OLD.replace("```\necho ok\n```",
-                                 "```\npython3 -m unittest lotus.agents\n```")
+WITH_MODULE = NAMING_OLD.replace(
+    "```\necho ok\n```",
+    "```\npython3 -m unittest lotus.agents\n"
+    "(python3 -m unittest lotus.agents)&& echo ok\n```")
 
 
 def no_linear(*args, **kwargs):
@@ -156,8 +158,24 @@ class MovedLandmarkTests(LoopFixture):
         body = self.ticket()[0]
         self.assertEqual(self.status(), "ready")
         self.assertIn("python3 -m unittest lotus.features.agents\n", body)
+        self.assertIn("(python3 -m unittest lotus.features.agents)&& echo ok",
+                      body)
         self.assertNotIn("unittest lotus.agents", body)
         self.assertIn(f"near `{OLD}:2`; plain {OLD} says so.", body)
+
+    def test_a_verify_module_the_ticket_declares_new_is_not_a_landmark(self):
+        self.file(NAMING_OLD
+                  .replace("* Extend", "* Add `tests/test_fresh.py` (new).\n"
+                                       "* Extend")
+                  .replace("```\necho ok\n```",
+                           "```\npython3 -m unittest tests.test_fresh\n```"))
+        self.move()
+        self.park(OLD)
+
+        self.sweep()
+
+        self.assertEqual(self.status(), "ready")
+        self.assertIn(f"* Extend `{NEW}` with the thing", self.ticket()[0])
 
     def test_a_file_moved_twice_is_named_at_its_final_path(self):
         self.file(NAMING_OLD)
