@@ -21,6 +21,7 @@ Each module, one line:
 - `holophyte/serve/__init__.py` — the `serve` package; empty.
 - `holophyte/config/__init__.py` — the `config` package; empty.
 - `holophyte/cli/__init__.py` — the `cli` package; empty.
+- `holophyte/scout/__init__.py` — the `scout` package; empty.
 - `holophyte/cli/cli_project.py` — project registration, listing and admission commands.
 - `holophyte/cli/cli_story.py` — the `--file-story SLUG`, `--approve-story KEY-n`
   and `--witness-pass KEY-n` options and their dispatch.
@@ -155,6 +156,10 @@ Each module, one line:
   of a role.
 - `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
+- `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's
+  lead and helper routes, each a harness `Seat`, their defaults and budget.
+- `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
+  scout route in a detached checkout of main, recorded in `route-probes.json`.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
 - `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a

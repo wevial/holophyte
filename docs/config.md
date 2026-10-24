@@ -772,6 +772,14 @@ keep, and the reason goes to the ticket as a comment. The table's shape is
 checked at startup with the `[agents]` commands; the commands themselves are not
 run there, since the worktree they are written against does not exist yet.
 
+Setup reruns, every entry, in the task worktree after a merge of main that
+brought in commits: at the merge gate, when an approved candidate resumes there,
+and when the babysitter merges main into a conflicting pull request. What setup
+generated from the old inputs would otherwise be judged stale by the merged
+tree's verify, so its commands must be safe to rerun. A failing command then is
+recorded as a `merge_gate` run event, `worktree setup rerun after merging main`
+with `FAILED` and its report, and the verify still runs on the merged tree.
+
 What setup writes into the worktree is untracked, and the implementer is asked
 to commit its work: keep build artifacts (`.venv/`, caches) in the project's
 `.gitignore`, or a task's `git add -A` will sweep them into the branch.
@@ -1823,3 +1831,45 @@ budget_min = 15
 
 An `enabled` that is not a boolean, a `budget_min` that is not an integer of
 at least 1, or any other key is a startup error naming the key.
+
+## `[scout]`
+
+A scout run's routes and budget: one lead route and the helper routes it
+starts. Each route is a `[scout.leads.NAME]` or `[scout.helpers.NAME]` table
+with `harness`, `model` and `effort`, read through the same harness adapters
+and `[harnesses]` paths as an `[agents]` table; only `claude` and `codex` take
+a scout role. A lead's turn and resume turn off its CLI's own subagents
+(`--disallowedTools Agent Task` for Claude, `--disable multi_agent` for
+Codex); a helper's carry neither. With no `[scout]` table the defaults below
+apply.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `leads` | Default: `opus` (`claude`, `opus`, `high`) and `sol` (`codex`, `gpt-6.1-sol`, `high`) | The lead routes, one `[scout.leads.NAME]` table each; a configured table replaces the built-in set whole. |
+| `helpers` | Default: `luna` (`codex`, `gpt-6-luna`, `low`) and `haiku` (`claude`, `haiku`, `low`) | The helper routes, one `[scout.helpers.NAME]` table each; a configured table replaces the built-in set whole. |
+| `lead` | Default: `opus` | The lead route a scout uses when its launch names none; must name a route in `leads`. |
+| `helper` | Default: `luna` | The helper route a scout uses when its launch names none; must name a route in `helpers`. |
+| `budget_min` | Default: `30` minutes | Integer of at least 1; the scout's time budget. |
+| `swarm` | Default: `4` | Integer of at least 1, at most `helper_turns`; the helpers at work at once. |
+| `helper_turns` | Default: `12` | Integer of at least 1; the helpers a scout starts in all. |
+| `waves` | Default: `2` | `1` or `2`. |
+
+```toml
+[scout]
+lead = "deep"
+helper = "luna"
+budget_min = 30
+[scout.leads.deep]
+harness = "codex"
+model = "gpt-6.1-sol"
+effort = "xhigh"
+```
+
+An unknown `[scout]` key or route-table key, a route name with anything but
+letters, digits, `_` and `-`, a `harness` that is no adapter or takes no scout
+role, a `model` or `effort` that is not a non-empty string (or a Codex effort
+outside its list), a `lead` or `helper` naming no route, a count that is not an
+integer of at least 1, a `swarm` above `helper_turns` or a `waves` other than 1
+or 2 is a startup error naming the table and the key.
+`factory.py --scout-probe PROJECT` probes each route; see
+[the CLI reference](reference/cli.md).

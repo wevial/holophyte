@@ -21,7 +21,11 @@ from holophyte.loop.gates import (
 from holophyte.loop.runs import heartbeat_while, set_phase, warn_on_run
 from holophyte.loop.steering import adopted_verify
 from holophyte.loop.stop import end_aborted, stop_if_requested
-from holophyte.loop.task_worktree import retire_merged_worktree
+from holophyte.loop.task_worktree import (
+    retire_merged_worktree,
+    run_worktree_setup,
+    setup_commands,
+)
 from holophyte.pr.pullrequest import (
     _opens_draft,
     _prepare_pr,
@@ -95,6 +99,7 @@ def _resume_at_merge_gate(run, carried, verify_cmd,
     print(f"[holo2] {task_id}: approved candidate {branch} at {sha[:12]}"
           f" from run {carried.run_id}; skipping to the merge gate")
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
+    rerun_setup_after_merge(project, conn, run_id, beat_s, wt, carried.sha, sha)
     ticket = f"{task}\n\n{body}" if body else task
     if merge.mode == "pr":
         ok, sha = _merge_gate(project, conn, run_id, provider, task_id,
@@ -223,6 +228,25 @@ def _sync_main_into_branch(project, conn, run_id, provider, task_id, branch,
     return merged
 
 
+def rerun_setup_after_merge(project, conn, run_id, beat_s, wt, before, after):
+    if before == after or not setup_commands(project):
+        return
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, report = run_worktree_setup(project, wt)
+    summary = (f"worktree setup rerun after merging main: {before[:12]} ->"
+               f" {after}; " + ("ok" if ok else f"FAILED\n{report}"))
+    print(f"[holo2] {summary}")
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "merge_gate", summary)
+
+
+def _merged_tree(wt, reviewed, sha):
+    if reviewed == sha:
+        return ""
+    return (" on the candidate merged with main at"
+            f" {sh(['git', 'rev-parse', 'main'], wt)[:12]}")
+
+
 def merge_conflict_goal(branch, pull, conflicts):
     return (f"The worktree is mid-merge. Merging main into {branch} -- the"
             f" branch pull request {pull.url} is open on, which GitHub"
@@ -245,6 +269,7 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
         sha = _sync_main_into_branch(project, conn, run_id, provider, task_id,
                                      branch, wt, sha, beat_s, ticket,
                                      budget_min)
+        rerun_setup_after_merge(project, conn, run_id, beat_s, wt, reviewed, sha)
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts,
                              verify_config(project).timeout_sec, conn=conn,
@@ -255,10 +280,11 @@ def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
     if not ok:
         print(f"[holo2] verify FAILED before merge; leaving branch {branch} "
               f"at {sha} for a human:\n{out}")
+        merged = _merged_tree(wt, reviewed, sha)
         _park_at_gate(conn, run_id, provider, task_id, branch, sha,
-                      f"verify failed at the merge gate:\n{out[-2000:]}",
+                      f"verify failed at the merge gate{merged}:\n{out[-2000:]}",
                       f"FAILED verify before merge.\n\n{out}\n")
-        raise RunFailure(f"verify failed before merge; branch {branch}"
+        raise RunFailure(f"verify failed before merge{merged}; branch {branch}"
                          f" preserved at {sha[:12]}", "verify")
     print("[holo2] verify ok before merge")
     if shared:

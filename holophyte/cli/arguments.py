@@ -355,6 +355,11 @@ def build_parser():
              "the brief's run and delete the brief; spawned by a fresh "
              "claim's implement stage under [agents.implementer_shadow], "
              "not meant to be typed")
+    modes.add_argument(
+        "--scout-probe", action="store_true",
+        help="probe each [scout] lead and helper route once in a detached "
+             "checkout of main, print each probe's line and record it in "
+             "route-probes.json; exit 0 when every route passed, else 1")
     parser.add_argument(
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "
