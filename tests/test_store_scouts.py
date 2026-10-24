@@ -196,20 +196,18 @@ class ScoutRecordTests(ScoutCase):
             scouts.record_scout_tasks(self.conn, scout_id, 1, 2,
                                       [{"question": "edit", "mode": "write"}])
 
-    def test_a_queued_task_may_end_stopped_but_not_done_or_failed(self):
+    def test_a_queued_task_cannot_end_without_running(self):
         scout_id = self.swarming()
-        queued, stopped = scouts.record_scout_tasks(
-            self.conn, scout_id, 1, 1, [{"question": "where", "mode": "read"},
-                                        {"question": "why", "mode": "read"}])
-        for phase in ("done", "failed"):
+        (queued,) = scouts.record_scout_tasks(
+            self.conn, scout_id, 1, 1, [{"question": "where", "mode": "read"}])
+        for phase in ("done", "failed", "stopped"):
             with self.subTest(phase=phase), self.assertRaises(ScoutRefused):
-                scouts.end_scout_task(self.conn, queued, phase, tokens=5)
-        scouts.end_scout_task(self.conn, stopped, "stopped", now=1750)
+                scouts.end_scout_task(self.conn, queued, phase, tokens=5,
+                                      now=1750)
         self.assertEqual(self.conn.execute(
-            "SELECT id, phase, startedAt, endedAt, durationMs, tokens"
-            " FROM scoutTasks ORDER BY id").fetchall(),
-            [(queued, "queued", None, None, None, None),
-             (stopped, "stopped", None, 1750, None, None)])
+            "SELECT phase, startedAt, endedAt, durationMs, tokens"
+            " FROM scoutTasks WHERE id = ?", (queued,)).fetchone(),
+            ("queued", None, None, None, None))
 
     def test_an_ended_scout_refuses_task_ends_events_and_filing(self):
         scout_id = self.swarming()

@@ -200,15 +200,13 @@ def end_scout_task(conn, task_id, phase, *, tokens=None, cost_usd=None,
         if current in TASK_ENDED:
             raise ScoutRefused(scout_id, scout_phase,
                                f"task {task_id} has already ended {current}")
-        if current == ScoutTaskPhase.QUEUED.value \
-                and phase != ScoutTaskPhase.STOPPED.value:
+        if current != ScoutTaskPhase.RUNNING.value:
             raise ScoutRefused(scout_id, scout_phase,
-                               f"task {task_id} is queued and can only stop")
+                               f"task {task_id} is {current}, not running")
         conn.execute(
             "UPDATE scoutTasks SET phase = ?, endedAt = ?, durationMs = ?,"
             " tokens = ?, costUsd = ?, excerpt = ? WHERE id = ?",
-            (phase, now, None if started_at is None else now - started_at,
-             tokens, cost_usd, excerpt, task_id))
+            (phase, now, now - started_at, tokens, cost_usd, excerpt, task_id))
 
 
 def record_scout_actions(conn, scout_id, pass_number, items):
