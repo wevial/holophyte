@@ -244,7 +244,7 @@ class PriorCheckTests(unittest.TestCase):
                 self.assertTrue(problems[0].startswith(field), problems)
 
     def test_a_pass_offered_nothing_drops_prior_from_its_repaired_report(self):
-        row = SimpleNamespace(kind="research", subject_kind=None,
+        row = SimpleNamespace(id=1, kind="research", subject_kind=None,
                               subject_ref=None)
         repaired = SimpleNamespace(answer=fenced(dict(EMPTY, prior=JUDGED)))
         lead = SimpleNamespace(row=row, session="lead-session",

@@ -25,6 +25,9 @@ LINE = Rule(lambda value: type(value) is int and value > 0,
 URL = Rule(lambda value: isinstance(value, str)
            and value.startswith(("http://", "https://")),
            "a URL starting http:// or https://", "URL")
+TASK_IDS = Rule(lambda value: value is None or (
+    isinstance(value, list) and all(type(item) is int for item in value)),
+    "a list of task ids", "[ID, ...]")
 
 
 def one_of(*choices):
@@ -68,7 +71,8 @@ FIELDS = {
     "summary": TEXT,
     "findings": Each({"title": TEXT,
                       "status": one_of("shown", "likely", "unconfirmed"),
-                      "evidence": Each(EVIDENCE, nonempty=True)}),
+                      "evidence": Each(EVIDENCE, nonempty=True),
+                      "tasks": TASK_IDS}),
     "actions": Each({"title": TEXT, "why": TEXT,
                      "kind": one_of(*KINDS, REVISE), "body": TEXT}),
 }
@@ -218,7 +222,15 @@ def prior_problems(prior, offered):
             for problem in judgement_problems(index, judgement, offered or {})]
 
 
-def report_problems(report, kind, subject=None, *, offered=None):
+def cited_problems(findings, scout, tasks):
+    return [f"findings[{index}].tasks: scout {scout} has no task {task}"
+            for index, finding in enumerate(findings)
+            if isinstance(finding, dict) and TASK_IDS.check(finding.get("tasks"))
+            for task in finding.get("tasks") or () if task not in tasks]
+
+
+def report_problems(report, kind, subject=None, *, offered=None, scout=None,
+                    tasks=()):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
@@ -229,6 +241,9 @@ def report_problems(report, kind, subject=None, *, offered=None):
         problems += revise_problems(actions, subject)
     if isinstance(report, dict) and report.get("prior") is not None:
         problems += prior_problems(report["prior"], offered)
+    findings = report.get("findings") if isinstance(report, dict) else None
+    if isinstance(findings, list):
+        problems += cited_problems(findings, scout, tasks)
     return problems
 
 
