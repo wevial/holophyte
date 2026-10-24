@@ -1412,14 +1412,15 @@ One scout whole: what the console's Scout page draws.
      {"file": "app/retry.py", "line": 12, "verified": true, "why": null},
      {"command": "python3 -m unittest tests.test_retry", "output": "…"},
      {"url": "https://example.test/issues/7"}]}],
-   "actions": [{"title": "…", "why": "…", "kind": "fix", "body": "…"}],
+   "actions": [{"title": "…", "why": "…", "kind": "fix", "body": "…",
+                "layer": null, "covers": null}],
    "reproduction": {"level": "test", "hypotheses": [
      {"hypothesis": "…", "separates": "…", "verdict": "supported"}]},
    "cut": [],
    "prior": [{"scout": 4, "finding": 1, "verdict": "holds", "why": "…"}]}}],
  "actions": [{"position": 1, "pass": 1, "title": "…", "why": "…",
-              "kind": "fix", "body": "…", "revises": null, "ticket": null,
-              "filed_ms": null}],
+              "kind": "fix", "body": "…", "layer": null, "covers": null,
+              "revises": null, "ticket": null, "filed_ms": null}],
  "events": [{"id": 1, "at": 1791568800000, "kind": "scout_queued",
              "summary": "bug scout queued by maintainer (holo scout)"}],
  "thread": [{"id": 1, "author": "maintainer", "mode": "ask", "text": "…",
@@ -1478,14 +1479,23 @@ table:
 
 `actions` are the scout's action items by `position`, which counts across
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
-`investigate`, `decide` or `revise`), `body` and `revises`, the
+`investigate`, `decide`, `revise` or `guardrail`), `body`, `layer`,
+`covers` and `revises`, the
 `ticket` key it was filed as and `filed_ms`, both null until it is filed. A
 `revise` item, offered only to a scout whose `subject` is a `defect`, is
 the defect ticket's whole body rewritten, and its `revises` is
 `{"ticket": KEY, "revision": N}`: the defect run's ticket and that
 ticket's revision when the item was stored. Every other item's `revises`
 is null. `holo scout show` prints a `revise` item as
-`A2 revise NAT-3 r2: TITLE`. `events` holds this scout's
+`A2 revise NAT-3 r2: TITLE`. A `guardrail` item, offered only to a
+guardrails scout, drafts a guard: its `layer` is the first layer of the
+correction ladder (`impossible`, `static`, `witness`, `guidance` or
+`review`) that would have caught every row it covers, and `covers` lists
+the findings digest's row ids it answers. Both are null on every other
+item, and a report's `actions` carry them the same way. Once a
+`guardrail` item is filed, the rows it covers leave the digest of later
+guardrails scouts of the project. `holo scout show` prints a `guardrail`
+item as `A1 guardrail static: TITLE (covers 3)`. `events` holds this scout's
 events in the order written, each its `id`, `at`, `kind` and `summary`,
 as `GET /runs/N` serves a run's.
 

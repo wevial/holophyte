@@ -23,7 +23,7 @@ const A2_TITLE = "Retry a locked write within the store's busy_timeout";
 const A2_DRAFT = body(A2_TITLE, "A locked write waits on the store's busy_timeout, not a loop of its own.");
 
 const item = (position: number, kind: ScoutAction["kind"], title: string, fields: Partial<ScoutAction> = {}): ScoutAction => ({
-  position, pass: 1, title, why: `Why ${title}.`, kind, body: body(title, "A draft."), revises: null, ticket: null, filed_ms: null, ...fields,
+  position, pass: 1, title, why: `Why ${title}.`, kind, body: body(title, "A draft."), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, ...fields,
 });
 const items: ScoutAction[] = [
   item(1, "fix", "Commit the listener's write before it calls publish"),

@@ -136,13 +136,13 @@ class ReportGoalTests(unittest.TestCase):
         choices = enumerated([FIELDS, REPRODUCTION])
         self.assertEqual(sorted(choices), sorted([
             "confirmed", "partial", "unconfirmed", "fix", "test", "investigate",
-            "decide", "revise", "test", "real_tool", "not_reproduced",
-            "supported", "ruled_out", "open"]))
+            "decide", "revise", "guardrail", "test", "real_tool",
+            "not_reproduced", "supported", "ruled_out", "open"]))
         goal = report_goal(SimpleNamespace(kind="bug", subject_kind="defect",
                                            subject_ref="12"),
                            SimpleNamespace(tasks=[]), None, False)
         self.assertEqual([choice for choice in choices
-                          if f'"{choice}"' not in goal], [])
+                          if f'"{choice}"' not in goal], ["guardrail"])
         self.assertNotIn('"shown"', goal)
         self.assertNotIn('"likely"', goal)
         for form in ('{"file": PATH, "line": N}',

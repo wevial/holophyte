@@ -2,6 +2,7 @@
 from typing import Literal, TypedDict
 
 from holophyte.serve.contract_routes import RouteProbe
+from store.enums import GapLayer
 
 Total = int | float | str | bool | None
 ScoutPhase = Literal["queued", "planning", "swarming", "synthesizing",
@@ -93,7 +94,10 @@ class ScoutFinding(TypedDict):
     evidence: list[FileEvidence | CommandEvidence | UrlEvidence | TextEvidence]
 
 
-ActionKind = Literal["fix", "test", "investigate", "decide", "revise"]
+ActionKind = Literal["fix", "test", "investigate", "decide", "revise",
+                     "guardrail"]
+Layer = Literal[tuple(layer.value for layer in GapLayer
+                     if layer != GapLayer.NONE)]
 
 
 class ScoutReportAction(TypedDict):
@@ -101,6 +105,8 @@ class ScoutReportAction(TypedDict):
     why: str
     kind: ActionKind
     body: str
+    layer: Layer | None
+    covers: list[str] | None
 
 
 class Hypothesis(TypedDict):
@@ -141,7 +147,8 @@ class Revises(TypedDict):
 
 ScoutAction = TypedDict("ScoutAction", {
     "position": int, "pass": int, "title": str, "why": str,
-    "kind": ActionKind, "body": str, "revises": Revises | None,
+    "kind": ActionKind, "body": str, "layer": Layer | None,
+    "covers": list[str] | None, "revises": Revises | None,
     "ticket": str | None, "filed_ms": int | None})
 
 
