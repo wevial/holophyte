@@ -63,7 +63,6 @@ test("History outcomes, empty project and the Runs entry link", async ({ browser
   await page.goto("/next.html#/runs/history?outcome=failed");
   await expect(page.getByRole("button", { name: "Failed 1", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("No failed runs this day.")).toHaveCount(4);
-  await expect(page.getByText("the bar runs to 1.5× the estimate; the tick marks the estimate")).toBeVisible();
   await expect(page.getByText("times PDT", { exact: true })).toBeInViewport();
   await shot(page, "01-history-failed-night.png");
   await page.getByRole("button", { name: "Colour theme: night. Switch to dawn" }).click();

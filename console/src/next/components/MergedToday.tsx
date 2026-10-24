@@ -1,4 +1,4 @@
-import { PrLink, Sha } from "../../components/ShippedTable";
+import { PrLink, Sha } from "./MergeFacts";
 import { formatClock } from "../../lib/format";
 import type { ShippedRow } from "../../lib/types";
 import { StateDot } from "./StateDot";

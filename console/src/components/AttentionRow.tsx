@@ -10,7 +10,7 @@ import { AttemptsCard } from "./AttemptsCard";
 import { KindPill } from "./KindPill";
 import { QuestionThread } from "./QuestionThread";
 import { RunDetail } from "./RunDetail";
-import { PrLink } from "./ShippedTable";
+import { PrLink } from "../next/components/MergeFacts";
 
 /** A question row's thread, when the daemon serves `/ledger`: its rows,
  *  whether it is the one open thread, and the toggle. */

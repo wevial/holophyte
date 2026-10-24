@@ -4,8 +4,10 @@ from time import time
 
 import store.read
 from holophyte.serve.serve_runs import (
+    commit_url,
     json_host,
     no_store,
+    origin_web_url,
     parse_limit,
     parse_since,
     parse_until,
@@ -35,13 +37,15 @@ def history(project, query, now=None):
         caps = served_round_caps(conn, project, [run.id for run in runs])
     finally:
         conn.close()
-    return 200, {"rows": [history_row(project, run, now, caps[run.id])
+    origin = (origin_web_url(project) if any(run.mergeSha for run in runs)
+              else None)
+    return 200, {"rows": [history_row(project, run, now, caps[run.id], origin)
                           for run in runs],
                  "since": since, "until": until, "limit": limit,
                  "truncated": total > limit, "total": total, "now": now}
 
 
-def history_row(project, run, now, max_rounds):
+def history_row(project, run, now, max_rounds, origin):
     live = run.endedAt is None
     return {"id": run.id, "ticket": run.linearIdentifier,
             "ticket_url": run.ticketUrl, "title": run.title,
@@ -57,4 +61,8 @@ def history_row(project, run, now, max_rounds):
             "heartbeat_age_ms": now - run.lastHeartbeat if live else None,
             "rounds": run.reviewRoundCount,
             "max_rounds": max_rounds,
+            "findings": run.findingCount, "merge_sha": run.mergeSha,
+            "commit_url": commit_url(project, run.mergeSha, origin),
+            "additions": run.prSeenAdditions,
+            "deletions": run.prSeenDeletions,
             "pr_url": run.prUrl, "host": json_host(project, run.host)}
