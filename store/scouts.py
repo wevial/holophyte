@@ -29,7 +29,7 @@ COLUMNS = ("id", "projectId", "ask", "kind", "links", "leadRoute",
 class ScoutRefused(Exception):
     def __init__(self, scout_id, phase, detail):
         super().__init__(f"scout {scout_id} is {phase}: {detail}")
-        self.scout_id, self.phase = scout_id, phase
+        self.phase = phase
 
 
 class Scout(NamedTuple):
