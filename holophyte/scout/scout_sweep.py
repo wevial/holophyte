@@ -180,6 +180,8 @@ def _config_refusal(target):
 
 def _start_answer(name, target, message, out):
     refused = _config_refusal(target)
+    if refused is None and _private_tmp_spawn():
+        refused = SANDBOXLESS
     if refused is not None:
         print(f"[holo2] {name}: scout {message.scout_id}'s ask {message.id}"
               f" waits: {refused}", file=out)
@@ -187,11 +189,6 @@ def _start_answer(name, target, message, out):
     conn = store.open(str(target.store_path))
     try:
         take_message(conn, message.id, host=socket.gethostname())
-        if _private_tmp_spawn():
-            fail_answer(conn, message.scout_id, message.id, SANDBOXLESS)
-            print(f"[holo2] {name}: scout {message.scout_id} answer failed:"
-                  f" {SANDBOXLESS}", file=out)
-            return False
         try:
             started = start_scout(name, target, message.scout_id)
         except OSError as bad:

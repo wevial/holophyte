@@ -9,6 +9,7 @@ import contextlib
 import io
 import json
 import os
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import holophyte.scout.scout_sweep as scout_sweep
@@ -110,6 +111,27 @@ class DaemonAskTests(ActionCase):
         self.assertEqual((argv[-2], phase), (str(scout_id), "answering"))
         (message,) = self.thread(path, scout_id)
         self.assertIsNotNone(message.consumed_by)
+
+    def test_an_answer_without_a_sandbox_waits_untaken_and_unspawned(self):
+        path = self.project("alpha")
+        scout_id = done_scout(self.conn(path))
+        server = self.serve(path)
+        no_runner = SimpleNamespace(which=lambda _name: None)
+        with patch.dict(os.environ, {"INVOCATION_ID": "sweep-run"}), \
+                patch.object(scout_sweep, "shutil", no_runner):
+            code, reply = self.ask(server, {"scout": scout_id})
+            self.sweep_pass()
+        self.assertEqual(code, 200, reply)
+        self.assertEqual((reply["ok"], reply["queued"]), (True, True))
+        self.assertIn("systemd-run is missing", reply["detail"])
+        (message,) = self.thread(path, scout_id)
+        self.assertIsNone(message.consumed_by)
+        self.assertEqual(scout(self.conn(path), scout_id).phase, "done")
+        self.assertEqual(self.spawned, [])
+
+        self.sweep_pass()
+        (argv, phase, _), = self.spawned
+        self.assertEqual((argv[-2], phase), (str(scout_id), "answering"))
 
     def test_a_refused_ask_writes_nothing_and_starts_nothing(self):
         path = self.project("alpha")
