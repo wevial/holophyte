@@ -28,7 +28,7 @@ HELPER_OPENING = "Scout helper turn"
 EXCERPT_CHARS = 4000
 QUEUED, DONE = ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.DONE.value
 FAILED, STOPPED = ScoutTaskPhase.FAILED.value, ScoutTaskPhase.STOPPED.value
-TOKENS_USED = re.compile(r"tokens used\D{0,4}([\d,]+)", re.IGNORECASE)
+TOKENS_USED = re.compile(r"tokens used\D{0,4}(\d[\d,]*)", re.IGNORECASE)
 
 
 class Planned(NamedTuple):
@@ -206,8 +206,8 @@ class Swarm:
                 conn.close()
 
     def record(self, conn, task, argv, turn, seconds):
-        _, usage = turn_answer(self.seat, turn.output)
-        excerpt = redact_prose(turn.output, self.secrets)[-EXCERPT_CHARS:]
+        answer, usage = turn_answer(self.seat, turn.output)
+        excerpt = redact_prose(answer, self.secrets)[-EXCERPT_CHARS:]
         end_scout_task(conn, task.id, turn.phase, tokens=usage_tokens(usage),
                        cost_usd=(usage or {}).get("cost_usd"), excerpt=excerpt)
         self.answers[task.id] = Answered(turn.phase, excerpt)

@@ -231,6 +231,28 @@ class ScoutSwarmTests(ScoutFixture):
             " AND kind = 'agent_turn'", (scout_id,))]
         self.assertIn("scout-helper", roles)
 
+    def test_a_helper_mentioning_tokens_used_with_no_count_ends_done(self):
+        path, conn, scout_id = self.research_scout()
+        self.stubs.answer(plan=plan(QUESTIONS[0]), report=fenced(REPORT),
+                          helper="I counted the tokens used, in total.")
+        self.run_scout(path, scout_id)
+        ((_, _, phase, _, tokens, _),) = self.tasks(conn, scout_id)
+        self.assertEqual((phase, tokens), ("done", None))
+
+    def test_a_claude_helper_excerpt_holds_its_result_not_its_json(self):
+        path, conn, scout_id = self.research_scout(helper_route="haiku")
+        answer = "The retry loop is at notes.txt:1."
+        self.stubs.answer(plan=plan(QUESTIONS[0]), report=fenced(REPORT),
+                          claude_helper=json.dumps(
+                              {"type": "result", "result": answer,
+                               "usage": {"input_tokens": 7,
+                                         "output_tokens": 5}}))
+        self.run_scout(path, scout_id)
+        ((excerpt, tokens),) = conn.execute(
+            "SELECT excerpt, tokens FROM scoutTasks WHERE scoutId = ?",
+            (scout_id,)).fetchall()
+        self.assertEqual((excerpt.strip(), tokens), (answer, 12))
+
     def test_a_helper_route_that_fails_its_probe_runs_no_helper(self):
         path, conn, scout_id = self.research_scout()
         self.stubs.answer(plan=plan(*QUESTIONS[:2]), report=fenced(REPORT),
