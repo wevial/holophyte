@@ -215,7 +215,8 @@ def repair_goal(row, problems, fresh, offered=None):
         + report_ending(row, offered))
 
 
-def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping):
+def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping,
+              price):
     label = outbound(argv_label(argv), known_secrets(project.config()))
     payload = dict(role=SCOUT_LEAD, label=label, route="primary",
                    exit_status=None, timed_out=False)
@@ -227,7 +228,7 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping):
         except subprocess.TimeoutExpired as expired:
             output = expired.output or ""
             payload["timed_out"] = True
-        answer, usage = turn_answer(seat, output)
+        answer, usage = turn_answer(seat, output, price)
         if usage is not None:
             payload["usage"] = usage
         return LeadTurn(output, answer, payload["timed_out"])
@@ -239,9 +240,10 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping):
 
 
 class Lead:
-    def __init__(self, conn, project, row, seat, worktree, stopping):
+    def __init__(self, conn, project, row, seat, worktree, stopping, price):
         self.conn, self.project, self.row = conn, project, row
         self.seat, self.worktree, self.stopping = seat, worktree, stopping
+        self.price = price
         self.secrets = known_secrets(project.config())
         self.session = None
 
@@ -253,7 +255,7 @@ class Lead:
     def turn(self, argv, cap):
         self.stopping.check()
         return lead_turn(self.conn, self.project, self.row.id, self.seat, argv,
-                         self.worktree, cap, self.stopping)
+                         self.worktree, cap, self.stopping, self.price)
 
     def outgoing(self, goal, context):
         head, slot, tail = goal.partition(CONTEXT_SLOT)
@@ -392,7 +394,8 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     seat, down = lead_seat(project, row, config, stopping)
     if down is not None:
         return "failed", down
-    lead = Lead(conn, project, row, seat, worktree, stopping)
+    lead = Lead(conn, project, row, seat, worktree, stopping,
+                config.lead_prices.get(row.lead_route or config.lead))
     deadline = monotonic() + budget_s
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
