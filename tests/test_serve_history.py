@@ -136,6 +136,42 @@ class HistoryTests(ServeTestCase):
                     self.assertEqual(rows[self.runs[6]]["working_ms"],
                                      body["now"] - self.now + 3 * MIN)
 
+    def test_findings_merge_sha_and_pull_request_size_in_both_forms(self):
+        self.seed_history(window=True)
+        sha = "a" * 40
+        finding = dict(path="app.py", line=1, severity="p2", message="fix it")
+        conn = store.open(str(self.db))
+        try:
+            store.record_review_round(conn, self.runs[7], 1, "changes_requested",
+                                      "reviewer", findings=[finding] * 2)
+            store.record_review_round(conn, self.runs[7], 2, "pass",
+                                      "reviewer", findings=[finding])
+            store.record_review_round(conn, self.runs[4], 1, "changes_requested",
+                                      "reviewer", findings=[finding])
+            store.record_pr_seen(conn, self.runs[7], (self.now, 0, 0, None,
+                                 "success", "APPROVED", "ticket 7", "MERGED",
+                                 120, 14))
+            with store.transaction(conn):
+                conn.execute("UPDATE runs SET mergeSha = ? WHERE id = ?",
+                             (sha, self.runs[7]))
+        finally:
+            conn.close()
+        for suffix in ("", f"&until={self.until}"):
+            with self.subTest(suffix=suffix):
+                code, _, body = self.request(
+                    "GET", f"/history?since={self.since}{suffix}")
+                self.assertEqual(code, 200)
+                rows = {row["id"]: row for row in body["rows"]}
+                merged, failed = rows[self.runs[7]], rows[self.runs[4]]
+                self.assertEqual(
+                    (merged["findings"], merged["merge_sha"],
+                     merged["additions"], merged["deletions"]),
+                    (3, sha, 120, 14))
+                self.assertEqual(
+                    (failed["findings"], failed["merge_sha"],
+                     failed["commit_url"], failed["additions"],
+                     failed["deletions"]), (1, None, None, None, None))
+
     def test_until_rejects_non_integer_and_non_increasing_bounds(self):
         self.seed_history()
         for until in ("soon", str(self.since), str(self.since - 1)):

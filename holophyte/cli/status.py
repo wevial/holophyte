@@ -5,6 +5,7 @@ from time import time
 
 import store.read
 from holophyte.babysit.babysit_steps import running_step
+from holophyte.cli.stale_paths import stale_paths
 from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.host.supervisor_lock import (
     pid_alive,
@@ -52,6 +53,7 @@ def snapshot(target, conn, now=None):
                       "reason": run.outcomeReason, "ended_ms": run.endedAt}
                      for run in store.read.stranded_runs(conn)],
         "stuck": stuck_wait_items(conn),
+        "stale_config_paths": stale_paths(target),
         "ready": _ready(target, conn),
         "supervisor_lock": _supervisor_holder(supervisor_lock_path(target)),
         "merge_lock": _merge_holder(target, conn),
@@ -117,6 +119,9 @@ def render(snap):
                   else "")
         lines.append(f"stuck {stuck['ticket']}: {stuck_sentence(stuck)}"
                      f"{behind}")
+    for stale in snap.get("stale_config_paths", []):
+        lines.append(f"stale config {stale['key']} \"{stale['entry']}\":"
+                     f" matches no tracked file on {stale['ref']} {stale['sha']}")
     lines.append(f"ready {snap['ready']}")
     lines.append(_lock_line("supervisor", snap["supervisor_lock"], "pid"))
     lines.append(_lock_line("merge", snap["merge_lock"], "run"))

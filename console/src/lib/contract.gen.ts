@@ -777,6 +777,11 @@ export const historyRowSchema = z.looseObject({
   heartbeat_age_ms: z.int().nullable(),
   rounds: z.int(),
   max_rounds: z.int(),
+  findings: z.int().optional(),
+  merge_sha: z.string().nullable().optional(),
+  commit_url: z.string().nullable().optional(),
+  additions: z.int().nullable().optional(),
+  deletions: z.int().nullable().optional(),
   pr_url: z.string().nullable(),
   host: z.string().nullable(),
 });

@@ -114,7 +114,7 @@ def project_rows(project, now, errors):
              + story_rows(who, status) + stranded_rows(who, status, now)
              + stuck_rows(who, status))
     running = running_rows(who, status)
-    trouble = lock_rows(who, status, key)
+    trouble = lock_rows(who, status, key) + config_rows(who, status)
     if key in errors:
         trouble.append(Row("✗", who, "", hinted(f"sweep: {errors[key]}",
                                                 SWEEP_LOG_HINT)))
@@ -244,6 +244,12 @@ def lock_rows(who, status, project):
             f"merge lock names run {merge['run']}, which is not live",
             f"holo sweep --act -p {shlex.quote(project)}")))
     return rows
+
+
+def config_rows(who, status):
+    return [Row("✗", who, "config", f"{stale['key']} \"{stale['entry']}\""
+                " matches nothing on main")
+            for stale in status.get("stale_config_paths", [])]
 
 
 def host_rows(snap, sweep, now):

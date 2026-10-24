@@ -137,6 +137,23 @@ class CommitUrlTests(ServeTestCase):
         self.assertEqual({row["merge_sha"] for row in body["rows"]},
                          {self.pushed, self.local, None})
 
+    def test_history_links_a_pushed_merge_as_shipped_does(self):
+        self.build_repository("https://github.com/example/repo.git")
+        self.seed_merged([self.pushed, self.local])
+        self.start()
+
+        _, _, shipped = self.request("GET", "/shipped")
+        code, _, history = self.request(
+            "GET", f"/history?since={self.now - 60 * MIN}")
+
+        self.assertEqual(code, 200)
+        links = {row["merge_sha"]: row["commit_url"] for row in history["rows"]}
+        shipped_links = {row["merge_sha"]: row["commit_url"]
+                         for row in shipped["rows"]}
+        self.assertIsNotNone(links[self.pushed])
+        self.assertEqual(links[self.pushed], shipped_links[self.pushed])
+        self.assertIsNone(links[self.local])
+
     def test_ssh_remote_normalizes(self):
         self.build_repository("git@github.com:example/repo.git")
         self.seed_merged([self.pushed])
