@@ -1,5 +1,5 @@
-"""A bug scout's `run` helpers: worktree setup before the turn, the run goal,
-the project's isolation, the refs guard around every scout turn, the read-only
+"""A bug scout's `run` helpers: a clone of their own, setup before the turn,
+the run goal, the project's isolation, the refs left untouched, the read-only
 tool profile of every other turn and the stored reproduction level, run by
 `factory.py --scout ID PROJECT` against stub CLIs over a real git repository.
 
@@ -9,6 +9,8 @@ import json
 import os
 import stat
 import sys
+import threading
+import time
 from itertools import takewhile
 from pathlib import Path
 from unittest.mock import patch
@@ -142,32 +144,32 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertIn("refs/heads/helper-branch", summaries)
         self.assertIn("refs/heads/main", summaries)
 
-    def test_the_refs_guard_restores_a_symbolic_ref_and_a_conflicting_parent(self):
-        cases = {
-            "main made symbolic": [
-                "git branch helper",
-                "git symbolic-ref refs/heads/main refs/heads/helper"],
-            "parent replaced by a child": [
-                "git branch -D saved", "git branch saved/helper"],
-            "parent replaced by a dangling symbolic child": [
-                "git branch -D saved",
-                "git symbolic-ref refs/heads/saved/helper refs/heads/missing"],
-        }
-        for number, (case, commands) in enumerate(cases.items()):
-            with self.subTest(case=case):
-                (self.stubs.directory / "helpers.jsonl").unlink(missing_ok=True)
-                path, conn, scout_id = self.scout("bug", name=f"refs{number}")
-                git(path, "branch", "saved")
-                shown = ["for-each-ref",
-                         "--format=%(refname) %(objectname) %(symref)",
-                         "refs/heads", "refs/tags"]
-                listed = git(path, *shown)
-                self.stubs.answer(plan=plan((RUN_Q, "run")),
-                                  report=fenced(REPORT), helper_sh=commands)
-                self.run_scout(path, scout_id)
-                self.assertEqual([status for status, _
-                                  in self.helper(RUN_Q)["sh"]], [0, 0])
-                self.assertEqual(git(path, *shown), listed)
+    def test_a_run_helper_turn_keeps_refs_another_writer_moves_meanwhile(self):
+        path, conn, scout_id = self.scout("bug")
+        shared = self.root / "turning"
+        shared.mkdir()
+        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
+                          helper_shared=str(shared), helper_sleep=4)
+        landed = {}
+
+        def writer():
+            deadline = time.monotonic() + 30
+            while not any(shared.iterdir()) and time.monotonic() < deadline:
+                time.sleep(0.05)
+            git(path, "-c", "user.name=w", "-c", "user.email=w@test", "commit",
+                "-q", "--allow-empty", "-m", "landed")
+            git(path, "branch", "task/holo-1-landed")
+            landed["main"] = git(path, "rev-parse", "main")
+            landed["during"] = any(shared.iterdir())
+
+        thread = threading.Thread(target=writer)
+        thread.start()
+        self.run_scout(path, scout_id)
+        thread.join()
+        self.assertTrue(landed["during"])
+        self.assertEqual(git(path, "rev-parse", "main"), landed["main"])
+        self.assertEqual(git(path, "rev-parse", "task/holo-1-landed"),
+                         landed["main"])
 
     def test_a_research_scout_runs_its_run_task_as_a_read_task(self):
         path, conn, scout_id = self.scout("research", SETUP_RAN)

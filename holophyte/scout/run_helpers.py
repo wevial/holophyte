@@ -1,5 +1,5 @@
+import shutil
 import subprocess
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -30,6 +30,7 @@ CLAIMED = ("test", "real_tool")
 NO_RUN_FINISHED = "no run helper finished"
 REF_KINDS = ("refs/heads", "refs/tags")
 LAUNCH_FAILURES = (OSError, RuntimeError, RunFailure)
+PRE_PUSH = "#!/bin/sh\necho 'a scout run helper does not push' >&2\nexit 1\n"
 
 
 def runs(row, task):
@@ -97,37 +98,41 @@ def reproduced(row, swarm, report):
         claimed_level=reproduction["level"], why=NO_RUN_FINISHED))
 
 
-def ref_values(repo):
+def run_clone(project, scout_id, task_id, base_sha):
+    from holophyte.scout.scout_process import scout_dir
+
+    path = scout_dir(project, scout_id) / f"run-{task_id}"
+    env = scratch_git_environment()
+    shutil.rmtree(path, ignore_errors=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sh(["git", "-c", "init.templateDir=", "clone", "--shared", "--no-checkout",
+        "--quiet", str(project.path), str(path)], cwd=project.path, env=env)
+    sh(["git", "remote", "remove", "origin"], cwd=path, env=env)
+    sh(["git", "checkout", "--detach", "--quiet", base_sha], cwd=path, env=env)
+    common = Path(sh(["git", "rev-parse", "--path-format=absolute",
+                      "--git-common-dir"], cwd=project.path, env=env))
+    if (common / "info" / "exclude").is_file():
+        (path / ".git" / "info").mkdir(exist_ok=True)
+        shutil.copyfile(common / "info" / "exclude",
+                        path / ".git" / "info" / "exclude")
+    hook = path / ".git" / "hooks" / "pre-push"
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text(PRE_PUSH)
+    hook.chmod(0o755)
+    for key in ("user.name", "user.email"):
+        value = subprocess.run(["git", "config", "--get", key],
+                               cwd=project.path, env=env, capture_output=True,
+                               text=True).stdout.strip()
+        if value:
+            sh(["git", "config", key, value], cwd=path, env=env)
+    return path
+
+
+def clone_refs(clone):
     listed = sh(["git", "for-each-ref",
                  "--format=%(refname) %(objectname) %(symref)", *REF_KINDS],
-                cwd=repo, env=scratch_git_environment())
-    values = {}
-    for line in listed.splitlines():
-        ref, oid, target = (line + " ").split(" ", 2)
-        values[ref] = (oid, target.strip())
-    return dict(dangling_symrefs(repo, values), **values)
-
-
-def dangling_symrefs(repo, listed):
-    env = scratch_git_environment()
-    common = Path(sh(["git", "rev-parse", "--path-format=absolute",
-                      "--git-common-dir"], cwd=repo, env=env))
-    for kind in REF_KINDS:
-        for path in (common / kind).rglob("*"):
-            ref = path.relative_to(common).as_posix()
-            if ref in listed or ref.endswith(".lock") or not path.is_file():
-                continue
-            try:
-                text = path.read_text(errors="replace").strip()
-            except OSError:
-                continue
-            if text.startswith("ref: "):
-                yield ref, ("", text[5:].strip())
-
-
-def update_ref(repo, *args):
-    subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], cwd=repo,
-                   env=scratch_git_environment(), capture_output=True)
+                cwd=clone, env=scratch_git_environment())
+    return dict(line.split(" ", 1) for line in listed.splitlines())
 
 
 def change(old, new):
@@ -136,51 +141,12 @@ def change(old, new):
     return "deleted" if new is None else "moved"
 
 
-def clear_ref(repo, ref, new):
-    oid, target = new
-    update_ref(repo, "update-ref", "--no-deref", "-d", ref,
-               *([] if target else [oid]))
-
-
-def put_ref(repo, ref, old, new):
-    oid, target = old
-    if target:
-        update_ref(repo, "symbolic-ref", ref, target)
-        return
-    expected = new[0] if new is not None and not new[1] else ""
-    update_ref(repo, "update-ref", "--no-deref", ref, oid, expected)
-
-
-def restore_refs(conn, scout_id, repo, before, turn):
-    seen = ref_values(repo)
-    after = dict(seen)
-    changed = sorted(ref for ref in before.keys() | after.keys()
-                     if before.get(ref) != after.get(ref))
-    for ref in changed:
-        old, new = before.get(ref), after.get(ref)
-        if new is not None and (old is None or bool(old[1]) != bool(new[1])):
-            clear_ref(repo, ref, new)
-            after.pop(ref)
-    for ref in changed:
-        if ref in before:
-            put_ref(repo, ref, before[ref], after.get(ref))
-    final = ref_values(repo)
-    reset, failed = [], []
-    for ref in changed:
-        (reset if final.get(ref) == before.get(ref) else failed).append(
-            f"{ref} ({change(before.get(ref), seen.get(ref))})")
-    if reset or failed:
-        summary = f"a {turn} turn left refs behind; put back: " + (
-            ", ".join(reset) or "none")
-        if failed:
-            summary += "; could not put back: " + ", ".join(failed)
-        record_scout_event(conn, scout_id, "scout_refs", summary)
-
-
-@contextmanager
-def refs_guard(conn, scout_id, repo, turn, before=None):
-    before = ref_values(repo) if before is None else before
-    try:
-        yield
-    finally:
-        restore_refs(conn, scout_id, repo, before, turn)
+def record_refs(conn, scout_id, before, after):
+    changed = [f"{ref} ({change(before.get(ref), after.get(ref))})"
+               for ref in sorted(before.keys() | after.keys())
+               if before.get(ref) != after.get(ref)]
+    if changed:
+        record_scout_event(
+            conn, scout_id, "scout_refs",
+            "a run helper turn changed refs in its own clone: "
+            + ", ".join(changed))

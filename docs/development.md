@@ -167,9 +167,9 @@ Each module, one line:
   field, and each `file`/`line` evidence item resolved against the base
   commit.
 - `holophyte/scout/run_helpers.py` — a bug scout's `run` helpers: the
-  project's `[worktree] setup` in the helper's worktree, the run goal, the
-  turn launched under `implementer_isolation`, the refs guard around every
-  scout turn and the stored reproduction level.
+  helper's own shared clone of the project, the project's `[worktree] setup`
+  in it, the run goal, the turn launched under `implementer_isolation`, the
+  refs the turn changed in its clone and the stored reproduction level.
 - `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's
   lead and helper routes, each a harness `Seat`, their defaults and budget.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each

@@ -17,7 +17,7 @@ from holophyte.scout.report import (
     report_problems,
     resolve_evidence,
 )
-from holophyte.scout.run_helpers import refs_guard, reproduced
+from holophyte.scout.run_helpers import reproduced
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
 from holophyte.scout.swarm import Swarm, turn_answer
@@ -181,8 +181,7 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
     started, output = monotonic(), ""
     try:
         try:
-            with refs_guard(conn, scout_id, project.path, SCOUT_LEAD):
-                payload["exit_status"], output = run_capped(argv, worktree, cap)
+            payload["exit_status"], output = run_capped(argv, worktree, cap)
         except subprocess.TimeoutExpired as expired:
             output = expired.output or ""
             payload["timed_out"] = True

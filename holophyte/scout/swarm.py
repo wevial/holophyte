@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -19,10 +20,11 @@ from holophyte.scout.run_helpers import (
     HELPER_OPENING,
     LAUNCH_FAILURES,
     READ_ONLY,
+    clone_refs,
     isolated_probe,
     launch_turn,
-    ref_values,
-    refs_guard,
+    record_refs,
+    run_clone,
     run_goal,
     run_seat,
     runs,
@@ -113,7 +115,7 @@ class Swarm:
                               conn.execute("PRAGMA database_list")
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
-        self.scratch, self.refs = None, None
+        self.scratch = None
         self.probing, self.isolated = threading.Lock(), {}
         self.stack = ExitStack()
 
@@ -165,7 +167,6 @@ class Swarm:
         if self.scratch is None:
             self.scratch = self.stack.enter_context(
                 review_scratch(self.project.path))
-        self.refs = ref_values(self.project.path)
         starts = [threading.Event() for _ in launch]
         with ThreadPoolExecutor(max_workers=self.size) as pool:
             list(pool.map(self.helper, launch, [None] + starts[:-1], starts))
@@ -201,20 +202,17 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
-            with refs_guard(conn, self.row.id, self.project.path, SCOUT_HELPER,
-                            self.refs):
-                if runs(self.row, task):
-                    self.run_helper(conn, task, mine)
-                    return
-                prepared, cap = self.prepared(task), self.remaining_s()
-                if prepared is None or cap <= 0:
-                    return
-                argv, checkout = prepared
-                turn = capped_turn(lambda: run_capped(argv, checkout, cap,
-                                                      on_start=start))
-                if started:
-                    self.record(conn, task, argv, turn,
-                                monotonic() - started[0])
+            if runs(self.row, task):
+                self.run_helper(conn, task, mine)
+                return
+            prepared, cap = self.prepared(task), self.remaining_s()
+            if prepared is None or cap <= 0:
+                return
+            argv, checkout = prepared
+            turn = capped_turn(lambda: run_capped(argv, checkout, cap,
+                                                  on_start=start))
+            if started:
+                self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
             mine.set()
             if conn is not None:
@@ -223,7 +221,14 @@ class Swarm:
     def run_helper(self, conn, task, mine):
         if self.remaining_s() <= 0:
             return
-        checkout = self.checkout(task)
+        checkout = run_clone(self.project, self.row.id, task.id,
+                             self.row.base_sha)
+        try:
+            self.run_in(conn, task, mine, checkout)
+        finally:
+            shutil.rmtree(checkout, ignore_errors=True)
+
+    def run_in(self, conn, task, mine, checkout):
         start_scout_task(conn, task.id)
         started = monotonic()
         mine.set()
@@ -232,7 +237,6 @@ class Swarm:
             self.end(conn, task, FAILED,
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
             return
-        self.refuse_push(checkout)
         seat = run_seat(self.project, self.seat)
         down = self.isolated_down(conn, seat, checkout)
         if down is not None:
@@ -240,9 +244,14 @@ class Swarm:
             return
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()
-        turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
-                                                cap), LAUNCH_FAILURES)
-                if cap > 0 else HelperTurn(STOPPED, None, ""))
+        before = clone_refs(checkout)
+        try:
+            turn = (capped_turn(lambda: launch_turn(self.project, argv,
+                                                    checkout, cap),
+                                LAUNCH_FAILURES)
+                    if cap > 0 else HelperTurn(STOPPED, None, ""))
+        finally:
+            record_refs(conn, self.row.id, before, clone_refs(checkout))
         self.record(conn, task, argv, turn, monotonic() - started)
 
     def isolated_down(self, conn, seat, checkout):
