@@ -160,6 +160,9 @@ Each module, one line:
   ask, its report labelled `F1`, `F2` and `A1` on, the lead's session
   resumed in the lead worktree, and the answer posted to the thread, or the
   failure recorded, as the scout returns to `done`.
+- `holophyte/scout/context.py` — a scout's context pack: its subject's
+  run, ledger, verify tail, findings, files and ticket, cut to a cap, for
+  the lead's plan goal.
 - `holophyte/scout/filing.py` — `POST /actions/scout-file`, `holo scout
   file` and the `holo mcp` `scout_file` tool: a done scout's action item
   judged by the ticket checker for Backlog, filed to Backlog through the
@@ -1144,8 +1147,12 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
 `console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
 `console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
+A failed run's page, open findings, follow-ups and ticket defect rows on Findings, and a ticket's actions each carry a
+Scout button (`console/src/next/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
+and `ask`, which the Scouts page reads into a filled New scout form whose launch sends `about` as `subject`.
 The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
-`console/src/next/scout.ts`, which also groups it into Plan, waves, Synthesis and Report;
+`console/src/next/scout.ts`, which also groups it into Plan, waves, Synthesis and Report, then an Answer
+or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
 `console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
 badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
 `console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm.

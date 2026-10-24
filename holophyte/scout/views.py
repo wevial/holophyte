@@ -120,6 +120,11 @@ def served_report(report):
             "cut": report.get("cut")}
 
 
+def served_action(item):
+    return {**{key: item[key] for key in ACTION_KEYS},
+            "revises": item.get("revises")}
+
+
 def served_message(message):
     return {"id": message.id, "author": message.author, "mode": message.mode,
             "text": message.text, "blocks": message.blocks,
@@ -148,7 +153,7 @@ def scout_parts(conn, scout_id):
                      "report": served_report(json.loads(report))}
                     for number, at, report in reports],
         "actions": [{"position": position, "pass": number,
-                     **{key: json.loads(item)[key] for key in ACTION_KEYS},
+                     **served_action(json.loads(item)),
                      "ticket": ticket, "filed_ms": filed}
                     for position, number, item, ticket, filed in actions],
         "events": [{"id": event_id, "at": at, "kind": kind,

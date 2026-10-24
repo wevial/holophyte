@@ -6,10 +6,12 @@ import { ConfirmDialog } from "./ConfirmDialog";
 
 const STOP = "Stop";
 
-/** Stop for a queued or live scout: a confirm that asks for a reason, then
+/** Stop for a queued or live scout, or its live follow-up `pass`: a confirm that asks for a reason, then
  *  `POST /actions/scout-stop`; a refusal reads inside the confirm. A sent stop
  *  puts focus back on Stop and calls `onSent`. */
-export function ScoutStop({ base, project, scout, actions, onSent }: { base: string; project: string; scout: number; actions: boolean; onSent: () => void }) {
+export function ScoutStop({ base, project, scout, pass, actions, onSent }: {
+  base: string; project: string; scout: number; pass: number | null; actions: boolean; onSent: () => void;
+}) {
   const action = useAction();
   const [stopping, setStopping] = useState(false);
   const [reason, setReason] = useState("");
@@ -61,7 +63,9 @@ export function ScoutStop({ base, project, scout, actions, onSent }: { base: str
             )
           }
         >
-          <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">Its lead and helpers stop now, and it writes no report.</p>
+          <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">
+            {pass == null ? "Its lead and helpers stop now, and it writes no report." : `Pass ${pass} stops now. The report so far stays.`}
+          </p>
           <label htmlFor={reasonId} className="mt-4 block font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">
             Reason · saved with the scout
           </label>

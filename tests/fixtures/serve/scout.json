@@ -159,6 +159,7 @@
       "why": "the loop spins",
       "kind": "fix",
       "body": "Sleep between attempts in app/retry.py.",
+      "revises": null,
       "ticket": null,
       "filed_ms": null
     },
@@ -169,6 +170,7 @@
       "why": "the cap is untested",
       "kind": "test",
       "body": "Add a test that stops at the cap.",
+      "revises": null,
       "ticket": null,
       "filed_ms": null
     }

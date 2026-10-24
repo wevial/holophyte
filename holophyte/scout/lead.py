@@ -11,10 +11,13 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
+from holophyte.scout.context import context_pack
 from holophyte.scout.report import (
-    FIELDS,
     REPRODUCTION,
+    REVISE,
     fields_shape,
+    offered_fields,
+    offers_revise,
     report_problems,
     resolve_evidence,
     ticket_skeleton,
@@ -42,12 +45,12 @@ REPAIR_OPENING = "Scout report repair turn"
 SYNTHESIS_OPENING = "Scout synthesis turn"
 NO_REPORT = "the lead's report turn returned no JSON object"
 MALFORMED = "the lead's report is malformed"
+CONTEXT_SLOT = "\x00context\x00"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
 PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
-REPORT_SHAPE = "{" + fields_shape(FIELDS).lstrip()
 REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
 
 
@@ -104,12 +107,12 @@ def asked(row):
             f"Base commit: {row.base_sha}")
 
 
-def plan_goal(row, limit):
+def plan_goal(row, limit, context):
     return (
         f"{PLAN_OPENING}\n\n"
         "You lead a scout: a read-only investigation of this checkout. Do not "
         "edit files, commit or push.\n\n"
-        f"{asked(row)}\n\n"
+        f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}"
         f"Plan the work as at most {limit} sub-tasks. Each is one question a "
         "helper answers by reading the code (mode \"read\") or by running "
         "commands in its own checkout (mode \"run\"), with the "
@@ -141,9 +144,26 @@ def synthesis_goal(row, swarm, fresh):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
+def subject_of(row):
+    return (None if row.subject_kind is None
+            else (row.subject_kind, row.subject_ref))
+
+
 def report_shape(row):
-    return REPORT_SHAPE + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value
-                           else "") + "}"
+    return ("{" + fields_shape(offered_fields(subject_of(row))).lstrip()
+            + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value else "")
+            + "}")
+
+
+def revise_rule(row):
+    if not offers_revise(subject_of(row)):
+        return ""
+    return (
+        f"This scout is about a ticket defect, so one action may be of kind "
+        f"\"{REVISE}\": at most one {REVISE} item, whose body is the defect "
+        "ticket's whole body in the skeleton's sections, rewritten so the "
+        "stop cannot recur and opening with its \"# \" title line, and whose "
+        "why names the wording that caused the stop.\n\n")
 
 
 def report_ending(row):
@@ -152,20 +172,21 @@ def report_ending(row):
         "replacing each <...> with the ticket's text: estimate is whole "
         f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
         "ticket keys it waits on.\n\n"
-        f"{ticket_skeleton()}\n\n"
+        f"{ticket_skeleton()}\n\n" + revise_rule(row) +
         "Do not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT, PATH and URL standing for strings "
         "and N for a line number from 1:\n\n"
         f"```json\n{report_shape(row)}\n```\n")
 
 
-def report_goal(row, swarm, problem, fresh, scope=""):
+def report_goal(row, swarm, problem, fresh, scope="", context=""):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
         answers = f"- none: no plan was stored, because {problem}"
     return (
         f"{REPORT_OPENING}\n\n"
-        + (f"{asked(row)}\n\n" if fresh else "") + scope
+        + (f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}" if fresh
+           else "") + scope
         + "The plan's sub-tasks, each with its phase and the end of its "
         "helper's output (a queued one never ran, a stopped one was cut at "
         f"the time budget):\n\n{answers}\n\n"
@@ -225,16 +246,21 @@ class Lead:
         return lead_turn(self.conn, self.project, self.row.id, self.seat, argv,
                          self.worktree, cap, self.stopping)
 
-    def start(self, goal, cap):
-        argv = self.seat.turn(outbound(goal, self.secrets))
+    def outgoing(self, goal, context):
+        head, slot, tail = goal.partition(CONTEXT_SLOT)
+        return (outbound(head, self.secrets) + (context if slot else "")
+                + outbound(tail, self.secrets))
+
+    def start(self, goal, cap, context=""):
+        argv = self.seat.turn(self.outgoing(goal, context))
         self.remember(self.seat.session(argv))
         turn = self.turn(argv, cap)
         if self.session is None:
             self.remember(self.seat.reported_session(turn.output))
         return turn
 
-    def resume(self, goal, cap):
-        goal = outbound(goal, self.secrets)
+    def resume(self, goal, cap, context=""):
+        goal = self.outgoing(goal, context)
         return self.turn(self.seat.resume(self.session) + [goal] if self.session
                          else self.seat.turn(goal), cap)
 
@@ -270,7 +296,8 @@ def run_waves(conn, lead, swarm, tasks, waves):
 
 
 def checked_report(lead, report):
-    problems = report_problems(report, lead.row.kind)
+    subject = subject_of(lead.row)
+    problems = report_problems(report, lead.row.kind, subject)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems,
@@ -278,7 +305,27 @@ def checked_report(lead, report):
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
-    return report, report_problems(report, lead.row.kind)
+    return report, report_problems(report, lead.row.kind, subject)
+
+
+def revised_ticket(conn, row):
+    if not offers_revise(subject_of(row)):
+        return None
+    found = conn.execute(
+        "SELECT t.linearIdentifier, t.revision FROM runs r"
+        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
+        (row.subject_ref,)).fetchone()
+    return None if found is None else {"ticket": found[0],
+                                       "revision": found[1]}
+
+
+def stamped(conn, row, report):
+    revises = revised_ticket(conn, row)
+    actions = [{**{key: value for key, value in action.items()
+                   if key != "revises"},
+                **({"revises": revises} if action["kind"] == REVISE else {})}
+               for action in report["actions"]]
+    return dict(report, actions=actions)
 
 
 def lead_seat(project, row, config, stopping):
@@ -295,6 +342,17 @@ def lead_seat(project, row, config, stopping):
     return seat, None
 
 
+def scout_context(conn, project, row):
+    pack = context_pack(project, row)
+    if pack is None:
+        return ""
+    record_scout_event(conn, row.id, "scout_context", pack.summary,
+                       level="detail", payload=json.dumps({
+                           "subject": f"{row.subject_kind}:{row.subject_ref}",
+                           "chars": len(pack.text), "paths": pack.paths}))
+    return f"## Context\n\n{pack.text}\n\n"
+
+
 def run_lead(conn, project, row, worktree, budget_s, stopping):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
@@ -304,12 +362,14 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         return "failed", down
     lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
-    turn = lead.start(plan_goal(row, limit), budget_s)
+    context = scout_context(conn, project, row)
+    turn = lead.start(plan_goal(row, limit, context), budget_s, context)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
-                                       lead.session is None), REPORT_TURN_S)
+                                       lead.session is None, context=context),
+                           REPORT_TURN_S, context)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
@@ -319,6 +379,7 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         report = reproduced(row, swarm, resolve_evidence(project.path,
                                                          row.base_sha, report))
         with store.transaction(conn):
+            report = stamped(conn, row, report)
             record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))
             record_scout_actions(conn, row.id, 1, report["actions"])
     return "done", "the lead wrote its report"
