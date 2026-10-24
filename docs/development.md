@@ -1145,6 +1145,10 @@ badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivi
 findings with their status and evidence, and the newest bug report's hypotheses.
 `console/src/next/components/ScoutActions.tsx` draws its Action items under the Report, each filed
 with `POST /actions/scout-file`; a checker refusal opens New ticket with the item's draft.
+`console/src/next/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
+composer cannot send; `console/src/next/components/ScoutThread.tsx` draws them as the Scout page's Thread
+with its Ask and Steer composer, posting `POST /actions/scout-message`, and
+`console/src/next/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
 
 ### Desktop wrapper
 

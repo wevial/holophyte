@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { scoutDetailSchema, type ScoutDetail, type ScoutTask } from "../lib/contract.gen";
+import { scoutDetailSchema, type ScoutDetail, type ScoutFinding, type ScoutReportPass, type ScoutTask } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { AnswerError, POLL_INTERVAL_MS, type Fetch } from "../lib/poll";
 import type { ActivityStep, ActivityTone } from "./activity";
@@ -53,6 +53,19 @@ export interface ScoutGroup {
   running: boolean;
   steps: ActivityStep[];
   tasks: ScoutTask[];
+}
+
+export interface NumberedFinding {
+  id: string;
+  pass: number;
+  finding: ScoutFinding;
+}
+
+/** Every pass's findings in pass order, numbered F1… across the passes. */
+export function numberFindings(reports: ScoutReportPass[]): NumberedFinding[] {
+  return [...reports].sort((a, b) => a.pass - b.pass)
+    .flatMap(({ pass, report }) => report.findings.map((finding) => ({ pass, finding })))
+    .map((each, index) => ({ ...each, id: `F${index + 1}` }));
 }
 
 const ENDED = new Set<ScoutTask["phase"]>(["done", "failed", "stopped"]);
