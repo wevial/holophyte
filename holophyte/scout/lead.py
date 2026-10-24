@@ -225,9 +225,6 @@ class Lead:
         return lead_turn(self.conn, self.project, self.row.id, self.seat, argv,
                          self.worktree, cap, self.stopping)
 
-    def plan(self, limit, cap):
-        return self.start(plan_goal(self.row, limit), cap)
-
     def start(self, goal, cap):
         argv = self.seat.turn(outbound(goal, self.secrets))
         self.remember(self.seat.session(argv))
@@ -307,7 +304,7 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         return "failed", down
     lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
-    turn = lead.plan(limit, budget_s)
+    turn = lead.start(plan_goal(row, limit), budget_s)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)

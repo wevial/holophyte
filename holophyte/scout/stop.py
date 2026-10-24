@@ -104,8 +104,8 @@ def requested(conn, project, scout_id, author, note, via):
     running = live and row.pid and runs_scout(row.pid, scout_id, project.path)
     pid = row.pid if running else None
     ask = current_ask(conn, scout_id) if row.phase == ANSWERING else None
-    steered = (current_pass(conn, scout_id)
-               if live and row.phase != ANSWERING else None)
+    steered = (current_pass(conn, scout_id) if row.phase != ANSWERING
+               else None)
     record_scout_event(
         conn, scout_id, REQUESTED, f"stop asked by {author} ({via}): {note}",
         level="detail", payload=json.dumps({
