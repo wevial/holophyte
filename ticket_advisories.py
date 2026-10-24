@@ -89,7 +89,7 @@ def _glob_re(pattern):
 def _base(pattern):
     parts = Path(pattern).parts
     fixed = [p for p in parts[:-1] if not any(c in p for c in GLOB_CHARS)]
-    return str(Path(*fixed)) if fixed and len(fixed) == len(parts) - 1 else "."
+    return str(Path(*fixed)) if len(fixed) == len(parts) - 1 else "."
 
 
 def _selections(tokens, tracked):
