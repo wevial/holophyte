@@ -255,9 +255,8 @@ const ANSWER_TONE: Record<string, ActivityTone> = { scout_answered: "ok", scout_
 /** Pass `run`'s tasks: those of its pass that started inside its span, and
  *  while it runs, those not yet started. */
 function passTasks(detail: ScoutDetail, run: FollowUp, running: boolean): ScoutTask[] {
-  const until = run.end?.at ?? run.until ?? Infinity;
-  return detail.tasks.filter((task) => task.pass === run.pass
-    && (task.started_ms == null ? running : task.started_ms >= run.started.at && task.started_ms <= until));
+  const inside = (started: number) => started >= run.started.at && (run.end != null ? started <= run.end.at : started < (run.until ?? Infinity));
+  return detail.tasks.filter((task) => task.pass === run.pass && (task.started_ms == null ? running : inside(task.started_ms)));
 }
 
 function followUpGroup(detail: ScoutDetail, run: FollowUp, now: number): ScoutGroup {

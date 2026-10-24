@@ -141,6 +141,7 @@ test("a done scout's Progress ends on its Answer, then its Pass 2 open on its he
   const [answer] = titled("Answer");
   const [pass] = titled("Pass 2");
   expect([opened(answer!), opened(pass!)]).toEqual([false, true]);
+  expect([tone(answer!), tone(pass!)]).toEqual(["ok", "ok"]);
   expect(helpers(pass!)).toEqual([DIGEST.question, JOBS.question]);
 });
 

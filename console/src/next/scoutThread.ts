@@ -76,10 +76,10 @@ function passLine(detail: ScoutDetail, run: FollowUp): string {
   return [`pass ${pass}`, route, formatClock(started.at)].filter((part) => part != null).join(" · ");
 }
 
-function passDoneLine(detail: ScoutDetail, events: ScoutEvent[], index: number): string {
-  const done = events[index]!;
-  const started = events.slice(0, index).findLast((event) => event.kind === "scout_pass_started");
-  const pass = started != null ? highestPass(detail, started.at) + 1 : highestPass(detail, done.at + 1);
+function passDoneLine(detail: ScoutDetail, spans: FollowUp[], done: ScoutEvent): string {
+  const run = spans.find((each) => each.end === done);
+  const started = run?.started;
+  const pass = run?.pass ?? highestPass(detail, done.at + 1);
   const labels = [
     ...numberFindings(detail.reports).filter((each) => each.pass === pass).map((each) => each.id),
     ...detail.actions.filter((action) => action.pass === pass).sort((a, b) => a.position - b.position).map((action) => `A${action.position}`),
@@ -96,7 +96,7 @@ function eventLine(detail: ScoutDetail, events: ScoutEvent[], spans: FollowUp[],
   const event = events[index]!;
   if (event.kind === "scout_answer_started") return { text: answerLine(detail, spanOf(spans, event)), tone: "quiet" };
   if (event.kind === "scout_pass_started") return { text: passLine(detail, spanOf(spans, event)), tone: "quiet" };
-  if (event.kind === "scout_pass_done") return { text: passDoneLine(detail, events, index), tone: "quiet" };
+  if (event.kind === "scout_pass_done") return { text: passDoneLine(detail, spans, event), tone: "quiet" };
   if (FAILED.has(event.kind)) return { text: event.summary, tone: "bad" };
   if (STOPPED.has(event.kind)) return { text: event.summary, tone: "wait" };
   return null;
