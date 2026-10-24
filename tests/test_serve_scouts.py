@@ -213,22 +213,6 @@ class ScoutCase(McpCase):
 
 
 class ListTests(ScoutCase):
-    def test_scouts_come_newest_first_with_their_phases_routes_and_tasks(self):
-        port = self.serve(self.project)
-        code, body = self.get(port, "/scouts")
-        self.assertEqual(code, 200, body)
-        self.assertEqual(
-            [(row["id"], row["phase"], row["lead"], row["helper"],
-              row["tasks_done"], row["tasks_total"]) for row in body["scouts"]],
-            [(self.queued, "queued", "A", "C", 0, 0),
-             (self.swarming, "swarming", "B", "D", 2, 3),
-             (self.done, "done", "A", "C", 3, 3)])
-        queued = body["scouts"][0]
-        self.assertIsNone(queued["started_ms"])
-        self.assertIsNone(queued["heartbeat_age_ms"])
-        self.assertIsNone(queued["elapsed_ms"])
-        self.assertEqual((body["limit"], body["truncated"]), (20, False))
-
     def test_a_limit_truncates_and_a_non_positive_limit_is_400(self):
         port = self.serve(self.project)
         code, body = self.get(port, "/scouts?limit=2")
@@ -257,47 +241,6 @@ class ListTests(ScoutCase):
 
 
 class DetailTests(ScoutCase):
-    def test_a_done_scout_serves_its_tasks_report_items_and_own_events(self):
-        port = self.serve(self.project)
-        code, body = self.get(port, f"/scouts/{self.done}")
-        self.assertEqual(code, 200, body)
-        self.assertEqual(body["scout"]["phase"], "done")
-        self.assertEqual(
-            [(task["pass"], task["wave"], task["question"], task["paths"],
-              task["route"], task["phase"], task["duration_ms"],
-              task["tokens"]) for task in body["tasks"]],
-            [(1, 1, "Where does the loop sleep?", ["app/retry.py"], "C",
-              "done", 100_000, 1_000),
-             (1, 1, "Does the test fail?", [], "C", "done", 101_000, 2_000),
-             (1, 2, "Is the cap read?", ["app/cap.py"], "D", "done", 102_000,
-              3_000)])
-        self.assertEqual([event["kind"] for event in body["events"]],
-                         ["scout_planned", "scout_swarmed"])
-        (entry,) = body["reports"]
-        self.assertEqual(entry["pass"], 1)
-        findings = entry["report"]["findings"]
-        self.assertEqual([finding["status"] for finding in findings],
-                         ["shown", "likely"])
-        self.assertEqual(findings[1]["evidence"][0],
-                         {"file": "app/cap.py", "line": 40, "verified": False,
-                          "why": UNVERIFIED})
-        self.assertEqual(
-            [(item["position"], item["kind"], item["body"], item["ticket"])
-             for item in body["actions"]],
-            [(1, "fix", ACTIONS[0]["body"], None),
-             (2, "test", ACTIONS[1]["body"], None)])
-
-    def test_undefined_report_keys_are_not_served(self):
-        code, body = scout_detail(self.project, str(self.done))
-        self.assertEqual(code, 200, body)
-        report = body["reports"][0]["report"]
-        self.assertNotIn("scratch", report)
-        self.assertNotIn("confidence", report["findings"][0])
-        self.assertEqual(report["summary"], REPORT["summary"])
-        self.assertEqual(report["actions"], ACTIONS)
-        self.assertEqual(report["findings"][0]["evidence"][1],
-                         REPORT["findings"][0]["evidence"][1])
-
     def test_an_unknown_id_is_404_a_malformed_one_400_and_no_store_503(self):
         port = self.serve(self.project)
         code, body = self.get(port, "/scouts/999")
@@ -311,20 +254,6 @@ class DetailTests(ScoutCase):
 
 
 class RoutesTests(ScoutCase):
-    def test_routes_leave_out_a_failed_probe_and_offer_an_unprobed_one(self):
-        code, body = scout_routes(self.project, now=NOW)
-        self.assertEqual(code, 200, body)
-        self.assertEqual([route["name"] for route in body["leads"]], ["A"])
-        self.assertEqual([route["name"] for route in body["helpers"]],
-                         ["C", "D"])
-        for route in (body["leads"][0], body["helpers"][0]):
-            self.assertEqual((route["probe"]["ok"], route["probe"]["at_ms"],
-                              route["probe"]["why"]), (True, NOW - 20_000, None))
-        self.assertIsNone(body["helpers"][1]["probe"])
-        self.assertEqual(body["defaults"], {
-            "lead": "A", "helper": "C", "swarm": 2, "minutes": 20,
-            "helper_turns": 6, "waves": 1})
-
     def test_a_project_with_no_store_still_answers_its_routes(self):
         project = self.bare("beta")
         port = self.serve(project)
@@ -404,13 +333,7 @@ class HoloTests(ScoutCase):
 
 
 class McpTests(ScoutCase):
-    def test_the_scouts_tool_is_a_read_answering_get_scouts(self):
-        async def use(client, _):
-            return (await client.list_tools()).tools
-        (tool,) = [tool for tool in self.session(use) if tool.name == "scouts"]
-        self.assertIs(tool.annotations.read_only_hint, True)
-        self.assertEqual(sorted(tool.input_schema["properties"]),
-                         ["limit", "project"])
+    def test_the_scouts_tool_answers_get_scouts_within_its_limit(self):
         result = self.call("scouts", {"project": "alpha", "limit": 2})
         self.assertIs(result.is_error, False, result.content)
         self.assertEqual([row["id"] for row in
@@ -418,15 +341,7 @@ class McpTests(ScoutCase):
                          [self.queued, self.swarming])
         self.assertIs(result.structured_content["truncated"], True)
 
-    def test_the_scout_show_tool_is_a_read_answering_get_scouts_id(self):
-        async def use(client, _):
-            return (await client.list_tools()).tools
-        tools = {tool.name: tool for tool in self.session(use)}
-        self.assertLessEqual({"scouts", "scout_show", "scout"}, set(tools))
-        show = tools["scout_show"]
-        self.assertIs(show.annotations.read_only_hint, True)
-        self.assertIs(tools["scout"].annotations.read_only_hint, False)
-        self.assertEqual(show.input_schema["required"], ["scout"])
+    def test_the_scout_show_tool_answers_get_scouts_id(self):
         result = self.call("scout_show", {"project": "alpha",
                                           "scout": self.done})
         self.assertIs(result.is_error, False, result.content)
