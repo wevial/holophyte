@@ -158,6 +158,20 @@ class GithubCase(LaunchCase):
     def target(self, path):
         return Project.locate(path, adopt=False)
 
+    def live_scout(self, path, **fields):
+        conn = self.conn(path)
+        (project,) = conn.execute("SELECT id FROM projects").fetchone()
+        scout_id = create_scout(conn, project, "why is CI slow?", "recon", 30,
+                                **fields)
+        move_scout(conn, scout_id, "planning",
+                   base_sha=git(path, "rev-parse", "main"))
+        return conn, scout_id
+
+    def github_events(self, conn, scout_id):
+        return conn.execute(
+            "SELECT summary FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_github'", (scout_id,)).fetchall()
+
 
 class GetTests(GithubCase):
     def setUp(self):
@@ -320,14 +334,6 @@ class EventTests(GithubCase):
         finally:
             connection.close()
 
-    def live_scout(self, path):
-        conn = self.conn(path)
-        (project,) = conn.execute("SELECT id FROM projects").fetchone()
-        scout_id = create_scout(conn, project, "why is CI slow?", "recon", 30)
-        move_scout(conn, scout_id, "planning",
-                   base_sha=git(path, "rev-parse", "main"))
-        return conn, scout_id
-
     def test_each_call_records_its_status_and_the_daemon_serves_them(self):
         path = self.github_project()
         conn, scout_id = self.live_scout(path)
@@ -362,10 +368,7 @@ class EventTests(GithubCase):
         for _ in range(2):
             self.assertIsNone(scout_server(conn, target,
                                            scout(conn, scout_id)))
-        self.assertEqual(conn.execute(
-            "SELECT summary FROM runEvents WHERE scoutId = ?"
-            " AND kind = 'scout_github'", (scout_id,)).fetchall(),
-            [(NO_ORIGIN,)])
+        self.assertEqual(self.github_events(conn, scout_id), [(NO_ORIGIN,)])
 
     def test_a_call_after_the_scout_ended_answers_and_records_nothing(self):
         path = self.github_project()
@@ -375,17 +378,13 @@ class EventTests(GithubCase):
         answer = called(self.target(path), scout_id, "github_get",
                         {"path": RUNS})
         self.assertEqual(json.loads(answer.text), RUNS_TRIMMED)
-        self.assertEqual(conn.execute(
-            "SELECT count(*) FROM runEvents WHERE scoutId = ?"
-            " AND kind = 'scout_github'", (scout_id,)).fetchone(), (0,))
+        self.assertEqual(self.github_events(conn, scout_id), [])
 
 
 class ServerTests(GithubCase):
     def test_the_stdio_server_lists_two_read_only_tools_and_answers_a_get(self):
         path = self.github_project()
-        conn = self.conn(path)
-        (project,) = conn.execute("SELECT id FROM projects").fetchone()
-        scout_id = create_scout(conn, project, "why is CI slow?", "recon", 30)
+        _, scout_id = self.live_scout(path)
         self.gh.answer(RUNS, json.dumps(RUNS_ANSWER))
         env = dict(os.environ, PYTHONPATH=str(ROOT))
         params = StdioServerParameters(
@@ -420,12 +419,7 @@ class TurnTests(GithubCase):
     def run_scout(self, config, origin=ORIGIN):
         os.environ["GH_TOKEN"] = GH_TOKEN
         path = self.github_project("alpha", config, origin)
-        conn = self.conn(path)
-        (project,) = conn.execute("SELECT id FROM projects").fetchone()
-        scout_id = create_scout(conn, project, "why is CI slow?", "recon", 30,
-                                helper_route="luna")
-        move_scout(conn, scout_id, "planning",
-                   base_sha=git(path, "rev-parse", "main"))
+        conn, scout_id = self.live_scout(path, helper_route="luna")
         self.stubs.answer(plan=plan((READ_Q, "read"), (RUN_Q, "run")),
                           synthesis=fenced({"tasks": []}),
                           report=fenced(REPORT))
@@ -492,10 +486,7 @@ class TurnTests(GithubCase):
     def test_with_no_github_origin_no_turn_carries_it_and_one_event_says_so(self):
         conn, scout_id = self.run_scout(GITHUB_LEAD, origin=None)
         self.assert_no_server()
-        self.assertEqual(conn.execute(
-            "SELECT summary FROM runEvents WHERE scoutId = ?"
-            " AND kind = 'scout_github'", (scout_id,)).fetchall(),
-            [(NO_ORIGIN,)])
+        self.assertEqual(self.github_events(conn, scout_id), [(NO_ORIGIN,)])
 
 
 class ConfigTests(ConfigFixture):
