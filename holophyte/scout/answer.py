@@ -143,11 +143,19 @@ def return_done(conn, scout_id, kind, summary, payload):
         move_scout(conn, scout_id, DONE)
 
 
+def fail_answer(conn, scout_id, message, reason):
+    return_done(conn, scout_id, ANSWER_FAILED, f"answer failed: {reason}",
+                {"message": message, "reason": reason})
+
+
+def stop_answer(conn, scout_id, reason, author, note):
+    return_done(conn, scout_id, ANSWER_STOPPED, f"answer stopped: {reason}",
+                {"reason": reason, "author": author, "note": note})
+
+
 def settle(conn, scout_id, outcome):
     if outcome.failure is not None:
-        return_done(conn, scout_id, ANSWER_FAILED,
-                    f"answer failed: {outcome.failure}",
-                    {"message": outcome.ask, "reason": outcome.failure})
+        fail_answer(conn, scout_id, outcome.ask, outcome.failure)
         print(f"[holo2] scout {scout_id} answer failed: {outcome.failure}",
               flush=True)
         return 1

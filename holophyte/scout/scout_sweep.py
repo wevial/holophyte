@@ -15,7 +15,7 @@ from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.config.config_tables import sweep_config
 from holophyte.host.registry import home
 from holophyte.loop.gates import sh
-from holophyte.scout.answer import ANSWER_FAILED, return_done
+from holophyte.scout.answer import fail_answer
 from holophyte.scout.scout_process import scout_dir
 from store.enums import ScoutPhase
 from store.scout_thread import (
@@ -59,8 +59,7 @@ def _end_one_stale(conn, row, reason, now):
     if row.phase != ANSWERING:
         end_scout(conn, row.id, "failed", reason, now=now)
         return "ended failed"
-    return_done(conn, row.id, ANSWER_FAILED, f"answer failed: {reason}",
-                {"message": None, "reason": reason})
+    fail_answer(conn, row.id, None, reason)
     return "answer failed, back to done"
 
 
@@ -171,25 +170,20 @@ def _start(name, target, row, out):
     return True
 
 
-def _answer_failed(conn, message, reason):
-    return_done(conn, message.scout_id, ANSWER_FAILED,
-                f"answer failed: {reason}",
-                {"message": message.id, "reason": reason})
-
-
 def _start_answer(name, target, message, out):
     conn = store.open(str(target.store_path))
     try:
         take_message(conn, message.id, host=socket.gethostname())
         if _private_tmp_spawn():
-            _answer_failed(conn, message, SANDBOXLESS)
+            fail_answer(conn, message.scout_id, message.id, SANDBOXLESS)
             print(f"[holo2] {name}: scout {message.scout_id} answer failed:"
                   f" {SANDBOXLESS}", file=out)
             return False
         try:
             started = start_scout(name, target, message.scout_id)
         except OSError as bad:
-            _answer_failed(conn, message, f"could not start: {bad}")
+            fail_answer(conn, message.scout_id, message.id,
+                        f"could not start: {bad}")
             raise
     except ThreadRefused:
         return False

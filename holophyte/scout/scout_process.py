@@ -13,7 +13,7 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
-from holophyte.scout.answer import ANSWER_STOPPED, Outcome, answer, return_done, settle
+from holophyte.scout.answer import Outcome, answer, settle, stop_answer
 from holophyte.scout.lead import run_lead
 from holophyte.scout.stop import stop_reason, stop_request
 from holophyte.scout.swarm import ScoutStopped, Stopping
@@ -203,9 +203,8 @@ def answer_stopped(conn, scout_id):
         conn.rollback()
     reason, asked = stop_reason(conn, scout_id), stop_request(conn, scout_id)
     try:
-        return_done(conn, scout_id, ANSWER_STOPPED, f"answer stopped: {reason}",
-                    {"reason": reason, "author": asked and asked["author"],
-                     "note": asked and asked["note"]})
+        stop_answer(conn, scout_id, reason, asked and asked["author"],
+                    asked and asked["note"])
     except ScoutRefused as ended:
         print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
         return 1
