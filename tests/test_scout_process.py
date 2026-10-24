@@ -412,6 +412,13 @@ class ScoutSweepTests(ScoutFixture):
         self.assertEqual([argv[-2] for argv, _ in self.spawned], [str(started)])
         self.assertEqual(scout(self.conn(alpha), stranded).phase, "queued")
 
+    def test_distinct_project_names_get_distinct_scout_units(self):
+        names = ["api:prod", "api-prod", "api_prod", "api_2dprod", "api prod"]
+        units = {scout_sweep.scout_unit(name, 1) for name in names}
+        self.assertEqual(len(units), len(names))
+        for unit in units:
+            self.assertRegex(unit, r"^holophyte-scout-[A-Za-z0-9_.]+-1$")
+
     def test_under_systemd_a_scout_starts_as_its_own_user_unit(self):
         path = self.project("alpha")
         with open(Host.locate().path, "a") as registry:

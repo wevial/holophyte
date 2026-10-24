@@ -55,8 +55,12 @@ def end_stale(name, target, conn, now, out):
               file=out)
 
 
+def _escape(match):
+    return "".join(f"_{byte:02x}" for byte in match.group().encode())
+
+
 def scout_unit(name, scout_id):
-    return f"holophyte-scout-{re.sub(r'[^A-Za-z0-9_.-]', '-', name)}-{scout_id}"
+    return f"holophyte-scout-{re.sub(r'[^A-Za-z0-9.]', _escape, name)}-{scout_id}"
 
 
 def _systemd_run():
