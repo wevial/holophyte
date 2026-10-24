@@ -138,6 +138,30 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertIn("refs/heads/helper-branch", summaries)
         self.assertIn("refs/heads/main", summaries)
 
+    def test_the_refs_guard_restores_a_symbolic_ref_and_a_conflicting_parent(self):
+        cases = {
+            "main made symbolic": [
+                "git branch helper",
+                "git symbolic-ref refs/heads/main refs/heads/helper"],
+            "parent replaced by a child": [
+                "git branch -D saved", "git branch saved/helper"],
+        }
+        for number, (case, commands) in enumerate(cases.items()):
+            with self.subTest(case=case):
+                (self.stubs.directory / "helpers.jsonl").unlink(missing_ok=True)
+                path, conn, scout_id = self.scout("bug", name=f"refs{number}")
+                git(path, "branch", "saved")
+                shown = ["for-each-ref",
+                         "--format=%(refname) %(objectname) %(symref)",
+                         "refs/heads", "refs/tags"]
+                listed = git(path, *shown)
+                self.stubs.answer(plan=plan((RUN_Q, "run")),
+                                  report=fenced(REPORT), helper_sh=commands)
+                self.run_scout(path, scout_id)
+                self.assertEqual([status for status, _
+                                  in self.helper(RUN_Q)["sh"]], [0, 0])
+                self.assertEqual(git(path, *shown), listed)
+
     def test_a_research_scout_runs_its_run_task_as_a_read_task(self):
         path, conn, scout_id = self.scout("research", SETUP_RAN)
         self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
@@ -192,14 +216,15 @@ class ScoutRunHelperTests(ScoutFixture):
                          ("not_reproduced", "test", "no run helper finished"))
 
     def test_only_a_bug_scout_s_run_helper_gets_write_tools(self):
-        for number, (config, helper) in enumerate((("", "luna"),
-                                                   (CODEX_LEAD, "haiku"))):
-            with self.subTest(helper=helper):
+        both = [(READ_Q, "read"), (RUN_Q, "run")]
+        scouts = (("recon", CODEX_LEAD, "haiku", [(READ_Q, "read")]),
+                  ("bug", "", "luna", both), ("bug", CODEX_LEAD, "haiku", both))
+        for number, (kind, config, helper, tasks) in enumerate(scouts):
+            with self.subTest(kind=kind, helper=helper):
                 (self.stubs.directory / "calls.jsonl").unlink(missing_ok=True)
                 path, conn, scout_id = self.scout(
-                    "bug", config, f"scout{number}", helper_route=helper)
-                self.stubs.answer(plan=plan((READ_Q, "read"), (RUN_Q, "run")),
-                                  report=fenced(REPORT))
+                    kind, config, f"scout{number}", helper_route=helper)
+                self.stubs.answer(plan=plan(*tasks), report=fenced(REPORT))
                 self.run_scout(path, scout_id)
                 leads = [call for call in self.stubs.calls()
                          if call["turn"] in ("plan", "synthesis", "report")]
@@ -208,7 +233,8 @@ class ScoutRunHelperTests(ScoutFixture):
                     self.assertTrue(read_only(call["argv"]), call["argv"])
                 helpers = {call["question"]: call["argv"]
                            for call in self.stubs.turns("helper")}
-                self.assertEqual(set(helpers), {READ_Q, RUN_Q})
+                self.assertEqual(set(helpers), {question for question, _ in tasks})
                 self.assertTrue(read_only(helpers[READ_Q]), helpers[READ_Q])
-                self.assertNotIn("--sandbox", helpers[RUN_Q])
-                self.assertNotIn("--disallowedTools", helpers[RUN_Q])
+                if RUN_Q in helpers:
+                    self.assertNotIn("--sandbox", helpers[RUN_Q])
+                    self.assertNotIn("--disallowedTools", helpers[RUN_Q])

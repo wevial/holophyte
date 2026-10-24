@@ -78,37 +78,60 @@ def reproduced(row, swarm, report):
 
 
 def ref_values(repo):
-    listed = sh(["git", "for-each-ref", "--format=%(refname) %(objectname)",
-                 *REF_KINDS], cwd=repo, env=scratch_git_environment())
-    return dict(line.split(" ", 1) for line in listed.splitlines())
+    listed = sh(["git", "for-each-ref",
+                 "--format=%(refname) %(objectname) %(symref)", *REF_KINDS],
+                cwd=repo, env=scratch_git_environment())
+    values = {}
+    for line in listed.splitlines():
+        ref, oid, target = (line + " ").split(" ", 2)
+        values[ref] = (oid, target.strip())
+    return values
 
 
-def ref_resets(before, after):
-    for ref in sorted(before.keys() | after.keys()):
-        old, new = before.get(ref), after.get(ref)
-        if old == new:
-            continue
-        if old is None:
-            yield ref, "created", ["-d", ref, new]
-        elif new is None:
-            yield ref, "deleted", [ref, old, ""]
-        else:
-            yield ref, "moved", [ref, old, new]
+def update_ref(repo, *args):
+    subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], cwd=repo,
+                   env=scratch_git_environment(), capture_output=True)
 
 
-def put_back(repo, ref, args, before):
-    if subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "update-ref",
-                       *args], cwd=repo, env=scratch_git_environment(),
-                      capture_output=True).returncode == 0:
-        return True
-    return ref_values(repo).get(ref) == before.get(ref)
+def change(old, new):
+    if old is None:
+        return "created"
+    return "deleted" if new is None else "moved"
+
+
+def clear_ref(repo, ref, new):
+    oid, target = new
+    update_ref(repo, "update-ref", "--no-deref", "-d", ref,
+               *([] if target else [oid]))
+
+
+def put_ref(repo, ref, old, new):
+    oid, target = old
+    if target:
+        update_ref(repo, "symbolic-ref", ref, target)
+        return
+    expected = new[0] if new is not None and not new[1] else ""
+    update_ref(repo, "update-ref", "--no-deref", ref, oid, expected)
 
 
 def restore_refs(conn, scout_id, repo, before, turn):
+    seen = ref_values(repo)
+    after = dict(seen)
+    changed = sorted(ref for ref in before.keys() | after.keys()
+                     if before.get(ref) != after.get(ref))
+    for ref in changed:
+        old, new = before.get(ref), after.get(ref)
+        if new is not None and (old is None or bool(old[1]) != bool(new[1])):
+            clear_ref(repo, ref, new)
+            after.pop(ref)
+    for ref in changed:
+        if ref in before:
+            put_ref(repo, ref, before[ref], after.get(ref))
+    final = ref_values(repo)
     reset, failed = [], []
-    for ref, change, args in ref_resets(before, ref_values(repo)):
-        (reset if put_back(repo, ref, args, before) else failed).append(
-            f"{ref} ({change})")
+    for ref in changed:
+        (reset if final.get(ref) == before.get(ref) else failed).append(
+            f"{ref} ({change(before.get(ref), seen.get(ref))})")
     if reset or failed:
         summary = f"a {turn} turn left refs behind; put back: " + (
             ", ".join(reset) or "none")
