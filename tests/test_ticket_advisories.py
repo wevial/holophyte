@@ -129,6 +129,15 @@ class WideVerifyTests(unittest.TestCase):
         self.assertIn('selects test_*', found[0])
         self.assertIn('2 files', found[0])
 
+    def test_discover_character_class_wider_than_in_scope_is_advised(self):
+        repo = make_repo(self, {'tests/test_a.py': '', 'tests/test_b.py': ''})
+        found = matching(tt.validate(ticket(
+            "python3 -m unittest discover -s tests -p 'test_[ab].py'",
+            '- `tests/test_a.py`'), repo=repo), WIDE)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('tests/test_[ab].py', found[0])
+        self.assertIn('2 files', found[0])
+
 
 class MainLintTests(unittest.TestCase):
     def failing_main(self):

@@ -1,4 +1,5 @@
 """Verify-block and criterion advisories that never block a filing."""
+import fnmatch
 import functools
 import io
 import re
@@ -90,9 +91,14 @@ def _tracked(repo):
     return [f for f in r.stdout.split("\0") if f] if r.returncode == 0 else []
 
 
-def _glob_re(pattern):
-    body = re.escape(pattern).replace(r"\*\*", ".*")
-    return re.compile(body.replace(r"\*", "[^/]*").replace(r"\?", "[^/]"))
+def _glob_matches(pattern, path):
+    if not pattern:
+        return not path
+    if pattern[0] == "**":
+        return any(_glob_matches(pattern[1:], path[i:])
+                   for i in range(len(path) + 1))
+    return (bool(path) and fnmatch.fnmatchcase(path[0], pattern[0])
+            and _glob_matches(pattern[1:], path[1:]))
 
 
 def _base(pattern):
@@ -105,19 +111,20 @@ def _selections(tokens, tracked):
     """(selection, base directory, covered files) for each wide token."""
     pattern = tt._discover_pattern(tokens)
     if pattern:
-        start, glob = Path(pattern[1]).parent, _glob_re(Path(pattern[1]).name)
+        start, glob = Path(pattern[1]).parent, Path(pattern[1]).name
         prefix = "" if str(start) == "." else f"{start}/"
         yield pattern[1], str(start), [
-            f for f in tracked
-            if f.startswith(prefix) and glob.fullmatch(f.rsplit("/", 1)[-1])]
+            f for f in tracked if f.startswith(prefix)
+            and fnmatch.fnmatchcase(f.rsplit("/", 1)[-1], glob)]
         return
     if tokens[:1] and tokens[0] in CD_COMMANDS:
         return
     for previous, token in zip([""] + tokens, tokens):
         token = token.removeprefix("./")
         if previous not in NON_PATH_OPTIONS and GLOB_TOKEN_RE.fullmatch(token):
-            glob = _glob_re(token)
-            yield token, _base(token), [f for f in tracked if glob.fullmatch(f)]
+            glob = token.split("/")
+            yield token, _base(token), [
+                f for f in tracked if _glob_matches(glob, f.split("/"))]
     for path in tt._repo_paths(" ".join(tokens)):
         directory = path.removeprefix("./").rstrip("/")
         yield path, directory, [f for f in tracked
