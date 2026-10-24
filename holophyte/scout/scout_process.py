@@ -4,6 +4,7 @@ import stat
 import subprocess
 import threading
 from contextlib import contextmanager
+from pathlib import Path
 
 import store
 from holophyte.agents.review_workspace import review_worktrees, scratch_git_environment
@@ -102,13 +103,38 @@ def clear_lead(repo, path, env):
     sh(["git", "worktree", "prune"], cwd=repo, env=env)
 
 
+def git_config(config, *args, env):
+    found = subprocess.run(["git", "config", "--file", str(config), *args],
+                           env=env, capture_output=True, text=True)
+    return found.stdout.strip() if found.returncode == 0 else None
+
+
+def enable_worktree_config(repo, env):
+    common = Path(sh(["git", "rev-parse", "--path-format=absolute",
+                      "--git-common-dir"], cwd=repo, env=env))
+    shared, main_only = common / "config", common / "config.worktree"
+    if git_config(shared, "--bool", "extensions.worktreeConfig",
+                  env=env) == "true":
+        return
+    bare = git_config(shared, "--bool", "core.bare", env=env)
+    worktree = git_config(shared, "core.worktree", env=env)
+    for key, value in (("core.bare", "true" if bare == "true" else None),
+                       ("core.worktree", worktree)):
+        if value is not None:
+            sh(["git", "config", "--file", str(main_only), key, value],
+               env=env)
+            sh(["git", "config", "--file", str(shared), "--unset", key],
+               env=env)
+    sh(["git", "config", "--file", str(shared), "extensions.worktreeConfig",
+        "true"], env=env)
+
+
 def refuse_push(repo, checkout, hooks, env):
     hooks.mkdir(parents=True, exist_ok=True)
     hook = hooks / "pre-push"
     hook.write_text(PRE_PUSH)
     hook.chmod(hook.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    sh(["git", "config", "extensions.worktreeConfig", "true"], cwd=repo,
-       env=env)
+    enable_worktree_config(repo, env)
     for key, value in (("core.hooksPath", str(hooks)),
                        ("remote.origin.pushurl", NO_PUSH_URL)):
         sh(["git", "config", "--worktree", key, value], cwd=checkout, env=env)

@@ -278,6 +278,37 @@ class ScoutProcessTests(ScoutFixture):
         self.assertEqual(code, 1, printed)
         self.assertEqual(self.events(path, scout_id), ["scout_started"])
 
+    def make_lead_in(self, checkout):
+        project = SimpleNamespace(path=checkout, holo_dir=self.root / "holo")
+        return scout_process.make_lead(project, 1,
+                                       git(checkout, "rev-parse", "HEAD"))
+
+    def test_a_checkout_of_a_bare_repository_still_works_beside_its_lead(self):
+        seed = self.repo("seed")
+        git(seed, "commit", "-q", "--allow-empty", "-m", "first")
+        bare = self.root / "shared.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)],
+                       check=True)
+        checkout = self.root / "checkout"
+        git(bare, "worktree", "add", "-q", "--detach", str(checkout), "HEAD")
+        lead = self.make_lead_in(checkout)
+        for tree in (checkout, lead):
+            self.assertEqual(git(tree, "rev-parse", "--show-toplevel"),
+                             str(tree.resolve()))
+            git(tree, "status", "--porcelain")
+        self.assertEqual(git(bare, "rev-parse", "--is-bare-repository"), "true")
+
+    def test_a_shared_core_worktree_stays_with_the_checkout_it_names(self):
+        checkout = self.root / "checkout"
+        subprocess.run(["git", "init", "-q", "--separate-git-dir",
+                        str(self.root / "gitdir"), str(checkout)], check=True)
+        git(checkout, "config", "core.worktree", str(checkout.resolve()))
+        git(checkout, "commit", "-q", "--allow-empty", "-m", "first")
+        lead = self.make_lead_in(checkout)
+        for tree in (checkout, lead):
+            self.assertEqual(git(tree, "rev-parse", "--show-toplevel"),
+                             str(tree.resolve()))
+
 
 class ScoutSweepTests(ScoutFixture):
     def setUp(self):
