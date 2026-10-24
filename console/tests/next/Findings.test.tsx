@@ -229,7 +229,7 @@ const defect = (ticket: string, run: number, facts: Partial<TicketDefect> = {}):
 
 const defectRows = (scope: ParentNode = group("Ticket defects")) => [...scope.querySelectorAll("[data-defect-row]")];
 const defectTickets = (scope: ParentNode) => defectRows(scope).map((row) => row.querySelector("a")!.textContent);
-const moreOf = (row: Element) => [...row.querySelectorAll("button")].find((button) => button.textContent === "More" || button.textContent === "Less") ?? null;
+const moreOf = (row: Element) => row.querySelector("button");
 
 test("a ticket defect reads its ticket, criterion, stop, revision with its time and note, and links its ticket page", async () => {
   const note = "C4 now names the export's columns";
