@@ -135,7 +135,7 @@ export function validateScoutsSearch(search: Record<string, unknown>): ScoutsSea
 /** A row's `scout` search value. */
 export const scoutKey = (row: { project: string; id: number }) => `${row.project}/${row.id}`;
 
-export interface OutcomePart {
+interface OutcomePart {
   count: number;
   words: string;
   toFile?: boolean;
