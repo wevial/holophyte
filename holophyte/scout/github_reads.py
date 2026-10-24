@@ -97,17 +97,13 @@ def capped(text):
             f"{GITHUB_ANSWER_CHARS} of {len(text)} characters shown")
 
 
-def fetched(project, repo, path):
-    return github._call(project, repo.host, "GET", path, None)
-
-
 def github_get(project, repo, path, method="GET"):
     try:
         path = guarded(repo, path, method)
     except Refused as refused:
         return Answer(f"[holo2] github_get refused: {refused}", REFUSED)
     try:
-        answer = fetched(project, repo, path)
+        answer = github._call(project, repo.host, "GET", path, None)
     except (InfraFailure, OSError) as failure:
         return Answer(f"[holo2] github_get failed: {failure}", FAILED)
     return Answer(capped(json.dumps(trimmed(answer), ensure_ascii=False)))
@@ -182,9 +178,9 @@ def zip_rows(data):
 
 
 def run_artifacts(project, repo, run, artifact):
-    listed = fetched(project, repo, guarded(
+    listed = github._call(project, repo.host, "GET", guarded(
         repo, f"repos/{repo.owner}/{repo.name}/actions/runs/{run}/artifacts"
-              "?per_page=100")).get("artifacts") or []
+              "?per_page=100"), None).get("artifacts") or []
     chosen = [each for each in listed if not each.get("expired")
               and (artifact is None or each.get("name") == artifact)]
     large = [each["name"] for each in chosen
