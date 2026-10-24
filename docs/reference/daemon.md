@@ -49,7 +49,9 @@ write, or a `pause` or `abort` of a run whose request is already
 pending. `scout` writes no interventions row, so its `recorded` is always
 null: its record, written before it starts anything, is the scout's own
 row and that row's first event, `scout_queued`. `scout-file` writes none
-either: its record is the filed ticket and the action item's filed key. A 400, 404 or 503 answers `{"error": ...}` instead.
+either: its record is the filed ticket and the action item's filed key.
+`scout-stop` writes none either: its record is the scout's
+`scout_stop_requested` event. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 
@@ -396,6 +398,54 @@ leaves `ok: true` and `detail` says so. The reply adds `scout`, `item`,
 A body that is not a JSON object, a `scout` or `item` that is not a
 positive integer, or a `note` or `author` that is not text is 400 naming
 the field. A project with no store is 503.
+
+## `POST /actions/scout-stop`
+
+Body: a JSON object with `scout` (required, a positive integer: the
+scout's id), `note` (required, non-blank: why) and `author` (optional,
+default `maintainer`). It stops one scout. `holo scout stop ID "note"`
+and the `holo mcp` `scout_stop` tool are the same stop. On a host daemon
+it is `/projects/NAME/actions/scout-stop`, admitted as the other project
+actions are.
+
+Every stop the route accepts first records a `scout_stop_requested`
+event on the scout, at the `detail` level, its payload `{"author",
+"note", "via", "pid"}`, `pid` the process the stop acts on or null. Then,
+by the scout's phase:
+
+- `queued`: the scout ends `stopped` at once, its reason `stopped by
+  AUTHOR: NOTE`. Nothing is signalled, and the host sweep never starts it.
+- live (`planning`, `swarming`, `synthesizing`, `answering`) on this host,
+  with a recorded `pid` whose command line (`ps -o command= -p PID`) names
+  `--scout ID`: that process is sent SIGTERM. The scout process ends
+  itself: it kills the process groups of its running lead turn and helper
+  turns, each such helper task ending `stopped`, runs no further turn,
+  ends the scout `stopped` with the reason `stopped by AUTHOR: NOTE` read
+  from its newest `scout_stop_requested` event, records a `scout_stopped`
+  event and exits 0. The reply comes before that end; a process gone
+  before the signal reaches it is 200 with `ok: false` saying so.
+- live with no running scout process (no `pid`, or one whose command line
+  does not name `--scout ID`): the scout ends `stopped` at once, its
+  reason `stopped by AUTHOR: NOTE; no scout process was running`, and
+  nothing is signalled.
+- live on another host: 200 with `ok: false` naming that host, whose
+  daemon must stop it; nothing is written.
+- already ended (`done`, `failed`, `stopped`): 200 with `ok: false`
+  naming the phase; nothing is written.
+
+An unknown scout is 404 `no such scout`. The reply adds `scout` and
+`pid`, the process signalled or null; `detail` is `stop sent to scout N's
+process P` or `scout N stopped`, and `recorded` is null.
+
+```json
+{"action": "scout-stop", "ok": true, "scout": 14, "pid": 48213,
+ "detail": "stop sent to scout 14's process 48213", "recorded": null}
+```
+
+A body that is not a JSON object or a `scout` that is not a positive
+integer is 400 naming the field; a `note` missing or blank is 400 `note
+must say why`, and an `author` that is not text is 400. A project with no
+store is 503.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 

@@ -183,6 +183,10 @@ Each module, one line:
   scouts whose heartbeat is stale and starts queued ones under `[scout]
   max_parallel` and a host-wide lock, putting a scout whose spawn failed
   back in `queued` for the next pass.
+- `holophyte/scout/stop.py` — `POST /actions/scout-stop`, `holo scout
+  stop` and the `holo mcp` `scout_stop` tool: a stop recorded as the
+  scout's `scout_stop_requested` event, then a queued scout ended at once
+  or a running scout's process signalled to end itself.
 - `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.

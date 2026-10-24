@@ -74,6 +74,7 @@ COVERED = {
     ("bug",): ["bug", "Save drops the title"],
     ("idea",): ["idea", "Show owner initials"],
     ("scout", "file"): ["scout", "file", "1", "1"],
+    ("scout", "stop"): ["scout", "stop", "1", "not needed"],
 }
 
 
@@ -412,6 +413,19 @@ class WriteTests(HttpCase):
             self.assertIn(problem, completed.stderr)
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM tickets").fetchone(), (0,))
+
+    def test_scout_stop_over_http_ends_a_queued_scout_with_the_note(self):
+        scout_id = store.scouts.create_scout(self.conn, self.project_id,
+                                             "Map the merge gate", "recon", 30)
+        completed = self.holo("scout", "stop", str(scout_id), "not needed",
+                              "-p", "alpha")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.requests,
+                         [("POST", "/projects/alpha/actions/scout-stop")])
+        self.assertEqual(self.conn.execute(
+            "SELECT phase, reason FROM scouts WHERE id = ?",
+            (scout_id,)).fetchone(),
+            ("stopped", "stopped by maintainer: not needed"))
 
 
 class RefusalTests(HttpCase):

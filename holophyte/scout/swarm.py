@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import signal
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -80,22 +82,72 @@ def helper_goal(row, task):
         "commands you ran with excerpts of their output, or links.\n")
 
 
-def capped_turn(argv, checkout, cap, on_start):
+class ScoutStopped(BaseException):
+    pass
+
+
+def kill_group(proc):
+    if proc.returncode is not None:
+        return
     try:
-        code, output = run_capped(argv, checkout, cap, on_start=on_start)
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+class Stopping:
+    def __init__(self):
+        self.lock, self.procs, self.stopped = threading.RLock(), set(), False
+
+    def run_capped(self, argv, cwd, cap, on_start=None):
+        mine = []
+
+        def start(proc):
+            with self.lock:
+                mine.append(proc)
+                self.procs.add(proc)
+                if self.stopped:
+                    kill_group(proc)
+            if on_start is not None:
+                on_start(proc)
+
+        try:
+            return run_capped(argv, cwd, cap, on_start=start)
+        finally:
+            with self.lock:
+                self.procs.difference_update(mine)
+
+    def stop(self):
+        with self.lock:
+            first, self.stopped = not self.stopped, True
+            for proc in list(self.procs):
+                kill_group(proc)
+        return first
+
+    def check(self):
+        if self.stopped:
+            raise ScoutStopped()
+
+
+def capped_turn(argv, checkout, cap, on_start, stopping):
+    try:
+        code, output = stopping.run_capped(argv, checkout, cap, on_start)
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
     except OSError as failed:
         return HelperTurn(FAILED, None, str(failed))
+    if code != 0 and stopping.stopped:
+        return HelperTurn(STOPPED, code, output or "")
     return HelperTurn(DONE if code == 0 else FAILED, code, output or "")
 
 
 class Swarm:
     """Runs a scout's helper turns, one wave at a time, until it is closed."""
 
-    def __init__(self, conn, project, row, config, deadline):
+    def __init__(self, conn, project, row, config, deadline, stopping=None):
         self.conn, self.project, self.row = conn, project, row
         self.deadline = deadline
+        self.stopping = stopping or Stopping()
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
         self.size = row.swarm or config.swarm
@@ -171,7 +223,7 @@ class Swarm:
         return path
 
     def prepared(self, task):
-        if self.remaining_s() <= 0:
+        if self.remaining_s() <= 0 or self.stopping.stopped:
             return None
         checkout = self.checkout(task)
         return self.seat.turn(outbound(helper_goal(self.row, task),
@@ -197,7 +249,7 @@ class Swarm:
             if prepared is None or cap <= 0:
                 return
             argv, checkout = prepared
-            turn = capped_turn(argv, checkout, cap, start)
+            turn = capped_turn(argv, checkout, cap, start, self.stopping)
             if started:
                 self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
@@ -214,7 +266,8 @@ class Swarm:
         payload = dict(role=SCOUT_HELPER,
                        label=outbound(argv_label(argv), self.secrets),
                        route=self.route, exit_status=turn.exit_status,
-                       timed_out=turn.phase == STOPPED, seconds=seconds)
+                       timed_out=turn.phase == STOPPED and turn.exit_status is None,
+                       seconds=seconds)
         if usage is not None:
             payload["usage"] = usage
         record_scout_event(conn, self.row.id, "agent_turn",

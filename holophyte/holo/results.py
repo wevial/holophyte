@@ -15,6 +15,7 @@ from holophyte.holo.grammar import (
     LAUNCH,
     SCOUT_FILE,
     SCOUT_KINDS,
+    SCOUT_STOP,
     arguments,
     canonical,
     factory_argv,
@@ -111,6 +112,8 @@ def call(args, target):
         return scout(args, target)
     if args.command.words == SCOUT_FILE:
         return scout_file(args, target)
+    if args.command.words == SCOUT_STOP:
+        return scout_stop(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -212,6 +215,32 @@ def scout_file(args, target):
     for line in said[:-1]:
         print(PREFIX + line)
     return PREFIX + said[-1]
+
+
+def scout_stop_body(args):
+    values, note = arguments(args, args.command)
+    if note is None or not note.strip():
+        args.leaf.error("holo scout stop's note must say why (non-blank text)")
+    body = {"scout": counted(values[0]), "note": note,
+            "author": last(args, "author")}
+    return {key: value for key, value in body.items() if value is not None}
+
+
+def scout_stop(args, target):
+    from holophyte.holo.mcp_tools import VIA
+    from holophyte.scout.stop import stop
+    body = scout_stop_body(args)
+    if not target:
+        args.leaf.error("holo scout stop needs its project: -p NAME|PATH")
+    signed = body.get("author", "").endswith(f" {VIA}")
+    code, reply = stop(located(target), body,
+                       "holo mcp" if signed else "holo scout stop")
+    if code == 400:
+        args.leaf.error(reply["error"])
+    if code != 200 or not reply["ok"]:
+        return PREFIX + (reply.get("detail") or reply.get("error", ""))
+    print(PREFIX + reply["detail"])
+    return 0
 
 
 def located(target):

@@ -8,7 +8,6 @@ from typing import NamedTuple
 import store
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
-from holophyte.loop.gates import run_capped
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.report import (
     FIELDS,
@@ -19,7 +18,7 @@ from holophyte.scout.report import (
 )
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
-from holophyte.scout.swarm import Swarm, turn_answer
+from holophyte.scout.swarm import Stopping, Swarm, turn_answer
 from store.enums import ScoutKind, ScoutTaskMode
 from store.scouts import (
     SWARMING,
@@ -173,14 +172,15 @@ def repair_goal(row, problems, fresh):
         f"number from 1:\n\n```json\n{report_shape(row)}\n```\n")
 
 
-def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
+def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping):
     label = outbound(argv_label(argv), known_secrets(project.config()))
     payload = dict(role=SCOUT_LEAD, label=label, route="primary",
                    exit_status=None, timed_out=False)
     started, output = monotonic(), ""
     try:
         try:
-            payload["exit_status"], output = run_capped(argv, worktree, cap)
+            payload["exit_status"], output = stopping.run_capped(
+                argv, worktree, cap)
         except subprocess.TimeoutExpired as expired:
             output = expired.output or ""
             payload["timed_out"] = True
@@ -196,9 +196,9 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
 
 
 class Lead:
-    def __init__(self, conn, project, row, seat, worktree):
+    def __init__(self, conn, project, row, seat, worktree, stopping):
         self.conn, self.project, self.row = conn, project, row
-        self.seat, self.worktree = seat, worktree
+        self.seat, self.worktree, self.stopping = seat, worktree, stopping
         self.secrets = known_secrets(project.config())
         self.session = None
 
@@ -208,8 +208,9 @@ class Lead:
             set_scout_session(self.conn, self.row.id, session)
 
     def turn(self, argv, cap):
+        self.stopping.check()
         return lead_turn(self.conn, self.project, self.row.id, self.seat, argv,
-                         self.worktree, cap)
+                         self.worktree, cap, self.stopping)
 
     def plan(self, limit, cap):
         argv = self.seat.turn(outbound(plan_goal(self.row, limit), self.secrets))
@@ -267,7 +268,7 @@ def checked_report(lead, report):
     return report, report_problems(report, lead.row.kind)
 
 
-def run_lead(conn, project, row, worktree, budget_s):
+def run_lead(conn, project, row, worktree, budget_s, stopping=None):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
     name = row.lead_route or config.lead
@@ -277,10 +278,11 @@ def run_lead(conn, project, row, worktree, budget_s):
     probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat)
     if not probe.ok:
         return "failed", f"lead route {name} is down: {probe.reason()}"
-    lead = Lead(conn, project, row, seat, worktree)
+    stopping = stopping or Stopping()
+    lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
     turn = lead.plan(limit, budget_s)
-    with Swarm(conn, project, row, config, deadline) as swarm:
+    with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
