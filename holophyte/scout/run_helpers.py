@@ -16,9 +16,8 @@ READ_ONLY = ("You help a scout: a read-only investigation of this checkout. "
 RUN_PERMISSION = (
     "You help a scout reproduce a bug in this checkout, your own worktree. "
     "You may edit files and run the project's tests in this worktree, and "
-    "should try to write a failing test that shows the bug.")
-RUN_LIMITS = ("You must not commit to, create or move any branch, and must "
-              "not push.")
+    "should try to write a failing test that shows the bug. You must not "
+    "commit to, create or move any branch, and must not push.")
 RUN_REPORT = (
     "Report each command you ran with its exit status and an excerpt of its "
     "output, and the reproduction level you reached: test (a failing test "
@@ -41,7 +40,7 @@ def task_fields(row, task):
 
 
 def run_goal(row, task):
-    return (f"{HELPER_OPENING}\n\n{RUN_PERMISSION} {RUN_LIMITS}\n\n"
+    return (f"{HELPER_OPENING}\n\n{RUN_PERMISSION}\n\n"
             f"{task_fields(row, task)}{RUN_REPORT}")
 
 
@@ -98,9 +97,8 @@ def ref_resets(before, after):
 
 
 def put_back(repo, ref, args, before):
-    env = scratch_git_environment()
     if subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "update-ref",
-                       *args], cwd=repo, env=env,
+                       *args], cwd=repo, env=scratch_git_environment(),
                       capture_output=True).returncode == 0:
         return True
     return ref_values(repo).get(ref) == before.get(ref)
