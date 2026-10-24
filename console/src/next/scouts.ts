@@ -106,7 +106,7 @@ export function sentence(detail: string): string {
   return /[.!?]$/.test(capital) ? capital : `${capital}.`;
 }
 
-export type ScoutKind = ScoutRow["kind"];
+type ScoutKind = ScoutRow["kind"];
 
 const SCOUT_KINDS: ScoutKind[] = ["bug", "research", "recon"];
 
