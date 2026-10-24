@@ -254,6 +254,7 @@ PINNED = {
     "holophyte/scout/scout_sweep.py": 3,
     "holophyte/scout/stop.py": 0,
     "holophyte/scout/swarm.py": 1,
+    "holophyte/scout/telemetry.py": 0,
     "holophyte/scout/thread_action.py": 0,
     "holophyte/scout/views.py": 1,
 
