@@ -270,6 +270,8 @@ class ApprovalTests(Worktree):
         bindings = {
             "walrus in a default": ("def helper(default=(limit := 1)):\n"
                                     "    return default\n", False),
+            "walrus in an annotation": ("def helper(value: (limit := 1)):\n"
+                                        "    return value\n", False),
             "comprehension variable": ("NAMES = [limit for limit in ()]\n", True),
         }
         for case, (binding, stands) in bindings.items():
@@ -279,6 +281,13 @@ class ApprovalTests(Worktree):
                     "import json\n", "import json\nfrom sys import maxsize as limit\n")
                 self.assertEqual(citations.test_unchanged(
                     approved, candidate, "LoadTests", "test_broken"), stands)
+
+    def test_an_added_import_after_an_approved_wildcard_import_is_a_change(self):
+        approved = LOAD.replace("import json\n", "import json\nfrom math import *\n")
+        candidate = approved.replace("from math import *\n",
+                                     "from math import *\nfrom cmath import sqrt\n")
+        self.assertFalse(citations.test_unchanged(approved, candidate,
+                                                  "LoadTests", "test_broken"))
 
     def test_a_change_the_cited_test_depends_on_makes_it_stale(self):
         cases = {

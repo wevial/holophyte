@@ -117,7 +117,7 @@ def _binds_new_names_only(added, bound, approved):
             binding = alias.asname or (alias.name.split(".")[0] if plain
                                        else alias.name)
             shared_root = plain and "." in alias.name and binding in roots
-            if binding == "*" or binding in bound and not shared_root:
+            if "*" in (binding, *bound) or binding in bound and not shared_root:
                 return False
     return True
 
@@ -149,8 +149,12 @@ def _module_level(node):
 
 def _evaluated_at_definition(node):
     if _is_def(node) or isinstance(node, ast.Lambda):
-        return [*node.args.defaults, *node.args.kw_defaults,
-                *getattr(node, "decorator_list", [])]
+        arguments = node.args
+        signature = [*arguments.posonlyargs, *arguments.args, arguments.vararg,
+                     *arguments.kwonlyargs, arguments.kwarg]
+        return [*arguments.defaults, *arguments.kw_defaults,
+                *getattr(node, "decorator_list", []), getattr(node, "returns", None),
+                *(arg.annotation for arg in signature if arg is not None)]
     if isinstance(node, ast.ClassDef):
         return [*node.bases, *node.keywords, *node.decorator_list]
     if isinstance(node, ast.comprehension):
