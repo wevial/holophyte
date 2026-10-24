@@ -215,6 +215,8 @@ Each module, one line:
 - `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.
+- `holophyte/scout/telemetry.py` — `turn_cost`: a scout turn's cost, the
+  CLI's reported one or its tokens at the route's `usd_per_mtok`.
 - `holophyte/scout/thread_action.py` — `POST /actions/scout-message`,
   `holo scout ask` and `steer` and the `holo mcp` `scout_ask` and
   `scout_steer` tools: an ask or a steer, optionally answering a card,

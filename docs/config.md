@@ -1847,8 +1847,12 @@ with `harness`, `model` and `effort`, read through the same harness adapters
 and `[harnesses]` paths as an `[agents]` table; only `claude` and `codex` take
 a scout role. A lead's turn and resume turn off its CLI's own subagents
 (`--disallowedTools Agent Task` for Claude, `--disable multi_agent` for
-Codex); a helper's carry neither. With no `[scout]` table the defaults below
-apply.
+Codex); a helper's carry neither. A route table may also set `usd_per_mtok`,
+a number of at least 0: the US dollars one million of the route's tokens cost,
+input, cached and output alike. It never reaches the CLI. Each helper task and
+lead turn records the CLI's own reported cost when it reports one, else its
+tokens at the route's price, else none; the built-in routes carry no price.
+With no `[scout]` table the defaults below apply.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -1878,7 +1882,8 @@ An unknown `[scout]` key or route-table key, a route name with anything but
 letters, digits, `_` and `-`, a `harness` that is no adapter or takes no scout
 role, a `model` or `effort` that is not a non-empty string (or a Codex effort
 outside its list), a `lead` or `helper` naming no route, a count that is not an
-integer of at least 1, a `swarm` or `steer_helpers` above `helper_turns` or a
-`waves` other than 1 or 2 is a startup error naming the table and the key.
+integer of at least 1, a `swarm` or `steer_helpers` above `helper_turns`, a
+`waves` other than 1 or 2 or a `usd_per_mtok` that is not a number of at least
+0 is a startup error naming the table and the key.
 `factory.py --scout-probe PROJECT` probes each route; see
 [the CLI reference](reference/cli.md).

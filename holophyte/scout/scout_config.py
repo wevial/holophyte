@@ -32,6 +32,7 @@ STEER_HELPERS = 4
 class ScoutConfig:
     leads: dict
     helpers: dict
+    prices: dict
     lead: str
     helper: str
     budget_min: int
@@ -45,10 +46,11 @@ class ScoutConfig:
 def scout_config(project):
     table = config_table(project, "scout")
     where = f"[holo2] {project.config_path}"
+    prices = {}
     leads = route_seats(project, where, table, "leads", DEFAULT_LEADS,
-                        SCOUT_LEAD)
+                        SCOUT_LEAD, prices)
     helpers = route_seats(project, where, table, "helpers", DEFAULT_HELPERS,
-                          SCOUT_HELPER)
+                          SCOUT_HELPER, prices)
     lead = default_route(where, table, "lead", DEFAULT_LEAD, "leads", leads)
     helper = default_route(where, table, "helper", DEFAULT_HELPER, "helpers",
                            helpers)
@@ -70,12 +72,12 @@ def scout_config(project):
             f"{where}: [scout] steer_helpers: {steer_helpers} helpers for a "
             f"steered pass is more than helper_turns = "
             f"{counts['helper_turns']}")
-    return ScoutConfig(leads, helpers, lead, helper, waves=waves,
+    return ScoutConfig(leads, helpers, prices, lead, helper, waves=waves,
                        steer_budget_min=steer_budget_min,
                        steer_helpers=steer_helpers, **counts)
 
 
-def route_seats(project, where, table, key, defaults, role):
+def route_seats(project, where, table, key, defaults, role, prices):
     routes = table.get(key, defaults)
     if not isinstance(routes, dict):
         raise SystemExit(
@@ -92,6 +94,9 @@ def route_seats(project, where, table, key, defaults, role):
             raise SystemExit(
                 f"{where}: {label}: write it as a table with harness, model "
                 f"and effort")
+        prices[name] = route_price(where, label, route)
+        route = {option: value for option, value in route.items()
+                 if option != "usd_per_mtok"}
         adapter = route_adapter(where, label, route, role, TABLE_KEYS)
         for option in ("model", "effort"):
             if option not in route:
@@ -101,6 +106,18 @@ def route_seats(project, where, table, key, defaults, role):
         seats[name] = Seat(adapter, harness_binary(project, where, adapter),
                            route, role)
     return seats
+
+
+def route_price(where, label, route):
+    price = route.get("usd_per_mtok")
+    if price is None:
+        return None
+    if isinstance(price, bool) or not isinstance(price, (int, float)) \
+            or not price >= 0:
+        raise SystemExit(
+            f"{where}: {label} usd_per_mtok must be a number of at least 0, "
+            f"got {price!r}")
+    return price
 
 
 def default_route(where, table, key, default, routes_key, seats):

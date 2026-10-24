@@ -109,7 +109,8 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
     if down is not None:
         return PassOutcome(number, message, failure=down)
     steer, card = steer_text(conn, row.id, message)
-    lead = Lead(conn, project, row, seat, worktree, stopping)
+    lead = Lead(conn, project, row, seat, worktree, stopping,
+                config.prices.get(row.lead_route or config.lead))
     lead.session = row.lead_session
     deadline = monotonic() + budget_s
     goal = pass_plan_goal(row, steer, card, number, *stored(conn, row.id),
