@@ -25,6 +25,7 @@ from holophyte.scout.answer import (
 from holophyte.scout.follow_up import (
     PassOutcome,
     current_pass,
+    held_pass,
     run_pass,
     settle_pass,
     stop_pass,
@@ -305,7 +306,9 @@ def pass_mode(conn, project, row, steered, stopping):
     scout_id = row.id
     interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
     try:
-        claim_scout(conn, scout_id, os.getpid())
+        with store.transaction(conn):
+            held_pass(conn, scout_id, steered)
+            claim_scout(conn, scout_id, os.getpid())
     except ScoutRefused as lost:
         print(f"[holo2] scout {scout_id} was claimed elsewhere: {lost}",
               flush=True)

@@ -6,6 +6,7 @@ pass, against stub lead and helper CLIs over real git repositories.
 Run: python3 -m unittest discover -s tests -p 'test_scout_follow_up.py' -v
 """
 import json
+import os
 import re
 import time
 import uuid
@@ -13,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import holophyte.scout.scout_sweep as scout_sweep
+import holophyte.scout.stop as stop
 from holophyte.config.checks import check_config
 from holophyte.config.project import Project
 from holophyte.host.registry import Host
@@ -27,7 +29,7 @@ from holophyte.scout.follow_up import (
 )
 from holophyte.scout.lead import REPORT_OPENING, SYNTHESIS_OPENING
 from holophyte.scout.scout_config import scout_config
-from holophyte.scout.scout_process import make_lead
+from holophyte.scout.scout_process import make_lead, pass_mode
 from holophyte.scout.swarm import Stopping
 from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
@@ -348,6 +350,61 @@ class RetriedPassTests(PassCase):
         self.assertEqual(scout(self.store_conn, scout_id).phase, "planning")
         self.assertEqual(self.reports(scout_id), {1: REPORT})
         self.assertEqual(len(self.items(scout_id)), 2)
+
+
+class EndedPassTests(PassCase):
+    def failed_then(self, scout_id, mode, text):
+        take_message(self.store_conn, self.steer(scout_id))
+        earlier = current_pass(self.store_conn, scout_id)
+        fail_pass(self.store_conn, scout_id, earlier, "heartbeat stale")
+        take_message(self.store_conn, post_message(
+            self.store_conn, scout_id, "maintainer", mode, text))
+        return earlier
+
+    def test_a_failed_pass_cannot_settle_over_a_later_answer(self):
+        scout_id = self.done_scout()
+        earlier = self.failed_then(scout_id, "ask", "Which finding?")
+        stale = PassOutcome(earlier["pass"], earlier["message"],
+                            dict(SECOND, cut=[]))
+        with self.assertRaises(ScoutRefused):
+            settle_pass(self.store_conn, scout_id, stale)
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "answering")
+        self.assertEqual(self.reports(scout_id), {1: REPORT})
+        self.assertEqual(len(self.items(scout_id)), 2)
+
+    def test_a_process_holding_a_replaced_steer_claims_nothing(self):
+        scout_id = self.done_scout()
+        take_message(self.store_conn, self.steer(scout_id))
+        row = scout(self.store_conn, scout_id)
+        earlier = current_pass(self.store_conn, scout_id)
+        fail_pass(self.store_conn, scout_id, earlier, "heartbeat stale")
+        take_message(self.store_conn, self.steer(scout_id, "And the cron?"))
+
+        self.assertEqual(pass_mode(self.store_conn, self.target, row, earlier,
+                                   Stopping()), 1)
+        now = scout(self.store_conn, scout_id)
+        self.assertEqual((now.phase, now.pid), ("planning", None))
+        self.assertEqual(self.stubs.calls(), [])
+
+    def test_a_vanished_process_stop_leaves_a_later_pass_running(self):
+        scout_id = self.steered()
+        beat_scout(self.store_conn, scout_id, os.getpid())
+        targeted = current_pass(self.store_conn, scout_id)
+
+        def pass_ended_and_next_steer_taken(_pid, _signal):
+            fail_pass(self.store_conn, scout_id, targeted, "the turn ended")
+            take_message(self.store_conn, self.steer(scout_id, "And cron?"))
+            raise ProcessLookupError
+
+        with patch.object(stop, "runs_scout", return_value=True), \
+                patch.object(stop.os, "kill", pass_ended_and_next_steer_taken):
+            status, reply = stop.stop(self.target, {
+                "scout": scout_id, "note": "steered the wrong way"})
+        self.assertEqual((status, reply["ok"]), (200, False), reply)
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "planning")
+        self.assertNotEqual(current_pass(self.store_conn, scout_id)["message"],
+                            targeted["message"])
+        self.assertEqual(self.payloads(scout_id, "scout_pass_stopped"), [])
 
 
 class StoppedPassTests(PassCase):

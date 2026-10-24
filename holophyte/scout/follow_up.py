@@ -28,6 +28,9 @@ from store.scout_thread import messages
 from store.scouts import (
     DONE,
     PASS_STARTED,
+    PLANNING,
+    SWARMING,
+    SYNTHESIZING,
     ScoutRefused,
     end_scout_task,
     move_scout,
@@ -42,6 +45,7 @@ PASS_DONE = "scout_pass_done"
 PASS_FAILED = "scout_pass_failed"
 PASS_STOPPED = "scout_pass_stopped"
 RUNNING = ScoutTaskPhase.RUNNING.value
+PASS_PHASES = (PLANNING, SWARMING, SYNTHESIZING)
 
 
 class PassOutcome(NamedTuple):
@@ -125,12 +129,15 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
 
 
 def held_pass(conn, scout_id, steered):
-    current = current_pass(conn, scout_id)
+    current, phase = current_pass(conn, scout_id), scout(conn, scout_id).phase
     if current is None or current["message"] != steered["message"]:
         raise ScoutRefused(
-            scout_id, scout(conn, scout_id).phase,
+            scout_id, phase,
             f"it runs the pass message {current and current['message']}"
             f" steered, not message {steered['message']}'s")
+    if phase not in PASS_PHASES:
+        raise ScoutRefused(scout_id, phase,
+                           f"pass {steered['pass']} has already ended")
 
 
 def stop_running(conn, scout_id, number):
