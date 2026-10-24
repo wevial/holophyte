@@ -7,6 +7,7 @@ import type { ActivityStep, ActivityTone } from "./activity";
 import { firstLine } from "./history";
 import { fetchRoute, routeKey } from "./queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { followUps, livePass, type FollowUp } from "./scoutThread";
 import { scoutState, sentence, type ScoutState } from "./scouts";
 import type { State } from "./state";
 
@@ -27,6 +28,8 @@ export type ScoutPage =
       sentence: string;
       stage: { label: string; sub: string | null };
       activity: ScoutGroup[];
+      /** The newest follow-up pass, its span counted to now while it runs. */
+      pass: { pass: number; ms: number | null; live: boolean } | null;
     };
 
 /** The scout states drawn with a run state's dot. */
@@ -37,10 +40,10 @@ export function scoutPage(project: string, id: number) {
   return { to: "/scouts/$project/$scout", params: { project: projectName(project), scout: String(id) }, search: keepScope } as const;
 }
 
-type ScoutGroupKind = "plan" | "wave" | "synthesis" | "report" | "next";
+type ScoutGroupKind = "plan" | "wave" | "synthesis" | "report" | "next" | "answer" | "pass";
 
 export interface ScoutGroup {
-  /** Stable across polls: "plan", "wave:1:2", "synthesis:1", "report", "next". */
+  /** Stable across polls: "plan", "wave:1:2", "synthesis:1", "report", "next", "answer:AT", "pass:P:AT". */
   key: string;
   kind: ScoutGroupKind;
   /** Null for the pending row after a live scout's last wave. */
@@ -77,7 +80,7 @@ export const stoppedCount = (tasks: ScoutTask[]) => tasks.filter((task) => task.
 /** A token count in thousands: "38k tok". */
 export const tokenWords = (tokens: number) => `${Math.round(tokens / 1000)}k tok`;
 
-const isLive = (phase: ScoutDetail["scout"]["phase"]) => phase === "planning" || phase === "swarming" || phase === "synthesizing";
+export const isLive = (phase: ScoutDetail["scout"]["phase"]) => phase === "planning" || phase === "swarming" || phase === "synthesizing";
 
 interface Wave {
   wave: number;
@@ -168,6 +171,13 @@ function pinUnlaunched(waves: Wave[], planEnd: number) {
 /** Plan, each wave with Synthesis between two, and Report, as the timeline's
  *  groups; a live scout's last group runs, and a pending row follows a running wave. */
 function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
+  if (detail.scout.started_ms == null) return [];
+  const later = followUps(detail);
+  const first = later.length ? { ...detail, scout: { ...detail.scout, phase: "done" as const } } : detail;
+  return [...firstRun(first, now), ...later.map((each) => followUpGroup(detail, each, now))];
+}
+
+function firstRun(detail: ScoutDetail, now: number): ScoutGroup[] {
   const { scout, events } = detail;
   if (scout.started_ms == null) return [];
   const live = isLive(scout.phase);
@@ -229,19 +239,81 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   return groups;
 }
 
+const counted = (findings: number, actions: number) => [
+  ...(findings ? [`${findings} ${findings === 1 ? "finding" : "findings"}`] : []),
+  ...(actions ? [`${actions} ${actions === 1 ? "action item" : "action items"}`] : []),
+];
+
+/** The first run's report, in counts. */
 function reportWords(detail: ScoutDetail): string[] {
-  const report = detail.reports.at(-1)?.report;
-  if (report == null) return [];
-  const { findings, actions } = report;
-  return [
-    ...(findings.length ? [`${findings.length} ${findings.length === 1 ? "finding" : "findings"}`] : []),
-    ...(actions.length ? [`${actions.length} ${actions.length === 1 ? "action item" : "action items"}`] : []),
-  ];
+  const report = [...detail.reports].sort((a, b) => a.pass - b.pass)[0]?.report;
+  return report == null ? [] : counted(report.findings.length, report.actions.length);
+}
+
+const ANSWER_TONE: Record<string, ActivityTone> = { scout_answered: "ok", scout_answer_failed: "bad", scout_answer_stopped: "wait" };
+
+/** Pass `run`'s tasks: those of its pass that started inside its span, and
+ *  while it runs, those not yet started. An earlier try at the same pass can
+ *  leave tasks that never started, and helpers start in id order, so after a
+ *  retry an unstarted task is the run's only above its first started task;
+ *  before one starts, no id tells the retry's from an earlier try's. */
+function passTasks(detail: ScoutDetail, run: FollowUp, running: boolean): ScoutTask[] {
+  const inside = (started: number) => started >= run.started.at && (run.end != null ? started <= run.end.at : started < (run.until ?? Infinity));
+  const own = detail.tasks.filter((task) => task.pass === run.pass);
+  const started = own.filter((task) => task.started_ms != null && inside(task.started_ms));
+  if (!running) return started;
+  const retry = followUps(detail).some((each) => each.kind === "pass" && each.pass === run.pass && each.started.at < run.started.at);
+  const floor = retry ? Math.min(Infinity, ...started.map((task) => task.id)) : -Infinity;
+  return own.filter((task) => (task.started_ms == null ? task.id > floor : started.includes(task)));
+}
+
+function followUpGroup(detail: ScoutDetail, run: FollowUp, now: number): ScoutGroup {
+  const { scout } = detail;
+  const at = run.started.at;
+  const ms = run.end == null ? null : run.end.at - at;
+  const lead = scout.lead == null ? [] : [scout.lead];
+  if (run.kind === "answer") {
+    const running = run.end == null && run.until == null && scout.phase === "answering";
+    const end = run.end?.at ?? (running ? now : at);
+    return {
+      key: `answer:${at}`, kind: "answer", at, title: "Answer", sub: lead, ms,
+      tone: running ? "live" : (ANSWER_TONE[run.end?.kind ?? ""] ?? "wait"), running, tasks: [],
+      steps: detail.events.filter((event) => event.at > at && event.at <= end).map((event) => ({ at: event.at, text: event.summary, ms: null, quiet: true })),
+    };
+  }
+  const running = livePass(detail)?.started === run.started;
+  const tasks = passTasks(detail, run, running);
+  const width = Math.min(scout.swarm ?? tasks.length, tasks.length);
+  const stopped = stoppedCount(tasks);
+  const report = detail.reports.find((each) => each.pass === run.pass)?.report;
+  const items = detail.actions.filter((action) => action.pass === run.pass).length;
+  return {
+    key: `pass:${run.pass}:${at}`, kind: "pass", at, title: `Pass ${run.pass}`,
+    sub: [
+      ...(scout.helper == null || !tasks.length ? [] : [`${scout.helper} ×${width}`]),
+      ...(tasks.length ? [`${backCount(tasks)} of ${tasks.length} back`] : []),
+      ...(stopped ? [`${stopped} stopped`] : []),
+      ...(run.end?.kind === "scout_pass_done" ? counted(report?.findings.length ?? 0, items) : []),
+    ],
+    ms,
+    tone: run.end?.kind === "scout_pass_failed" ? "bad" : waveTone(tasks, tasks.some((task) => task.phase === "running")),
+    running, steps: [], tasks,
+  };
+}
+
+/** The newest follow-up pass, its span to its end or, while it runs, to now. */
+function newestPass(detail: ScoutDetail, now: number) {
+  const newest = followUps(detail).findLast((each) => each.kind === "pass");
+  if (newest == null) return null;
+  const live = livePass(detail) != null;
+  const end = newest.end?.at ?? (live ? now : null);
+  return { pass: newest.pass!, ms: end == null ? null : end - newest.started.at, live };
 }
 
 const are = (n: number, many: string, one: string) => (n === 1 ? one : many);
 
-/** "5 of 10 helpers are back, 4 are running, and 1 waits for a slot", leaving out a clause whose count is 0. */
+/** "5 of 10 helpers are back, 4 are running, and 1 waits for a slot" or "1 of 2 helpers are back, and 1 is
+ *  running", leaving out a clause whose count is 0. */
 function swarmClauses(tasks: ScoutTask[]): string {
   const count = (phase: ScoutTask["phase"]) => tasks.filter((task) => task.phase === phase).length;
   const parts = [
@@ -249,14 +321,16 @@ function swarmClauses(tasks: ScoutTask[]): string {
     { n: count("running"), verb: (n: number) => are(n, "are running", "is running") },
     { n: count("queued"), verb: (n: number) => are(n, "wait for a slot", "waits for a slot") },
   ].filter((part) => part.n > 0);
-  const clauses = parts.map((part, index) => (index === 0 ? `${part.n} of ${tasks.length} helpers ${part.verb(part.n)}` : `${part.n} ${part.verb(part.n)}`));
-  if (clauses.length < 3) return clauses.join(" and ");
+  const clauses = parts.map((part, index) => (index === 0 ? `${part.n} of ${tasks.length} helpers ${part.verb(tasks.length)}` : `${part.n} ${part.verb(part.n)}`));
+  if (clauses.length < 2) return clauses.join("");
   return `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
 }
 
 /** The sentence behind the scout's state dot. */
 function scoutSentence(detail: ScoutDetail): string {
   const { scout } = detail;
+  const pass = livePass(detail);
+  if (pass != null) return passSentence(detail, pass);
   switch (scout.phase) {
     case "queued":
       return "Waiting for a scout slot.";
@@ -280,9 +354,22 @@ function scoutSentence(detail: ScoutDetail): string {
   }
 }
 
-/** The Stage chip: the phase, with its wave while swarming or synthesizing. */
+function passSentence(detail: ScoutDetail, run: FollowUp): string {
+  const head = `Pass ${run.pass}:`;
+  if (detail.scout.phase === "planning") return `${head} the lead is planning.`;
+  if (detail.scout.phase === "synthesizing") return `${head} the lead is writing its report.`;
+  const clauses = swarmClauses(passTasks(detail, run, true));
+  return clauses === "" ? `${head} the lead is handing out sub-tasks.` : `${head} ${clauses}.`;
+}
+
+/** The Stage chip: the phase, with the live pass, or its wave while swarming
+ *  or synthesizing, or a done scout's highest report pass past the first. */
 function scoutStage(detail: ScoutDetail): { label: string; sub: string | null } {
   const { scout } = detail;
+  const pass = livePass(detail);
+  if (pass != null) return { label: scout.phase, sub: `pass ${pass.pass}` };
+  const highest = Math.max(0, ...detail.reports.map((report) => report.pass));
+  if (scout.phase === "done" && highest > 1) return { label: scout.phase, sub: `pass ${highest}` };
   const wave = wavesOf(detail.tasks).at(-1);
   if ((scout.phase !== "swarming" && scout.phase !== "synthesizing") || wave == null) return { label: scout.phase, sub: null };
   const of = scout.budget.waves == null ? "" : ` of ${scout.budget.waves}`;
@@ -327,5 +414,6 @@ export function useScoutPage(project: string, id: number | null): ScoutPage {
     sentence: scoutSentence(detail),
     stage: scoutStage(detail),
     activity: scoutActivity(detail, now),
+    pass: newestPass(detail, now),
   };
 }
