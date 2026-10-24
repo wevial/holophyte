@@ -13,8 +13,20 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
-from holophyte.loop.gates import reap_group, run_capped, sh
+from holophyte.loop.gates import RunFailure, reap_group, run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
+from holophyte.scout.run_helpers import (
+    HELPER_OPENING,
+    READ_ONLY,
+    launch_turn,
+    ref_values,
+    refs_guard,
+    run_goal,
+    run_seat,
+    runs,
+    set_up,
+    task_fields,
+)
 from holophyte.scout.scout_probes import probe_scout_route
 from store.enums import ScoutTaskPhase
 from store.scouts import (
@@ -24,10 +36,10 @@ from store.scouts import (
     start_scout_task,
 )
 
-HELPER_OPENING = "Scout helper turn"
 EXCERPT_CHARS = 4000
 QUEUED, DONE = ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.DONE.value
 FAILED, STOPPED = ScoutTaskPhase.FAILED.value, ScoutTaskPhase.STOPPED.value
+LAUNCH_FAILURES = (OSError, RuntimeError, RunFailure)
 TOKENS_USED = re.compile(r"tokens used\D{0,4}(\d[\d,]*)", re.IGNORECASE)
 
 
@@ -69,23 +81,18 @@ def usage_tokens(usage):
 
 
 def helper_goal(row, task):
-    paths = ", ".join(task.paths) or "none"
     return (
-        f"{HELPER_OPENING}\n\n"
-        "You help a scout: a read-only investigation of this checkout. Read "
-        "and search only: do not edit files, commit or push.\n\n"
-        f"Ask: {row.ask}\nKind: {row.kind}\nBase commit: {row.base_sha}\n\n"
-        f"Question: {task.question}\nPaths: {paths}\nMode: {task.mode}\n\n"
+        f"{HELPER_OPENING}\n\n{READ_ONLY}\n\n{task_fields(row, task)}"
         "Answer the question with evidence: path:line at the base commit, "
         "commands you ran with excerpts of their output, or links.\n")
 
 
-def capped_turn(argv, checkout, cap, on_start):
+def capped_turn(turn, failures=(OSError,)):
     try:
-        code, output = run_capped(argv, checkout, cap, on_start=on_start)
+        code, output = turn()
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
-    except OSError as failed:
+    except failures as failed:
         return HelperTurn(FAILED, None, str(failed))
     return HelperTurn(DONE if code == 0 else FAILED, code, output or "")
 
@@ -105,7 +112,7 @@ class Swarm:
                               conn.execute("PRAGMA database_list")
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
-        self.scratch = None
+        self.scratch, self.refs = None, None
         self.stack = ExitStack()
 
     def __enter__(self):
@@ -156,18 +163,17 @@ class Swarm:
         if self.scratch is None:
             self.scratch = self.stack.enter_context(
                 review_scratch(self.project.path))
+        self.refs = ref_values(self.project.path)
         starts = [threading.Event() for _ in launch]
         with ThreadPoolExecutor(max_workers=self.size) as pool:
             list(pool.map(self.helper, launch, [None] + starts[:-1], starts))
 
     def checkout(self, task):
-        from holophyte.scout.scout_process import refuse_push
-
-        repo, path = self.project.path, self.scratch / f"helper-{task.id}"
-        env = scratch_git_environment()
+        path = self.scratch / f"helper-{task.id}"
         sh(["git", "worktree", "add", "--detach", "--quiet", str(path),
-            self.row.base_sha], cwd=repo, env=env)
-        refuse_push(repo, path, self.scratch / "hooks", env)
+            self.row.base_sha], cwd=self.project.path,
+           env=scratch_git_environment())
+        self.refuse_push(path)
         return path
 
     def prepared(self, task):
@@ -193,24 +199,61 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
-            prepared, cap = self.prepared(task), self.remaining_s()
-            if prepared is None or cap <= 0:
-                return
-            argv, checkout = prepared
-            turn = capped_turn(argv, checkout, cap, start)
-            if started:
-                self.record(conn, task, argv, turn, monotonic() - started[0])
+            with refs_guard(conn, self.row.id, self.project.path, SCOUT_HELPER,
+                            self.refs):
+                if runs(self.row, task):
+                    self.run_helper(conn, task, mine)
+                    return
+                prepared, cap = self.prepared(task), self.remaining_s()
+                if prepared is None or cap <= 0:
+                    return
+                argv, checkout = prepared
+                turn = capped_turn(lambda: run_capped(argv, checkout, cap,
+                                                      on_start=start))
+                if started:
+                    self.record(conn, task, argv, turn,
+                                monotonic() - started[0])
         finally:
             mine.set()
             if conn is not None:
                 conn.close()
 
+    def run_helper(self, conn, task, mine):
+        if self.remaining_s() <= 0:
+            return
+        checkout = self.checkout(task)
+        start_scout_task(conn, task.id)
+        started = monotonic()
+        mine.set()
+        problem = set_up(self.project, checkout, self.deadline)
+        if problem is not None:
+            self.end(conn, task, FAILED,
+                     redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
+            return
+        self.refuse_push(checkout)
+        argv = run_seat(self.project, self.seat).turn(
+            outbound(run_goal(self.row, task), self.secrets))
+        cap = self.remaining_s()
+        turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
+                                                cap), LAUNCH_FAILURES)
+                if cap > 0 else HelperTurn(STOPPED, None, ""))
+        self.record(conn, task, argv, turn, monotonic() - started)
+
+    def refuse_push(self, checkout):
+        from holophyte.scout.scout_process import refuse_push
+
+        refuse_push(self.project.path, checkout, self.scratch / "hooks",
+                    scratch_git_environment())
+
+    def end(self, conn, task, phase, excerpt, usage=None):
+        end_scout_task(conn, task.id, phase, tokens=usage_tokens(usage),
+                       cost_usd=(usage or {}).get("cost_usd"), excerpt=excerpt)
+        self.answers[task.id] = Answered(phase, excerpt)
+
     def record(self, conn, task, argv, turn, seconds):
         answer, usage = turn_answer(self.seat, turn.output)
         excerpt = redact_prose(answer, self.secrets)[-EXCERPT_CHARS:]
-        end_scout_task(conn, task.id, turn.phase, tokens=usage_tokens(usage),
-                       cost_usd=(usage or {}).get("cost_usd"), excerpt=excerpt)
-        self.answers[task.id] = Answered(turn.phase, excerpt)
+        self.end(conn, task, turn.phase, excerpt, usage)
         payload = dict(role=SCOUT_HELPER,
                        label=outbound(argv_label(argv), self.secrets),
                        route=self.route, exit_status=turn.exit_status,
