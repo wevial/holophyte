@@ -8,7 +8,7 @@ import { POLL_INTERVAL_MS } from "../lib/poll";
 import { prLabel } from "../lib/shipped";
 import type { ContractBodies } from "./fleet";
 import { routeKey, routeOrNone } from "./queries";
-import { PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "./scope";
+import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 
 export interface ScoutListRow extends ScoutRow {
   base: string;
@@ -134,15 +134,6 @@ export interface ScoutTarget {
   kind: ScoutKind;
   ask: string;
   off: string | null;
-}
-
-/** The link to the Scouts page with its form filled for `target`, keeping the scope. */
-export function scoutThis(target: ScoutTarget) {
-  const { project, about, kind, ask } = target;
-  return {
-    to: "/scouts",
-    search: (previous: ScopeSearch) => ({ project: previous.project, new: projectName(project), about, kind, ask }),
-  } as const;
 }
 
 /** The subject `about` names, in words: "run 812", "the defect in run 812",
