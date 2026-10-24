@@ -15,6 +15,8 @@ export type ScoutPage =
   | { kind: "loading" }
   | { kind: "unknown_project" }
   | { kind: "not_found" }
+  /** The first read failed with no earlier answer; `status` is the daemon's non-2xx code, null for any other failure. */
+  | { kind: "failed"; status: number | null }
   | {
       kind: "scout";
       base: string;
@@ -400,6 +402,9 @@ export function useScoutPage(project: string, id: number | null): ScoutPage {
   if (id == null || (answer.error instanceof AnswerError && answer.error.status === 404)) return { kind: "not_found" };
   const status = host.contract_error ? undefined : host.status;
   const detail = answer.data;
+  if (detail == null && answer.error != null) {
+    return { kind: "failed", status: answer.error instanceof AnswerError ? answer.error.status : null };
+  }
   if (detail == null || status == null) return { kind: "loading" };
   const { phase } = detail.scout;
   return {

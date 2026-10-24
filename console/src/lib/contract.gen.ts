@@ -1206,10 +1206,15 @@ export const urlEvidenceSchema = z.looseObject({
 });
 export type UrlEvidence = z.infer<typeof urlEvidenceSchema>;
 
+export const textEvidenceSchema = z.looseObject({
+  text: z.string(),
+});
+export type TextEvidence = z.infer<typeof textEvidenceSchema>;
+
 export const scoutFindingSchema = z.looseObject({
   title: z.string(),
   status: z.enum(["shown", "likely", "unconfirmed"]),
-  evidence: z.array(z.union([fileEvidenceSchema, commandEvidenceSchema, urlEvidenceSchema])),
+  evidence: z.array(z.union([fileEvidenceSchema, commandEvidenceSchema, urlEvidenceSchema, textEvidenceSchema])),
 });
 export type ScoutFinding = z.infer<typeof scoutFindingSchema>;
 
