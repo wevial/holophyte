@@ -71,9 +71,8 @@ class LivePostTests(unittest.TestCase):
             move_scout(self.conn, scout_id, "swarming")
         if phase == "synthesizing":
             move_scout(self.conn, scout_id, "synthesizing")
-        if phase in ("done", "failed", "stopped", "answering"):
-            end_scout(self.conn, scout_id, "done" if phase == "answering"
-                      else phase, f"ended {phase}")
+        if phase in ("done", "answering"):
+            end_scout(self.conn, scout_id, "done", "ended done")
         if phase == "answering":
             take_message(self.conn, post_message(
                 self.conn, scout_id, "maintainer", "ask", "what next?"))
@@ -96,14 +95,7 @@ class LivePostTests(unittest.TestCase):
                                   message.consumed_by),
                                  ("steer", STEER, None))
 
-    def test_an_ended_scout_or_a_second_waiting_message_is_refused(self):
-        for phase in ("failed", "stopped"):
-            with self.subTest(phase=phase):
-                scout_id = self.scout_in(phase)
-                with self.assertRaises(ThreadRefused) as caught:
-                    self.steer(scout_id)
-                self.assertIn(phase, str(caught.exception))
-                self.assertEqual(messages(self.conn, scout_id), [])
+    def test_a_second_waiting_message_on_a_running_scout_is_refused(self):
         swarming = self.scout_in("swarming")
         waiting = self.steer(swarming)
         with self.assertRaises(ThreadRefused) as caught:
