@@ -6,7 +6,7 @@ from pathlib import Path
 import store
 import ticket_header
 import ticket_template
-from holophyte.review.landmarks import SPAN_RE, MainTree, declared_new
+from holophyte.review.landmarks import SPAN_RE, declared_new
 
 VERIFY_HEADING = "## Verify command(s)"
 TOKEN_RE = re.compile(r"[^\s;&|()'\"]+")
@@ -132,8 +132,7 @@ def _dotted(path):
     return dotted if path.endswith(".py") and DOTTED_RE.fullmatch(dotted) else None
 
 
-def map_landmarks(repo, paths, modules, commits):
-    tree = MainTree(repo)
+def map_landmarks(tree, paths, modules, commits):
     spans, tokens, mapped, unmapped, touched = {}, {}, [], [], False
     for written in paths:
         chain = _chain(str(Path(written)), commits)
@@ -196,14 +195,14 @@ def record(conn, ticket_id, text):
                       f"relandmark:{digest}")
 
 
-def refresh(repo, conn, parked, paths, still_stale):
+def refresh(tree, conn, parked, paths, still_stale):
     ticket_id, identifier, _, body = parked[:4]
     written = body_written_at(conn, ticket_id, body)
     if written is None:
         return None, None
-    tree = MainTree(repo)
     spans, tokens, mapped, unmapped, touched = map_landmarks(
-        repo, paths, stale_modules(body, tree), renames_since(repo, written))
+        tree, paths, stale_modules(body, tree),
+        renames_since(tree.repo, written))
     if not touched:
         return None, None
     if not unmapped:

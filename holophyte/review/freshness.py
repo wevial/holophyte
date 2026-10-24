@@ -305,7 +305,7 @@ def _moved(target, conn, provider, parked):
     paths = [path for _, path in named_paths(parked[3], tree)
              if "/" in path and not tree.has(str(Path(path)))]
     return moved_landmarks.refresh(
-        target.path, conn, parked, list(dict.fromkeys(paths)),
+        tree, conn, parked, list(dict.fromkeys(paths)),
         lambda body: stale_reasons(target.path, body, conn, provider))
 
 
