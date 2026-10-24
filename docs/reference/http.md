@@ -357,7 +357,8 @@ UI and its required-reason form are covered by HOLO-403.
    "elapsed_ms": 540000, "working_ms": 480000, "estimate_ms": 1800000,
    "heartbeat_age_ms": 12000, "rounds": 1,
    "max_rounds": 2, "findings": 2, "merge_sha": null, "commit_url": null,
-   "additions": 120, "deletions": 14, "pr_url": null, "host": "writer-1"},
+   "additions": 120, "deletions": 14, "resumed_as": null, "pr_url": null,
+   "host": "writer-1"},
   {"id": 225, "ticket": "KO-255", "ticket_url": null,
    "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
    "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
@@ -366,7 +367,8 @@ UI and its required-reason form are covered by HOLO-403.
    "elapsed_ms": 1200000, "working_ms": null, "estimate_ms": null,
    "heartbeat_age_ms": null, "rounds": 0,
    "max_rounds": 2, "findings": 0, "merge_sha": null, "commit_url": null,
-   "additions": null, "deletions": null, "pr_url": null, "host": "writer-1"}
+   "additions": null, "deletions": null, "resumed_as": null, "pr_url": null,
+   "host": "writer-1"}
 ], "since": 1788393600000, "until": null, "limit": 200,
  "truncated": false, "total": 2,
  "now": 1788478743000}
@@ -401,8 +403,12 @@ the run's own review rounds recorded, counted as `/shipped` counts them;
 `merge_sha` and `commit_url`, as `/shipped` serves them (`commit_url`
 null unless the sha is on `origin/main`); `additions` and `deletions`,
 the pull request size last recorded for the run (null when none was);
-and `pr_url` and `host`, as `/shipped` spells them. An older daemon omits
-`findings`, `merge_sha`, `commit_url`, `additions` and `deletions`.
+`resumed_as`, for a run whose `outcome` is `paused`, the id of the next run
+of the same ticket after it, whether or not that run is in the answer (null
+for a paused run with no later run, and for every run not paused); and
+`pr_url` and `host`, as `/shipped` spells them. An older daemon omits
+`findings`, `merge_sha`, `commit_url`, `additions`, `deletions` and
+`resumed_as`.
 
 The body echoes `since`, `until` (null when omitted) and the `limit` applied,
 and carries `total`, the number of matching runs before the limit, and

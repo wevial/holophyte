@@ -376,6 +376,7 @@ class RecentRun:
     mergeSha: str | None
     prSeenAdditions: int | None
     prSeenDeletions: int | None
+    resumedAs: int | None
 
 
 def recent_runs(conn, since, limit, until=None):
@@ -399,7 +400,10 @@ def recent_runs(conn, since, limit, until=None):
         " r.workStartedAt,"
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
         "    FROM reviewRounds rr WHERE rr.runId = r.id),"
-        f" r.mergeSha, {size}, COUNT(*) OVER ()"
+        f" r.mergeSha, {size},"
+        " CASE WHEN r.outcome = 'paused' THEN (SELECT MIN(n.id) FROM runs n"
+        "   WHERE n.ticketId = r.ticketId AND n.id > r.id) END,"
+        " COUNT(*) OVER ()"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.startedAt DESC, r.id DESC LIMIT ?",

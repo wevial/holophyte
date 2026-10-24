@@ -4,7 +4,7 @@ import { failureWord, firstLine } from "../history";
 import type { DayGroup, DayRun } from "../runDays";
 import { STATES } from "../state";
 import { ActualVsBox, PrLink, Sha } from "./MergeFacts";
-import { RunRowLink } from "./RunTable";
+import { ResumedAs, RunRowLink } from "./RunTable";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
@@ -52,7 +52,11 @@ function DayRow({ row, since }: { row: DayRun; since: number }) {
       <span className={`${MONO} text-ink-3 [overflow-wrap:anywhere]`}>{row.project}</span>
       <span>
         <span className="flex items-center gap-1.5"><StateDot state={row.state} hideWord /><span className={`${MONO} font-medium ${TONE_TEXT[STATES[row.state].tone]}`}>{STATES[row.state].word}</span></span>
-        {detail && <span className="mt-1 block font-mono text-[11.5px] leading-[1.4] text-ink-3 [overflow-wrap:anywhere]">{detail}</span>}
+        {(detail || row.state === "resumed") && (
+          <span className="mt-1 block font-mono text-[11.5px] leading-[1.4] text-ink-3 [overflow-wrap:anywhere]">
+            {row.state === "resumed" ? <ResumedAs row={row} /> : detail}
+          </span>
+        )}
       </span>
       <span className={`${MONO} text-ink-3`}>{row.rounds || "–"}</span>
       <span className={`${MONO} text-ink-3`}>{row.findings || "–"}</span>
