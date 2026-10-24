@@ -21,6 +21,7 @@ from holophyte.config.project import Project
 from holophyte.host.registry import Host, settings
 from holophyte.scout.views import scout_detail, scout_routes, scouts
 from holophyte.serve.serve_host import HostServer
+from store.scout_thread import post_message, take_message
 from store.scouts import (
     create_scout,
     end_scout,
@@ -141,10 +142,23 @@ def seed_scouts(conn, project):
                        now=NOW - 65_000)
     end_scout(conn, done, "done", "the lead wrote its report",
               now=NOW - 60_000)
+    seed_thread(conn, done)
     queued = create_scout(conn, project, "Show owner initials", "research",
                           10, lead_route="A", helper_route="C", swarm=1,
                           helper_turns=6, waves=1, now=NOW - 5_000)
     return done, swarming, queued
+
+
+def seed_thread(conn, scout_id):
+    asked = post_message(conn, scout_id, "maintainer", "ask",
+                         "Does the cap apply to webhooks?", now=NOW - 50_000)
+    take_message(conn, asked, host="writer", now=NOW - 45_000)
+    post_message(conn, scout_id, "scout", "answer", "Yes, through F1.",
+                 blocks=[{"type": "finding", "pass": 1, "index": 1}],
+                 answers_id=asked, now=NOW - 40_000)
+    move_scout(conn, scout_id, "done")
+    post_message(conn, scout_id, "test seat", "ask", "And the retry cap?",
+                 now=NOW - 30_000)
 
 
 def record_probes(project):
@@ -231,7 +245,8 @@ class ListTests(ScoutCase):
     def test_a_store_without_scouts_answers_an_empty_list(self):
         conn = store.open(str(self.store_path))
         try:
-            for table in ("scoutActions", "scoutReports", "scoutTasks"):
+            for table in ("threadMessages", "scoutActions", "scoutReports",
+                          "scoutTasks"):
                 conn.execute(f"DELETE FROM {table}")
             conn.execute("DELETE FROM runEvents WHERE scoutId IS NOT NULL")
             conn.execute("DELETE FROM scouts")

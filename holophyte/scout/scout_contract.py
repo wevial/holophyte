@@ -116,9 +116,31 @@ ScoutAction = TypedDict("ScoutAction", {
 
 
 class ScoutEvent(TypedDict):
+    id: int
     at: int
     kind: str
     summary: str
+
+
+FindingBlock = TypedDict("FindingBlock", {
+    "type": Literal["finding"], "pass": int, "index": int})
+
+
+class ActionBlock(TypedDict):
+    type: Literal["action"]
+    position: int
+
+
+class ThreadMessage(TypedDict):
+    id: int
+    author: str
+    mode: Literal["ask", "steer", "answer"]
+    text: str
+    blocks: list[FindingBlock | ActionBlock]
+    answers: int | None
+    at: int
+    consumed_by: int | None
+    consumed_ms: int | None
 
 
 class ScoutDetail(TypedDict):
@@ -127,6 +149,7 @@ class ScoutDetail(TypedDict):
     reports: list[ScoutReportPass]
     actions: list[ScoutAction]
     events: list[ScoutEvent]
+    thread: list[ThreadMessage]
 
 
 class ScoutRoute(TypedDict):

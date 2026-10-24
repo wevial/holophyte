@@ -25,6 +25,7 @@ from store.scout_thread import (
     STEER,
     Message,
     ThreadRefused,
+    release_message,
     take_message,
     waiting_messages,
 )
@@ -183,17 +184,10 @@ def _config_refusal(target):
     return None
 
 
-def _message_failed(conn, message, reason):
-    if message.mode == ASK:
-        fail_answer(conn, message.scout_id, message.id, reason)
-    else:
-        fail_pass(conn, message.scout_id,
-                  current_pass(conn, message.scout_id), reason)
-
-
 def _start_message(name, target, message, out):
-    work = "answer" if message.mode == ASK else "pass"
     refused = _config_refusal(target)
+    if refused is None and _private_tmp_spawn():
+        refused = SANDBOXLESS
     if refused is not None:
         print(f"[holo2] {name}: scout {message.scout_id}'s {message.mode}"
               f" {message.id} waits: {refused}", file=out)
@@ -201,15 +195,15 @@ def _start_message(name, target, message, out):
     conn = store.open(str(target.store_path))
     try:
         take_message(conn, message.id, host=socket.gethostname())
-        if _private_tmp_spawn():
-            _message_failed(conn, message, SANDBOXLESS)
-            print(f"[holo2] {name}: scout {message.scout_id} {work} failed:"
-                  f" {SANDBOXLESS}", file=out)
-            return False
         try:
             started = start_scout(name, target, message.scout_id)
         except OSError as bad:
-            _message_failed(conn, message, f"could not start: {bad}")
+            if message.mode == ASK:
+                release_message(conn, message.id, str(bad))
+            else:
+                fail_pass(conn, message.scout_id,
+                          current_pass(conn, message.scout_id),
+                          f"could not start: {bad}")
             raise
     except ThreadRefused:
         return False

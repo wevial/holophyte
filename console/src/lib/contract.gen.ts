@@ -1255,11 +1255,38 @@ export const scoutActionSchema = z.looseObject({
 export type ScoutAction = z.infer<typeof scoutActionSchema>;
 
 export const scoutEventSchema = z.looseObject({
+  id: z.int(),
   at: z.int(),
   kind: z.string(),
   summary: z.string(),
 });
 export type ScoutEvent = z.infer<typeof scoutEventSchema>;
+
+export const findingBlockSchema = z.looseObject({
+  type: z.literal("finding"),
+  pass: z.int(),
+  index: z.int(),
+});
+export type FindingBlock = z.infer<typeof findingBlockSchema>;
+
+export const actionBlockSchema = z.looseObject({
+  type: z.literal("action"),
+  position: z.int(),
+});
+export type ActionBlock = z.infer<typeof actionBlockSchema>;
+
+export const threadMessageSchema = z.looseObject({
+  id: z.int(),
+  author: z.string(),
+  mode: z.enum(["ask", "steer", "answer"]),
+  text: z.string(),
+  blocks: z.array(z.union([findingBlockSchema, actionBlockSchema])),
+  answers: z.int().nullable(),
+  at: z.int(),
+  consumed_by: z.int().nullable(),
+  consumed_ms: z.int().nullable(),
+});
+export type ThreadMessage = z.infer<typeof threadMessageSchema>;
 
 export const scoutDetailSchema = z.looseObject({
   scout: scoutFullSchema,
@@ -1267,6 +1294,7 @@ export const scoutDetailSchema = z.looseObject({
   reports: z.array(scoutReportPassSchema),
   actions: z.array(scoutActionSchema),
   events: z.array(scoutEventSchema),
+  thread: z.array(threadMessageSchema),
 });
 export type ScoutDetail = z.infer<typeof scoutDetailSchema>;
 
