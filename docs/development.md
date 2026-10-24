@@ -468,6 +468,13 @@ Each module, one line:
 - `holophyte/loop/witness_turns.py` — the witness pre-check's gaps sent back
   to the implementer before the round 1 review, at most two `witness_turn`
   turns a run, and the brief of gaps still open for the round 1 reviewer.
+- `holophyte/review/main_baseline.py` — before each review round, each
+  criterion with an on-main output clause and a named test file has its
+  verify lines run in a detached tree at the review base with the
+  candidate's copy of that file; recorded as the `main_baseline` event,
+  reused while the base, the command and the file's blob match, and shown
+  to the reviewer as the "Baseline at the merge base" block. A check that
+  passes at the base is a round 1 witness gap.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as
@@ -857,7 +864,8 @@ At the root:
   pickable-ready.
 - `ticket_advisories.py` — the checker's verify-block and criterion
   advisories: a whole-suite discover, a hard-coded test count, a verify
-  wider than In scope, and a repository-wide `ruff check` that fails on main.
+  wider than In scope, a repository-wide `ruff check` that fails on main,
+  and a criterion asking for a run's output the factory does not make.
 - `ticket_header.py` — finds, parses and checks the `+++` TOML header a
   ticket can open with, setting the same `Ticket` fields as the magic lines.
 - `ticket_depends.py` — finds a ticket body's estimate line and rewrites its

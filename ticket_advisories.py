@@ -10,6 +10,8 @@ import tempfile
 from pathlib import Path
 
 import ticket_template as tt
+from holophyte.review import main_baseline
+from holophyte.review.witness_precheck import named_files
 
 COUNT_RE = re.compile(
     r"\bRan \d+ tests?\b"
@@ -217,8 +219,26 @@ def _lint_advisories(t, repo):
             f"(ruff check PATH …)" for cmd in commands]
 
 
+def _baseline_advisories(t):
+    advisories = []
+    named = named_files(t.acceptance_boxes)
+    for i, (text, files) in enumerate(zip(t.acceptance_boxes, named), 1):
+        forms = main_baseline.demands(text)
+        if "other" in forms:
+            advisories.append(
+                f"{tt.ADVISORY_PREFIX}criterion {i} asks for a run's output in "
+                f"a state other than main; the factory makes only on-main runs, "
+                f"so the implementer must supply this one: {text}")
+        if not files and any(form != "other" for form in forms):
+            advisories.append(
+                f"{tt.ADVISORY_PREFIX}criterion {i} asks for an on-main run's "
+                f"output but names no test file for the factory to run: {text}")
+    return advisories
+
+
 def advisories(t, repo=None):
-    found = _suite_advisories(t) + _count_advisories(t)
+    found = (_suite_advisories(t) + _count_advisories(t)
+             + _baseline_advisories(t))
     if repo is not None:
         found += _wide_verify_advisories(t, repo)
         found += _lint_advisories(t, repo)

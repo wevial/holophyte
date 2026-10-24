@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import ticket_advisories
 import ticket_template as tt
 from tests.test_ticket_template import FILLED
 
@@ -19,6 +20,9 @@ SAME_COUNT = 'the same count as main'
 WIDE = 'In scope names'
 LINT = 'lint fails on main'
 NO_RUFF = 'ruff is not on PATH'
+OUTPUT = "and that run's output is in the implementer output."
+ONLY_ON_MAIN = 'the factory makes only on-main runs'
+NO_TEST_FILE = 'names no test file for the factory to run'
 
 
 def ticket(verify=VERIFY, in_scope=IN_SCOPE, criterion=CRITERION_2):
@@ -185,6 +189,30 @@ class MainLintTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {'PATH': bin_dir}):
                 problems = tt.validate(t, repo=repo)
         self.assertEqual(matching(problems, LINT), [])
+
+
+class BaselineRunTests(unittest.TestCase):
+    def advised(self, criterion, phrase):
+        return matching(ticket_advisories.advisories(ticket(criterion=criterion)),
+                        phrase)
+
+    def test_a_run_on_another_branch_is_left_to_the_implementer(self):
+        (advice,) = self.advised(
+            f"then it stays. On the first ticket's branch the panel stays, "
+            f"{OUTPUT}", ONLY_ON_MAIN)
+        self.assertIn('criterion 2 ', advice)
+        self.assertIn('the implementer must supply this one', advice)
+
+    def test_an_on_main_clause_naming_no_test_file_is_advised(self):
+        (advice,) = self.advised(f"then it stays. On main it fails, {OUTPUT}",
+                                 NO_TEST_FILE)
+        self.assertIn('criterion 2 ', advice)
+
+    def test_an_on_main_clause_naming_a_test_file_is_not_advised(self):
+        criterion = (f"`tests/test_export.py` passes. On main it fails, "
+                     f"{OUTPUT}")
+        self.assertEqual(self.advised(criterion, ONLY_ON_MAIN), [])
+        self.assertEqual(self.advised(criterion, NO_TEST_FILE), [])
 
 
 class ScriptTests(unittest.TestCase):
