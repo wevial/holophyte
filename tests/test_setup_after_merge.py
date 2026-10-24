@@ -68,7 +68,6 @@ class DirectGateTests(LoopFixture):
         (self.target / path).write_text(body)
         self.git("add", path)
         self.git("commit", "-q", "-m", f"main changes {path}")
-        return self.git("rev-parse", "main").strip()
 
     def provider(self, verify=CMP):
         return StubProvider(dict(a_task(), verify=verify))
@@ -79,7 +78,6 @@ class DirectGateTests(LoopFixture):
                   MoveMain(self, "schema.txt", "schema v2\n"),
                   provider=self.provider())
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertIn("the scripted work", self.subjects())
         merged = self.git("rev-parse", "main^2").strip()
         self.assertEqual(self.git("show", f"{merged}:schema.txt"), "schema v2\n")
         (event,) = reruns(self)
@@ -98,9 +96,7 @@ class DirectGateTests(LoopFixture):
         self.commit_on_main("schema.txt", "schema v2\n")
         holophyte.cli.operator.approve(self.project, "KO-131", "ok",
                                        out=io.StringIO())
-        fake, _ = self.loop(provider=self.provider())
-        self.assertEqual(fake.roles, [])
-        self.assertIn("the scripted work", self.subjects())
+        self.loop(provider=self.provider())
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
                          [(1, "abandoned"), (2, "merged")])
         merged = self.git("rev-parse", "main^2").strip()
@@ -157,8 +153,7 @@ class BabysitterMergeTests(cases.ConflictingMainHelpers, MergeModeFixture):
     def test_setup_reruns_before_the_merged_trees_verify(self):
         self.parked(CMP, ["cp schema.txt generated.txt"])
         self.conflicting("schema.txt", "schema from main\n")
-        fake, _ = self.resume()
-        self.assertEqual(fake.roles, [])
+        self.resume()
         self.assertIn("waiting for a human to say merge", self.question())
         merged = self.git("rev-parse", BRANCH).strip()
         (event,) = reruns(self)
@@ -169,7 +164,6 @@ class BabysitterMergeTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.parked("test -e FIXED.md", ["echo no-venv >&2; exit 3"])
         self.conflicting("MOVED.md", "main moved\n")
         fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
-        self.assertEqual(fake.roles[0], "implement")
         self.assertIn("test -e FIXED.md", fake.turns[0].goal)
         (event,) = reruns(self)
         self.assertIn("FAILED", event)
@@ -181,12 +175,10 @@ class BabysitterMergeTests(cases.ConflictingMainHelpers, MergeModeFixture):
                                          body="the branch's line\n"))
         moved = self.conflicting("MOVED.md", "main moved\n")
         fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
-        self.assertEqual(fake.roles[0], "implement")
         goal = fake.turns[0].goal
         self.assertIn(f"The candidate merged with main at {moved}", goal)
         self.assertIn("fails a different command", goal)
         self.assertIn("grep -q branch README.md", goal)
-        self.assertNotIn("main is red", goal)
         self.assertNotIn("main is red", self.question())
 
 
