@@ -1121,6 +1121,13 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
 `console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
 `console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
+The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
+`console/src/next/scout.ts`, which also groups it into Plan, waves, Synthesis and Report;
+`console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
+badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
+`console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm.
+`console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
+findings with their status and evidence, and the newest bug report's hypotheses.
 
 ### Desktop wrapper
 

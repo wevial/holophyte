@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
 import { useAction } from "../actions";
@@ -8,14 +9,12 @@ import { EMPTY_DRAFT, ScoutLaunch, type LaunchProject } from "../components/Scou
 import { StateDot } from "../components/StateDot";
 import { firstLine } from "../history";
 import { scopedHosts, useConsolePeers } from "../scope";
-import { countScouts, scoutState, useScouts, type ScoutListRow, type ScoutState } from "../scouts";
-import type { State } from "../state";
+import { SCOUT_DOTS, scoutPage } from "../scout";
+import { countScouts, scoutState, useScouts, type ScoutListRow } from "../scouts";
 
 const GRID = "min-[720px]:grid min-[720px]:grid-cols-[16px_40px_minmax(0,1fr)_76px_92px_52px_88px_56px] min-[720px]:items-start min-[720px]:gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
-
-const DOTS: Record<ScoutState, State> = { running: "running", queued: "queued", done: "merged", stopped: "abandoned", failed: "failed" };
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
@@ -35,26 +34,27 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
   const reason = state === "failed" ? firstLine(row.reason) : "";
   const took = state === "queued" || row.elapsed_ms == null ? DASH : formatSettled(row.elapsed_ms);
   return (
-    <li
-      data-row
-      data-scout={row.id}
-      className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 border-b border-rule-2 px-3 py-3 text-[14px] transition-colors duration-(--motion-colour) last:border-b-0 hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
-    >
-      <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={DOTS[state]} label={state} hideWord /></span>
-      <span data-cell="ask" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
-        {row.ask}
-        {reason && <span data-reason className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{reason}</span>}
-      </span>
-      <span className={`col-start-2 flex flex-wrap ${MONO} min-[720px]:contents`}>
-        <span data-cell="id" className={`${FACT} min-[720px]:order-1 min-[720px]:text-ink-2`}>{row.id}</span>
-        <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
-          <span className="min-[720px]:inline-block min-[720px]:align-top min-[720px]:leading-[15px] min-[720px]:border min-[720px]:border-rule min-[720px]:px-1 min-[720px]:text-[11px] min-[720px]:font-semibold min-[720px]:text-ink-2">{row.kind}</span>
+    <li data-row data-scout={row.id} className="border-b border-rule-2 last:border-b-0">
+      <Link
+        {...scoutPage(row.project, row.id)}
+        className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 px-3 py-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
+      >
+        <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
+        <span data-cell="ask" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
+          {row.ask}
+          {reason && <span data-reason className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{reason}</span>}
         </span>
-        <span data-cell="project" className={`${FACT} min-[720px]:order-4`}>{row.project}</span>
-        <span data-cell="lead" className={`${FACT} min-[720px]:order-5`}>{row.lead ?? DASH}</span>
-        <span data-cell="helpers" className={`${FACT} min-[720px]:order-6`}>{helpers(row)}</span>
-        <span data-cell="took" className={`${FACT} whitespace-nowrap min-[720px]:order-7 min-[720px]:text-right`}>{took}</span>
-      </span>
+        <span className={`col-start-2 flex flex-wrap ${MONO} min-[720px]:contents`}>
+          <span data-cell="id" className={`${FACT} min-[720px]:order-1 min-[720px]:text-ink-2`}>{row.id}</span>
+          <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
+            <span className="min-[720px]:inline-block min-[720px]:align-top min-[720px]:leading-[15px] min-[720px]:border min-[720px]:border-rule min-[720px]:px-1 min-[720px]:text-[11px] min-[720px]:font-semibold min-[720px]:text-ink-2">{row.kind}</span>
+          </span>
+          <span data-cell="project" className={`${FACT} min-[720px]:order-4`}>{row.project}</span>
+          <span data-cell="lead" className={`${FACT} min-[720px]:order-5`}>{row.lead ?? DASH}</span>
+          <span data-cell="helpers" className={`${FACT} min-[720px]:order-6`}>{helpers(row)}</span>
+          <span data-cell="took" className={`${FACT} whitespace-nowrap min-[720px]:order-7 min-[720px]:text-right`}>{took}</span>
+        </span>
+      </Link>
     </li>
   );
 }
