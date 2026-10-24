@@ -108,7 +108,7 @@ function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: bo
   const state = scoutState(row.phase);
   const took = state === "queued" || row.elapsed_ms == null ? DASH : formatSettled(row.elapsed_ms);
   const outcome = scoutOutcome(row);
-  const empty = outcome.kind === "counts" && outcome.parts.length === 0;
+  const empty = outcome.kind === "counts" ? outcome.parts.length === 0 : outcome.text === "";
   return (
     <li data-row data-scout={row.id} aria-current={current ? "true" : undefined} className={`border-b border-rule-2 last:border-b-0 ${current ? "bg-row-selected shadow-[inset_2px_0_0_var(--act)]" : ""}`}>
       <Link
