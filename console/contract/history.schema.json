@@ -167,6 +167,16 @@
             }
           ]
         },
+        "resumed_as": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "pr_url": {
           "anyOf": [
             {

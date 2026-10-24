@@ -588,6 +588,7 @@ class HistoryRow(TypedDict):
     commit_url: NotRequired[str | None]
     additions: NotRequired[int | None]
     deletions: NotRequired[int | None]
+    resumed_as: NotRequired[int | None]
     pr_url: str | None
     host: str | None
 

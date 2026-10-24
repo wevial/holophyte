@@ -36,9 +36,21 @@ export function RunRowLink({ row, ...props }: {
   );
 }
 
+export function ResumedAs({ row }: { row: { base: string; resumed_as?: number | null } }) {
+  if (row.resumed_as == null) return null;
+  return (
+    <>
+      resumed as{" "}
+      <RunRowLink row={{ base: row.base, id: row.resumed_as }} aria-label={`run ${row.resumed_as}`} className="relative underline underline-offset-2 hover:text-ink">
+        run {row.resumed_as}
+      </RunRowLink>
+    </>
+  );
+}
+
 function RunTableRow({ row, now }: { row: RunRow; now: number }) {
   const start = started(row.started_ms, now);
-  const quiet = row.state === "merged" || row.state === "abandoned";
+  const quiet = row.state === "merged" || row.state === "abandoned" || row.state === "resumed";
   const need = NEEDS_YOU.has(row.state);
   return (
     <li
@@ -64,7 +76,9 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
       <span className="inline-flex items-start gap-1.5">
         <StateDot state={row.state} hideWord />
-        <span className={`font-sans text-[13px] font-medium leading-[1.3] ${row.state === "merged" ? "text-ink" : TONE_TEXT[STATES[row.state].tone]}`}>{row.stage}</span>
+        <span className={`font-sans text-[13px] font-medium leading-[1.3] ${row.state === "merged" ? "text-ink" : TONE_TEXT[STATES[row.state].tone]}`}>
+          {row.state === "resumed" ? <>paused · <ResumedAs row={row} /></> : row.stage}
+        </span>
       </span>
       <span className={MONO}>{row.rounds > 0 ? row.rounds : DASH}</span>
       <span className={MONO}>{prNumber(row.pr_url)}</span>

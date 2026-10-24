@@ -3,7 +3,7 @@ import { isStale } from "../lib/derive";
 import type { BoardState } from "../lib/types";
 
 export type State =
-  | "failed" | "question" | "paused" | "needs_you" | "stale" | "running" | "ready_to_merge"
+  | "failed" | "question" | "paused" | "resumed" | "needs_you" | "stale" | "running" | "ready_to_merge"
   | "merged" | "abandoned" | "queued" | "on_ci" | "parked" | "held" | "todo" | "backlog";
 
 /** The theme's raw colour tokens, by name. */
@@ -13,6 +13,7 @@ export const STATES: Record<State, { word: string; tone: Tone }> = {
   failed: { word: "failed", tone: "bad" },
   question: { word: "question", tone: "ask" },
   paused: { word: "paused", tone: "ask" },
+  resumed: { word: "paused", tone: "ink-3" },
   needs_you: { word: "needs you", tone: "ask" },
   stale: { word: "stale", tone: "need" },
   running: { word: "running", tone: "live" },
@@ -35,7 +36,7 @@ type ParkFacts = { park_kind?: unknown };
 export type Subject =
   | { attention: { kind: string } & ParkFacts; readiness?: Readiness }
   | {
-      run: { phase: string; outcome?: string | null; heartbeat_age_ms?: number | null } & ParkFacts;
+      run: { phase: string; outcome?: string | null; heartbeat_age_ms?: number | null; resumed_as?: number | null } & ParkFacts;
       staleMs: number;
       readiness?: Readiness;
     }
@@ -81,7 +82,8 @@ function ofRun(run: Extract<Subject, { run: unknown }>["run"], staleMs: number, 
   if (run.phase === "blocked_on_operator") return "question";
   if (ENDED_PHASES.has(run.phase)) {
     if (run.outcome === "merged" || run.outcome === "abandoned") return run.outcome;
-    return run.outcome === "paused" ? "paused" : "failed";
+    if (run.outcome !== "paused") return "failed";
+    return run.resumed_as == null ? "paused" : "resumed";
   }
   return isStale(run.heartbeat_age_ms, staleMs) ? "stale" : "running";
 }
