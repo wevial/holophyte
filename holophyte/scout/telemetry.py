@@ -8,7 +8,6 @@ from store.scouts import ENDED
 
 MILLION = 1_000_000
 MINUTE_MS = 60_000
-TASK_DONE = ScoutTaskPhase.DONE.value
 IN_ENDED = f"s.phase IN ({', '.join('?' * len(ENDED))})"
 
 
@@ -136,7 +135,7 @@ def lead_line(route, turns):
 
 
 def helper_line(route, tasks, cited):
-    done = [task for task in tasks if task.phase == TASK_DONE]
+    done = [task for task in tasks if task.phase == ScoutTaskPhase.DONE.value]
     used = sum((task.scout, task.id) in cited for task in done)
     return (f"scout helper {route}: {plural(len(tasks), 'task')} · "
             f"done {len(done)} · cited {used} · {minutes(tasks)} · "
