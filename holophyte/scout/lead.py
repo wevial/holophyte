@@ -43,6 +43,7 @@ REPAIR_OPENING = "Scout report repair turn"
 SYNTHESIS_OPENING = "Scout synthesis turn"
 NO_REPORT = "the lead's report turn returned no JSON object"
 MALFORMED = "the lead's report is malformed"
+CONTEXT_SLOT = "\x00context\x00"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
@@ -110,7 +111,7 @@ def plan_goal(row, limit, context):
         f"{PLAN_OPENING}\n\n"
         "You lead a scout: a read-only investigation of this checkout. Do not "
         "edit files, commit or push.\n\n"
-        f"{asked(row)}\n\n{context}"
+        f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}"
         f"Plan the work as at most {limit} sub-tasks. Each is one question a "
         "helper answers by reading the code (mode \"read\") or by running "
         "commands in its own checkout (mode \"run\"), with the "
@@ -166,7 +167,8 @@ def report_goal(row, swarm, problem, fresh, scope="", context=""):
         answers = f"- none: no plan was stored, because {problem}"
     return (
         f"{REPORT_OPENING}\n\n"
-        + (f"{asked(row)}\n\n{context}" if fresh else "") + scope
+        + (f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}" if fresh
+           else "") + scope
         + "The plan's sub-tasks, each with its phase and the end of its "
         "helper's output (a queued one never ran, a stopped one was cut at "
         f"the time budget):\n\n{answers}\n\n"
@@ -226,16 +228,21 @@ class Lead:
         return lead_turn(self.conn, self.project, self.row.id, self.seat, argv,
                          self.worktree, cap, self.stopping)
 
-    def start(self, goal, cap):
-        argv = self.seat.turn(outbound(goal, self.secrets))
+    def outgoing(self, goal, context):
+        head, slot, tail = goal.partition(CONTEXT_SLOT)
+        return (outbound(head, self.secrets) + (context if slot else "")
+                + outbound(tail, self.secrets))
+
+    def start(self, goal, cap, context=""):
+        argv = self.seat.turn(self.outgoing(goal, context))
         self.remember(self.seat.session(argv))
         turn = self.turn(argv, cap)
         if self.session is None:
             self.remember(self.seat.reported_session(turn.output))
         return turn
 
-    def resume(self, goal, cap):
-        goal = outbound(goal, self.secrets)
+    def resume(self, goal, cap, context=""):
+        goal = self.outgoing(goal, context)
         return self.turn(self.seat.resume(self.session) + [goal] if self.session
                          else self.seat.turn(goal), cap)
 
@@ -317,13 +324,13 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
     context = scout_context(conn, project, row)
-    turn = lead.start(plan_goal(row, limit, context), budget_s)
+    turn = lead.start(plan_goal(row, limit, context), budget_s, context)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
                                        lead.session is None, context=context),
-                           REPORT_TURN_S)
+                           REPORT_TURN_S, context)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT

@@ -235,16 +235,21 @@ class SubjectContextTests(ContextCase):
         section = self.section(self.plan_goal())
         self.assertNotIn(f"\n{secret}\n", section)
         self.assertLessEqual(len(section), 24_000)
+        return section
+
+    def test_a_body_whose_secrets_redact_longer_is_cut_to_the_cap(self):
+        section = self.redacted_body_section("shortkey")
         self.assertTrue(section.endswith(f"\n{CUT_LINE}"))
 
-    def test_a_body_whose_secrets_redact_longer_is_still_cut_to_the_cap(self):
-        self.redacted_body_section("shortkey")
+    def test_a_secret_inside_the_redaction_mark_is_cut_to_the_cap(self):
+        section = self.redacted_body_section("red")
+        self.assertTrue(section.endswith(f"\n{CUT_LINE}"))
 
-    def test_a_secret_inside_the_redaction_mark_is_still_cut_to_the_cap(self):
-        self.redacted_body_section("red")
-
-    def test_a_body_whose_secrets_redact_shorter_is_still_cut_to_the_cap(self):
-        self.redacted_body_section("sk-long-scout-secret-0123456789abcdef")
+    def test_a_body_whose_secrets_redact_shorter_goes_whole_and_unmarked(self):
+        section = self.redacted_body_section(
+            "sk-long-scout-secret-0123456789abcdef")
+        self.assertIn("[redacted]\nxx", section)
+        self.assertNotIn(CUT_LINE, section)
 
     def test_a_scout_with_no_subject_gets_no_context(self):
         self.start()
