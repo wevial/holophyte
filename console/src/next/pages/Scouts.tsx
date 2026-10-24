@@ -108,6 +108,7 @@ export function Scouts() {
   const close = () => {
     setOpen(false);
     if (asked != null) void navigate({ to: "/scouts", search: keepScope, replace: true });
+    if (draft.about != null) setDraft({ ...draft, about: null });
   };
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-6 pt-3.5 pb-7 max-[720px]:px-4">
@@ -141,10 +142,7 @@ export function Scouts() {
           action={launch}
           draft={draft}
           onDraft={setDraft}
-          onCancel={() => {
-            close();
-            if (draft.about != null) setDraft({ ...draft, about: null });
-          }}
+          onCancel={close}
           onLaunched={() => {
             close();
             setDraft(EMPTY_DRAFT);

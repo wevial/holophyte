@@ -4,11 +4,12 @@ import type { ScopeSearch } from "../scope";
 import type { ScoutTarget } from "../scouts";
 import { Btn } from "./Btn";
 
-/** "Scout": opens the Scouts page's New scout form filled for `target`, keeping the scope. */
+/** "Scout": opens the Scouts page's New scout form filled for `target`, scoped to its project unless unscoped. */
 export function ScoutThis({ target }: { target: ScoutTarget }) {
   const navigate = useNavigate();
   const { project, about, kind, ask } = target;
-  const open = () => void navigate({ to: "/scouts", search: (previous: ScopeSearch) => ({ project: previous.project, new: projectName(project), about, kind, ask }) });
+  const name = projectName(project);
+  const open = () => void navigate({ to: "/scouts", search: (previous: ScopeSearch) => ({ project: previous.project == null ? undefined : name, new: name, about, kind, ask }) });
   return (
     <Btn disabled={target.off != null} title={target.off ?? undefined} onClick={open}>
       Scout

@@ -204,6 +204,28 @@ test("removing the About line launches with no subject", async () => {
   expect(Object.keys(posts[0]!.body!)).not.toContain("subject");
 });
 
+test("a run seen under another project's scope opens its Scout scoped to the run's project, keeping its subject", async () => {
+  await mount("#/runs/demo/12?project=writer", scoutThisFetch().fetch);
+  await click(scoutButtons()[0]!);
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("project")).toBe("demo");
+  expect(project()).toBe("demo");
+  expect(about()).toBe("About run 12");
+});
+
+test("closing a prefilled form with New scout drops its subject, so the next blank form launches with none", async () => {
+  const daemon = scoutThisFetch();
+  await mount("#/runs/demo/12", daemon.fetch);
+  await click(scoutButtons()[0]!);
+  const header = screen.getByRole("button", { name: "New scout" });
+  await click(header);
+  await click(header);
+  expect(about()).toBeNull();
+  await click(within(form()).getByRole("button", { name: "Scout" }));
+  const posts = scoutPosts(daemon.seen);
+  expect(posts).toHaveLength(1);
+  expect(Object.keys(posts[0]!.body!)).not.toContain("subject");
+});
+
 test("picking another project drops the subject, so that project's launch names none", async () => {
   const daemon = scoutThisFetch();
   await mount("#/runs/demo/12", daemon.fetch);
