@@ -170,7 +170,8 @@ class DaemonLaunchTests(LaunchCase):
                 self.assertEqual(
                     first_event(path, reply["scout"]),
                     ("scout_queued",
-                     {"author": author, "via": "POST /actions/scout"}))
+                     {"author": author, "via": "POST /actions/scout",
+                      "subject": None}))
 
     def test_a_launch_past_the_hosts_scout_slots_stays_queued(self):
         path = self.project("alpha")

@@ -157,7 +157,10 @@ def scouts_lines(body):
 
 
 def scout_lines(body):
+    subject = body["scout"]["subject"]
     lines = [scout_line(body["scout"])]
+    if subject is not None:
+        lines.append(f"about {subject['kind']}:{subject['ref']}")
     lines += [f"  task {task['id']}  pass {task['pass']} wave {task['wave']}"
               f"  {task['phase']}  {task['question']}" for task in body["tasks"]]
     lines += [f"  report pass {entry['pass']}: {entry['report']['summary']}"

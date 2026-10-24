@@ -176,7 +176,7 @@ def scout_body(args):
             "helper": last(args, "helper"),
             "swarm": counted(last(args, "swarm")),
             "minutes": counted(last(args, "minutes")),
-            "author": last(args, "author")}
+            "subject": last(args, "about"), "author": last(args, "author")}
     return {key: value for key, value in body.items() if value is not None}
 
 

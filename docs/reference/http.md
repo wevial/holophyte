@@ -1358,7 +1358,8 @@ draws. `GET /scouts?limit=N` reads at most `N`.
              "helper": "luna", "swarm": 4, "tasks_done": 2, "tasks_total": 3,
              "created_ms": 1791568800000, "started_ms": 1791568810000,
              "ended_ms": null, "elapsed_ms": 95000,
-             "heartbeat_age_ms": 4000}],
+             "heartbeat_age_ms": 4000,
+             "subject": {"kind": "run", "ref": "52"}}],
  "limit": 20, "truncated": false}
 ```
 
@@ -1371,6 +1372,10 @@ helpers at once. `tasks_done` counts its helper tasks that have ended and
 `elapsed_ms` runs from the start to the end, or to now while the scout
 runs, and is null while it is queued. `heartbeat_age_ms` is the age of a
 running scout's last heartbeat, null while it is queued or once it ended.
+`subject` is what the scout is about, given at its launch: `kind` is
+`run`, `defect`, `ticket` or `pr`, and `ref` the run id as text, the
+ticket key or the pull request URL; it is null for a scout launched
+without one.
 
 `limit` defaults to 20 and is capped at 200. The body echoes the applied
 `limit`; `truncated` is true when more scouts exist than it returns. There
@@ -1420,8 +1425,8 @@ One scout whole: what the console's Scout page draws.
 
 `scout` holds the `GET /scouts` row's keys, `id`, `ask`, `kind`, `phase`,
 `reason`, `lead`, `helper`, `swarm`, `tasks_done`, `tasks_total`,
-`created_ms`, `started_ms`, `ended_ms`, `elapsed_ms` and
-`heartbeat_age_ms`, plus the `base_sha` it planned
+`created_ms`, `started_ms`, `ended_ms`, `elapsed_ms`,
+`heartbeat_age_ms` and `subject` (its `kind` and `ref`, or null), plus the `base_sha` it planned
 at and the `host` it ran on (each null while queued), its `budget` of
 `minutes`, `helper_turns` and `waves`, and its `totals` as recorded, or
 null.
@@ -1934,8 +1939,8 @@ a `[serve]` name or a repository path; `report` also takes `since`,
 `runs` and `scouts` `limit`, `run` the `run` id and its `view`, `ticket`
 the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run` or `body` and the required `note` and
 `author`, `steer` also its `hint` and `now` booleans, and `scout` its
-required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
-the note its ask, and `scout_file` its required `scout` id and `item`
+required `kind` and its optional `lead`, `helper`, `swarm`, `minutes` and
+`subject` (`KIND:REF`, what the scout is about), the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
 `scout_stop` its required `project` and `scout` id, the note its reason,
 `scout_ask` its required `project` and `scout` id, the note its ask, and

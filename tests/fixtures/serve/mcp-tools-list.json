@@ -548,6 +548,11 @@
               "minimum": 1,
               "description": "the wall-clock budget; default [scout] budget_min"
             },
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "description": "what the scout is about: run:N, defect:N, ticket:KEY or pr:URL"
+            },
             "note": {
               "type": "string",
               "minLength": 1,

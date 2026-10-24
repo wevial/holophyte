@@ -15,6 +15,10 @@
     "ended_ms": 1750000000000,
     "elapsed_ms": 530000,
     "heartbeat_age_ms": null,
+    "subject": {
+      "kind": "ticket",
+      "ref": "ALPHA-1"
+    },
     "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "host": "writer",
     "budget": {

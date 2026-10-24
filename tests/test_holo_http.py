@@ -376,6 +376,30 @@ class WriteTests(HttpCase):
         self.assertEqual(self.requests,
                          [("POST", "/projects/alpha/actions/scout")])
 
+    def test_scout_about_over_http_posts_the_subject(self):
+        import holophyte.serve.server as server
+        store.tickets.mirror_ticket(self.conn, self.project_id,
+                                    linear_issue_id="issue-NAT-3",
+                                    linear_identifier="NAT-3", title="ticket")
+        live = store.scouts.create_scout(self.conn, self.project_id,
+                                         "a live scout", "recon", 30)
+        store.scouts.move_scout(self.conn, live, "planning", base_sha="a" * 40)
+        with open(Host.locate().path, "a") as registry:
+            registry.write("\n[scout]\nmax_parallel = 1\n")
+        bodies, launch = [], server.launch
+
+        def recorded(project, body):
+            bodies.append(body)
+            return launch(project, body)
+        with patch.object(server, "launch", recorded):
+            completed = self.holo("scout", "Map it", "--kind", "recon",
+                                  "--about", "ticket:NAT-3", "-p", "alpha")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        (body,) = bodies
+        self.assertEqual(body["subject"], "ticket:NAT-3")
+        self.assertEqual(self.requests,
+                         [("POST", "/projects/alpha/actions/scout")])
+
     def done_scout(self, *bodies):
         scout_id = store.scouts.create_scout(self.conn, self.project_id,
                                              "Map the merge gate", "recon", 30)

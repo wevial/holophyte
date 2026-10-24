@@ -61,7 +61,8 @@ LEAD = Flag("--lead", "NAME")
 HELPER_ROUTE = Flag("--helper", "NAME")
 SWARM = Flag("--swarm", "N")
 MINUTES = Flag("--minutes", "M")
-SCOUT_FLAGS = (LEAD, HELPER_ROUTE, SWARM, MINUTES, AUTHOR)
+ABOUT = Flag("--about", "KIND:REF")
+SCOUT_FLAGS = (LEAD, HELPER_ROUTE, SWARM, MINUTES, ABOUT, AUTHOR)
 
 REQUIRED, OPTIONAL = "required", "optional"
 NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")

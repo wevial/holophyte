@@ -112,6 +112,10 @@ MINUTES = Field("minutes", {
     "type": "integer", "minimum": 1,
     "description": "the wall-clock budget; default [scout] budget_min"},
     option("--minutes"))
+SUBJECT = Field("subject", {
+    "type": "string", "minLength": 1,
+    "description": "what the scout is about: run:N, defect:N, ticket:KEY"
+                   " or pr:URL"}, option("--about"))
 
 
 def signed(author):
@@ -178,7 +182,8 @@ WRITES = (
          ("hold",), (PROJECT,), tier=WRITE, signs=in_note),
     Tool("scout", "launch a scout, the note its ask; queued while the"
          " host's scout slots are full (holo scout launch --json)",
-         ("scout", "launch"), (PROJECT, KIND, LEAD, HELPER, SWARM, MINUTES),
+         ("scout", "launch"),
+         (PROJECT, KIND, LEAD, HELPER, SWARM, MINUTES, SUBJECT),
          required=("kind",), tier=WRITE, signs=by_author),
     Tool("scout_file", "file a done scout's action item to Backlog through"
          " the ticket checker, the note and author its first board note"

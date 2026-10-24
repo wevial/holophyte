@@ -553,7 +553,10 @@ CREATE TABLE IF NOT EXISTS scouts (
     startedAt   INTEGER,
     heartbeatAt INTEGER,
     endedAt     INTEGER,
-    totals      TEXT  -- JSON
+    totals      TEXT,  -- JSON
+    subjectKind TEXT
+        {_enums.check_clause('subjectKind', _enums.ScoutSubject)},
+    subjectRef  TEXT
 );
 
 -- scoutReports: a scout pass's report, at most one per pass.
