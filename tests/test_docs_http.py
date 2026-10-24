@@ -4,6 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
+from holophyte.serve.contract import TicketDefect
 from holophyte.serve.server import window_report
 from tests.test_holo_report import WindowReportCase
 
@@ -85,6 +86,13 @@ class HttpReferenceTests(unittest.TestCase):
         self.assertIn('{"run": 52', text)
         self.assertIn('{"ok": false, "detail": "run N is not a draft held for'
                       ' review"}', text)
+
+    def test_findings_section_names_every_pinned_and_ticket_defect_key(self):
+        text = section(self.document, "`GET /findings")
+        body = json.loads((FIXTURES / "findings.json").read_text())
+        missing = sorted(key for key in {*body, *TicketDefect.__annotations__}
+                         if f"`{key}`" not in text and f'"{key}"' not in text)
+        self.assertEqual(missing, [])
 
     def test_dropping_a_documented_key_names_it(self):
         text = section(self.document, "`GET /status`")
