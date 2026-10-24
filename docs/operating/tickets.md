@@ -157,6 +157,18 @@ verdict line says. So:
 - Keep visual passes, re-renders of gitignored output, and "on the writer
   host" checks out of the criteria; they are operator steps, recorded in
   the ledger after the merge.
+- A criterion may ask for a RED baseline: "On main the test fails, and
+  that run's output is in the implementer output." The factory makes that
+  run itself before each review round, for three forms of the sentence:
+  one that starts "On main", one that says "as on main" (`With X as on
+  main ...`, which runs the whole base tree, not only `X` reverted), and
+  one that starts "With the change reverted". It runs the verify lines up
+  to the first one that names the criterion's test file, at the review
+  base with the candidate's copy of that file, and hands the reviewer the
+  output in place of the implementer's. The criterion must name a test
+  file; one that names none, and any other state (another ticket's
+  branch, a scratch commit, a forced failure), still needs the
+  implementer's output, and the ticket checker advises so.
 - Verify commands must be true of the candidate, not of a fixture you
   imagined: a negated grep that also matches a legitimate line (`---`)
   and a plural that a one-item fixture cannot produce both failed real
