@@ -14,6 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.scout_stubs import LeadStubs, fenced
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from host_fixture import HostFixture, git  # noqa: E402
 
@@ -47,6 +49,10 @@ class ScoutFixture(HostFixture):
         patcher.start()
         self.addCleanup(patcher.stop)
         os.environ.pop("INVOCATION_ID", None)
+        self.stubs = LeadStubs(self.root / "lead-stubs",
+                               plan=fenced({"tasks": []}),
+                               report=fenced({"summary": "nothing found"}))
+        self.stubs.on_path()
 
     def project(self, name, supervisor=""):
         """A registered native-board repository with two commits on main."""
@@ -294,7 +300,8 @@ class ScoutProcessTests(ScoutFixture):
         with patch.object(scout_process, "end_scout", ended_elsewhere):
             code, printed = self.cli("--scout", str(scout_id), str(path))
         self.assertEqual(code, 1, printed)
-        self.assertEqual(self.events(path, scout_id), ["scout_started"])
+        self.assertEqual([kind for kind in self.events(path, scout_id)
+                          if kind != "agent_turn"], ["scout_started"])
 
     def make_lead_in(self, checkout):
         project = SimpleNamespace(path=checkout, holo_dir=self.root / "holo")

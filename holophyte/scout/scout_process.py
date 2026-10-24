@@ -12,6 +12,7 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
+from holophyte.scout.lead import run_lead
 from store.scouts import (
     PLANNING,
     ScoutRefused,
@@ -182,7 +183,9 @@ def scout_mode(project, scout_id):
                                f"scout {scout_id} started as pid {os.getpid()}")
             try:
                 with scout_heartbeat(conn, scout_id, interval_s):
-                    make_lead(project, scout_id, row.base_sha)
+                    lead = make_lead(project, scout_id, row.base_sha)
+                    phase, reason = run_lead(conn, project, row, lead,
+                                             row.budget_min * 60)
             except (ScoutEnded, ScoutRefused):
                 raise
             except Exception as bad:  # noqa: BLE001 - recorded as the scout's end
@@ -191,13 +194,13 @@ def scout_mode(project, scout_id):
                      f"scout {scout_id} failed: {reason}", reason)
                 print(f"[holo2] scout {scout_id} failed: {reason}", flush=True)
                 return 1
-            _end(conn, scout_id, "done", "scout_done",
-                 f"scout {scout_id} done", "the lead worktree is ready")
+            _end(conn, scout_id, phase, f"scout_{phase}",
+                 f"scout {scout_id} {phase}: {reason}", reason)
         except (ScoutEnded, ScoutRefused) as ended:
             print(f"[holo2] scout {scout_id} ended elsewhere: {ended}",
                   flush=True)
             return 1
-        print(f"[holo2] scout {scout_id} done", flush=True)
-        return 0
+        print(f"[holo2] scout {scout_id} {phase}: {reason}", flush=True)
+        return 0 if phase == "done" else 1
     finally:
         conn.close()
