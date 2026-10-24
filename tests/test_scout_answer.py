@@ -354,6 +354,18 @@ class AnswerSlotTests(AnswerCase):
         (asked,) = messages(self.store_conn, scout_id)
         self.assertIsNone(asked.consumed_by)
 
+    def test_an_ask_waits_untaken_while_the_project_config_is_refused(self):
+        config = self.target.config_path
+        config.write_text(config.read_text().replace(
+            "[scout]\n", "[scout]\nwaves = 3\n", 1))
+        scout_id = self.done_scout()
+        self.ask(scout_id)
+        printed = self.sweep_pass()
+        self.assertEqual(self.spawned, [])
+        self.assertIn("[scout] waves must be 1 or 2", printed)
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "done")
+        (asked,) = messages(self.store_conn, scout_id)
+        self.assertIsNone(asked.consumed_by)
 
     def test_an_ask_older_than_a_queued_scout_takes_the_slot_first(self):
         live = self.live_scout()

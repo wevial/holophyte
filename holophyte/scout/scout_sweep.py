@@ -12,6 +12,7 @@ from holophyte.admission import project_of
 from holophyte.admission import state as admission_state
 from holophyte.agents.review_workspace import scratch_git_environment
 from holophyte.cli.host_modes import FACTORY_PATH
+from holophyte.config.checks import check_config
 from holophyte.config.config_tables import sweep_config
 from holophyte.host.registry import home
 from holophyte.loop.gates import sh
@@ -168,7 +169,20 @@ def _start(name, target, row, out):
     return True
 
 
+def _config_refusal(target):
+    try:
+        check_config(target)
+    except (SystemExit, ValueError) as bad:
+        return str(bad) or type(bad).__name__
+    return None
+
+
 def _start_answer(name, target, message, out):
+    refused = _config_refusal(target)
+    if refused is not None:
+        print(f"[holo2] {name}: scout {message.scout_id}'s ask {message.id}"
+              f" waits: {refused}", file=out)
+        return False
     conn = store.open(str(target.store_path))
     try:
         take_message(conn, message.id, host=socket.gethostname())
