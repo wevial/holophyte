@@ -1,7 +1,9 @@
 """A scout run's record: its phase, reports, helper tasks, actions and events."""
 import json
 import socket
+import threading
 import time
+from contextlib import contextmanager
 from typing import NamedTuple
 
 from . import EVENT_LEVELS, _redact_event
@@ -27,6 +29,7 @@ COLUMNS = ("id", "projectId", "ask", "kind", "links", "leadRoute",
            "budgetMin", "phase", "reason", "baseSha", "host", "pid",
            "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals")
 SELECT = f"SELECT {', '.join(COLUMNS)} FROM scouts"
+_HOLDS, _HOLDING = {}, threading.Lock()
 
 
 class ScoutRefused(Exception):
@@ -72,11 +75,41 @@ def _phase(conn, scout_id):
     return row[0]
 
 
+def _main_path(conn):
+    (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
+               if row[1] == "main"]
+    return path
+
+
+def _held(conn, scout_id, phase):
+    pid = _HOLDS.get((_main_path(conn), scout_id)) if _HOLDS else None
+    if pid is None:
+        return
+    (owner,) = conn.execute("SELECT pid FROM scouts WHERE id = ?",
+                            (scout_id,)).fetchone()
+    if owner != pid:
+        raise ScoutRefused(scout_id, phase,
+                           f"pid {pid} no longer holds it (pid {owner})")
+
+
 def _live(conn, scout_id):
     phase = _phase(conn, scout_id)
     if phase in ENDED:
         raise ScoutRefused(scout_id, phase, "the scout has already ended")
+    _held(conn, scout_id, phase)
     return phase
+
+
+@contextmanager
+def holding_scout(conn, scout_id, pid):
+    key = (_main_path(conn), scout_id)
+    with _HOLDING:
+        _HOLDS[key] = pid
+    try:
+        yield
+    finally:
+        with _HOLDING:
+            _HOLDS.pop(key, None)
 
 
 def create_scout(conn, project_id, ask, kind, budget_min, *, links=(),
