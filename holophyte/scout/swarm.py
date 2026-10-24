@@ -15,6 +15,7 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
+from holophyte.isolation import launcher
 from holophyte.loop.gates import reap_group, run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.scout.run_helpers import (
@@ -32,7 +33,7 @@ from holophyte.scout.run_helpers import (
     task_fields,
 )
 from holophyte.scout.scout_probes import probe_scout_route
-from store.enums import ScoutTaskPhase
+from store.enums import ScoutKind, ScoutTaskPhase
 from store.scouts import (
     end_scout_task,
     record_scout_event,
@@ -116,7 +117,7 @@ class Swarm:
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
         self.scratch = None
-        self.probing, self.isolated = threading.Lock(), {}
+        self.probing, self.downs = threading.Lock(), {}
         self.stack = ExitStack()
 
     def __enter__(self):
@@ -129,21 +130,41 @@ class Swarm:
         return max(0.0, self.deadline - monotonic())
 
     def left(self):
-        return self.launched < self.total and self.remaining_s() > 0
+        return (self.launched < self.total and self.remaining_s() > 0
+                and not self.stranded())
 
     def ready(self):
-        if self.seat is None:
-            why = f"no [scout.helpers.{self.route}]"
-        else:
-            probe = probe_scout_route(
-                self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
-                min(PROBE_TIMEOUT, self.remaining_s()))
-            if probe.ok:
-                return True
-            why = probe.reason()
+        if self.seat is not None:
+            return True
         record_scout_event(self.conn, self.row.id, "scout_helpers",
-                           f"helper route {self.route} is down: {why}")
+                           f"helper route {self.route} is down: "
+                           f"no [scout.helpers.{self.route}]")
         return False
+
+    def contained(self):
+        return launcher.route_for(self.project).backend == "container"
+
+    def stranded(self):
+        if not self.downs.get("host"):
+            return False
+        return (not (self.row.kind == ScoutKind.BUG.value and self.contained())
+                or bool(self.downs.get("container")))
+
+    def host_probe(self):
+        probe = probe_scout_route(
+            self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
+            min(PROBE_TIMEOUT, self.remaining_s()))
+        return None if probe.ok else (
+            f"helper route {self.route} is down: {probe.reason()}")
+
+    def route_down(self, conn, key, probe):
+        with self.probing:
+            if key not in self.downs:
+                self.downs[key] = probe()
+                if self.downs[key] is not None:
+                    record_scout_event(conn, self.row.id, "scout_helpers",
+                                       self.downs[key])
+            return self.downs[key]
 
     def plan(self, wave, tasks):
         ids = record_scout_tasks(self.conn, self.row.id, 1, wave, [
@@ -205,6 +226,8 @@ class Swarm:
             if runs(self.row, task):
                 self.run_helper(conn, task, mine)
                 return
+            if self.route_down(conn, "host", self.host_probe) is not None:
+                return
             prepared, cap = self.prepared(task), self.remaining_s()
             if prepared is None or cap <= 0:
                 return
@@ -252,15 +275,11 @@ class Swarm:
         self.record(conn, task, argv, turn, monotonic() - started)
 
     def isolated_down(self, conn, seat, checkout):
-        with self.probing:
-            if "down" not in self.isolated:
-                down = isolated_probe(self.project, self.route, seat,
-                                      checkout, self.remaining_s())
-                self.isolated["down"] = down
-                if down is not None:
-                    record_scout_event(conn, self.row.id, "scout_helpers",
-                                       down)
-            return self.isolated["down"]
+        if not self.contained():
+            return self.route_down(conn, "host", self.host_probe)
+        return self.route_down(conn, "container", partial(
+            isolated_probe, self.project, self.route, seat, checkout,
+            self.remaining_s()))
 
     def refuse_push(self, checkout):
         from holophyte.scout.scout_process import refuse_push

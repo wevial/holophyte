@@ -67,8 +67,6 @@ def setup_failure(project, checkout, deadline):
 
 
 def isolated_probe(project, route, seat, checkout, remaining_s):
-    if launcher.route_for(project).backend != "container":
-        return None
     probe = probe_scout_route(
         project, f"{SCOUT_RUNNER}:{route}", seat,
         min(PROBE_TIMEOUT, remaining_s),

@@ -292,6 +292,16 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertEqual(self.report(conn, scout_id)["summary"],
                          REPORT["summary"])
 
+    def test_a_container_run_helper_runs_when_the_host_helper_is_missing(self):
+        _, conn, scout_id, _, goals = self.container_scout(
+            config=CODEX_LEAD
+            + f'[harnesses]\nclaude = "{self.root / "missing" / "claude"}"\n')
+        self.assertEqual(len(goals), 1)
+        self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+        reproduction = self.report(conn, scout_id)["reproduction"]
+        self.assertEqual(reproduction["level"], "test")
+        self.assertNotIn("claimed_level", reproduction)
+
     def test_a_setup_that_cannot_launch_fails_its_task_and_the_report_is_stored(self):
         path, conn, scout_id = self.scout(
             "bug", '[agents]\nimplementer_isolation = "container"\n'
