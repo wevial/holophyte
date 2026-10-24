@@ -8,7 +8,7 @@ type Evidence = ScoutFinding["evidence"][number];
 const CHIP = "inline-block rounded px-2 py-0.5 font-sans text-[13px] font-medium leading-[1.4]";
 const MONO = "font-mono text-[13px] leading-[1.5] [overflow-wrap:anywhere]";
 const ID = "pt-[5px] font-mono text-[11px] font-semibold leading-none text-ink-3";
-const ROW = "grid grid-cols-[2rem_6.75rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 py-3 max-[720px]:grid-cols-[2rem_minmax(0,1fr)]";
+const ROW = "grid grid-cols-[2.375rem_5.25rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 py-3 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]";
 const TEXT = "m-0 font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]";
 
 const FINDING_TONES: Record<ScoutFinding["status"], string> = {
@@ -71,7 +71,7 @@ function FindingItem({ numbered, base }: { numbered: Numbered; base: string }) {
   return (
     <li data-scout-finding className={`${ROW} px-4 last:border-b-0`}>
       <span data-finding-id className={ID}>{id}</span>
-      <span><span data-finding-status className={`${CHIP} ${FINDING_TONES[finding.status]}`}>{finding.status}</span></span>
+      <span><span data-finding-status className={`${CHIP} whitespace-nowrap ${FINDING_TONES[finding.status]}`}>{finding.status}</span></span>
       <div className="min-w-0 max-[720px]:col-start-2">
         <p className={TEXT}>
           <span data-finding-title>{finding.title}</span>
@@ -159,7 +159,7 @@ export function ScoutReport({ reports, baseSha }: { reports: ScoutReportPass[]; 
       </h2>
       {meta.length > 0 && <p data-report-meta className="m-0 mt-2.5 font-mono text-[13px] leading-[1.5] text-ink-2">{meta.join(" · ")}</p>}
       {findings.length > 0 && (
-        <ol aria-label="Findings" className="m-0 mt-3 list-none border border-rule bg-findings-bg p-0">
+        <ol aria-label="Findings" className="m-0 mt-3 list-none border border-rule bg-paper-2 p-0">
           {findings.map((each) => <FindingItem key={each.id} numbered={each} base={base} />)}
         </ol>
       )}
