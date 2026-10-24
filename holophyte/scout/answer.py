@@ -10,7 +10,13 @@ from holophyte.scout.lead import Lead, asked, fenced_json
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
 from store.scout_thread import ANSWER, ANSWER_STARTED, messages, post_message
-from store.scouts import DONE, move_scout, record_scout_event
+from store.scouts import (
+    ANSWERING,
+    DONE,
+    ScoutRefused,
+    move_scout,
+    record_scout_event,
+)
 
 ANSWER_TURN_S = 300
 ANSWER_OPENING = "Scout answer turn"
@@ -52,13 +58,18 @@ def stored(conn, scout_id):
             [(position, json.loads(item)) for position, item in actions])
 
 
-def taken_ask(conn, scout_id):
+def current_ask(conn, scout_id):
     row = conn.execute(
         "SELECT payload FROM runEvents WHERE scoutId = ? AND kind = ?"
         " ORDER BY seq DESC LIMIT 1", (scout_id, ANSWER_STARTED)).fetchone()
-    if row is None:
+    return None if row is None else json.loads(row[0])["message"]
+
+
+def taken_ask(conn, scout_id):
+    ask = current_ask(conn, scout_id)
+    if ask is None:
         raise RuntimeError(f"scout {scout_id} has taken no ask")
-    ask, thread = json.loads(row[0])["message"], messages(conn, scout_id)
+    thread = messages(conn, scout_id)
     (index,) = [index for index, message in enumerate(thread)
                 if message.id == ask]
     return thread[index], thread[:index]
@@ -69,12 +80,16 @@ def report_text(reports, actions):
     parts = []
     for pass_number, report in reports:
         parts.append(f"## Pass {pass_number}\n\n{report['summary']}\n")
-        parts += [f"{next(labelled)} [{finding['status']}] {finding['title']}"
-                  f"\n  evidence: {json.dumps(finding['evidence'])}"
-                  for finding in report["findings"]]
+        parts += [f"{next(labelled)} {finding['title']}\n"
+                  f"  {json.dumps(finding)}" for finding in report["findings"]]
+        rest = {key: value for key, value in report.items()
+                if key not in ("summary", "findings", "actions")}
+        if rest:
+            parts.append(f"\nThe rest of pass {pass_number}'s report:"
+                         f" {json.dumps(rest)}")
     parts.append("\n## Action items\n")
-    parts += [f"{next(labelled)} [{item['kind']}] {item['title']}: "
-              f"{item['why']}" for _, item in actions] or ["none"]
+    parts += [f"{next(labelled)} {item['title']}\n  {json.dumps(item)}"
+              for _, item in actions] or ["none"]
     return "\n".join(parts)
 
 
@@ -136,20 +151,29 @@ def answer(conn, project, row, worktree, stopping, cap=ANSWER_TURN_S):
     return read_answer(question.id, lead.resume(goal, cap), cap)
 
 
-def return_done(conn, scout_id, kind, summary, payload):
+def held(conn, scout_id, ask):
+    current = current_ask(conn, scout_id)
+    if current != ask:
+        raise ScoutRefused(scout_id, ANSWERING,
+                           f"it answers message {current}, not {ask}")
+
+
+def return_done(conn, scout_id, ask, kind, summary, payload):
     with store.transaction(conn):
+        held(conn, scout_id, ask)
         record_scout_event(conn, scout_id, kind, summary, level="detail",
-                           payload=json.dumps(payload))
+                           payload=json.dumps({"message": ask, **payload}))
         move_scout(conn, scout_id, DONE)
 
 
-def fail_answer(conn, scout_id, message, reason):
-    return_done(conn, scout_id, ANSWER_FAILED, f"answer failed: {reason}",
-                {"message": message, "reason": reason})
+def fail_answer(conn, scout_id, ask, reason):
+    return_done(conn, scout_id, ask, ANSWER_FAILED, f"answer failed: {reason}",
+                {"reason": reason})
 
 
-def stop_answer(conn, scout_id, reason, author, note):
-    return_done(conn, scout_id, ANSWER_STOPPED, f"answer stopped: {reason}",
+def stop_answer(conn, scout_id, ask, reason, author, note):
+    return_done(conn, scout_id, ask, ANSWER_STOPPED,
+                f"answer stopped: {reason}",
                 {"reason": reason, "author": author, "note": note})
 
 
@@ -164,6 +188,7 @@ def settle(conn, scout_id, outcome):
     summary = f"answered message {outcome.ask}" + (
         f"; unknown labels: {', '.join(unknown)}" if unknown else "")
     with store.transaction(conn):
+        held(conn, scout_id, outcome.ask)
         posted = post_message(conn, scout_id, "scout", ANSWER, outcome.text,
                               blocks=[labelled[ref] for ref in outcome.refs
                                       if ref in labelled],

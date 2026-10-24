@@ -8,7 +8,7 @@ from pathlib import Path
 
 import store
 from holophyte.loop.runs import open_store
-from holophyte.scout.answer import stop_answer
+from holophyte.scout.answer import current_ask, stop_answer
 from holophyte.scout.filing import ROW_ID_LIMIT
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
@@ -64,7 +64,8 @@ def end_unrun(conn, scout_id, phase, reason, author, note):
     if phase != ANSWERING:
         end_scout(conn, scout_id, "stopped", reason)
         return f"scout {scout_id} stopped"
-    stop_answer(conn, scout_id, reason, author, note)
+    stop_answer(conn, scout_id, current_ask(conn, scout_id), reason, author,
+                note)
     return f"scout {scout_id}'s answer stopped; it is done again"
 
 

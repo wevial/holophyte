@@ -18,13 +18,21 @@ from unittest.mock import patch
 import holophyte.scout.scout_sweep as scout_sweep
 from holophyte.config.project import Project
 from holophyte.host.registry import Host
-from holophyte.scout.answer import ANSWER_OPENING, answer, labels, settle
+from holophyte.scout.answer import (
+    ANSWER_OPENING,
+    Outcome,
+    answer,
+    fail_answer,
+    labels,
+    settle,
+)
 from holophyte.scout.lead import PLAN_OPENING, REPORT_OPENING
 from holophyte.scout.run_helpers import HELPER_OPENING
 from holophyte.scout.scout_process import make_lead
 from holophyte.scout.swarm import Stopping
 from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
+    ScoutRefused,
     beat_scout,
     create_scout,
     end_scout,
@@ -74,7 +82,7 @@ class AnswerCase(StopCase):
         self.target = target
         self.stubs.answer(answer=fenced({"answer": TEXT, "refs": ["F2"]}))
 
-    def done_scout(self, session="S", created=None):
+    def done_scout(self, session="S", created=None, report=REPORT):
         (project,) = self.store_conn.execute(
             "SELECT id FROM projects").fetchone()
         scout_id = create_scout(self.store_conn, project, "why does the"
@@ -83,7 +91,7 @@ class AnswerCase(StopCase):
                    base_sha=git(self.path, "rev-parse", "main~1"))
         if session is not None:
             set_scout_session(self.store_conn, scout_id, session)
-        record_scout_report(self.store_conn, scout_id, 1, REPORT)
+        record_scout_report(self.store_conn, scout_id, 1, report)
         record_scout_actions(self.store_conn, scout_id, 1, ACTIONS)
         end_scout(self.store_conn, scout_id, "done", REASON)
         return scout_id
@@ -201,6 +209,38 @@ class AnswerStepTests(AnswerCase):
                           {"type": "action", "position": 1}])
         (event,) = self.payloads(scout_id, "scout_answered")
         self.assertEqual(event["unknown_refs"], ["F9"])
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "done")
+
+    def test_the_goal_carries_each_stored_report_in_full(self):
+        report = dict(REPORT, cut=["the CI logs were not read"],
+                      reproduction={"level": "not_reproduced",
+                                    "hypotheses": [{"claim": "a timer race"}]})
+        scout_id = self.done_scout(report=report)
+        take_message(self.store_conn, self.ask(scout_id))
+        self.assertEqual(self.answer_step(scout_id), 0)
+        goal = self.answer_goal()
+        for carried in ("the CI logs were not read", "a timer race",
+                        ACTIONS[0]["body"], FINDINGS[0]["evidence"][0]["file"]):
+            self.assertIn(carried, goal)
+
+    def test_an_obsolete_attempt_cannot_settle_a_newer_ask(self):
+        scout_id = self.done_scout()
+        first = self.ask(scout_id)
+        take_message(self.store_conn, first)
+        fail_answer(self.store_conn, scout_id, first, "heartbeat stale")
+        second = self.ask(scout_id)
+        take_message(self.store_conn, second)
+
+        for obsolete in (Outcome(first, TEXT), Outcome(first, failure="cut")):
+            with self.assertRaises(ScoutRefused):
+                settle(self.store_conn, scout_id, obsolete)
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "answering")
+        self.assertEqual(self.answers(scout_id), [])
+
+        self.assertEqual(settle(self.store_conn, scout_id,
+                                Outcome(second, TEXT)), 0)
+        (answered,) = self.answers(scout_id)
+        self.assertEqual(answered.answers_id, second)
         self.assertEqual(scout(self.store_conn, scout_id).phase, "done")
 
     def test_an_answer_without_json_or_cut_at_its_cap_leaves_the_report(self):

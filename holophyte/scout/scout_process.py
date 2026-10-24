@@ -13,7 +13,7 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
-from holophyte.scout.answer import Outcome, answer, settle, stop_answer
+from holophyte.scout.answer import Outcome, answer, current_ask, settle, stop_answer
 from holophyte.scout.lead import run_lead
 from holophyte.scout.stop import stop_reason, stop_request
 from holophyte.scout.swarm import ScoutStopped, Stopping
@@ -198,12 +198,12 @@ def end_stopped(conn, scout_id):
     return 0
 
 
-def answer_stopped(conn, scout_id):
+def answer_stopped(conn, scout_id, ask):
     if conn.in_transaction:
         conn.rollback()
     reason, asked = stop_reason(conn, scout_id), stop_request(conn, scout_id)
     try:
-        stop_answer(conn, scout_id, reason, asked and asked["author"],
+        stop_answer(conn, scout_id, ask, reason, asked and asked["author"],
                     asked and asked["note"])
     except ScoutRefused as ended:
         print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
@@ -212,17 +212,17 @@ def answer_stopped(conn, scout_id):
     return 0
 
 
-def answered(conn, project, row, stopping):
+def answered(conn, project, row, ask, stopping):
     try:
         worktree = make_lead(project, row.id, row.base_sha)
         return answer(conn, project, row, worktree, stopping)
     except ScoutRefused:
         raise
     except Exception as bad:
-        return Outcome(None, failure=str(bad).strip() or type(bad).__name__)
+        return Outcome(ask, failure=str(bad).strip() or type(bad).__name__)
 
 
-def answer_mode(conn, project, row, stopping):
+def answer_mode(conn, project, row, ask, stopping):
     scout_id = row.id
     interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
     try:
@@ -231,7 +231,7 @@ def answer_mode(conn, project, row, stopping):
         if owner != os.getpid():
             raise ScoutRefused(scout_id, ANSWERING, f"pid {owner} answers it")
         with scout_heartbeat(conn, scout_id, interval_s):
-            outcome = answered(conn, project, row, stopping)
+            outcome = answered(conn, project, row, ask, stopping)
         try:
             return settle(conn, scout_id, outcome)
         except ScoutRefused:
@@ -256,14 +256,15 @@ def scout_mode(project, scout_id):
             return 1
         stopping = Stopping()
         answering = row.phase == ANSWERING
+        ask = current_ask(conn, scout_id) if answering else None
         with stop_on_sigterm(stopping):
             try:
                 if answering:
-                    return answer_mode(conn, project, row, stopping)
+                    return answer_mode(conn, project, row, ask, stopping)
                 return run_scout(conn, project, row, stopping)
             except ScoutStopped:
                 if answering:
-                    return answer_stopped(conn, scout_id)
+                    return answer_stopped(conn, scout_id, ask)
                 return end_stopped(conn, scout_id)
     finally:
         conn.close()

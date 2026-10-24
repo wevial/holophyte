@@ -15,7 +15,7 @@ from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.config.config_tables import sweep_config
 from holophyte.host.registry import home
 from holophyte.loop.gates import sh
-from holophyte.scout.answer import fail_answer
+from holophyte.scout.answer import current_ask, fail_answer
 from holophyte.scout.scout_process import scout_dir
 from store.enums import ScoutPhase
 from store.scout_thread import (
@@ -59,7 +59,7 @@ def _end_one_stale(conn, row, reason, now):
     if row.phase != ANSWERING:
         end_scout(conn, row.id, "failed", reason, now=now)
         return "ended failed"
-    fail_answer(conn, row.id, None, reason)
+    fail_answer(conn, row.id, current_ask(conn, row.id), reason)
     return "answer failed, back to done"
 
 
