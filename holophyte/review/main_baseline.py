@@ -3,6 +3,7 @@ candidate's copy of its named test files, for the reviewer to read."""
 import json
 import re
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import store
@@ -61,26 +62,55 @@ def _names(line, path):
                for spelling, before in spellings)
 
 
+def _commands(verify_cmd):
+    commands, pending = [], ""
+    for text in (verify_cmd or "").splitlines():
+        if not pending and (not text.strip()
+                            or text.lstrip().startswith("#")):
+            continue
+        pending += text
+        if pending.endswith("\\"):
+            pending += "\n"
+        else:
+            commands.append(pending)
+            pending = ""
+    return commands + ([pending.rstrip("\n")] if pending else [])
+
+
+def _complete(lines):
+    return subprocess.run(["bash", "-n"], input="\n".join(lines), text=True,
+                          capture_output=True).returncode == 0
+
+
 def lines_for(verify_cmd, files):
-    lines = [text for text in (verify_cmd or "").splitlines()
-             if text.strip() and not text.lstrip().startswith("#")]
-    for end, line in enumerate(lines, 1):
-        if any(_names(line, path) for path in files):
-            return lines[:end]
-    return lines
+    commands = _commands(verify_cmd)
+    for end, command in enumerate(commands, 1):
+        if any(_names(command, path) for path in files):
+            return commands[:end] if _complete(commands[:end]) else commands
+    return commands
 
 
 def _blobs(wt, sha, files):
+    tree = sh(["git", "ls-tree", "-r", "--name-only", sha], wt).splitlines()
     blobs = {}
-    for path in files:
-        if GLOB.search(path):
-            continue
-        found = subprocess.run(["git", "rev-parse", "--verify", "--quiet",
-                                f"{sha}:{path}"], cwd=wt, capture_output=True,
-                               text=True)
-        if found.returncode == 0:
-            blobs[path] = found.stdout.strip()
+    for named in files:
+        for path in ([found for found in tree if fnmatchcase(found, named)]
+                     if GLOB.search(named) else [named]):
+            found = subprocess.run(["git", "rev-parse", "--verify", "--quiet",
+                                    f"{sha}:{path}"], cwd=wt,
+                                   capture_output=True, text=True)
+            if found.returncode == 0:
+                blobs[path] = found.stdout.strip()
     return blobs
+
+
+def _stopped(command, files, failure):
+    stopped = (failure or {}).get("command") or ""
+    naming = [line for line in command.splitlines()
+              if any(_names(line, path) for path in files)]
+    if naming and not any(_names(stopped, path) for path in files):
+        return {"stopped_at": stopped}
+    return {}
 
 
 def _recorded(conn, run_id, key):
@@ -109,7 +139,8 @@ def _run(project, conn, run_id, beat_s, wt, base, sha, files, command):
     failure = getattr(out, "failure", None)
     status = 0 if ok else (failure or {}).get("exit_status")
     return {"ran": True, "passed": ok, "exit_status": status,
-            "output": str(out)[-OUTPUT_TAIL:]}
+            "output": str(out)[-OUTPUT_TAIL:],
+            **({} if ok else _stopped(command, files, failure))}
 
 
 def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
@@ -170,12 +201,18 @@ def _entry(result):
     if not result["ran"]:
         return (f"C{n}: the baseline at {base} did not run: "
                 f"{result['reason']}\n")
+    ran = (f"C{n}: at the merge base {base}, with {files} taken from the "
+           f"candidate {result['sha'][:12]}, the factory ran:\n"
+           f"{result['command']}\n")
+    if result.get("stopped_at"):
+        return (f"{ran}It stopped at `{result['stopped_at']}` with exit status "
+                f"{result['exit_status']} before {files} ran, so this is not "
+                f"the run C{n}'s on-main clause asks for; the implementer "
+                f"output must supply it. Output tail:\n{result['output']}\n")
     whole = (" The whole base tree ran with the candidate's test, not only "
              "the named code as on main." if result["form"] == "as_on_main"
              else "")
-    return (f"C{n}: at the merge base {base}, with {files} taken from the "
-            f"candidate {result['sha'][:12]}, the factory ran:\n"
-            f"{result['command']}\nExit status: {result['exit_status']}. "
+    return (f"{ran}Exit status: {result['exit_status']}. "
             f"This run is the run C{n}'s on-main clause asks for, in place of "
             f"the implementer output.{whole} Output tail:\n"
             f"{result['output']}\n")

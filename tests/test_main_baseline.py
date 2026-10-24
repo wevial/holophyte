@@ -192,6 +192,35 @@ class BaselineRuns(unittest.TestCase):
                      ("later", "")),
             ["setup", "check", "later"])
 
+    def test_a_line_continued_with_a_backslash_runs_as_one_command(self):
+        log = self.root / "args"
+        stub = self.root / "check.sh"
+        stub.write_text(f"echo \"$@\" >> '{log}'\n")
+        later = self.root / "later.sh"
+        later.write_text(f"echo later >> '{log}'\n")
+        self.baselines([ON_MAIN], verify=(f"sh '{stub}' tests/test_app.py \\\n"
+                                          f"  -v\nsh '{later}'"))
+        self.assertEqual(log.read_text(), "tests/test_app.py -v\n")
+
+    def test_a_base_run_stopped_before_the_test_line_is_not_its_witness(self):
+        lint = self.root / "lint.sh"
+        lint.write_text("echo lint-failed; exit 4\n")
+        _, _, (result,) = self.baselines([ON_MAIN],
+                                         verify=f"sh '{lint}'\n{VERIFY}")
+        entry = main_baseline.brief([result])
+        self.assertEqual(result["exit_status"], 4)
+        self.assertIn(f"It stopped at `sh '{lint}'` with exit status 4 before "
+                      "tests/test_app.py ran", entry)
+        self.assertNotIn("This run is the run C1's", entry)
+        self.assertIsNone(main_baseline.gap(result))
+
+    def test_a_named_file_pattern_runs_with_its_matches(self):
+        criterion = ON_MAIN.replace("tests/test_app.py", "tests/test_*.py")
+        conn, run, _ = self.baselines([criterion])
+        (event,) = payloads(conn, run)
+        self.assertEqual(event["files"], ["tests/test_app.py"])
+        self.assertIn("AssertionError", event["output"])
+
     def test_a_recorded_run_is_reused_until_the_named_file_changes(self):
         counter = self.root / "counter"
         verify = (f"python3 -c 'import uuid; print(uuid.uuid4())' | tee -a "
