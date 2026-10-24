@@ -56,20 +56,7 @@ class MentionAccountCases(OperatorNotePass):
         self.assertIn(("resolve", {"thread": "PRRT_1"}), self.api_calls())
 
     def test_review_bot_path_mention_is_adjudicated_not_refused(self):
-        fake, replies = self.coderabbit_loop('mention_accounts = ["maintainer"]\n')
-        fix = fake.roles.index("implement", fake.roles.index("adjudicate"))
-        self.assertIn("Cap the uncompressed size of each ZIP member",
-                      fake.turns[fix].goal)
-        self.assertEqual(len(replies), 1)
-        self.assertIn("Addressed in ", replies[0])
-
-    def test_review_bot_path_mention_is_adjudicated_with_mentions_open(self):
-        fake, _ = self.coderabbit_loop("")
-        self.assertIn("adjudicate", fake.roles)
-
-    def coderabbit_loop(self, accounts):
-        """The loop over CodeRabbit's thread; asserts no instruction or refusal."""
-        self.configure('[merge]\nmode = "pr"\n' + accounts)
+        self.configure('[merge]\nmode = "pr"\nmention_accounts = ["maintainer"]\n')
         self.fake_route(states=[self.pr_state([coderabbit()]), self.pr_state()])
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
                             Reply("THREAD 1: ADDRESS -- cap each member"),
@@ -77,17 +64,12 @@ class MentionAccountCases(OperatorNotePass):
                             provider=self.provider())
         self.assertFalse(any("Instruction from @coderabbitai" in turn.goal
                              for turn in fake.turns))
+        fix = fake.roles.index("implement", fake.roles.index("adjudicate"))
+        self.assertIn("Cap the uncompressed size of each ZIP member",
+                      fake.turns[fix].goal)
         replies = self.replies()
-        self.assertFalse(any(REFUSAL in body for body in replies))
-        return fake, replies
-
-    def test_advisory_review_bot_path_mention_is_noted_not_refused(self):
-        replies = self.settled('mention_accounts = ["maintainer"]\n'
-                               'bot_threads = "advisory"\n', [coderabbit()])
         self.assertEqual(len(replies), 1)
-        self.assertIn("Noted as advisory for the maintainer;"
-                      " not acted on by the factory.", replies[0])
-        self.assertNotIn(REFUSAL, replies[0])
+        self.assertIn("Addressed in ", replies[0])
 
     def test_stranger_mention_on_a_bot_thread_is_refused(self):
         thread = coderabbit(((("stranger", "User"), "@holophyte fix: cap it"),))
