@@ -26,7 +26,7 @@ const ABOUT_LINK = "underline underline-offset-2 hover:text-ink";
 
 /** "about run 812", linked to its subject's page or, for a pull request, its address. */
 function About({ subject, project }: { subject: ScoutDetail["scout"]["subject"]; project: string }) {
-  const target = subject == null ? null : aboutTarget(`${subject.kind}:${subject.ref}`);
+  const target = subject == null ? null : aboutTarget(subject);
   if (target == null) return null;
   const link = "url" in target ? <a href={target.url} target="_blank" rel="noreferrer" className={ABOUT_LINK}>{target.words}</a>
     : "ticket" in target ? <Link to="/tickets/$project/$key" params={{ project, key: target.ticket }} search={{}} className={ABOUT_LINK}>{target.words}</Link>

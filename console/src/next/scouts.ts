@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useSearch } from "@tanstack/react-router";
-import { scoutRoutesSchema, scoutsSchema, type ScoutRoute, type ScoutRow, type ScoutRoutes, type Scouts } from "../lib/contract.gen";
+import { scoutRoutesSchema, scoutsSchema, type ScoutRoute, type ScoutRow, type ScoutRoutes, type Scouts, type ScoutSubject } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import type { HostRecord } from "../lib/hosts";
 import { POLL_INTERVAL_MS } from "../lib/poll";
@@ -157,18 +157,16 @@ export function aboutWords(about: string): string | null {
   }
 }
 
-/** Where a scout's subject `about` lives in the console, or the pull
+/** Where a scout's `subject` lives in the console, or the pull
  *  request's own address; null where `aboutWords` has no words for it. */
 type AboutTarget =
   | { words: string; run: string }
   | { words: string; ticket: string }
   | { words: string; url: string };
 
-export function aboutTarget(about: string): AboutTarget | null {
-  const words = aboutWords(about);
+export function aboutTarget({ kind, ref }: ScoutSubject): AboutTarget | null {
+  const words = aboutWords(`${kind}:${ref}`);
   if (words == null) return null;
-  const kind = about.slice(0, about.indexOf(":"));
-  const ref = about.slice(kind.length + 1);
   if (kind === "pr") return { words, url: ref };
   return kind === "ticket" ? { words, ticket: ref } : { words, run: ref };
 }
