@@ -78,7 +78,8 @@ class HardCodedCountTests(unittest.TestCase):
                           'then round 2 failed.',
                           'then HOLO-42 tests stay green.',
                           'then test_42.py passes.',
-                          'then the branch adds 3 tests.'):
+                          'then the branch adds 3 tests.',
+                          'then the branch adds 3 passing tests.'):
             with self.subTest(criterion=criterion):
                 problems = tt.validate(ticket(criterion=criterion))
                 self.assertEqual(matching(problems, SAME_COUNT), [])
@@ -129,6 +130,16 @@ class WideVerifyTests(unittest.TestCase):
         self.assertIn('selects test_*', found[0])
         self.assertIn('2 files', found[0])
 
+    def test_glob_under_a_named_parent_is_not_advised(self):
+        repo = make_repo(self, {'tests/console/test_a.py': '',
+                                'tests/console/test_b.py': ''})
+        verify = "python3 -m pytest 'tests/*/test_*.py'"
+        named = '- `tests/console/test_a.py`'
+        self.assertEqual(len(matching(tt.validate(
+            ticket(verify, named), repo=repo), WIDE)), 1)
+        problems = tt.validate(ticket(verify, named + '\n- `tests/`'), repo=repo)
+        self.assertEqual(matching(problems, WIDE), [])
+
     def test_discover_character_class_wider_than_in_scope_is_advised(self):
         repo = make_repo(self, {'tests/test_a.py': '', 'tests/test_b.py': ''})
         found = matching(tt.validate(ticket(
@@ -158,7 +169,8 @@ class MainLintTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('ruff'), NO_RUFF)
     def test_lint_that_does_not_run_ruff_on_the_whole_repository_is_not_advised(self):
         repo = self.failing_main()
-        for verify in ('ruff check a.py', 'echo ruff check .'):
+        for verify in ('ruff check a.py', 'echo ruff check .', 'ruff check -',
+                       'ruff check --stdin-filename a.py -'):
             with self.subTest(verify=verify):
                 problems = tt.validate(ticket(verify), repo=repo)
                 self.assertEqual(matching(problems, LINT), [])

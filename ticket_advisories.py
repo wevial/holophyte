@@ -19,6 +19,7 @@ COUNT_RE = re.compile(
 ORDINAL_WORDS = frozenset((
     "attempt", "case", "check", "code", "criteria", "criterion", "exit",
     "item", "line", "phase", "round", "run", "stage", "status", "step", "test"))
+ADDING_WORDS = frozenset(("add", "added", "adding", "adds", "new"))
 ID_CHAIN_RE = re.compile(r"(?:\b([A-Za-z]*)\d+\s*(?:,|\band\b|\bor\b)\s*)+$")
 GLOB_TOKEN_RE = re.compile(r"[\w.*?/\[\]-]*[*?][\w.*?/\[\]-]*")
 NON_PATH_OPTIONS = ("-k", "-m")
@@ -60,7 +61,7 @@ def _names_an_item(before):
             return True
         before = before[:chain.start()]
     word = re.search(r"(\w+)\W*$", before)
-    return bool(word) and word.group(1).lower() in ORDINAL_WORDS
+    return bool(word) and word.group(1).lower() in ORDINAL_WORDS | ADDING_WORDS
 
 
 def _counts(text):
@@ -102,9 +103,12 @@ def _glob_matches(pattern, path):
 
 
 def _base(pattern):
-    parts = Path(pattern).parts
-    fixed = [p for p in parts[:-1] if not any(c in p for c in GLOB_CHARS)]
-    return str(Path(*fixed)) if len(fixed) == len(parts) - 1 else "."
+    fixed = []
+    for part in Path(pattern).parts[:-1]:
+        if any(c in part for c in GLOB_CHARS):
+            break
+        fixed.append(part)
+    return str(Path(*fixed))
 
 
 def _selections(tokens, tracked):
@@ -168,7 +172,8 @@ def _lints_whole_repository(tokens):
     if rest[:1] != ["check"]:
         return False
     paths = [a for before, a in zip(rest, rest[1:])
-             if not a.startswith("-") and before not in LINT_VALUE_OPTIONS]
+             if (a == "-" or not a.startswith("-"))
+             and before not in LINT_VALUE_OPTIONS]
     return all(p in (".", "./") for p in paths)
 
 
