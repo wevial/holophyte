@@ -83,7 +83,7 @@ def run_worktree_setup(project, wt, conn=None, run_id=None):
 
 
 def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None,
-                     reuse=()):
+                     reuse=(), on_start=None):
     try:
         write_worktree_environment(project, wt)
     except (SystemExit, InfraFailure) as error:
@@ -99,7 +99,7 @@ def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None,
         set_phase(conn, run_id, "working",
                   f"worktree setup: {len(commands)} command(s) in {wt}")
     ok, report, transcript = _run_setup_commands(project, wt, commands, deadline,
-                                                 reuse)
+                                                 reuse, on_start)
     if not ok:
         return False, report, transcript
     if (Path(wt) / ".githooks").is_dir():
@@ -113,7 +113,7 @@ def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None,
     return True, "", transcript
 
 
-def _run_setup_commands(project, wt, commands, deadline, reuse):
+def _run_setup_commands(project, wt, commands, deadline, reuse, on_start=None):
     timeout = setup_timeout(project)
     transcript = ""
     for n, command in enumerate(commands, 1):
@@ -129,7 +129,7 @@ def _run_setup_commands(project, wt, commands, deadline, reuse):
                            " not run: the time budget is spent"), transcript
         try:
             ok, out = run_verify(command, wt, timeout=limit, project=project,
-                                 rerun=False)
+                                 rerun=False, on_start=on_start)
         except subprocess.TimeoutExpired as e:
             ok, out = False, timeout_report(command, e)
         except OSError as error:

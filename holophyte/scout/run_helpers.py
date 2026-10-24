@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 from holophyte.agents.harness import SCOUT_RUNNER
@@ -58,29 +59,30 @@ def run_seat(project, seat):
     return replace(seat, binary=binary, role=SCOUT_RUNNER)
 
 
-def setup_failure(project, checkout, deadline):
+def setup_failure(project, checkout, deadline, tracked):
     try:
-        ok, report, _ = prepare_worktree(project, checkout, deadline=deadline)
+        ok, report, _ = tracked(partial(prepare_worktree, project, checkout,
+                                        deadline=deadline))
     except LAUNCH_FAILURES as failed:
         return f"[holo2] worktree setup could not launch: {failed}"
     return None if ok else report
 
 
-def isolated_probe(project, route, seat, checkout, remaining_s):
+def isolated_probe(project, route, seat, checkout, remaining_s, tracked):
     probe = probe_scout_route(
         project, f"{SCOUT_RUNNER}:{route}", seat,
         min(PROBE_TIMEOUT, remaining_s),
-        run=lambda project, argv, cap: launch_turn(project, argv, checkout,
-                                                    cap))
+        run=lambda project, argv, cap: tracked(partial(
+            launch_turn, project, argv, checkout, cap)))
     if probe.ok:
         return None
     return f"helper route {route} is down in the container: {probe.reason()}"
 
 
-def launch_turn(project, argv, checkout, cap, around=None):
+def launch_turn(project, argv, checkout, cap, around=None, on_start=None):
     return launcher.launch(launcher.turn_route(project, argv), checkout,
                            launcher.environment(project), argv, timeout=cap,
-                           project=project, around=around)
+                           project=project, around=around, on_start=on_start)
 
 
 def reproduced(row, swarm, report):

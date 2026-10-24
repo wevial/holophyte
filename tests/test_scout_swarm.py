@@ -90,8 +90,8 @@ class ScoutSwarmTests(ScoutFixture):
                                     "helper_pid_file": str(pid_file)}})
         real = lead.run_lead
         with patch.object(scout_process, "run_lead",
-                          lambda conn, project, row, worktree, _budget_s:
-                          real(conn, project, row, worktree, 5)):
+                          lambda conn, project, row, worktree, _budget_s, *rest:
+                          real(conn, project, row, worktree, 5, *rest)):
             self.run_scout(path, scout_id)
         phases = [phase for _, _, phase, *_ in self.tasks(conn, scout_id)]
         self.assertEqual(phases, ["done", "stopped", "done"])
@@ -115,8 +115,8 @@ class ScoutSwarmTests(ScoutFixture):
 
         with patch.object(lead, "probe_scout_route", slow_probe), \
                 patch.object(scout_process, "run_lead",
-                             lambda conn, project, row, worktree, _budget_s:
-                             real_lead(conn, project, row, worktree, 4)):
+                             lambda conn, project, row, worktree, _budget_s, *rest:
+                             real_lead(conn, project, row, worktree, 4, *rest)):
             self.run_scout(path, scout_id)
         self.assertEqual([phase for _, _, phase, *_ in self.tasks(conn, scout_id)],
                          ["done"])

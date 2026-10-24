@@ -613,6 +613,46 @@
           "additionalProperties": false
         },
         "name": "scout_file"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "stop a scout, the note its reason: a queued one ends now, a running one's process is signalled (holo scout stop ID --json)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "scout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the scout's id"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "project",
+            "scout",
+            "note",
+            "author"
+          ],
+          "additionalProperties": false
+        },
+        "name": "scout_stop"
       }
     ]
   }

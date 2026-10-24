@@ -15,9 +15,9 @@ from holophyte.redact import safe_print as print
 from holophyte.scout.scout_config import scout_config
 
 
-def in_critic_workspace(project, cmd, timeout):
+def in_critic_workspace(project, cmd, timeout, run=run_capped):
     with critic_workspace(project) as checkout:
-        return run_capped(cmd, checkout, timeout)
+        return run(cmd, checkout, timeout)
 
 
 def probe_scout_route(project, name, seat, timeout=PROBE_TIMEOUT,

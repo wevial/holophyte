@@ -15,6 +15,7 @@ from holophyte.holo.grammar import (
     LAUNCH,
     SCOUT_FILE,
     SCOUT_KINDS,
+    SCOUT_STOP,
     arguments,
     canonical,
     factory_argv,
@@ -111,6 +112,8 @@ def call(args, target):
         return scout(args, target)
     if args.command.words == SCOUT_FILE:
         return scout_file(args, target)
+    if args.command.words == SCOUT_STOP:
+        return scout_stop(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -174,14 +177,17 @@ def scout_body(args):
 
 
 def scout(args, target):
-    from holophyte.holo.mcp_tools import VIA
     from holophyte.scout.launch import launch
-    body = scout_body(args)
+    return scout_action(args, target, scout_body(args), launch, "holo scout")
+
+
+def scout_action(args, target, body, action, name):
+    from holophyte.holo.mcp_tools import VIA
     if not target:
-        args.leaf.error("holo scout needs its project: -p NAME|PATH")
+        args.leaf.error(f"{name} needs its project: -p NAME|PATH")
     signed = body.get("author", "").endswith(f" {VIA}")
-    code, reply = launch(located(target), body,
-                         "holo mcp" if signed else "holo scout")
+    code, reply = action(located(target), body,
+                         "holo mcp" if signed else name)
     if code == 400:
         args.leaf.error(reply["error"])
     if code != 200 or not reply["ok"]:
@@ -212,6 +218,21 @@ def scout_file(args, target):
     for line in said[:-1]:
         print(PREFIX + line)
     return PREFIX + said[-1]
+
+
+def scout_stop_body(args):
+    values, note = arguments(args, args.command)
+    if note is None or not note.strip():
+        args.leaf.error("holo scout stop's note must say why (non-blank text)")
+    body = {"scout": counted(values[0]), "note": note,
+            "author": last(args, "author")}
+    return {key: value for key, value in body.items() if value is not None}
+
+
+def scout_stop(args, target):
+    from holophyte.scout.stop import stop
+    return scout_action(args, target, scout_stop_body(args), stop,
+                        "holo scout stop")
 
 
 def located(target):
