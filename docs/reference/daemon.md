@@ -52,7 +52,7 @@ row and that row's first event, `scout_queued`. `scout-file` writes none
 either: its record is the filed ticket and the action item's filed key.
 `scout-stop` writes none either: its record is the scout's
 `scout_stop_requested` event. `scout-message` writes none either: its record is
-the ask's thread message. A 400, 404 or 503 answers `{"error": ...}` instead.
+the ask's or steer's thread message. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 
@@ -475,28 +475,53 @@ store is 503.
 ## `POST /actions/scout-message`
 
 Body: a JSON object with `scout` (required, a positive integer: the
-scout's id), `mode` (required, `ask`), `text` (required, non-blank: the
-ask) and `author` (optional, default `maintainer`). It asks a `done`
-scout about its report; the scout's lead answers in its thread, which
-[`GET /scouts/ID`](http.md#get-scoutsid) serves as `thread`. `holo scout
-ask ID "TEXT"` and the `holo mcp` `scout_ask` tool are the same ask. On a
+scout's id), `mode` (required, `ask` or `steer`), `text` (required,
+non-blank: the ask or the steer), `answers` (optional, a positive
+integer: the id of the scout's card the message answers) and `author`
+(optional, default `maintainer`). An `ask` asks a `done` scout about its
+report, and its lead answers in its thread, which
+[`GET /scouts/ID`](http.md#get-scoutsid) serves as `thread`. A `steer`
+tells a `done` scout to look further: it runs one more pass on the steer
+and appends that pass's report. `holo scout ask ID "TEXT"` and
+`holo scout steer ID "TEXT"`, each with `--answers MSG`, and the
+`holo mcp` `scout_ask` and `scout_steer` tools are the same messages. On a
 host daemon it is `/projects/NAME/actions/scout-message`, admitted as the
 other project actions are.
 
-The ask is recorded first, as a message on the scout's thread. Then the
-route runs the start half of the host sweep's scout step once, which
-takes the oldest waiting work while the host is under its `[scout]
-max_parallel`: the scout goes to `answering` and its lead's session is
-resumed to answer. An ask not taken waits for the sweep's next pass.
+The message is recorded first, on the scout's thread. Then the route runs
+the start half of the host sweep's scout step once, which takes the
+oldest waiting work while the host is under its `[scout] max_parallel`:
+for an ask the scout goes to `answering` and its lead's session is
+resumed to answer; for a steer the scout goes to `planning` and runs its
+next pass. A message not taken waits for the sweep's next pass.
+
+An answer turn's ANSWER and a pass's REPORT may end with a `proposals`
+list, each `{"question": "...", "choices": [{"label": "...", "mode":
+"ask"}, {"label": "...", "mode": "steer"}]}` with two to four choices,
+each choice's `mode` `ask` or `steer`.
+After the turn's own record, at most `MAX_PROPOSALS` (2) of them, in the
+order given, are posted to the thread as cards: author `scout`, mode
+`answer`, `answers` the message the turn took, the question as text and
+one block `{"type": "proposal", "question", "choices"}`. A malformed
+proposal, or one past the cap, is dropped and named in the turn's
+`scout_answered` or `scout_pass_done` event, under `dropped_proposals`.
+A person answers a card with an ask or a steer whose `answers` is the
+card: a client posts a choice as its label with that choice's mode, and a
+typed answer as its text; the daemon does not match the text to a label. The turn that takes the message reads the card's question
+beside it.
 
 An unknown scout is 404 `no such scout`. A scout not `done` is 200 with
 `ok: false`, `reason` `not_done` and `detail` naming its phase; a scout
-with an ask still waiting is 200 with `ok: false`, `reason`
-`ask_waiting` and `detail` naming the waiting message's id. Neither
-writes anything. The reply adds `scout`, `message`, the new message's id,
-and `queued`, true when the ask was not taken and waits for a scout slot;
-`detail` is `scout N is answering message M` or `message M waits for a
-scout slot: ...`, and `recorded` is null.
+with an ask or steer still waiting is 200 with `ok: false`, `reason`
+`ask_waiting` and `detail` naming the waiting message's id. An `answers`
+that is not a card of this scout, or a card a person's message already
+answers, is 200 with `ok: false`, `reason` `card_refused` and `detail`
+naming the card's id; the store holds that rule, so two messages cannot
+both answer one card. None of these writes anything. The reply adds
+`scout`, `message`, the new message's id, and `queued`, true when the
+message was not taken and waits for a scout slot; `detail` is `scout N is
+answering message M`, `scout N runs pass P for message M` or `message M
+waits for a scout slot: ...`, and `recorded` is null.
 
 ```json
 {"action": "scout-message", "ok": true, "scout": 14, "message": 3,
@@ -505,8 +530,9 @@ scout slot: ...`, and `recorded` is null.
 ```
 
 A body that is not a JSON object, a `scout` that is not a positive
-integer, a `mode` missing or not `ask`, and a `text` missing or blank are
-400 naming the field. A project with no store is 503.
+integer, a `mode` missing or not `ask` or `steer`, a `text` missing or
+blank, and an `answers` that is not a positive integer are 400 naming the
+field. A project with no store is 503.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 

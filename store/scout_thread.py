@@ -5,6 +5,7 @@ from typing import NamedTuple
 from holophyte.redact import redact_document, redact_values
 
 from .enums import ThreadMode
+from .run_reads import SQLITE_INT64_MAX
 from .schema import _transaction
 from .scouts import (
     ANSWERING,
@@ -65,6 +66,54 @@ def _blocks(scout_id, blocks):
     return blocks
 
 
+def _answered(conn, scout_id, answers_id):
+    row = None if answers_id > SQLITE_INT64_MAX else conn.execute(
+        "SELECT scoutId, mode, blocks FROM threadMessages WHERE id = ?",
+        (answers_id,)).fetchone()
+    if row is None or row[0] != scout_id:
+        raise ThreadRefused(f"message {answers_id}",
+                            f"not a message of scout {scout_id}")
+    return row[1], json.loads(row[2])
+
+
+def _proposes(blocks):
+    return any(block.get("type") == "proposal" for block in blocks)
+
+
+def _anchor(conn, scout_id, answers_id, blocks):
+    if answers_id is None:
+        raise ThreadRefused(f"scout {scout_id}", "an answer names its ask")
+    mode, _ = _answered(conn, scout_id, answers_id)
+    if mode != ASK and not (mode == STEER and _proposes(blocks)):
+        raise ThreadRefused(f"message {answers_id}",
+                            f"it is {mode}; an answer answers an ask, and a"
+                            " card an ask or a steer")
+
+
+def _card(conn, scout_id, answers_id):
+    mode, blocks = _answered(conn, scout_id, answers_id)
+    if mode != ANSWER or not _proposes(blocks):
+        raise ThreadRefused(f"message {answers_id}",
+                            f"it is {mode}, not a card of the scout")
+    taken = conn.execute(
+        "SELECT id FROM threadMessages WHERE answersId = ? AND mode IN (?, ?)"
+        " ORDER BY id LIMIT 1", (answers_id, ASK, STEER)).fetchone()
+    if taken is not None:
+        raise ThreadRefused(f"message {answers_id}",
+                            f"message {taken[0]} already answers the card")
+
+
+def _person(conn, scout_id, phase, answers_id):
+    if phase != DONE:
+        raise ThreadRefused(f"scout {scout_id}", f"it is {phase}, not done")
+    if answers_id is not None:
+        _card(conn, scout_id, answers_id)
+    waiting = _waiting(conn, scout_id)
+    if waiting is not None:
+        raise ThreadRefused(f"scout {scout_id}",
+                            f"message {waiting} is not taken yet")
+
+
 def post_message(conn, scout_id, author, mode, text, *, blocks=(),
                  answers_id=None, now=None):
     for name, value in (("text", text), ("author", author)):
@@ -72,38 +121,23 @@ def post_message(conn, scout_id, author, mode, text, *, blocks=(),
             raise ValueError(f"{name} must be non-blank text")
     if mode not in (ASK, STEER, ANSWER):
         raise ValueError(f"unknown thread mode {mode!r}")
-    blocks = json.dumps(redact_document(_blocks(scout_id, blocks)))
+    listed = _blocks(scout_id, blocks)
     with _transaction(conn):
         row = conn.execute("SELECT projectId, phase FROM scouts WHERE id = ?",
                            (scout_id,)).fetchone()
         if row is None:
             raise ThreadRefused(f"scout {scout_id}", "no such scout")
         project_id, phase = row
-        if mode != ANSWER:
-            if phase != DONE:
-                raise ThreadRefused(f"scout {scout_id}",
-                                    f"it is {phase}, not done")
-            waiting = _waiting(conn, scout_id)
-            if waiting is not None:
-                raise ThreadRefused(f"scout {scout_id}",
-                                    f"message {waiting} is not taken yet")
-        if mode == ANSWER and answers_id is None:
-            raise ThreadRefused(f"scout {scout_id}", "an answer names its ask")
-        if answers_id is not None:
-            answered = conn.execute("SELECT scoutId, mode FROM threadMessages"
-                                    " WHERE id = ?", (answers_id,)).fetchone()
-            if answered is None or answered[0] != scout_id:
-                raise ThreadRefused(f"message {answers_id}",
-                                    f"not a message of scout {scout_id}")
-            if mode == ANSWER and answered[1] != ASK:
-                raise ThreadRefused(f"message {answers_id}",
-                                    f"it is {answered[1]}; an answer"
-                                    " answers an ask")
+        if mode == ANSWER:
+            _anchor(conn, scout_id, answers_id, listed)
+        else:
+            _person(conn, scout_id, phase, answers_id)
         return conn.execute(
             "INSERT INTO threadMessages (projectId, scoutId, author, mode,"
             " text, blocks, answersId, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (project_id, scout_id, author.strip(), mode,
-             redact_values(text.strip()), blocks, answers_id,
+             redact_values(text.strip()),
+             json.dumps(redact_document(listed)), answers_id,
              _now(now))).lastrowid
 
 

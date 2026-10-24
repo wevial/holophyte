@@ -7,6 +7,12 @@ from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import safe_print as print
 from holophyte.scout.lead import Lead, asked, fenced_json
+from holophyte.scout.proposals import (
+    card_line,
+    post_cards,
+    proposals_goal,
+    read_proposals,
+)
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
 from store.scout_thread import ANSWER, ANSWER_STARTED, messages, post_message
@@ -34,6 +40,8 @@ class Outcome(NamedTuple):
     text: str | None = None
     refs: tuple = ()
     failure: str | None = None
+    proposals: tuple = ()
+    dropped: tuple = ()
 
 
 def labels(reports, actions):
@@ -101,6 +109,7 @@ def answer_goal(row, question, earlier, reports, actions, fresh):
         + (f"{asked(row)}\n\n" if fresh else "")
         + "Your scout has finished. A person asks about its report:\n\n"
         f"Question: {question.text}\n\n"
+        + card_line(earlier, question) +
         "Answer from what you have already read. You may read and search "
         "the checkout, but do not edit files, commit or push, and start no "
         "helpers or subagents.\n\n"
@@ -110,7 +119,7 @@ def answer_goal(row, question, earlier, reports, actions, fresh):
         f"The thread's earlier messages, oldest first:\n{thread}\n\n"
         "End your answer with one fenced json block in this shape, refs "
         "naming the labels your answer rests on:\n\n"
-        f"```json\n{ANSWER_SHAPE}\n```\n")
+        f"```json\n{ANSWER_SHAPE}\n```\n" + proposals_goal())
 
 
 def read_answer(ask, turn, cap):
@@ -124,8 +133,10 @@ def read_answer(ask, turn, cap):
     if not isinstance(text, str) or not text.strip():
         return Outcome(ask, failure=EMPTY_ANSWER)
     refs = refs if isinstance(refs, list) else []
+    proposals, dropped = read_proposals(found)
     return Outcome(ask, text, tuple(dict.fromkeys(
-        ref for ref in refs if isinstance(ref, str))))
+        ref for ref in refs if isinstance(ref, str))), None,
+        tuple(proposals), tuple(dropped))
 
 
 def answer(conn, project, row, ask, worktree, stopping, cap=ANSWER_TURN_S):
@@ -197,10 +208,12 @@ def settle(conn, scout_id, outcome):
                               blocks=[labelled[ref] for ref in outcome.refs
                                       if ref in labelled],
                               answers_id=outcome.ask)
+        cards = post_cards(conn, scout_id, outcome.ask, outcome.proposals)
         record_scout_event(conn, scout_id, ANSWERED, summary, level="detail",
-                           payload=json.dumps({"message": outcome.ask,
-                                               "answer": posted,
-                                               "unknown_refs": unknown}))
+                           payload=json.dumps({
+                               "message": outcome.ask, "answer": posted,
+                               "unknown_refs": unknown, "cards": cards,
+                               "dropped_proposals": outcome.dropped}))
         move_scout(conn, scout_id, DONE)
     print(f"[holo2] scout {scout_id} {summary}", flush=True)
     return 0

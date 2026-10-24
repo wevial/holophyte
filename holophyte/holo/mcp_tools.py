@@ -58,6 +58,10 @@ RUN = Field("run", {"type": "integer", "minimum": 1,
                     "description": "the run's id"}, None)
 SCOUT = RUN._replace(name="scout", schema={**RUN.schema,
                                            "description": "the scout's id"})
+ANSWERS = Field("answers", {
+    "type": "integer", "minimum": 1,
+    "description": "the id of the scout's card this message answers"},
+    option("--answers"))
 ITEM = Field("item", {"type": "integer", "minimum": 1,
                       "description": "the action item's position"}, None)
 VIEW = Field("view", {
@@ -189,8 +193,13 @@ WRITES = (
     Tool("scout_ask", "ask a done scout about its report, the note the ask;"
          " its lead answers in the thread scout_show serves, waiting while"
          " the host's scout slots are full (holo scout ask ID --json)",
-         ("scout", "ask"), (PROJECT, SCOUT), required=("project", "scout"),
-         tier=WRITE, signs=by_author),
+         ("scout", "ask"), (PROJECT, SCOUT, ANSWERS),
+         required=("project", "scout"), tier=WRITE, signs=by_author),
+    Tool("scout_steer", "steer a done scout to look further, the note the"
+         " steer; it runs one more pass, waiting while the host's scout"
+         " slots are full (holo scout steer ID --json)",
+         ("scout", "steer"), (PROJECT, SCOUT, ANSWERS),
+         required=("project", "scout"), tier=WRITE, signs=by_author),
 )
 
 TOOLS = READS + WRITES

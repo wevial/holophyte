@@ -673,6 +673,11 @@
               "minimum": 1,
               "description": "the scout's id"
             },
+            "answers": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the id of the scout's card this message answers"
+            },
             "note": {
               "type": "string",
               "minLength": 1,
@@ -693,6 +698,51 @@
           "additionalProperties": false
         },
         "name": "scout_ask"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "steer a done scout to look further, the note the steer; it runs one more pass, waiting while the host's scout slots are full (holo scout steer ID --json)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "scout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the scout's id"
+            },
+            "answers": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the id of the scout's card this message answers"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "project",
+            "scout",
+            "note",
+            "author"
+          ],
+          "additionalProperties": false
+        },
+        "name": "scout_steer"
       }
     ]
   }
