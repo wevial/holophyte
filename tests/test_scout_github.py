@@ -198,6 +198,23 @@ class GetTests(GithubCase):
                 self.assertIn(rule, answer.text)
         self.assertEqual(self.gh.calls(), [])
 
+    def test_a_commit_ref_holding_a_slash_is_read_plain_or_encoded(self):
+        reads = ("repos/example/repo/commits/feature/foo/status",
+                 "repos/example/repo/commits/heads%2Fmain/check-runs")
+        for path in reads:
+            self.gh.answer(path, json.dumps({"state": "success"}))
+        for path in reads:
+            with self.subTest(path=path):
+                answer = github_get(self.target(self.path), self.repo, path)
+                self.assertFalse(answer.error, answer.text)
+                self.assertEqual(json.loads(answer.text), {"state": "success"})
+        self.assertEqual([call[-1] for call in self.gh.calls()], list(reads))
+        for path in ("repos/example%2Frepo/commits/main/status",
+                     "repos/example/repo/commits/a%5Cb/status"):
+            with self.subTest(path=path):
+                self.assertIn("encoded slash", github_get(
+                    self.target(self.path), self.repo, path).text)
+
     def test_an_answer_past_the_cap_is_cut_with_a_truncation_line(self):
         long = {"workflow_runs": [{"id": number, "name": "x" * 80,
                                    "jobs_url": "https://api/jobs"}

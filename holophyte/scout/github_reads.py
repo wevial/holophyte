@@ -21,8 +21,9 @@ OK, FAILED, REFUSED = "ok", "failed", "refused"
 ALLOWED = re.compile(
     r"(actions/runs(/\d+(/jobs|/attempts/\d+/jobs|/timing|/artifacts)?)?"
     r"|actions/jobs/\d+|actions/workflows(/[^/]+/runs)?"
-    r"|pulls(/\d+(/files)?)?|commits/[^/]+/(check-runs|status)"
+    r"|pulls(/\d+(/files)?)?|commits/.+/(check-runs|status)"
     r"|issues/\d+(/comments)?|contents/.+)")
+COMMIT_REF = re.compile(r"(/commits/)(.+)(/(check-runs|status)/?)$")
 SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 UNPRINTABLE = re.compile(r"[\x00-\x20\x7f]")
 PLAYWRIGHT_STATUS = {"expected": "passed", "unexpected": "failed",
@@ -68,7 +69,10 @@ def guarded(repo, path, method="GET"):
         raise Refused("a path may not hold a fragment '#'")
     if ".." in unquote(path):
         raise Refused("a path may not hold '..'")
-    if re.search(r"%(2f|5c)", route, re.IGNORECASE):
+    outside_ref = COMMIT_REF.sub(
+        lambda ref: ref[1] + re.sub("%2f", "/", ref[2], flags=re.IGNORECASE)
+        + ref[3], route)
+    if re.search(r"%(2f|5c)", outside_ref, re.IGNORECASE):
         raise Refused("a path may not hold an encoded slash")
     if SCHEME.match(path) or "//" in route or "." in route.split("/")[0]:
         raise Refused("a path may not hold a scheme or a host")
