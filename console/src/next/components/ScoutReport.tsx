@@ -30,7 +30,6 @@ const LEVELS: Record<Reproduction["level"], string> = {
   not_reproduced: "not reproduced",
 };
 
-
 const isFile = (item: Evidence): item is FileEvidence => "file" in item;
 const isCommand = (item: Evidence): item is CommandEvidence => "command" in item;
 

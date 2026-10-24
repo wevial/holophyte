@@ -32,8 +32,10 @@ export const nextPass = (detail: ScoutDetail) => highestPass(detail) + 1;
 
 function answerLine(detail: ScoutDetail, events: ScoutEvent[], index: number): string {
   const started = events[index]!;
-  const end = events.slice(index + 1).find((event) => ANSWER_ENDS.has(event.kind));
-  const span = end != null ? formatSpan(end.at - started.at) : detail.scout.phase === "answering" ? "now" : null;
+  const later = events.slice(index + 1);
+  const next = later.findIndex((event) => event.kind === "scout_answer_started");
+  const end = (next < 0 ? later : later.slice(0, next)).find((event) => ANSWER_ENDS.has(event.kind));
+  const span = end != null ? formatSpan(end.at - started.at) : detail.scout.phase === "answering" && next < 0 ? "now" : null;
   return ["answer turn", detail.scout.lead, span].filter((part) => part != null).join(" · ");
 }
 

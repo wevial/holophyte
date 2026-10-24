@@ -74,7 +74,7 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
             ))}
         </ol>
       )}
-      <ScoutCompose key={detail.scout.id} base={base} detail={detail} actions={actions} ref={ref} />
+      <ScoutCompose base={base} detail={detail} actions={actions} ref={ref} />
     </aside>
   );
 }
