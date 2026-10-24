@@ -160,6 +160,9 @@ Each module, one line:
   ask, its report labelled `F1`, `F2` and `A1` on, the lead's session
   resumed in the lead worktree, and the answer posted to the thread, or the
   failure recorded, as the scout returns to `done`.
+- `holophyte/scout/context.py` — a scout's context pack: its subject's
+  run, ledger, verify tail, findings, files and ticket, cut to a cap, for
+  the lead's plan goal.
 - `holophyte/scout/filing.py` — `POST /actions/scout-file`, `holo scout
   file` and the `holo mcp` `scout_file` tool: a done scout's action item
   judged by the ticket checker for Backlog, filed to Backlog through the
