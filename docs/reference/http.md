@@ -1452,8 +1452,8 @@ and `why` it did not (null when it did); a command item, `command` and
 
 `actions` are the scout's action items by `position`, which counts across
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
-`investigate`, `decide` or `revise`) and `body`, `revises`, the `ticket`
-key it was filed as and `filed_ms`, both null until it is filed. A
+`investigate`, `decide` or `revise`), `body` and `revises`, the
+`ticket` key it was filed as and `filed_ms`, both null until it is filed. A
 `revise` item, offered only to a scout whose `subject` is a `defect`, is
 the defect ticket's whole body rewritten, and its `revises` is
 `{"ticket": KEY, "revision": N}`: the defect run's ticket and that

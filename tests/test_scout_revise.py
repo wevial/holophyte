@@ -31,8 +31,9 @@ FIX = {"title": "Back off between retries", "why": "the loop spins",
 REVISE = {"title": "Name the saved field", "why": "C2 says 'the name'",
           "kind": "revise", "body": REVISION}
 REPORT = {"summary": "the ticket names the wrong field", "findings": [],
-          "actions": [FIX, dict(REVISE,
-                                revises={"ticket": "NAT-9", "revision": 7})]}
+          "actions": [dict(FIX, revises={"ticket": "NAT-9", "revision": 7}),
+                      dict(REVISE,
+                           revises={"ticket": "NAT-9", "revision": 7})]}
 EMPTY_PLAN = fenced({"tasks": []})
 NATIVE = '[board]\nkind = "native"\nprefix = "NAT"\n'
 
@@ -54,8 +55,7 @@ class ReportCheckTests(unittest.TestCase):
 
     def test_a_second_revise_item_and_an_untitled_revision_are_problems(self):
         twice = checked([REVISE, REVISE], ("defect", "12"))
-        self.assertTrue(any(problem.startswith("actions[1].kind:")
-                            for problem in twice), twice)
+        self.assertIn("actions[1].kind: at most one revise item", twice)
         untitled = checked([dict(REVISE, body=REVISION.removeprefix("# "))],
                            ("defect", "12"))
         self.assertTrue(any(problem.startswith("actions[0].body:")
@@ -164,9 +164,8 @@ class DefectScoutTests(ReviseCase):
         self.assertIsNone(fix["revises"])
         shown = self.holo("scout", "show", str(scout_id), "-p", str(self.path))
         self.assertEqual(shown.returncode, 0, shown.stderr)
-        self.assertTrue(any(line.startswith("A2 revise NAT-3 r2:")
-                            for line in shown.stdout.splitlines()),
-                        shown.stdout)
+        self.assertIn("A2 revise NAT-3 r2: Name the saved field",
+                      shown.stdout.splitlines())
 
 
 class ReviseFilingTests(ReviseCase):
@@ -181,13 +180,17 @@ class ReviseFilingTests(ReviseCase):
             {"scout": self.scout_id, "item": item}, revision=None)
         return status, answer
 
+    def refused(self):
+        return (f"scout {self.scout_id} item 2 revises NAT-3 at revision 2;"
+                " save it on NAT-3's edit page")
+
     def test_the_daemon_refuses_a_revise_item_and_still_files_a_fix(self):
         self.start_host()
         before = self.written(self.scout_id)
         status, answer = self.file(2)
         self.assertEqual(status, 200, answer)
         self.assertEqual((answer["ok"], answer["ticket"]), (False, None))
-        self.assertIn("revises NAT-3 at revision 2", answer["detail"])
+        self.assertEqual(answer["detail"], self.refused())
         self.assertEqual(self.written(self.scout_id), before)
         self.assertEqual(before[1][1], (2, None, None))
         status, answer = self.file(1)
@@ -202,7 +205,7 @@ class ReviseFilingTests(ReviseCase):
         filed = self.holo("scout", "file", str(self.scout_id), "2",
                           "-p", str(self.path))
         self.assertEqual(filed.returncode, 1, filed.stderr)
-        self.assertIn("revises NAT-3", filed.stdout + filed.stderr)
+        self.assertIn(self.refused(), filed.stdout + filed.stderr)
         self.assertEqual(self.written(self.scout_id), before)
 
 
