@@ -118,7 +118,7 @@ export function ScoutLaunch({ projects, draft, onDraft, onCancel, onLaunched }: 
         event.preventDefault();
         launch();
       }}
-      className="border border-rule bg-paper"
+      className="mb-4 border border-rule bg-paper"
     >
       <Band>
         <label htmlFor="scout-ask" className="flex flex-col">
@@ -131,7 +131,7 @@ export function ScoutLaunch({ projects, draft, onDraft, onCancel, onLaunched }: 
           <Pressed label="Kind" options={KINDS} picked={draft.kind} onPick={(kind) => set({ kind })} />
           <label htmlFor="scout-project" className="flex w-full max-w-[260px] flex-col">
             <span className={LABEL}>Project</span>
-            <select id="scout-project" value={project.base} onChange={(event) => set({ base: event.target.value })} className={`${INPUT} font-sans`}>
+            <select id="scout-project" value={project.base} onChange={(event) => set({ base: event.target.value, picks: null })} className={`${INPUT} font-sans`}>
               {projects.map((each) => <option key={each.base} value={each.base}>{each.name}</option>)}
             </select>
           </label>

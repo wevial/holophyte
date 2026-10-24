@@ -266,6 +266,15 @@ test("with no scope the Project select lists every project taking actions and re
   expect(within(form()).getByRole("button", { name: "glm · haiku ×2 · 15 min" })).toBeTruthy();
 });
 
+test("returning to a project after picking another resets its pickers to its defaults", async () => {
+  await openForm("#/scouts", { demo: [] });
+  await fillForm(ASK);
+  const project = within(form()).getByLabelText("Project");
+  await change(project, WRITER);
+  await change(project, DEMO);
+  expect(disclosure().textContent).toBe("opus · luna ×4 · 30 min");
+});
+
 test("with no project taking actions New scout is disabled under the actions-off title", async () => {
   await mount("#/scouts", scoutFetch({ demo: [], actions: false }).fetch);
   const button = screen.getByRole("button", { name: "New scout" });
