@@ -36,7 +36,7 @@ function HelperRow({ task, now }: { task: ScoutTask; now: number }) {
   return (
     <li
       data-helper={task.phase}
-      className="grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 border-b border-rule-2 px-4 py-2.5 last:border-b-0 min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px]"
+      className="grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 border-b border-rule-2 px-4 py-2 last:border-b-0 min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px]"
     >
       <span className="self-start pt-[3px]"><StateDot state={dot.state} label={dot.label} hideWord /></span>
       <span data-question className={`min-w-0 font-sans text-[14px] leading-[1.45] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
@@ -44,7 +44,7 @@ function HelperRow({ task, now }: { task: ScoutTask; now: number }) {
       </span>
       <span className="col-start-2 flex flex-wrap font-mono text-[12px] leading-[1.4] text-ink-2 min-[720px]:contents">
         <span className={FACT}>
-          <span data-mode={task.mode} className={`inline-block px-1 text-[11px] font-semibold leading-[15px] ${task.mode === "run" ? "border border-wait-wash bg-wait-wash text-wait" : "border border-rule text-ink-2"}`}>
+          <span data-mode={task.mode} className={`inline-block px-1 text-[11px] font-semibold leading-[15px] ${task.mode === "run" ? "border border-transparent bg-[color-mix(in_oklab,var(--wait)_22%,transparent)] text-wait" : "border border-rule text-ink-2"}`}>
             {task.mode}
           </span>
         </span>
@@ -58,7 +58,7 @@ function HelperRow({ task, now }: { task: ScoutTask; now: number }) {
 
 function Helpers({ tasks, now }: { tasks: ScoutTask[]; now: number }) {
   return (
-    <ol aria-label="Helpers" className="relative z-[1] m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-findings-bg p-0 max-[720px]:ml-0">
+    <ol aria-label="Helpers" className="relative z-[1] m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:ml-0">
       {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} />)}
     </ol>
   );
@@ -67,6 +67,7 @@ function Helpers({ tasks, now }: { tasks: ScoutTask[]; now: number }) {
 function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number }) {
   const bodyId = useId();
   const folds = group.kind === "wave" ? group.tasks.length > 0 : !group.running && group.steps.length > 0;
+  const shown = folds ? open : group.running && group.steps.length > 0;
   return (
     <li data-group={group.kind} data-running={group.running ? "" : undefined} className="relative border-b border-rule-2">
       <Connector line={line} />
@@ -79,7 +80,7 @@ function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: 
           {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
         </span>
       </GroupHead>
-      {folds && open && (
+      {shown && (
         <div id={bodyId}>
           {group.kind === "wave" ? <Helpers tasks={group.tasks} now={now} /> : <Steps steps={group.steps} />}
         </div>

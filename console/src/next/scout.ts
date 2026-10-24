@@ -74,8 +74,9 @@ interface Wave {
 }
 
 /** Pass 1's tasks by wave, in wave order, each in plan order. A wave of an
- *  ended scout (`endedMs`) whose tasks never all ended ends with the scout. */
-function wavesOf(tasks: ScoutTask[], endedMs: number | null = null): Wave[] {
+ *  ended scout (`endedMs`) whose tasks never all ended ends with the scout;
+ *  once the lead is `synthesizing`, a wave ends with its last task back. */
+function wavesOf(tasks: ScoutTask[], endedMs: number | null = null, synthesizing = false): Wave[] {
   const byWave = new Map<number, ScoutTask[]>();
   for (const task of tasks) {
     if (task.pass !== 1) continue;
@@ -86,7 +87,7 @@ function wavesOf(tasks: ScoutTask[], endedMs: number | null = null): Wave[] {
     .map(([wave, each]) => {
       const starts = each.flatMap((task) => (task.started_ms == null ? [] : [task.started_ms]));
       const ends = each.flatMap((task) => (ENDED.has(task.phase) && task.ended_ms != null ? [task.ended_ms] : []));
-      const end = ends.length === each.length ? Math.max(...ends) : endedMs;
+      const end = ends.length === each.length || (synthesizing && ends.length) ? Math.max(...ends) : endedMs;
       return { wave, tasks: each, start: starts.length ? Math.min(...starts) : null, end };
     });
 }
@@ -136,7 +137,7 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   if (scout.started_ms == null) return [];
   const live = isLive(scout.phase);
   const lead = scout.lead == null ? [] : [scout.lead];
-  const waves = wavesOf(detail.tasks, live ? null : scout.ended_ms);
+  const waves = wavesOf(detail.tasks, live ? null : scout.ended_ms, scout.phase === "synthesizing");
   const firstTurn = events.find((event) => event.kind === "agent_turn" && event.at >= scout.started_ms!)?.at ?? null;
   const planEnd = waves[0]?.start ?? waves[0]?.end ?? (scout.phase === "planning" ? null : (firstTurn ?? scout.ended_ms));
   const firstWave = waves[0]?.tasks.length ?? 0;

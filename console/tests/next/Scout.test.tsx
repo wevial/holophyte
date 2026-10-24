@@ -271,6 +271,34 @@ test("a scout stopped mid-wave ends that wave at the stop, cut short rather than
   expect(helpers(wave).map(helperRow)[5]!.took).toBe("10m 00s");
 });
 
+test("a synthesizing scout ends its wave on the last helper back, past an unlaunched one, and runs Synthesis", async () => {
+  const synthesizing: ScoutDetail = {
+    ...live,
+    scout: { ...live.scout, phase: "synthesizing" },
+    tasks: [back(waveOne[0]!.question, { started_ms: at(11, 47, 12), ended_ms: at(11, 50, 12) }), waveOne[9]!],
+  };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: synthesizing } }).fetch);
+  expect(groups().map((group) => [row(group).title, row(group).span])).toEqual([
+    ["Plan · opus · 2 sub-tasks", "1m 12s"],
+    ["Wave 1 · luna ×2 · 1 of 2 back", "3m 00s"],
+    ["Synthesis · opus", "now"],
+  ]);
+});
+
+test("a running Plan shows its steps open, with no control to fold them", async () => {
+  const planning: ScoutDetail = {
+    ...live,
+    scout: { ...live.scout, phase: "planning" },
+    tasks: [],
+    events: [{ at: at(11, 50), kind: "scout_planning", summary: "the lead reads the repository" }],
+  };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: planning } }).fetch);
+  const plan = groupTitled("Plan");
+  expect(row(plan).span).toBe("now");
+  expect(fold(plan)).toBeNull();
+  expect(Array.from(plan.querySelectorAll("[data-step-text]"), (step) => step.textContent)).toEqual(["the lead reads the repository"]);
+});
+
 test("a wave the reader closed stays closed when the next poll brings a helper back", async () => {
   const bodies = { 31: live };
   const queries = await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies }).fetch);
