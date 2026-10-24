@@ -9,8 +9,14 @@ from time import time
 
 import store
 from holophyte.agents.harness import shadow_seat
+from holophyte.config.serve_settings import serve_config
 from holophyte.loop.gates import merge_lock_arbiter, read_merge_lock
-from holophyte.loop.reexec import reexec_command
+from holophyte.loop.reexec import (
+    reexec_command,
+    start_transient_unit,
+    systemd_runner,
+    transient_unit,
+)
 from holophyte.loop.runs import open_store
 from holophyte.loop.shadow import ShadowBrief, run_shadow, shadow_branch, shadow_label
 from holophyte.redact import known_secrets, outbound
@@ -39,28 +45,36 @@ def shadow_starter(project, conn, run_id, **ticket):
     return start
 
 
+def _launch(project, run_id, path):
+    program, _ = reexec_command()
+    argv = [program, str(FACTORY), "--shadow", str(path), str(project.path)]
+    log_path = path.with_suffix(".log")
+    log = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        runner = systemd_runner()
+        if runner:
+            unit = transient_unit("shadow", serve_config(project).name, run_id)
+            start_transient_unit(runner, unit, log_path, argv)
+            return "unit", unit
+        return "pid", SPAWN(argv, stdin=subprocess.DEVNULL, stdout=log,
+                            stderr=subprocess.STDOUT, start_new_session=True).pid
+    finally:
+        os.close(log)
+
+
 def start_shadow(project, conn, run_id, brief):
     seat = shadow_seat(project)
     if seat is None or conn is None or run_id is None:
         return
     payload = {"pid": None, "branch": shadow_branch(brief.branch),
                "route": outbound(shadow_label(seat), known_secrets(project.config())),
-               "error": None}
+               "unit": None, "error": None}
     path = brief_path(project, run_id)
     try:
         write_brief(project, run_id, brief)
-        program, _ = reexec_command()
-        log = os.open(path.with_suffix(".log"),
-                      os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        try:
-            child = SPAWN([program, str(FACTORY), "--shadow", str(path),
-                           str(project.path)], stdin=subprocess.DEVNULL,
-                          stdout=log, stderr=subprocess.STDOUT,
-                          start_new_session=True)
-        finally:
-            os.close(log)
-        payload["pid"] = child.pid
-        summary = f"shadow {payload['route']} started as pid {child.pid}"
+        key, value = _launch(project, run_id, path)
+        payload[key] = value
+        summary = f"shadow {payload['route']} started as {key} {value}"
     except Exception as error:
         with suppress(OSError):
             path.unlink(missing_ok=True)
