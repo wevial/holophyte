@@ -40,7 +40,7 @@ SOL = ("scout lead sol: 1 scout · 1 turn · 5.0 min · 40000 tokens ·"
 LUNA = ("scout helper luna: 3 tasks · done 2 · cited 2 · 4.0 min ·"
         " 6000 tokens · $0.0030")
 SECTION = ("scouts:", "scout lead", "scout helper")
-FINDING = {"title": "the retry loop never backs off", "status": "shown",
+FINDING = {"title": "the retry loop never backs off", "status": "confirmed",
            "evidence": [{"url": "https://example.test/retry"}]}
 
 
