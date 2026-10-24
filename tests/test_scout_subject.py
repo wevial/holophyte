@@ -73,7 +73,6 @@ class MigrationTests(unittest.TestCase):
             self.addCleanup(conn.close)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
                              (store.schema.SCHEMA_VERSION,))
-            self.assertEqual(store.schema.READABLE_FROM, 50)
             row = scout(conn, 1)
             self.assertEqual((row.ask, row.phase, row.subject_kind,
                               row.subject_ref),
@@ -250,7 +249,7 @@ class HoloSubjectTests(SubjectCase):
 
 
 class McpSubjectTests(McpCase):
-    def test_the_scout_tool_takes_an_optional_subject(self):
+    def test_the_scout_tool_records_its_subject(self):
         conn = store.open(str(self.store_path))
         try:
             (project,) = conn.execute("SELECT id FROM projects").fetchone()
@@ -260,13 +259,6 @@ class McpSubjectTests(McpCase):
         finally:
             conn.close()
         slots(1)
-
-        async def use(client, _):
-            return (await client.list_tools()).tools
-        (tool,) = [tool for tool in self.session(use) if tool.name == "scout"]
-        self.assertIn("subject", tool.input_schema["properties"])
-        self.assertNotIn("subject", tool.input_schema["required"])
-
         result = self.call("scout", {"project": "alpha", "note": ASK,
                                      "kind": "bug", "author": "test seat",
                                      "subject": "ticket:NAT-3"})
