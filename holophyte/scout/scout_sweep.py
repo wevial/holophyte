@@ -23,6 +23,7 @@ from store.scout_thread import (
     ASK,
     Message,
     ThreadRefused,
+    release_message,
     take_message,
     waiting_messages,
 )
@@ -194,8 +195,7 @@ def _start_answer(name, target, message, out):
         try:
             started = start_scout(name, target, message.scout_id)
         except OSError as bad:
-            fail_answer(conn, message.scout_id, message.id,
-                        f"could not start: {bad}")
+            release_message(conn, message.id, str(bad))
             raise
     except ThreadRefused:
         return False

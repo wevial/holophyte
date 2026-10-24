@@ -409,8 +409,11 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "start_scout_task"]),
                                  # HOLO-522: a scout's thread, its messages
                                  # posted, taken and read.
+                                 # HOLO-524: `release_message`, an ask
+                                 # whose answer could not start, waiting again.
                                  (store.scout_thread, ["messages",
                                                        "post_message",
+                                                       "release_message",
                                                        "take_message",
                                                        "waiting_messages"]),
                                  # HOLO-175: a story child's follow-up proposed

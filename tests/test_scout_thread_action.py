@@ -11,13 +11,14 @@ import json
 import os
 from unittest.mock import patch
 
+import holophyte.scout.scout_sweep as scout_sweep
 import store
 from holophyte.host.registry import Host, settings
 from holophyte.scout.views import scout_detail
 from holophyte.serve.contract import ROUTES
 from holophyte.serve.serve_host import HostServer, host_tokens
 from store.scout_thread import messages
-from store.scouts import create_scout, end_scout, move_scout
+from store.scouts import create_scout, end_scout, move_scout, scout
 from tests.serve_contract_fixture import NOW, normalize_contract
 from tests.test_holo_mcp import McpCase
 from tests.test_scout_launch import MACHINE, LaunchCase, slots
@@ -86,6 +87,29 @@ class DaemonAskTests(ActionCase):
         self.assertEqual((message.id, message.author, message.consumed_by),
                          (reply["message"], "test seat", None))
         self.assertEqual(self.spawned, [])
+
+    def test_an_answer_whose_spawn_fails_waits_and_the_next_sweep_starts_it(self):
+        path = self.project("alpha")
+        scout_id = done_scout(self.conn(path))
+        server = self.serve(path)
+
+        def refused(argv, **options):
+            raise OSError("no such interpreter")
+
+        with patch.object(scout_sweep, "SPAWN", refused):
+            code, reply = self.ask(server, {"scout": scout_id})
+        self.assertEqual(code, 200, reply)
+        self.assertEqual((reply["ok"], reply["queued"]), (True, True))
+        self.assertIn("no such interpreter", reply["detail"])
+        (message,) = self.thread(path, scout_id)
+        self.assertIsNone(message.consumed_by)
+        self.assertEqual(scout(self.conn(path), scout_id).phase, "done")
+
+        self.sweep_pass()
+        (argv, phase, _), = self.spawned
+        self.assertEqual((argv[-2], phase), (str(scout_id), "answering"))
+        (message,) = self.thread(path, scout_id)
+        self.assertIsNotNone(message.consumed_by)
 
     def test_a_refused_ask_writes_nothing_and_starts_nothing(self):
         path = self.project("alpha")

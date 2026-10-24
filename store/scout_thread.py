@@ -13,12 +13,14 @@ from .scouts import (
     PLANNING,
     _now,
     _reopen_scout,
+    move_scout,
     record_scout_event,
 )
 
 ASK, STEER, ANSWER = (mode.value for mode in ThreadMode)
 BLOCK_TYPES = ("finding", "action", "proposal")
 ANSWER_STARTED = "scout_answer_started"
+START_FAILED = "scout_start_failed"
 COLUMNS = ("id", "projectId", "scoutId", "author", "mode", "text", "blocks",
            "answersId", "at", "consumedBy", "consumedAt")
 SELECT = f"SELECT {', '.join(COLUMNS)} FROM threadMessages"
@@ -141,6 +143,29 @@ def take_message(conn, message_id, host=None, now=None):
         conn.execute("UPDATE threadMessages SET consumedBy = ?, consumedAt = ?"
                      " WHERE id = ?", (event_id, now, message_id))
         return event_id
+
+
+def release_message(conn, message_id, reason, now=None):
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT m.scoutId, m.consumedBy, s.phase FROM threadMessages m"
+            " JOIN scouts s ON s.id = m.scoutId WHERE m.id = ?",
+            (message_id,)).fetchone()
+        if row is None:
+            raise ThreadRefused(f"message {message_id}", "no such message")
+        scout_id, consumed_by, phase = row
+        if consumed_by is None or phase != ANSWERING:
+            raise ThreadRefused(f"message {message_id}",
+                                f"not an answer in progress (scout {scout_id}"
+                                f" is {phase})")
+        record_scout_event(conn, scout_id, START_FAILED,
+                           f"could not start: {reason}; message {message_id}"
+                           " waits for the next pass", level="detail",
+                           payload=json.dumps({"message": message_id,
+                                               "reason": reason}), now=now)
+        conn.execute("UPDATE threadMessages SET consumedBy = NULL,"
+                     " consumedAt = NULL WHERE id = ?", (message_id,))
+        move_scout(conn, scout_id, DONE)
 
 
 def _message(row):
