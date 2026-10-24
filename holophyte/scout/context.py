@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 import store.read
 from holophyte.host.supervisor import SWEEP_EVENT
+from holophyte.redact import known_secrets, outbound
 from holophyte.review.findings import decode_findings
 from holophyte.serve.serve_findings import (
     CONTRADICTION,
@@ -274,5 +275,6 @@ def context_pack(project, scout):
         return None
     pack = Pack(project)
     PACKS[scout.subject_kind](pack, scout.subject_ref)
-    text = capped("\n".join(pack.lines), pack)
+    text = capped(outbound("\n".join(pack.lines),
+                           known_secrets(project.config())), pack)
     return ContextPack(text, pack.paths(), "context: " + " · ".join(pack.notes))

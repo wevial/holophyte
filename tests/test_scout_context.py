@@ -227,6 +227,15 @@ class SubjectContextTests(ContextCase):
         self.assertLessEqual(len(section), 24_000)
         self.assertTrue(section.endswith(f"\n{CUT_LINE}"))
 
+    def test_a_body_whose_secrets_redact_longer_is_still_cut_to_the_cap(self):
+        self.start(CLAUDE_LEAD + '[linear]\napi_key = "shortkey"\n')
+        self.mirror("NAT-3", body="shortkey\n" * 3_333 + "xxx")
+        self.run_scout(("ticket", "NAT-3"))
+        section = self.section(self.plan_goal())
+        self.assertNotIn("shortkey", section)
+        self.assertLessEqual(len(section), 24_000)
+        self.assertTrue(section.endswith(f"\n{CUT_LINE}"))
+
     def test_a_scout_with_no_subject_gets_no_context(self):
         self.start()
         scout_id = self.run_scout()
