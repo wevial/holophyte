@@ -140,7 +140,14 @@ CRITERION 2: not met — production requests /runs, not /runs?limit=1
 CRITERION 3: unwitnessed — no test exercises the 404 path
 ```
 
-A named test that does not exist in the tree is unwitnessed. Any criterion
+A named test that does not exist in the tree is unwitnessed. A near-miss
+citation resolves only to a single match: the same test name on exactly one
+other class of the named file (`path::Wrong::test_x` when only `Right`
+defines `test_x`), or a dotted module whose file exists
+(`tests.core.test_sources` read as `tests/core/test_sources.py`). The
+criterion's `criteria` event records the correction under `resolved`. An
+ambiguous match (the name on two or more other classes, which the note
+lists) or an absent one stays unwitnessed. Any criterion
 not met or unwitnessed makes the round `changes_requested` whatever the
 verdict line says. So:
 

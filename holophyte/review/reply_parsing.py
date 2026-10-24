@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import review_runner
+from holophyte.review import citations
 from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN, _changed_files
 from holophyte.review.criterion_ids import numbered, parse
 from store import CRITERIA_PATH
@@ -271,8 +272,8 @@ def test_references(witness):
         cls = None
         if len(segments) > 1 and segments[-1][0].isupper():
             cls = segments.pop()
-        references.append(("/".join(segments) + ".py", cls,
-                           match.group("name2")))
+        references.append(citations.DottedReference(
+            ("/".join(segments) + ".py", cls, match.group("name2"))))
     return references
 
 
@@ -304,6 +305,18 @@ for path, cls, name in json.loads(sys.argv[1]):
         module = modules[path]
         found = (callable(getattr(getattr(module, cls, None), name, None))
                  if module is not None else None)
+        if found is False:
+            pending, seen, found = list(vars(module).values()), set(), []
+            while pending:
+                value = pending.pop()
+                if (not isinstance(value, type) or id(value) in seen
+                        or value.__module__ != module.__name__):
+                    continue
+                seen.add(id(value))
+                pending.extend(vars(value).values())
+                if callable(vars(value).get(name)):
+                    found.append(value.__name__)
+            found.sort()
     results.append(found)
 print(json.dumps(results))
 """
@@ -443,28 +456,53 @@ def _go_table_titles(text, parent):
 
 
 def missing_witnesses(references, root):
-    references = [tuple(ref) for ref in references]
+    return _checked_witnesses(references, root)[0]
+
+
+def _spec(path, cls, name):
+    return "::".join(part for part in (path, cls, name) if part)
+
+
+def _checked_witnesses(references, root):
+    references = [ref if isinstance(ref, tuple) else tuple(ref)
+                  for ref in references]
     imported = _import_witnesses(references, root)
-    missing = []
-    for path, cls, name in references:
-        spec = f"{path}::{cls}::{name}" if cls else f"{path}::{name}"
+    missing, corrected = [], {}
+    for ref in references:
+        path, cls, name = ref
         file = _inside(root, path)
         if file is None:
-            missing.append(f"{spec} (outside the worktree: {path})")
+            missing.append(f"{_spec(*ref)} (outside the worktree: {path})")
             continue
-        if not file.is_file():
-            missing.append(f"{spec} (no file {path})")
+        reason, classes = ((f"no file {path}", []) if not file.is_file()
+                           else _witness_reason(file, ref, imported.get(ref)))
+        if reason is None:
             continue
-        found = imported.get((path, cls, name))
-        if found is not None:
-            if not found:
-                missing.append(f"{spec} (import: no callable {name} on class {cls})")
-            continue
-        reason = _scan_witness(file, cls, name)
-        if reason:
-            route = "textual fallback" if cls else "textual scan"
-            missing.append(f"{spec} ({route}: {reason})")
-    return missing
+        others = [other for other in classes if other != cls]
+        module = citations.dotted_module(ref)
+        if len(others) == 1:
+            corrected[ref] = ((path, others[0], name), "other class")
+        elif module and (found := _inside(root, module)) and found.is_file():
+            corrected[ref] = ((module, None, None), "dotted module")
+        else:
+            defined = f"; defined on classes {', '.join(others)}" if others else ""
+            missing.append(f"{_spec(*ref)} ({reason}{defined})")
+    return missing, corrected
+
+
+def _witness_reason(file, ref, found):
+    _, cls, name = ref
+    if found is True:
+        return None, []
+    if isinstance(found, list):
+        return f"import: no callable {name} on class {cls}", found
+    reason = _scan_witness(file, cls, name)
+    if not reason:
+        return None, []
+    classes = (citations.defining_classes(file.read_text(errors="replace"), name)
+               if cls and file.suffix == ".py" else [])
+    route = "textual fallback" if cls else "textual scan"
+    return f"{route}: {reason}", classes
 
 
 # A witness names a test in the worktree, never an absolute path or a `..` escape.
@@ -512,44 +550,70 @@ def _approval_problems(note, references, approved_range):
 
 
 def _approval_witnesses(note, references, root, approved_range):
+    return _checked_approval(note, references, root, approved_range, {})[0]
+
+
+def _checked_approval(note, references, root, approved_range, corrected):
     if _approval_problems(note, references, approved_range) != []:
-        return []
+        return [], []
     approved, sha = approved_range
     changed = {(Path(root) / path).resolve()
                for path in _changed_files(root, approved, sha)}
-    return [f"{path} (changed since approval at {approved})"
-            for path, _, _ in references if _inside(root, path) in changed]
+    stale, kept = [], []
+    for ref in references:
+        path, cls, name = corrected.get(ref, (ref,))[0]
+        if _inside(root, path) not in changed:
+            continue
+        if name and path.endswith(".py") and citations.test_unchanged(
+                _shown(root, approved, path), _shown(root, sha, path), cls, name):
+            spec = _spec(path, cls, name)
+            kept.append((spec, spec, "unchanged since approval"))
+        else:
+            stale.append(f"{path} (changed since approval at {approved})")
+    return stale, kept
+
+
+def _shown(root, sha, path):
+    shown = subprocess.run(["git", "show", f"{sha}:{path}"], cwd=root,
+                           capture_output=True)
+    return shown.stdout.decode(errors="replace") if shown.returncode == 0 else None
 
 
 def _judged_criteria(reply, criteria, root, approved_range):
     block = criteria_block(reply)
     for n, criterion in numbered(None, None, criteria):
         status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
-        stale = []
+        stale, resolved = [], []
         if status == "met" and note and root is not None:
             references = test_references(note)
-            missing = missing_witnesses(references, root)
+            missing, corrected = _checked_witnesses(references, root)
             missing += _approval_problems(note, references, approved_range) or []
-            stale = _approval_witnesses(note, references, root, approved_range)
+            stale, kept = _checked_approval(note, references, root,
+                                            approved_range, corrected)
+            resolved = [(_spec(*ref), _spec(*spec), rule)
+                        for ref, (spec, rule) in corrected.items()] + kept
             if missing or stale:
                 status, note = ("unwitnessed",
                                 MISSING_WITNESS_NOTE + "; ".join(missing + stale))
-                stale = [] if missing else stale
+                stale, resolved = ([] if missing else stale), []
         if status == "met" and not note:
             status, note = "unwitnessed", "met claimed but no test or check named"
-        yield n, criterion, status, note, bool(stale)
+        yield n, criterion, status, note, bool(stale), resolved
 
 
 def criteria_statuses(reply, criteria, root=None, *, approved_range=None):
-    return [{"n": n, "status": status.replace(" ", "_"), "note": note}
-            for n, _, status, note, _ in _judged_criteria(
+    return [dict({"n": n, "status": status.replace(" ", "_"), "note": note},
+                 **({"resolved": [{"cited": cited, "as": spec, "rule": rule}
+                                  for cited, spec, rule in resolved]}
+                    if resolved else {}))
+            for n, _, status, note, _, resolved in _judged_criteria(
                 reply, criteria, root, approved_range)]
 
 
 def criteria_findings(reply, criteria, root=None, *, approved_range=None,
                       scope=()):
     findings = []
-    for n, criterion, status, note, stale in _judged_criteria(
+    for n, criterion, status, note, stale, _ in _judged_criteria(
             reply, criteria, root, approved_range):
         if status == "met":
             continue
