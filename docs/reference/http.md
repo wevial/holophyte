@@ -1921,7 +1921,7 @@ the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run`
 required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
 the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
-`scout_stop` its required `scout` id, the note its reason. `annotations` holds `readOnlyHint`, true for a read, and
+`scout_stop` its required `project` and `scout` id, the note its reason. `annotations` holds `readOnlyHint`, true for a read, and
 `destructiveHint`, false for every tool served today, so a client that
 asks a person before a destructive write asks here as on stdio. A tool
 call's `result` holds `content`, a list of one object whose `type` is

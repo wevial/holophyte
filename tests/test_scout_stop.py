@@ -22,6 +22,7 @@ import holophyte.scout.scout_sweep as scout_sweep
 import holophyte.scout.stop as stop_module
 import store
 from holophyte.cli.host_modes import FACTORY_PATH
+from holophyte.holo.resolve import client_path
 from holophyte.host.registry import Host, settings
 from holophyte.scout.lead import REPORT_OPENING
 from holophyte.serve.serve_host import HostServer, host_tokens
@@ -424,13 +425,26 @@ class McpScoutStopTests(McpCase):
         finally:
             conn.close()
 
+    def phase(self):
+        conn = store.open(str(self.store_path))
+        try:
+            return scout(conn, self.scout).phase
+        finally:
+            conn.close()
+
     def test_the_scout_stop_tool_stops_the_scout_signed_via_mcp(self):
         async def use(client, _):
             return (await client.list_tools()).tools
         (tool,) = [tool for tool in self.session(use)
                    if tool.name == "scout_stop"]
-        self.assertLessEqual({"scout", "note", "author"},
+        self.assertLessEqual({"project", "scout", "note", "author"},
                              set(tool.input_schema["required"]))
+
+        client_path().write_text('default_project = "alpha"\n')
+        unnamed = self.call("scout_stop", {
+            "scout": self.scout, "note": "not needed", "author": "test seat"})
+        self.assertIs(unnamed.is_error, True, unnamed.content)
+        self.assertEqual(self.phase(), "queued")
 
         result = self.call("scout_stop", {
             "project": "alpha", "scout": self.scout, "note": "not needed",

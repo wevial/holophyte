@@ -183,7 +183,8 @@ WRITES = (
          signs=by_author),
     Tool("scout_stop", "stop a scout, the note its reason: a queued one ends"
          " now, a running one's process is signalled (holo scout stop ID"
-         " --json)", ("scout", "stop"), (PROJECT, SCOUT), required=("scout",),
+         " --json)", ("scout", "stop"), (PROJECT, SCOUT),
+         required=("project", "scout"),
          tier=WRITE, signs=by_author),
 )
 
