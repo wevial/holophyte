@@ -555,8 +555,9 @@ def write_over(args, daemon, prefix, route, known):
     ok = bool(reply.get("ok"))
     shown = {"recorded": None, **reply,
              "action": " ".join(args.command.words), "ok": ok}
-    lines = [line.removeprefix(PREFIX)
-             for line in str(reply.get("detail") or "").splitlines()]
+    lines = reply.get("problems") or [
+        line.removeprefix(PREFIX)
+        for line in str(reply.get("detail") or "").splitlines()]
     if args.json:
         print(json.dumps({**shown, "transport": HTTP}))
     else:
