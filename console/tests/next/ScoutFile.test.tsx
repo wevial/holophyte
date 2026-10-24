@@ -204,6 +204,22 @@ test("filing a handed draft from New ticket leaves the stored draft for the proj
   expect(localStorage.getItem("holo.newTicket.demo")).toBe(stored);
 });
 
+test("a handed draft saved with edits reopens with those edits after a reload", async () => {
+  const fake = await mount(scoutFetch({ scout: done() }).fetch);
+  await click(within(rowOf("A3")).getByRole("link", { name: A3_TITLE }));
+  await act(async () => void fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "An edited title" } }));
+  await click(screen.getByRole("button", { name: "Save draft" }));
+  cleanup();
+  render(
+    <QueryClientProvider client={consoleQueryClient()}>
+      <NextConsole base={DEMO} pollDeps={fake.deps} />
+    </QueryClientProvider>,
+  );
+  await settled();
+  expect(window.location.hash).toBe("#/tickets/demo/new");
+  expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe("An edited title");
+});
+
 const visit = async (hash: string) => {
   await act(async () => {
     window.location.hash = hash;
@@ -222,6 +238,18 @@ test("a refusal under scout 31's A1 does not read under a cached scout 32's A1",
   await visit("#/scouts/demo/32");
   expect(document.querySelector("[data-scout-facts]")!.textContent).toStartWith("scout 32");
   expect(within(rowOf("A1")).queryByRole("alert")).toBeNull();
+});
+
+test("a checker refusal answered after the reader left the Scout page leaves the page they opened", async () => {
+  let answer: (response: Response) => void = () => {};
+  const daemon: Daemon = { scout: done(), file: () => new Promise((resolve) => (answer = resolve)) };
+  await mount(scoutFetch(daemon).fetch);
+  await click(fileOf("A4"));
+  await visit("#/tickets/demo/new");
+  answer(Response.json({ ok: false, ticket: null, problems: [REFUSAL], advisories: [], detail: REFUSAL }));
+  await settled();
+  expect(window.location.hash).toBe("#/tickets/demo/new");
+  expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe("");
 });
 
 test("an already-filed answer reads under the row and reads the scout again on the Scout page", async () => {

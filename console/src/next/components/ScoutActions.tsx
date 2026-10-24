@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../lib/actions";
@@ -25,6 +26,11 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   const navigate = useNavigate();
   const toast = useToast();
   const id = `A${item.position}`;
+  const shown = useRef(true);
+  useEffect(() => {
+    shown.current = true;
+    return () => void (shown.current = false);
+  }, []);
   const refused = action.data != null && !action.data.ok ? action.data : null;
   const file = async () => {
     const result = await action.mutateAsync({
@@ -34,7 +40,7 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
     if (result.ok) return;
     if (result.ticket != null) {
       void client.invalidateQueries({ queryKey: ["route", base] });
-    } else if (result.problems != null) {
+    } else if (result.problems != null && shown.current) {
       toast(`The checker refused ${id}: ${result.detail}`);
       void navigate({ to: "/tickets/$project/new", params: { project }, search: {}, state: { draft: item.body } });
     }

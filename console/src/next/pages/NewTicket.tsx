@@ -184,6 +184,7 @@ export function NewTicket() {
     try {
       localStorage.setItem(draftKey(project), JSON.stringify({ body, priority, savedAt: Date.now() }));
       setStoredApart(false);
+      if (handed != null) void navigate({ to: "/tickets/$project/new", params: { project }, search: {}, replace: true });
       toast("Draft kept in this browser.");
     } catch {
       toast("This browser keeps no drafts.");
