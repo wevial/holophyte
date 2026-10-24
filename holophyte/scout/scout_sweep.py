@@ -7,7 +7,7 @@ from holophyte.admission import project_of
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
-from holophyte.scout.scout_process import lead_path
+from holophyte.scout.scout_process import scout_dir
 from store.enums import ScoutPhase
 from store.scouts import (
     PLANNING,
@@ -52,7 +52,7 @@ def end_stale(name, target, conn, now, out):
 
 
 def start_scout(target, scout_id):
-    log = lead_path(target, scout_id).parent / "scout.log"
+    log = scout_dir(target, scout_id) / "scout.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "ab") as handle:
         child = SPAWN(
