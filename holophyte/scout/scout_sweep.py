@@ -64,7 +64,7 @@ def _end_one_stale(conn, row, reason, now):
         return "answer failed, back to done"
     steered = current_pass(conn, row.id)
     if steered is not None:
-        fail_pass(conn, row.id, steered["pass"], reason)
+        fail_pass(conn, row.id, steered, reason)
         return f"pass {steered['pass']} failed, back to done"
     end_scout(conn, row.id, "failed", reason, now=now)
     return "ended failed"
@@ -188,7 +188,7 @@ def _message_failed(conn, message, reason):
         fail_answer(conn, message.scout_id, message.id, reason)
     else:
         fail_pass(conn, message.scout_id,
-                  current_pass(conn, message.scout_id)["pass"], reason)
+                  current_pass(conn, message.scout_id), reason)
 
 
 def _start_message(name, target, message, out):

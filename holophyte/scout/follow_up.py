@@ -124,12 +124,13 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
         return PassOutcome(number, message, dict(report, cut=swarm.cut()))
 
 
-def held_pass(conn, scout_id, number):
-    steered = current_pass(conn, scout_id)
-    current = None if steered is None else steered["pass"]
-    if current != number:
-        raise ScoutRefused(scout_id, scout(conn, scout_id).phase,
-                           f"it runs pass {current}, not {number}")
+def held_pass(conn, scout_id, steered):
+    current = current_pass(conn, scout_id)
+    if current is None or current["message"] != steered["message"]:
+        raise ScoutRefused(
+            scout_id, scout(conn, scout_id).phase,
+            f"it runs the pass message {current and current['message']}"
+            f" steered, not message {steered['message']}'s")
 
 
 def stop_running(conn, scout_id, number):
@@ -140,35 +141,39 @@ def stop_running(conn, scout_id, number):
         end_scout_task(conn, task_id, STOPPED)
 
 
-def end_pass(conn, scout_id, number, kind, summary, payload):
+def end_pass(conn, scout_id, steered, kind, summary, payload):
+    number = steered["pass"]
     with store.transaction(conn):
-        held_pass(conn, scout_id, number)
+        held_pass(conn, scout_id, steered)
         stop_running(conn, scout_id, number)
         record_scout_event(conn, scout_id, kind, summary, level="detail",
-                           payload=json.dumps({"pass": number, **payload}))
+                           payload=json.dumps({"pass": number,
+                                               "message": steered["message"],
+                                               **payload}))
         move_scout(conn, scout_id, DONE)
 
 
-def fail_pass(conn, scout_id, number, reason):
-    end_pass(conn, scout_id, number, PASS_FAILED,
-             f"pass {number} failed: {reason}", {"reason": reason})
+def fail_pass(conn, scout_id, steered, reason):
+    end_pass(conn, scout_id, steered, PASS_FAILED,
+             f"pass {steered['pass']} failed: {reason}", {"reason": reason})
 
 
-def stop_pass(conn, scout_id, number, reason, author, note):
-    end_pass(conn, scout_id, number, PASS_STOPPED,
-             f"pass {number} stopped: {reason}",
+def stop_pass(conn, scout_id, steered, reason, author, note):
+    end_pass(conn, scout_id, steered, PASS_STOPPED,
+             f"pass {steered['pass']} stopped: {reason}",
              {"reason": reason, "author": author, "note": note})
 
 
 def settle_pass(conn, scout_id, outcome):
     number = outcome.number
+    steered = {"pass": number, "message": outcome.message}
     if outcome.failure is not None:
-        fail_pass(conn, scout_id, number, outcome.failure)
+        fail_pass(conn, scout_id, steered, outcome.failure)
         print(f"[holo2] scout {scout_id} pass {number} failed:"
               f" {outcome.failure}", flush=True)
         return 1
     with store.transaction(conn):
-        held_pass(conn, scout_id, number)
+        held_pass(conn, scout_id, steered)
         record_scout_report(conn, scout_id, number, outcome.report)
         positions = record_scout_actions(conn, scout_id, number,
                                          outcome.report["actions"])

@@ -18,9 +18,12 @@ from holophyte.config.project import Project
 from holophyte.host.registry import Host
 from holophyte.scout.follow_up import (
     PASS_OPENING,
+    PassOutcome,
     current_pass,
+    fail_pass,
     run_pass,
     settle_pass,
+    stop_pass,
 )
 from holophyte.scout.lead import REPORT_OPENING, SYNTHESIS_OPENING
 from holophyte.scout.scout_config import scout_config
@@ -28,6 +31,7 @@ from holophyte.scout.scout_process import make_lead
 from holophyte.scout.swarm import Stopping
 from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
+    ScoutRefused,
     beat_scout,
     create_scout,
     end_scout,
@@ -264,7 +268,8 @@ class SteerConfigTests(ConfigFixture):
         for table, key in (
                 ("steer_budget_min = 0\n", "steer_budget_min"),
                 ('steer_helpers = "four"\n', "steer_helpers"),
-                ("helper_turns = 5\nsteer_helpers = 6\n", "steer_helpers")):
+                ("helper_turns = 5\nsteer_helpers = 6\n", "steer_helpers"),
+                ("swarm = 1\nhelper_turns = 1\n", "steer_helpers")):
             with self.subTest(table=table):
                 with self.assertRaises(SystemExit) as refused:
                     check_config(self.project(f"[scout]\n{table}"))
@@ -319,6 +324,30 @@ class StalePassTests(PassCase):
                         failed["reason"])
         self.assertEqual(self.tasks(scout_id), [(1, QUESTIONS[0], "stopped")])
         self.assertEqual(self.reports(scout_id), {1: REPORT})
+
+
+class RetriedPassTests(PassCase):
+    def test_an_earlier_attempt_of_a_reused_pass_cannot_end_the_retry(self):
+        scout_id = self.done_scout()
+        take_message(self.store_conn, self.steer(scout_id))
+        earlier = current_pass(self.store_conn, scout_id)
+        fail_pass(self.store_conn, scout_id, earlier, "heartbeat stale")
+        take_message(self.store_conn, self.steer(scout_id, "And the cron?"))
+        retry = current_pass(self.store_conn, scout_id)
+        self.assertEqual(retry["pass"], earlier["pass"])
+
+        stale = PassOutcome(earlier["pass"], earlier["message"],
+                            dict(SECOND, cut=[]))
+        for ending in (lambda: settle_pass(self.store_conn, scout_id, stale),
+                       lambda: fail_pass(self.store_conn, scout_id, earlier,
+                                         "cut"),
+                       lambda: stop_pass(self.store_conn, scout_id, earlier,
+                                         "stopped", None, None)):
+            with self.assertRaises(ScoutRefused):
+                ending()
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "planning")
+        self.assertEqual(self.reports(scout_id), {1: REPORT})
+        self.assertEqual(len(self.items(scout_id)), 2)
 
 
 class StoppedPassTests(PassCase):

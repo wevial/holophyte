@@ -64,8 +64,7 @@ def scout_config(project):
             f"{where}: [scout] waves must be 1 or 2, got {waves!r}")
     steer_budget_min = count(where, table, "steer_budget_min",
                              STEER_BUDGET_MIN)
-    steer_helpers = count(where, table, "steer_helpers",
-                          min(STEER_HELPERS, counts["helper_turns"]))
+    steer_helpers = count(where, table, "steer_helpers", STEER_HELPERS)
     if steer_helpers > counts["helper_turns"]:
         raise SystemExit(
             f"{where}: [scout] steer_helpers: {steer_helpers} helpers for a "

@@ -67,7 +67,7 @@ def end_unrun(conn, scout_id, phase, ask, reason, author, note):
         return f"scout {scout_id}'s answer stopped; it is done again"
     steered = current_pass(conn, scout_id)
     if steered is not None:
-        stop_pass(conn, scout_id, steered["pass"], reason, author, note)
+        stop_pass(conn, scout_id, steered, reason, author, note)
         return (f"scout {scout_id}'s pass {steered['pass']} stopped;"
                 " it is done again")
     end_scout(conn, scout_id, "stopped", reason)

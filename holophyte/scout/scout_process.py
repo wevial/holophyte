@@ -278,7 +278,7 @@ def pass_stopped(conn, scout_id, steered):
     reason = BY_SIGNAL if asked is None else stopped_by(asked["author"],
                                                         asked["note"])
     try:
-        stop_pass(conn, scout_id, number, reason, asked and asked["author"],
+        stop_pass(conn, scout_id, steered, reason, asked and asked["author"],
                   asked and asked["note"])
     except ScoutRefused as ended:
         print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)

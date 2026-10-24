@@ -1861,7 +1861,7 @@ apply.
 | `helper_turns` | Default: `12` | Integer of at least 1; the helpers a scout starts in all. |
 | `waves` | Default: `2` | `1` or `2`. |
 | `steer_budget_min` | Default: `10` minutes | Integer of at least 1; a steered follow-up pass's time budget, counted from its plan turn. |
-| `steer_helpers` | Default: `4`, or `helper_turns` when that is lower | Integer of at least 1, at most `helper_turns`; the helpers a steered follow-up pass starts in all, in one wave. |
+| `steer_helpers` | Default: `4` | Integer of at least 1, at most `helper_turns`; the helpers a steered follow-up pass starts in all, in one wave. |
 
 ```toml
 [scout]
