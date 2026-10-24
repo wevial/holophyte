@@ -6,9 +6,12 @@ over real git repositories.
 Run: python3 -m unittest discover -s tests -p 'test_scout_answer.py' -v
 """
 import json
+import os
+import re
 import time
 import unittest
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -48,6 +51,13 @@ REPORT = {"summary": "the retry loop spins", "findings": FINDINGS,
           "actions": ACTIONS, "cut": []}
 QUESTION = "Which finding explains the spin?"
 TEXT = "F2 shows the timeout read twice; A1 fixes the loop."
+
+
+def reaped(pid):
+    try:
+        return os.waitpid(pid, os.WNOHANG)[0] == pid
+    except ChildProcessError:
+        return True
 
 
 class AnswerCase(StopCase):
@@ -129,6 +139,9 @@ class SweptAnswerTests(AnswerCase):
             self.events(scout_id))
         self.assertTrue(wait_for(
             lambda: scout(self.store_conn, scout_id).phase == "done"))
+        (pid,) = map(int, re.findall(r"answering message \d+ as pid (\d+)",
+                                     printed))
+        self.assertTrue(wait_for(lambda: reaped(pid), 30))
 
         row = scout(self.store_conn, scout_id)
         self.assertEqual((row.ended_at, row.reason, row.lead_session),
@@ -230,16 +243,19 @@ class CodexAnswerTests(AnswerCase):
         scout_id = self.answering(session=session)
         self.assertEqual(self.answer_step(scout_id), 0)
         (call,) = self.stubs.turns("answer")
-        self.assertEqual(call["argv"][1], "exec")
-        self.assertIn("resume", call["argv"])
-        self.assertLess(call["argv"].index("resume"),
-                        call["argv"].index(session))
+        argv = [Path(call["argv"][0]).name, *call["argv"][1:]]
+        self.assertEqual(argv[:2], ["codex", "exec"])
+        sandbox = argv.index("--sandbox")
+        self.assertEqual(argv[sandbox + 1], "read-only")
+        self.assertLess(sandbox, argv.index("resume"))
+        self.assertLess(argv.index("resume"), argv.index(session))
 
         (self.stubs.directory / "calls.jsonl").unlink()
         scout_id = self.answering(session=None)
         self.assertEqual(self.answer_step(scout_id), 0)
         (call,) = self.stubs.turns("answer")
-        self.assertEqual(call["argv"][1], "exec")
+        self.assertEqual([Path(call["argv"][0]).name, call["argv"][1]],
+                         ["codex", "exec"])
         self.assertNotIn("resume", call["argv"])
         self.assertIn("Ask: why does the retry spin?", call["argv"][-1])
 
