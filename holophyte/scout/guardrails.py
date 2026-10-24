@@ -175,8 +175,7 @@ def filed_covers(project, scout):
     covered = set()
     for (item,) in items:
         action = json.loads(item)
-        if action.get("kind") == GUARDRAIL and isinstance(
-                action.get("covers"), list):
+        if action["kind"] == GUARDRAIL:
             covered.update(action["covers"])
     return covered
 
