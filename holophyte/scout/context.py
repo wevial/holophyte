@@ -277,6 +277,7 @@ def context_pack(project, scout):
         return None
     pack = Pack(project)
     PACKS[scout.subject_kind](pack, scout.subject_ref)
-    text = outbound("\n".join(pack.lines), known_secrets(project.config()))
+    text = "\n".join(pack.lines).replace("\x00", "\\x00")
+    text = outbound(text, known_secrets(project.config()))
     text = capped(text, pack)
     return ContextPack(text, pack.paths(), "context: " + " · ".join(pack.notes))

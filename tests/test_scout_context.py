@@ -123,6 +123,14 @@ class RunContextTests(ContextCase):
                      "app/save.py:88 [p1] save drops the title"):
             self.assertIn(text, goal)
 
+    def test_a_nul_byte_in_the_verify_output_reaches_the_plan_turn_escaped(self):
+        self.start()
+        run = self.failed_run(self.mirror("NAT-3"))
+        self.red_round(run, "binary\x00blob\nMARKER-TAIL")
+        self.run_scout(("run", str(run)))
+        goal = self.plan_goal()
+        self.assertIn("binary\\x00blob\nMARKER-TAIL", goal)
+
     def test_the_pack_keeps_the_newest_20_ledger_entries_and_the_output_tail(self):
         self.start()
         run = self.failed_run(self.mirror("NAT-3"), ledger=[
