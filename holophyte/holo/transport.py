@@ -43,6 +43,7 @@ from holophyte.holo.results import (
     STDIN,
     build_result,
     human_line,
+    human_text,
     parse_run,
     scout_body,
     scout_file_body,
@@ -563,5 +564,5 @@ def write_over(args, daemon, prefix, route, known):
         print(json.dumps({**shown, "transport": HTTP}))
     else:
         out = sys.stdout if ok else sys.stderr
-        print(human_line(shown, lines, colour_on(out)), file=out)
+        print(human_text(shown, lines, colour_on(out)), file=out)
     return 0 if ok else 1

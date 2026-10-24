@@ -408,10 +408,10 @@ class WriteTests(HttpCase):
         completed = self.holo("scout", "file", str(scout_id), "1",
                               "-p", "alpha")
         self.assertEqual(completed.returncode, 0, completed.stderr)
+        detail, *listed = completed.stdout.splitlines()
         self.assertIn(f"scout {scout_id} item 1 filed as HOLO-1 in Backlog",
-                      completed.stdout)
-        for problem in problems:
-            self.assertIn(problem, completed.stdout)
+                      detail)
+        self.assertEqual(listed, problems)
         self.assertEqual(self.requests,
                          [("POST", "/projects/alpha/actions/scout-file")])
 

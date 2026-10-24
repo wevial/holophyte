@@ -361,10 +361,9 @@ class HoloScoutFileTests(ScoutFileCase):
         code, out, err = self.holo("scout", "file", str(self.scout), "2",
                                    "-p", str(self.paths["native"]))
         self.assertEqual(code, 0, err)
-        filed = out.index("filed as NAT-1 in Backlog")
-        places = [out.index(problem) for problem in problems]
-        self.assertEqual(places, sorted(places))
-        self.assertLess(filed, places[0])
+        detail, *listed = out.splitlines()
+        self.assertIn("filed as NAT-1 in Backlog", detail)
+        self.assertEqual(listed, problems)
 
     def test_holo_json_answers_the_draft_ticket_and_its_problems(self):
         problems = self.problems()
