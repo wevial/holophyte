@@ -48,6 +48,8 @@ interface Daemon {
   actions?: boolean;
   file?: () => Response | Promise<Response>;
   check?: () => Response;
+  filing?: () => Response;
+  other?: ScoutDetail;
 }
 
 /** DEMO answering `/scouts/31` from `daemon.scout` at each read, its file route from `daemon.file`; every request is kept. */
@@ -57,6 +59,8 @@ function scoutFetch(daemon: Daemon) {
   const fetch: Fetch = async (url, init) => {
     seen.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
     if (url === `${DEMO}/scouts/31`) return Response.json(daemon.scout);
+    if (url === `${DEMO}/scouts/32` && daemon.other) return Response.json(daemon.other);
+    if (url === `${DEMO}/tickets` && daemon.filing) return daemon.filing();
     if (url === `${DEMO}/actions/scout-file` && daemon.file) return daemon.file();
     if (url === `${DEMO}/board`) return Response.json({ ...board, editable: true });
     if (url === `${DEMO}/tickets/check` && daemon.check) return daemon.check();
@@ -180,6 +184,44 @@ test("an item's title opens New ticket with its draft and files nothing", async 
   expect(window.location.hash).toBe("#/tickets/demo/new");
   expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe(A3_TITLE);
   expect(posts(seen)).toHaveLength(0);
+});
+
+test("filing a handed draft from New ticket leaves the stored draft for the project as it was", async () => {
+  const stored = JSON.stringify({ body: draft("A draft kept earlier"), priority: 2, savedAt: at(10, 0) });
+  localStorage.setItem("holo.newTicket.demo", stored);
+  const daemon: Daemon = {
+    scout: done(),
+    check: () => Response.json({ problems: [], advisories: [], blocks: false }),
+    filing: () => Response.json({ ticket: "DEMO-215", revision: 1 }, { status: 201 }),
+  };
+  const fake = await mount(scoutFetch(daemon).fetch);
+  await click(within(rowOf("A3")).getByRole("link", { name: A3_TITLE }));
+  const check = fake.scheduled.find((entry) => entry.ms === CHECK_DELAY_MS)!;
+  await act(async () => check.fn());
+  await settled();
+  await click(screen.getByRole("button", { name: "File ticket" }));
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-215");
+  expect(localStorage.getItem("holo.newTicket.demo")).toBe(stored);
+});
+
+const visit = async (hash: string) => {
+  await act(async () => {
+    window.location.hash = hash;
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await settled();
+};
+
+test("a refusal under scout 31's A1 does not read under a cached scout 32's A1", async () => {
+  const other = { ...done(), scout: { ...done().scout, id: 32 } };
+  await mount(scoutFetch({ scout: done(), other, file: refusal("demo has no [board]") }).fetch);
+  await visit("#/scouts/demo/32");
+  await visit("#/scouts/demo/31");
+  await click(fileOf("A1"));
+  expect(within(rowOf("A1")).getByRole("alert").textContent).toBe("demo has no [board]");
+  await visit("#/scouts/demo/32");
+  expect(document.querySelector("[data-scout-facts]")!.textContent).toStartWith("scout 32");
+  expect(within(rowOf("A1")).queryByRole("alert")).toBeNull();
 });
 
 test("an already-filed answer reads under the row and reads the scout again on the Scout page", async () => {

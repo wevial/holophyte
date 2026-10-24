@@ -130,7 +130,7 @@ export function ScoutPage() {
           <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)} />
         </section>
         <ScoutReport key={`${page.base}/${scout.id}`} reports={page.detail.reports} baseSha={scout.base_sha} />
-        <ScoutActions items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />
+        <ScoutActions key={`${page.base}/${scout.id}/actions`} items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />
       </div>
     </Page>
   );

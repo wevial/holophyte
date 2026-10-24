@@ -9,7 +9,7 @@ import { Btn } from "./Btn";
 import { detailLine } from "./CardActions";
 import { SECTION_LABEL } from "./Criteria";
 
-const TAG = "rounded border border-rule px-1.5 py-px font-mono text-[11px] leading-[1.4] text-ink-3";
+const TAG = "border border-rule px-1.5 py-[3px] font-mono text-[11px] leading-none text-ink-3";
 
 interface Scope {
   base: string;

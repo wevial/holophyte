@@ -141,8 +141,10 @@ export function NewTicket() {
     setEvidence(fieldOf(form, "evidence"));
   };
   const handed = useLocation({ select: location => location.state.draft });
+  const [storedApart, setStoredApart] = useState(false);
   useEffect(() => {
     restore(handed == null ? readDraft(project) : handedDraft(handed));
+    setStoredApart(handed != null);
   }, [project, handed]);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
@@ -181,6 +183,7 @@ export function NewTicket() {
   const save = () => {
     try {
       localStorage.setItem(draftKey(project), JSON.stringify({ body, priority, savedAt: Date.now() }));
+      setStoredApart(false);
       toast("Draft kept in this browser.");
     } catch {
       toast("This browser keeps no drafts.");
@@ -201,7 +204,7 @@ export function NewTicket() {
       setProblems("problems" in result ? result.problems : [result.error]);
       return;
     }
-    clearDraft(project);
+    if (!storedApart) clearDraft(project);
     toast(`Filed ${result.ticket} in ${project} Backlog.`);
     void client.invalidateQueries({ queryKey: ["fleet"] });
     void client.invalidateQueries({ queryKey: ["route", target.base] });
