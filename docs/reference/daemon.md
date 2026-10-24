@@ -328,9 +328,11 @@ daemon runs the start half of the host sweep's scout step once: while the
 host's live scouts are fewer than `host.toml`'s `[scout] max_parallel`, it
 starts the host's oldest queued scouts, each moved to `planning` at
 `main`'s sha and spawned as `factory.py --scout ID PROJECT`, so a new
-launch never jumps the queue. A scout not started stays `queued` and a
-later host sweep starts it; one whose start failed says why in `detail`
-and is still `ok: true`, since it is recorded and will run.
+launch never jumps the queue. A scout not started stays `queued`, with
+`ok: true` and why it did not start in `detail`, and a later host sweep
+starts it. A scout whose process could not be spawned is ended `failed` by
+that step, and the answer is `ok: false` with `queued` false and the
+reason in `detail`.
 
 The reply adds `scout`, the new scout's id, and `queued`, true when it was
 not started; `recorded` is null.

@@ -185,6 +185,22 @@ class DaemonLaunchTests(LaunchCase):
                          "queued")
         self.assertEqual(self.spawned, [])
 
+    def test_a_spawn_that_fails_answers_not_ok_with_the_scout_failed(self):
+        path = self.project("alpha")
+        server = self.serve(path)
+
+        def refused(argv, **options):
+            raise OSError("no such interpreter")
+
+        with patch.object(scout_sweep, "SPAWN", refused):
+            code, reply = self.post(server, "/actions/scout",
+                                    {"ask": ASK, "kind": "bug"})
+        self.assertEqual(code, 200, reply)
+        self.assertEqual((reply["ok"], reply["queued"]), (False, False))
+        self.assertIn("could not start: no such interpreter", reply["detail"])
+        self.assertEqual(scout(self.conn(path), reply["scout"]).phase,
+                         "failed")
+
     def test_a_refused_launch_writes_no_scout_and_starts_nothing(self):
         path = self.project("alpha")
         server = self.serve(path)
@@ -317,5 +333,6 @@ class McpLaunchTests(McpCase):
         self.assertIs(result.structured_content["ok"], True)
         row = scout_rows(self.alpha)[-1]
         self.assertEqual((row.ask, row.phase), ("Map the merge gate", "queued"))
-        self.assertEqual(first_event(self.alpha, row.id)[1]["author"],
-                         "test seat via MCP")
+        kind, payload = first_event(self.alpha, row.id)
+        self.assertEqual((kind, payload["author"]),
+                         ("scout_queued", "test seat via MCP"))

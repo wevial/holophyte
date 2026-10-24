@@ -8,7 +8,7 @@ from holophyte.host.registry import Host, HostError, registered_at, settings
 from holophyte.loop.runs import open_store
 from holophyte.scout.scout_config import scout_config
 from holophyte.serve.serve_runs import no_store
-from store.scouts import create_scout, record_scout_event
+from store.scouts import QUEUED, create_scout, record_scout_event, scout
 
 SCOUT_ACTION = "scout"
 KINDS = ("bug", "research", "recon")
@@ -81,18 +81,22 @@ def record(project, body, picked, config, via):
     return scout_id
 
 
+def entry_name(entry):
+    return entry.name or str(entry.path)
+
+
 def start(project, scout_id):
     from holophyte.scout.scout_sweep import start_queued
     out = io.StringIO()
     try:
         host = Host.locate()
         limit = settings(host).scout_max_parallel
-        if registered_at(host, project) is None:
+        entry = registered_at(host, project)
+        if entry is None:
             return False, (f"{host.path} does not register {project.path},"
                            " so no host sweep starts it")
-        live, started = start_queued(
-            host.projects(), limit, out,
-            key=lambda entry: entry.name or str(entry.path))
+        live, started = start_queued(host.projects(), limit, out,
+                                     key=entry_name)
     except HostError as bad:
         return False, str(bad).removeprefix("[holo2] ")
     if (Path(project.path).resolve(), scout_id) in started:
@@ -100,9 +104,19 @@ def start(project, scout_id):
     if live >= limit:
         return False, f"{live} of {limit} scout slots in use"
     said = [line.removeprefix("[holo2] ")
-            for line in out.getvalue().splitlines() if line.strip()]
-    return False, (said[-1] if said
-                   else "not started this pass; the host sweep starts it")
+            for line in out.getvalue().splitlines()
+            if line.startswith((f"[holo2] {entry_name(entry)}: ",
+                                "[holo2] no scout starts"))]
+    return False, said[-1] if said else "not started this pass"
+
+
+def ended(project, scout_id):
+    conn = open_store(project)
+    try:
+        row = scout(conn, scout_id)
+    finally:
+        conn.close()
+    return None if row.phase == QUEUED else f"{row.phase}: {row.reason}"
 
 
 def launch(project, body, via=VIA_DAEMON):
@@ -117,6 +131,12 @@ def launch(project, body, via=VIA_DAEMON):
         return 200, {"ok": False, "detail": declined}
     scout_id = record(project, body, picked, config, via)
     ran, said = start(project, scout_id)
-    detail = said if ran else f"scout {scout_id} queued: {said}"
-    return 200, {"ok": True, "scout": scout_id, "queued": not ran,
-                 "detail": detail}
+    if ran:
+        return 200, {"ok": True, "scout": scout_id, "queued": False,
+                     "detail": said}
+    failed = ended(project, scout_id)
+    if failed is not None:
+        return 200, {"ok": False, "scout": scout_id, "queued": False,
+                     "detail": f"scout {scout_id} {failed}"}
+    return 200, {"ok": True, "scout": scout_id, "queued": True,
+                 "detail": f"scout {scout_id} queued: {said}"}
