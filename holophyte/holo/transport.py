@@ -20,6 +20,7 @@ from holophyte.holo.grammar import (
     LAUNCH,
     READS,
     REQUIRED,
+    SCOUT_FILE,
     SCOUT_KINDS,
     SHOW,
     arguments,
@@ -44,6 +45,7 @@ from holophyte.holo.results import (
     human_line,
     parse_run,
     scout_body,
+    scout_file_body,
 )
 
 TRANSPORT = "HOLO_TRANSPORT"
@@ -356,6 +358,8 @@ HTTP_ROUTES = {
     ("start",): Route("POST", "/actions/launch-loop"),
     **{words: Route("POST", "/actions/scout", SCOUT_BODY)
        for words in (("scout", LAUNCH), *SCOUT_KINDS)},
+    SCOUT_FILE: Route("POST", "/actions/scout-file",
+                      ("scout", "item", "note", "author")),
 }
 
 
@@ -461,6 +465,8 @@ def fields(args, route):
     values, note = arguments(args, command)
     if route.path == HTTP_ROUTES[("scout", LAUNCH)].path:
         return scout_body(args)
+    if route.path == HTTP_ROUTES[SCOUT_FILE].path:
+        return scout_file_body(args)
     if note is not None and "note" not in route.body:
         args.leaf.error(f"{route.method} {route.path} takes no note; a hold"
                         " is released over http with holo release NOTE")

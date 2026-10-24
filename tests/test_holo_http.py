@@ -31,6 +31,7 @@ from holophyte.host.registry import Host, settings
 from holophyte.serve.serve_host import HostHandler, HostServer, host_tokens
 from tests.phase_fixture import finish_run
 from tests.test_holo_grammar import T0
+from tests.test_serve_ticket_check import body as ticket_body
 
 ROOT = Path(__file__).resolve().parent.parent
 MACHINE = "machine-token-value"
@@ -70,6 +71,7 @@ COVERED = {
     ("scout", "launch"): ["scout", "Map the merge gate", "--kind", "recon"],
     ("bug",): ["bug", "Save drops the title"],
     ("idea",): ["idea", "Show owner initials"],
+    ("scout", "file"): ["scout", "file", "1", "1"],
 }
 
 
@@ -367,6 +369,29 @@ class WriteTests(HttpCase):
                          " use\n")
         self.assertEqual(self.requests,
                          [("POST", "/projects/alpha/actions/scout")])
+
+    def test_scout_file_over_http_files_the_named_item_and_prints_the_detail(self):
+        scout_id = store.scouts.create_scout(self.conn, self.project_id,
+                                             "Map the merge gate", "recon", 30)
+        store.scouts.move_scout(self.conn, scout_id, "planning",
+                                base_sha="a" * 40)
+        store.scouts.record_scout_actions(
+            self.conn, scout_id, 1,
+            [{"title": title, "why": "it is slow", "kind": "fix",
+              "body": ticket_body(title)} for title in ("First", "Second")])
+        store.scouts.end_scout(self.conn, scout_id, "done", "answered")
+        completed = self.holo("scout", "file", str(scout_id), "1",
+                              "-p", "alpha")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.conn.execute(
+            "SELECT position, ticketKey FROM scoutActions WHERE scoutId = ?"
+            " ORDER BY position", (scout_id,)).fetchall(),
+            [(1, "HOLO-1"), (2, None)])
+        self.assertEqual(completed.stdout,
+                         f"✓ scout {scout_id} item 1 filed as HOLO-1 in"
+                         " Backlog\n")
+        self.assertEqual(self.requests,
+                         [("POST", "/projects/alpha/actions/scout-file")])
 
 
 class RefusalTests(HttpCase):

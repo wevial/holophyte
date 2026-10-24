@@ -22,6 +22,7 @@ from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.loop.pool_handoff import workers_on_previous_build
 from holophyte.loop.reexec import SWEEP_UNIT, systemctl_user
 from holophyte.redact import known_secrets, outbound
+from holophyte.scout.filing import SCOUT_FILE_ACTION
 from holophyte.serve.console_build import console_state, refresh_console
 from holophyte.serve.serve_actions import (
     ACTIONS,
@@ -56,6 +57,7 @@ RESTART_DAEMON = "restart-daemon"
 # A file, not a store: no store owns the sweep, and stores may be down.
 HOST_LEDGER = "host-actions.jsonl"
 HOST_ACTIONS = ACTIONS - {"restart-supervisor"}
+MACHINE_ONLY = (ACTIONS_PREFIX + MERGE_ACTION, ACTIONS_PREFIX + SCOUT_FILE_ACTION)
 # The sweep unit's `TimeoutStartSec`.
 SWEEP_TIMEOUT_SEC = 120
 SWEEP_FIELDS = ("started", "ended", "revision", "pid", "exit", "projects")
@@ -390,7 +392,7 @@ class HostHandler(StatusHandler):
             board = post_path(path)
             if board is not None:
                 return post_ticket(self, scope, path, *board)
-            if path == ACTIONS_PREFIX + MERGE_ACTION and self.server.actions \
+            if path in MACHINE_ONLY and self.server.actions \
                     and not self.admitted(self.server.write_token):
                 return self.answer(401, {})
             return self.post(scope, path)

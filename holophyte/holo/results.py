@@ -13,6 +13,7 @@ from holophyte.holo.grammar import (
     ALIASES,
     COMMANDS,
     LAUNCH,
+    SCOUT_FILE,
     SCOUT_KINDS,
     arguments,
     canonical,
@@ -108,6 +109,8 @@ def call(args, target):
         return steer(args, target)
     if args.command.words in (("scout", LAUNCH), *SCOUT_KINDS):
         return scout(args, target)
+    if args.command.words == SCOUT_FILE:
+        return scout_file(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -185,6 +188,30 @@ def scout(args, target):
         return PREFIX + (reply.get("detail") or reply.get("error", ""))
     print(PREFIX + reply["detail"])
     return 0
+
+
+def scout_file_body(args):
+    values, note = arguments(args, args.command)
+    body = {"scout": counted(values[0]), "item": counted(values[1]),
+            "note": note, "author": last(args, "author")}
+    return {key: value for key, value in body.items() if value is not None}
+
+
+def scout_file(args, target):
+    from holophyte.scout.filing import file_action
+    body = scout_file_body(args)
+    if not target:
+        args.leaf.error("holo scout file needs its project: -p NAME|PATH")
+    code, reply = file_action(located(target), body)
+    if code == 400:
+        args.leaf.error(reply["error"])
+    if code == 200 and reply["ok"]:
+        print(PREFIX + reply["detail"])
+        return 0
+    said = reply.get("problems") or [reply.get("detail") or reply["error"]]
+    for line in said[:-1]:
+        print(PREFIX + line)
+    return PREFIX + said[-1]
 
 
 def located(target):
