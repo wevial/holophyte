@@ -110,7 +110,7 @@ def requested(conn, project, scout_id, author, note, via):
         conn, scout_id, REQUESTED, f"stop asked by {author} ({via}): {note}",
         level="detail", payload=json.dumps({
             "author": author, "note": note, "via": via, "pid": pid,
-            "ask": ask, "pass": steered and steered["pass"]}))
+            "ask": ask, "steer": steered and steered["message"]}))
     if pid is None:
         reason = stopped_by(author, note)
         said = end_unrun(conn, scout_id, row.phase, ask,

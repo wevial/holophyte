@@ -268,11 +268,12 @@ def answer_mode(conn, project, row, ask, stopping):
         return 1
 
 
-def pass_stopped(conn, scout_id, number):
+def pass_stopped(conn, scout_id, steered):
     if conn.in_transaction:
         conn.rollback()
+    number = steered["pass"]
     asked = stop_request(conn, scout_id)
-    if asked is not None and asked.get("pass") != number:
+    if asked is not None and asked.get("steer") != steered["message"]:
         asked = None
     reason = BY_SIGNAL if asked is None else stopped_by(asked["author"],
                                                         asked["note"])
@@ -335,7 +336,7 @@ def modes(conn, project, row, stopping):
     steered = current_pass(conn, row.id)
     if steered is not None:
         return (partial(pass_mode, conn, project, row, steered, stopping),
-                partial(pass_stopped, conn, row.id, steered["pass"]))
+                partial(pass_stopped, conn, row.id, steered))
     return (partial(run_scout, conn, project, row, stopping),
             partial(end_stopped, conn, row.id))
 
