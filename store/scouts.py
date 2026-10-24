@@ -24,6 +24,7 @@ COLUMNS = ("id", "projectId", "ask", "kind", "links", "leadRoute",
            "leadSession", "helperRoute", "swarm", "helperTurns", "waves",
            "budgetMin", "phase", "reason", "baseSha", "host", "pid",
            "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals")
+SELECT = f"SELECT {', '.join(COLUMNS)} FROM scouts"
 
 
 class ScoutRefused(Exception):
@@ -267,15 +268,14 @@ def _scout(row):
 
 
 def scout(conn, scout_id):
-    row = conn.execute(f"SELECT {', '.join(COLUMNS)} FROM scouts WHERE id = ?",
-                       (scout_id,)).fetchone()
+    row = conn.execute(f"{SELECT} WHERE id = ?", (scout_id,)).fetchone()
     return None if row is None else _scout(row)
 
 
 def scouts(conn, phases):
     phases = list(phases)
     rows = conn.execute(
-        f"SELECT {', '.join(COLUMNS)} FROM scouts WHERE phase IN"
+        f"{SELECT} WHERE phase IN"
         f" ({', '.join('?' * len(phases))}) ORDER BY createdAt, id",
         phases).fetchall()
     return [_scout(row) for row in rows]
