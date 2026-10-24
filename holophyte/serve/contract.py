@@ -1,9 +1,9 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
-from holophyte.serve.contract_emit import check, render, write
+from holophyte.serve.contract_emit import ClientDefault, check, render, write
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
 from holophyte.serve.contract_routes import (
     ActiveRoute,
@@ -679,11 +679,24 @@ class FollowUpRow(TypedDict):
     error: str | None
 
 
+class TicketDefect(TypedDict):
+    ticket: str
+    run: int
+    kind: Literal["contradiction", "criterion_stuck", "review_stuck"]
+    criteria: list[str]
+    reason: str
+    at: int
+    revision: int
+    revised_ms: int
+    requeue_note: str | None
+
+
 class Findings(TypedDict):
     since: int
     limit: int
     runs: list[FindingsRun]
     follow_ups: list[FollowUpRow]
+    ticket_defects: Annotated[list[TicketDefect], ClientDefault([])]
 
 
 class BoardTicket(TypedDict):

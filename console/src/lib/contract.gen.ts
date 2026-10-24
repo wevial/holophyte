@@ -894,11 +894,25 @@ export const followUpRowSchema = z.looseObject({
 });
 export type FollowUpRow = z.infer<typeof followUpRowSchema>;
 
+export const ticketDefectSchema = z.looseObject({
+  ticket: z.string(),
+  run: z.int(),
+  kind: z.enum(["contradiction", "criterion_stuck", "review_stuck"]),
+  criteria: z.array(z.string()),
+  reason: z.string(),
+  at: z.int(),
+  revision: z.int(),
+  revised_ms: z.int(),
+  requeue_note: z.string().nullable(),
+});
+export type TicketDefect = z.infer<typeof ticketDefectSchema>;
+
 export const findingsSchema = z.looseObject({
   since: z.int(),
   limit: z.int(),
   runs: z.array(findingsRunSchema),
   follow_ups: z.array(followUpRowSchema),
+  ticket_defects: z.array(ticketDefectSchema).default([]),
 });
 export type Findings = z.infer<typeof findingsSchema>;
 
