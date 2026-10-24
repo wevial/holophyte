@@ -80,7 +80,7 @@ export const stoppedCount = (tasks: ScoutTask[]) => tasks.filter((task) => task.
 /** A token count in thousands: "38k tok". */
 export const tokenWords = (tokens: number) => `${Math.round(tokens / 1000)}k tok`;
 
-const isLive = (phase: ScoutDetail["scout"]["phase"]) => phase === "planning" || phase === "swarming" || phase === "synthesizing";
+export const isLive = (phase: ScoutDetail["scout"]["phase"]) => phase === "planning" || phase === "swarming" || phase === "synthesizing";
 
 interface Wave {
   wave: number;

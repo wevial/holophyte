@@ -1,7 +1,7 @@
 import { ACTIONS_OFF } from "../lib/actions";
 import type { ScoutDetail, ScoutEvent, ThreadMessage } from "../lib/contract.gen";
 import { formatClock, formatSettled, formatSpan } from "../lib/format";
-import { numberFindings } from "./scout";
+import { isLive, numberFindings } from "./scout";
 
 export type LineTone = "quiet" | "bad" | "wait";
 
@@ -55,10 +55,8 @@ export function followUps(detail: ScoutDetail): FollowUp[] {
 
 /** The pass the scout is in: its newest pass, with no end, while the scout runs. */
 export function livePass(detail: ScoutDetail): FollowUp | null {
-  const { phase } = detail.scout;
   const newest = followUps(detail).findLast((each) => each.kind === "pass");
-  const running = phase === "planning" || phase === "swarming" || phase === "synthesizing";
-  return running && newest != null && newest.end == null ? newest : null;
+  return isLive(detail.scout.phase) && newest != null && newest.end == null ? newest : null;
 }
 
 const spanOf = (events: FollowUp[], started: ScoutEvent) => events.find((each) => each.started === started)!;
