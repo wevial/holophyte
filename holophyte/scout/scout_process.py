@@ -13,10 +13,19 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
+from holophyte.scout.answer import (
+    Outcome,
+    answer,
+    current_ask,
+    held,
+    settle,
+    stop_answer,
+)
 from holophyte.scout.lead import run_lead
-from holophyte.scout.stop import stop_reason
+from holophyte.scout.stop import BY_SIGNAL, stop_reason, stop_request, stopped_by
 from holophyte.scout.swarm import ScoutStopped, Stopping
 from store.scouts import (
+    ANSWERING,
     PLANNING,
     ScoutRefused,
     beat_scout,
@@ -47,9 +56,9 @@ def lead_path(project, scout_id):
 def refusal(scout_id, row):
     if row is None:
         return f"[holo2] scout {scout_id}: the store holds no such scout"
-    if row.phase != PLANNING:
-        return (f"[holo2] scout {scout_id} is {row.phase}, not {PLANNING};"
-                " nothing to run")
+    if row.phase not in (PLANNING, ANSWERING):
+        return (f"[holo2] scout {scout_id} is {row.phase}, not {PLANNING} or"
+                f" {ANSWERING}; nothing to run")
     if row.pid is not None:
         return (f"[holo2] scout {scout_id} is {row.phase} and already records"
                 f" pid {row.pid}; nothing to run")
@@ -196,6 +205,60 @@ def end_stopped(conn, scout_id):
     return 0
 
 
+def answer_stopped(conn, scout_id, ask):
+    if conn.in_transaction:
+        conn.rollback()
+    asked = stop_request(conn, scout_id)
+    if asked is not None and asked.get("ask") != ask:
+        asked = None
+    reason = BY_SIGNAL if asked is None else stopped_by(asked["author"],
+                                                        asked["note"])
+    try:
+        stop_answer(conn, scout_id, ask, reason, asked and asked["author"],
+                    asked and asked["note"])
+    except ScoutRefused as ended:
+        print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
+        return 1
+    print(f"[holo2] scout {scout_id} answer stopped: {reason}", flush=True)
+    return 0
+
+
+def answered(conn, project, row, ask, stopping):
+    try:
+        worktree = make_lead(project, row.id, row.base_sha)
+        return answer(conn, project, row, ask, worktree, stopping)
+    except ScoutRefused:
+        raise
+    except Exception as bad:
+        return Outcome(ask, failure=str(bad).strip() or type(bad).__name__)
+
+
+def answer_mode(conn, project, row, ask, stopping):
+    scout_id = row.id
+    interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
+    try:
+        with store.transaction(conn):
+            held(conn, scout_id, ask)
+            beat_scout(conn, scout_id, os.getpid())
+        owner = scout(conn, scout_id).pid
+        if owner != os.getpid():
+            raise ScoutRefused(scout_id, ANSWERING, f"pid {owner} answers it")
+        with scout_heartbeat(conn, scout_id, interval_s):
+            outcome = answered(conn, project, row, ask, stopping)
+        try:
+            return settle(conn, scout_id, outcome)
+        except ScoutRefused:
+            raise
+        except Exception as bad:
+            if conn.in_transaction:
+                conn.rollback()
+            reason = str(bad).strip() or type(bad).__name__
+            return settle(conn, scout_id, outcome._replace(failure=reason))
+    except (ScoutEnded, ScoutRefused) as ended:
+        print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
+        return 1
+
+
 def scout_mode(project, scout_id):
     conn = open_store(project)
     try:
@@ -205,10 +268,16 @@ def scout_mode(project, scout_id):
             print(refused, flush=True)
             return 1
         stopping = Stopping()
+        answering = row.phase == ANSWERING
+        ask = current_ask(conn, scout_id) if answering else None
         with stop_on_sigterm(stopping):
             try:
+                if answering:
+                    return answer_mode(conn, project, row, ask, stopping)
                 return run_scout(conn, project, row, stopping)
             except ScoutStopped:
+                if answering:
+                    return answer_stopped(conn, scout_id, ask)
                 return end_stopped(conn, scout_id)
     finally:
         conn.close()
