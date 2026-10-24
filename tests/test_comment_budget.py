@@ -301,6 +301,7 @@ PINNED = {
     "store/writes.py": 2,
 
     "story_template.py": 1,
+    "ticket_advisories.py": 2,
     "ticket_depends.py": 3,
     "ticket_header.py": 4,
     "ticket_template.py": 24,
