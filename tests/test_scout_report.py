@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from holophyte.scout.lead import report_goal
+import ticket_template
+from holophyte.scout.lead import fenced_json, repair_goal, report_goal
 from holophyte.scout.report import (
     FIELDS,
     REPRODUCTION,
@@ -130,6 +131,34 @@ class ReportGoalTests(unittest.TestCase):
         for form in ('{"file": PATH, "line": N}',
                      '{"command": TEXT, "output": TEXT}', '{"url": URL}'):
             self.assertIn(form, goal)
+
+    def goals(self):
+        for kind in ("bug", "recon"):
+            row = SimpleNamespace(kind=kind)
+            yield kind, "report", report_goal(row, SimpleNamespace(tasks=[]),
+                                              None, False)
+            yield kind, "repair", repair_goal(row, ["summary: must be"
+                                                    " non-empty text"], False)
+
+    def test_each_goal_shows_a_ticket_skeleton_in_template_order_before_its_shape(self):
+        structural = ("missing H1", "missing section",
+                      "unknown section", "duplicate section",
+                      "sections out of template order")
+        for kind, name, goal in self.goals():
+            with self.subTest(kind=kind, goal=name):
+                shape = goal.index("```json")
+                skeleton = goal[goal.index("+++\n"):shape]
+                ticket = ticket_template.parse(skeleton)
+                self.assertEqual(ticket.header_problems, [])
+                self.assertEqual([problem for problem in
+                                  ticket_template.validate(ticket)
+                                  if problem.startswith(structural)
+                                  or "header" in problem], [])
+                self.assertEqual(ticket.order, [
+                    section for section in ticket_template.SECTION_ORDER
+                    if section != ticket_template.ESTIMATE])
+                report = BUG if kind == "bug" else RESEARCH
+                self.assertEqual(fenced_json(goal + fenced(report)), report)
 
 
 class ResolveEvidenceTests(unittest.TestCase):
