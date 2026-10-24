@@ -98,7 +98,7 @@ KNOWN_KEYS["questions"] = frozenset((
 KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
 KNOWN_KEYS["scout"] = frozenset((
     "leads", "helpers", "lead", "helper", "budget_min", "swarm",
-    "helper_turns", "waves", "steer_budget_min", "steer_helpers"))
+    "helper_turns", "waves", "steer_budget_min", "steer_helpers", "github"))
 
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)

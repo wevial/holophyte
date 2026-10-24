@@ -12,6 +12,7 @@ from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.context import context_pack
+from holophyte.scout.github_mcp import TOOLS_SENTENCE, scout_server
 from holophyte.scout.guardrails import findings_digest
 from holophyte.scout.prior import (
     offered_findings,
@@ -121,7 +122,7 @@ def asked(row):
             f"Base commit: {row.base_sha}")
 
 
-def plan_goal(row, limit, context, prior=""):
+def plan_goal(row, limit, context, prior="", github=False):
     return (
         f"{PLAN_OPENING}\n\n"
         "You lead a scout: a read-only investigation of this checkout. Do not "
@@ -132,6 +133,7 @@ def plan_goal(row, limit, context, prior=""):
         "commands in its own checkout (mode \"run\"), with the "
         "repository-relative paths it should start from. "
         f"{'' if row.kind == ScoutKind.BUG.value else MEASURE_SENTENCE}"
+        f"{TOOLS_SENTENCE if github else ''}"
         "End your answer with one fenced json block in this shape, TEXT and "
         "PATH standing for strings:\n\n"
         f"```json\n{PLAN_SHAPE}\n```\n")
@@ -270,6 +272,7 @@ class Lead:
         self.price = price
         self.secrets = known_secrets(project.config())
         self.session = None
+        self.server = scout_server(conn, project, row)
 
     def remember(self, session):
         if session is not None:
@@ -287,7 +290,7 @@ class Lead:
                 + outbound(tail, self.secrets))
 
     def start(self, goal, cap, context=""):
-        argv = self.seat.turn(self.outgoing(goal, context))
+        argv = self.seat.turn(self.outgoing(goal, context), self.server)
         self.remember(self.seat.session(argv))
         turn = self.turn(argv, cap)
         if self.session is None:
@@ -296,8 +299,9 @@ class Lead:
 
     def resume(self, goal, cap, context=""):
         goal = self.outgoing(goal, context)
-        return self.turn(self.seat.resume(self.session) + [goal] if self.session
-                         else self.seat.turn(goal), cap)
+        return self.turn(
+            self.seat.resume(self.session, self.server) + [goal]
+            if self.session else self.seat.turn(goal, self.server), cap)
 
 
 def wave_tasks(conn, swarm, turn, wave, cut):
@@ -443,9 +447,10 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     deadline = monotonic() + budget_s
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
-    turn = lead.start(plan_goal(row, limit, context, prior + digest), budget_s,
-                      context)
-    with Swarm(conn, project, row, config, deadline, stopping) as swarm:
+    turn = lead.start(plan_goal(row, limit, context, prior + digest,
+                                lead.server is not None), budget_s, context)
+    with Swarm(conn, project, row, config, deadline, stopping,
+               server=lead.server) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
