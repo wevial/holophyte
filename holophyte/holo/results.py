@@ -206,7 +206,10 @@ def scout_file(args, target):
     if code == 400:
         args.leaf.error(reply["error"])
     if code == 200 and reply["ok"]:
-        print(PREFIX + reply["detail"])
+        args.answered = {key: reply[key]
+                         for key in ("detail", "ticket", "problems")}
+        for line in [reply["detail"], *reply["problems"]]:
+            print(PREFIX + line)
         return 0
     said = reply.get("problems") or [reply.get("detail") or reply["error"]]
     for line in said[:-1]:
@@ -302,7 +305,7 @@ def build_result(args, code, lines, row):
         result["ticket"] = ticket
     if run is not None or recorded_run is not None:
         result["run"] = recorded_run if run is None else run
-    return result
+    return {**result, **getattr(args, "answered", {})}
 
 
 def human_line(result, lines, colour=False):

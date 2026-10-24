@@ -159,7 +159,8 @@ Each module, one line:
 - `holophyte/scout/filing.py` — `POST /actions/scout-file`, `holo scout
   file` and the `holo mcp` `scout_file` tool: a done scout's action item
   judged by the ticket checker for Backlog, filed to Backlog through the
-  project's board, and its filed key recorded on the item.
+  project's board (as a draft whose first note lists the checker's
+  problems, when it has any), and its filed key recorded on the item.
 - `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
   the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
   recorded `queued` with its `scout_queued` event, then started by the host

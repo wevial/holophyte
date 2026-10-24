@@ -16,6 +16,7 @@ from holophyte.scout.report import (
     fields_shape,
     report_problems,
     resolve_evidence,
+    ticket_skeleton,
 )
 from holophyte.scout.run_helpers import reproduced
 from holophyte.scout.scout_config import scout_config
@@ -31,6 +32,7 @@ from store.scouts import (
     record_scout_report,
     set_scout_session,
 )
+from ticket_template import MAX_ESTIMATE_MIN
 
 REPORT_TURN_S = 600
 PLAN_OPENING = "Scout plan turn"
@@ -138,6 +140,15 @@ def synthesis_goal(row, swarm, fresh):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
+def drafted_actions():
+    return (
+        "Write each action's body as a ticket draft in this skeleton, "
+        "replacing each <...> with the ticket's text: estimate is whole "
+        f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
+        "ticket keys it waits on.\n\n"
+        f"{ticket_skeleton()}\n")
+
+
 def report_shape(row):
     return REPORT_SHAPE + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value
                            else "") + "}"
@@ -154,8 +165,9 @@ def report_goal(row, swarm, problem, fresh):
         "helper's output (a queued one never ran, a stopped one was cut at "
         f"the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
-        "which part was cut and why, and the actions you would take. Do not "
-        "edit files, commit or push. End your answer with one fenced json "
+        "which part was cut and why, and the actions you would take.\n\n"
+        f"{drafted_actions()}\n"
+        "Do not edit files, commit or push. End your answer with one fenced json "
         "block in this shape, TEXT, PATH and URL standing for strings and N "
         "for a line number from 1:\n\n"
         f"```json\n{report_shape(row)}\n```\n")
@@ -168,10 +180,12 @@ def repair_goal(row, problems, fresh):
         + (f"{asked(row)}\n\n" if fresh else "")
         + "The report you wrote does not fit its shape. Each problem names the "
         f"field and what it must be:\n\n{listed}\n\n"
-        "Write the whole report again with these fixed. Do not edit files, "
-        "commit or push. End your answer with one fenced json block in this "
-        "shape, TEXT, PATH and URL standing for strings and N for a line "
-        f"number from 1:\n\n```json\n{report_shape(row)}\n```\n")
+        "Write the whole report again with these fixed.\n\n"
+        f"{drafted_actions()}\n"
+        "Do not edit files, commit or push. End your answer with one fenced "
+        "json block in this shape, TEXT, PATH and URL standing for strings "
+        "and N for a line number from 1:\n\n"
+        f"```json\n{report_shape(row)}\n```\n")
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):

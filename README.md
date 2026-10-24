@@ -122,7 +122,7 @@ holo attention [--json] [-p NAME|PATH]           # what waits on the operator, a
 holo board [--json] | ticket KEY [--json] -p NAME|PATH # the board's columns or one ticket's detail, as GET /board and /tickets/KEY
 holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; --json prints GET /scouts's body
 holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
-holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, a refusal printing each problem; see docs/reference/daemon.md#post-actionsscout-file
+holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, as a draft when the checker reports problems, printing each problem; see docs/reference/daemon.md#post-actionsscout-file
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,

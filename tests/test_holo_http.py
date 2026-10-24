@@ -399,7 +399,7 @@ class WriteTests(HttpCase):
         self.assertEqual(self.requests,
                          [("POST", "/projects/alpha/actions/scout-file")])
 
-    def test_a_refused_scout_file_over_http_prints_every_checker_problem(self):
+    def test_a_draft_scout_file_over_http_prints_every_checker_problem(self):
         text = without_verify()
         scout_id = self.done_scout(text)
         problems = store.board.check_ticket(self.conn, self.project_id, text,
@@ -407,11 +407,13 @@ class WriteTests(HttpCase):
         self.assertGreater(len(problems), 1)
         completed = self.holo("scout", "file", str(scout_id), "1",
                               "-p", "alpha")
-        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(f"scout {scout_id} item 1 filed as HOLO-1 in Backlog",
+                      completed.stdout)
         for problem in problems:
-            self.assertIn(problem, completed.stderr)
-        self.assertEqual(self.conn.execute(
-            "SELECT COUNT(*) FROM tickets").fetchone(), (0,))
+            self.assertIn(problem, completed.stdout)
+        self.assertEqual(self.requests,
+                         [("POST", "/projects/alpha/actions/scout-file")])
 
 
 class RefusalTests(HttpCase):
