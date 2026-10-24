@@ -225,6 +225,15 @@ class BaselineRuns(unittest.TestCase):
         self.assertIn("AssertionError", result["output"])
         self.assertNotIn("unattributed", result)
 
+    def test_here_document_text_in_a_comment_or_quotes_opens_none(self):
+        for verify in (f"{VERIFY} # <<CHECK\necho later-command",
+                       f"echo '<<CHECK'\n{VERIFY}\necho later-command"):
+            with self.subTest(verify=verify):
+                _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
+                self.assertNotIn("later-command", result["command"])
+                self.assertNotEqual(result["exit_status"], 0)
+                self.assertIsNone(main_baseline.gap(result))
+
     def test_a_base_run_stopped_before_the_test_line_is_not_its_witness(self):
         lint = self.root / "lint.sh"
         lint.write_text("echo lint-failed; exit 4\n")
@@ -269,6 +278,17 @@ class BaselineRuns(unittest.TestCase):
                               entry)
                 self.assertNotIn("This run is the run C1's", entry)
                 self.assertIsNone(main_baseline.gap(result))
+
+    def test_a_check_named_only_by_its_command_text_is_unattributed(self):
+        self.commit({"e2e/app.spec.ts": "test('app', () => {});\n"})
+        spec = f"Given `e2e/app.spec.ts`, it passes. On main it fails, {OUTPUT}"
+        _, _, (result,) = self.baselines(
+            [spec], verify="set -e\ntest -f candidate-marker\n"
+                           "npx playwright test \\\n  e2e/app.spec.ts:15")
+        self.assertNotEqual(result["exit_status"], 0)
+        self.assertEqual(result["unattributed"], main_baseline.NO_CHECK_OUTPUT)
+        self.assertIn("the base failed before the named check ran",
+                      main_baseline.brief([result]))
 
     def test_a_failing_block_naming_no_file_witnesses_by_its_output(self):
         _, _, (result,) = self.baselines(

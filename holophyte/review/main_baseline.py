@@ -22,8 +22,7 @@ OUTPUT_TAIL = 2000
 HEADING = "Baseline at the merge base"
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
 VERIFY_FAILED = "verify failed at the candidate"
-HEREDOC = re.compile(r"(?<!<)<<(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\""
-                     r"|\\?([^\s;&|<>()'\"]+))")
+WORD_END = " \t\n;&|<>()"
 UNITTEST_RAN = re.compile(r"^Ran \d+ tests? in ", re.M)
 NO_CHECK_OUTPUT = "its output shows no run of the named check"
 
@@ -70,13 +69,53 @@ def _names(line, path):
         for token in patterns)
 
 
-def _heredocs(text):
-    return [(dash == "-", "".join(words))
-            for dash, *words in HEREDOC.findall(text)]
+def _word(line, at):
+    word, quote = "", ""
+    while at < len(line) and (quote or line[at] not in WORD_END):
+        char = line[at]
+        if char == quote or (not quote and char in "'\""):
+            quote = "" if quote else char
+        elif char == "\\" and quote != "'" and at + 1 < len(line):
+            at += 1
+            word += line[at]
+        else:
+            word += char
+        at += 1
+    return word, at
+
+
+def _heredocs(line, quote):
+    ends, at = [], 0
+    while at < len(line):
+        char = line[at]
+        if quote:
+            if char == quote:
+                quote = ""
+            elif char == "\\" and quote == '"':
+                at += 1
+        elif char in "'\"":
+            quote = char
+        elif char == "\\":
+            at += 1
+        elif char == "#" and (at == 0 or line[at - 1] in WORD_END):
+            break
+        elif line.startswith("<<<", at):
+            at += 2
+        elif line.startswith("<<", at):
+            strip = line.startswith("<<-", at)
+            at += 3 if strip else 2
+            while at < len(line) and line[at] in " \t":
+                at += 1
+            word, at = _word(line, at)
+            if word:
+                ends.append((strip, word))
+            continue
+        at += 1
+    return ends, quote
 
 
 def _commands(verify_cmd):
-    commands, pending, ends = [], "", []
+    commands, pending, ends, quote = [], "", [], ""
     for text in (verify_cmd or "").splitlines():
         if ends:
             strip, word = ends[0]
@@ -86,13 +125,13 @@ def _commands(verify_cmd):
                               or text.lstrip().startswith("#")):
             continue
         else:
-            ends = _heredocs(text)
+            ends, quote = _heredocs(text, quote)
         pending += text
         if ends or pending.endswith("\\") or not _complete(pending):
             pending += "\n"
         else:
             commands.append(pending)
-            pending = ""
+            pending, quote = "", ""
     return commands + ([pending.rstrip("\n")] if pending else [])
 
 
@@ -121,6 +160,12 @@ def _blobs(wt, sha, files):
             if found.returncode == 0:
                 blobs[path] = found.stdout.strip()
     return blobs
+
+
+def _execution_output(output, command):
+    shown = set(command.splitlines())
+    return "\n".join(line for line in output.splitlines()
+                     if not line.startswith("[verify]") and line not in shown)
 
 
 def _check_ran(output, files, own):
@@ -160,7 +205,8 @@ def _attribution(command, files, failure, output):
         return {"unattributed": f"it stopped at `{stopped}`, before the "
                                 f"line that names {', '.join(files)}"}
     own = _stopped_output(failure or {}, output)
-    if not _check_ran(output if own is None else own, files, own is not None):
+    if not _check_ran(_execution_output(output if own is None else own,
+                                        command), files, own is not None):
         return {"unattributed": NO_CHECK_OUTPUT}
     return {}
 
