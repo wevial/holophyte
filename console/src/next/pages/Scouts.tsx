@@ -14,13 +14,7 @@ const GRID = "min-[720px]:grid min-[720px]:grid-cols-[20px_44px_minmax(0,1fr)_76
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 
-const DOTS: Record<ScoutState, { state: State; label: string }> = {
-  running: { state: "running", label: "running" },
-  queued: { state: "queued", label: "queued" },
-  done: { state: "merged", label: "done" },
-  stopped: { state: "abandoned", label: "stopped" },
-  failed: { state: "failed", label: "failed" },
-};
+const DOTS: Record<ScoutState, State> = { running: "running", queued: "queued", done: "merged", stopped: "abandoned", failed: "failed" };
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
@@ -45,7 +39,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
       data-scout={row.id}
       className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 border-b border-rule-2 px-3 py-3 text-[14px] transition-colors duration-(--motion-colour) last:border-b-0 hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
     >
-      <span data-cell="state" className="pt-0.5"><StateDot {...DOTS[state]} hideWord /></span>
+      <span data-cell="state" className="pt-0.5"><StateDot state={DOTS[state]} label={state} hideWord /></span>
       <span data-cell="ask" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
         {row.ask}
         {reason && <span data-reason className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{reason}</span>}
