@@ -62,12 +62,13 @@ class PriorCase(ScoutFixture):
             "SELECT id FROM projects").fetchone()
         self.reported = 0
 
-    def earlier(self, findings, *, task_paths=(), phase="done", base=None):
+    def earlier(self, findings, *, task_paths=(), phase="done", base=None,
+                task_pass=1):
         scout_id = create_scout(self.db, self.project_id, f"ask {len(findings)}",
                                 "bug", 30)
         move_scout(self.db, scout_id, "planning", base_sha=base or self.first)
         if task_paths:
-            record_scout_tasks(self.db, scout_id, 1, 1, [
+            record_scout_tasks(self.db, scout_id, task_pass, 1, [
                 {"question": "where?", "paths": list(task_paths),
                  "mode": "read"}])
         self.reported += 1
@@ -129,10 +130,15 @@ class PlanGoalTests(PriorCase):
     def test_a_directory_ask_and_a_task_path_each_match(self):
         cited = self.earlier([finding("save drops the title", "app/save.py",
                                       3)])
-        self.run_scout("What does app/ hold?")
+        self.run_scout("What does app hold?")
         self.assertEqual(self.listed(self.plan_goal()), [cited])
         tasked = self.earlier([], task_paths=["app/form.py"])
         self.run_scout("Why does app/form.py lose focus?")
+        self.assertEqual(self.listed(self.plan_goal()), [tasked])
+
+    def test_a_task_path_of_a_later_pass_matches(self):
+        tasked = self.earlier([], task_paths=["app/save.py"], task_pass=2)
+        self.run_scout("Why does app/save.py drop the title?")
         self.assertEqual(self.listed(self.plan_goal()), [tasked])
 
     def test_only_the_three_newest_done_scouts_are_listed_newest_first(self):

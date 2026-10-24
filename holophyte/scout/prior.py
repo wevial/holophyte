@@ -45,26 +45,28 @@ def cleaned(path):
     return str(parts)
 
 
-def word_path(word):
-    word = LINE_TAIL.sub("", word.strip(EDGES).rstrip(".:"))
-    if "/" not in word and not EXTENSION.search(word):
-        return None
-    return cleaned(word)
-
-
-def exists(repo, base_sha, path):
+def object_type(repo, base_sha, path):
     try:
-        sh(["git", "cat-file", "-e", f"{base_sha}:{path}"], cwd=repo)
+        return sh(["git", "cat-file", "-t", f"{base_sha}:{path}"], cwd=repo)
     except RuntimeError:
-        return False
-    return True
+        return None
+
+
+def named_path(repo, base_sha, word):
+    word = LINE_TAIL.sub("", word.strip(EDGES).rstrip(".:"))
+    path = cleaned(word)
+    if path is None:
+        return None
+    found = object_type(repo, base_sha, path)
+    if "/" in word or EXTENSION.search(word):
+        return path if found in ("blob", "tree") else None
+    return path if found == "tree" else None
 
 
 def scout_paths(repo, scout, pack_paths):
-    words = " ".join([scout.ask, *scout.links]).split()
-    named = [path for path in map(word_path, words) if path is not None]
-    named = [path for path in dict.fromkeys(named)
-             if scout.base_sha and exists(repo, scout.base_sha, path)]
+    words = dict.fromkeys(" ".join([scout.ask, *scout.links]).split())
+    named = [path for word in words if scout.base_sha and (
+        path := named_path(repo, scout.base_sha, word)) is not None]
     packed = [path for path in map(cleaned, pack_paths or ()) if path]
     return list(dict.fromkeys(named + packed))
 
@@ -82,7 +84,7 @@ def cited_paths(conn, scout_id, report):
     cited = [item.get("file") for finding in report.get("findings") or ()
              for item in finding.get("evidence") or () if "file" in item]
     for (paths,) in conn.execute("SELECT paths FROM scoutTasks"
-                                 " WHERE scoutId = ? AND pass = 1",
+                                 " WHERE scoutId = ?",
                                  (scout_id,)):
         cited.extend(json.loads(paths))
     return [path for path in map(cleaned, cited) if path]
