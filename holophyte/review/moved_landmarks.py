@@ -9,7 +9,7 @@ import ticket_template
 from holophyte.review.landmarks import SPAN_RE, declared_new
 
 VERIFY_HEADING = "## Verify command(s)"
-TOKEN_RE = re.compile(r"[^\s;&|()'\"]+")
+TOKEN_RE = re.compile(r"""(?:[^\s;&|()'"]|'[^']*'|"[^"]*")+""")
 DOTTED_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 
 
@@ -167,6 +167,14 @@ def _span(match, spans):
     return f"`{new}`" if new else match.group(0)
 
 
+def _token(word, tokens):
+    quote = word[0] if word[0] in "'\"" and word[-1] == word[0] else ""
+    bare = word[1:-1] if quote and len(word) > 1 else word
+    if bare not in tokens:
+        return word
+    return f"{quote}{tokens[bare]}{quote}"
+
+
 def rewrite(body, spans, tokens):
     _, header = ticket_header.split(body)
     lines = body.splitlines(keepends=True)
@@ -182,8 +190,7 @@ def rewrite(body, spans, tokens):
         if ticket_template.FENCE_RE.match(line.strip()):
             fenced = not fenced
         elif fenced and section == VERIFY_HEADING:
-            lines[i] = TOKEN_RE.sub(lambda m: tokens.get(m.group(), m.group()),
-                                    line)
+            lines[i] = TOKEN_RE.sub(lambda m: _token(m.group(), tokens), line)
         else:
             lines[i] = SPAN_RE.sub(lambda m: _span(m, spans), line)
     return "".join(lines)

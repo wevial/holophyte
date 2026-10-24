@@ -43,7 +43,8 @@ NAMING_OLD = (VALID_BODY
 WITH_MODULE = NAMING_OLD.replace(
     "```\necho ok\n```",
     "```\npython3 -m unittest lotus.agents\n"
-    "(python3 -m unittest lotus.agents)&& echo ok\n```")
+    "(python3 -m unittest lotus.agents)&& echo ok\n"
+    "python3 -m unittest \"lotus.agents\" && echo 'lotus.agents helper'\n```")
 
 
 def no_linear(*args, **kwargs):
@@ -160,6 +161,8 @@ class MovedLandmarkTests(LoopFixture):
         self.assertIn("python3 -m unittest lotus.features.agents\n", body)
         self.assertIn("(python3 -m unittest lotus.features.agents)&& echo ok",
                       body)
+        self.assertIn("python3 -m unittest \"lotus.features.agents\" &&"
+                      " echo 'lotus.agents helper'\n", body)
         self.assertNotIn("unittest lotus.agents", body)
         self.assertIn(f"near `{OLD}:2`; plain {OLD} says so.", body)
 
