@@ -630,6 +630,64 @@
       ],
       "additionalProperties": true
     },
+    "TicketDefect": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "run": {
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "contradiction",
+            "criterion_stuck",
+            "review_stuck"
+          ]
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "revised_ms": {
+          "type": "integer"
+        },
+        "requeue_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ticket",
+        "run",
+        "kind",
+        "criteria",
+        "reason",
+        "at",
+        "revision",
+        "revised_ms",
+        "requeue_note"
+      ],
+      "additionalProperties": true
+    },
     "Findings": {
       "type": "object",
       "properties": {
@@ -650,13 +708,20 @@
           "items": {
             "$ref": "#/$defs/FollowUpRow"
           }
+        },
+        "ticket_defects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TicketDefect"
+          }
         }
       },
       "required": [
         "since",
         "limit",
         "runs",
-        "follow_ups"
+        "follow_ups",
+        "ticket_defects"
       ],
       "additionalProperties": true
     }

@@ -679,11 +679,24 @@ class FollowUpRow(TypedDict):
     error: str | None
 
 
+class TicketDefect(TypedDict):
+    ticket: str
+    run: int
+    kind: Literal["contradiction", "criterion_stuck", "review_stuck"]
+    criteria: list[str]
+    reason: str
+    at: int
+    revision: int
+    revised_ms: int
+    requeue_note: str | None
+
+
 class Findings(TypedDict):
     since: int
     limit: int
     runs: list[FindingsRun]
     follow_ups: list[FollowUpRow]
+    ticket_defects: list[TicketDefect]
 
 
 class BoardTicket(TypedDict):

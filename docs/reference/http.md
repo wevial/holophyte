@@ -965,6 +965,12 @@ from history.
    "line": 30, "created_ms": 1788451661675, "settled_ms": 1788451661675,
    "state": "filed", "filed_as": "KO-230", "duplicate_of": null,
    "error": null}
+ ],
+ "ticket_defects": [
+  {"ticket": "KO-221", "run": 54, "kind": "contradiction", "criteria": ["C4"],
+   "reason": "implementer: criterion C4 cannot be met as written: the export has no header field",
+   "at": 1788452000000, "revision": 2, "revised_ms": 1788452600000,
+   "requeue_note": "C4 now names the export's columns"}
  ]}
 ```
 
@@ -990,6 +996,22 @@ row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
 those events named their row reads `ledger` for a `guardrail` and
 `superseded` for a `feature`. The route serves rows, not fates: which
 group a finding falls in is the console's to work out.
+
+`ticket_defects` holds the runs that stopped because their ticket was
+wrong, newest stop first, at most `limit` of them. A run is one when it
+recorded a `contradiction` event, or a supervisor sweep that failed it for
+`criterion_stuck` or `review_stuck` (a sweep that took no action, or one
+for `stale_heartbeat` or `time_box`, does not count), at or after `since`,
+and its ticket then gained a revision above the one the run was claimed
+at, written at or after the stop and, when the ticket has a later run, at
+or below the revision that run was claimed at. A run claimed at no
+revision is never one. Each entry is the `ticket`, the `run`, the stop's
+`kind` (`contradiction`, `criterion_stuck` or `review_stuck`), its
+`criteria` ids (the declared ones for a contradiction, the criteria
+restated as unmet for `criterion_stuck`, none for `review_stuck`), the
+stop event's text as `reason` and its time as `at`, the lowest qualifying
+`revision` and its time as `revised_ms`, and `requeue_note`, the note of
+the run's first requeue, or null. A run's newest stop gives its one entry.
 
 A missing or non-integer `since`, or a bad `limit`, is 400 with an
 `error` naming the parameter; a project with no store is 503.
