@@ -174,15 +174,11 @@ def stored_plan(conn, scout_id, turn, limit):
     return tasks, None
 
 
-def lead_seat(project, row):
-    config = scout_config(project)
-    name = row.lead_route or config.lead
-    return name, config.leads.get(name), row.helper_turns or config.helper_turns
-
-
 def run_lead(conn, project, row, worktree, budget_s):
     """Returns the phase the scout ends in and the reason it ends there."""
-    name, seat, limit = lead_seat(project, row)
+    config = scout_config(project)
+    name = row.lead_route or config.lead
+    seat, limit = config.leads.get(name), row.helper_turns or config.helper_turns
     if seat is None:
         return "failed", f"lead route {name} is down: no [scout.leads.{name}]"
     probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat)

@@ -67,9 +67,6 @@ class ScoutLeadTests(ScoutFixture):
     def run_scout(self, path, scout_id):
         return self.cli("--scout", str(scout_id), str(path))
 
-    def store_path(self, path):
-        return str(Project.locate(path, adopt=False).store_path)
-
     def report(self, conn, scout_id):
         rows = conn.execute("SELECT report FROM scoutReports WHERE scoutId = ?"
                             " AND pass = 1", (scout_id,)).fetchall()
@@ -98,7 +95,7 @@ class ScoutLeadTests(ScoutFixture):
     def test_a_claude_lead_resumes_the_session_it_recorded_at_dispatch(self):
         path, conn, scout_id = self.bug_scout()
         self.stubs.answer(plan=fenced(PLAN), report=fenced(REPORT),
-                          store=self.store_path(path))
+                          store=str(Project.locate(path, adopt=False).store_path))
         self.run_scout(path, scout_id)
         (plan,), (report,) = self.stubs.turns("plan"), self.stubs.turns("report")
         session = plan["argv"][plan["argv"].index("--session-id") + 1]
