@@ -181,14 +181,17 @@ class DaemonScoutFileTests(ScoutFileCase):
                          (["NAT-1"], 1))
         self.assertEqual(actions[0], (1, "NAT-1", 1))
 
-    def test_an_item_of_a_scout_that_did_not_finish_done_files_nothing(self):
+    def failed_scout(self):
         with self.store("native") as (conn, project):
             failed = create_scout(conn, project, "Map the merge gate",
                                   "recon", 30)
             move_scout(conn, failed, "planning", base_sha="a" * 40)
             record_scout_actions(conn, failed, 1, items()[:1])
             end_scout(conn, failed, "failed", "the lead turn failed")
-            before = written(conn, project, failed)
+            return failed, written(conn, project, failed)
+
+    def test_an_item_of_a_scout_that_did_not_finish_done_files_nothing(self):
+        failed, before = self.failed_scout()
         self.start_host()
         status, answer = self.file({"scout": failed, "item": 1})
         self.assertEqual(status, 200, answer)
@@ -211,6 +214,19 @@ class DaemonScoutFileTests(ScoutFileCase):
                          400)
         self.assertEqual(self.file({"scout": self.scout, "item": 1},
                                    token=OWN)[0], 401)
+        self.assertEqual(self.state(), before)
+
+    def test_ids_past_sqlites_range_and_a_failed_scouts_missing_item_are_404(self):
+        failed, _ = self.failed_scout()
+        self.start_host()
+        before = self.state()
+        for payload, error in (
+                ({"scout": 2**63, "item": 1}, "no such scout"),
+                ({"scout": self.scout, "item": 2**63}, "no such action item"),
+                ({"scout": failed, "item": 99}, "no such action item")):
+            with self.subTest(payload=payload):
+                status, answer = self.file(payload)
+                self.assertEqual((status, answer["error"]), (404, error))
         self.assertEqual(self.state(), before)
 
     def test_disabled_actions_refuse_the_filing_without_writes(self):

@@ -14,6 +14,7 @@ from store.scouts import ScoutRefused, file_scout_action, scout
 SCOUT_FILE_ACTION = "scout-file"
 BACKLOG = "Backlog"
 FILING_LOCK = "scout-file.lock"
+ROW_ID_LIMIT = 2**63
 
 
 class Answered(Exception):
@@ -33,6 +34,8 @@ def refusal(body):
 
 
 def action_item(conn, scout_id, position):
+    if position >= ROW_ID_LIMIT:
+        return None
     row = conn.execute("SELECT item, ticketKey FROM scoutActions"
                        " WHERE scoutId = ? AND position = ?",
                        (scout_id, position)).fetchone()
@@ -43,19 +46,19 @@ def judged(project, scout_id, position):
     named = {"scout": scout_id, "item": position}
     conn = open_store(project)
     try:
-        row = scout(conn, scout_id)
+        row = scout(conn, scout_id) if scout_id < ROW_ID_LIMIT else None
         if row is None:
             raise Answered(404, {"error": "no such scout", **named,
                                  "detail": f"no scout {scout_id}"})
-        if row.phase != ScoutPhase.DONE.value:
-            raise Answered(200, {"ok": False, **named,
-                                 "detail": f"scout {scout_id} is {row.phase};"
-                                           " only a done scout's items file"})
         found = action_item(conn, scout_id, position)
         if found is None:
             raise Answered(404, {"error": "no such action item", **named,
                                  "detail": f"scout {scout_id} has no item"
                                            f" {position}"})
+        if row.phase != ScoutPhase.DONE.value:
+            raise Answered(200, {"ok": False, **named,
+                                 "detail": f"scout {scout_id} is {row.phase};"
+                                           " only a done scout's items file"})
         item, filed = found
         if filed is not None:
             raise Answered(200, {"ok": False, **named, "ticket": filed,
