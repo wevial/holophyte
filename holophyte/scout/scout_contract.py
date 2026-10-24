@@ -103,12 +103,20 @@ class Reproduction(TypedDict):
     hypotheses: list[Hypothesis]
 
 
+class PriorJudgement(TypedDict):
+    scout: int
+    finding: int
+    verdict: Literal["holds", "fixed", "unchecked"]
+    why: str
+
+
 class ScoutReport(TypedDict):
     summary: str
     findings: list[ScoutFinding]
     actions: list[ScoutReportAction]
     reproduction: Reproduction | None
     cut: list[str] | None
+    prior: list[PriorJudgement] | None
 
 
 ScoutReportPass = TypedDict("ScoutReportPass", {

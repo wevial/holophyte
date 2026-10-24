@@ -89,6 +89,8 @@ REPORT = {
          "separates": "a delayed loop passes the test",
          "verdict": "supported"}]},
     "cut": ["Does the cap apply to webhooks?"],
+    "prior": [{"scout": 4, "finding": 1, "verdict": "holds",
+               "why": "app/retry.py still loops without a delay"}],
     "scratch": "the lead's own notes",
 }
 

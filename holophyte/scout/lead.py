@@ -12,7 +12,14 @@ from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.context import context_pack
+from holophyte.scout.prior import (
+    offered_findings,
+    prior_reports,
+    prior_section,
+    scout_paths,
+)
 from holophyte.scout.report import (
+    PRIOR,
     REPRODUCTION,
     REVISE,
     fields_shape,
@@ -52,6 +59,7 @@ FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
 PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
 REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
+PRIOR_SHAPE = ",\n" + fields_shape({"prior": PRIOR})
 
 
 class LeadTurn(NamedTuple):
@@ -107,12 +115,12 @@ def asked(row):
             f"Base commit: {row.base_sha}")
 
 
-def plan_goal(row, limit, context):
+def plan_goal(row, limit, context, prior=""):
     return (
         f"{PLAN_OPENING}\n\n"
         "You lead a scout: a read-only investigation of this checkout. Do not "
         "edit files, commit or push.\n\n"
-        f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}"
+        f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}{prior}"
         f"Plan the work as at most {limit} sub-tasks. Each is one question a "
         "helper answers by reading the code (mode \"read\") or by running "
         "commands in its own checkout (mode \"run\"), with the "
@@ -149,10 +157,10 @@ def subject_of(row):
             else (row.subject_kind, row.subject_ref))
 
 
-def report_shape(row):
+def report_shape(row, offered=None):
     return ("{" + fields_shape(offered_fields(subject_of(row))).lstrip()
             + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value else "")
-            + "}")
+            + (PRIOR_SHAPE if offered else "") + "}")
 
 
 def revise_rule(row):
@@ -166,7 +174,7 @@ def revise_rule(row):
         "why names the wording that caused the stop.\n\n")
 
 
-def report_ending(row):
+def report_ending(row, offered=None):
     return (
         "Write each action's body as a ticket draft in this skeleton, "
         "replacing each <...> with the ticket's text: estimate is whole "
@@ -176,10 +184,11 @@ def report_ending(row):
         "Do not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT, PATH and URL standing for strings "
         "and N for a line number from 1:\n\n"
-        f"```json\n{report_shape(row)}\n```\n")
+        f"```json\n{report_shape(row, offered)}\n```\n")
 
 
-def report_goal(row, swarm, problem, fresh, scope="", context=""):
+def report_goal(row, swarm, problem, fresh, scope="", context="",
+                offered=None):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
         answers = f"- none: no plan was stored, because {problem}"
@@ -192,10 +201,10 @@ def report_goal(row, swarm, problem, fresh, scope="", context=""):
         f"the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take.\n\n"
-        + report_ending(row))
+        + report_ending(row, offered))
 
 
-def repair_goal(row, problems, fresh):
+def repair_goal(row, problems, fresh, offered=None):
     listed = "\n".join(f"- {problem}" for problem in problems)
     return (
         f"{REPAIR_OPENING}\n\n"
@@ -203,7 +212,7 @@ def repair_goal(row, problems, fresh):
         + "The report you wrote does not fit its shape. Each problem names the "
         f"field and what it must be:\n\n{listed}\n\n"
         "Write the whole report again with these fixed.\n\n"
-        + report_ending(row))
+        + report_ending(row, offered))
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping):
@@ -295,17 +304,26 @@ def run_waves(conn, lead, swarm, tasks, waves):
             return
 
 
-def checked_report(lead, report):
-    subject = subject_of(lead.row)
-    problems = report_problems(report, lead.row.kind, subject)
+def unoffered(report, offered):
+    if offered is not None:
+        return report
+    return {key: value for key, value in report.items() if key != "prior"}
+
+
+def checked_report(lead, report, offered=None):
+    check = partial(report_problems, kind=lead.row.kind,
+                    subject=subject_of(lead.row), offered=offered)
+    report = unoffered(report, offered)
+    problems = check(report)
     if not problems:
         return report, []
-    turn = lead.resume(repair_goal(lead.row, problems,
-                                   lead.session is None), REPORT_TURN_S)
+    turn = lead.resume(repair_goal(lead.row, problems, lead.session is None,
+                                   offered), REPORT_TURN_S)
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
-    return report, report_problems(report, lead.row.kind, subject)
+    report = unoffered(report, offered)
+    return report, check(report)
 
 
 def revised_ticket(conn, row):
@@ -345,12 +363,26 @@ def lead_seat(project, row, config, stopping):
 def scout_context(conn, project, row):
     pack = context_pack(project, row)
     if pack is None:
-        return ""
+        return "", []
     record_scout_event(conn, row.id, "scout_context", pack.summary,
                        level="detail", payload=json.dumps({
                            "subject": f"{row.subject_kind}:{row.subject_ref}",
                            "chars": len(pack.text), "paths": pack.paths}))
-    return f"## Context\n\n{pack.text}\n\n"
+    return f"## Context\n\n{pack.text}\n\n", pack.paths
+
+
+def scout_prior(conn, project, row, pack_paths):
+    paths = scout_paths(project.path, row, pack_paths)
+    if not paths:
+        return "", {}
+    priors = prior_reports(conn, project.path, row, paths)
+    ids = [prior.scout for prior in priors]
+    record_scout_event(
+        conn, row.id, "scout_prior", "prior reports: " + (
+            f"scouts {', '.join(map(str, ids))}" if ids else "none"),
+        level="detail", payload=json.dumps({"scouts": ids, "paths": paths}))
+    return (prior_section(project.path, priors, row.base_sha),
+            offered_findings(priors))
 
 
 def run_lead(conn, project, row, worktree, budget_s, stopping):
@@ -362,18 +394,20 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         return "failed", down
     lead = Lead(conn, project, row, seat, worktree, stopping)
     deadline = monotonic() + budget_s
-    context = scout_context(conn, project, row)
-    turn = lead.start(plan_goal(row, limit, context), budget_s, context)
+    context, pack_paths = scout_context(conn, project, row)
+    prior, offered = scout_prior(conn, project, row, pack_paths)
+    turn = lead.start(plan_goal(row, limit, context, prior), budget_s, context)
     with Swarm(conn, project, row, config, deadline, stopping) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
-                                       lead.session is None, context=context),
+                                       lead.session is None, context=context,
+                                       offered=offered),
                            REPORT_TURN_S, context)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
-        report, problems = checked_report(lead, report)
+        report, problems = checked_report(lead, report, offered)
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
         report = reproduced(row, swarm, resolve_evidence(project.path,

@@ -1409,7 +1409,8 @@ One scout whole: what the console's Scout page draws.
    "actions": [{"title": "…", "why": "…", "kind": "fix", "body": "…"}],
    "reproduction": {"level": "test", "hypotheses": [
      {"hypothesis": "…", "separates": "…", "verdict": "supported"}]},
-   "cut": []}}],
+   "cut": [],
+   "prior": [{"scout": 4, "finding": 1, "verdict": "holds", "why": "…"}]}}],
  "actions": [{"position": 1, "pass": 1, "title": "…", "why": "…",
               "kind": "fix", "body": "…", "revises": null, "ticket": null,
               "filed_ms": null}],
@@ -1444,8 +1445,12 @@ defines, and a key a lead added beside them is left out: its `summary`;
 its `findings`, each a `title`, a `status` of `shown`, `likely` or
 `unconfirmed`, and its `evidence`; its `actions`; its `reproduction`, a
 `level` and `hypotheses`, each with its `hypothesis`, what it `separates`
-and its `verdict`, or null; and `cut`, the helper questions cut at the
-time budget, or null. An evidence item is one of a file item, `file`,
+and its `verdict`, or null; `cut`, the helper questions cut at the
+time budget, or null; and `prior`, or null when the report has none: the
+lead's judgement of each finding of the earlier scouts its plan goal
+offered, those whose reports or sub-tasks named the same paths, each its
+`scout`, the `finding` numbered from 1, a `verdict` of `holds`, `fixed` or
+`unchecked`, and `why`. An evidence item is one of a file item, `file`,
 `line`, `verified` (whether the file and line resolve in the base commit)
 and `why` it did not (null when it did); a command item, `command` and
 `output`; or a `url`.

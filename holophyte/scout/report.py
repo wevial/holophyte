@@ -56,6 +56,7 @@ def needs_hypothesis(value, path):
 
 
 KINDS = ("fix", "test", "investigate", "decide")
+VERDICTS = ("holds", "fixed", "unchecked")
 REVISE = "revise"
 DEFECT = "defect"
 EVIDENCE = Either({
@@ -71,6 +72,8 @@ FIELDS = {
     "actions": Each({"title": TEXT, "why": TEXT,
                      "kind": one_of(*KINDS, REVISE), "body": TEXT}),
 }
+PRIOR = Each({"scout": LINE, "finding": LINE, "verdict": one_of(*VERDICTS),
+              "why": TEXT})
 REPRODUCTION = Checked({
     "level": one_of("test", "real_tool", "not_reproduced"),
     "hypotheses": Each({"hypothesis": TEXT, "separates": TEXT,
@@ -193,7 +196,29 @@ def revise_problems(actions, subject):
     return problems
 
 
-def report_problems(report, kind, subject=None):
+def judgement_problems(index, judgement, offered):
+    path = f"prior[{index}]"
+    if not isinstance(judgement, dict):
+        return [f"{path}: must be an object"]
+    number, finding = judgement.get("scout"), judgement.get("finding")
+    problems = []
+    if type(number) is not int or number not in offered:
+        problems.append(f"{path}.scout: scout {number} was not offered")
+    elif type(finding) is not int or not 1 <= finding <= offered[number]:
+        problems.append(f"{path}.finding: scout {number} has no finding"
+                        f" {finding}")
+    return problems + walk(judgement, {"verdict": one_of(*VERDICTS),
+                                       "why": TEXT}, path)
+
+
+def prior_problems(prior, offered):
+    if not isinstance(prior, list):
+        return ["prior: must be a list"]
+    return [problem for index, judgement in enumerate(prior)
+            for problem in judgement_problems(index, judgement, offered or {})]
+
+
+def report_problems(report, kind, subject=None, *, offered=None):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
@@ -202,6 +227,8 @@ def report_problems(report, kind, subject=None):
     actions = report.get("actions") if isinstance(report, dict) else None
     if isinstance(actions, list):
         problems += revise_problems(actions, subject)
+    if isinstance(report, dict) and report.get("prior") is not None:
+        problems += prior_problems(report["prior"], offered)
     return problems
 
 
