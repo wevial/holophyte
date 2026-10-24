@@ -177,10 +177,21 @@ def zip_rows(data):
     return rows
 
 
+def listed_artifacts(project, repo, run):
+    listed, page = [], 1
+    while True:
+        path = (f"repos/{repo.owner}/{repo.name}/actions/runs/{run}/artifacts"
+                f"?per_page=100{f'&page={page}' if page > 1 else ''}")
+        found = github._call(project, repo.host, "GET", guarded(repo, path),
+                             None).get("artifacts") or []
+        listed += found
+        if len(found) < 100:
+            return listed
+        page += 1
+
+
 def run_artifacts(project, repo, run, artifact):
-    listed = github._call(project, repo.host, "GET", guarded(
-        repo, f"repos/{repo.owner}/{repo.name}/actions/runs/{run}/artifacts"
-              "?per_page=100"), None).get("artifacts") or []
+    listed = listed_artifacts(project, repo, run)
     chosen = [each for each in listed if not each.get("expired")
               and (artifact is None or each.get("name") == artifact)]
     large = [each["name"] for each in chosen

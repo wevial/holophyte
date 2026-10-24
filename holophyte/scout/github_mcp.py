@@ -55,7 +55,10 @@ def scout_server(conn, project, row):
     if not scout_config(project).github:
         return None
     if origin_repo(project) is None:
-        record_scout_event(conn, row.id, "scout_github", NO_ORIGIN)
+        if conn.execute("SELECT 1 FROM runEvents WHERE scoutId = ? AND kind"
+                        " = 'scout_github' AND summary = ?",
+                        (row.id, NO_ORIGIN)).fetchone() is None:
+            record_scout_event(conn, row.id, "scout_github", NO_ORIGIN)
         return None
     env = {"PYTHONPATH": str(ROOT)}
     if os.environ.get("HOLOPHYTE_HOME"):

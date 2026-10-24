@@ -20,10 +20,10 @@ import anyio
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
 from holophyte.config.project import Project
-from holophyte.scout.github_mcp import NO_ORIGIN, called
+from holophyte.scout.github_mcp import NO_ORIGIN, called, scout_server
 from holophyte.scout.github_reads import github_get, github_tests, origin_repo
 from holophyte.scout.scout_config import scout_config
-from store.scouts import create_scout, end_scout, move_scout
+from store.scouts import create_scout, end_scout, move_scout, scout
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
 from tests.test_scout_config import ScoutFixture as ConfigFixture
@@ -245,6 +245,25 @@ class TestsTests(GithubCase):
         self.assertNotIn("repos/example/repo/actions/artifacts/13/zip",
                          [call[-1] for call in self.gh.calls()])
 
+    def test_an_artifact_on_a_later_page_of_the_listing_is_read(self):
+        path = self.github_project()
+        self.gh.answer(ARTIFACTS, json.dumps({"total_count": 101, "artifacts": [
+            {"id": 100 + number, "name": f"trace-{number}",
+             "size_in_bytes": 600, "expired": True}
+            for number in range(100)]}))
+        self.gh.answer(ARTIFACTS + "&page=2", json.dumps({
+            "total_count": 101, "artifacts": [
+                {"id": 12, "name": "junit", "size_in_bytes": 600,
+                 "expired": False}]}))
+        self.gh.answer("repos/example/repo/actions/artifacts/12/zip",
+                       zipped({"junit/results.xml": JUNIT}))
+        target = self.target(path)
+        answer = github_tests(target, origin_repo(target), 7, "junit")
+        self.assertFalse(answer.error, answer.text)
+        result = json.loads(answer.text)
+        self.assertEqual((result["artifacts"], result["total"],
+                          result["failed"]), (["junit"], 2, 1))
+
 
 class EventTests(GithubCase):
     def get(self, server, route):
@@ -291,6 +310,19 @@ class EventTests(GithubCase):
         served = [event["summary"] for event in detail["events"]
                   if event["kind"] == "scout_github"]
         self.assertEqual(served, [summary for summary, _ in events])
+
+    def test_the_missing_origin_notice_is_recorded_once_per_scout(self):
+        path = self.github_project(config="[scout]\ngithub = true\n",
+                                   origin=None)
+        conn, scout_id = self.live_scout(path)
+        target = self.target(path)
+        for _ in range(2):
+            self.assertIsNone(scout_server(conn, target,
+                                           scout(conn, scout_id)))
+        self.assertEqual(conn.execute(
+            "SELECT summary FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_github'", (scout_id,)).fetchall(),
+            [(NO_ORIGIN,)])
 
     def test_a_call_after_the_scout_ended_answers_and_records_nothing(self):
         path = self.github_project()
