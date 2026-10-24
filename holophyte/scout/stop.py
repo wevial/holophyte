@@ -6,6 +6,7 @@ import subprocess
 
 import store
 from holophyte.loop.runs import open_store
+from holophyte.scout.filing import ROW_ID_LIMIT
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from store.scouts import (
@@ -22,7 +23,6 @@ VIA_DAEMON = "POST /actions/scout-stop"
 REQUESTED = "scout_stop_requested"
 NO_PROCESS = "no scout process was running"
 BY_SIGNAL = "stopped by signal"
-ROW_ID_LIMIT = 2**63
 PS_TIMEOUT_S = 10
 
 

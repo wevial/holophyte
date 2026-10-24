@@ -177,14 +177,17 @@ def scout_body(args):
 
 
 def scout(args, target):
-    from holophyte.holo.mcp_tools import VIA
     from holophyte.scout.launch import launch
-    body = scout_body(args)
+    return scout_action(args, target, scout_body(args), launch, "holo scout")
+
+
+def scout_action(args, target, body, action, name):
+    from holophyte.holo.mcp_tools import VIA
     if not target:
-        args.leaf.error("holo scout needs its project: -p NAME|PATH")
+        args.leaf.error(f"{name} needs its project: -p NAME|PATH")
     signed = body.get("author", "").endswith(f" {VIA}")
-    code, reply = launch(located(target), body,
-                         "holo mcp" if signed else "holo scout")
+    code, reply = action(located(target), body,
+                         "holo mcp" if signed else name)
     if code == 400:
         args.leaf.error(reply["error"])
     if code != 200 or not reply["ok"]:
@@ -227,20 +230,9 @@ def scout_stop_body(args):
 
 
 def scout_stop(args, target):
-    from holophyte.holo.mcp_tools import VIA
     from holophyte.scout.stop import stop
-    body = scout_stop_body(args)
-    if not target:
-        args.leaf.error("holo scout stop needs its project: -p NAME|PATH")
-    signed = body.get("author", "").endswith(f" {VIA}")
-    code, reply = stop(located(target), body,
-                       "holo mcp" if signed else "holo scout stop")
-    if code == 400:
-        args.leaf.error(reply["error"])
-    if code != 200 or not reply["ok"]:
-        return PREFIX + (reply.get("detail") or reply.get("error", ""))
-    print(PREFIX + reply["detail"])
-    return 0
+    return scout_action(args, target, scout_stop_body(args), stop,
+                        "holo scout stop")
 
 
 def located(target):
