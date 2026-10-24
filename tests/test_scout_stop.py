@@ -99,11 +99,11 @@ class StopCase(ScoutFixture):
     def stop(self, scout_id, note="wrong project"):
         return self.post({"scout": scout_id, "note": note})
 
-    def planning(self, host=None, **counts):
+    def planning(self, host=None, kind="research", **counts):
         (project,) = self.store_conn.execute(
             "SELECT id FROM projects").fetchone()
         scout_id = create_scout(self.store_conn, project, "where is the bug?",
-                                "research", 30, **counts)
+                                kind, 30, **counts)
         move_scout(self.store_conn, scout_id, "planning",
                    base_sha=git(self.path, "rev-parse", "main"), host=host)
         return scout_id
@@ -216,17 +216,23 @@ class RunningScoutStopTests(StopCase):
                       [kind for kind, _ in self.events(scout_id)])
 
     def test_a_stop_while_swarming_stops_both_helpers_and_their_children(self):
+        self.stops_both_helpers("research", "read")
+
+    def test_a_stop_while_swarming_stops_both_run_helpers_and_their_children(self):
+        self.stops_both_helpers("bug", "run")
+
+    def stops_both_helpers(self, kind, mode):
         pid_files = [self.child(f"helper-{n}") for n in (1, 2)]
         self.stubs.answer(
             plan=fenced({"tasks": [{"question": question, "paths": [],
-                                    "mode": "read"}
+                                    "mode": mode}
                                    for question in QUESTIONS]}),
             report=fenced(REPORT),
             helpers={question: {"helper_sleep": 600,
                                 "helper_pid_file": str(pid_file)}
                      for question, pid_file in zip(QUESTIONS, pid_files)})
         self.start_host()
-        scout_id = self.planning(swarm=2, helper_turns=2, waves=1)
+        scout_id = self.planning(kind=kind, swarm=2, helper_turns=2, waves=1)
         proc = self.spawn_scout(scout_id)
         children = [self.pid_of(pid_file) for pid_file in pid_files]
 

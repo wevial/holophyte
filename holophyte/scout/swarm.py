@@ -112,6 +112,9 @@ class Stopping:
         self.starting = False
 
     def run_capped(self, argv, cwd, cap, on_start=None):
+        return self.tracked(partial(run_capped, argv, cwd, cap), on_start)
+
+    def tracked(self, run, on_start=None):
         mine, main = [], threading.current_thread() is threading.main_thread()
 
         def start(proc):
@@ -128,7 +131,7 @@ class Stopping:
         if main:
             self.starting = True
         try:
-            return run_capped(argv, cwd, cap, on_start=start)
+            return run(on_start=start)
         finally:
             with self.lock:
                 self.procs.difference_update(mine)
@@ -306,7 +309,7 @@ class Swarm:
                 conn.close()
 
     def run_helper(self, conn, task, mine):
-        if self.remaining_s() <= 0:
+        if self.remaining_s() <= 0 or self.stopping.stopped:
             return
         try:
             checkout = run_clone(self.project, self.row.id, task.id,
@@ -339,8 +342,8 @@ class Swarm:
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()
         around = partial(audited, conn, self.row.id)
-        turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
-                                                cap, around),
+        launch = partial(launch_turn, self.project, argv, checkout, cap, around)
+        turn = (capped_turn(lambda: self.stopping.tracked(launch),
                             self.stopping, LAUNCH_FAILURES)
                 if cap > 0 else HelperTurn(STOPPED, None, ""))
         self.record(conn, task, argv, turn, monotonic() - started)
@@ -350,7 +353,7 @@ class Swarm:
             return self.route_down(conn, "host", self.host_probe)
         return self.route_down(conn, "container", partial(
             isolated_probe, self.project, self.route, seat, checkout,
-            self.remaining_s()))
+            self.remaining_s(), self.stopping.tracked))
 
     def refuse_push(self, checkout):
         from holophyte.scout.scout_process import refuse_push
