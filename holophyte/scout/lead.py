@@ -105,7 +105,7 @@ def asked(row):
             f"Base commit: {row.base_sha}")
 
 
-def plan_goal(row, limit, context=""):
+def plan_goal(row, limit, context):
     return (
         f"{PLAN_OPENING}\n\n"
         "You lead a scout: a read-only investigation of this checkout. Do not "
