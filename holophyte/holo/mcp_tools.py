@@ -186,6 +186,11 @@ WRITES = (
          " --json)", ("scout", "stop"), (PROJECT, SCOUT),
          required=("project", "scout"),
          tier=WRITE, signs=by_author),
+    Tool("scout_ask", "ask a done scout about its report, the note the ask;"
+         " its lead answers in the thread scout_show serves, waiting while"
+         " the host's scout slots are full (holo scout ask ID --json)",
+         ("scout", "ask"), (PROJECT, SCOUT), required=("project", "scout"),
+         tier=WRITE, signs=by_author),
 )
 
 TOOLS = READS + WRITES

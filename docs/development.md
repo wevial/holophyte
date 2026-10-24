@@ -200,10 +200,15 @@ Each module, one line:
 - `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.
+- `holophyte/scout/thread_action.py` — `POST /actions/scout-message`,
+  `holo scout ask` and the `holo mcp` `scout_ask` tool: an ask recorded on
+  a done scout's thread, then the host sweep's scout step started once to
+  take it while a host scout slot is free.
 - `holophyte/scout/views.py` — the daemon's scout reads: `GET /scouts`,
-  `GET /scouts/ID` with its tasks, served report, action items and events,
-  and `GET /scouts/routes`, the launch pickers less any route whose last
-  probe failed; `holo scouts` and `holo scout show` read them too.
+  `GET /scouts/ID` with its tasks, served report, action items, events and
+  thread, and `GET /scouts/routes`, the launch pickers less any route whose
+  last probe failed; `holo scouts`, `holo scout show` and `holo scout
+  thread` read them too.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
 - `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a

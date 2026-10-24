@@ -75,6 +75,8 @@ COVERED = {
     ("idea",): ["idea", "Show owner initials"],
     ("scout", "file"): ["scout", "file", "1", "1"],
     ("scout", "stop"): ["scout", "stop", "1", "not needed"],
+    ("scout", "thread"): ["scout", "thread", "1"],
+    ("scout", "ask"): ["scout", "ask", "1", "Go on"],
 }
 
 
@@ -264,7 +266,7 @@ class ReadTests(HttpCase):
                                   self.server.action_names)
                     continue
                 path = route.path.format(
-                    N=scout if words == ("scout", "show") else run,
+                    N=scout if words[0] == "scout" else run,
                     KEY="HOLO-1")
                 for tail in ("", "/files", "/ledger", "/turns")[
                         :4 if words == ("run",) else 1]:
@@ -428,6 +430,27 @@ class WriteTests(HttpCase):
             "SELECT phase, reason FROM scouts WHERE id = ?",
             (scout_id,)).fetchone(),
             ("stopped", "stopped by maintainer: not needed"))
+
+    def test_scout_ask_and_thread_over_http_post_the_ask_and_read_the_thread(self):
+        live = store.scouts.create_scout(self.conn, self.project_id,
+                                         "a live scout", "recon", 30)
+        store.scouts.move_scout(self.conn, live, "planning", base_sha="a" * 40)
+        with open(Host.locate().path, "a") as registry:
+            registry.write("\n[scout]\nmax_parallel = 1\n")
+        scout_id = self.done_scout()
+        asked = self.holo("scout", "ask", str(scout_id), "Go on", "-p", "alpha")
+        self.assertEqual(asked.returncode, 0, asked.stderr)
+        self.assertEqual(self.conn.execute(
+            "SELECT scoutId, mode, text FROM threadMessages").fetchall(),
+            [(scout_id, "ask", "Go on")])
+        shown = self.holo("scout", "thread", str(scout_id), "--json",
+                          "-p", "alpha")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertEqual([item["text"] for item in
+                          json.loads(shown.stdout)["thread"]], ["Go on"])
+        self.assertEqual(self.requests, [
+            ("POST", "/projects/alpha/actions/scout-message"),
+            ("GET", f"/projects/alpha/scouts/{scout_id}")])
 
 
 class RefusalTests(HttpCase):

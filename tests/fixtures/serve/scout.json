@@ -171,14 +171,63 @@
   ],
   "events": [
     {
+      "id": 1,
       "at": 1750000000000,
       "kind": "scout_planned",
       "summary": "the lead planned 3 tasks"
     },
     {
+      "id": 1,
       "at": 1750000000000,
       "kind": "scout_swarmed",
       "summary": "3 of 3 helpers answered"
+    },
+    {
+      "id": 1,
+      "at": 1750000000000,
+      "kind": "scout_answer_started",
+      "summary": "answering message 1"
+    }
+  ],
+  "thread": [
+    {
+      "id": 1,
+      "author": "maintainer",
+      "mode": "ask",
+      "text": "Does the cap apply to webhooks?",
+      "blocks": [],
+      "answers": null,
+      "at": 1750000000000,
+      "consumed_by": 6,
+      "consumed_ms": 1749999955000
+    },
+    {
+      "id": 1,
+      "author": "scout",
+      "mode": "answer",
+      "text": "Yes, through F1.",
+      "blocks": [
+        {
+          "type": "finding",
+          "pass": 1,
+          "index": 1
+        }
+      ],
+      "answers": 1,
+      "at": 1750000000000,
+      "consumed_by": null,
+      "consumed_ms": null
+    },
+    {
+      "id": 1,
+      "author": "test seat",
+      "mode": "ask",
+      "text": "And the retry cap?",
+      "blocks": [],
+      "answers": null,
+      "at": 1750000000000,
+      "consumed_by": null,
+      "consumed_ms": null
     }
   ]
 }

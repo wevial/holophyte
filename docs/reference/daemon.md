@@ -51,7 +51,8 @@ null: its record, written before it starts anything, is the scout's own
 row and that row's first event, `scout_queued`. `scout-file` writes none
 either: its record is the filed ticket and the action item's filed key.
 `scout-stop` writes none either: its record is the scout's
-`scout_stop_requested` event. A 400, 404 or 503 answers `{"error": ...}` instead.
+`scout_stop_requested` event. `scout-message` writes none either: its record is
+the ask's thread message. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 
@@ -470,6 +471,42 @@ A body that is not a JSON object or a `scout` that is not a positive
 integer is 400 naming the field; a `note` missing or blank is 400 `note
 must say why`, and an `author` that is not text is 400. A project with no
 store is 503.
+
+## `POST /actions/scout-message`
+
+Body: a JSON object with `scout` (required, a positive integer: the
+scout's id), `mode` (required, `ask`), `text` (required, non-blank: the
+ask) and `author` (optional, default `maintainer`). It asks a `done`
+scout about its report; the scout's lead answers in its thread, which
+[`GET /scouts/ID`](http.md#get-scoutsid) serves as `thread`. `holo scout
+ask ID "TEXT"` and the `holo mcp` `scout_ask` tool are the same ask. On a
+host daemon it is `/projects/NAME/actions/scout-message`, admitted as the
+other project actions are.
+
+The ask is recorded first, as a message on the scout's thread. Then the
+route runs the start half of the host sweep's scout step once, which
+takes the oldest waiting work while the host is under its `[scout]
+max_parallel`: the scout goes to `answering` and its lead's session is
+resumed to answer. An ask not taken waits for the sweep's next pass.
+
+An unknown scout is 404 `no such scout`. A scout not `done` is 200 with
+`ok: false`, `reason` `not_done` and `detail` naming its phase; a scout
+with an ask still waiting is 200 with `ok: false`, `reason`
+`ask_waiting` and `detail` naming the waiting message's id. Neither
+writes anything. The reply adds `scout`, `message`, the new message's id,
+and `queued`, true when the ask was not taken and waits for a scout slot;
+`detail` is `scout N is answering message M` or `message M waits for a
+scout slot: ...`, and `recorded` is null.
+
+```json
+{"action": "scout-message", "ok": true, "scout": 14, "message": 3,
+ "queued": false, "detail": "scout 14 is answering message 3",
+ "recorded": null}
+```
+
+A body that is not a JSON object, a `scout` that is not a positive
+integer, a `mode` missing or not `ask`, and a `text` missing or blank are
+400 naming the field. A project with no store is 503.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 

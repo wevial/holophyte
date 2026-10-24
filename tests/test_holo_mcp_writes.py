@@ -29,7 +29,7 @@ from tests.test_holo_http import ROOT, HttpCase
 from tests.test_holo_mcp import MINUTE, NOW, TOOLS, McpCase
 
 WRITES = {"file_ticket", "send_back", "babysit", "steer", "requeue", "hold",
-          "scout", "scout_file", "scout_stop"}
+          "scout", "scout_file", "scout_stop", "scout_ask"}
 URL = "https://example.test/pull/7"
 AUTHOR = "test seat"
 SIGNED = "test seat via MCP"

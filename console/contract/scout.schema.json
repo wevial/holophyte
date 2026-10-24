@@ -661,6 +661,9 @@
     "ScoutEvent": {
       "type": "object",
       "properties": {
+        "id": {
+          "type": "integer"
+        },
         "at": {
           "type": "integer"
         },
@@ -672,9 +675,125 @@
         }
       },
       "required": [
+        "id",
         "at",
         "kind",
         "summary"
+      ],
+      "additionalProperties": true
+    },
+    "FindingBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "finding"
+        },
+        "pass": {
+          "type": "integer"
+        },
+        "index": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "pass",
+        "index"
+      ],
+      "additionalProperties": true
+    },
+    "ActionBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "action"
+        },
+        "position": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "type",
+        "position"
+      ],
+      "additionalProperties": true
+    },
+    "ThreadMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "author": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "ask",
+            "steer",
+            "answer"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FindingBlock"
+              },
+              {
+                "$ref": "#/$defs/ActionBlock"
+              }
+            ]
+          }
+        },
+        "answers": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "type": "integer"
+        },
+        "consumed_by": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consumed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "author",
+        "mode",
+        "text",
+        "blocks",
+        "answers",
+        "at",
+        "consumed_by",
+        "consumed_ms"
       ],
       "additionalProperties": true
     },
@@ -707,6 +826,12 @@
           "items": {
             "$ref": "#/$defs/ScoutEvent"
           }
+        },
+        "thread": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ThreadMessage"
+          }
         }
       },
       "required": [
@@ -714,7 +839,8 @@
         "tasks",
         "reports",
         "actions",
-        "events"
+        "events",
+        "thread"
       ],
       "additionalProperties": true
     }
