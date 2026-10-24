@@ -19,6 +19,7 @@ from holophyte.scout.run_helpers import (
     HELPER_OPENING,
     LAUNCH_FAILURES,
     READ_ONLY,
+    isolated_probe,
     launch_turn,
     ref_values,
     refs_guard,
@@ -113,6 +114,7 @@ class Swarm:
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
         self.scratch, self.refs = None, None
+        self.probing, self.isolated = threading.Lock(), {}
         self.stack = ExitStack()
 
     def __enter__(self):
@@ -231,13 +233,28 @@ class Swarm:
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
             return
         self.refuse_push(checkout)
-        argv = run_seat(self.project, self.seat).turn(
-            outbound(run_goal(self.row, task), self.secrets))
+        seat = run_seat(self.project, self.seat)
+        down = self.isolated_down(conn, seat, checkout)
+        if down is not None:
+            self.end(conn, task, FAILED, down)
+            return
+        argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()
         turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
                                                 cap), LAUNCH_FAILURES)
                 if cap > 0 else HelperTurn(STOPPED, None, ""))
         self.record(conn, task, argv, turn, monotonic() - started)
+
+    def isolated_down(self, conn, seat, checkout):
+        with self.probing:
+            if "down" not in self.isolated:
+                down = isolated_probe(self.project, self.route, seat,
+                                      checkout, self.remaining_s())
+                self.isolated["down"] = down
+                if down is not None:
+                    record_scout_event(conn, self.row.id, "scout_helpers",
+                                       down)
+            return self.isolated["down"]
 
     def refuse_push(self, checkout):
         from holophyte.scout.scout_process import refuse_push

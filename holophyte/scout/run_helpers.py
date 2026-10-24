@@ -4,10 +4,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from holophyte.agents.harness import SCOUT_RUNNER
+from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import scratch_git_environment
 from holophyte.isolation import launcher
 from holophyte.loop.gates import RunFailure, sh
 from holophyte.loop.task_worktree import prepare_worktree
+from holophyte.scout.scout_probes import probe_scout_route
 from store.enums import ScoutKind, ScoutTaskMode, ScoutTaskPhase
 from store.scouts import record_scout_event
 
@@ -60,6 +62,19 @@ def set_up(project, checkout, deadline):
     except LAUNCH_FAILURES as failed:
         return f"[holo2] worktree setup could not launch: {failed}"
     return None if ok else report
+
+
+def isolated_probe(project, route, seat, checkout, remaining_s):
+    if launcher.route_for(project).backend != "container":
+        return None
+    probe = probe_scout_route(
+        project, f"{SCOUT_RUNNER}:{route}", seat,
+        min(PROBE_TIMEOUT, remaining_s),
+        run=lambda project, argv, cap: launch_turn(project, argv, checkout,
+                                                    cap))
+    if probe.ok:
+        return None
+    return f"helper route {route} is down in the container: {probe.reason()}"
 
 
 def launch_turn(project, argv, checkout, cap):

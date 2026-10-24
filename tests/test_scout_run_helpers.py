@@ -13,6 +13,7 @@ from itertools import takewhile
 from pathlib import Path
 from unittest.mock import patch
 
+from holophyte.agents.probes import PROBE_GOAL
 from holophyte.config.project import Project
 from holophyte.isolation import launcher
 from holophyte.scout.scout_process import lead_path
@@ -32,6 +33,9 @@ DOCKER = """#!{python}
 import json, sys
 with open({log!r}, "a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
+if sys.argv[-1] == {goal!r}:
+    print({probe!r})
+    sys.exit({probe_exit})
 sys.exit(1 if sys.argv[1:2] == ["inspect"] else 0)
 """
 
@@ -175,7 +179,10 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertIn(READ_ONLY, turn["argv"][-1])
         self.assertNotIn("may edit files", turn["argv"][-1])
 
-    def test_a_container_project_runs_the_run_helper_in_the_image(self):
+    def container_scout(self, probe="ready", probe_exit=0):
+        """A container bug scout with one run task, run against a stub
+        `docker` that answers the helper probe with `probe` and
+        `probe_exit`; each `docker run` argv it logged, and the scout."""
         path, conn, scout_id = self.scout(
             "bug", '[agents]\nimplementer_isolation = "container"\n',
             helper_route="haiku")
@@ -184,7 +191,9 @@ class ScoutRunHelperTests(ScoutFixture):
         bin_dir, log = self.root / "docker-bin", self.root / "docker.jsonl"
         bin_dir.mkdir()
         docker = bin_dir / "docker"
-        docker.write_text(DOCKER.format(python=sys.executable, log=str(log)))
+        docker.write_text(DOCKER.format(
+            python=sys.executable, log=str(log), goal=PROBE_GOAL, probe=probe,
+            probe_exit=probe_exit))
         docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
         self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT))
         with patch.object(launcher, "image_ready", lambda route: None), \
@@ -192,12 +201,28 @@ class ScoutRunHelperTests(ScoutFixture):
             self.run_scout(path, scout_id)
         runs = [argv for argv in map(json.loads, log.read_text().splitlines())
                 if argv[:1] == ["run"]]
-        self.assertEqual(len(runs), 1)
-        self.assertIn("claude", runs[0])
-        self.assertTrue(any(arg.startswith("Scout helper turn\n")
-                            for arg in runs[0]))
+        goals = [argv for argv in runs
+                 if any(arg.startswith("Scout helper turn\n") for arg in argv)]
+        return conn, scout_id, runs, goals
+
+    def test_a_container_project_runs_the_run_helper_in_the_image(self):
+        conn, scout_id, runs, goals = self.container_scout()
+        self.assertEqual(len(goals), 1)
+        self.assertIn("claude", goals[0])
         self.assertEqual(self.stubs.turns("helper"), [])
         self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+
+    def test_a_run_route_down_in_the_container_fails_its_task_unlaunched(self):
+        conn, scout_id, runs, goals = self.container_scout(
+            "claude: not found", 127)
+        self.assertTrue(any(PROBE_GOAL in argv and "claude" in argv
+                            for argv in runs))
+        self.assertEqual(goals, [])
+        phase, excerpt = self.task(conn, scout_id, RUN_Q)
+        self.assertEqual(phase, "failed")
+        self.assertIn("helper route haiku is down in the container", excerpt)
+        self.assertEqual(self.report(conn, scout_id)["summary"],
+                         REPORT["summary"])
 
     def test_a_setup_that_cannot_launch_fails_its_task_and_the_report_is_stored(self):
         path, conn, scout_id = self.scout(
