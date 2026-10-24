@@ -53,8 +53,7 @@ def wanted(pairs):
 
 
 def _names(line, path):
-    name = Path(path).name
-    stem = name.rsplit(".", 1)[0] if "." in name else name
+    stem = Path(path).name.rsplit(".", 1)[0]
     spellings = ((path, r"[\w-]"),
                  (path.removesuffix(".py").replace("/", "."), r"[\w-]"),
                  (stem, r"[\w/.-]"))
