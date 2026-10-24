@@ -12,15 +12,15 @@ def defining_classes(source, name):
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
         return _scanned_classes(source, name)
-    return sorted({node.name for node in ast.walk(tree)
-                   if isinstance(node, ast.ClassDef)
-                   and any(_is_def(child) and child.name == name
-                           for child in node.body)})
+    return sorted(node.name for node in ast.walk(tree)
+                  if isinstance(node, ast.ClassDef)
+                  and any(_is_def(child) and child.name == name
+                          for child in node.body))
 
 
 def _scanned_classes(source, name):
-    stack, classes = [], []
-    for line in source.splitlines():
+    stack, classes = [], {}
+    for number, line in enumerate(source.splitlines()):
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip())
@@ -31,9 +31,9 @@ def _scanned_classes(source, name):
             continue
         if (match.group(1) != "class" and match.group(2) == name
                 and stack and stack[-1][1]):
-            classes.append(stack[-1][2])
-        stack.append((indent, match.group(1) == "class", match.group(2)))
-    return sorted(set(classes))
+            classes[stack[-1][3]] = stack[-1][2]
+        stack.append((indent, match.group(1) == "class", match.group(2), number))
+    return sorted(classes.values())
 
 
 def dotted_module(reference):
@@ -51,11 +51,18 @@ def test_unchanged(approved, candidate, cls, name):
     if not all(_cited(tree, cls, name) for tree in trees):
         return False
     bound = _module_bindings(trees[0])
-    before, after = (_strip(tree, cls, name, bound) for tree in trees)
+    before, after = ([(ast.dump(node), node) for node in tree.body
+                      if isinstance(node, ast.Import | ast.ImportFrom)]
+                     for tree in trees)
     added = _added_imports(before, after)
-    return (ast.dump(trees[0]) == ast.dump(trees[1]) and added is not None
-            and _binds_new_names_only(added, bound,
-                                      [node for _, node in before]))
+    if added is None:
+        return False
+    trees[1].body = [node for node in trees[1].body
+                     if all(node is not other for other in added)]
+    for tree in trees:
+        _strip(tree, cls, name, bound)
+    return (ast.dump(trees[0]) == ast.dump(trees[1])
+            and _binds_new_names_only(added, bound, [node for _, node in before]))
 
 
 def _added_imports(before, after):
@@ -81,16 +88,11 @@ def _is_def(node):
 
 
 def _strip(tree, cls, name, bound):
-    imports = [(ast.dump(node), node) for node in tree.body
-               if isinstance(node, ast.Import | ast.ImportFrom)]
-    tree.body = [node for node in tree.body
-                 if not isinstance(node, ast.Import | ast.ImportFrom)]
     _drop_other_tests(tree, None, cls, name)
     used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     tree.body = [node for node in tree.body
                  if not (isinstance(node, ast.ClassDef) and not node.body
                          and node.name not in used | bound)]
-    return imports
 
 
 def _drop_other_tests(node, owner, cls, name):
@@ -140,7 +142,17 @@ def _module_bindings(tree):
 
 def _module_level(node):
     yield node
-    if _is_def(node) or isinstance(node, ast.ClassDef | ast.Lambda):
-        return
-    for child in ast.iter_child_nodes(node):
-        yield from _module_level(child)
+    for child in _evaluated_at_definition(node):
+        if child is not None:
+            yield from _module_level(child)
+
+
+def _evaluated_at_definition(node):
+    if _is_def(node) or isinstance(node, ast.Lambda):
+        return [*node.args.defaults, *node.args.kw_defaults,
+                *getattr(node, "decorator_list", [])]
+    if isinstance(node, ast.ClassDef):
+        return [*node.bases, *node.keywords, *node.decorator_list]
+    if isinstance(node, ast.comprehension):
+        return [node.iter, *node.ifs]
+    return ast.iter_child_nodes(node)

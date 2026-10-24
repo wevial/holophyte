@@ -127,6 +127,16 @@ class OtherClassTests(Worktree):
                     self.assertEqual((entry["status"], entry.get("resolved")),
                                      ("met", OTHER_CLASS))
 
+    def test_two_classes_of_one_name_stay_ambiguous_by_source(self):
+        twice = "".join(f"class Outer{n}:\n    class Reads(unittest.TestCase):\n"
+                        "        def test_reads(self):\n            pass\n\n\n"
+                        for n in "AB")
+        self.write("tests/test_alpha.py",
+                   f"import unittest\n{UNIMPORTABLE}\n\n{twice}")
+        entry = self.status()
+        self.assertEqual(entry["status"], "unwitnessed")
+        self.assertTrue(entry["note"].endswith("; defined on classes Reads, Reads)"))
+
 
 class DottedModuleTests(Worktree):
     REPLY = ("CRITERION 1: met — python3 -m ci.check tests.core.test_sources"
@@ -247,6 +257,28 @@ class ApprovalTests(Worktree):
                     "import json\n", "import json\nfrom sys import maxsize as limit\n")
                 self.assertFalse(citations.test_unchanged(
                     approved, candidate, "LoadTests", "test_broken"))
+
+    def test_an_approved_import_moved_past_retained_code_is_a_change(self):
+        approved = LOAD.replace("import unittest\n", "import unittest\nfrom math "
+                                "import pi as value\n") + "\n\nvalue = 1\n"
+        moved = approved.replace("from math import pi as value\n", "") + (
+            "from math import pi as value\n")
+        self.assertFalse(citations.test_unchanged(approved, moved,
+                                                  "LoadTests", "test_broken"))
+
+    def test_module_bindings_follow_python_scopes(self):
+        bindings = {
+            "walrus in a default": ("def helper(default=(limit := 1)):\n"
+                                    "    return default\n", False),
+            "comprehension variable": ("NAMES = [limit for limit in ()]\n", True),
+        }
+        for case, (binding, stands) in bindings.items():
+            with self.subTest(case=case):
+                approved = f"{LOAD}\n\n{binding}"
+                candidate = approved.replace(
+                    "import json\n", "import json\nfrom sys import maxsize as limit\n")
+                self.assertEqual(citations.test_unchanged(
+                    approved, candidate, "LoadTests", "test_broken"), stands)
 
     def test_a_change_the_cited_test_depends_on_makes_it_stale(self):
         cases = {
