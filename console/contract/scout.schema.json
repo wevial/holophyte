@@ -467,8 +467,8 @@
         },
         "status": {
           "enum": [
-            "shown",
-            "likely",
+            "confirmed",
+            "partial",
             "unconfirmed"
           ]
         },

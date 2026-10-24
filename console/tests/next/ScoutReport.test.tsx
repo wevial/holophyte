@@ -29,11 +29,11 @@ const finding = (title: string, status: ScoutFinding["status"], evidence: ScoutF
 });
 
 const bugFindings = [
-  finding("The comment listener keeps its write transaction open while it calls publish.", "shown", [
+  finding("The comment listener keeps its write transaction open while it calls publish.", "confirmed", [
     file("lotuspod/listener.py", 132), { ...servedCommand!, command: COMMAND, output: OUTPUT },
   ]),
-  finding("Loop claims use the default 5 s busy_timeout.", "shown", [file("lotuspod/store.py", 41)]),
-  finding("The digest job writes through its own connection.", "likely", [file("lotuspod/digest.py", 57), file("lotuspod/digest.py", 301, false, WHY)]),
+  finding("Loop claims use the default 5 s busy_timeout.", "confirmed", [file("lotuspod/store.py", 41)]),
+  finding("The digest job writes through its own connection.", "partial", [file("lotuspod/digest.py", 57), file("lotuspod/digest.py", 301, false, WHY)]),
   finding("busy_timeout is lost when the store reconnects.", "unconfirmed", [file("lotuspod/store.py", 41)]),
 ];
 
@@ -56,19 +56,19 @@ const bug: ScoutDetail = {
 const research: ScoutDetail = {
   ...bug,
   scout: { ...bug.scout, id: 32, kind: "research" },
-  reports: [pass(1, [finding("Streams resume from their last offset.", "shown", [{ url: "https://example.com/notes/streams" }])], null)],
+  reports: [pass(1, [finding("Streams resume from their last offset.", "confirmed", [{ url: "https://example.com/notes/streams" }])], null)],
 };
 
 const twoPasses: ScoutDetail = {
   ...bug,
   scout: { ...bug.scout, id: 33 },
-  reports: [bug.reports[0]!, pass(2, [finding("The digest also holds the lock.", "likely")], { level: "test", hypotheses })],
+  reports: [bug.reports[0]!, pass(2, [finding("The digest also holds the lock.", "partial")], { level: "test", hypotheses })],
 };
 
 const marked: ScoutDetail = {
   ...bug,
   scout: { ...bug.scout, id: 34 },
-  reports: [pass(1, [finding("**Bold** and `code`", "shown")], null)],
+  reports: [pass(1, [finding("**Bold** and `code`", "confirmed")], null)],
 };
 
 const unreported = (id: number, phase: ScoutDetail["scout"]["phase"]): ScoutDetail => ({
@@ -126,7 +126,7 @@ test("a done bug scout's Report counts its findings, reads its reproduction and 
   expect(meta()).toBe("reproduced in a test · at base a41c9e2");
   const rows = findingRows();
   expect(rows.map(rowId)).toEqual(["F1", "F2", "F3", "F4"]);
-  expect(rows.map(chip)).toEqual(["shown", "shown", "likely", "unconfirmed"]);
+  expect(rows.map(chip)).toEqual(["confirmed", "confirmed", "partial", "unconfirmed"]);
 });
 
 test("a verified citation is titled with its base and an unverified one reads its reason as its description", async () => {
@@ -227,7 +227,7 @@ test("a text evidence item reads as plain text with no link or button, beside fi
     ...bug,
     reports: [pass(1, [
       finding("Helpers outlive the loop.", "unconfirmed", [{ text }]),
-      finding("The unit sets no KillMode.", "shown", [file("deploy/holophyte-loop@.service", 13), { url: "https://example.com/systemd/kill" }]),
+      finding("The unit sets no KillMode.", "confirmed", [file("deploy/holophyte-loop@.service", 13), { url: "https://example.com/systemd/kill" }]),
     ], null)],
   };
   await mount(31, { 31: mixed });

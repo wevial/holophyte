@@ -1213,7 +1213,7 @@ export type TextEvidence = z.infer<typeof textEvidenceSchema>;
 
 export const scoutFindingSchema = z.looseObject({
   title: z.string(),
-  status: z.enum(["shown", "likely", "unconfirmed"]),
+  status: z.enum(["confirmed", "partial", "unconfirmed"]),
   evidence: z.array(z.union([fileEvidenceSchema, commandEvidenceSchema, urlEvidenceSchema, textEvidenceSchema])),
 });
 export type ScoutFinding = z.infer<typeof scoutFindingSchema>;
