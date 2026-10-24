@@ -25,6 +25,8 @@ TAIL_CHARS = 2_000
 MESSAGE_CHARS = 300
 FINDINGS_SHOWN = 20
 BODY_CHARS = 12_000
+PARK_CHARS = 4_000
+PARK_KINDS = ("critic", "stale", "validation")
 
 
 class ContextPack(NamedTuple):
@@ -226,6 +228,23 @@ def defect_pack(pack, ref):
         body_lines(pack, run, claimed, bodies)
 
 
+def park_kind(note):
+    if note["kind"] == "stale" and "* critic: " in (note["text"] or ""):
+        return "critic"
+    return note["kind"]
+
+
+def park_part(pack, ticket, revision):
+    parks = [note for note in ticket["notes"] if note["kind"] in PARK_KINDS]
+    if ticket["status"] != "needs_spec" or not parks:
+        return []
+    note = max(parks, key=lambda each: (each["at"], each["id"]))
+    kind = park_kind(note)
+    pack.note(f"parked {kind}")
+    return [f"Parked: {kind} at revision {revision}, {stamp(note['at'])}",
+            (note["text"] or "")[:PARK_CHARS]]
+
+
 def ticket_pack(pack, key):
     ticket = answered(pack, f"ticket {key}", ticket_detail, key)
     if ticket is None:
@@ -234,7 +253,8 @@ def ticket_pack(pack, key):
     pack.note(f"ticket {key}")
     current = ticket["current"]["revision"] if ticket["current"] else "none"
     pack.add(f"Context: ticket {key} \"{ticket['title']}\", {ticket['status']},"
-             f" revision {current}", ticket["body"] or "", "Runs:", *(
+             f" revision {current}", ticket["body"] or "",
+             *park_part(pack, ticket, current), "Runs:", *(
                  f"run {r['run']}: {r['outcome'] or r['phase']}"
                  for r in ticket["runs"]))
     ended = next((r["run"] for r in ticket["runs"]
