@@ -8,6 +8,8 @@ type Evidence = ScoutFinding["evidence"][number];
 const CHIP = "inline-block rounded px-2 py-0.5 font-sans text-[13px] font-medium leading-[1.4]";
 const MONO = "font-mono text-[13px] leading-[1.5] [overflow-wrap:anywhere]";
 const ID = "pt-[5px] font-mono text-[11px] font-semibold leading-none text-ink-3";
+const ROW = "grid grid-cols-[2rem_6.75rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 py-3 max-[720px]:grid-cols-[2rem_minmax(0,1fr)]";
+const TEXT = "m-0 font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]";
 
 const FINDING_TONES: Record<ScoutFinding["status"], string> = {
   shown: "bg-live-wash text-ok-ink",
@@ -70,11 +72,11 @@ function FindingItem({ numbered, base }: { numbered: Numbered; base: string }) {
     setOpen(next);
   };
   return (
-    <li data-scout-finding className="grid grid-cols-[2rem_6.75rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 px-4 py-3 last:border-b-0 max-[720px]:grid-cols-[2rem_minmax(0,1fr)]">
+    <li data-scout-finding className={`${ROW} px-4 last:border-b-0`}>
       <span data-finding-id className={ID}>{id}</span>
       <span><span data-finding-status className={`${CHIP} ${FINDING_TONES[finding.status]}`}>{finding.status}</span></span>
       <div className="min-w-0 max-[720px]:col-start-2">
-        <p className="m-0 font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]">
+        <p className={TEXT}>
           <span data-finding-title>{finding.title}</span>
           {pass > 1 && <span data-finding-pass className="ml-2 rounded border border-rule px-1.5 py-px font-mono text-[11px] text-ink-3">pass {pass}</span>}
         </p>
@@ -123,11 +125,11 @@ function Hypotheses({ hypotheses }: { hypotheses: Hypothesis[] }) {
         {hypotheses.map((each, index) => {
           const verdict = VERDICTS[each.verdict];
           return (
-            <li key={index} data-hypothesis className="grid grid-cols-[2rem_6.75rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 py-3 max-[720px]:grid-cols-[2rem_minmax(0,1fr)]">
+            <li key={index} data-hypothesis className={ROW}>
               <span data-hypothesis-id className={ID}>H{index + 1}</span>
               <span><span data-verdict className={`${CHIP} ${verdict.tone}`}>{verdict.word}</span></span>
               <div className="min-w-0 max-[720px]:col-start-2">
-                <p data-hypothesis-text className="m-0 font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]">{each.hypothesis}</p>
+                <p data-hypothesis-text className={TEXT}>{each.hypothesis}</p>
                 <p data-separates className="m-0 mt-0.5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{each.separates}</p>
               </div>
             </li>
