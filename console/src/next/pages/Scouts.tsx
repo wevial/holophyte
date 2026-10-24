@@ -228,9 +228,9 @@ export function Scouts() {
       </header>
       {wide ? (
         <div className="flex min-h-0 flex-1 items-stretch gap-4">
-          <ScoutList rows={rows} empty={empty} scoped={project != null} current={launching || shown == null ? null : `${shown.project}/${shown.id}`} />
+          <ScoutList rows={rows} empty={empty} scoped={project != null} current={launching || shown == null ? null : scoutKey(shown)} />
           <div data-scout-pane className="min-w-0 flex-1 overflow-y-auto border border-rule bg-paper">
-            {launching ? form(true) : shown != null && <ScoutPane key={`${shown.project}/${shown.id}`} project={shown.project} id={shown.id} />}
+            {launching ? form(true) : shown != null && <ScoutPane key={scoutKey(shown)} project={shown.project} id={shown.id} />}
           </div>
         </div>
       ) : (
