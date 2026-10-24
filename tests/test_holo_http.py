@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 import holophyte.cli.entry
 import store
+import store.scouts
 import store.tickets
 from holophyte.config.project import Project
 from holophyte.holo.transport import HTTP_ROUTES
@@ -64,6 +65,9 @@ COVERED = {
     ("resume",): ["resume", "HOLO-1", "go on"],
     ("abort",): ["abort", "HOLO-1", "end it"],
     ("start",): ["start"],
+    ("scout", "launch"): ["scout", "Map the merge gate", "--kind", "recon"],
+    ("bug",): ["bug", "Save drops the title"],
+    ("idea",): ["idea", "Show owner initials"],
 }
 
 
@@ -322,6 +326,25 @@ class WriteTests(HttpCase):
         self.assertIn(f"HOLO-1 steered: hint (steer note 1) on live run {live}",
                       line)
         self.assertEqual(self.requests, [("POST", "/projects/alpha/actions/steer")])
+
+    def test_scout_over_http_posts_the_ask_and_kind_and_prints_the_detail(self):
+        live = store.scouts.create_scout(self.conn, self.project_id,
+                                         "a live scout", "recon", 30)
+        store.scouts.move_scout(self.conn, live, "planning", base_sha="a" * 40)
+        with open(Host.locate().path, "a") as registry:
+            registry.write("\n[scout]\nmax_parallel = 1\n")
+        completed = self.holo("scout", "Map the merge gate", "--kind", "recon",
+                              "-p", "alpha")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        (scout_id, ask, kind), = self.conn.execute(
+            "SELECT id, ask, kind FROM scouts WHERE id != ?", (live,))
+        self.assertEqual((ask, kind), ("Map the merge gate", "recon"))
+        self.assertEqual(completed.stdout,
+                         f"✓ scout {scout_id} queued: 1 of 1 scout slots in"
+                         " use\n")
+        self.assertEqual(self.requests,
+                         [("POST", "/projects/alpha/actions/scout")])
+
 
 class RefusalTests(HttpCase):
     def test_approve_has_no_route_and_goes_nowhere_not_even_ssh(self):

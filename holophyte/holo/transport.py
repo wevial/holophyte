@@ -14,7 +14,15 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import quote, urlencode
 
-from holophyte.holo.grammar import FOLLOW, JSON, READS, REQUIRED, arguments
+from holophyte.holo.grammar import (
+    FOLLOW,
+    JSON,
+    LAUNCH,
+    READS,
+    REQUIRED,
+    SCOUT_KINDS,
+    arguments,
+)
 from holophyte.holo.resolve import (
     DEFAULT,
     ENVIRONMENT,
@@ -34,6 +42,7 @@ from holophyte.holo.results import (
     build_result,
     human_line,
     parse_run,
+    scout_body,
 )
 
 TRANSPORT = "HOLO_TRANSPORT"
@@ -322,6 +331,7 @@ class Route(NamedTuple):
     local: tuple = ()
 
 
+SCOUT_BODY = ("ask", "kind", "lead", "helper", "swarm", "minutes", "author")
 HTTP_ROUTES = {
     ("report",): Route("GET", "/report"),
     ("runs",): Route("GET", "/runs"),
@@ -341,6 +351,8 @@ HTTP_ROUTES = {
     ("abort",): Route("POST", "/actions/abort",
                       ("run", "note", "close", "pr_comment")),
     ("start",): Route("POST", "/actions/launch-loop"),
+    **{words: Route("POST", "/actions/scout", SCOUT_BODY)
+       for words in (("scout", LAUNCH), *SCOUT_KINDS)},
 }
 
 
@@ -444,6 +456,8 @@ def fields(args, route):
         return {}
     command = args.command
     values, note = arguments(args, command)
+    if route.path == HTTP_ROUTES[("scout", LAUNCH)].path:
+        return scout_body(args)
     if note is not None and "note" not in route.body:
         args.leaf.error(f"{route.method} {route.path} takes no note; a hold"
                         " is released over http with holo release NOTE")
