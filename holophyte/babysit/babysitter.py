@@ -142,6 +142,8 @@ def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,
                 " a conflict)")
         if conn is not None and run_id is not None:
             store.record_ledger(conn, run_id, "note", note)
+    from holophyte.loop.merge_gate import rerun_setup_after_merge
+    rerun_setup_after_merge(project, conn, run_id, beat_s, wt, sha, merged)
     merged = _verify_main_refresh(
         project, conn, run_id, provider, task_id, branch, wt, merged, beat_s,
         pull, budget_min, verify_cmd, contracts, ticket, ref, criteria)
@@ -194,7 +196,7 @@ def _verify_main_refresh(project, conn, run_id, provider, task_id, branch, wt,
                     f"main is red at {main.sha}; verify command: {main.command}\n"
                     f"Merged tree:\n{out}\nMain:\n{main.out}\n"
                     "Fix main and send this run back through babysit.", ())
-    goal = (f"The merge of main introduced a verification failure on {pull.url}; "
+    goal = (f"The candidate merged with main at {main.sha} fails verify on {pull.url}; "
             f"main at {main.sha} {main.state}Failing verify command: {command}\n"
             f"{out}\n"
             f"The ticket is the contract:\n{ticket}\n"

@@ -23,7 +23,7 @@ class RefreshFixNoteTests(cases.ConflictingMainHelpers, MergeModeFixture):
         fake, _ = self.loop(Commit("fix merge", path="FIXED.md"), Idle(""),
                             provider=provider)
 
-        self.assertIn("The merge of main introduced a verification failure",
+        self.assertIn(f"The candidate merged with main at {moved} fails verify",
                       fake.turns[0].goal)
         self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
         self.assertIn(note, fake.turns[0].goal)
@@ -48,7 +48,7 @@ class RefreshFixNoteTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.parked_on_a_nit(Commit("candidate", path="THING.md"))
         provider = StubProvider(dict(a_task(), body=self.BODY,
                                      verify="test -e FIXED.md -o ! -e THING.md"))
-        self.remote_main("MOVED.md", "main moved\n")
+        moved = self.remote_main("MOVED.md", "main moved\n")
         self.serve(self.pr_state(mergeable="CONFLICTING"), self.pr_state())
         hint = "Consider documenting the merged candidate in HINT.md."
         with store.open(str(self.project.store_path)) as conn:
@@ -68,7 +68,7 @@ class RefreshFixNoteTests(cases.ConflictingMainHelpers, MergeModeFixture):
                             Commit("apply hint", path="HINT.md"), Idle(""),
                             provider=provider)
 
-        self.assertIn("The merge of main introduced a verification failure",
+        self.assertIn(f"The candidate merged with main at {moved} fails verify",
                       fake.turns[0].goal)
         self.assertNotIn(hint, fake.turns[0].goal)
         self.assertEqual([n["event_id"] for n in pending_at_refresh], [note_id])

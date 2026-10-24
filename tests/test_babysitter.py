@@ -553,13 +553,13 @@ class ConflictingPullRequestTests(cases.ConflictingMainHelpers,
 
     def test_a_carry_the_worktree_lacks_runs_setup_on_main_first(self):
         command = "test -d deps && test -e FIXED.md -o ! -e THING.md"
-        _, moved = self.carry_candidate(command, setup=["mkdir deps"],
-                                        installed=False)
+        _, moved = self.carry_candidate(
+            command, setup=["test -e THING.md || mkdir deps"], installed=False)
         fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
         self.assertEqual(fake.roles[0], "implement")
         self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
         (event,) = self.prepared()
-        self.assertIn("ran setup for deps: mkdir deps", event)
+        self.assertIn("ran setup for deps: test -e THING.md || mkdir deps", event)
         self.assertNotIn("FAILED", event)
 
     def test_setup_replacing_a_carried_link_still_cleans_up(self):
@@ -567,7 +567,8 @@ class ConflictingPullRequestTests(cases.ConflictingMainHelpers,
         must not turn the checkout's cleanup into a crash."""
         command = "test -d deps && test -e FIXED.md -o ! -e THING.md"
         wt, moved = self.carry_candidate(
-            command, setup=["rm -rf deps && mkdir -p deps other-deps"],
+            command, setup=["test -e THING.md || { rm -rf deps"
+                            " && mkdir -p deps other-deps; }"],
             carry=("deps", "other-deps"))
         fake, _ = self.resume(Commit("fix merge", path="FIXED.md"), Idle(""))
         self.assertIn(f"main at {moved} passes", fake.turns[0].goal)
