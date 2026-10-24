@@ -1,7 +1,7 @@
 import store
+from holophyte.loop.runs import open_store
 from holophyte.scout.filing import ROW_ID_LIMIT
 from holophyte.scout.launch import start
-from holophyte.serve.serve_actions import action_store
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from store.scout_thread import ASK, ThreadRefused, post_message
@@ -24,7 +24,7 @@ def refusal(body):
 
 
 def record(project, scout_id, mode, text, author):
-    conn = action_store(project)
+    conn = open_store(project)
     try:
         row = scout(conn, scout_id) if scout_id < ROW_ID_LIMIT else None
         if row is None:
