@@ -96,6 +96,9 @@ KNOWN_KEYS["questions"] = frozenset((
     "backend_fallback", "fallback_model", "fallback_effort", "failures",
     "complexity"))
 KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
+KNOWN_KEYS["scout"] = frozenset((
+    "leads", "helpers", "lead", "helper", "budget_min", "swarm",
+    "helper_turns", "waves"))
 
 BUDGET_SCALE = 1.0
 BUDGET_SCALE_RANGE = (1.0, 3.0)

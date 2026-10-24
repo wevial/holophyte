@@ -35,6 +35,7 @@ from holophyte.config.project import Project
 from holophyte.host.startup import eager_import
 from holophyte.loop.pool import witness_child, worker
 from holophyte.loop.shadow_spawn import shadow_mode
+from holophyte.scout.scout_probes import scout_probe_mode
 from holophyte.serve.server import ADDRESS_SHAPE
 from provider import board_for
 
@@ -45,6 +46,14 @@ def cli(argv=None):
     if argv[:1] == ["project"]:
         return project_cli(argv[1:])
     return _legacy_cli(argv)
+
+
+def _boardless_mode(args, target):
+    if args.shadow is not None:
+        return lambda: shadow_mode(target, args.shadow)
+    if args.scout_probe:
+        return lambda: scout_probe_mode(target)
+    return None
 
 
 def _legacy_cli(argv):
@@ -69,8 +78,9 @@ def _legacy_cli(argv):
         args.import_store is not None or args.board_diff or args.dry_run))
     target.config()
     check_config(target)
-    if args.shadow is not None:
-        return shadow_mode(target, args.shadow)
+    boardless = _boardless_mode(args, target)
+    if boardless is not None:
+        return boardless()
     read_only = _read_only_mode(args, target)
     if read_only is not None:
         return read_only()

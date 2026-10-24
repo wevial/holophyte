@@ -68,6 +68,8 @@ def check_config(project):
     verify_config(project)
     check_config_keys(project)
     board_alias_notice(project)
+    from holophyte.scout.scout_config import scout_config
+    scout_config(project)
     harness.check_target(project)
     budget_scale(project)
     turn_cap_min(project)
