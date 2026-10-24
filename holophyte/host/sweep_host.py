@@ -35,6 +35,7 @@ from holophyte.host.supervisor_lock import (
 from holophyte.host.sweep_report import merge_lock_lines, restart_lines, sweep_lines
 from holophyte.host.worktree_cleanup import retire_finished
 from holophyte.loop.runs import open_store
+from holophyte.scout.scout_sweep import sweep_scouts
 from store import launch_backoff
 
 UNAVAILABLE_AFTER = 3
@@ -318,7 +319,8 @@ def run_pass(host, stop=None, out=None, clock=None, revision=None):
         if not host.path.exists():
             raise HostError(f"[holo2] no host registry at {host.path};"
                             " `factory.py project add PATH` registers one")
-        sweep_sec = settings(host).sweep_sec
+        knobs = settings(host)
+        sweep_sec = knobs.sweep_sec
         entries = host.projects()
     except HostError as bad:
         print(str(bad), file=out)
@@ -341,6 +343,9 @@ def run_pass(host, stop=None, out=None, clock=None, revision=None):
         if seen is not None:
             swept.append((entry, seen))
         save_state(home, state)
+    if not stop.is_set():
+        sweep_scouts(entries, knobs.scout_max_parallel, clock(), out,
+                     key=entry_key)
     errors = reconcile_all(swept, state, home, stop, sweep_sec, now, out)
     state["projects"].update(errors)
     if stop.is_set():

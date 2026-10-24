@@ -36,6 +36,7 @@ from holophyte.host.startup import eager_import
 from holophyte.loop.pool import witness_child, worker
 from holophyte.loop.shadow_spawn import shadow_mode
 from holophyte.scout.scout_probes import scout_probe_mode
+from holophyte.scout.scout_process import scout_mode
 from holophyte.serve.server import ADDRESS_SHAPE
 from provider import board_for
 
@@ -53,6 +54,8 @@ def _boardless_mode(args, target):
         return lambda: shadow_mode(target, args.shadow)
     if args.scout_probe:
         return lambda: scout_probe_mode(target)
+    if args.scout is not None:
+        return lambda: scout_mode(target, args.scout)
     return None
 
 
