@@ -97,7 +97,7 @@ def revision_after(conn, run_id, ticket_id, claimed, at):
     return conn.execute(
         "SELECT revision, at FROM ticketRevisions WHERE ticketId = ?"
         " AND revision > ? AND at >= ?" + ceiling + " ORDER BY revision LIMIT 1",
-        (ticket_id, claimed, at, *([] if later is None else later))).fetchone()
+        (ticket_id, claimed, at, *(later or ()))).fetchone()
 
 
 def stopped_criteria(conn, run_id, kind, payload):
