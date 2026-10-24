@@ -9,7 +9,6 @@ import { AgentCompose } from "../components/AgentCompose";
 import { AgentPanel } from "../components/AgentPanel";
 import { CriteriaList } from "../components/CriteriaList";
 import { SECTION_LABEL } from "../components/Criteria";
-import { PhaseBar } from "../components/PhaseBar";
 import { RawLog } from "../components/RawLog";
 import { RunActivity } from "../components/RunActivity";
 import { RunDetails } from "../components/RunDetails";
@@ -152,7 +151,7 @@ export function RunPage() {
           )}
           <RunTicket base={page.base} ticket={run.ticket} />
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
-          <section id="progress" aria-label="Progress" className="scroll-mt-4">
+          <section id="progress" aria-label="Progress" className="@container/progress scroll-mt-4">
             <h2 className={`m-0 ${SECTION_LABEL}`}>
               Progress
               {page.live && (
@@ -164,8 +163,7 @@ export function RunPage() {
                 </span>
               )}
             </h2>
-            <PhaseBar detail={page.detail} now={page.now} />
-            <RunActivity key={`${page.base}/${run.id}`} activity={page.activity} needsYou={page.needsYou} detail={page.detail} base={page.base} project={project} />
+            <RunActivity key={`${page.base}/${run.id}`} activity={page.activity} detail={page.detail} base={page.base} project={project} />
             <RawLog key={`raw ${page.base}/${run.id}`} run={run.id} lines={page.progress} />
           </section>
           <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />

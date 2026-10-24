@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { describe, needsYouEntries, type Fact } from "../lib/attention";
+import { describe, type Fact } from "../lib/attention";
 import type { ConsoleAsk, RouteLabels, RunCriterion, RunDetail, Status, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatClock, formatSettled } from "../lib/format";
@@ -43,10 +43,6 @@ export type RunPage =
       stage: { label: string; sub: string | null };
       progress: ProgressLine[];
       activity: RunActivity;
-      /** Whether the header says the run waits on the maintainer. */
-      needsYou: boolean;
-      /** The fleet poll's clock the page's figures are read at. */
-      now: number;
       asks: ConsoleAsk[];
       agentState: string;
       phase: string;
@@ -146,7 +142,7 @@ function liveWords({ detail, live, phase }: Facts): { stage: string; sentence: s
   };
 }
 
-/** The run's stage chip and the sentence before "Nothing needs you.". */
+/** The run's stage chip and the sentence its header says. */
 function stageWords(facts: Facts): { stage: string; sentence: string } {
   const { detail, item, now } = facts;
   const run = detail.run;
@@ -184,9 +180,6 @@ function stageWords(facts: Facts): { stage: string; sentence: string } {
   }
 }
 
-/** States whose own sentence already says the run waits on the maintainer. */
-const ASKS_YOU = new Set<State>(["stale", "question", "paused", "ready_to_merge"]);
-
 const ITEM_KIND: Partial<Record<State, string>> = { parked: "pr_open", question: "blocked", paused: "paused" };
 
 /** Run `run` of the one host whose project is named `project`: its
@@ -218,7 +211,6 @@ export function useRunPage(project: string, run: number | null): RunPage {
   });
   const items = hostItems(host, now).filter((item) => item.run === run);
   const item = items.find((each) => each.kind === ITEM_KIND[state]) ?? null;
-  const needsYou = ASKS_YOU.has(state) || needsYouEntries(items, readiness, now).length > 0;
   const prItem = items.find((each) => each.kind === "pr_open");
   const words = stageWords({ detail, live, phase, state, item, thresholds: status.thresholds, heartbeatMs: heartbeat ?? 0, now });
   const criteria = ["running", "stale", "question", "on_ci", "parked", "ready_to_merge"].includes(state) ? criteriaClause(detail.criteria) : "";
@@ -241,7 +233,7 @@ export function useRunPage(project: string, run: number | null): RunPage {
     boxMs: live?.time_box_ms ?? detail.run.time_box_ms,
     labels: status.route_labels,
     prFacts: prItem == null ? null : (describe(prItem, status.thresholds, { now }).facts ?? []),
-    sentence: needsYou ? sentence : `${sentence} Nothing needs you.`,
+    sentence,
     stage: {
       label: words.stage,
       sub: state === "running" && loopsBack > 0 ? `${loopsBack} loop${loopsBack === 1 ? "" : "s"} back` : null,
@@ -250,8 +242,6 @@ export function useRunPage(project: string, run: number | null): RunPage {
     agentState: agentState({ ...detail.run, phase, round: live?.round ?? detail.rounds.length }),
     progress: progressLines(detail, runAsks, now),
     activity: runActivity(detail, runAsks, now),
-    needsYou,
-    now,
     live: detail.run.outcome == null,
   };
 }

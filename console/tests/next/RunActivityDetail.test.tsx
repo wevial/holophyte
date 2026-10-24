@@ -183,24 +183,20 @@ afterEach(() => {
 test("the criteria grid has a column for the pre-check, each review round and the final check, and names each cell by its status and note", async () => {
   await mount(finished);
   const table = grid()!;
-  expect(Array.from(table.querySelectorAll("thead th"), (th) => th.textContent)).toEqual(["pre-check", "round 1", "round 2", "final"]);
+  expect(within(table).getAllByRole("columnheader").map((th) => th.getAttribute("aria-label"))).toEqual(["pre-check", "round 1", "round 2", "final check"]);
   expect(Array.from(table.querySelectorAll("tbody th"), (th) => th.textContent)).toEqual(["C1", "C2", "C3"]);
   expect(columnCells(table, 1)[0]!.getAttribute("aria-label")).toBe("not met: export is absent");
   expect(columnCells(table, 0)[2]!.getAttribute("aria-label")).toBe("unwitnessed");
   expect(within(table).getAllByRole("cell", { name: "not met: export is absent" })).toHaveLength(1);
-  expect(table.querySelectorAll("[data-failed]")).toHaveLength(0);
 });
 
-test("a failed final check's column reads unwitnessed in every cell under the failed outline, and a run that judged no criteria has no grid", async () => {
+test("a failed final check's column is headed final check and reads unwitnessed in every cell with no failed outline, and a run that judged no criteria has no grid", async () => {
   await mount(failedFinal);
   const table = grid()!;
-  const final = table.querySelector("thead th[data-failed]")!;
-  expect(final.textContent).toBe("final");
-  expect(columnCells(table, 1).map((cell) => [cell.getAttribute("aria-label"), cell.hasAttribute("data-failed")])).toEqual([
-    ["unwitnessed", true],
-    ["unwitnessed", true],
-    ["unwitnessed", true],
-  ]);
+  expect(within(table).getAllByRole("columnheader", { name: "final check" })).toHaveLength(1);
+  expect(within(table).queryByRole("columnheader", { name: "final" })).toBeNull();
+  expect(columnCells(table, 1).map((cell) => cell.getAttribute("aria-label"))).toEqual(["unwitnessed", "unwitnessed", "unwitnessed"]);
+  expect(table.querySelectorAll("[data-failed]")).toHaveLength(0);
   cleanup();
   await mount({ ...handedOver, rounds: handedOver.rounds.map((each) => ({ ...each, criteria: [] })) });
   expect(progress().querySelector("[data-group]")).not.toBeNull();
@@ -268,23 +264,53 @@ test("a review thread reads Addressed with its fix's short sha or Declined with 
   expect(declined!.querySelector("[data-outcome-detail]")!.textContent).toBe("The ticket limits search to text columns.");
 });
 
-test("a run failed at its final check ends on a card saying what the check left open, the steer cap and the next run, its reason folded", async () => {
+const lastGroup = () => Array.from(progress().querySelectorAll<HTMLElement>("[data-group]")).at(-1)!;
+
+test("a run failed at its final check ends its last group on what the check left open, the steer cap and the next run, its reason folded", async () => {
   await mount(failedFinal);
   expect(within(progress()).queryByRole("region", { name: "Now" })).toBeNull();
-  const card = within(progress()).getByRole("region", { name: "How the run ended" });
-  const text = card.textContent!;
+  expect(within(progress()).queryByRole("region", { name: "How the run ended" })).toBeNull();
+  const list = within(progress()).getByRole("list", { name: "Run activity" });
+  expect(progress().querySelectorAll("[data-end-facts]")).toHaveLength(list.querySelectorAll("[data-end-facts]").length);
+  const last = lastGroup();
+  expect(last.getAttribute("data-current")).toBe("bad");
+  const facts = last.querySelector("[data-end-facts]")!;
+  const text = facts.textContent!;
   for (const words of ["Failed at the final check", "3 of 3", "2 of 3 met", "steer cap", "run 13"]) expect(text).toContain(words);
   expect(text).not.toContain("terminal adjudication: FAIL");
-  await act(async () => void fireEvent.click(within(card).getByRole("button", { name: "raw reason" })));
-  expect(card.textContent).toContain("terminal adjudication: FAIL");
+  await act(async () => void fireEvent.click(within(facts as HTMLElement).getByRole("button", { name: "raw reason" })));
+  expect(facts.textContent).toContain("terminal adjudication: FAIL");
 });
 
-test("a run sent back to the babysitter ends on Handed to the babysitter, and a merged run on its short sha linked to the commit", async () => {
+test("a run sent back to the babysitter ends its last group on Handed to the babysitter in the wait tone, and a merged run on its short sha linked to the commit in the ok tone", async () => {
   await mount(handedOver);
-  expect(within(progress()).getByRole("region", { name: "How the run ended" }).querySelector("[data-end-title]")!.textContent).toBe("Handed to the babysitter");
+  expect(lastGroup().getAttribute("data-current")).toBe("wait");
+  expect(lastGroup().querySelector("[data-end-title]")!.textContent).toBe("Handed to the babysitter");
   cleanup();
   await mount(finished);
-  const card = within(progress()).getByRole("region", { name: "How the run ended" });
-  expect(card.querySelector("[data-end-title]")!.textContent).toMatch(/^Merged as abc1234 at /);
-  expect(within(card).getByRole("link", { name: "abc1234" }).getAttribute("href")).toBe("https://github.test/demo/commit/abc1234def");
+  const last = lastGroup();
+  expect(last.getAttribute("data-current")).toBe("ok");
+  expect(last.querySelector("[data-end-title]")!.textContent).toMatch(/^Merged as abc1234 at /);
+  expect(within(last).getByRole("link", { name: "abc1234" }).getAttribute("href")).toBe("https://github.test/demo/commit/abc1234def");
+});
+
+test("a criterion's label in the grid shows its full text in a tooltip on hover, focus and press, and hides it on leave and Escape", async () => {
+  const c1 = { id: "C1", n: 1, text: "The export writes a TOML file", status: "met" as const, note: "", run: 12, round: 3 };
+  await mount({ ...finished, criteria: [c1] });
+  const label = within(grid()!).getByRole("button", { name: "C1" });
+  const tip = () => screen.queryByRole("tooltip");
+  expect(tip()).toBeNull();
+  await act(async () => void fireEvent.pointerEnter(label, { pointerType: "mouse" }));
+  expect(tip()!.textContent).toBe("The export writes a TOML file");
+  expect(label.getAttribute("aria-describedby")).toBe(tip()!.id);
+  await act(async () => void fireEvent.pointerLeave(label, { pointerType: "mouse" }));
+  expect(tip()).toBeNull();
+  await act(async () => void fireEvent.focus(label));
+  expect(tip()!.textContent).toBe("The export writes a TOML file");
+  await act(async () => void fireEvent.keyDown(label, { key: "Escape" }));
+  expect(tip()).toBeNull();
+  await act(async () => void fireEvent.blur(label));
+  await act(async () => void fireEvent.click(label));
+  expect(tip()!.textContent).toBe("The export writes a TOML file");
+  expect(label.getAttribute("aria-describedby")).toBe(tip()!.id);
 });

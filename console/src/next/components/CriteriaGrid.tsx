@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { CriteriaGrid as Grid, GridCell } from "../activity";
 
 const WORD: Record<GridCell["status"], string> = { met: "met", not_met: "not met", unwitnessed: "unwitnessed" };
@@ -6,11 +6,13 @@ const WORD: Record<GridCell["status"], string> = { met: "met", not_met: "not met
 const CELL_TONE: Record<GridCell["status"], string> = {
   met: "text-live",
   not_met: "bg-bad-wash text-bad",
-  unwitnessed: "text-ask-ink",
+  unwitnessed: "text-warn-ink",
 };
 
 const EDGE = "border border-rule";
-const OUTLINE = "border-x-2 border-x-bad";
+const RAIL_CELL = "@[640px]/progress:min-w-0 @[640px]/progress:px-1.5";
+const MARGIN = 8;
+const GAP = 6;
 
 function Glyph({ status }: { status: GridCell["status"] }) {
   if (status === "unwitnessed") return <span className="font-mono text-[14px] font-bold leading-none">?</span>;
@@ -21,16 +23,14 @@ function Glyph({ status }: { status: GridCell["status"] }) {
   );
 }
 
-function Cell({ cell, failed, last }: { cell: GridCell | null; failed: boolean; last: boolean }) {
+function Cell({ cell }: { cell: GridCell | null }) {
   const name = cell == null ? undefined : cell.note ? `${WORD[cell.status]}: ${cell.note}` : WORD[cell.status];
-  const outline = failed ? `${OUTLINE} ${last ? "border-b-2 border-b-bad" : ""}` : "";
   return (
     <td
       aria-label={name}
       title={name}
       data-status={cell?.status}
-      data-failed={failed ? "" : undefined}
-      className={`${EDGE} ${outline} h-9 min-w-[64px] px-3 text-center ${cell == null ? "" : CELL_TONE[cell.status]}`}
+      className={`${EDGE} ${RAIL_CELL} h-9 min-w-[64px] px-3 text-center ${cell == null ? "" : CELL_TONE[cell.status]}`}
     >
       {cell != null && <Glyph status={cell.status} />}
     </td>
@@ -48,35 +48,124 @@ function LegendItem({ status }: { status: GridCell["status"] }) {
   );
 }
 
-/** Criteria as rows against the pre-check, each review round and the final check as columns. */
+/** Below the label, or above it when there is no room below, and never past the viewport's sides. */
+function useTipPlace(shown: boolean) {
+  const anchor = useRef<HTMLButtonElement>(null);
+  const tip = useRef<HTMLSpanElement>(null);
+  const [place, setPlace] = useState<CSSProperties>({});
+  useLayoutEffect(() => {
+    if (!shown || anchor.current == null || tip.current == null) return;
+    const at = anchor.current.getBoundingClientRect();
+    const size = tip.current.getBoundingClientRect();
+    const left = Math.max(MARGIN, Math.min(at.left, window.innerWidth - size.width - MARGIN));
+    const below = at.bottom + GAP;
+    const top = below + size.height > window.innerHeight - MARGIN ? Math.max(MARGIN, at.top - size.height - GAP) : below;
+    setPlace({ left, top });
+  }, [shown]);
+  return { anchor, tip, place };
+}
+
+interface LabelProps {
+  id: string;
+  text: string;
+  shown: boolean;
+  onShow: (shown: boolean) => void;
+  onToggle: () => void;
+}
+
+/** A criterion's id that shows its full text while hovered or focused; a touch or key press toggles it,
+ *  and a scroll hides it rather than leave it behind its label. */
+function RowLabel({ id, text, shown, onShow, onToggle }: LabelProps) {
+  const tipId = useId();
+  const pointer = useRef<string | null>(null);
+  const { anchor, tip, place } = useTipPlace(shown);
+  useEffect(() => {
+    if (!shown) return;
+    const hide = () => onShow(false);
+    window.addEventListener("scroll", hide, { capture: true, passive: true });
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, { capture: true });
+      window.removeEventListener("resize", hide);
+    };
+  }, [shown, onShow]);
+  return (
+    <>
+      <button
+        ref={anchor}
+        type="button"
+        aria-describedby={shown ? tipId : undefined}
+        onPointerEnter={(event) => event.pointerType !== "touch" && onShow(true)}
+        onPointerLeave={(event) => event.pointerType !== "touch" && onShow(false)}
+        onPointerDown={(event) => (pointer.current = event.pointerType)}
+        onPointerCancel={() => (pointer.current = null)}
+        onFocus={() => pointer.current == null && onShow(true)}
+        onBlur={() => onShow(false)}
+        onKeyDown={(event) => event.key === "Escape" && onShow(false)}
+        onClick={() => {
+          const by = pointer.current;
+          pointer.current = null;
+          if (by === "mouse") onShow(true);
+          else onToggle();
+        }}
+        className="cursor-help border-0 bg-transparent p-0 font-mono text-[13px] font-bold text-ink"
+      >
+        {id}
+      </button>
+      {shown && (
+        <span
+          ref={tip}
+          id={tipId}
+          role="tooltip"
+          style={place}
+          className="fixed z-20 w-max max-w-[min(320px,calc(100vw-16px))] border border-rule bg-paper px-3 py-2 text-left font-sans text-[13px] font-normal leading-[1.45] text-ink shadow-[var(--card-shadow)]"
+        >
+          {text}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Criteria as rows against the pre-check, each review round and the final check as columns; in the
+ *  side rail the column headers shorten, keeping their full names. */
 export function CriteriaGrid({ grid }: { grid: Grid }) {
   const label = useId();
+  const [tip, setTip] = useState<string | null>(null);
   return (
-    <section data-criteria-grid className="mt-4">
+    <section data-criteria-grid>
       <div id={label} className="font-sans text-[13px] font-semibold text-ink-2">Criteria by round</div>
       <div className="mt-2 overflow-x-auto">
-        <table aria-labelledby={label} className="border-collapse font-mono text-[13px] text-ink">
+        <table aria-labelledby={label} className="border-collapse font-mono text-[13px] text-ink @[640px]/progress:w-full">
           <thead>
             <tr>
               <td className={`${EDGE} bg-paper-2`} />
               {grid.columns.map((column) => (
-                <th
-                  key={column.label}
-                  scope="col"
-                  data-failed={column.failed ? "" : undefined}
-                  className={`${EDGE} ${column.failed ? `${OUTLINE} border-t-2 border-t-bad` : ""} bg-paper-2 px-3 py-2 font-semibold whitespace-nowrap`}
-                >
-                  {column.label}
+                <th key={column.label} scope="col" aria-label={column.label} title={column.label} className={`${EDGE} ${RAIL_CELL} bg-paper-2 px-3 py-2 font-semibold whitespace-nowrap`}>
+                  <span aria-hidden="true" className="@[640px]/progress:hidden">{column.label}</span>
+                  <span aria-hidden="true" className="hidden @[640px]/progress:inline">{column.short}</span>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {grid.rows.map((row, index) => (
+            {grid.rows.map((row) => (
               <tr key={row.id}>
-                <th scope="row" className={`${EDGE} px-3 text-left font-medium text-ink-2`}>{row.id}</th>
+                <th scope="row" className={`${EDGE} ${RAIL_CELL} px-3 text-left font-bold text-ink`}>
+                  {row.text == null ? (
+                    row.id
+                  ) : (
+                    <RowLabel
+                      id={row.id}
+                      text={row.text}
+                      shown={tip === row.id}
+                      onShow={(shown) => setTip((was) => (shown ? row.id : was === row.id ? null : was))}
+                      onToggle={() => setTip((was) => (was === row.id ? null : row.id))}
+                    />
+                  )}
+                </th>
                 {row.cells.map((cell, column) => (
-                  <Cell key={grid.columns[column]!.label} cell={cell} failed={grid.columns[column]!.failed} last={index === grid.rows.length - 1} />
+                  <Cell key={grid.columns[column]!.label} cell={cell} />
                 ))}
               </tr>
             ))}

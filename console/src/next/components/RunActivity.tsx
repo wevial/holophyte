@@ -1,11 +1,11 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import type { RoundCriterion, RoundFinding, RunDetail } from "../../lib/contract.gen";
 import { findingsHistory, RANK, severityOf, type Fate } from "../../lib/findings";
 import { formatClock, formatSpan } from "../../lib/format";
-import { criteriaGrid, PASSED, type ActivityGroup, type ActivityNow, type ActivityStep, type ActivityTone, type RunActivity as Activity } from "../activity";
+import { criteriaGrid, PASSED, type ActivityGroup, type ActivityStep, type ActivityTone, type RunActivity as Activity } from "../activity";
 import { ActivityFinding } from "./ActivityFinding";
 import { CriteriaGrid } from "./CriteriaGrid";
-import { EndCard } from "./EndCard";
+import { CURRENT_TINT, EndFacts, endingOf, type EndTone } from "./EndFacts";
 import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
 
@@ -79,7 +79,7 @@ function Steps({ steps }: { steps: ActivityStep[] }) {
 
 const MARK: Record<Exclude<RoundCriterion["status"], "met">, { glyph: string; word: string; tone: string }> = {
   not_met: { glyph: "✕", word: "not met", tone: "text-bad" },
-  unwitnessed: { glyph: "?", word: "unwitnessed", tone: "text-ask-ink" },
+  unwitnessed: { glyph: "?", word: "unwitnessed", tone: "text-warn-ink" },
 };
 
 function Mark({ criterion }: { criterion: RoundCriterion }) {
@@ -120,7 +120,7 @@ function groupFindings(group: ActivityGroup): RoundFinding[] {
 
 function Findings({ findings, fates }: { findings: RoundFinding[]; fates: Map<RoundFinding, Fate> }) {
   return (
-    <ul data-findings className="m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:ml-[92px]">
+    <ul data-findings className="m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-findings-bg p-0 max-[720px]:ml-[92px]">
       {findings.map((finding, index) => <ActivityFinding key={index} finding={finding} fate={fates.get(finding) ?? null} />)}
     </ul>
   );
@@ -132,15 +132,24 @@ interface GroupProps {
   onToggle: () => void;
   line: Line;
   fates: Map<RoundFinding, Fate>;
+  /** The current group's tone; null for every other group. */
+  current: EndTone | "live" | null;
+  /** What ends the current group's body: a live run's newest progress, or how the run ended. */
+  tail: ReactNode;
 }
 
-function Group({ group, open, onToggle, line, fates }: GroupProps) {
+function Group({ group, open, onToggle, line, fates, current, tail }: GroupProps) {
   const stepsId = useId();
   const findings = groupFindings(group);
-  const folds = !group.running && (group.steps.length > 0 || findings.length > 0);
+  const folds = group.steps.length > 0 || findings.length > 0 || tail != null;
   return (
-    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="relative border-b border-rule-2">
-      {line !== "none" && <span aria-hidden="true" className="absolute left-[76px] w-px bg-rule max-[720px]:left-[66px]" style={CONNECTOR[line]} />}
+    <li
+      data-group={group.kind}
+      data-running={group.running ? "" : undefined}
+      data-current={current ?? undefined}
+      className={`relative border-b border-rule-2 ${current == null ? "" : `-ml-3 pl-3 ${CURRENT_TINT[current]}`}`}
+    >
+      {line !== "none" && <span aria-hidden="true" className={`absolute left-[76px] w-px bg-rule max-[720px]:left-[66px] ${current == null ? "" : "ml-3"}`} style={CONNECTOR[line]} />}
       <div className={`${ROW} min-h-[54px] py-3`}>
         <time dateTime={new Date(group.at).toISOString()} className="font-mono text-[13px] text-ink-2">
           {formatClock(group.at)}
@@ -162,10 +171,11 @@ function Group({ group, open, onToggle, line, fates }: GroupProps) {
           </div>
         )}
       </div>
-      {(group.running || open) && (
+      {folds && open && (
         <div id={stepsId}>
           {group.steps.length > 0 && <Steps steps={group.steps} />}
           {findings.length > 0 && <Findings findings={findings} fates={fates} />}
+          {tail}
         </div>
       )}
     </li>
@@ -173,31 +183,6 @@ function Group({ group, open, onToggle, line, fates }: GroupProps) {
 }
 
 const groupKey = (group: ActivityGroup) => `${group.kind}:${group.at}`;
-
-function openAtFirst(group: ActivityGroup, index: number, groups: ActivityGroup[]) {
-  return index === groups.length - 1 || group.tone === "bad" || group.tone === "act" || groups.findIndex((each) => each.marks.length > 0) === index;
-}
-
-function NowBar({ now, needsYou }: { now: ActivityNow; needsYou: boolean }) {
-  return (
-    <section
-      aria-label="Now"
-      className="sticky top-0 z-10 mt-4 border-b-2 border-ink bg-live-wash py-3.5 pl-5 pr-5 shadow-[inset_4px_0_0_var(--live)] max-[720px]:pl-4"
-    >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span aria-hidden="true" className="self-center">
-          <StateDot state="running" hideWord tone="live" />
-        </span>
-        <b className="font-sans text-[16px] font-semibold leading-[1.3] text-ink">{now.what}</b>
-        <span className="ml-auto font-mono text-[13px] text-ink-2">since {formatClock(now.since)}</span>
-      </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-[26px]">
-        {now.detail != null && <span data-now-detail className="font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{now.detail}</span>}
-        {!needsYou && <span className="bg-live/15 px-2 py-0.5 font-sans text-[13px] font-semibold text-ok-ink">Nothing needs you</span>}
-      </div>
-    </section>
-  );
-}
 
 const judgedFindings = (group: ActivityGroup) =>
   group.round != null && (group.kind === "round" || (group.kind === "final" && (group.round.findings.length > 0 || PASSED.has(group.round.verdict))));
@@ -211,40 +196,70 @@ function reviewFates(groups: ActivityGroup[]): Map<RoundFinding, Fate> {
 
 interface RunActivityProps {
   activity: Activity;
-  needsYou: boolean;
   detail: RunDetail;
   base: string;
   project: string;
 }
 
-/** The run's timeline: a live run's Now bar or an ended run's end card,
- *  the criteria by round, then one row per group, each folding open to its
- *  steps and findings. A reader's fold choice holds across polls; a group
- *  seen for the first time opens when it is the last, gone wrong, acting,
- *  or the first with marks. */
-export function RunActivity({ activity, needsYou, detail, base, project }: RunActivityProps) {
+function NowDetail({ text }: { text: string }) {
+  return (
+    <p data-now-detail className="m-0 pb-3 pl-[106px] pr-5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere] max-[720px]:pl-[92px]">
+      {text}
+    </p>
+  );
+}
+
+/** The run's timeline beside its criteria by round, one row per group,
+ *  each folding open to its steps and findings. The current group, the
+ *  running one or an ended run's last, is tinted and ends on its newest
+ *  progress or on how the run ended; a group the reader has not toggled
+ *  is open exactly while it is current. */
+export function RunActivity({ activity, detail, base, project }: RunActivityProps) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
-  const firstSeen = useRef(new Map<string, boolean>());
   const { groups } = activity;
-  groups.forEach((group, index) => {
-    const key = groupKey(group);
-    if (!firstSeen.current.has(key)) firstSeen.current.set(key, openAtFirst(group, index, groups));
-  });
   const grid = useMemo(() => criteriaGrid(detail), [detail]);
   const fates = useMemo(() => reviewFates(groups), [groups]);
+  const ending = detail.run.outcome == null ? null : endingOf(detail, activity);
   const lineOf = (index: number): Line => (groups.length < 2 ? "none" : index === 0 ? "first" : index === groups.length - 1 ? "last" : "middle");
+  const currentOf = (group: ActivityGroup, index: number): EndTone | "live" | null => {
+    if (index !== groups.length - 1) return null;
+    if (group.running) return "live";
+    return ending?.tone ?? null;
+  };
+  const tailOf = (group: ActivityGroup, current: EndTone | "live" | null): ReactNode => {
+    if (current == null) return null;
+    if (group.running) {
+      const text = activity.now?.detail;
+      return text == null || text === group.steps.at(-1)?.text ? null : <NowDetail text={text} />;
+    }
+    return ending == null ? null : <EndFacts detail={detail} ending={ending} base={base} project={project} />;
+  };
   return (
-    <>
-      {activity.now != null && <NowBar now={activity.now} needsYou={needsYou} />}
-      {detail.run.outcome != null && <EndCard detail={detail} activity={activity} base={base} project={project} />}
-      {grid != null && <CriteriaGrid grid={grid} />}
-      <ol aria-label="Run activity" className="m-0 mt-3 list-none border-t border-rule-2 p-0">
+    <div className="mt-4 flex flex-col gap-3 @[640px]/progress:grid @[640px]/progress:grid-cols-[minmax(0,1fr)_248px] @[640px]/progress:items-start @[640px]/progress:gap-x-6">
+      {grid != null && (
+        <div className="@[640px]/progress:sticky @[640px]/progress:top-0 @[640px]/progress:col-start-2 @[640px]/progress:row-start-1">
+          <CriteriaGrid grid={grid} />
+        </div>
+      )}
+      <ol aria-label="Run activity" className="m-0 list-none border-t border-rule-2 p-0 @[640px]/progress:col-start-1 @[640px]/progress:row-start-1">
         {groups.map((group, index) => {
           const key = groupKey(group);
-          const open = chosen[key] ?? firstSeen.current.get(key) ?? false;
-          return <Group key={key} group={group} open={open} line={lineOf(index)} fates={fates} onToggle={() => setChosen((was) => ({ ...was, [key]: !open }))} />;
+          const current = currentOf(group, index);
+          const open = chosen[key] ?? current != null;
+          return (
+            <Group
+              key={key}
+              group={group}
+              open={open}
+              line={lineOf(index)}
+              fates={fates}
+              current={current}
+              tail={tailOf(group, current)}
+              onToggle={() => setChosen((was) => ({ ...was, [key]: !open }))}
+            />
+          );
         })}
       </ol>
-    </>
+    </div>
   );
 }
