@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -182,6 +183,39 @@ class TakeTests(ThreadCase):
                          (event_id, before.heartbeat_at + 1000))
         self.refused(lambda: thread.take_message(self.conn, asked), asked)
         self.assertEqual(thread.waiting_messages(self.conn), [])
+
+    def test_two_connections_competing_for_one_ask_take_it_once(self):
+        scout_id = self.scout_in("done")
+        asked = self.ask(scout_id)
+        start, outcomes = threading.Barrier(2), {}
+
+        def take(n):
+            conn = store.open(self.path)
+            try:
+                start.wait()
+                outcomes[n] = thread.take_message(conn, asked, host=f"host-{n}")
+            except Exception as exc:  # noqa: BLE001 - the loser's error is asserted
+                outcomes[n] = exc
+            finally:
+                conn.close()
+
+        takers = [threading.Thread(target=take, args=(n,)) for n in range(2)]
+        for taker in takers:
+            taker.start()
+        for taker in takers:
+            taker.join(timeout=30)
+
+        self.assertEqual(len(outcomes), 2, outcomes)
+        refused = [out for out in outcomes.values() if isinstance(out, Exception)]
+        self.assertEqual(len(refused), 1, outcomes)
+        self.assertIsInstance(refused[0], ThreadRefused)
+        (event_id,) = [out for out in outcomes.values() if out not in refused]
+        started = self.conn.execute(
+            "SELECT id FROM runEvents WHERE scoutId = ? AND kind = ?",
+            (scout_id, "scout_answer_started")).fetchall()
+        self.assertEqual(started, [(event_id,)])
+        self.assertEqual(thread.messages(self.conn, scout_id)[0].consumed_by,
+                         event_id)
 
     def test_a_steer_starts_the_next_pass_and_returns_with_its_first_end(self):
         scout_id = self.scout_in("swarming")
