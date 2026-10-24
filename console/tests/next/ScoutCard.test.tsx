@@ -74,7 +74,7 @@ const carded: ScoutDetail = { ...done, thread: [...done.thread, cardMessage] };
 interface Daemon {
   scout: ScoutDetail;
   actions?: boolean;
-  post?: () => Response;
+  post?: () => Response | Promise<Response>;
 }
 
 /** DEMO answering `/scouts/31` with `daemon.scout` and its message posts with `daemon.post`; every request is kept. */
@@ -208,7 +208,24 @@ test("a refused choice reads its detail under the card and enables the buttons a
   expect(cardButtons().map((button) => button.disabled)).toEqual([false, false, false]);
 });
 
-test("the card's buttons are disabled with the composer's title when actions are off", async () => {
+test("the card's buttons are disabled with the composer's title when actions are off or the scout is answering", async () => {
   await mount(scoutFetch({ scout: carded, actions: false }).fetch);
   expect(cardButtons().map((button) => [button.disabled, button.title])).toEqual(Array(3).fill([true, ACTIONS_OFF]));
+  cleanup();
+  await mount(scoutFetch({ scout: { ...carded, scout: { ...carded.scout, phase: "answering" } } }).fetch);
+  expect(cardButtons().map((button) => [button.disabled, button.title])).toEqual(Array(3).fill([true, "Scout 31 is answering."]));
+});
+
+test("while a typed answer is in flight the card's buttons are disabled, so a choice posts no second answer", async () => {
+  let answer: (response: Response) => void = () => {};
+  const daemon = scoutFetch({ scout: carded, post: () => new Promise<Response>((resolve) => { answer = resolve; }) });
+  await mount(daemon.fetch);
+  await click(choice("Type an answer"));
+  await type(within(region()).getByRole("textbox", { name: "Question for the scout" }), "Neither, drop F5");
+  await click(send());
+  expect(cardButtons().map((button) => button.disabled)).toEqual([true, true, true]);
+  await click(choice("Fold into A1"));
+  expect(posts(daemon.seen)).toHaveLength(1);
+  await act(async () => answer(taken()));
+  await settled();
 });

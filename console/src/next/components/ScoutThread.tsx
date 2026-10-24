@@ -1,3 +1,4 @@
+import { useIsMutating } from "@tanstack/react-query";
 import { useCallback, useRef, useState, type Ref } from "react";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { useAction } from "../actions";
@@ -12,10 +13,21 @@ const LINE_TONES: Record<LineTone, string> = { quiet: "text-ink-3", bad: "text-b
 type Mode = "ask" | "steer";
 const MODES: { mode: Mode; label: string }[] = [{ mode: "ask", label: "Ask" }, { mode: "steer", label: "Steer" }];
 
-function ScoutCompose({ base, detail, actions, answering, onStopAnswering, ref }: {
+const MESSAGE_ROUTE = "/actions/scout-message";
+
+/** Whether any of the thread's posts to `base`, the composer's or a card's, is still in flight. */
+const useSending = (base: string) => useIsMutating({
+  predicate: (mutation) => {
+    const post = mutation.state.variables as { base?: string; route?: string } | undefined;
+    return post?.base === base && post.route === MESSAGE_ROUTE;
+  },
+}) > 0;
+
+function ScoutCompose({ base, detail, actions, sending, answering, onStopAnswering, ref }: {
   base: string;
   detail: ScoutDetail;
   actions: boolean;
+  sending: boolean;
   answering: CardRow | null;
   onStopAnswering: () => void;
   ref?: Ref<HTMLTextAreaElement>;
@@ -25,12 +37,12 @@ function ScoutCompose({ base, detail, actions, answering, onStopAnswering, ref }
   const action = useAction();
   const scout = detail.scout.id;
   const blocked = composeBlock(detail, actions);
-  const disabled = blocked != null || action.isPending;
+  const disabled = blocked != null || sending;
   const asking = mode === "ask";
   const send = async () => {
     if (disabled || !text.trim()) return;
     const result = await action.mutateAsync({
-      label: asking ? "Ask" : "Steer", base, route: "/actions/scout-message",
+      label: asking ? "Ask" : "Steer", base, route: MESSAGE_ROUTE,
       body: { scout, mode, text: text.trim(), ...(answering ? { answers: answering.id } : {}) },
       said: asking ? `Asked scout ${scout}.` : `Steered scout ${scout}.`,
     });
@@ -80,6 +92,7 @@ function ScoutCompose({ base, detail, actions, answering, onStopAnswering, ref }
 export function ScoutThread({ base, detail, actions, ref }: { base: string; detail: ScoutDetail; actions: boolean; ref?: Ref<HTMLTextAreaElement> }) {
   const rows = threadRows(detail);
   const blocked = composeBlock(detail, actions);
+  const sending = useSending(base);
   const [answeringId, setAnsweringId] = useState<number | null>(null);
   const answering = rows.find((row): row is CardRow => row.kind === "card" && row.id === answeringId && !row.answered) ?? null;
   const box = useRef<HTMLTextAreaElement | null>(null);
@@ -101,7 +114,7 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
           {rows.map((row) => row.kind === "message"
             ? <ThreadMessage key={row.key} head={row.head} at={row.at} text={row.text} agent={row.agent} indent="ml-6" />
             : row.kind === "card"
-            ? <ScoutCard key={row.key} base={base} scout={detail.scout.id} card={row} blocked={blocked} onType={() => typeAnswer(row)} />
+            ? <ScoutCard key={row.key} base={base} scout={detail.scout.id} card={row} blocked={blocked} sending={sending} onType={() => typeAnswer(row)} />
             : (
               <li key={row.key} data-thread-line className={`flex items-center gap-2 font-mono text-[12px] leading-[1.4] [overflow-wrap:anywhere] before:h-px before:w-3 before:shrink-0 before:bg-rule before:content-[''] after:h-px after:w-3 after:shrink-0 after:bg-rule after:content-[''] ${LINE_TONES[row.tone]}`}>
                 {row.text}
@@ -109,7 +122,7 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
             ))}
         </ol>
       )}
-      <ScoutCompose base={base} detail={detail} actions={actions} answering={answering} onStopAnswering={() => setAnsweringId(null)} ref={boxRef} />
+      <ScoutCompose base={base} detail={detail} actions={actions} sending={sending} answering={answering} onStopAnswering={() => setAnsweringId(null)} ref={boxRef} />
     </aside>
   );
 }

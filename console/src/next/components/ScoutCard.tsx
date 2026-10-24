@@ -6,15 +6,16 @@ import { Btn } from "./Btn";
 /** A scout's proposal card: its question, a button per choice that posts the
  *  choice's label as the answer, and Type an answer; an answered card keeps
  *  only its head and question. */
-export function ScoutCard({ base, scout, card, blocked, onType }: {
+export function ScoutCard({ base, scout, card, blocked, sending, onType }: {
   base: string;
   scout: number;
   card: CardRow;
   blocked: string | null;
+  sending: boolean;
   onType: () => void;
 }) {
   const action = useAction();
-  const disabled = blocked != null || action.isPending;
+  const disabled = blocked != null || sending;
   const choose = (choice: CardRow["choices"][number]) => {
     action.mutate({
       label: choice.mode === "ask" ? "Ask" : "Steer", base, route: "/actions/scout-message",
