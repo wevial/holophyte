@@ -11,11 +11,6 @@ from holophyte.config.worktree_settings import setup_steps
 from holophyte.review.blast_radius import matching
 from holophyte.review.briefs import main_ref
 
-UI_PATHS = "[merge] ui_paths"
-HIGH_PATHS = "[review] high_paths"
-MEDIUM_PATHS = "[review] medium_paths"
-SETUP_INPUTS = "[worktree] setup inputs"
-
 
 def _ui_matches(entry, files):
     return any(fnmatch.fnmatchcase(path, entry) for path in files)
@@ -29,10 +24,6 @@ def _input_matches(entry, files):
     return any(path == entry or path.startswith(entry + "/") for path in files)
 
 
-MATCHERS = {UI_PATHS: _ui_matches, HIGH_PATHS: _review_matches,
-            MEDIUM_PATHS: _review_matches, SETUP_INPUTS: _input_matches}
-
-
 def _read(reader):
     try:
         return tuple(reader())
@@ -42,10 +33,13 @@ def _read(reader):
 
 def _entries(project):
     return (
-        (UI_PATHS, _read(lambda: merge_config(project).ui_paths)),
-        (HIGH_PATHS, _read(lambda: review_config(project).high_paths)),
-        (MEDIUM_PATHS, _read(lambda: review_config(project).medium_paths)),
-        (SETUP_INPUTS, _read(lambda: dict.fromkeys(
+        ("[merge] ui_paths", _ui_matches,
+         _read(lambda: merge_config(project).ui_paths)),
+        ("[review] high_paths", _review_matches,
+         _read(lambda: review_config(project).high_paths)),
+        ("[review] medium_paths", _review_matches,
+         _read(lambda: review_config(project).medium_paths)),
+        ("[worktree] setup inputs", _input_matches, _read(lambda: dict.fromkeys(
             path for step in setup_steps(project) for path in step.inputs or ()))),
     )
 
@@ -64,14 +58,14 @@ def _stale(root, ref, sha, entries):
     if listed.returncode != 0:
         return ()
     files = [os.fsdecode(path) for path in listed.stdout.split(b"\0") if path]
-    return tuple((key, entry) for key, values in entries for entry in values
-                 if not MATCHERS[key](entry, files))
+    return tuple((key, entry) for key, matches, values in entries
+                 for entry in values if not matches(entry, files))
 
 
 def stale_paths(project):
     root = Path(project.path).resolve()
     entries = _entries(project)
-    if not any(values for _, values in entries):
+    if not any(values for _, _, values in entries):
         return []
     try:
         ref = main_ref(root)
