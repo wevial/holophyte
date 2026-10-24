@@ -233,6 +233,36 @@ const pressed = () => filterButtons().filter((button) => button.getAttribute("ar
 const searchState = () => new URLSearchParams(window.location.hash.split("?")[1]).get("state");
 const shownIds = () => rows().map((row) => row.getAttribute("data-run"));
 
+function resumedFleet(): Fetch {
+  const resumed = run({ id: 5, ticket: "DEMO-5", title: "Hold", started_ms: today(17, 30), phase: "paused", outcome: "paused", resumed_as: 8 });
+  const resumer = run({ id: 8, ticket: "DEMO-5", title: "Hold", started_ms: today(17, 50) });
+  const waiting = run({ id: 4, ticket: "DEMO-4", title: "Wait", started_ms: today(17, 0), phase: "paused", outcome: "paused", resumed_as: null });
+  const items = [
+    { kind: "paused", level: "attention", run: 4, ticket: "DEMO-4", ticket_url: null, title: "Wait", note: "Waiting on a key", asked_ms: NOW - MINUTE, pr_url: null },
+  ] as Item[];
+  return fleet([resumed, resumer, waiting], [], items);
+}
+
+test("a paused run a later run resumed reads resumed as that run in grey, while one with no later run still needs you", async () => {
+  await mount("#/runs?state=all", resumedFleet());
+  const byId = (id: string) => rows().find((row) => row.getAttribute("data-run") === id)!;
+  const [resumed, waiting] = [byId("5"), byId("4")];
+  expect(cells(resumed)[4]).toBe("paused · resumed as run 8");
+  expect(within(resumed).getByRole("link", { name: "run 8" }).getAttribute("href")).toEndWith("#/runs/demo/8");
+  expect(resumed.hasAttribute("data-need")).toBe(false);
+  expect(within(resumed).getByText(/^paused · /).className).toContain("text-ink-3");
+  expect(cells(waiting)[4]).toBe("paused · Waiting on a key");
+  expect(waiting.hasAttribute("data-need")).toBe(true);
+});
+
+test("Active leaves out a paused run a later run resumed and does not count it, while All does", async () => {
+  await mount("#/runs", resumedFleet());
+  expect(pressed()).toEqual(["Active 2"]);
+  expect(shownIds()).toEqual(["8", "4"]);
+  expect(countLine()).toBe("all projects · 3 runs / 2 active / newest first / today and yesterday");
+  expect(filterButtons()[0]!.textContent).toBe("All 3");
+});
+
 test("the count line and every State button count the scoped runs, with Active pressed and only active runs listed by default", async () => {
   await mount("#/runs", sixRuns());
   expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first / today and yesterday");

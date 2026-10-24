@@ -23,7 +23,10 @@ export function Runs() {
   const navigate = useNavigate();
   const filter: RunFilter = state ?? "active";
   const counts: Record<RunFilter, number> = { all: rows.length, active: 0, merged: 0, failed: 0, abandoned: 0 };
-  for (const row of rows) counts[stateGroup(row.state)] += 1;
+  for (const row of rows) {
+    const group = stateGroup(row.state);
+    if (group !== "superseded") counts[group] += 1;
+  }
   const shown = filter === "all" ? rows : rows.filter((row) => stateGroup(row.state) === filter);
   const word = filter === "all" ? "" : `${filter} `;
   const pick = (id: RunFilter) =>

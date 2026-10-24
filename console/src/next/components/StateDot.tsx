@@ -37,6 +37,7 @@ export const STATE_ICONS: Record<State, ReactNode> = {
     </>
   ),
   paused: pause,
+  resumed: pause,
   needs_you: (
     <>
       {ring}

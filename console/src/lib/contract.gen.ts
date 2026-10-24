@@ -782,6 +782,7 @@ export const historyRowSchema = z.looseObject({
   commit_url: z.string().nullable().optional(),
   additions: z.int().nullable().optional(),
   deletions: z.int().nullable().optional(),
+  resumed_as: z.int().nullable().optional(),
   pr_url: z.string().nullable(),
   host: z.string().nullable(),
 });
