@@ -244,6 +244,20 @@ def answered(conn, project, row, ask, stopping):
         return Outcome(ask, failure=str(bad).strip() or type(bad).__name__)
 
 
+def held_answer_run(conn, project, row, ask, stopping, interval_s):
+    with scout_heartbeat(conn, row.id, interval_s):
+        outcome = answered(conn, project, row, ask, stopping)
+    try:
+        return settle(conn, row.id, outcome)
+    except ScoutRefused:
+        raise
+    except Exception as bad:
+        if conn.in_transaction:
+            conn.rollback()
+        reason = str(bad).strip() or type(bad).__name__
+        return settle(conn, row.id, outcome._replace(failure=reason))
+
+
 def answer_mode(conn, project, row, ask, stopping):
     scout_id = row.id
     interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
@@ -254,17 +268,9 @@ def answer_mode(conn, project, row, ask, stopping):
         owner = scout(conn, scout_id).pid
         if owner != os.getpid():
             raise ScoutRefused(scout_id, ANSWERING, f"pid {owner} answers it")
-        with scout_heartbeat(conn, scout_id, interval_s):
-            outcome = answered(conn, project, row, ask, stopping)
-        try:
-            return settle(conn, scout_id, outcome)
-        except ScoutRefused:
-            raise
-        except Exception as bad:
-            if conn.in_transaction:
-                conn.rollback()
-            reason = str(bad).strip() or type(bad).__name__
-            return settle(conn, scout_id, outcome._replace(failure=reason))
+        with holding_scout(conn, scout_id, owner):
+            return held_answer_run(conn, project, row, ask, stopping,
+                                   interval_s)
     except (ScoutEnded, ScoutRefused) as ended:
         print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
         return 1

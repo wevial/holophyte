@@ -8,6 +8,7 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_follow_up.py' -v
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import uuid
@@ -15,11 +16,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import holophyte.scout.scout_process as scout_process
 import holophyte.scout.scout_sweep as scout_sweep
 import holophyte.scout.stop as stop
 from holophyte.config.checks import check_config
 from holophyte.config.project import Project
 from holophyte.host.registry import Host
+from holophyte.scout.answer import Outcome, fail_answer, settle, stop_answer
 from holophyte.scout.follow_up import (
     PASS_OPENING,
     PassOutcome,
@@ -31,7 +34,7 @@ from holophyte.scout.follow_up import (
 )
 from holophyte.scout.lead import REPORT_OPENING, SYNTHESIS_OPENING
 from holophyte.scout.scout_config import scout_config
-from holophyte.scout.scout_process import make_lead, pass_mode
+from holophyte.scout.scout_process import answer_mode, make_lead, pass_mode
 from holophyte.scout.swarm import Stopping
 from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
@@ -89,6 +92,15 @@ conn = store.open("{store}")
 fail_pass(conn, {scout}, current_pass(conn, {scout}), "heartbeat stale")
 take_message(conn, post_message(conn, {scout}, "maintainer", "steer",
                                 "And the cron?"))
+"""
+STALE_ANSWER = """import store
+from holophyte.scout.answer import fail_answer
+from store.scout_thread import post_message, take_message
+
+conn = store.open("{store}")
+fail_answer(conn, {scout}, {ask}, "heartbeat stale")
+take_message(conn, post_message(conn, {scout}, "maintainer", "steer",
+                                "Go check the digest email as well."))
 """
 
 
@@ -386,6 +398,53 @@ class EndedPassTests(PassCase):
         self.assertEqual(scout(self.store_conn, scout_id).phase, "answering")
         self.assertEqual(self.reports(scout_id), {1: REPORT})
         self.assertEqual(len(self.items(scout_id)), 2)
+
+    def test_a_failed_answer_cannot_end_a_later_pass(self):
+        scout_id = self.done_scout()
+        ask = post_message(self.store_conn, scout_id, "maintainer", "ask",
+                           "Which finding?")
+        take_message(self.store_conn, ask)
+        beat_scout(self.store_conn, scout_id, os.getpid())
+        fail_answer(self.store_conn, scout_id, ask, "heartbeat stale")
+        take_message(self.store_conn, self.steer(scout_id))
+
+        for ending in (lambda: settle(self.store_conn, scout_id,
+                                      Outcome(ask, "F1 explains it.")),
+                       lambda: fail_answer(self.store_conn, scout_id, ask,
+                                           "cut"),
+                       lambda: stop_answer(self.store_conn, scout_id, ask,
+                                           "stopped", None, None)):
+            with self.assertRaises(ScoutRefused):
+                ending()
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "planning")
+        self.assertEqual(settle_pass(self.store_conn, scout_id, PassOutcome(
+            2, current_pass(self.store_conn, scout_id)["message"],
+            dict(SECOND, cut=[]))), 0)
+        self.assertEqual(self.reports(scout_id)[2], dict(SECOND, cut=[]))
+
+    def test_an_answer_process_stops_beating_a_pass_that_replaced_it(self):
+        scout_id = self.done_scout()
+        ask = post_message(self.store_conn, scout_id, "maintainer", "ask",
+                           "Which finding?")
+        take_message(self.store_conn, ask)
+        row, beats = scout(self.store_conn, scout_id), []
+
+        def answer_went_stale_and_a_steer_was_taken(*_args):
+            subprocess.run([sys.executable, "-c", STALE_ANSWER.format(
+                store=self.target.store_path, scout=scout_id, ask=ask)],
+                cwd=ROOT, check=True)
+            with self.assertRaises(ScoutRefused):
+                beat_scout(self.store_conn, scout_id)
+            beats.append(scout(self.store_conn, scout_id).heartbeat_at)
+            return Outcome(ask, "F1 explains it.")
+
+        with patch.object(scout_process, "answered",
+                          answer_went_stale_and_a_steer_was_taken):
+            self.assertEqual(answer_mode(self.store_conn, self.target, row,
+                                         ask, Stopping()), 1)
+        now = scout(self.store_conn, scout_id)
+        self.assertEqual((now.phase, now.pid, now.heartbeat_at),
+                         ("planning", None, beats[0]))
 
     def test_a_process_holding_a_replaced_steer_claims_nothing(self):
         scout_id = self.done_scout()
