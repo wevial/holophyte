@@ -1,0 +1,57 @@
+{
+  "scouts": [
+    {
+      "id": 1,
+      "ask": "Show owner initials",
+      "kind": "research",
+      "phase": "queued",
+      "reason": null,
+      "lead": "A",
+      "helper": "C",
+      "swarm": 1,
+      "tasks_done": 0,
+      "tasks_total": 0,
+      "created_ms": 1749999995000,
+      "started_ms": null,
+      "ended_ms": null,
+      "elapsed_ms": null,
+      "heartbeat_age_ms": null
+    },
+    {
+      "id": 1,
+      "ask": "Map the merge gate",
+      "kind": "recon",
+      "phase": "swarming",
+      "reason": null,
+      "lead": "B",
+      "helper": "D",
+      "swarm": 3,
+      "tasks_done": 2,
+      "tasks_total": 3,
+      "created_ms": 1749999700000,
+      "started_ms": 1750000000000,
+      "ended_ms": null,
+      "elapsed_ms": 290000,
+      "heartbeat_age_ms": 290000
+    },
+    {
+      "id": 1,
+      "ask": "Why does the retry spin?",
+      "kind": "bug",
+      "phase": "done",
+      "reason": "the lead wrote its report",
+      "lead": "A",
+      "helper": "C",
+      "swarm": 2,
+      "tasks_done": 3,
+      "tasks_total": 3,
+      "created_ms": 1749999400000,
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "elapsed_ms": 530000,
+      "heartbeat_age_ms": null
+    }
+  ],
+  "limit": 20,
+  "truncated": false
+}

@@ -21,6 +21,7 @@ from holophyte.holo.grammar import (
     READS,
     REQUIRED,
     SCOUT_KINDS,
+    SHOW,
     arguments,
 )
 from holophyte.holo.resolve import (
@@ -339,6 +340,8 @@ HTTP_ROUTES = {
     ("attention",): Route("GET", "/attention"),
     ("board",): Route("GET", "/board", local=(("editable", False),)),
     ("ticket",): Route("GET", "/tickets/{KEY}"),
+    ("scouts",): Route("GET", "/scouts"),
+    ("scout", SHOW): Route("GET", "/scouts/{N}"),
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note", "force")),
     ("send-back",): Route("POST", "/actions/send-back",
                           ("run", "note", "author")),
@@ -491,6 +494,12 @@ def read_over(args, daemon, prefix, route, timezone):
     parts = [part for part in RUN_PARTS if getattr(args, part, False)]
     if len(parts) > 1:
         args.leaf.error("give at most one of --files, --ledger and --turns")
+    if args.command.words == ("scout", SHOW):
+        from holophyte.scout.views import parse_scout_id
+        try:
+            parse_scout_id(args.arg0)
+        except ValueError as bad:
+            args.leaf.error(str(bad))
     named = quote(getattr(args, "arg0", None) or "", safe="")
     path = route.path.format(N=named, KEY=named)
     path += "".join(f"/{part}" for part in parts)

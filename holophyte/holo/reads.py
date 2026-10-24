@@ -67,6 +67,17 @@ def ticket_answer(args, project):
     return f"GET /tickets/{args.arg0}", ticket_detail(project, args.arg0)
 
 
+def scouts_answer(args, project):
+    from holophyte.scout.views import scouts
+    query = urlencode({"limit": args.limit[-1]}) if args.limit else ""
+    return "GET /scouts", scouts(project, query)
+
+
+def scout_answer(args, project):
+    from holophyte.scout.views import scout_detail
+    return f"GET /scouts/{args.arg0}", scout_detail(project, args.arg0)
+
+
 def runs_lines(body):
     return [f"{row['ticket']}  run {row['run']}  {row['outcome']}"
             f"  ended {when(row['ended_ms'])}"
@@ -128,11 +139,32 @@ def ticket_lines(body):
             + [f"  verify: {line}" for line in body["verification_commands"]])
 
 
+def scout_line(row):
+    return f"scout {row['id']}  {row['kind']}  {row['phase']}  {row['ask']}"
+
+
+def scouts_lines(body):
+    return [scout_line(row) for row in body["scouts"]]
+
+
+def scout_lines(body):
+    lines = [scout_line(body["scout"])]
+    lines += [f"  task {task['id']}  pass {task['pass']} wave {task['wave']}"
+              f"  {task['phase']}  {task['question']}" for task in body["tasks"]]
+    lines += [f"  report pass {entry['pass']}: {entry['report']['summary']}"
+              for entry in body["reports"]]
+    lines += [f"  item {item['position']}  {item['kind']}  {item['title']}"
+              f"  {item['ticket'] or 'unfiled'}" for item in body["actions"]]
+    return lines
+
+
 READS = {("runs",): (runs_answer, runs_lines),
          ("run",): (run_answer, None),
          ("attention",): (attention_answer, attention_lines),
          ("board",): (board_answer, board_lines),
-         ("ticket",): (ticket_answer, ticket_lines)}
+         ("ticket",): (ticket_answer, ticket_lines),
+         ("scouts",): (scouts_answer, scouts_lines),
+         ("scout", "show"): (scout_answer, scout_lines)}
 RUN_LISTINGS = {"files": files_lines, "ledger": ledger_lines,
                 "turns": turns_lines}
 

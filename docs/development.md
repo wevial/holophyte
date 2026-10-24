@@ -172,6 +172,9 @@ Each module, one line:
   refs the turn changed in its clone and the stored reproduction level.
 - `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's
   lead and helper routes, each a harness `Seat`, their defaults and budget.
+- `holophyte/scout/scout_contract.py` — the TypedDicts of `GET /scouts`,
+  `GET /scouts/ID` and `GET /scouts/routes`, emitted by
+  `holophyte/serve/contract.py`.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
   scout route in a detached checkout of main, recorded in `route-probes.json`.
 - `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
@@ -183,6 +186,10 @@ Each module, one line:
 - `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
   route probe, a detached worktree per helper, the swarm and helper-total
   caps, and each helper's task record.
+- `holophyte/scout/views.py` — the daemon's scout reads: `GET /scouts`,
+  `GET /scouts/ID` with its tasks, served report, action items and events,
+  and `GET /scouts/routes`, the launch pickers less any route whose last
+  probe failed; `holo scouts` and `holo scout show` read them too.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
 - `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a

@@ -21,6 +21,14 @@ from holophyte.holo.report_page import DEFAULT_SINCE, FORMS, report, window_ms
 from holophyte.host.supervisor import factory_revision
 from holophyte.loop.reexec import reexec_self
 from holophyte.scout.launch import SCOUT_ACTION, launch
+from holophyte.scout.views import (
+    SCOUT_PATH,
+    SCOUT_ROUTES_PATH,
+    SCOUTS_PATH,
+    scout_detail,
+    scout_routes,
+    scouts,
+)
 from holophyte.serve.serve_actions import (
     ACTIONS,
     ACTIONS_PREFIX,
@@ -114,7 +122,8 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
 OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
-                        "/attention", "/board", "/report", "/findings"})
+                        "/attention", "/board", "/report", "/findings",
+                        SCOUTS_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
     "Scope", ("project", "token", "action_token", "actions", "config_edit",
@@ -238,6 +247,8 @@ SHAPED_ROUTES = (
     (RUN_ASKS_PATH, run_asks),
     (TICKET_PATH, ticket_detail),
     (STORY_PATH, story_detail),
+    (SCOUT_ROUTES_PATH, scout_routes),
+    (SCOUT_PATH, scout_detail),
 )
 
 
@@ -259,7 +270,7 @@ def window_report(project, query):
 
 QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/history": history, "/holds": holds, "/report": window_report,
-                "/findings": findings}
+                "/findings": findings, SCOUTS_PATH: scouts}
 
 
 def shaped_route(path):

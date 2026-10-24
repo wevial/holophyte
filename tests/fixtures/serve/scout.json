@@ -1,0 +1,184 @@
+{
+  "scout": {
+    "id": 1,
+    "ask": "Why does the retry spin?",
+    "kind": "bug",
+    "phase": "done",
+    "reason": "the lead wrote its report",
+    "lead": "A",
+    "helper": "C",
+    "swarm": 2,
+    "tasks_done": 3,
+    "tasks_total": 3,
+    "created_ms": 1749999400000,
+    "started_ms": 1750000000000,
+    "ended_ms": 1750000000000,
+    "elapsed_ms": 530000,
+    "heartbeat_age_ms": null,
+    "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "host": "writer",
+    "budget": {
+      "minutes": 20,
+      "helper_turns": 6,
+      "waves": 2
+    },
+    "totals": null
+  },
+  "tasks": [
+    {
+      "id": 1,
+      "pass": 1,
+      "wave": 1,
+      "question": "Where does the loop sleep?",
+      "paths": [
+        "app/retry.py"
+      ],
+      "mode": "read",
+      "route": "C",
+      "phase": "done",
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "duration_ms": 100000,
+      "tokens": 1000,
+      "cost_usd": 0.01,
+      "excerpt": "answer 0"
+    },
+    {
+      "id": 1,
+      "pass": 1,
+      "wave": 1,
+      "question": "Does the test fail?",
+      "paths": [],
+      "mode": "run",
+      "route": "C",
+      "phase": "done",
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "duration_ms": 101000,
+      "tokens": 2000,
+      "cost_usd": 0.01,
+      "excerpt": "answer 1"
+    },
+    {
+      "id": 1,
+      "pass": 1,
+      "wave": 2,
+      "question": "Is the cap read?",
+      "paths": [
+        "app/cap.py"
+      ],
+      "mode": "read",
+      "route": "D",
+      "phase": "done",
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "duration_ms": 102000,
+      "tokens": 3000,
+      "cost_usd": 0.01,
+      "excerpt": "answer 2"
+    }
+  ],
+  "reports": [
+    {
+      "pass": 1,
+      "at": 1750000000000,
+      "report": {
+        "summary": "The retry loop never backs off.",
+        "findings": [
+          {
+            "title": "Retry spins without a delay",
+            "status": "shown",
+            "evidence": [
+              {
+                "file": "app/retry.py",
+                "line": 12,
+                "verified": true,
+                "why": null
+              },
+              {
+                "command": "python3 -m unittest tests.test_retry",
+                "output": "FAILED (failures=1)"
+              }
+            ]
+          },
+          {
+            "title": "The cap may be ignored",
+            "status": "likely",
+            "evidence": [
+              {
+                "file": "app/cap.py",
+                "line": 40,
+                "verified": false,
+                "why": "not in the base commit aaaaaaaaaaaa"
+              },
+              {
+                "url": "https://example.test/issues/7"
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "title": "Back off between retries",
+            "why": "the loop spins",
+            "kind": "fix",
+            "body": "Sleep between attempts in app/retry.py."
+          },
+          {
+            "title": "Pin the retry cap",
+            "why": "the cap is untested",
+            "kind": "test",
+            "body": "Add a test that stops at the cap."
+          }
+        ],
+        "reproduction": {
+          "level": "test",
+          "hypotheses": [
+            {
+              "hypothesis": "no delay between attempts",
+              "separates": "a delayed loop passes the test",
+              "verdict": "supported"
+            }
+          ]
+        },
+        "cut": [
+          "Does the cap apply to webhooks?"
+        ]
+      }
+    }
+  ],
+  "actions": [
+    {
+      "position": 1,
+      "pass": 1,
+      "title": "Back off between retries",
+      "why": "the loop spins",
+      "kind": "fix",
+      "body": "Sleep between attempts in app/retry.py.",
+      "ticket": null,
+      "filed_ms": null
+    },
+    {
+      "position": 2,
+      "pass": 1,
+      "title": "Pin the retry cap",
+      "why": "the cap is untested",
+      "kind": "test",
+      "body": "Add a test that stops at the cap.",
+      "ticket": null,
+      "filed_ms": null
+    }
+  ],
+  "events": [
+    {
+      "at": 1750000000000,
+      "kind": "scout_planned",
+      "summary": "the lead planned 3 tasks"
+    },
+    {
+      "at": 1750000000000,
+      "kind": "scout_swarmed",
+      "summary": "3 of 3 helpers answered"
+    }
+  ]
+}

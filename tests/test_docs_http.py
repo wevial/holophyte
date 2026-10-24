@@ -66,6 +66,13 @@ class HttpReferenceTests(unittest.TestCase):
         assert_covers(self, section(self.document, "`GET /runs/N/asks`"),
                       "run-asks.json")
 
+    def test_scout_sections_name_every_pinned_key(self):
+        for heading, fixture in (("`GET /scouts`", "scouts.json"),
+                                 ("`GET /scouts/ID`", "scout.json"),
+                                 ("`GET /scouts/routes`", "scout-routes.json")):
+            with self.subTest(heading=heading):
+                assert_covers(self, section(self.document, heading), fixture)
+
     def test_host_sections_name_every_key_the_host_root_answers(self):
         assert_covers(self, section(self.document, "Host `GET /status`"),
                       "host-status.json")
