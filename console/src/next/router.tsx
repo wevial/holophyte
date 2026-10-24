@@ -21,6 +21,7 @@ import { Overview } from "./pages/Overview";
 import { TurnPage } from "./pages/Turn";
 import { RunPage } from "./pages/Run";
 import { Runs } from "./pages/Runs";
+import { Scouts } from "./pages/Scouts";
 import { RunsHistory, validateHistorySearch } from "./pages/RunsHistory";
 import { Settings } from "./pages/Settings";
 import { StoriesIndex, Story } from "./pages/Story";
@@ -74,6 +75,7 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   pageRoute("/findings", Findings),
+  pageRoute("/scouts", Scouts),
   pageRoute("/settings", Settings),
   pageRoute("/settings/$tab", Settings),
 ]);

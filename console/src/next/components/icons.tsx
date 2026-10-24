@@ -82,6 +82,15 @@ export function FindingsIcon() {
   );
 }
 
+export function ScoutsIcon() {
+  return (
+    <Stroke>
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="M10.6 5.4 9 9 5.4 10.6 7 7Z" />
+    </Stroke>
+  );
+}
+
 export function ChevronIcon({ folded }: { folded: boolean }) {
   return (
     <svg
