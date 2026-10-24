@@ -85,6 +85,7 @@ LOOP_KEYS = {
     "fix_session": "fresh",
     "review_session": "fresh",
     "critic_after_hours": 12,
+    "refresh_moved_landmarks": True,
 }
 LOOP_ORDERS = ("identifier", "priority")
 LOOP_INTEGER_FLOORS = {

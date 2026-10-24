@@ -23,6 +23,7 @@ from holophyte.board.projection import (
 from holophyte.config.config_tables import loop_config
 from holophyte.files import RangeError, touched_files
 from holophyte.redact import safe_print as print
+from holophyte.review import moved_landmarks
 from holophyte.review.landmarks import (
     MainTree,
     declared_new,
@@ -278,8 +279,8 @@ def _still_parked(conn, project_id, parked, columns, critic=False):
             " re-checked; nothing changed"])
 
 
-def _rederive(target, conn, project_id, parked, revision, note=None):
-    ticket_id, identifier, _, body = parked[:4]
+def _rederive(target, conn, project_id, parked, revision, body, note=None):
+    ticket_id, identifier = parked[:2]
     revision = store.board.edit_ticket(conn, project_id, identifier, body,
                                        revision, author="factory")
     status = store_status(conn, ticket_id)
@@ -297,6 +298,32 @@ def _rederive(target, conn, project_id, parked, revision, note=None):
     return revision, status
 
 
+def _moved(target, conn, provider, parked):
+    if not loop_config(target).refresh_moved_landmarks:
+        return None, None
+    tree = MainTree(target.path)
+    paths = [path for _, path in named_paths(parked[3], tree)
+             if "/" in path and not tree.has(str(Path(path)))]
+    return moved_landmarks.refresh(
+        tree, conn, parked, list(dict.fromkeys(paths)),
+        lambda body: stale_reasons(target.path, body, conn, provider))
+
+
+def _recheck_one(target, conn, project_id, provider, row):
+    body, note = row[3], None
+    if stale_reasons(target.path, body, conn, provider):
+        body, note = _moved(target, conn, provider, row)
+        if note is None:
+            return None
+    with lease_turn(target), store.transaction(conn):
+        _still_parked(conn, project_id, row, ("ready",))
+        outcome = None if body is None else _rederive(
+            target, conn, project_id, row, row[2], body)
+        if note is not None:
+            moved_landmarks.record(conn, row[0], note)
+    return outcome
+
+
 def recheck_stale(target, conn, project_id, provider):
     parked = stale_parked(conn, project_id)
     if not parked:
@@ -307,18 +334,14 @@ def recheck_stale(target, conn, project_id, provider):
               f" ({len(parked)}) is re-checked this pass: {failure}")
         return
     for row in parked:
-        if stale_reasons(target.path, row[3], conn, provider):
-            continue
         try:
-            with lease_turn(target), store.transaction(conn):
-                _still_parked(conn, project_id, row, ("ready",))
-                revision, status = _rederive(target, conn, project_id, row,
-                                             row[2])
+            outcome = _recheck_one(target, conn, project_id, provider, row)
         except (ValueError, store.RevisionMoved) as e:
             print(f"[holo2] {row[1]} not re-checked: {e}")
             continue
-        print(f"[holo2] re-checked {row[1]} against main: {status}"
-              f" (revision {revision})")
+        if outcome is not None:
+            print(f"[holo2] re-checked {row[1]} against main: {outcome[1]}"
+                  f" (revision {outcome[0]})")
 
 
 def recheck_move(target, conn, project_id, provider, parked, revision, note):
@@ -342,7 +365,7 @@ def recheck_move(target, conn, project_id, provider, parked, revision, note):
                                                "ready", revision,
                                                author="cli", note=note)
         revision, status = _rederive(target, conn, project_id, parked,
-                                     revision, None if moved else note)
+                                     revision, body, None if moved else note)
         if status != "needs_spec":
             store.record_project_intervention(
                 conn, "requeue", f"--move {identifier} ready re-readied it"
