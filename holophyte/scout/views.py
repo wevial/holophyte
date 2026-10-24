@@ -176,8 +176,7 @@ def scout_detail(project, text, now=None):
 
 
 def offered(project, routes, role, default, now):
-    seats = [f"{role}:{name}" for name in routes]
-    probes = route_probe_view(project, seats, now)
+    probes = route_probe_view(project, [f"{role}:{name}" for name in routes], now)
     listed = []
     for name, seat in routes.items():
         probe = probes[f"{role}:{name}"]["primary"]
