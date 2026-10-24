@@ -179,6 +179,16 @@ test("a pass 3 planning and then synthesizing says so in its status and stage", 
   expect([status(), stage()]).toEqual(["Pass 3: the lead is writing its report.", "synthesizing · pass 3"]);
 });
 
+test("a pass synthesizing after its helpers reads now, with the tone of a stopped, failed or finished helper", async () => {
+  const cases: [ScoutTask["phase"], string][] = [["stopped", "wait"], ["failed", "bad"], ["done", "ok"]];
+  for (const [phase, says] of cases) {
+    await mount(passThree("synthesizing", [task("Does the nightly export hold the lock too?", 3, phase, at(15, 0, 30), at(15, 2))]), PASS_THREE + 4 * 60_000);
+    const last = groups().at(-1)!;
+    expect([row(last)[1], tone(last)]).toEqual(["now", says]);
+    cleanup();
+  }
+});
+
 test("a failed try at pass 2 and its retry read as two Pass 2 groups, each holding only its own span's helpers", async () => {
   const failed = task("Does the digest hold the lock?", 2, "done", at(14, 44, 30), at(14, 45));
   const retried = task("Does the digest hold the lock across a publish?", 2, "done", at(14, 50, 30), at(14, 53));

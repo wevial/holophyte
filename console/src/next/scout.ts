@@ -288,7 +288,7 @@ function followUpGroup(detail: ScoutDetail, run: FollowUp, now: number): ScoutGr
       ...(run.end?.kind === "scout_pass_done" ? counted(report?.findings.length ?? 0, items) : []),
     ],
     ms,
-    tone: run.end?.kind === "scout_pass_failed" ? "bad" : waveTone(tasks, running),
+    tone: run.end?.kind === "scout_pass_failed" ? "bad" : waveTone(tasks, tasks.some((task) => task.phase === "running")),
     running, steps: [], tasks,
   };
 }

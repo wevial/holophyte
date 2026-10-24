@@ -102,6 +102,11 @@ export function ScoutPage() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 ref={heading} tabIndex={-1} className="m-0 max-w-[64ch] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink [overflow-wrap:anywhere]">{scout.ask}</h1>
           {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
+          {thread && scout.phase === "done" && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
+            event.preventDefault();
+            composeRef.current?.focus();
+            composeRef.current?.scrollIntoView({ block: "nearest" });
+          }}>Ask or steer</a>}
         </div>
         <p data-scout-facts className="m-0 mt-3 font-mono text-[12px] leading-[1.7] text-ink-3 [overflow-wrap:anywhere]">
           <Facts detail={page.detail} project={project} now={page.now} pass={page.pass} />
@@ -115,11 +120,6 @@ export function ScoutPage() {
           </p>
         </div>
         <div className="mt-[18px] flex flex-wrap items-center gap-x-3 gap-y-2.5">
-          {thread && scout.phase === "done" && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
-            event.preventDefault();
-            composeRef.current?.focus();
-            composeRef.current?.scrollIntoView({ block: "nearest" });
-          }}>Ask or steer</a>}
           <span className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">Stage</span>
           <span role="group" aria-label="Stage">
             <StageChip label={page.stage.label} state={dot} sub={page.stage.sub} />
