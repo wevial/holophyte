@@ -363,7 +363,7 @@ export function byProject<T>(items: T[], projectOf: (item: T) => string): { proj
   return [...split].map(([project, items]) => ({ project, items })).sort((a, b) => b.items.length - a.items.length || a.project.localeCompare(b.project));
 }
 
-/** The scoped fleet's week of findings, sorted into the page's four groups. */
+/** The scoped fleet's week of findings and ticket defects, sorted into the page's groups. */
 export function useFindingsPage(): FindingsPage {
   const peers = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
