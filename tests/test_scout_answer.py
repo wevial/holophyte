@@ -30,7 +30,7 @@ from holophyte.scout.answer import (
 )
 from holophyte.scout.lead import PLAN_OPENING, REPORT_OPENING
 from holophyte.scout.run_helpers import HELPER_OPENING
-from holophyte.scout.scout_process import answer_mode, make_lead
+from holophyte.scout.scout_process import answer_mode, answer_stopped, make_lead
 from holophyte.scout.swarm import Stopping
 from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
@@ -475,6 +475,18 @@ class StoppedAnswerTests(AnswerCase):
         self.assertEqual(scout(self.store_conn, scout_id).phase, "answering")
         self.assertNotEqual(current_ask(self.store_conn, scout_id), first)
         self.assertEqual(self.payloads(scout_id, "scout_answer_stopped"), [])
+
+    def test_a_signal_stop_of_a_later_ask_takes_no_earlier_stops_note(self):
+        self.start_host()
+        scout_id = self.answering()
+        self.stop(scout_id, "asked the wrong scout")
+        take_message(self.store_conn, self.ask(scout_id, "And the loop?"))
+        later = current_ask(self.store_conn, scout_id)
+        self.assertEqual(answer_stopped(self.store_conn, scout_id, later), 0)
+        (_, stopped) = self.payloads(scout_id, "scout_answer_stopped")
+        self.assertEqual((stopped["reason"], stopped["author"],
+                          stopped["note"]), (stop.BY_SIGNAL, None, None))
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "done")
 
 
 class LabelTests(unittest.TestCase):

@@ -22,7 +22,7 @@ from holophyte.scout.answer import (
     stop_answer,
 )
 from holophyte.scout.lead import run_lead
-from holophyte.scout.stop import stop_reason, stop_request
+from holophyte.scout.stop import BY_SIGNAL, stop_reason, stop_request, stopped_by
 from holophyte.scout.swarm import ScoutStopped, Stopping
 from store.scouts import (
     ANSWERING,
@@ -208,7 +208,11 @@ def end_stopped(conn, scout_id):
 def answer_stopped(conn, scout_id, ask):
     if conn.in_transaction:
         conn.rollback()
-    reason, asked = stop_reason(conn, scout_id), stop_request(conn, scout_id)
+    asked = stop_request(conn, scout_id)
+    if asked is not None and asked.get("ask") != ask:
+        asked = None
+    reason = BY_SIGNAL if asked is None else stopped_by(asked["author"],
+                                                        asked["note"])
     try:
         stop_answer(conn, scout_id, ask, reason, asked and asked["author"],
                     asked and asked["note"])
