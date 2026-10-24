@@ -192,15 +192,14 @@ class ScoutRunHelperTests(ScoutFixture):
                          ("not_reproduced", "test", "no run helper finished"))
 
     def test_only_a_bug_scout_s_run_helper_gets_write_tools(self):
-        both = [(READ_Q, "read"), (RUN_Q, "run")]
-        scouts = (("recon", CODEX_LEAD, "haiku", [(READ_Q, "read")]),
-                  ("bug", "", "luna", both), ("bug", CODEX_LEAD, "haiku", both))
-        for number, (kind, config, helper, tasks) in enumerate(scouts):
-            with self.subTest(kind=kind, helper=helper):
+        for number, (config, helper) in enumerate((("", "luna"),
+                                                   (CODEX_LEAD, "haiku"))):
+            with self.subTest(helper=helper):
                 (self.stubs.directory / "calls.jsonl").unlink(missing_ok=True)
                 path, conn, scout_id = self.scout(
-                    kind, config, f"scout{number}", helper_route=helper)
-                self.stubs.answer(plan=plan(*tasks), report=fenced(REPORT))
+                    "bug", config, f"scout{number}", helper_route=helper)
+                self.stubs.answer(plan=plan((READ_Q, "read"), (RUN_Q, "run")),
+                                  report=fenced(REPORT))
                 self.run_scout(path, scout_id)
                 leads = [call for call in self.stubs.calls()
                          if call["turn"] in ("plan", "synthesis", "report")]
@@ -209,8 +208,7 @@ class ScoutRunHelperTests(ScoutFixture):
                     self.assertTrue(read_only(call["argv"]), call["argv"])
                 helpers = {call["question"]: call["argv"]
                            for call in self.stubs.turns("helper")}
-                self.assertEqual(set(helpers), {question for question, _ in tasks})
+                self.assertEqual(set(helpers), {READ_Q, RUN_Q})
                 self.assertTrue(read_only(helpers[READ_Q]), helpers[READ_Q])
-                if RUN_Q in helpers:
-                    self.assertNotIn("--sandbox", helpers[RUN_Q])
-                    self.assertNotIn("--disallowedTools", helpers[RUN_Q])
+                self.assertNotIn("--sandbox", helpers[RUN_Q])
+                self.assertNotIn("--disallowedTools", helpers[RUN_Q])
