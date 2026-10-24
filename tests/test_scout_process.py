@@ -40,6 +40,13 @@ def now_ms():
 
 
 class ScoutFixture(HostFixture):
+    def setUp(self):
+        super().setUp()
+        patcher = patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("INVOCATION_ID", None)
+
     def project(self, name, supervisor=""):
         """A registered native-board repository with two commits on main."""
         path = self.repo(name)
