@@ -84,7 +84,9 @@ export function ScoutPane({ project, id }: { project: string; id: number }) {
         </div>
       </header>
       <ScoutActions key={`${key}/actions`} items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />
-      <ScoutReport key={key} reports={page.detail.reports} baseSha={scout.base_sha} hypotheses={false} />
+      <div className="min-[721px]:[&_[data-scout-finding]]:grid-cols-[2.375rem_6.75rem_minmax(0,1fr)]">
+        <ScoutReport key={key} reports={page.detail.reports} baseSha={scout.base_sha} hypotheses={false} />
+      </div>
       {thread && (
         <div className="mt-8 [&>aside]:px-0">
           <ScoutThread key={`${key}/thread`} base={page.base} detail={page.detail} actions={page.actions} ref={composeRef} />
