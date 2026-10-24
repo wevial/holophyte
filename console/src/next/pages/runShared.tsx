@@ -19,12 +19,14 @@ export function Page({ label, children }: { label: string; children: ReactNode }
   );
 }
 
-export function Notice({ label, text, back }: { label: string; text: string; back?: ReturnType<typeof runPage> }) {
+type Back = ReturnType<typeof runPage> | { to: "/scouts"; search: { project: string } };
+
+export function Notice({ label, text, back, backLabel }: { label: string; text: string; back?: Back; backLabel?: string }) {
   return (
     <Page label={label}>
       <p className="m-0 font-mono text-[13px] text-ink-3">{text}</p>
       <Link {...(back ?? { to: "/runs", search: {} })} className="mt-3 inline-block font-sans text-[13px] font-medium text-act underline underline-offset-2">
-        {back ? "Back to the run" : "Back to Runs"}
+        {backLabel ?? (back ? "Back to the run" : "Back to Runs")}
       </Link>
     </Page>
   );
