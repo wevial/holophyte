@@ -25,6 +25,7 @@ import store.operate
 import store.read
 import store.run_reads
 import store.schema
+import store.scout_thread
 import store.scouts
 import store.steer_notes
 import store.stories
@@ -406,6 +407,12 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "scout", "scouts",
                                                  "set_scout_session",
                                                  "start_scout_task"]),
+                                 # HOLO-522: a scout's thread, its messages
+                                 # posted, taken and read.
+                                 (store.scout_thread, ["messages",
+                                                       "post_message",
+                                                       "take_message",
+                                                       "waiting_messages"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

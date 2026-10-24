@@ -797,6 +797,11 @@ The store is its own package:
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper
   tasks and action items, its `runEvents` rows, and `scout()`/`scouts()`.
+- `store/scout_thread.py` — a scout's thread in `threadMessages`:
+  `post_message()` records an ask, steer or answer, `take_message()` takes
+  a waiting ask or steer and moves its `done` scout to `answering` or
+  `planning` with its event, `messages()` and `waiting_messages()` read
+  them, and `ThreadRefused` names a write they refuse.
 - `store/stories.py` — `file_story()` writes a story's rows for a parent
   and its children, `story()` reads one back from either, `approve_story()`
   freezes its plan with one open story per project, and `abandon_story()`
