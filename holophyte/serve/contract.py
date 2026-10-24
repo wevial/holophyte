@@ -582,6 +582,11 @@ class HistoryRow(TypedDict):
     heartbeat_age_ms: int | None
     rounds: int
     max_rounds: int
+    findings: NotRequired[int]
+    merge_sha: NotRequired[str | None]
+    commit_url: NotRequired[str | None]
+    additions: NotRequired[int | None]
+    deletions: NotRequired[int | None]
     pr_url: str | None
     host: str | None
 

@@ -1798,6 +1798,17 @@ A `high_paths` or `medium_paths` that is not a list of such globs, a `fan_in` or
 `adversary` that is not a boolean, or an unknown key is a startup error naming
 the key.
 
+Four keys hold repository paths, and each is matched against changed or
+tracked files as its consumer matches it: `[merge] ui_paths` with
+`fnmatch.fnmatchcase()` on the full path, `[review] high_paths` and
+`medium_paths` as above (a pattern with no `/` also matches the basename), and
+a `[worktree] setup` table's `inputs` as a file or a directory, so an input
+matches a tracked file equal to it or under it. When code moves, an entry can
+match nothing without any error, so `--status` (the `stale config` line and
+`stale_config_paths` in `--json`) and `holo status` (a `config` row under
+Problems) report each entry that matches no file tracked on main
+(`origin/main` when it resolves, else `main`).
+
 ## `[trim]`
 
 The trim step: one agent turn after the implement turn and before the first
