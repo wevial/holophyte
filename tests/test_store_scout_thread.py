@@ -58,6 +58,7 @@ class ThreadCase(unittest.TestCase):
             "SELECT * FROM scouts ORDER BY id").fetchall(), scout_rows)
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM runEvents").fetchone(), events)
+        return caught.exception
 
     def ask(self, scout_id, text="what next?", now=None):
         return thread.post_message(self.conn, scout_id, "maintainer", "ask",
@@ -240,6 +241,25 @@ class TakeTests(ThreadCase):
                      "an answer is not taken")
         self.assertNotIn(answer,
                          [m.id for m in thread.waiting_messages(self.conn)])
+
+    def test_an_answer_must_name_an_ask_of_its_scout(self):
+        scout_id, asked = self.answering()
+        answer = thread.post_message(self.conn, scout_id, "scout", "answer",
+                                     "because", answers_id=asked)
+        unknown = self.refused(lambda: thread.post_message(
+            self.conn, scout_id, "scout", "answer", "unanchored"),
+            "names its ask")
+        self.assertEqual(unknown.subject, f"scout {scout_id}")
+        self.refused(lambda: thread.post_message(
+            self.conn, scout_id, "scout", "answer", "to an answer",
+            answers_id=answer), "it is answer")
+        scouts.move_scout(self.conn, scout_id, "done")
+        steer = thread.post_message(self.conn, scout_id, "maintainer",
+                                    "steer", "check more")
+        thread.take_message(self.conn, steer, host="host-h")
+        self.refused(lambda: thread.post_message(
+            self.conn, scout_id, "scout", "answer", "to a steer",
+            answers_id=steer), "it is steer")
 
     def test_an_answered_scout_returns_to_done_with_its_first_end(self):
         scout_id, _ = self.answering()

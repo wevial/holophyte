@@ -27,6 +27,7 @@ SELECT = f"SELECT {', '.join(COLUMNS)} FROM threadMessages"
 class ThreadRefused(Exception):
     def __init__(self, subject, detail):
         super().__init__(f"{subject}: {detail}")
+        self.subject = subject
 
 
 class Message(NamedTuple):
@@ -83,12 +84,18 @@ def post_message(conn, scout_id, author, mode, text, *, blocks=(),
             if waiting is not None:
                 raise ThreadRefused(f"scout {scout_id}",
                                     f"message {waiting} is not taken yet")
+        if mode == ANSWER and answers_id is None:
+            raise ThreadRefused(f"scout {scout_id}", "an answer names its ask")
         if answers_id is not None:
-            answered = conn.execute("SELECT scoutId FROM threadMessages"
+            answered = conn.execute("SELECT scoutId, mode FROM threadMessages"
                                     " WHERE id = ?", (answers_id,)).fetchone()
             if answered is None or answered[0] != scout_id:
                 raise ThreadRefused(f"message {answers_id}",
                                     f"not a message of scout {scout_id}")
+            if mode == ANSWER and answered[1] != ASK:
+                raise ThreadRefused(f"message {answers_id}",
+                                    f"it is {answered[1]}; an answer"
+                                    " answers an ask")
         return conn.execute(
             "INSERT INTO threadMessages (projectId, scoutId, author, mode,"
             " text, blocks, answersId, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
