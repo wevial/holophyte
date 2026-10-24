@@ -776,7 +776,9 @@ Each module, one line:
   `[loop] workers > 1`, `worker()` as one child, the spawn and wait
   seams, the claimable count and the `[holo2 wN]` line prefixing.
 - `holophyte/loop/reexec.py` — `reexec_self`, the shared self re-exec the loop
-  and the supervisor both restart themselves through.
+  and the supervisor both restart themselves through, and
+  `start_transient_unit`, the `systemd-run --user --collect` start a scout and
+  a shadow each run as their own transient user unit through.
 
 The store is its own package:
 

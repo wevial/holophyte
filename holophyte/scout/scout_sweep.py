@@ -1,6 +1,5 @@
 import fcntl
 import os
-import re
 import shutil
 import socket
 import subprocess
@@ -16,6 +15,11 @@ from holophyte.config.checks import check_config
 from holophyte.config.config_tables import sweep_config
 from holophyte.host.registry import home
 from holophyte.loop.gates import sh
+from holophyte.loop.reexec import (
+    start_transient_unit,
+    systemd_runner,
+    transient_unit,
+)
 from holophyte.scout.answer import current_ask, fail_answer
 from holophyte.scout.follow_up import current_pass, fail_pass
 from holophyte.scout.scout_process import scout_dir
@@ -48,8 +52,6 @@ SPAWN = subprocess.Popen
 START_LOCK = "scout-start.lock"
 START_FAILED = "scout_start_failed"
 SANDBOX_UNAVAILABLE = "scout_sandbox_unavailable"
-SYSTEMD_UNIT_VARS = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID",
-             "NOTIFY_SOCKET", "MANAGERPID")
 
 
 def _project_scouts(conn, target, phases):
@@ -89,16 +91,8 @@ def end_stale(name, target, conn, now, out):
                   file=out)
 
 
-def _escape(match):
-    return "".join(f"_{byte:02x}" for byte in match.group().encode())
-
-
 def scout_unit(name, scout_id):
-    return f"holophyte-scout-{re.sub(r'[^A-Za-z0-9.]', _escape, name)}-{scout_id}"
-
-
-def _systemd_run():
-    return os.environ.get("INVOCATION_ID") and shutil.which("systemd-run")
+    return transient_unit("scout", name, scout_id)
 
 
 def _private_tmp_spawn():
@@ -122,20 +116,10 @@ def start_scout(name, target, scout_id):
     log.parent.mkdir(parents=True, exist_ok=True)
     argv = [sys.executable, "-u", str(FACTORY_PATH), "--scout", str(scout_id),
             str(target.path)]
-    runner = _systemd_run()
+    runner = systemd_runner()
     if runner:
         unit = scout_unit(name, scout_id)
-        ran = subprocess.run(
-            [runner, "--user", "--collect", "--quiet", "--unit", unit,
-             f"--working-directory={os.getcwd()}",
-             f"--property=StandardOutput=append:{log}",
-             f"--property=StandardError=append:{log}",
-             *(f"--setenv={key}" for key in os.environ if key not in SYSTEMD_UNIT_VARS),
-             *argv],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True)
-        if ran.returncode != 0:
-            raise OSError(f"systemd-run exited {ran.returncode}:"
-                          f" {ran.stderr.strip()}")
+        start_transient_unit(runner, unit, log, argv)
         return f"unit {unit}"
     with open(log, "ab") as handle:
         child = SPAWN(argv, start_new_session=True, stdin=subprocess.DEVNULL,

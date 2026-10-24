@@ -180,6 +180,16 @@ shadow's commits stay on a local `shadow/SLUG` branch: list them with
 existing `shadow/SLUG` branch or `SLUG.shadow` path is left untouched: the
 shadow records `branch_exists` and stops.
 
+The loop starts the shadow beside the primary and never waits for it. Under
+systemd (the loop's `INVOCATION_ID` set and `systemd-run` on `PATH`) a shadow
+runs as its own transient user unit `holophyte-shadow-NAME-RUN`, `NAME` the
+project's `[serve] name` escaped as a scout unit's is and `RUN` the run id, so
+it lives until its own time cap ends it: a stop of the loop's unit
+`holophyte-loop@NAME` does not end it, and
+`systemctl --user stop holophyte-shadow-NAME-RUN` does. Its output is appended
+to `shadows/RUN.log` beside the project store. Outside systemd it is a
+detached child of the loop in its own session.
+
 `[agents.implementer_profiles.NAME]` names an implementer route a ticket can
 pick with an `Implementer: NAME` line beside its estimate:
 
