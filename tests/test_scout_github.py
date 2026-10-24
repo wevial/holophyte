@@ -182,7 +182,8 @@ class GetTests(GithubCase):
             ("GET", "//api.github.com/repos/example/repo/pulls",
              "scheme or a host"),
             ("GET", "repos/example/repo/pulls?state=open\nX: y",
-             "control character"))
+             "control character"),
+            ("GET", "repos/example/repo/commits/main#/status", "fragment"))
         for method, path, rule in refused:
             with self.subTest(method=method, path=path):
                 answer = github_get(self.target(self.path), self.repo, path,

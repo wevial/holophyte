@@ -64,6 +64,8 @@ def guarded(repo, path, method="GET"):
     route = path.partition("?")[0]
     if UNPRINTABLE.search(path):
         raise Refused("a path may not hold a space or a control character")
+    if "#" in unquote(path):
+        raise Refused("a path may not hold a fragment '#'")
     if ".." in unquote(path):
         raise Refused("a path may not hold '..'")
     if re.search(r"%(2f|5c)", route, re.IGNORECASE):

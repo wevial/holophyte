@@ -1915,7 +1915,7 @@ GET of it only when it lies under `repos/OWNER/NAME/` on the allow-list:
 `actions/workflows/ID/runs`, `pulls`, `pulls/N`, `pulls/N/files`,
 `commits/REF/check-runs`, `commits/REF/status`, `issues/N`,
 `issues/N/comments` and `contents/PATH`, with an optional query string. Any
-other method, repository or path, `graphql`, `..`, a scheme or a host is
+other method, repository or path, `graphql`, `..`, a `#` fragment, a scheme or a host is
 refused naming its rule. The answer drops `node_id`, `url` and every `*_url`
 key but `html_url` at every depth and is cut at 40000 characters with a
 `[holo2] truncated: 40000 of N characters shown` line. `github_tests` takes
