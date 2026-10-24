@@ -46,6 +46,9 @@ Each module, one line:
   `require_board()`.
 - `holophyte/cli/host_modes.py` — the host forms of `--status`, `--serve` and
   `--supervise`, the read-only modes, and `start_supervisor()`.
+- `holophyte/cli/stale_paths.py` — `stale_paths()`: the config path entries
+  (`[merge] ui_paths`, `[review] high_paths` and `medium_paths`, `[worktree]
+  setup` inputs) that match no file tracked on main, once per main commit.
 - `holophyte/holo/__init__.py` — the `holo` command's package.
 - `holophyte/holo/cli.py` — `main()`, the `holo` console script `pyproject.toml`
   declares: `--version` prints the package version and the checkout's short
