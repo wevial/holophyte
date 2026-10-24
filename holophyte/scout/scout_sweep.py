@@ -104,11 +104,9 @@ SANDBOXLESS = ("systemd-run is missing under a systemd unit, so the scout would"
 
 
 def _fail_sandboxless(conn, scout_id):
-    reason = SANDBOXLESS
     with store.transaction(conn):
-        record_scout_event(conn, scout_id, SANDBOX_UNAVAILABLE, reason)
-        end_scout(conn, scout_id, "failed", reason)
-    return reason
+        record_scout_event(conn, scout_id, SANDBOX_UNAVAILABLE, SANDBOXLESS)
+        end_scout(conn, scout_id, "failed", SANDBOXLESS)
 
 
 def start_scout(name, target, scout_id):
@@ -152,8 +150,8 @@ def _start(name, target, row, out):
         move_scout(conn, row.id, PLANNING, base_sha=base,
                    host=socket.gethostname())
         if _private_tmp_spawn():
-            reason = _fail_sandboxless(conn, row.id)
-            print(f"[holo2] {name}: scout {row.id} ended failed: {reason}",
+            _fail_sandboxless(conn, row.id)
+            print(f"[holo2] {name}: scout {row.id} ended failed: {SANDBOXLESS}",
                   file=out)
             return False
         try:
