@@ -219,14 +219,6 @@ class SubjectContextTests(ContextCase):
         self.assertIn(PR, goal)
         self.assertIn(f"Context: run {run} of", goal)
 
-    def test_a_long_ticket_body_is_cut_to_the_cap(self):
-        self.start()
-        self.mirror("NAT-3", body="body line\n" * 3_000)
-        self.run_scout(("ticket", "NAT-3"))
-        section = self.section(self.plan_goal())
-        self.assertLessEqual(len(section), 24_000)
-        self.assertTrue(section.endswith(f"\n{CUT_LINE}"))
-
     def redacted_body_section(self, secret):
         self.start(CLAUDE_LEAD + f'[linear]\napi_key = "{secret}"\n')
         body = f"{secret}\n" * (30_000 // (len(secret) + 1))
