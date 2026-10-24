@@ -82,7 +82,7 @@ class ScoutFinding(TypedDict):
     evidence: list[FileEvidence | CommandEvidence | UrlEvidence]
 
 
-ActionKind = Literal["fix", "test", "investigate", "decide"]
+ActionKind = Literal["fix", "test", "investigate", "decide", "revise"]
 
 
 class ScoutReportAction(TypedDict):
@@ -115,10 +115,15 @@ ScoutReportPass = TypedDict("ScoutReportPass", {
     "pass": int, "at": int, "report": ScoutReport})
 
 
+class Revises(TypedDict):
+    ticket: str
+    revision: int
+
+
 ScoutAction = TypedDict("ScoutAction", {
     "position": int, "pass": int, "title": str, "why": str,
-    "kind": ActionKind, "body": str, "ticket": str | None,
-    "filed_ms": int | None})
+    "kind": ActionKind, "body": str, "revises": Revises | None,
+    "ticket": str | None, "filed_ms": int | None})
 
 
 class ScoutEvent(TypedDict):

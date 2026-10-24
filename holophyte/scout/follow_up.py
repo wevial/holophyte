@@ -17,6 +17,7 @@ from holophyte.scout.lead import (
     lead_seat,
     report_goal,
     run_waves,
+    stamped,
     wave_tasks,
 )
 from holophyte.scout.proposals import (
@@ -188,9 +189,10 @@ def settle_pass(conn, scout_id, outcome):
         return 1
     with store.transaction(conn):
         held_pass(conn, scout_id, steered)
-        record_scout_report(conn, scout_id, number, outcome.report)
+        report = stamped(conn, scout(conn, scout_id), outcome.report)
+        record_scout_report(conn, scout_id, number, report)
         positions = record_scout_actions(conn, scout_id, number,
-                                         outcome.report["actions"])
+                                         report["actions"])
         found = [label for label, block in labels(*stored(conn, scout_id))
                  .items() if block["type"] == "finding"
                  and block["pass"] == number]

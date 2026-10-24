@@ -391,7 +391,11 @@ An unknown scout is 404 `no such scout`, an unknown item 404 `no such
 action item`. A scout not `done` is 200 with `ok: false` naming its
 phase, and nothing is checked or written. An item already filed is 200 with `ok: false`, `ticket` the
 key it was filed as, and `detail` `scout 14 item 2 is already filed as
-KEY`; nothing is checked or written. A project with no `[board]` is
+KEY`; nothing is checked or written. A `revise` item is 200 with
+`ok: false`, `ticket` null and `detail` `scout 14 item 2 revises NAT-3 at
+revision 2; save it on NAT-3's edit page`: a revision is saved on its
+ticket's edit page, so nothing is checked or filed and the item stays
+unfiled, and `holo scout file` exits 1 printing that `detail`. A project with no `[board]` is
 `ok: false`. A blank `body` is `ok: false`, and so is a body with no H1
 whose item has a blank `title`; nothing is written. A body with no H1 is
 filed as `# TITLE` (the item's `title`) and a blank line before it,
