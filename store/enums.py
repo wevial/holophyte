@@ -259,6 +259,7 @@ class ScoutKind(str, Enum):
     BUG = 'bug'
     RESEARCH = 'research'
     RECON = 'recon'
+    GUARDRAILS = 'guardrails'
 
 
 class ScoutSubject(str, Enum):

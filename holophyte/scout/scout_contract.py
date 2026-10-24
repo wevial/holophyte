@@ -17,7 +17,7 @@ class ScoutSubject(TypedDict):
 class ScoutRow(TypedDict):
     id: int
     ask: str
-    kind: Literal["bug", "research", "recon"]
+    kind: Literal["bug", "research", "recon", "guardrails"]
     phase: ScoutPhase
     reason: str | None
     lead: str | None
@@ -80,7 +80,7 @@ class TextEvidence(TypedDict):
     text: str
 
 
-FindingStatus = Literal["shown", "likely", "unconfirmed"]
+FindingStatus = Literal["confirmed", "partial", "unconfirmed"]
 
 
 class ScoutFinding(TypedDict):

@@ -13,8 +13,8 @@ const ROW = "grid grid-cols-[2.375rem_5.25rem_minmax(0,1fr)] gap-x-2 border-b bo
 const TEXT = "m-0 font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]";
 
 const FINDING_TONES: Record<ScoutFinding["status"], string> = {
-  shown: "bg-live-wash text-ok-ink",
-  likely: "bg-wait-wash text-wait",
+  confirmed: "bg-live-wash text-ok-ink",
+  partial: "bg-wait-wash text-wait",
   unconfirmed: "bg-rule-2 text-ink-2",
 };
 

@@ -1364,7 +1364,7 @@ draws. `GET /scouts?limit=N` reads at most `N`.
 ```
 
 Each row carries the scout's `id`, its `ask`, its `kind` (`bug`,
-`research` or `recon`), its `phase` and the `reason` it ended (null until
+`research`, `recon` or `guardrails`), its `phase` and the `reason` it ended (null until
 it does), the `lead` and `helper` route names it runs on and its `swarm`,
 helpers at once. `tasks_done` counts its helper tasks that have ended and
 `tasks_total` all of them, over every pass. `created_ms`, `started_ms` and
@@ -1402,7 +1402,7 @@ One scout whole: what the console's Scout page draws.
             "cost_usd": 0.02, "excerpt": "…"}],
  "reports": [{"pass": 1, "at": 1791569000000, "report": {
    "summary": "…",
-   "findings": [{"title": "…", "status": "shown", "evidence": [
+   "findings": [{"title": "…", "status": "confirmed", "evidence": [
      {"file": "app/retry.py", "line": 12, "verified": true, "why": null},
      {"command": "python3 -m unittest tests.test_retry", "output": "…"},
      {"url": "https://example.test/issues/7"}]}],
@@ -1442,7 +1442,7 @@ the helper `route`, its `phase` (`queued`, `running`, `done`, `failed` or
 `reports` holds one entry per stored pass, its `pass`, the `at` it was
 stored and the `report`. A `report` serves only the fields the report check
 defines, and a key a lead added beside them is left out: its `summary`;
-its `findings`, each a `title`, a `status` of `shown`, `likely` or
+its `findings`, each a `title`, a `status` of `confirmed`, `partial` or
 `unconfirmed`, and its `evidence`; its `actions`; its `reproduction`, a
 `level` and `hypotheses`, each with its `hypothesis`, what it `separates`
 and its `verdict`, or null; `cut`, the helper questions cut at the
@@ -1455,9 +1455,20 @@ offered, those whose reports or sub-tasks named the same paths, each its
 and `why` it did not (null when it did); a command item, `command` and
 `output`; a `url`; or a `text` item, `text`. A report stored before the
 report check serves inside these fields: a finding's free-text `evidence`
-serves as one `text` item holding the string as stored, a `status` outside
-the three above serves `unconfirmed`, and a report action's `kind` outside
-those `actions` lists serves `investigate`.
+serves as one `text` item holding the string as stored, and a report
+action's `kind` outside those `actions` lists serves `investigate`. No
+stored report is rewritten; each finding's stored `status` serves by this
+table:
+
+| stored | served |
+| --- | --- |
+| `shown` | `confirmed` |
+| `likely` | `partial` |
+| `unconfirmed` | `unconfirmed` |
+| `confirmed` | `confirmed` |
+| `partial` | `partial` |
+| `unverified` | `unconfirmed` |
+| any other word | `unconfirmed` |
 
 `actions` are the scout's action items by `position`, which counts across
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
@@ -1955,7 +1966,7 @@ a `[serve]` name or a repository path; `report` also takes `since`,
 `runs` and `scouts` `limit`, `run` the `run` id and its `view`, `ticket`
 the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run` or `body` and the required `note` and
 `author`, `steer` also its `hint` and `now` booleans, and `scout` its
-required `kind` and its optional `lead`, `helper`, `swarm`, `minutes` and
+required `kind` (`bug`, `research`, `recon` or `guardrails`) and its optional `lead`, `helper`, `swarm`, `minutes` and
 `subject` (`KIND:REF`, what the scout is about), the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
 `scout_stop` its required `project` and `scout` id, the note its reason,

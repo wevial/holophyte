@@ -91,7 +91,7 @@
         "findings": [
           {
             "title": "Retry spins without a delay",
-            "status": "shown",
+            "status": "confirmed",
             "evidence": [
               {
                 "file": "app/retry.py",
@@ -107,7 +107,7 @@
           },
           {
             "title": "The cap may be ignored",
-            "status": "likely",
+            "status": "partial",
             "evidence": [
               {
                 "file": "app/cap.py",

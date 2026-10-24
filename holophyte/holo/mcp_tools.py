@@ -4,6 +4,8 @@ import subprocess
 import sys
 from typing import Callable, NamedTuple
 
+from store.enums import ScoutKind
+
 READ, WRITE = 0, 1
 STDIN = "-"
 VIA = "via MCP"
@@ -93,9 +95,9 @@ NOW = Field("now", {
     lambda value: ["--now"] * bool(value))
 
 KIND = Field("kind", {
-    "enum": ["bug", "research", "recon"],
-    "description": "what the scout does: find a bug, research an idea, or"
-                   " map code"}, option("--kind"))
+    "enum": [kind.value for kind in ScoutKind],
+    "description": "what the scout does: find a bug, research an idea, map"
+                   " code, or mine findings for guardrails"}, option("--kind"))
 LEAD = Field("lead", {
     "type": "string", "minLength": 1,
     "description": "a [scout.leads.NAME] route; default [scout] lead"},

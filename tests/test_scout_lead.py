@@ -30,7 +30,7 @@ PLAN = {"tasks": [
     {"question": "Does the retry test fail on main?", "paths": [],
      "mode": "run"}]}
 REPORT = {"summary": "the retry loop never backs off",
-          "findings": [{"title": "no backoff", "status": "shown",
+          "findings": [{"title": "no backoff", "status": "confirmed",
                         "evidence": [{"url": "https://example.test/retry"}]}],
           "actions": [],
           "reproduction": {"level": "test", "hypotheses": [

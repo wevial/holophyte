@@ -1,11 +1,12 @@
 import copy
 import subprocess
 from pathlib import PurePosixPath
-from typing import NamedTuple
+from typing import NamedTuple, get_args
 
 import ticket_header
 import ticket_template
 from holophyte.loop.gates import sh
+from holophyte.scout.scout_contract import FindingStatus
 from store.enums import ScoutKind
 
 
@@ -62,6 +63,16 @@ def needs_hypothesis(value, path):
     return []
 
 
+STATUSES = get_args(FindingStatus)
+STORED_STATUSES = {"shown": "confirmed", "likely": "partial",
+                   "unverified": "unconfirmed",
+                   **{status: status for status in STATUSES}}
+
+
+def read_status(status):
+    return STORED_STATUSES.get(status, "unconfirmed")
+
+
 KINDS = ("fix", "test", "investigate", "decide")
 VERDICTS = ("holds", "fixed", "unchecked")
 REVISE = "revise"
@@ -74,7 +85,7 @@ EVIDENCE = Either({
 FIELDS = {
     "summary": TEXT,
     "findings": Each({"title": TEXT,
-                      "status": one_of("shown", "likely", "unconfirmed"),
+                      "status": one_of(*STATUSES),
                       "evidence": Each(EVIDENCE, nonempty=True),
                       "tasks": Omittable(TASK_IDS)}),
     "actions": Each({"title": TEXT, "why": TEXT,

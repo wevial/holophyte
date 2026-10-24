@@ -62,9 +62,9 @@ from tests.test_scout_process import MINUTE, now_ms
 from tests.test_scout_stop import WAIT_S, StopCase, wait_for
 
 REASON = "the lead wrote its report"
-FINDINGS = [{"title": "the retry loop never sleeps", "status": "shown",
+FINDINGS = [{"title": "the retry loop never sleeps", "status": "confirmed",
              "evidence": [{"url": "https://example.test/retry"}]},
-            {"title": "the timeout is read twice", "status": "likely",
+            {"title": "the timeout is read twice", "status": "partial",
              "evidence": [{"url": "https://example.test/timeout"}]}]
 ACTIONS = [{"title": "add a backoff", "why": "it spins", "kind": "fix",
             "body": "Add a backoff."},
@@ -78,7 +78,7 @@ QUESTIONS = ["Where is the digest sent?", "Who builds the digest?",
              "Which commit added the digest?"]
 SECOND = {"summary": "the digest retries too",
           "findings": [{"title": "the digest shares the retry loop",
-                        "status": "shown",
+                        "status": "confirmed",
                         "evidence": [{"url": "https://example.test/digest"}]}],
           "actions": [{"title": "share the backoff", "why": "same loop",
                        "kind": "fix", "body": "Share the backoff."}]}

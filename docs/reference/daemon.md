@@ -314,7 +314,7 @@ their answers. A failed or empty answer fails the run, as an
 
 Body: a JSON object with `ask` (required, non-blank text: what the scout
 looks into; links, ticket keys and pull request URLs go in its text),
-`kind` (required, `bug`, `research` or `recon`), `lead` (optional, a
+`kind` (required, `bug`, `research`, `recon` or `guardrails`), `lead` (optional, a
 `[scout.leads.NAME]` route; default `[scout] lead`), `helper` (optional, a
 `[scout.helpers.NAME]` route; default `[scout] helper`), `swarm` (optional
 positive integer, helpers at once; default `[scout] swarm`), `minutes`
@@ -364,7 +364,7 @@ not started; `recorded` is null.
 ```
 
 A body that is not a JSON object, a missing or blank `ask`, a `kind`
-outside the three, a `lead` or `helper` that is not a string, or a `swarm`
+outside the four, a `lead` or `helper` that is not a string, or a `swarm`
 or `minutes` that is not a positive integer is 400 naming the field. So is a
 `subject` that is not a string, has no colon, has a kind outside the four,
 a blank ref, a `run` or `defect` ref that is not a positive integer, or a

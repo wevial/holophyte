@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 59
+SCHEMA_VERSION = 60
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -349,8 +349,8 @@ def init(conn):
                          " WHERE t.lastRunId = runs.id"
                          " AND t.status = 'blocked_on_operator')"
                          " WHERE parkKind IS NULL")
-        if version < 50:
-            _rebuild_enum_tables(conn)
+        if version < 60:
+            _rebuild_enum_tables(conn, version)
         if version < 37:
             conn.execute(
                 "INSERT INTO ticketRevisions (ticketId, revision, at, author,"
@@ -376,8 +376,10 @@ def init(conn):
         conn.execute(f"PRAGMA foreign_keys = {foreign_keys}")
 
 
-def _rebuild_enum_tables(conn):
-    for table in dict.fromkeys(table for table, _ in _enums.CONSTRAINED_COLUMNS):
+def _rebuild_enum_tables(conn, version):
+    tables = (dict.fromkeys(table for table, _ in _enums.CONSTRAINED_COLUMNS)
+              if version < 50 else ("scouts",))
+    for table in tables:
         # `_widen_interventions_action()` rebuilds it and translates its history.
         if table == "interventions":
             continue
