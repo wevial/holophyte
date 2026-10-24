@@ -93,8 +93,7 @@ function wavesOf(tasks: ScoutTask[], endedMs: number | null = null): Wave[] {
 
 function waveTone(tasks: ScoutTask[], running: boolean): ActivityTone {
   if (running) return "live";
-  if (tasks.some((task) => !ENDED.has(task.phase))) return "wait";
-  if (tasks.some((task) => task.phase === "stopped")) return "wait";
+  if (tasks.some((task) => !ENDED.has(task.phase) || task.phase === "stopped")) return "wait";
   if (tasks.some((task) => task.phase === "failed")) return "bad";
   return "ok";
 }
@@ -172,7 +171,7 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   const groups = spans.map((span, index): ScoutGroup => {
     if ("wave" in span) {
       const running = live && span === last && span.end == null;
-      return waveGroup(span, scout.helper, scout.swarm, running, groupStart(spans[index - 1], now));
+      return waveGroup(span, scout.helper, scout.swarm, running, spans[index - 1]?.end ?? now);
     }
     const running = span.end == null && live && index === spans.length - 1;
     return {
@@ -191,11 +190,6 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
     });
   }
   return groups;
-}
-
-/** Where a wave with no started task begins: where the group before it ended. */
-function groupStart(before: Span | Wave | undefined, now: number): number {
-  return before?.end ?? now;
 }
 
 function reportWords(detail: ScoutDetail): string[] {
