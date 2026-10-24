@@ -6,6 +6,7 @@ import ticket_header
 import ticket_template
 from holophyte.admission import project_row
 from holophyte.loop.runs import open_store
+from holophyte.scout.report import REVISE
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from provider import FiledWithoutBlockers, board_for
@@ -61,6 +62,9 @@ def judged(project, scout_id, position):
                                  "detail": f"scout {scout_id} is {row.phase};"
                                            " only a done scout's items file"})
         item, filed = found
+        if isinstance(item, dict) and item.get("kind") == REVISE:
+            raise Answered(200, {"ok": False, **named, "ticket": None,
+                                 "detail": revise_refusal(item, named)})
         if filed is not None:
             raise Answered(200, {"ok": False, **named, "ticket": filed,
                                  "detail": f"scout {scout_id} item {position}"
@@ -75,6 +79,14 @@ def judged(project, scout_id, position):
             conn, project_row(conn, project), text, column="backlog")
     finally:
         conn.close()
+
+
+def revise_refusal(item, named):
+    revises = item.get("revises") or {}
+    ticket = revises.get("ticket", "its ticket")
+    return (f"scout {named['scout']} item {named['item']} revises {ticket}"
+            f" at revision {revises.get('revision', 'unknown')}; save it on"
+            f" {ticket}'s edit page")
 
 
 def filed_text(item, named):

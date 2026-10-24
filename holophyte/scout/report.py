@@ -55,6 +55,9 @@ def needs_hypothesis(value, path):
     return []
 
 
+KINDS = ("fix", "test", "investigate", "decide")
+REVISE = "revise"
+DEFECT = "defect"
 EVIDENCE = Either({
     "file": {"file": PATH, "line": LINE},
     "command": {"command": TEXT, "output": ANY_TEXT},
@@ -66,8 +69,7 @@ FIELDS = {
                       "status": one_of("shown", "likely", "unconfirmed"),
                       "evidence": Each(EVIDENCE, nonempty=True)}),
     "actions": Each({"title": TEXT, "why": TEXT,
-                     "kind": one_of("fix", "test", "investigate", "decide"),
-                     "body": TEXT}),
+                     "kind": one_of(*KINDS, REVISE), "body": TEXT}),
 }
 REPRODUCTION = Checked({
     "level": one_of("test", "real_tool", "not_reproduced"),
@@ -158,12 +160,49 @@ def fields_shape(fields):
     return ",\n".join(f' "{key}": {shown(field)}' for key, field in fields.items())
 
 
-def report_problems(report, kind):
+def offers_revise(subject):
+    return subject is not None and subject[0] == DEFECT
+
+
+def offered_fields(subject):
+    kinds = KINDS + ((REVISE,) if offers_revise(subject) else ())
+    action = dict(FIELDS["actions"].item, kind=one_of(*kinds))
+    return dict(FIELDS, actions=Each(action))
+
+
+def untitled(body):
+    if not isinstance(body, str) or not body.strip():
+        return False
+    return not next(line for line in body.splitlines()
+                    if line.strip()).startswith("# ")
+
+
+def revise_problems(actions, subject):
+    revising = [(index, action) for index, action in enumerate(actions)
+                if isinstance(action, dict) and action.get("kind") == REVISE]
+    problems = []
+    for count, (index, action) in enumerate(revising):
+        if not offers_revise(subject):
+            problems.append(f"actions[{index}].kind: revise needs a"
+                            " ticket-defect subject")
+        if count:
+            problems.append(f"actions[{index}].kind: at most one revise item")
+        if untitled(action.get("body")):
+            problems.append(f'actions[{index}].body: a revision starts with'
+                            ' its "# " title line')
+    return problems
+
+
+def report_problems(report, kind, subject=None):
     """Each problem opens with the field's path; none means the report passes."""
     fields = dict(FIELDS)
     if kind == ScoutKind.BUG.value or "reproduction" in report:
         fields["reproduction"] = REPRODUCTION
-    return walk(report, fields, "")
+    problems = walk(report, fields, "")
+    actions = report.get("actions") if isinstance(report, dict) else None
+    if isinstance(actions, list):
+        problems += revise_problems(actions, subject)
+    return problems
 
 
 def line_count(repo, spec):

@@ -165,9 +165,17 @@ def scout_lines(body):
               f"  {task['phase']}  {task['question']}" for task in body["tasks"]]
     lines += [f"  report pass {entry['pass']}: {entry['report']['summary']}"
               for entry in body["reports"]]
-    lines += [f"  item {item['position']}  {item['kind']}  {item['title']}"
-              f"  {item['ticket'] or 'unfiled'}" for item in body["actions"]]
+    lines += [action_line(item) for item in body["actions"]]
     return lines
+
+
+def action_line(item):
+    revises = item["revises"]
+    if revises is not None:
+        return (f"A{item['position']} {item['kind']} {revises['ticket']}"
+                f" r{revises['revision']}: {item['title']}")
+    return (f"  item {item['position']}  {item['kind']}  {item['title']}"
+            f"  {item['ticket'] or 'unfiled'}")
 
 
 def choice_lines(message):

@@ -1411,7 +1411,8 @@ One scout whole: what the console's Scout page draws.
      {"hypothesis": "…", "separates": "…", "verdict": "supported"}]},
    "cut": []}}],
  "actions": [{"position": 1, "pass": 1, "title": "…", "why": "…",
-              "kind": "fix", "body": "…", "ticket": null, "filed_ms": null}],
+              "kind": "fix", "body": "…", "revises": null, "ticket": null,
+              "filed_ms": null}],
  "events": [{"id": 1, "at": 1791568800000, "kind": "scout_queued",
              "summary": "bug scout queued by maintainer (holo scout)"}],
  "thread": [{"id": 1, "author": "maintainer", "mode": "ask", "text": "…",
@@ -1451,8 +1452,14 @@ and `why` it did not (null when it did); a command item, `command` and
 
 `actions` are the scout's action items by `position`, which counts across
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
-`investigate` or `decide`) and `body`, the `ticket` key it was filed as
-and `filed_ms`, both null until it is filed. `events` holds this scout's
+`investigate`, `decide` or `revise`) and `body`, `revises`, the `ticket`
+key it was filed as and `filed_ms`, both null until it is filed. A
+`revise` item, offered only to a scout whose `subject` is a `defect`, is
+the defect ticket's whole body rewritten, and its `revises` is
+`{"ticket": KEY, "revision": N}`: the defect run's ticket and that
+ticket's revision when the item was stored. Every other item's `revises`
+is null. `holo scout show` prints a `revise` item as
+`A2 revise NAT-3 r2: TITLE`. `events` holds this scout's
 events in the order written, each its `id`, `at`, `kind` and `summary`,
 as `GET /runs/N` serves a run's.
 

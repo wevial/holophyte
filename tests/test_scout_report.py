@@ -122,9 +122,10 @@ class ReportGoalTests(unittest.TestCase):
         choices = enumerated([FIELDS, REPRODUCTION])
         self.assertEqual(sorted(choices), sorted([
             "shown", "likely", "unconfirmed", "fix", "test", "investigate",
-            "decide", "test", "real_tool", "not_reproduced", "supported",
-            "ruled_out", "open"]))
-        goal = report_goal(SimpleNamespace(kind="bug"),
+            "decide", "revise", "test", "real_tool", "not_reproduced",
+            "supported", "ruled_out", "open"]))
+        goal = report_goal(SimpleNamespace(kind="bug", subject_kind="defect",
+                                           subject_ref="12"),
                            SimpleNamespace(tasks=[]), None, False)
         self.assertEqual([choice for choice in choices
                           if f'"{choice}"' not in goal], [])
@@ -134,7 +135,8 @@ class ReportGoalTests(unittest.TestCase):
 
     def goals(self):
         for kind in ("bug", "recon"):
-            row = SimpleNamespace(kind=kind)
+            row = SimpleNamespace(kind=kind, subject_kind=None,
+                                  subject_ref=None)
             yield kind, "report", report_goal(row, SimpleNamespace(tasks=[]),
                                               None, False)
             yield kind, "repair", repair_goal(row, ["summary: must be"

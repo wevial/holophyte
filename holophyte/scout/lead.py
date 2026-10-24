@@ -13,9 +13,11 @@ from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.context import context_pack
 from holophyte.scout.report import (
-    FIELDS,
     REPRODUCTION,
+    REVISE,
     fields_shape,
+    offered_fields,
+    offers_revise,
     report_problems,
     resolve_evidence,
     ticket_skeleton,
@@ -49,7 +51,6 @@ FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
 PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
-REPORT_SHAPE = "{" + fields_shape(FIELDS).lstrip()
 REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
 
 
@@ -143,9 +144,26 @@ def synthesis_goal(row, swarm, fresh):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
+def subject_of(row):
+    return (None if row.subject_kind is None
+            else (row.subject_kind, row.subject_ref))
+
+
 def report_shape(row):
-    return REPORT_SHAPE + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value
-                           else "") + "}"
+    return ("{" + fields_shape(offered_fields(subject_of(row))).lstrip()
+            + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value else "")
+            + "}")
+
+
+def revise_rule(row):
+    if not offers_revise(subject_of(row)):
+        return ""
+    return (
+        f"This scout is about a ticket defect, so one action may be of kind "
+        f"\"{REVISE}\": at most one {REVISE} item, whose body is the defect "
+        "ticket's whole body in the skeleton's sections, rewritten so the "
+        "stop cannot recur and opening with its \"# \" title line, and whose "
+        "why names the wording that caused the stop.\n\n")
 
 
 def report_ending(row):
@@ -154,7 +172,7 @@ def report_ending(row):
         "replacing each <...> with the ticket's text: estimate is whole "
         f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
         "ticket keys it waits on.\n\n"
-        f"{ticket_skeleton()}\n\n"
+        f"{ticket_skeleton()}\n\n" + revise_rule(row) +
         "Do not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT, PATH and URL standing for strings "
         "and N for a line number from 1:\n\n"
@@ -278,7 +296,8 @@ def run_waves(conn, lead, swarm, tasks, waves):
 
 
 def checked_report(lead, report):
-    problems = report_problems(report, lead.row.kind)
+    subject = subject_of(lead.row)
+    problems = report_problems(report, lead.row.kind, subject)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems,
@@ -286,7 +305,27 @@ def checked_report(lead, report):
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
-    return report, report_problems(report, lead.row.kind)
+    return report, report_problems(report, lead.row.kind, subject)
+
+
+def revised_ticket(conn, row):
+    if not offers_revise(subject_of(row)):
+        return None
+    found = conn.execute(
+        "SELECT t.linearIdentifier, t.revision FROM runs r"
+        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
+        (row.subject_ref,)).fetchone()
+    return None if found is None else {"ticket": found[0],
+                                       "revision": found[1]}
+
+
+def stamped(conn, row, report):
+    revises = revised_ticket(conn, row)
+    actions = [{**{key: value for key, value in action.items()
+                   if key != "revises"},
+                **({"revises": revises} if action["kind"] == REVISE else {})}
+               for action in report["actions"]]
+    return dict(report, actions=actions)
 
 
 def lead_seat(project, row, config, stopping):
@@ -340,6 +379,7 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         report = reproduced(row, swarm, resolve_evidence(project.path,
                                                          row.base_sha, report))
         with store.transaction(conn):
+            report = stamped(conn, row, report)
             record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))
             record_scout_actions(conn, row.id, 1, report["actions"])
     return "done", "the lead wrote its report"

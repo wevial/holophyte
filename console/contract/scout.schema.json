@@ -498,7 +498,8 @@
             "fix",
             "test",
             "investigate",
-            "decide"
+            "decide",
+            "revise"
           ]
         },
         "body": {
@@ -631,6 +632,22 @@
       ],
       "additionalProperties": true
     },
+    "Revises": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ticket",
+        "revision"
+      ],
+      "additionalProperties": true
+    },
     "ScoutAction": {
       "type": "object",
       "properties": {
@@ -651,11 +668,22 @@
             "fix",
             "test",
             "investigate",
-            "decide"
+            "decide",
+            "revise"
           ]
         },
         "body": {
           "type": "string"
+        },
+        "revises": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revises"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "ticket": {
           "anyOf": [
@@ -685,6 +713,7 @@
         "why",
         "kind",
         "body",
+        "revises",
         "ticket",
         "filed_ms"
       ],
