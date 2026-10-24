@@ -24,7 +24,6 @@ TAIL_CHARS = 2_000
 MESSAGE_CHARS = 300
 FINDINGS_SHOWN = 20
 BODY_CHARS = 12_000
-FAILED_READ = (500, {})
 
 
 class ContextPack(NamedTuple):
@@ -49,12 +48,16 @@ class Pack:
                                   if path))
 
 
-def answered(read, *args):
+def answered(pack, what, read, *args):
     try:
-        return read(*args)
+        code, body = read(pack.project, *args)
     except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError,
             KeyError, TypeError, ValueError, AttributeError):
-        return FAILED_READ
+        code = None
+    if code == 200:
+        return body
+    pack.note(f"{what} unreadable")
+    return None
 
 
 def readonly(project):
@@ -74,9 +77,8 @@ def head_line(run):
 
 
 def ledger_part(pack, run_id):
-    code, body = answered(run_ledger, pack.project, str(run_id))
-    if code != 200:
-        pack.note("ledger unreadable")
+    body = answered(pack, "ledger", run_ledger, str(run_id))
+    if body is None:
         return
     entries = body["entries"]
     shown = entries[-LEDGER_SHOWN:]
@@ -141,9 +143,8 @@ def criteria_part(pack, criteria):
 
 
 def files_part(pack, run_id):
-    code, body = answered(run_files, pack.project, str(run_id))
-    if code != 200:
-        pack.note("files unreadable")
+    body = answered(pack, "files", run_files, str(run_id))
+    if body is None:
         return
     pack.files.extend(f["path"] for f in body["files"])
     pack.note(f"{len(body['files'])} files")
@@ -151,9 +152,8 @@ def files_part(pack, run_id):
 
 
 def run_pack(pack, run_id):
-    code, detail = answered(run_detail, pack.project, str(run_id))
-    if code != 200:
-        pack.note(f"run {run_id} unreadable")
+    detail = answered(pack, f"run {run_id}", run_detail, str(run_id))
+    if detail is None:
         pack.add(f"Context: run {run_id} could not be read")
         return None
     pack.note(f"run {run_id}")
@@ -202,9 +202,8 @@ def body_lines(pack, run, claimed, bodies):
     else:
         pack.add(f"Ticket body at claimed revision {revision}:",
                  (bodies.get(revision) or "")[:BODY_CHARS])
-    code, ticket = answered(ticket_detail, pack.project, run["ticket"])
-    if code != 200:
-        pack.note("ticket unreadable")
+    ticket = answered(pack, "ticket", ticket_detail, run["ticket"])
+    if ticket is None:
         return
     current = ticket["current"]
     if current and revision is not None and current["revision"] > revision:
@@ -227,9 +226,8 @@ def defect_pack(pack, ref):
 
 
 def ticket_pack(pack, key):
-    code, ticket = answered(ticket_detail, pack.project, key)
-    if code != 200:
-        pack.note(f"ticket {key} unreadable")
+    ticket = answered(pack, f"ticket {key}", ticket_detail, key)
+    if ticket is None:
         pack.add(f"Context: ticket {key} could not be read")
         return
     pack.note(f"ticket {key}")
