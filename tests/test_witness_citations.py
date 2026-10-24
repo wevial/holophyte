@@ -14,6 +14,7 @@ from pathlib import Path
 import holophyte.loop.runs
 import store
 import store.tickets
+from holophyte.review import citations
 from holophyte.review.reply_parsing import criteria_findings, criteria_statuses
 
 CRITERIA = ["Given a reader, then it reads"]
@@ -195,6 +196,12 @@ class ApprovalTests(Worktree):
             "import json\n", "import json\nimport json.decoder\n"))
         findings, _ = self.judged(candidate)
         self.assertEqual(findings, [])
+
+    def test_a_new_class_shadowing_the_cited_class_is_a_change(self):
+        shadowed = LOAD + ("\n\nclass LoadTests(unittest.TestCase):\n"
+                           "    def test_more(self):\n        pass\n")
+        self.assertFalse(citations.test_unchanged(LOAD, shadowed, "LoadTests",
+                                                  "test_broken"))
 
     def test_a_change_the_cited_test_depends_on_makes_it_stale(self):
         cases = {

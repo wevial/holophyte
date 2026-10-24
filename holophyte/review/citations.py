@@ -15,11 +15,13 @@ def defining_classes(source, name):
         indent = len(line) - len(line.lstrip())
         while stack and stack[-1][0] >= indent:
             stack.pop()
-        match = re.match(r"\s*class (\w+)\b", line)
-        if match:
-            stack.append((indent, match.group(1)))
-        elif stack and re.match(rf"\s*def {name}\(", line):
-            classes.append(stack[-1][1])
+        match = re.match(r"\s*(class|(?:async\s+)?def)\s+(\w+)\b", line)
+        if match is None:
+            continue
+        if (match.group(1) != "class" and match.group(2) == name
+                and stack and stack[-1][1]):
+            classes.append(stack[-1][2])
+        stack.append((indent, match.group(1) == "class", match.group(2)))
     return sorted(set(classes))
 
 
@@ -38,7 +40,7 @@ def test_unchanged(approved, candidate, cls, name):
     if not all(_cited(tree, cls, name) for tree in trees):
         return False
     bound = _module_bindings(trees[0])
-    before, after = (_strip(tree, cls, name) for tree in trees)
+    before, after = (_strip(tree, cls, name, bound) for tree in trees)
     return (ast.dump(trees[0]) == ast.dump(trees[1]) and before.keys() <= after.keys()
             and _binds_new_names_only(
                 [node for key, node in after.items() if key not in before],
@@ -57,7 +59,7 @@ def _is_def(node):
     return isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
 
 
-def _strip(tree, cls, name):
+def _strip(tree, cls, name, bound):
     imports = {ast.dump(node): node for node in tree.body
                if isinstance(node, ast.Import | ast.ImportFrom)}
     tree.body = [node for node in tree.body
@@ -66,7 +68,7 @@ def _strip(tree, cls, name):
     used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     tree.body = [node for node in tree.body
                  if not (isinstance(node, ast.ClassDef) and not node.body
-                         and node.name not in used)]
+                         and node.name not in used | bound)]
     return imports
 
 
