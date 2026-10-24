@@ -1447,7 +1447,8 @@ events in the order written, each its `at`, `kind` and `summary`, as
 An id that is not a positive integer is 400 with an `error`. An id the
 store does not hold is 404 with `error` `no such scout`; a project with no
 store answers 503. On a host daemon this route is
-`GET /projects/NAME/scouts/ID`. `holo scout show ID [--json]` prints it.
+`GET /projects/NAME/scouts/ID`. `holo scout show ID [--json]` prints it,
+and the `holo mcp` `scout_show` tool answers it.
 
 ## `GET /scouts/routes`
 
@@ -1915,7 +1916,7 @@ a JSON Schema object: `type`, `properties` (each a `type`, `minLength` or
 and `additionalProperties`, false. Every tool takes an optional `project`,
 a `[serve]` name or a repository path; `report` also takes `since`,
 `runs` and `scouts` `limit`, `run` the `run` id and its `view`, `ticket`
-the `key`, and the writes their own `ticket`, `run` or `body` and the required `note` and
+the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run` or `body` and the required `note` and
 `author`, `steer` also its `hint` and `now` booleans, and `scout` its
 required `kind` and its optional `lead`, `helper`, `swarm` and `minutes`,
 the note its ask. `annotations` holds `readOnlyHint`, true for a read, and

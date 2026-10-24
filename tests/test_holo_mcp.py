@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MINUTE = 60_000
 NOW = 1_750_000_000_000
 TOOLS = {"status", "attention", "report", "runs", "run", "board", "ticket",
-         "scouts", "board_diff", "sweep_preview"}
+         "scouts", "scout_show", "board_diff", "sweep_preview"}
 INSTALL = "python3 -m pip install --user -r requirements.txt"
 PROTOCOL = "2025-11-25"
 
@@ -137,7 +137,7 @@ class SessionTests(McpCase):
                           initialized.server_info.version),
                          ("holo", package_version()))
 
-    def test_the_ten_reads_are_each_read_only_with_an_input_schema(self):
+    def test_the_eleven_reads_are_each_read_only_with_an_input_schema(self):
         async def use(client, _):
             return (await client.list_tools()).tools
         reads = [tool for tool in self.session(use) if tool.name in TOOLS]

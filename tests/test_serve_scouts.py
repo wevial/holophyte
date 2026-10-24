@@ -1,6 +1,6 @@
 """The scout reads: `GET /scouts`, `GET /scouts/ID` and `GET /scouts/routes`
-on a project and a host daemon, `holo scouts` and `holo scout show`, and the
-`holo mcp` `scouts` tool, over a store seeded through the scout writers.
+on project and host daemons, `holo scouts`, `holo scout show` and the
+`holo mcp` tools `scouts` and `scout_show`, on a store the writers seed.
 
 Run: python3 -m unittest discover -s tests -p 'test_serve_scouts.py' -v
 """
@@ -417,3 +417,19 @@ class McpTests(ScoutCase):
                           result.structured_content["scouts"]],
                          [self.queued, self.swarming])
         self.assertIs(result.structured_content["truncated"], True)
+
+    def test_the_scout_show_tool_is_a_read_answering_get_scouts_id(self):
+        async def use(client, _):
+            return (await client.list_tools()).tools
+        tools = {tool.name: tool for tool in self.session(use)}
+        self.assertLessEqual({"scouts", "scout_show", "scout"}, set(tools))
+        show = tools["scout_show"]
+        self.assertIs(show.annotations.read_only_hint, True)
+        self.assertIs(tools["scout"].annotations.read_only_hint, False)
+        self.assertEqual(show.input_schema["required"], ["scout"])
+        result = self.call("scout_show", {"project": "alpha",
+                                          "scout": self.done})
+        self.assertIs(result.is_error, False, result.content)
+        code, body = self.get(self.serve(self.project), f"/scouts/{self.done}")
+        self.assertEqual(code, 200, body)
+        self.assertEqual(steady(result.structured_content), steady(body))

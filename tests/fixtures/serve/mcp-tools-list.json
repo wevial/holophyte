@@ -207,6 +207,33 @@
           "destructiveHint": false,
           "readOnlyHint": true
         },
+        "description": "one scout whole: its tasks, reports, action items and events (holo scout show ID --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "scout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the scout's id"
+            }
+          },
+          "required": [
+            "scout"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "scout_show"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
         "description": "where the store's ready queue differs from the board's, as text (holo board diff)",
         "inputSchema": {
           "properties": {

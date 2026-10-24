@@ -56,6 +56,8 @@ SCOUT_LIMIT = LIMIT._replace(schema={**LIMIT.schema,
                                     "description": "at most this many scouts"})
 RUN = Field("run", {"type": "integer", "minimum": 1,
                     "description": "the run's id"}, None)
+SCOUT = RUN._replace(name="scout", schema={**RUN.schema,
+                                           "description": "the scout's id"})
 VIEW = Field("view", {
     "enum": list(VIEWS), "default": VIEWS[0],
     "description": "the run's detail, or its files, ledger or agent turns"},
@@ -136,6 +138,9 @@ READS = (
          ("ticket",), (PROJECT, KEY), required=("key",)),
     Tool("scouts", "recent scouts, newest first (holo scouts --json)",
          ("scouts",), (PROJECT, SCOUT_LIMIT)),
+    Tool("scout_show", "one scout whole: its tasks, reports, action items"
+         " and events (holo scout show ID --json)", ("scout", "show"),
+         (PROJECT, SCOUT), required=("scout",)),
     Tool("board_diff", "where the store's ready queue differs from the"
          " board's, as text (holo board diff)", ("board", "diff"),
          (PROJECT,), json=False, answered=BOARD_DIFF_SUMMARY),
