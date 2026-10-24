@@ -61,10 +61,11 @@ const demoRoutes: ScoutRoutes = {
 };
 
 /** DEMO serving runs 12 to 14, DEMO-7, the findings above and its scout
- *  routes, WRITER its scout routes, `actions` as given; run 14 is live.
- *  Every request is kept. */
+ *  routes, WRITER its scout routes, `actions` as given but off for each
+ *  base in `off`; run 14 is live. Every request is kept. */
 function scoutThisFetch(actions = true) {
   const seen: { url: string; method: string; body: Record<string, unknown> | null }[] = [];
+  const off = new Set<string>();
   const polls = fleet({ items: [], runs: [{ ...run(14, "DEMO-8"), phase: "working" }] }, { items: [] });
   const fetch: Fetch = async (url, init) => {
     seen.push({ url, method: init?.method ?? "GET", body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
@@ -77,21 +78,23 @@ function scoutThisFetch(actions = true) {
     if (url === `${DEMO}/actions/scout` || url === `${WRITER}/actions/scout`) return Response.json({ ok: true, detail: "scout 32 started" });
     const answer = await polls(url);
     if (!url.endsWith("/status")) return answer;
-    return Response.json({ ...(await answer.json()), actions });
+    return Response.json({ ...(await answer.json()), actions: actions && !off.has(url.slice(0, -"/status".length)) });
   };
-  return { fetch, seen };
+  return { fetch, seen, off };
 }
 
 async function mount(hash: string, fetch: Fetch) {
   window.location.hash = hash;
   const fake = fakeDeps(fetch);
   fake.clock.now = NOW;
+  const queries = consoleQueryClient();
   render(
-    <QueryClientProvider client={consoleQueryClient()}>
+    <QueryClientProvider client={queries}>
       <NextConsole base={DEMO} pollDeps={fake.deps} />
     </QueryClientProvider>,
   );
   for (let round = 0; round < 6; round += 1) await act(settle);
+  return queries;
 }
 
 const click = async (element: Element) => {
@@ -206,6 +209,21 @@ test("picking another project drops the subject, so that project's launch names 
   await mount("#/runs/demo/12", daemon.fetch);
   await click(scoutButtons()[0]!);
   await change(within(form()).getByLabelText("Project"), WRITER);
+  expect(project()).toBe("writer");
+  expect(about()).toBeNull();
+  await click(within(form()).getByRole("button", { name: "Scout" }));
+  const posts = daemon.seen.filter((each) => each.method === "POST" && each.url.endsWith("/actions/scout"));
+  expect(posts.map((each) => each.url)).toEqual([`${WRITER}/actions/scout`]);
+  expect(Object.keys(posts[0]!.body!)).not.toContain("subject");
+});
+
+test("a subject's project going away drops the subject, so the project the form falls back to launches with none", async () => {
+  const daemon = scoutThisFetch();
+  const queries = await mount("#/runs/demo/12", daemon.fetch);
+  await click(scoutButtons()[0]!);
+  daemon.off.add(DEMO);
+  await act(async () => void (await queries.refetchQueries({ queryKey: ["fleet"] })));
+  for (let round = 0; round < 6; round += 1) await act(settle);
   expect(project()).toBe("writer");
   expect(about()).toBeNull();
   await click(within(form()).getByRole("button", { name: "Scout" }));

@@ -125,6 +125,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
     ask?.setSelectionRange(ask.value.length, ask.value.length);
   }, []);
   const project = projects.find((each) => each.base === draft.base) ?? projects[0]!;
+  const about = project.base === draft.base ? draft.about : null;
   const { data: routes } = useScoutRoutes(project.base);
   const leads = routes?.leads ?? [];
   const helperRoutes = routes?.helpers ?? [];
@@ -139,7 +140,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   const pick = (change: Partial<ScoutPicks>) => picks && set({ picks: { ...picks, ...change, base: project.base } });
   const launch = () => {
     if (!ready) return;
-    const body = { ask: draft.ask.trim(), kind: draft.kind, lead: picks.lead, helper: picks.helper, swarm, minutes, ...(draft.about == null ? {} : { subject: draft.about }) };
+    const body = { ask: draft.ask.trim(), kind: draft.kind, lead: picks.lead, helper: picks.helper, swarm, minutes, ...(about == null ? {} : { subject: about }) };
     action.mutate(
       { label: "Scout", base: project.base, route: "/actions/scout", body, said: sentence },
       { onSuccess: (result) => result.ok && onLaunched() },
@@ -156,7 +157,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
       className="mb-4 border border-rule bg-paper"
     >
       <Band>
-        {draft.about != null && <AboutLine about={draft.about} onRemove={() => set({ about: null })} />}
+        {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
         <label htmlFor="scout-ask" className="flex flex-col">
           <span className={LABEL}>Ask</span>
           <textarea id="scout-ask" ref={askRef} rows={2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans`} />
