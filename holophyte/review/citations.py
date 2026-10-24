@@ -8,6 +8,17 @@ class DottedReference(tuple):
 
 
 def defining_classes(source, name):
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return _scanned_classes(source, name)
+    return sorted({node.name for node in ast.walk(tree)
+                   if isinstance(node, ast.ClassDef)
+                   and any(_is_def(child) and child.name == name
+                           for child in node.body)})
+
+
+def _scanned_classes(source, name):
     stack, classes = [], []
     for line in source.splitlines():
         if not line.strip():

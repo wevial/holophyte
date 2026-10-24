@@ -104,6 +104,14 @@ class OtherClassTests(Worktree):
             "note": f"named test not found: {CITED} "
                     "(import: no callable test_reads on class Wrong)"})
 
+    def test_a_def_inside_a_string_is_not_a_candidate(self):
+        quoted = '    """\n    def test_reads(self):\n    """\n' + OTHER
+        self.write("tests/test_alpha.py",
+                   alpha(("Reads", quoted), prelude=UNIMPORTABLE))
+        entry = self.status()
+        self.assertEqual(entry["status"], "unwitnessed")
+        self.assertNotIn("resolved", entry)
+
 
 class DottedModuleTests(Worktree):
     REPLY = ("CRITERION 1: met — python3 -m ci.check tests.core.test_sources"
