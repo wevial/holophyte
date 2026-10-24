@@ -32,12 +32,16 @@ LOOK = "test -e setup-ran && echo present || echo absent"
 READ_ONLY = "Read and search only: do not edit files, commit or push."
 WRITE_TOOLS = {"Bash", "Edit", "Write", "NotebookEdit"}
 DOCKER = """#!{python}
-import json, sys
+import json, subprocess, sys
 with open({log!r}, "a") as log:
     log.write(json.dumps(sys.argv[1:]) + "\\n")
 if sys.argv[-1] == {goal!r}:
     print({probe!r})
     sys.exit({probe_exit})
+if {helper!r} and sys.argv[-1].startswith("Scout helper turn"):
+    (mounted,) = [arg.split(":")[0] for arg in sys.argv
+                  if arg.endswith(":/workspace:rw")]
+    sys.exit(subprocess.run([{helper!r}, sys.argv[-1]], cwd=mounted).returncode)
 sys.exit(1 if sys.argv[1:2] == ["inspect"] else 0)
 """
 
@@ -203,12 +207,14 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertIn(READ_ONLY, turn["argv"][-1])
         self.assertNotIn("may edit files", turn["argv"][-1])
 
-    def container_scout(self, probe="ready", probe_exit=0):
+    def container_scout(self, probe="ready", probe_exit=0, config="",
+                        helper_sh=None):
         """A container bug scout with one run task, run against a stub
         `docker` that answers the helper probe with `probe` and
-        `probe_exit`; each `docker run` argv it logged, and the scout."""
+        `probe_exit`, and with `helper_sh` runs the stub helper in the
+        mounted workspace; each `docker run` argv it logged, and the scout."""
         path, conn, scout_id = self.scout(
-            "bug", '[agents]\nimplementer_isolation = "container"\n',
+            "bug", '[agents]\nimplementer_isolation = "container"\n' + config,
             helper_route="haiku")
         git(path, "config", "user.name", "scout-test")
         git(path, "config", "user.email", "scout@test")
@@ -217,9 +223,11 @@ class ScoutRunHelperTests(ScoutFixture):
         docker = bin_dir / "docker"
         docker.write_text(DOCKER.format(
             python=sys.executable, log=str(log), goal=PROBE_GOAL, probe=probe,
-            probe_exit=probe_exit))
+            probe_exit=probe_exit,
+            helper=str(self.stubs.directory / "claude") if helper_sh else ""))
         docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
-        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT))
+        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
+                          helper_sh=helper_sh or [])
         with patch.object(launcher, "image_ready", lambda route: None), \
                 patch.object(os, "defpath", f"{bin_dir}{os.pathsep}{os.defpath}"):
             self.run_scout(path, scout_id)
@@ -227,17 +235,53 @@ class ScoutRunHelperTests(ScoutFixture):
                 if argv[:1] == ["run"]]
         goals = [argv for argv in runs
                  if any(arg.startswith("Scout helper turn\n") for arg in argv)]
-        return conn, scout_id, runs, goals
+        return path, conn, scout_id, runs, goals
 
     def test_a_container_project_runs_the_run_helper_in_the_image(self):
-        conn, scout_id, runs, goals = self.container_scout()
+        _, conn, scout_id, runs, goals = self.container_scout()
         self.assertEqual(len(goals), 1)
         self.assertIn("claude", goals[0])
         self.assertEqual(self.stubs.turns("helper"), [])
         self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
 
+    def test_a_container_run_helper_s_refs_are_reported_and_its_push_refused(self):
+        remote = self.root / "remote.git"
+        git(self.root, "init", "-q", "--bare", str(remote))
+        path, conn, scout_id, _, goals = self.container_scout(
+            config=SETUP_RAN, helper_sh=[
+                "echo edited >> notes.txt", "git commit -qam edit",
+                "git branch helper-branch",
+                "git update-ref refs/heads/main HEAD",
+                f"git push -q {remote} HEAD:refs/heads/pushed"])
+        self.assertEqual(len(goals), 1)
+        statuses = [status for status, _ in self.helper(RUN_Q)["sh"]]
+        self.assertEqual(statuses[:4], [0, 0, 0, 0])
+        self.assertNotEqual(statuses[4], 0)
+        self.assertEqual(git(remote, "for-each-ref"), "")
+        self.assertEqual(git(path, "for-each-ref", "--format=%(refname)",
+                             "refs/heads", "refs/tags"), "refs/heads/main")
+        self.assertEqual(git(path, "show", "main:notes.txt"), "second")
+        summaries = " ".join(summary for (summary,) in conn.execute(
+            "SELECT summary FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_refs'", (scout_id,)))
+        self.assertIn("refs/heads/helper-branch", summaries)
+        self.assertIn("refs/heads/main", summaries)
+
+    def test_a_container_run_helper_commits_in_a_project_with_env_source(self):
+        source = self.root / "scout.env"
+        source.write_text("TOKEN=value\n")
+        path, conn, scout_id, _, goals = self.container_scout(
+            config=f'[worktree]\nenv_source = "{source}"\n'
+                   'env_allow = ["TOKEN"]\n',
+            helper_sh=["echo edited >> notes.txt", "git commit -qam edit"])
+        self.assertEqual([status for status, _ in self.helper(RUN_Q)["sh"]],
+                         [0, 0])
+        self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+        self.assertEqual(self.report(conn, scout_id)["reproduction"]["level"],
+                         "test")
+
     def test_a_run_route_down_in_the_container_fails_its_task_unlaunched(self):
-        conn, scout_id, runs, goals = self.container_scout(
+        _, conn, scout_id, runs, goals = self.container_scout(
             "claude: not found", 127)
         self.assertTrue(any(PROBE_GOAL in argv and "claude" in argv
                             for argv in runs))

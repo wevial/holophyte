@@ -5,6 +5,7 @@ import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from functools import partial
 from time import monotonic
 from typing import NamedTuple
 
@@ -20,15 +21,14 @@ from holophyte.scout.run_helpers import (
     HELPER_OPENING,
     LAUNCH_FAILURES,
     READ_ONLY,
-    clone_refs,
+    audited,
     isolated_probe,
     launch_turn,
-    record_refs,
     run_clone,
     run_goal,
     run_seat,
     runs,
-    set_up,
+    setup_failure,
     task_fields,
 )
 from holophyte.scout.scout_probes import probe_scout_route
@@ -232,7 +232,7 @@ class Swarm:
         start_scout_task(conn, task.id)
         started = monotonic()
         mine.set()
-        problem = set_up(self.project, checkout, self.deadline)
+        problem = setup_failure(self.project, checkout, self.deadline)
         if problem is not None:
             self.end(conn, task, FAILED,
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
@@ -244,14 +244,11 @@ class Swarm:
             return
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()
-        before = clone_refs(checkout)
-        try:
-            turn = (capped_turn(lambda: launch_turn(self.project, argv,
-                                                    checkout, cap),
-                                LAUNCH_FAILURES)
-                    if cap > 0 else HelperTurn(STOPPED, None, ""))
-        finally:
-            record_refs(conn, self.row.id, before, clone_refs(checkout))
+        around = partial(audited, conn, self.row.id)
+        turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
+                                                cap, around),
+                            LAUNCH_FAILURES)
+                if cap > 0 else HelperTurn(STOPPED, None, ""))
         self.record(conn, task, argv, turn, monotonic() - started)
 
     def isolated_down(self, conn, seat, checkout):

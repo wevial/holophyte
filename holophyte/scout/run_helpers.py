@@ -1,3 +1,5 @@
+import contextlib
+import os
 import shutil
 import subprocess
 from dataclasses import replace
@@ -56,12 +58,9 @@ def run_seat(project, seat):
     return replace(seat, binary=binary, role=SCOUT_RUNNER)
 
 
-def set_up(project, checkout, deadline):
-    """The setup's failure report, or None once every entry has run."""
+def setup_failure(project, checkout, deadline):
     try:
         ok, report, _ = prepare_worktree(project, checkout, deadline=deadline)
-        if ok:
-            refuse_push(checkout)
     except LAUNCH_FAILURES as failed:
         return f"[holo2] worktree setup could not launch: {failed}"
     return None if ok else report
@@ -80,10 +79,10 @@ def isolated_probe(project, route, seat, checkout, remaining_s):
     return f"helper route {route} is down in the container: {probe.reason()}"
 
 
-def launch_turn(project, argv, checkout, cap):
+def launch_turn(project, argv, checkout, cap, around=None):
     return launcher.launch(launcher.turn_route(project, argv), checkout,
                            launcher.environment(project), argv, timeout=cap,
-                           project=project)
+                           project=project, around=around)
 
 
 def reproduced(row, swarm, report):
@@ -135,15 +134,49 @@ def refuse_push(clone):
     hook.chmod(0o755)
     sh(["git", "config", "extensions.worktreeConfig", "true"], cwd=clone,
        env=env)
-    sh(["git", "config", "--worktree", "core.hooksPath", str(hooks)],
+    sh(["git", "config", "--worktree", "core.hooksPath", ".git/refusal-hooks"],
        cwd=clone, env=env)
 
 
+def regular(path):
+    return path.is_file() and not path.is_symlink()
+
+
+def loose_refs(git_dir):
+    for kind in REF_KINDS:
+        top = git_dir / kind
+        if not top.is_dir() or top.is_symlink():
+            continue
+        for directory, _, names in os.walk(top):
+            for name in names:
+                path = Path(directory) / name
+                if regular(path):
+                    with path.open(errors="replace") as ref:
+                        value = ref.read(256).strip()
+                    yield path.relative_to(git_dir).as_posix(), value
+
+
 def clone_refs(clone):
-    listed = sh(["git", "for-each-ref",
-                 "--format=%(refname) %(objectname) %(symref)", *REF_KINDS],
-                cwd=clone, env=scratch_git_environment())
-    return dict(line.split(" ", 1) for line in listed.splitlines())
+    """Read as files: after a container turn, running Git would obey its config."""
+    git_dir, refs = clone / ".git", {}
+    if regular(git_dir / "packed-refs"):
+        for line in (git_dir / "packed-refs").read_text(errors="replace").splitlines():
+            value, _, name = line.partition(" ")
+            if name.startswith(tuple(f"{kind}/" for kind in REF_KINDS)):
+                refs[name] = value
+    if git_dir.is_dir() and not git_dir.is_symlink():
+        refs.update(loose_refs(git_dir))
+    return refs
+
+
+@contextlib.contextmanager
+def audited(conn, scout_id, checkout):
+    refuse_push(checkout)
+    before = clone_refs(checkout)
+    try:
+        yield
+    finally:
+        record_refs(conn, scout_id, before, clone_refs(checkout))
 
 
 def change(old, new):
