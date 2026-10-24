@@ -54,24 +54,25 @@ def section(lines):
 
 
 class CitedTaskCheckTests(unittest.TestCase):
-    def problems(self, tasks):
-        report = a_report(tasks) if tasks is not None else dict(
-            a_report(), findings=[FINDING])
+    def problems(self, **cited):
+        report = dict(a_report(), findings=[dict(FINDING, **cited)])
         return report_problems(report, "research", scout=7, tasks={41, 42})
 
     def test_a_finding_citing_its_scouts_task_or_none_passes(self):
-        self.assertEqual(self.problems([41]), [])
-        self.assertEqual(self.problems(None), [])
+        self.assertEqual(self.problems(tasks=[41]), [])
+        self.assertEqual(self.problems(), [])
 
     def test_an_unknown_task_id_is_named_on_the_findings_tasks(self):
-        problems = [problem for problem in self.problems([99])
+        problems = [problem for problem in self.problems(tasks=[99])
                     if problem.startswith("findings[0].tasks:")]
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("99", problems[0])
 
     def test_tasks_that_are_no_list_of_ids_are_a_problem(self):
-        self.assertTrue(any(problem.startswith("findings[0].tasks:")
-                            for problem in self.problems("41")))
+        for tasks in ("41", None):
+            with self.subTest(tasks=tasks):
+                self.assertTrue(any(problem.startswith("findings[0].tasks:")
+                                    for problem in self.problems(tasks=tasks)))
 
 
 class CitedTaskRunTests(ScoutFixture):
