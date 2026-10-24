@@ -1,11 +1,18 @@
 """Mention identity boundaries exercised through the fake GitHub."""
+import json
+from pathlib import Path
+
 from babysit_fixture import OperatorNotePass
-from fake_agent import APPROVE, Commit, Idle
+from fake_agent import APPROVE, Commit, Idle, Reply
 from loop_fixture import BRANCH
 
 import holophyte.pr.pr_status
 from holophyte.babysit import babysitter, thread_mentions
+from holophyte.babysit.thread_mentions import REFUSAL
 from holophyte.config.config_tables import merge_config
+
+CODERABBIT = json.loads((Path(__file__).parent / "fixtures" / "mentions"
+                         / "coderabbit_zip_member.json").read_text())
 
 
 class MentionAccountCases(OperatorNotePass):
@@ -41,6 +48,27 @@ class MentionAccountCases(OperatorNotePass):
         self.assertIn("Addressed in ", replies[0]["body"])
         self.assertIn(("resolve", {"thread": "PRRT_1"}), self.api_calls())
 
+
+    def test_review_bot_path_mention_is_adjudicated_not_refused(self):
+        self.configure('[merge]\nmode = "pr"\nmention_accounts = ["maintainer"]\n')
+        thread = (CODERABBIT["path"], CODERABBIT["line"],
+                  (CODERABBIT["login"], CODERABBIT["typename"]),
+                  CODERABBIT["body"], ())
+        self.fake_route(states=[self.pr_state([thread]), self.pr_state()])
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            Reply("THREAD 1: ADDRESS -- cap each member"),
+                            Commit("fix: cap each member"), APPROVE, Idle(""),
+                            provider=self.provider())
+        fix = fake.roles.index("implement", fake.roles.index("adjudicate"))
+        self.assertIn("Cap the uncompressed size of each ZIP member",
+                      fake.turns[fix].goal)
+        self.assertFalse(any("Instruction from @coderabbitai" in turn.goal
+                             for turn in fake.turns))
+        replies = [data["body"] for kind, data in self.api_calls()
+                   if kind == "reply"]
+        self.assertFalse(any(REFUSAL in body for body in replies))
+        self.assertEqual(len(replies), 1)
+        self.assertIn("Addressed in ", replies[0])
 
     def test_listed_login_is_case_insensitive(self):
         self.mention_accounts = 'mention_accounts = ["OpErAtOr"]\n'
