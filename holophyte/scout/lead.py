@@ -233,7 +233,6 @@ def run_waves(conn, lead, swarm, tasks, waves):
 
 def run_lead(conn, project, row, worktree, budget_s):
     """Returns the phase the scout ends in and the reason it ends there."""
-    deadline = monotonic() + budget_s
     config = scout_config(project)
     name = row.lead_route or config.lead
     seat, limit = config.leads.get(name), row.helper_turns or config.helper_turns
@@ -243,6 +242,7 @@ def run_lead(conn, project, row, worktree, budget_s):
     if not probe.ok:
         return "failed", f"lead route {name} is down: {probe.reason()}"
     lead = Lead(conn, project, row, seat, worktree)
+    deadline = monotonic() + budget_s
     turn = lead.plan(limit, budget_s)
     with Swarm(conn, project, row, config, deadline) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")

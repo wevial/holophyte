@@ -174,6 +174,8 @@ class Swarm:
         conn = store.open(self.store_path)
         try:
             checkout = self.checkout(task)
+            if self.remaining_s() <= 0:
+                return
             start_scout_task(conn, task.id)
             argv = self.seat.turn(outbound(helper_goal(self.row, task),
                                            self.secrets))

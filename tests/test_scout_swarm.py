@@ -101,6 +101,23 @@ class ScoutSwarmTests(ScoutFixture):
         self.assertEqual(self.report(conn, scout_id)["cut"], [QUESTIONS[1]])
         self.assertEqual(scout(conn, scout_id).phase, "done")
 
+    def test_the_budget_counts_from_the_plan_turn_not_the_lead_probe(self):
+        path, conn, scout_id = self.research_scout()
+        self.stubs.answer(plan=plan(QUESTIONS[0]), report=fenced(REPORT))
+        real_probe, real_lead = lead.probe_scout_route, lead.run_lead
+
+        def slow_probe(*args):
+            time.sleep(5)
+            return real_probe(*args)
+
+        with patch.object(lead, "probe_scout_route", slow_probe), \
+                patch.object(scout_process, "run_lead",
+                             lambda conn, project, row, worktree, _budget_s:
+                             real_lead(conn, project, row, worktree, 4)):
+            self.run_scout(path, scout_id)
+        self.assertEqual([phase for _, _, phase, *_ in self.tasks(conn, scout_id)],
+                         ["done"])
+
     def test_a_second_wave_follows_a_synthesis_turn_resuming_the_lead(self):
         path, conn, scout_id = self.research_scout(waves=2)
         self.stubs.answer(plan=plan(QUESTIONS[0]), synthesis=plan(QUESTIONS[1]),
@@ -174,6 +191,10 @@ class ScoutSwarmTests(ScoutFixture):
         self.assertIsNotNone(duration)
         self.assertEqual(Path(self.stubs.turns("helper")[0]["argv"][0]).name,
                          "codex")
+        roles = [json.loads(payload)["role"] for (payload,) in conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'agent_turn'", (scout_id,))]
+        self.assertIn("scout-helper", roles)
 
     def test_a_helper_route_that_fails_its_probe_runs_no_helper(self):
         path, conn, scout_id = self.research_scout()
