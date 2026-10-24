@@ -514,6 +514,21 @@ class ScoutSweepTests(ScoutFixture):
         self.assertIn(f"--property=StandardOutput=append:{log}", argv)
         self.assertIn("--setenv=PATH", argv)
         self.assertNotIn("--setenv=INVOCATION_ID", argv)
+        self.assertEqual([word for word in argv if "PrivateTmp" in word], [])
         self.assertEqual(argv[-3:], ["--scout", str(first), str(path)])
         self.assertFalse(record.exists())
         self.assertEqual([argv[-2] for argv, _ in self.spawned], [str(second)])
+
+    def test_under_a_unit_without_systemd_run_the_scout_fails_unspawned(self):
+        path = self.project("alpha")
+        scout_id = self.a_scout(path)
+        no_runner = SimpleNamespace(which=lambda _name: None)
+        with patch.dict(os.environ, {"INVOCATION_ID": "sweep-run"}), \
+                patch.object(scout_sweep, "shutil", no_runner):
+            printed = self.sweep_pass()
+        row = scout(self.conn(path), scout_id)
+        self.assertEqual(row.phase, "failed", printed)
+        self.assertIn("Codex read-only turns cannot start", row.reason)
+        self.assertIn(scout_sweep.SANDBOX_UNAVAILABLE,
+                      self.events(path, scout_id))
+        self.assertEqual(self.spawned, [])

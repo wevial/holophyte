@@ -1,11 +1,13 @@
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+from functools import partial
 from time import monotonic
 from typing import NamedTuple
 
@@ -15,10 +17,25 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
+from holophyte.isolation import launcher
 from holophyte.loop.gates import reap_group, run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
-from holophyte.scout.scout_probes import probe_scout_route
-from store.enums import ScoutTaskPhase
+from holophyte.scout.run_helpers import (
+    HELPER_OPENING,
+    LAUNCH_FAILURES,
+    READ_ONLY,
+    audited,
+    isolated_probe,
+    launch_turn,
+    run_clone,
+    run_goal,
+    run_seat,
+    runs,
+    setup_failure,
+    task_fields,
+)
+from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
+from store.enums import ScoutKind, ScoutTaskPhase
 from store.scouts import (
     end_scout_task,
     record_scout_event,
@@ -26,7 +43,6 @@ from store.scouts import (
     start_scout_task,
 )
 
-HELPER_OPENING = "Scout helper turn"
 EXCERPT_CHARS = 4000
 QUEUED, DONE = ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.DONE.value
 FAILED, STOPPED = ScoutTaskPhase.FAILED.value, ScoutTaskPhase.STOPPED.value
@@ -71,13 +87,8 @@ def usage_tokens(usage):
 
 
 def helper_goal(row, task):
-    paths = ", ".join(task.paths) or "none"
     return (
-        f"{HELPER_OPENING}\n\n"
-        "You help a scout: a read-only investigation of this checkout. Read "
-        "and search only: do not edit files, commit or push.\n\n"
-        f"Ask: {row.ask}\nKind: {row.kind}\nBase commit: {row.base_sha}\n\n"
-        f"Question: {task.question}\nPaths: {paths}\nMode: {task.mode}\n\n"
+        f"{HELPER_OPENING}\n\n{READ_ONLY}\n\n{task_fields(row, task)}"
         "Answer the question with evidence: path:line at the base commit, "
         "commands you ran with excerpts of their output, or links.\n")
 
@@ -140,12 +151,12 @@ class Stopping:
             raise ScoutStopped()
 
 
-def capped_turn(argv, checkout, cap, on_start, stopping):
+def capped_turn(turn, stopping, failures=(OSError,)):
     try:
-        code, output = stopping.run_capped(argv, checkout, cap, on_start)
+        code, output = turn()
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
-    except OSError as failed:
+    except failures as failed:
         return HelperTurn(FAILED, None, str(failed))
     if code != 0 and stopping.stopped:
         return HelperTurn(STOPPED, code, output or "")
@@ -169,6 +180,7 @@ class Swarm:
                               if name == "main"]
         self.launched, self.tasks, self.answers = 0, [], {}
         self.scratch = None
+        self.probing, self.downs = threading.Lock(), {}
         self.stack = ExitStack()
 
     def __enter__(self):
@@ -181,22 +193,42 @@ class Swarm:
         return max(0.0, self.deadline - monotonic())
 
     def left(self):
-        return self.launched < self.total and self.remaining_s() > 0
+        return (self.launched < self.total and self.remaining_s() > 0
+                and not self.stranded())
 
     def ready(self):
-        if self.seat is None:
-            why = f"no [scout.helpers.{self.route}]"
-        else:
-            probe = probe_scout_route(
-                self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
-                min(PROBE_TIMEOUT, self.remaining_s()),
-                self.stopping.run_capped)
-            if probe.ok:
-                return True
-            why = probe.reason()
+        if self.seat is not None:
+            return True
         record_scout_event(self.conn, self.row.id, "scout_helpers",
-                           f"helper route {self.route} is down: {why}")
+                           f"helper route {self.route} is down: "
+                           f"no [scout.helpers.{self.route}]")
         return False
+
+    def contained(self):
+        return launcher.route_for(self.project).backend == "container"
+
+    def stranded(self):
+        if not self.downs.get("host"):
+            return False
+        return (not (self.row.kind == ScoutKind.BUG.value and self.contained())
+                or bool(self.downs.get("container")))
+
+    def host_probe(self):
+        probe = probe_scout_route(
+            self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
+            min(PROBE_TIMEOUT, self.remaining_s()),
+            partial(in_critic_workspace, run=self.stopping.run_capped))
+        return None if probe.ok else (
+            f"helper route {self.route} is down: {probe.reason()}")
+
+    def route_down(self, conn, key, probe):
+        with self.probing:
+            if key not in self.downs:
+                self.downs[key] = probe()
+                if self.downs[key] is not None:
+                    record_scout_event(conn, self.row.id, "scout_helpers",
+                                       self.downs[key])
+            return self.downs[key]
 
     def plan(self, wave, tasks):
         ids = record_scout_tasks(self.conn, self.row.id, 1, wave, [
@@ -225,13 +257,11 @@ class Swarm:
             list(pool.map(self.helper, launch, [None] + starts[:-1], starts))
 
     def checkout(self, task):
-        from holophyte.scout.scout_process import refuse_push
-
-        repo, path = self.project.path, self.scratch / f"helper-{task.id}"
-        env = scratch_git_environment()
+        path = self.scratch / f"helper-{task.id}"
         sh(["git", "worktree", "add", "--detach", "--quiet", str(path),
-            self.row.base_sha], cwd=repo, env=env)
-        refuse_push(repo, path, self.scratch / "hooks", env)
+            self.row.base_sha], cwd=self.project.path,
+           env=scratch_git_environment())
+        self.refuse_push(path)
         return path
 
     def prepared(self, task):
@@ -257,11 +287,17 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
+            if runs(self.row, task):
+                self.run_helper(conn, task, mine)
+                return
+            if self.route_down(conn, "host", self.host_probe) is not None:
+                return
             prepared, cap = self.prepared(task), self.remaining_s()
             if prepared is None or cap <= 0:
                 return
             argv, checkout = prepared
-            turn = capped_turn(argv, checkout, cap, start, self.stopping)
+            turn = capped_turn(lambda: self.stopping.run_capped(
+                argv, checkout, cap, start), self.stopping)
             if started:
                 self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
@@ -269,12 +305,68 @@ class Swarm:
             if conn is not None:
                 conn.close()
 
+    def run_helper(self, conn, task, mine):
+        if self.remaining_s() <= 0:
+            return
+        try:
+            checkout = run_clone(self.project, self.row.id, task.id,
+                                 self.row.base_sha)
+        except (RuntimeError, OSError) as error:
+            start_scout_task(conn, task.id)
+            mine.set()
+            self.end(conn, task, FAILED,
+                     redact_prose(str(error), self.secrets)[:EXCERPT_CHARS])
+            return
+        try:
+            self.run_in(conn, task, mine, checkout)
+        finally:
+            shutil.rmtree(checkout, ignore_errors=True)
+
+    def run_in(self, conn, task, mine, checkout):
+        start_scout_task(conn, task.id)
+        started = monotonic()
+        mine.set()
+        problem = setup_failure(self.project, checkout, self.deadline)
+        if problem is not None:
+            self.end(conn, task, FAILED,
+                     redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
+            return
+        seat = run_seat(self.project, self.seat)
+        down = self.isolated_down(conn, seat, checkout)
+        if down is not None:
+            self.end(conn, task, FAILED, down)
+            return
+        argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
+        cap = self.remaining_s()
+        around = partial(audited, conn, self.row.id)
+        turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
+                                                cap, around),
+                            self.stopping, LAUNCH_FAILURES)
+                if cap > 0 else HelperTurn(STOPPED, None, ""))
+        self.record(conn, task, argv, turn, monotonic() - started)
+
+    def isolated_down(self, conn, seat, checkout):
+        if not self.contained():
+            return self.route_down(conn, "host", self.host_probe)
+        return self.route_down(conn, "container", partial(
+            isolated_probe, self.project, self.route, seat, checkout,
+            self.remaining_s()))
+
+    def refuse_push(self, checkout):
+        from holophyte.scout.scout_process import refuse_push
+
+        refuse_push(self.project.path, checkout, self.scratch / "hooks",
+                    scratch_git_environment())
+
+    def end(self, conn, task, phase, excerpt, usage=None):
+        end_scout_task(conn, task.id, phase, tokens=usage_tokens(usage),
+                       cost_usd=(usage or {}).get("cost_usd"), excerpt=excerpt)
+        self.answers[task.id] = Answered(phase, excerpt)
+
     def record(self, conn, task, argv, turn, seconds):
         answer, usage = turn_answer(self.seat, turn.output)
         excerpt = redact_prose(answer, self.secrets)[-EXCERPT_CHARS:]
-        end_scout_task(conn, task.id, turn.phase, tokens=usage_tokens(usage),
-                       cost_usd=(usage or {}).get("cost_usd"), excerpt=excerpt)
-        self.answers[task.id] = Answered(turn.phase, excerpt)
+        self.end(conn, task, turn.phase, excerpt, usage)
         payload = dict(role=SCOUT_HELPER,
                        label=outbound(argv_label(argv), self.secrets),
                        route=self.route, exit_status=turn.exit_status,

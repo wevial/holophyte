@@ -232,7 +232,10 @@ removed with it on every exit, as
 `codex exec -m M -c model_reasoning_effort=E
 --dangerously-bypass-approvals-and-sandbox PROMPT`: Codex's read-only sandbox
 cannot start under a systemd user unit with PrivateTmp, so the throwaway
-checkout is the write boundary. The id from Codex's first `session id:` line
+checkout is the write boundary. Scouts run Codex with `--sandbox read-only`
+instead, so each scout starts as its own transient `systemd-run --user` unit
+without PrivateTmp, and a scout that would inherit a PrivateTmp unit (no
+`systemd-run` there) ends `failed` before any turn. The id from Codex's first `session id:` line
 is written to `$HOLOPHYTE_REVIEW_SCRATCH/session`, and when
 `HOLOPHYTE_REVIEW_RESUME` is set (see `[loop] review_session`) the turn is
 `codex exec resume` with the same options, the id and the prompt; a resume
@@ -731,7 +734,7 @@ them succeeding says nothing about these two keys.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `setup` | Default: `[]` | List of entries, each a non-empty shell command string or a table `{ run = "...", inputs = [...], keep = [...] }`; set to install the project's dependencies before agent turns. A table's `run` is a non-empty command, `inputs` a non-empty list of repository-relative files or directories, and optional `keep` a list of repository-relative paths the step leaves behind; any other key is refused. Task worktrees and the main-side checkout run every entry's command; a loop witness pass reuses a table step in its warm tree while its inputs at the commit match its last successful run. Setup runs where verify commands run: under `implementer_isolation = "container"` it runs in the image, so commands name tools by the names the image puts on `PATH`, not by host paths. |
+| `setup` | Default: `[]` | List of entries, each a non-empty shell command string or a table `{ run = "...", inputs = [...], keep = [...] }`; set to install the project's dependencies before agent turns. A table's `run` is a non-empty command, `inputs` a non-empty list of repository-relative files or directories, and optional `keep` a list of repository-relative paths the step leaves behind; any other key is refused. Task worktrees, the main-side checkout and a bug scout's run helper clones run every entry's command; a loop witness pass reuses a table step in its warm tree while its inputs at the commit match its last successful run. Setup runs where verify commands run: under `implementer_isolation = "container"` it runs in the image, so commands name tools by the names the image puts on `PATH`, not by host paths. |
 | `setup_timeout_sec` | Default: `300` seconds | Finite positive number; increase for slower dependency installation. |
 | `branch_prefix` | Default: `"task"` | Legal single git branch segment (constraints below); change to follow the project's branch naming convention. |
 | `env_source` | Default: absent | Source dotenv path, with `~` expanded; relative paths resolve beside config.toml. Requires `env_allow`. |

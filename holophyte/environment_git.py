@@ -49,15 +49,17 @@ def factory_identity(wt):
             "-c", "user.email=holophyte@factory.invalid"]
 
 
-def refuse_environment_history(target, branch, *, action, commit=None):
+def refuse_environment_history(target, branch, *, action, commit=None,
+                               repo=None):
     if not protected(target):
         return branch
+    repo = repo or target.path
     commit = commit or sh(
         ["git", "rev-parse", "--verify", f"refs/heads/{branch}^{{commit}}"],
-        target.path)
-    tree = sh(["git", "ls-tree", "--name-only", commit, "--", ".env"], target.path)
+        repo)
+    tree = sh(["git", "ls-tree", "--name-only", commit, "--", ".env"], repo)
     history = sh(["git", "log", "--format=%H", f"main..{commit}", "--", ".env"],
-                 target.path)
+                 repo)
     if tree or history:
         raise InfraFailure("candidate contains .env in its tree or history; "
                            f"refusing to {action}")
