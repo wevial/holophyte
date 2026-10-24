@@ -3,27 +3,21 @@ that moved the branch, and a main that fails a different verify command
 than the merged tree is not read as a red main."""
 import io
 import json
-import sys
 import unittest
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent))
-sys.path.insert(0, str(HERE))
-
-import babysit_fixture as cases  # noqa: E402
-from fake_agent import APPROVE, Commit, Idle  # noqa: E402
-from loop_fixture import (  # noqa: E402
+import holophyte.cli.operator
+import tests.babysit_fixture as cases
+from holophyte.loop import merge_gate
+from holophyte.loop.gates import RunFailure
+from tests.fake_agent import APPROVE, Commit, Idle
+from tests.loop_fixture import (
     BRANCH,
     LoopFixture,
     MergeModeFixture,
     StubProvider,
     a_task,
 )
-
-import holophyte.cli.operator  # noqa: E402
-from holophyte.loop import merge_gate  # noqa: E402
-from holophyte.loop.gates import RunFailure  # noqa: E402
 
 SETUP = '[worktree]\nsetup = ["cp schema.txt generated.txt"]\n'
 CMP = "cmp schema.txt generated.txt"
@@ -180,6 +174,19 @@ class BabysitterMergeTests(cases.ConflictingMainHelpers, MergeModeFixture):
         self.assertIn("fails a different command", goal)
         self.assertIn("grep -q branch README.md", goal)
         self.assertNotIn("main is red", self.question())
+
+    def test_main_failing_the_same_trimmed_unittest_command_is_red(self):
+        verify = "python3 -m unittest tests.test_shared tests.test_new"
+        self.parked(verify, None, Commit(
+            "candidate", path="tests/test_new.py",
+            body="def test_new():\n    pass\n"))
+        moved = self.conflicting(
+            "tests/test_shared.py",
+            "import unittest\n\n\nclass Shared(unittest.TestCase):\n"
+            "    def test_shared(self):\n        self.fail('red')\n")
+        fake, _ = self.resume()
+        self.assertEqual(fake.roles, [])
+        self.assertIn(f"main is red at {moved}", self.question())
 
 
 if __name__ == "__main__":

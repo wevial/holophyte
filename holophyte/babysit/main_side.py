@@ -37,7 +37,7 @@ def verify_detached_main(project, conn, run_id, beat_s, wt, ref, command,
         ok, out = refresh_verify(project, conn, run_id, beat_s, detached, sha,
                                  side.command, contracts)
         expected = (drop_candidate_modules(failing, wt, detached, sha).command
-                    if failing in side.trimmed else failing)
+                    if failing else failing)
     other = _other_clause(ok, out, failing, expected)
     if other:
         return MainSide(sha, None, out, side.command,
