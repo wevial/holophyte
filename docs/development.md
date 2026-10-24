@@ -156,6 +156,10 @@ Each module, one line:
   of a role.
 - `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
+- `holophyte/scout/filing.py` — `POST /actions/scout-file`, `holo scout
+  file` and the `holo mcp` `scout_file` tool: a done scout's action item
+  judged by the ticket checker for Backlog, filed to Backlog through the
+  project's board, and its filed key recorded on the item.
 - `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
   the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
   recorded `queued` with its `scout_queued` event, then started by the host
@@ -1096,6 +1100,9 @@ share page framing in `console/src/next/pages/runShared.tsx`.
 The Turn page’s `console/src/next/components/TurnEntries.tsx` lists transcript
 entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/next/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
+`console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
+`console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
+`console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 
 ### Desktop wrapper
 

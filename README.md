@@ -83,7 +83,7 @@ holo --version                                   # the package version and the c
 holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but --scout-probe and the internal --worker, --witness-step, --shadow and --scout has a holo command
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
-holo mcp                                         # an MCP server on stdio: tools for the holo reads and seven signed writes (file_ticket, send_back, babysit, steer, requeue, hold, scout); see docs/reference/cli.md#holo
+holo mcp                                         # an MCP server on stdio: tools for the holo reads and eight signed writes (file_ticket, send_back, babysit, steer, requeue, hold, scout, scout_file); see docs/reference/cli.md#holo
 holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp when [serve] actions = true, else the reads only; behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
 holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
 holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
@@ -122,6 +122,7 @@ holo attention [--json] [-p NAME|PATH]           # what waits on the operator, a
 holo board [--json] | ticket KEY [--json] -p NAME|PATH # the board's columns or one ticket's detail, as GET /board and /tickets/KEY
 holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; --json prints GET /scouts's body
 holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
+holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, a refusal printing each problem; see docs/reference/daemon.md#post-actionsscout-file
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,

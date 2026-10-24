@@ -208,14 +208,14 @@ class HoloUsageTests(unittest.TestCase):
                                     block)]
         self.assertEqual(missing, [])
 
-    def test_readme_holo_mcp_line_names_the_seven_signed_writes(self):
+    def test_readme_holo_mcp_line_names_the_eight_signed_writes(self):
         from holophyte.holo.mcp_tools import WRITES
         block = USAGE.search(README.read_text()).group(1)
         [line] = [ln for ln in block.splitlines()
                   if ln.startswith("holo mcp ") and "signed writes" in ln]
-        self.assertIn("seven signed writes", line)
+        self.assertIn("eight signed writes", line)
         names = {tool.name for tool in WRITES}
-        self.assertEqual(len(names), 7)
+        self.assertEqual(len(names), 8)
         for name in names:
             self.assertRegex(line, rf"\b{name}\b")
 

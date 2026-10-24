@@ -140,6 +140,9 @@ COMMANDS = (
     Command(("scout", "launch"), None,
             "launch a scout on an ask: a bug, research or recon",
             note=REQUIRED, flags=(KIND, *SCOUT_FLAGS), records=()),
+    Command(("scout", "file"), None,
+            "file a done scout's action item N to Backlog, checked first",
+            takes=("ID", "N"), note=OPTIONAL, flags=(AUTHOR,), records=()),
     Command(("bug",), None, "launch a bug scout on an ask",
             note=REQUIRED, flags=SCOUT_FLAGS, records=()),
     Command(("idea",), None, "launch a research scout on an ask",
@@ -186,6 +189,7 @@ MCP = Command(("mcp",), None,
               flags=(MCP_HTTP,))
 
 LAUNCH = "launch"
+SCOUT_FILE = ("scout", "file")
 SCOUT_KINDS = {("bug",): "bug", ("idea",): "research"}
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
 

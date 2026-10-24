@@ -58,6 +58,8 @@ RUN = Field("run", {"type": "integer", "minimum": 1,
                     "description": "the run's id"}, None)
 SCOUT = RUN._replace(name="scout", schema={**RUN.schema,
                                            "description": "the scout's id"})
+ITEM = Field("item", {"type": "integer", "minimum": 1,
+                      "description": "the action item's position"}, None)
 VIEW = Field("view", {
     "enum": list(VIEWS), "default": VIEWS[0],
     "description": "the run's detail, or its files, ledger or agent turns"},
@@ -174,6 +176,11 @@ WRITES = (
          " host's scout slots are full (holo scout launch --json)",
          ("scout", "launch"), (PROJECT, KIND, LEAD, HELPER, SWARM, MINUTES),
          required=("kind",), tier=WRITE, signs=by_author),
+    Tool("scout_file", "file a done scout's action item to Backlog through"
+         " the ticket checker, the note and author its first board note"
+         " (holo scout file ID N --json)", ("scout", "file"),
+         (PROJECT, SCOUT, ITEM), required=("scout", "item"), tier=WRITE,
+         signs=by_author),
 )
 
 TOOLS = READS + WRITES

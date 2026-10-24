@@ -152,7 +152,7 @@ export function useTurnTranscript(base: string, run: number, turn: number, deps:
 
 /** A route's 404 is null, not a failure: a daemon without the route, or
  *  without the thing it names. */
-async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
+export async function routeOrNone<T>(fetch: Fetch, url: string, schema: z.ZodType<T>): Promise<T | null> {
   try {
     return await fetchRoute(fetch, url, schema);
   } catch (failure) {
