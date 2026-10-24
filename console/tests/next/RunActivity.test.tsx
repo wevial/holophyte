@@ -63,6 +63,31 @@ const live: RunDetail = {
   rounds: [],
 };
 
+const metC1 = { id: "C1", n: 1, status: "met" as const, note: "" };
+
+/** Run 12, merged after its Round 1 asked for changes and left C1 not met, then passed its final check. */
+const checked: RunDetail = {
+  ...ended,
+  run: { ...ended.run, max_rounds: 1, ended_ms: T + 20 * MIN },
+  events: [
+    ...EVENTS.slice(0, 3),
+    { at: T + 8 * MIN, kind: "rebase", summary: "rebased the candidate on main" },
+    ...EVENTS.slice(3),
+    phase(T + 16 * MIN, "verifying -> reviewing: terminal adjudication"),
+  ],
+  rounds: [
+    { ...roundOne, criteria: [{ ...metC1, status: "not_met", note: "the export is absent" }] },
+    round({ round: 2, started_ms: T + 16 * MIN + SEC, ended_ms: T + 18 * MIN, verdict: "pass", reviewer_model: "claude-adjudicate", criteria: [metC1] }),
+  ],
+};
+
+/** Run 12, live in the verify after Round 1's fix. */
+const reviewing: RunDetail = {
+  ...live,
+  events: [...EVENTS, beat(T + 15 * MIN + 45 * SEC, "Implement turn: 9 tool calls; last: running a command")],
+  rounds: [roundOne],
+};
+
 const noAsks: RunAsks = { run: 12, ticket: "DEMO-12", pr_url: null, asks: [] };
 
 /** `/runs/12` answers `bodies.detail`, read at each request; run 12 is live in `/status` while it has no outcome. */
@@ -151,39 +176,43 @@ test("an open round reads its verify, review and fix with their durations, and a
   expect(steps(rowOf("Round 2"))[0]).toBe("Verify <1s");
 });
 
-test("a round the reader closed stays closed when the next poll adds an event", async () => {
-  const bodies = { detail: ended };
+const current = () => rows().filter((li) => li.hasAttribute("data-current"));
+const body = (li: Element) => document.getElementById(fold(li).getAttribute("aria-controls")!);
+
+test("an ended run opens only its last group, the current one, and a last group the reader closed stays closed when the next poll adds an event", async () => {
+  const bodies = { detail: checked };
   const queries = await mount(runFetch(bodies));
-  const first = rowOf("Round 1");
-  expect(fold(first).getAttribute("aria-expanded")).toBe("true");
-  await toggle(first);
-  expect(steps(rowOf("Round 1"))).toEqual([]);
-  bodies.detail = { ...ended, events: [...EVENTS, { at: T + 15 * MIN + 40 * SEC, kind: "trim", summary: "Trim kept; line delta -4" }] };
+  expect(rows().map((li) => [row(li)[0]!.split(" · ")[0], fold(li).getAttribute("aria-expanded")])).toEqual([
+    ["Implement", "false"],
+    ["Round 1", "false"],
+    ["Final check", "true"],
+  ]);
+  expect(current()).toEqual([rowOf("Final check")]);
+  await toggle(rowOf("Final check"));
+  bodies.detail = { ...checked, events: [...checked.events, { at: T + 19 * MIN, kind: "trim", summary: "Trim kept; line delta -2" }] };
   await repoll(queries);
-  expect(fold(rowOf("Round 1")).getAttribute("aria-expanded")).toBe("false");
-  expect(steps(rowOf("Round 1"))).toEqual([]);
+  expect(fold(rowOf("Final check")).getAttribute("aria-expanded")).toBe("false");
+  expect(steps(rowOf("Final check"))).toEqual([]);
 });
 
-test("a live run's Now bar reads its running group, start and newest heartbeat, and a newer heartbeat adds no row", async () => {
-  const bodies = { detail: live };
+test("a live run has no Now region; its running group alone is open and current, its body ending on the newest progress, replaced as a newer one arrives", async () => {
+  const bodies = { detail: reviewing };
   const queries = await mount(runFetch(bodies));
-  const now = within(progress()).getByRole("region", { name: "Now" });
-  expect(now.textContent).toContain("Implement");
-  expect(now.textContent).toContain("since 10:00");
-  expect(now.textContent).toContain("Implement turn: 9 tool calls; last: running a command");
-  expect(now.textContent).toContain("Nothing needs you");
-  expect(rows().map(row)).toEqual([["Implement", "now"]]);
-
-  bodies.detail = { ...live, events: [...live.events, beat(T + 8 * MIN, "Implement turn: 12 tool calls; last: editing a file")] };
-  await repoll(queries);
-  expect(within(progress()).getByRole("region", { name: "Now" }).textContent).toContain("Implement turn: 12 tool calls; last: editing a file");
-  expect(rows().map(row)).toEqual([["Implement", "now"]]);
-  expect(steps(rows()[0]!)).toEqual([]);
-});
-
-test("an ended run's Progress has no Now bar", async () => {
-  await mount(runFetch({ detail: ended }));
   expect(within(progress()).queryByRole("region", { name: "Now" })).toBeNull();
+  const running = rows().at(-1)!;
+  expect(running.hasAttribute("data-running")).toBe(true);
+  expect(current()).toEqual([running]);
+  expect(rows().map((li) => li.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded") ?? null)).toEqual([null, "false", "true"]);
+  expect(body(running)!.textContent).toContain("Implement turn: 9 tool calls; last: running a command");
+  const before = body(running)!.childElementCount;
+
+  bodies.detail = { ...reviewing, events: [...reviewing.events, beat(T + 16 * MIN, "Implement turn: 12 tool calls; last: editing a file")] };
+  await repoll(queries);
+  const after = body(rows().at(-1)!)!;
+  expect(after.textContent).toContain("Implement turn: 12 tool calls; last: editing a file");
+  expect(after.textContent).not.toContain("Implement turn: 9 tool calls");
+  expect(after.childElementCount).toBe(before);
+  expect(rows()).toHaveLength(3);
 });
 
 test("Raw log opens a dialog of every Progress line, heartbeats included, and Escape returns focus to its button", async () => {

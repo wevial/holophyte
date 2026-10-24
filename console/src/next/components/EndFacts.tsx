@@ -1,6 +1,6 @@
 import { useContext, useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import type { RoundCriterion, RunDetail } from "../../lib/contract.gen";
+import type { Round, RoundCriterion, RunDetail } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 import { shortSha } from "../../lib/shipped";
 import { PASSED, type RunActivity } from "../activity";
@@ -10,23 +10,36 @@ import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { FoldChevron } from "./icons";
 
-type Tone = "bad" | "wait" | "ok" | "neutral";
-
-const CARD_TONE: Record<Tone, string> = {
+/** The current group's wash and 4px left stripe: a live run's, or the tone its end took. */
+export const CURRENT_TINT: Record<Ending["tone"] | "live", string> = {
+  live: "bg-live-wash shadow-[inset_4px_0_0_var(--live)]",
   bad: "bg-bad-wash shadow-[inset_4px_0_0_var(--bad)]",
   wait: "bg-wait-wash shadow-[inset_4px_0_0_var(--wait)]",
   ok: "bg-live-wash shadow-[inset_4px_0_0_var(--live)]",
   neutral: "bg-paper-2 shadow-[inset_4px_0_0_var(--rule)]",
 };
 
-const ICON: Record<Tone, { path: string; className: string }> = {
-  bad: { path: "M4.5 4.5l7 7M11.5 4.5l-7 7", className: "text-bad" },
-  wait: { path: "M3 11V9a4 4 0 0 1 4-4h6.5M10.5 2l3 3-3 3", className: "text-wait" },
-  ok: { path: "M3.5 8.4 6.6 11.5 12.5 5", className: "text-live" },
-  neutral: { path: "M8 5.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5z", className: "text-ink-3" },
-};
+export type Ending =
+  | { kind: "final_check"; tone: "bad"; final: Round; review: Round | null; parked: boolean }
+  | { kind: "failed" | "other"; tone: "bad" | "neutral" }
+  | { kind: "handed"; tone: "wait" }
+  | { kind: "merged"; tone: "ok" };
 
 const HANDED_TO_BABYSITTER = /^sent back to the babysitter/;
+
+/** How an ended run ended, and the tone its last group wears for it. */
+export function endingOf(detail: RunDetail, activity: RunActivity): Ending {
+  const { run } = detail;
+  const final = activity.groups.findLast((group) => group.kind === "final")?.round;
+  if (run.outcome === "failed" && final?.ended_ms != null && !PASSED.has(final.verdict)) {
+    const review = activity.groups.findLast((group) => group.kind === "round" && (group.round?.criteria.length ?? 0) > 0)?.round ?? null;
+    return { kind: "final_check", tone: "bad", final, review, parked: detail.events.some((event) => event.kind === "steer_cap_park") };
+  }
+  if (run.outcome === "failed") return { kind: "failed", tone: "bad" };
+  if (run.outcome === "abandoned" && HANDED_TO_BABYSITTER.test(run.outcome_reason ?? "")) return { kind: "handed", tone: "wait" };
+  if (run.outcome === "merged") return { kind: "merged", tone: "ok" };
+  return { kind: "other", tone: "neutral" };
+}
 
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const count = (criteria: RoundCriterion[], status: RoundCriterion["status"]) => criteria.filter((criterion) => criterion.status === status).length;
@@ -72,37 +85,30 @@ function RawReason({ reason }: { reason: string }) {
   );
 }
 
-function Card({ tone, title, aside, children }: { tone: Tone; title: ReactNode; aside?: ReactNode; children?: ReactNode }) {
-  const icon = ICON[tone];
+function Facts({ title, aside, children }: { title: ReactNode; aside?: ReactNode; children?: ReactNode }) {
   return (
-    <section aria-label="How the run ended" data-end-card={tone} className={`mt-4 border-b-2 border-ink py-3.5 pl-5 pr-5 max-[720px]:pl-4 ${CARD_TONE[tone]}`}>
+    <div data-end-facts className="pb-3 pl-[106px] pr-5 font-sans text-[14px] leading-[1.5] text-ink max-[720px]:pl-[92px]">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <svg viewBox="0 0 16 16" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`self-center ${icon.className}`}>
-          <path d={icon.path} />
-        </svg>
-        <b data-end-title className="font-sans text-[16px] font-semibold leading-[1.3] text-ink">{title}</b>
-        {aside != null && <span className="ml-auto font-mono text-[13px] text-ink-2">{aside}</span>}
+        <b data-end-title className="font-semibold">{title}</b>
+        {aside != null && <span className="font-mono text-[13px] text-ink-2">{aside}</span>}
       </div>
-      {children != null && <div className="mt-1.5 pl-[30px] font-sans text-[14px] leading-[1.5] text-ink">{children}</div>}
-    </section>
+      {children != null && <div className="mt-1">{children}</div>}
+    </div>
   );
 }
 
-/** Where the Now bar stood once a run has ended: how it ended, and the ticket's next run when there is one. */
-export function EndCard({ detail, activity, base, project }: { detail: RunDetail; activity: RunActivity; base: string; project: string }) {
+/** The end of an ended run's last group: how it ended, and the ticket's next run when there is one. */
+export function EndFacts({ detail, ending, base, project }: { detail: RunDetail; ending: Ending; base: string; project: string }) {
   const next = useNextRun(base, detail);
   const { run } = detail;
   const nextLink = next == null ? null : <Link {...runPage(project, next)} className="font-mono underline underline-offset-2 hover:text-ink">run {next}</Link>;
   const reason = run.outcome_reason ?? "";
-  const final = activity.groups.findLast((group) => group.kind === "final")?.round;
-  if (run.outcome === "failed" && final?.ended_ms != null && !PASSED.has(final.verdict)) {
-    const review = activity.groups.findLast((group) => group.kind === "round" && (group.round?.criteria.length ?? 0) > 0)?.round ?? null;
-    const parked = detail.events.some((event) => event.kind === "steer_cap_park");
+  if (ending.kind === "final_check") {
     return (
-      <Card tone="bad" title="Failed at the final check" aside={run.ended_ms == null ? null : formatClock(run.ended_ms)}>
+      <Facts title="Failed at the final check" aside={run.ended_ms == null ? null : formatClock(run.ended_ms)}>
         <ul className="m-0 list-disc pl-5 [&>li+li]:mt-1">
-          <li>{finalCheckBullet(final.criteria, review?.criteria ?? null, review?.round ?? null)}</li>
-          {parked && <li>Its review rounds were used up, so it parked on the steer cap.</li>}
+          <li>{finalCheckBullet(ending.final.criteria, ending.review?.criteria ?? null, ending.review?.round ?? null)}</li>
+          {ending.parked && <li>Its review rounds were used up, so it parked on the steer cap.</li>}
           {nextLink != null && (
             <li>
               <b className="font-semibold">In motion:</b> the ticket's next attempt → {nextLink}
@@ -110,24 +116,24 @@ export function EndCard({ detail, activity, base, project }: { detail: RunDetail
           )}
         </ul>
         {reason !== "" && <RawReason reason={reason} />}
-      </Card>
+      </Facts>
     );
   }
-  if (run.outcome === "failed") return <Card tone="bad" title={capital(failureWord(run.failure_kind))}>{firstLine(reason) || null}</Card>;
-  if (run.outcome === "abandoned" && HANDED_TO_BABYSITTER.test(reason)) {
+  if (ending.kind === "failed") return <Facts title={capital(failureWord(run.failure_kind))}>{firstLine(reason) || null}</Facts>;
+  if (ending.kind === "handed") {
     const aside = (
       <>
         {run.ended_ms != null && formatClock(run.ended_ms)}
         {nextLink != null && <> · {nextLink} next</>}
       </>
     );
-    return <Card tone="wait" title="Handed to the babysitter" aside={aside}>{capital(firstLine(reason))}</Card>;
+    return <Facts title="Handed to the babysitter" aside={aside}>{capital(firstLine(reason))}</Facts>;
   }
-  if (run.outcome === "merged") {
+  if (ending.kind === "merged") {
     const sha = shortSha(run.merge_sha);
     const shaText = run.commit_url != null && sha !== "" ? <a href={run.commit_url} target="_blank" rel="noreferrer" className="font-mono underline underline-offset-2">{sha}</a> : <span className="font-mono">{sha}</span>;
     const at = run.ended_ms == null ? null : ` at ${formatClock(run.ended_ms)}`;
-    return <Card tone="ok" title={sha === "" ? <>Merged{at}</> : <>Merged as {shaText}{at}</>} />;
+    return <Facts title={sha === "" ? <>Merged{at}</> : <>Merged as {shaText}{at}</>} />;
   }
-  return <Card tone="neutral" title={capital(run.outcome ?? "ended")}>{firstLine(reason) || null}</Card>;
+  return <Facts title={capital(run.outcome ?? "ended")}>{firstLine(reason) || null}</Facts>;
 }

@@ -55,7 +55,7 @@ test("the Run page counts reviewed criteria, names their marks and waits only fo
   expect(within(rows[0]!).getByText("Silent leases are requeued.")).toBeTruthy();
   expect(within(rows[3]!).getByText("waits on round 2")).toBeTruthy();
   expect(list.getAllByText("waits on round 2")).toHaveLength(1);
-  expect(verdict()).toBe("Reviewing round 2 of 3. Three of four criteria are met. Nothing needs you.");
+  expect(verdict()).toBe("Reviewing round 2 of 3. Three of four criteria are met.");
 });
 
 test("Evidence opens from a closed fold and distinguishes test witnesses from round findings", async () => {
@@ -77,7 +77,7 @@ test("an unwitnessed criterion has a clock mark and an unjudged run has an empty
   await mount([], []);
   expect(within(block()).getByText("No review has judged the criteria yet.")).toBeTruthy();
   expect(within(block()).queryByRole("list")).toBeNull();
-  expect(verdict()).toBe("Reviewing round 2 of 3. Nothing needs you.");
+  expect(verdict()).toBe("Reviewing round 2 of 3.");
 });
 
 test("a live retry waits for a new judgment even when its earlier run marked the criterion met", async () => {
