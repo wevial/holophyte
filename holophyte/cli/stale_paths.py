@@ -70,7 +70,8 @@ def _stale(root, ref, sha, entries):
 
 def stale_paths(project):
     root = Path(project.path).resolve()
-    if not root.is_dir():
+    entries = _entries(project)
+    if not root.is_dir() or not any(values for _, values in entries):
         return []
     try:
         ref = main_ref(root)
@@ -80,4 +81,4 @@ def stale_paths(project):
     if sha is None:
         return []
     return [{"key": key, "entry": entry, "ref": ref, "sha": sha[:12]}
-            for key, entry in _stale(str(root), ref, sha, _entries(project))]
+            for key, entry in _stale(str(root), ref, sha, entries)]

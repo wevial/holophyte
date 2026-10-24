@@ -74,6 +74,8 @@ class StalePathsTests(SweepTestCase):
                 if init:
                     git(tmp, "init", "-q", "-b", "main")
                 project = holophyte.config.project.Project.locate(Path(tmp))
+                project.config_path.parent.mkdir(parents=True, exist_ok=True)
+                project.config_path.write_text(UI)
                 self.assertEqual(stale_paths(project), [])
         with self.subTest("refused high_paths"):
             self.configure(UI + '[review]\nhigh_paths = "x"\n')
