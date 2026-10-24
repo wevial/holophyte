@@ -1027,8 +1027,7 @@ thread: "Only listed maintainers may instruct the factory here", opening
 `---- Comment by holophyte ----`. Review threads retain normal bot or human
 routing; conversation comments yield no instruction. The latest comment of a bot
 (GitHub type `Bot`, a `[bot]` login, or a login in `bot_authors` or `bot_logins`)
-is never an instruction and never refused, with or without `mention_accounts`:
-it is judged as a finding under `bot_threads`. Set `mention_accounts = ["maintainer-login"]`
+is never an instruction and never refused, with or without `mention_accounts`. Set `mention_accounts = ["maintainer-login"]`
 to restrict instructions in both places. A bare string or a non-string list entry
 is rejected at startup.
 
