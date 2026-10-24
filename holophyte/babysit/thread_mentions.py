@@ -36,12 +36,17 @@ def refused(thread, merge):
 
 def classify(thread, handle, accounts=(), bot_logins=()):
     """Only the latest comment can address the factory."""
-    from holophyte.babysit.maintainer_notes import is_console_ask
+    from holophyte.babysit.maintainer_notes import is_console_ask, is_note
     if is_console_ask(thread):
         return thread
     latest = thread.comments[-1]
-    if (bot_author(latest.author, bot_logins, latest.author_kind)
-            or not authorized(latest.author, accounts)):
+    if bot_author(latest.author, bot_logins, latest.author_kind):
+        opener = (not is_note(thread)
+                  and bot_author(thread.author, bot_logins, thread.author_kind))
+        return replace(thread, classification="", request="", intent="unmarked",
+                       triage=None,
+                       author_kind="bot" if opener else thread.author_kind)
+    if not authorized(latest.author, accounts):
         return replace(thread, classification="", request="",
                        intent="unmarked", triage=None)
     if thread.triage is not None:

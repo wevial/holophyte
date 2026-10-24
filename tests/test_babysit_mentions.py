@@ -95,7 +95,7 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
 
     def test_configured_user_bots_are_stored_as_findings_without_outcomes(self):
         self.configure('[merge]\nmode = "pr"\nbot_logins = ["SERVICE"]\n'
-                       'bot_authors = ["REVIEWER"]\nhuman_threads = "act"\n')
+                       'bot_authors = ["REVIEWER"]\n')
         authors = ("service", "Reviewer", "automation[BOT]")
         threads = [("src/app.py", 30, (author, "User"),
                     "@holophyte fix: fix tokens") for author in authors]
@@ -260,7 +260,7 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
         thread = ("src/app.py", 30, ("service", "User"),
                   "@holophyte fix: use the path tokenId")
         self.assertEqual(self.mention_fixed(
-            thread, config='bot_logins = ["service"]\nhuman_threads = "act"\n',
+            thread, config='bot_logins = ["service"]\n',
             judged=(Reply("THREAD 1: ADDRESS -- use the path tokenId"),)), [])
 
     def test_a_refused_reaction_is_a_run_event_and_the_fix_still_runs(self):
