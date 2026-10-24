@@ -156,3 +156,19 @@ export function aboutWords(about: string): string | null {
       return null;
   }
 }
+
+/** Where a scout's subject `about` lives in the console, or the pull
+ *  request's own address; null where `aboutWords` has no words for it. */
+export type AboutTarget =
+  | { words: string; run: string }
+  | { words: string; ticket: string }
+  | { words: string; url: string };
+
+export function aboutTarget(about: string): AboutTarget | null {
+  const words = aboutWords(about);
+  if (words == null) return null;
+  const kind = about.slice(0, about.indexOf(":"));
+  const ref = about.slice(kind.length + 1);
+  if (kind === "pr") return { words, url: ref };
+  return kind === "ticket" ? { words, ticket: ref } : { words, run: ref };
+}

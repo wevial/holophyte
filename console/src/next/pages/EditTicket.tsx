@@ -1,5 +1,5 @@
 import { useContext, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { editTicket } from "../../lib/boardWrites";
 import { formatAge, formatClock } from "../../lib/format";
@@ -61,6 +61,7 @@ export function EditTicket() {
   const host = page.kind === "ticket" ? [page.host] : [];
   const board = useBoards(host, deps)[0]?.board;
   const readiness = useReadiness(host, deps);
+  const handed = useLocation({ select: location => handedDraft(location.state) });
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "not_mirrored") {
     return <Frame project={project} ticketKey={key}><p className="mt-6 font-mono text-[13px] text-ink-3">No host of {project} has mirrored {key}.</p></Frame>;
@@ -89,7 +90,18 @@ export function EditTicket() {
     column: ticket.current?.column ?? card?.column ?? null,
   };
   const cards = hostCards(page.host, board, readiness, page.now);
-  return <EditForm key={`${project}/${key}`} project={project} ticketKey={key} base={page.host.base} loaded={loaded} cards={cards} now={page.now} />;
+  return <EditForm key={`${project}/${key}`} project={project} ticketKey={key} base={page.host.base} loaded={loaded} cards={cards} now={page.now} handed={handed} />;
+}
+
+/** A scout's draft handed to the page: its body, the scout, and the revision it revises. */
+interface Handed {
+  draft: string;
+  scout: number;
+  revision: number;
+}
+
+function handedDraft({ draft, scout, revision }: { draft?: string; scout?: number; revision?: number }): Handed | null {
+  return draft == null || scout == null || revision == null ? null : { draft, scout, revision };
 }
 
 /** What the page read of revision `loaded`: its fields as the form draws them. */
@@ -160,14 +172,14 @@ function ConflictBanner({ ticketKey, started, newer, parts, picks, onPick, onLoa
   );
 }
 
-function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: string; ticketKey: string; base: string; loaded: Loaded; cards: ReturnType<typeof hostCards>; now: number }) {
+function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { project: string; ticketKey: string; base: string; loaded: Loaded; cards: ReturnType<typeof hostCards>; now: number; handed: Handed | null }) {
   const deps = useContext(PollDepsContext);
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
-  const [edit, setEdit] = useState<{ origin: Read; read: Read }>(() => {
+  const [edit, setEdit] = useState<{ origin: Read; read: Read; handed: Handed | null }>(() => {
     const origin = readOf(loaded);
-    return { origin, read: origin };
+    return { origin, read: handed == null ? origin : readOf({ ...loaded, body: handed.draft }), handed };
   });
   const { origin, read } = edit;
   const drawn = (part: string) => !read.raw.has(part);
@@ -182,7 +194,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
     : sectionParts(origin.body, origin.body, body).filter(part => part.side === "mine").map(part => part.name);
   const newer = loaded.revision > origin.revision;
   const loadRevision = (next: Read, form: Read = next) => {
-    setEdit({ origin: next, read: form });
+    setEdit({ origin: next, read: form, handed: null });
     setFields(form.fields);
     setPicks({});
     setRefusal([]);
@@ -235,6 +247,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
     void navigate({ to: "/tickets/$project/$key", params: { project, key: ticketKey }, search: {} });
   };
   const line = parts ? `revision ${origin.revision} · newer revision ${loaded.revision} exists`
+    : edit.handed != null ? `revision ${origin.revision} + scout ${edit.handed.scout}'s draft${edit.handed.revision === origin.revision ? "" : ` of revision ${edit.handed.revision}`}`
     : read !== origin ? `revision ${origin.revision} + your picks`
     : [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
 
