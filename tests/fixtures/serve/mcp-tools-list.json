@@ -524,9 +524,10 @@
               "enum": [
                 "bug",
                 "research",
-                "recon"
+                "recon",
+                "guardrails"
               ],
-              "description": "what the scout does: find a bug, research an idea, or map code"
+              "description": "what the scout does: find a bug, research an idea, map code, or mine findings for guardrails"
             },
             "lead": {
               "type": "string",

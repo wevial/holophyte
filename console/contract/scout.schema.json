@@ -72,7 +72,8 @@
           "enum": [
             "bug",
             "research",
-            "recon"
+            "recon",
+            "guardrails"
           ]
         },
         "phase": {

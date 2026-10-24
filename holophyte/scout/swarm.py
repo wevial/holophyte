@@ -35,6 +35,7 @@ from holophyte.scout.run_helpers import (
     task_fields,
 )
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
+from holophyte.scout.telemetry import turn_cost
 from store.enums import ScoutKind, ScoutTaskPhase
 from store.scouts import (
     end_scout_task,
@@ -67,7 +68,15 @@ class HelperTurn(NamedTuple):
     output: str
 
 
-def turn_answer(seat, output):
+def turn_answer(seat, output, price):
+    answer, usage = reported_answer(seat, output)
+    if usage is not None:
+        usage["cost_usd"] = turn_cost(price, usage_tokens(usage),
+                                      usage.get("cost_usd"))
+    return answer, usage
+
+
+def reported_answer(seat, output):
     if seat.name == "claude":
         result = claude_result(output)
         return result if result is not None else (output, None)
@@ -177,6 +186,7 @@ class Swarm:
         self.pass_number = pass_number
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
+        self.price = config.helper_prices.get(self.route)
         self.total = total or row.helper_turns or config.helper_turns
         self.size = min(row.swarm or config.swarm, self.total)
         self.secrets = known_secrets(project.config())
@@ -374,7 +384,7 @@ class Swarm:
         self.answers[task.id] = Answered(phase, excerpt)
 
     def record(self, conn, task, argv, turn, seconds):
-        answer, usage = turn_answer(self.seat, turn.output)
+        answer, usage = turn_answer(self.seat, turn.output, self.price)
         excerpt = redact_prose(answer, self.secrets)[-EXCERPT_CHARS:]
         self.end(conn, task, turn.phase, excerpt, usage)
         payload = dict(role=SCOUT_HELPER,

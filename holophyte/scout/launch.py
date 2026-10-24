@@ -13,10 +13,11 @@ from holophyte.scout.scout_config import scout_config
 from holophyte.serve.serve_findings import CONTRADICTION, stop_kind
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import SQLITE_MAX_DIGITS, SQLITE_MAX_INT, no_store
+from store.enums import ScoutKind
 from store.scouts import ENDED, QUEUED, create_scout, record_scout_event, scout
 
 SCOUT_ACTION = "scout"
-KINDS = ("bug", "research", "recon")
+KINDS = tuple(kind.value for kind in ScoutKind)
 ROUTES = (("lead", "leads"), ("helper", "helpers"))
 COUNTS = (("swarm", "swarm"), ("minutes", "budget_min"))
 VIA_DAEMON = "POST /actions/scout"
