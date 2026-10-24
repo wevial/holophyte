@@ -120,6 +120,19 @@ def beat_scout(conn, scout_id, pid=None, now=None):
                      (_now(now), pid, scout_id))
 
 
+def claim_scout(conn, scout_id, pid, host=None, now=None):
+    with _transaction(conn):
+        phase = _live(conn, scout_id)
+        (owner,) = conn.execute("SELECT pid FROM scouts WHERE id = ?",
+                                (scout_id,)).fetchone()
+        if phase != PLANNING or owner is not None:
+            raise ScoutRefused(scout_id, phase,
+                               f"not a planning scout without a pid (pid {owner})")
+        conn.execute("UPDATE scouts SET pid = ?, host = ?, heartbeatAt = ?"
+                     " WHERE id = ?",
+                     (pid, host or socket.gethostname(), _now(now), scout_id))
+
+
 def end_scout(conn, scout_id, phase, reason, totals=None, now=None):
     if phase not in ENDED:
         raise ValueError(f"a scout ends {', '.join(ENDED)}, not {phase!r}")

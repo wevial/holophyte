@@ -394,7 +394,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # The scout process, its swarm, its reads and
                                  # its filing write and read a scout's record
                                  # through these.
-                                 (store.scouts, ["beat_scout", "create_scout",
+                                 (store.scouts, ["beat_scout", "claim_scout",
+                                                 "create_scout",
                                                  "end_scout", "end_scout_task",
                                                  "file_scout_action",
                                                  "move_scout",

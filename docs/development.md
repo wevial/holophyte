@@ -160,6 +160,11 @@ Each module, one line:
   lead and helper routes, each a harness `Seat`, their defaults and budget.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
   scout route in a detached checkout of main, recorded in `route-probes.json`.
+- `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
+  process, its lead worktree with pushes refused, its heartbeat and its end.
+- `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
+  scouts whose heartbeat is stale and starts queued ones under `[scout]
+  max_parallel`.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
 - `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a
