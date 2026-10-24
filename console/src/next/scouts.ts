@@ -159,7 +159,7 @@ export function aboutWords(about: string): string | null {
 
 /** Where a scout's subject `about` lives in the console, or the pull
  *  request's own address; null where `aboutWords` has no words for it. */
-export type AboutTarget =
+type AboutTarget =
   | { words: string; run: string }
   | { words: string; ticket: string }
   | { words: string; url: string };
