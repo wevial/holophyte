@@ -395,7 +395,7 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     if down is not None:
         return "failed", down
     lead = Lead(conn, project, row, seat, worktree, stopping,
-                config.prices.get(row.lead_route or config.lead))
+                config.lead_prices.get(row.lead_route or config.lead))
     deadline = monotonic() + budget_s
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)

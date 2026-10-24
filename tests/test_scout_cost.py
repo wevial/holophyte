@@ -55,6 +55,10 @@ class RoutePriceTests(ConfigFixture):
 
 
 class TurnCostTests(unittest.TestCase):
+    def test_a_reported_cost_wins_whatever_the_price(self):
+        self.assertEqual(turn_cost(0.5, 41000, 0.12), 0.12)
+        self.assertEqual(turn_cost(None, 41000, 0.12), 0.12)
+
     def test_no_cost_without_a_price_or_without_tokens(self):
         self.assertIsNone(turn_cost(None, 41000, None))
         self.assertIsNone(turn_cost(0.5, None, None))
@@ -122,6 +126,15 @@ class ScoutTurnCostTests(ProcessFixture):
              "total_cost_usd": 0.3}), report=REPORT)
         _, conn, scout_id = self.research_scout("", name="beta")
         self.assertEqual(self.plan_usage(conn, scout_id)["cost_usd"], 0.3)
+
+
+    def test_a_lead_keeps_its_price_beside_a_same_named_helper(self):
+        self.stubs.answer(codex_plan=fenced({"tasks": []}), report=REPORT,
+                          plan_tokens="12,000")
+        _, conn, scout_id = self.research_scout(
+            '[scout]\nlead = "luna"\n' + priced(LUNA.replace("helpers", "leads"),
+                                                 2.0))
+        self.assertEqual(self.plan_usage(conn, scout_id)["cost_usd"], 0.024)
 
 
 if __name__ == "__main__":

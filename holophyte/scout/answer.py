@@ -155,7 +155,7 @@ def answer(conn, project, row, ask, worktree, stopping, cap=ANSWER_TURN_S):
         return Outcome(question.id,
                        failure=f"lead route {name} is down: {probe.reason()}")
     lead = Lead(conn, project, row, seat, worktree, stopping,
-                config.prices.get(name))
+                config.lead_prices.get(name))
     lead.session = row.lead_session
     reports, actions = stored(conn, row.id)
     goal = answer_goal(row, question, earlier, reports, actions,

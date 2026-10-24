@@ -186,7 +186,7 @@ class Swarm:
         self.pass_number = pass_number
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
-        self.price = config.prices.get(self.route)
+        self.price = config.helper_prices.get(self.route)
         self.total = total or row.helper_turns or config.helper_turns
         self.size = min(row.swarm or config.swarm, self.total)
         self.secrets = known_secrets(project.config())

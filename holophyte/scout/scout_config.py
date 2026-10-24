@@ -32,7 +32,8 @@ STEER_HELPERS = 4
 class ScoutConfig:
     leads: dict
     helpers: dict
-    prices: dict
+    lead_prices: dict
+    helper_prices: dict
     lead: str
     helper: str
     budget_min: int
@@ -42,15 +43,18 @@ class ScoutConfig:
     steer_budget_min: int
     steer_helpers: int
 
+    @property
+    def prices(self):
+        return {**self.lead_prices, **self.helper_prices}
+
 
 def scout_config(project):
     table = config_table(project, "scout")
     where = f"[holo2] {project.config_path}"
-    prices = {}
-    leads = route_seats(project, where, table, "leads", DEFAULT_LEADS,
-                        SCOUT_LEAD, prices)
-    helpers = route_seats(project, where, table, "helpers", DEFAULT_HELPERS,
-                          SCOUT_HELPER, prices)
+    leads, lead_prices = route_seats(project, where, table, "leads",
+                                     DEFAULT_LEADS, SCOUT_LEAD)
+    helpers, helper_prices = route_seats(project, where, table, "helpers",
+                                         DEFAULT_HELPERS, SCOUT_HELPER)
     lead = default_route(where, table, "lead", DEFAULT_LEAD, "leads", leads)
     helper = default_route(where, table, "helper", DEFAULT_HELPER, "helpers",
                            helpers)
@@ -72,18 +76,18 @@ def scout_config(project):
             f"{where}: [scout] steer_helpers: {steer_helpers} helpers for a "
             f"steered pass is more than helper_turns = "
             f"{counts['helper_turns']}")
-    return ScoutConfig(leads, helpers, prices, lead, helper, waves=waves,
-                       steer_budget_min=steer_budget_min,
+    return ScoutConfig(leads, helpers, lead_prices, helper_prices, lead,
+                       helper, waves=waves, steer_budget_min=steer_budget_min,
                        steer_helpers=steer_helpers, **counts)
 
 
-def route_seats(project, where, table, key, defaults, role, prices):
+def route_seats(project, where, table, key, defaults, role):
     routes = table.get(key, defaults)
     if not isinstance(routes, dict):
         raise SystemExit(
             f"{where}: [scout] {key}: write each route as a "
             f"[scout.{key}.NAME] table")
-    seats = {}
+    seats, prices = {}, {}
     for name, route in routes.items():
         label = f"[scout.{key}.{name}]"
         if not PROFILE_NAME.fullmatch(name):
@@ -105,7 +109,7 @@ def route_seats(project, where, table, key, defaults, role, prices):
                     f"got nothing")
         seats[name] = Seat(adapter, harness_binary(project, where, adapter),
                            route, role)
-    return seats
+    return seats, prices
 
 
 def route_price(where, label, route):
