@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import threading
@@ -13,6 +14,8 @@ from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
 from holophyte.scout.lead import run_lead
+from holophyte.scout.stop import stop_reason
+from holophyte.scout.swarm import ScoutStopped, Stopping
 from store.scouts import (
     PLANNING,
     ScoutRefused,
@@ -163,6 +166,36 @@ def _end(conn, scout_id, phase, kind, summary, reason):
         end_scout(conn, scout_id, phase, reason)
 
 
+@contextmanager
+def stop_on_sigterm(stopping):
+    def on_term(_signum, _frame):
+        if stopping.stop() and not stopping.starting:
+            raise ScoutStopped()
+
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous = signal.signal(signal.SIGTERM, on_term)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def end_stopped(conn, scout_id):
+    if conn.in_transaction:
+        conn.rollback()
+    reason = stop_reason(conn, scout_id)
+    try:
+        _end(conn, scout_id, "stopped", "scout_stopped",
+             f"scout {scout_id} stopped: {reason}", reason)
+    except ScoutRefused as ended:
+        print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
+        return 1
+    print(f"[holo2] scout {scout_id} stopped: {reason}", flush=True)
+    return 0
+
+
 def scout_mode(project, scout_id):
     conn = open_store(project)
     try:
@@ -171,36 +204,46 @@ def scout_mode(project, scout_id):
         if refused is not None:
             print(refused, flush=True)
             return 1
-        interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
-        try:
-            claim_scout(conn, scout_id, os.getpid())
-        except ScoutRefused as lost:
-            print(f"[holo2] scout {scout_id} was claimed elsewhere: {lost}",
-                  flush=True)
-            return 1
-        try:
-            record_scout_event(conn, scout_id, "scout_started",
-                               f"scout {scout_id} started as pid {os.getpid()}")
+        stopping = Stopping()
+        with stop_on_sigterm(stopping):
             try:
-                with scout_heartbeat(conn, scout_id, interval_s):
-                    lead = make_lead(project, scout_id, row.base_sha)
-                    phase, reason = run_lead(conn, project, row, lead,
-                                             row.budget_min * 60)
-            except (ScoutEnded, ScoutRefused):
-                raise
-            except Exception as bad:  # noqa: BLE001 - recorded as the scout's end
-                reason = str(bad).strip() or type(bad).__name__
-                _end(conn, scout_id, "failed", "scout_failed",
-                     f"scout {scout_id} failed: {reason}", reason)
-                print(f"[holo2] scout {scout_id} failed: {reason}", flush=True)
-                return 1
-            _end(conn, scout_id, phase, f"scout_{phase}",
-                 f"scout {scout_id} {phase}: {reason}", reason)
-        except (ScoutEnded, ScoutRefused) as ended:
-            print(f"[holo2] scout {scout_id} ended elsewhere: {ended}",
-                  flush=True)
-            return 1
-        print(f"[holo2] scout {scout_id} {phase}: {reason}", flush=True)
-        return 0 if phase == "done" else 1
+                return run_scout(conn, project, row, stopping)
+            except ScoutStopped:
+                return end_stopped(conn, scout_id)
     finally:
         conn.close()
+
+
+def run_scout(conn, project, row, stopping):
+    scout_id = row.id
+    interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
+    try:
+        claim_scout(conn, scout_id, os.getpid())
+    except ScoutRefused as lost:
+        print(f"[holo2] scout {scout_id} was claimed elsewhere: {lost}",
+              flush=True)
+        return 1
+    try:
+        record_scout_event(conn, scout_id, "scout_started",
+                           f"scout {scout_id} started as pid {os.getpid()}")
+        try:
+            with scout_heartbeat(conn, scout_id, interval_s):
+                lead = make_lead(project, scout_id, row.base_sha)
+                phase, reason = run_lead(conn, project, row, lead,
+                                         row.budget_min * 60, stopping)
+        except (ScoutEnded, ScoutRefused):
+            raise
+        except Exception as bad:  # noqa: BLE001 - recorded as the scout's end
+            reason = str(bad).strip() or type(bad).__name__
+            _end(conn, scout_id, "failed", "scout_failed",
+                 f"scout {scout_id} failed: {reason}", reason)
+            print(f"[holo2] scout {scout_id} failed: {reason}", flush=True)
+            return 1
+        _end(conn, scout_id, phase, f"scout_{phase}",
+             f"scout {scout_id} {phase}: {reason}", reason)
+    except (ScoutEnded, ScoutRefused) as ended:
+        print(f"[holo2] scout {scout_id} ended elsewhere: {ended}",
+              flush=True)
+        return 1
+    print(f"[holo2] scout {scout_id} {phase}: {reason}", flush=True)
+    return 0 if phase == "done" else 1

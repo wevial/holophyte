@@ -1,6 +1,8 @@
 import json
+import os
 import re
 import shutil
+import signal
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -32,7 +34,7 @@ from holophyte.scout.run_helpers import (
     setup_failure,
     task_fields,
 )
-from holophyte.scout.scout_probes import probe_scout_route
+from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
 from store.enums import ScoutKind, ScoutTaskPhase
 from store.scouts import (
     end_scout_task,
@@ -91,22 +93,86 @@ def helper_goal(row, task):
         "commands you ran with excerpts of their output, or links.\n")
 
 
-def capped_turn(turn, failures=(OSError,)):
+class ScoutStopped(BaseException):
+    pass
+
+
+def kill_group(proc):
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+class Stopping:
+    def __init__(self):
+        self.lock, self.procs, self.stopped = threading.RLock(), set(), False
+        self.starting = False
+
+    def run_capped(self, argv, cwd, cap, on_start=None):
+        return self.tracked(partial(run_capped, argv, cwd, cap), on_start)
+
+    def tracked(self, run, on_start=None):
+        mine, main = [], threading.current_thread() is threading.main_thread()
+
+        def start(proc):
+            with self.lock:
+                mine.append(proc)
+                self.procs.add(proc)
+                if self.stopped:
+                    kill_group(proc)
+            if main:
+                self.started()
+            if on_start is not None:
+                on_start(proc)
+
+        if main:
+            self.starting = True
+        try:
+            return run(on_start=start)
+        finally:
+            with self.lock:
+                self.procs.difference_update(mine)
+            if main and self.starting:
+                self.started()
+
+    def started(self):
+        self.starting = False
+        self.check()
+
+    def stop(self):
+        with self.lock:
+            first, self.stopped = not self.stopped, True
+            for proc in list(self.procs):
+                kill_group(proc)
+        return first
+
+    def check(self):
+        if self.stopped:
+            raise ScoutStopped()
+
+
+def capped_turn(turn, stopping, failures=(OSError,)):
     try:
         code, output = turn()
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
     except failures as failed:
         return HelperTurn(FAILED, None, str(failed))
+    if code != 0 and stopping.stopped:
+        return HelperTurn(STOPPED, code, output or "")
     return HelperTurn(DONE if code == 0 else FAILED, code, output or "")
 
 
 class Swarm:
     """Runs a scout's helper turns, one wave at a time, until it is closed."""
 
-    def __init__(self, conn, project, row, config, deadline):
+    def __init__(self, conn, project, row, config, deadline, stopping):
         self.conn, self.project, self.row = conn, project, row
         self.deadline = deadline
+        self.stopping = stopping
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
         self.size = row.swarm or config.swarm
@@ -153,14 +219,18 @@ class Swarm:
     def host_probe(self):
         probe = probe_scout_route(
             self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
-            min(PROBE_TIMEOUT, self.remaining_s()))
+            min(PROBE_TIMEOUT, self.remaining_s()),
+            partial(in_critic_workspace, run=self.stopping.run_capped))
         return None if probe.ok else (
             f"helper route {self.route} is down: {probe.reason()}")
 
     def route_down(self, conn, key, probe):
         with self.probing:
             if key not in self.downs:
-                self.downs[key] = probe()
+                down = probe()
+                if down is not None and self.stopping.stopped:
+                    return down
+                self.downs[key] = down
                 if self.downs[key] is not None:
                     record_scout_event(conn, self.row.id, "scout_helpers",
                                        self.downs[key])
@@ -201,7 +271,7 @@ class Swarm:
         return path
 
     def prepared(self, task):
-        if self.remaining_s() <= 0:
+        if self.remaining_s() <= 0 or self.stopping.stopped:
             return None
         checkout = self.checkout(task)
         return self.seat.turn(outbound(helper_goal(self.row, task),
@@ -232,8 +302,8 @@ class Swarm:
             if prepared is None or cap <= 0:
                 return
             argv, checkout = prepared
-            turn = capped_turn(lambda: run_capped(argv, checkout, cap,
-                                                  on_start=start))
+            turn = capped_turn(lambda: self.stopping.run_capped(
+                argv, checkout, cap, start), self.stopping)
             if started:
                 self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
@@ -242,7 +312,7 @@ class Swarm:
                 conn.close()
 
     def run_helper(self, conn, task, mine):
-        if self.remaining_s() <= 0:
+        if self.remaining_s() <= 0 or self.stopping.stopped:
             return
         try:
             checkout = run_clone(self.project, self.row.id, task.id,
@@ -262,22 +332,23 @@ class Swarm:
         start_scout_task(conn, task.id)
         started = monotonic()
         mine.set()
-        problem = setup_failure(self.project, checkout, self.deadline)
+        seat = run_seat(self.project, self.seat)
+        problem = (setup_failure(self.project, checkout, self.deadline,
+                                 self.stopping.tracked)
+                   or self.isolated_down(conn, seat, checkout))
+        if problem is not None and self.stopping.stopped:
+            self.end(conn, task, STOPPED, "")
+            return
         if problem is not None:
             self.end(conn, task, FAILED,
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
             return
-        seat = run_seat(self.project, self.seat)
-        down = self.isolated_down(conn, seat, checkout)
-        if down is not None:
-            self.end(conn, task, FAILED, down)
-            return
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()
         around = partial(audited, conn, self.row.id)
-        turn = (capped_turn(lambda: launch_turn(self.project, argv, checkout,
-                                                cap, around),
-                            LAUNCH_FAILURES)
+        launch = partial(launch_turn, self.project, argv, checkout, cap, around)
+        turn = (capped_turn(lambda: self.stopping.tracked(launch),
+                            self.stopping, LAUNCH_FAILURES)
                 if cap > 0 else HelperTurn(STOPPED, None, ""))
         self.record(conn, task, argv, turn, monotonic() - started)
 
@@ -286,7 +357,7 @@ class Swarm:
             return self.route_down(conn, "host", self.host_probe)
         return self.route_down(conn, "container", partial(
             isolated_probe, self.project, self.route, seat, checkout,
-            self.remaining_s()))
+            self.remaining_s(), self.stopping.tracked))
 
     def refuse_push(self, checkout):
         from holophyte.scout.scout_process import refuse_push
@@ -306,7 +377,8 @@ class Swarm:
         payload = dict(role=SCOUT_HELPER,
                        label=outbound(argv_label(argv), self.secrets),
                        route=self.route, exit_status=turn.exit_status,
-                       timed_out=turn.phase == STOPPED, seconds=seconds)
+                       timed_out=turn.phase == STOPPED and turn.exit_status is None,
+                       seconds=seconds)
         if usage is not None:
             payload["usage"] = usage
         record_scout_event(conn, self.row.id, "agent_turn",

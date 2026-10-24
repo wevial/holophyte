@@ -22,6 +22,7 @@ from holophyte.host.supervisor import factory_revision
 from holophyte.loop.reexec import reexec_self
 from holophyte.scout.filing import SCOUT_FILE_ACTION, file_action
 from holophyte.scout.launch import SCOUT_ACTION, launch
+from holophyte.scout.stop import SCOUT_STOP_ACTION, stop
 from holophyte.scout.views import (
     SCOUT_PATH,
     SCOUT_ROUTES_PATH,
@@ -413,6 +414,8 @@ class StatusHandler(BaseHTTPRequestHandler):
             return launch(project, body)
         if action == SCOUT_FILE_ACTION:
             return file_action(project, body)
+        if action == SCOUT_STOP_ACTION:
+            return stop(project, body)
         if action in LEVERS:
             return LEVERS[action](project, body)
         return unit_action(project, action, scope.unit_name)

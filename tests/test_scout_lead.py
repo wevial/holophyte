@@ -129,8 +129,8 @@ class ScoutLeadTests(ScoutFixture):
         budget_s, real = 3, lead.run_lead
         started = time.monotonic()
         with patch.object(scout_process, "run_lead",
-                          lambda conn, project, row, worktree, _budget_s:
-                          real(conn, project, row, worktree, budget_s)):
+                          lambda conn, project, row, worktree, _budget_s, *rest:
+                          real(conn, project, row, worktree, budget_s, *rest)):
             code, printed = self.run_scout(path, scout_id)
         elapsed = time.monotonic() - started
         self.assertEqual(code, 0, printed)

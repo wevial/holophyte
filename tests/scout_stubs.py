@@ -34,6 +34,7 @@ if turn == "helper":
     call["question"] = re.search(r"^Question: (.*)$", goal, re.M).group(1)
     answers = dict(answers, **answers.get("helpers", {{}}).get(
         call["question"], {{}}))
+answers = dict(answers, **answers.get("binaries", {{}}).get(binary, {{}}))
 with open(here / "calls.jsonl", "a") as log:
     log.write(json.dumps(call) + "\n")
 print(answers.get(binary + "_" + turn, answers.get(turn, "")), flush=True)
@@ -74,6 +75,7 @@ class LeadStubs:
     output; `TURN_sh` to shell commands it runs, logged the same way;
     `TURN_tokens` to a count printed under a `tokens used` line;
     `helpers` maps a helper's question to answers overriding these for it;
+    `binaries` maps `claude` or `codex` to answers overriding these for it;
     and `store` to a store whose scouts' lead sessions each call logs."""
 
     def __init__(self, directory, **answers):

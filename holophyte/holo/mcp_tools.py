@@ -181,6 +181,11 @@ WRITES = (
          " (holo scout file ID N --json)", ("scout", "file"),
          (PROJECT, SCOUT, ITEM), required=("scout", "item"), tier=WRITE,
          signs=by_author),
+    Tool("scout_stop", "stop a scout, the note its reason: a queued one ends"
+         " now, a running one's process is signalled (holo scout stop ID"
+         " --json)", ("scout", "stop"), (PROJECT, SCOUT),
+         required=("project", "scout"),
+         tier=WRITE, signs=by_author),
 )
 
 TOOLS = READS + WRITES
