@@ -91,7 +91,7 @@ def route_seats(project, where, table, key, defaults, role):
 
 def default_route(where, table, key, default, routes_key, seats):
     name = table.get(key, default)
-    if name not in seats:
+    if not isinstance(name, str) or name not in seats:
         raise SystemExit(
             f"{where}: [scout] {key}: {name!r} names no route in "
             f"[scout.{routes_key}]; the routes are "

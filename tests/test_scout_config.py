@@ -98,6 +98,8 @@ class ScoutRefusalTests(ScoutFixture):
          'colour = "red"\n',
          ("[scout.helpers.h] colour: unknown key",)),
         ('[scout]\nlead = "nope"\n', ("[scout] lead", "'nope'", "opus, sol")),
+        ('[scout]\nlead = []\n', ("[scout] lead", "opus, sol")),
+        ('[scout]\nhelper = {}\n', ("[scout] helper", "haiku, luna")),
         ('[scout]\nswarm = 5\nhelper_turns = 4\n',
          ("[scout] swarm", "helper_turns = 4")),
         ('[scout]\nwaves = 3\n', ("[scout] waves", "got 3")),
