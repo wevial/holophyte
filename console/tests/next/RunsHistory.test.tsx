@@ -89,7 +89,6 @@ test("history asks each host for the five local days before yesterday and keeps 
   await mount("#/runs/history", server.fetch);
   expect(screen.getByRole("heading", { level: 1, name: "Runs history" })).toBeTruthy();
   expect(headings()).toEqual(firstPage);
-  expect(screen.getByText("the bar runs to 1.5× the estimate; the tick marks the estimate")).toBeTruthy();
   expect(screen.getByText("five days a page · 30 days back")).toBeTruthy();
   expect(screen.getByText("times PDT")).toBeTruthy();
 
@@ -250,6 +249,10 @@ const dayRun = (id: number) => within(screen.getByRole("list", { name: "Runs on 
   .getAllByRole("listitem").find((row) => row.getAttribute("data-run") === String(id))!;
 const dayCells = (id: number) => Array.from(dayRun(id).children) as HTMLElement[];
 
+const HEAD = ["Run", "Ticket", "Title", "Project", "Outcome", "Rounds", "Findings", "Took · estimate", "Change", "Ended"];
+const [OUTCOME, ROUNDS, FINDINGS, TOOK, CHANGE, ENDED] = [4, 5, 6, 7, 8, 9];
+const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+
 test("history rows separate ticket and title and name and link the merged run with its outcome and end time", async () => {
   await mount("#/runs/history", fleet([{
     ...run(213, "merged", 26, 30), ticket: "DEMO-215", title: "Stop a run that edits outside its scope",
@@ -261,30 +264,81 @@ test("history rows separate ticket and title and name and link the merged run wi
   expect(link.getAttribute("href")).toEndWith("#/runs/demo/213");
   const cells = dayCells(213);
   expect(cells.slice(0, 4).map((cell) => cell.textContent)).toEqual(["213", "DEMO-215", "Stop a run that edits outside its scope", "demo"]);
-  expect(within(cells[4]!).getByText("merged")).toBeTruthy();
-  expect(within(cells[4]!).getByText("PR #483")).toBeTruthy();
-  expect(cells[5]!.textContent).toBe("2");
-  expect(cells[7]!.textContent).toBe("19:45");
-  const head = document.querySelector("[data-day-run-table] [aria-hidden='true']")!;
-  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "Outcome", "Rounds", "Took · estimate", "Ended"]);
+  expect(within(cells[OUTCOME]!).getByText("merged")).toBeTruthy();
+  expect(cells[ROUNDS]!.textContent).toBe("2");
+  expect(cells[ENDED]!.textContent).toBe("19:45");
 });
 
-test("history shows whole-minute overruns and caps the working-time fill at the track's end", async () => {
+test("history draws each run's time box bar green to 80 %, amber to the box and red past it", async () => {
   await mount("#/runs/history", fleet([
-    run(212, "merged", 35, 30), run(194, "merged", 72, 45),
-    { ...run(193, "merged", 30, 30), working_ms: 30 * MINUTE + 20_000 },
-    { ...run(192, "merged", 30, 30), estimate_ms: 30 * MINUTE - 1_000 },
-    { ...run(191, "merged", 30, 30), working_ms: 31 * MINUTE - 1_000, estimate_ms: 30 * MINUTE - 1_000 },
+    run(224, "merged", 24, 30), run(225, "merged", 25, 30), run(230, "merged", 30, 30), run(231, "merged", 31, 30),
   ], []).fetch);
-  const short = dayCells(212)[6]!;
-  for (const text of ["35m", "/ 30m", "+5m"]) expect(within(short).getByText(text)).toBeTruthy();
-  expect((short.querySelector("[data-work-fill]") as HTMLElement).style.width).toBe("78%");
-  const long = dayCells(194)[6]!;
-  for (const text of ["1h 12m", "/ 45m", "+27m"]) expect(within(long).getByText(text)).toBeTruthy();
-  expect((long.querySelector("[data-work-fill]") as HTMLElement).style.width).toBe("100%");
-  expect(dayCells(193)[6]!.textContent).not.toContain("+");
-  expect(dayCells(192)[6]!.textContent).not.toContain("+");
-  expect(within(dayCells(191)[6]!).getByText("+1m")).toBeTruthy();
+  const took = (id: number) => dayCells(id)[TOOK]!;
+  expect([224, 225, 230, 231].map((id) => took(id).querySelector("[role='progressbar']")!.getAttribute("data-tone"))).toEqual(["ok", "warn", "warn", "over"]);
+  expect([224, 225, 230, 231].map((id) => took(id).querySelector("[data-minutes]")!.textContent)).toEqual(["24m / 30m", "25m / 30m", "30m / 30m", "31m / 30m"]);
+  expect([224, 225, 230, 231].map((id) => took(id).querySelector("[data-delta]")!.textContent)).toEqual(["−6m", "−5m", "0m", "+1m"]);
+});
+
+test("history leaves the bar empty without an estimate, dashes a run without work and drops the 1.5× note", async () => {
+  await mount("#/runs/history", fleet([
+    run(211, "merged", 20, null), { ...run(209, "merged", 0, 30), working_ms: null },
+  ], []).fetch);
+  const unestimated = dayCells(211)[TOOK]!;
+  expect(unestimated.textContent).toBe("20m / —");
+  expect(unestimated.querySelector("[data-delta]")).toBeNull();
+  const bar = unestimated.querySelector("[role='progressbar']")!;
+  expect([bar.getAttribute("data-tone"), bar.getAttribute("aria-valuenow"), bar.children.length]).toEqual(["none", "0", 0]);
+  const knownLink = within(dayRun(211)).getByRole("link", { name: /^Run 211,/ });
+  expect(knownLink.getAttribute("aria-label")).toContain(", took 20m,");
+  expect(knownLink.getAttribute("aria-label")).not.toContain("against");
+  expect(dayCells(209)[TOOK]!.textContent).toBe("–");
+  expect(dayCells(209)[TOOK]!.querySelector("[role='progressbar']")).toBeNull();
+  expect(within(dayRun(209)).getByRole("link", { name: /^Run 209,/ }).getAttribute("aria-label")).not.toContain("took");
+  expect(screen.queryByText(/1\.5×/)).toBeNull();
+});
+
+test("history heads a Findings column and dashes a run without findings as it dashes zero rounds", async () => {
+  await mount("#/runs/history", fleet([{ ...run(215, "merged", 20, 30), findings: 4 }, { ...run(216, "merged", 20, 30), findings: 0 }], []).fetch);
+  const head = document.querySelector("[data-day-run-table] [aria-hidden='true']")!;
+  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(HEAD);
+  expect([dayCells(215)[FINDINGS]!.textContent, dayCells(216)[FINDINGS]!.textContent]).toEqual(["4", "–"]);
+  expect(dayCells(216)[ROUNDS]!.textContent).toBe("–");
+});
+
+test("history puts a merge's size, pull request and commit in Change instead of under its outcome", async () => {
+  await mount("#/runs/history", fleet([{
+    ...run(217, "merged", 20, 30), additions: 120, deletions: 14, pr_url: "https://github.com/example/demo/pull/812",
+    merge_sha: SHA, commit_url: `https://github.com/example/demo/commit/${SHA}`,
+  }], []).fetch);
+  const change = dayCells(217)[CHANGE]!;
+  expect(change.querySelector("[data-size]")!.textContent).toBe("+120 −14");
+  const pr = within(change).getByRole("link", { name: "PR #812" });
+  const sha = within(change).getByRole("link", { name: SHA.slice(0, 7) });
+  expect([pr.getAttribute("href"), pr.getAttribute("target")]).toEqual(["https://github.com/example/demo/pull/812", "_blank"]);
+  expect([sha.getAttribute("href"), sha.getAttribute("target")]).toEqual([`https://github.com/example/demo/commit/${SHA}`, "_blank"]);
+  expect(change.textContent).toBe(`+120 −14PR #812${SHA.slice(0, 7)}`);
+  expect(dayCells(217)[OUTCOME]!.textContent).not.toContain("PR #812");
+});
+
+test("history shows a merge without a pull request as its plain short sha and dashes Change on other outcomes", async () => {
+  await mount("#/runs/history", fleet([
+    { ...run(218, "merged", 20, 30), additions: null, deletions: null, merge_sha: SHA, commit_url: null },
+    { ...run(208, "failed", 10, 30), failure_kind: "verify" },
+    { ...run(210, "abandoned", 10, 30), outcome_reason: "superseded" },
+  ], []).fetch);
+  const change = dayCells(218)[CHANGE]!;
+  expect(change.textContent).toBe(SHA.slice(0, 7));
+  expect(within(change).queryByRole("link")).toBeNull();
+  expect([dayCells(208)[CHANGE]!.textContent, dayCells(210)[CHANGE]!.textContent]).toEqual(["–", "–"]);
+});
+
+test("history reads rows from a daemon that serves no findings, sha or size", async () => {
+  const legacy = { ...run(219, "merged", 20, 30), pr_url: null };
+  for (const key of ["findings", "merge_sha", "commit_url", "additions", "deletions"]) expect(legacy).not.toHaveProperty(key);
+  await mount("#/runs/history", fleet([legacy, run(220, "failed", 10, 30)], []).fetch);
+  expect(screen.queryByText(/did not answer/)).toBeNull();
+  expect([dayCells(219)[FINDINGS]!.textContent, dayCells(220)[FINDINGS]!.textContent]).toEqual(["–", "–"]);
+  expect(dayCells(219)[CHANGE]!.textContent).toBe("");
 });
 
 test("history explains failed and abandoned outcomes and prefixes an end on a later day", async () => {
@@ -293,30 +347,14 @@ test("history explains failed and abandoned outcomes and prefixes an end on a la
     { ...run(210, "abandoned", 10, 30), outcome_reason: "superseded by a newer run\nrun 214 claimed it",
       ended_ms: midnight("2026-10-15") + 20 * MINUTE },
   ], []).fetch);
-  const failed = dayCells(208)[4]!;
+  const failed = dayCells(208)[OUTCOME]!;
   expect(within(failed).getByText("failed")).toBeTruthy();
   expect(within(failed).getByText("at verify")).toBeTruthy();
-  const abandoned = dayCells(210)[4]!;
+  const abandoned = dayCells(210)[OUTCOME]!;
   expect(within(abandoned).getByText("abandoned")).toBeTruthy();
   expect(within(abandoned).getByText("superseded by a newer run")).toBeTruthy();
   expect(abandoned.textContent).not.toContain("run 214 claimed it");
-  expect(dayCells(210)[7]!.textContent).toBe("Thu 00:20");
-});
-
-test("history omits unknown estimates and work from bars and accessible names and shows zero rounds as a dash", async () => {
-  await mount("#/runs/history", fleet([
-    run(211, "merged", 26, null), { ...run(209, "merged", 0, 30), working_ms: null },
-  ], []).fetch);
-  const knownWork = dayCells(211);
-  expect(knownWork[6]!.textContent).toBe("26m");
-  expect(knownWork[6]!.querySelector("[data-work-bar]")).toBeNull();
-  expect(knownWork[5]!.textContent).toBe("–");
-  const knownLink = within(dayRun(211)).getByRole("link", { name: /^Run 211,/ });
-  expect(knownLink.getAttribute("aria-label")).toContain(", took 26m,");
-  expect(knownLink.getAttribute("aria-label")).not.toContain("against");
-  expect(dayCells(209)[6]!.textContent).toBe("–");
-  expect(dayCells(209)[6]!.querySelector("[data-work-bar]")).toBeNull();
-  expect(within(dayRun(209)).getByRole("link", { name: /^Run 209,/ }).getAttribute("aria-label")).not.toContain("took");
+  expect(dayCells(210)[ENDED]!.textContent).toBe("Thu 00:20");
 });
 
 const onDay = (row: HistoryRow, date: string): HistoryRow => ({

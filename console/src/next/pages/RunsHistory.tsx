@@ -144,7 +144,6 @@ export function RunsHistory() {
         </section>
       ))}
       <footer className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-b border-rule pb-[18px] font-mono text-[12px] leading-[1.4] text-ink-3">
-        <span>the bar runs to 1.5× the estimate; the tick marks the estimate</span>
         <span>five days a page · 30 days back</span>
         <span>times {zoneName(peers.now)}</span>
       </footer>

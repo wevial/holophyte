@@ -3,19 +3,16 @@ import { localMidnight } from "../../lib/ledger";
 import { failureWord, firstLine } from "../history";
 import type { DayGroup, DayRun } from "../runDays";
 import { STATES } from "../state";
-import { prNumber, RunRowLink } from "./RunTable";
+import { ActualVsBox, PrLink, Sha } from "./MergeFacts";
+import { RunRowLink } from "./RunTable";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
-const GRID = "grid grid-cols-[56px_96px_minmax(0,2.6fr)_96px_168px_64px_minmax(170px,1.2fr)_60px] items-start gap-3";
+const GRID = "grid grid-cols-[48px_88px_minmax(0,2.6fr)_80px_128px_56px_68px_204px_minmax(128px,1fr)_60px] items-start gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4]";
 const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
 
 function reason(row: DayRun): string {
-  if (row.state === "merged") {
-    const pr = prNumber(row.pr_url);
-    return pr === "–" ? "" : `PR ${pr}`;
-  }
   if (row.state === "failed") return failureWord(row.failure_kind).replace(/^failed(?: · )?/, "").trim();
   return row.state === "abandoned" ? firstLine(row.outcome_reason) : "";
 }
@@ -23,20 +20,19 @@ function reason(row: DayRun): string {
 function Took({ row }: { row: DayRun }) {
   const { working_ms: work, estimate_ms: estimate } = row;
   if (work == null) return <span className={`${MONO} text-ink-3`}>–</span>;
-  const over = estimate == null ? 0 : Math.floor((work - estimate) / 60_000);
-  const fill = estimate === 0 ? (work > 0 ? 100 : 0) : Math.min(100, Math.round(work / (1.5 * (estimate ?? 1)) * 100));
-  const tone = estimate != null && work > estimate ? "bg-need" : row.state === "merged" ? "bg-live" : "bg-ink-3";
+  return <ActualVsBox actualMin={work / 60_000} estimateMin={estimate == null ? null : estimate / 60_000} />;
+}
+
+function Change({ row }: { row: DayRun }) {
+  if (row.state !== "merged") return <span className={`${MONO} text-ink-3`}>–</span>;
+  const { additions, deletions, merge_sha: sha = null } = row;
   return (
-    <span className={`${MONO} text-ink-3 tabular-nums`}>
-      <span className="font-medium text-ink-2">{formatSettled(work)}</span>
-      {estimate != null && <>
-        {" "}<span>/ {formatSettled(estimate)}</span>
-        {over >= 1 && <span className="text-need"> +{over}m</span>}
-        <span data-work-bar aria-hidden="true" className="relative mt-2 block h-1 bg-rule-2">
-          <span data-work-fill className={`block h-full ${tone}`} style={{ width: `${fill}%` }} />
-          <span className="absolute -top-0.5 h-2 w-px bg-ink-3" style={{ left: `${100 / 3 * 2}%` }} />
-        </span>
-      </>}
+    <span className={`${MONO} relative flex flex-wrap items-baseline gap-x-2 text-ink-3`}>
+      {typeof additions === "number" && typeof deletions === "number" && (
+        <span data-size className="tabular-nums"><span className="text-ok-text">+{additions}</span> <span className="text-bad-text">−{deletions}</span></span>
+      )}
+      <PrLink url={row.pr_url} />
+      {sha && <Sha row={{ merge_sha: sha, commit_url: row.commit_url }} />}
     </span>
   );
 }
@@ -58,7 +54,9 @@ function DayRow({ row, since }: { row: DayRun; since: number }) {
         {detail && <span className="mt-1 block font-mono text-[11.5px] leading-[1.4] text-ink-3 [overflow-wrap:anywhere]">{detail}</span>}
       </span>
       <span className={`${MONO} text-ink-3`}>{row.rounds || "–"}</span>
+      <span className={`${MONO} text-ink-3`}>{row.findings || "–"}</span>
       <Took row={row} />
+      <Change row={row} />
       <span className={`${MONO} text-ink-3 text-right`}>{ended}</span>
     </li>
   );
@@ -67,9 +65,9 @@ function DayRow({ row, since }: { row: DayRun; since: number }) {
 export function DayRunTable({ day, label }: { day: DayGroup; label: string }) {
   return (
     <div data-day-run-table className="overflow-x-auto">
-      <div className="min-w-[1000px]">
+      <div className="min-w-[1140px]">
         <div aria-hidden="true" className={`${GRID} border-b border-rule px-3 pb-2.5 pt-3 font-mono text-[11px] uppercase leading-none tracking-[0.12em] text-ink-3`}>
-          {["Run", "Ticket", "Title", "Project", "Outcome", "Rounds", "Took · estimate", "Ended"].map(word => <span key={word} className={word === "Ended" ? "text-right" : undefined}>{word}</span>)}
+          {["Run", "Ticket", "Title", "Project", "Outcome", "Rounds", "Findings", "Took · estimate", "Change", "Ended"].map(word => <span key={word} className={word === "Ended" ? "text-right" : undefined}>{word}</span>)}
         </div>
         <ol aria-label={`Runs on ${label}, latest first`} className="m-0 list-none p-0">
           {day.rows.map(row => <DayRow key={`${row.base} ${row.id}`} row={row} since={day.since} />)}

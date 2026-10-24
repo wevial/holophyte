@@ -372,6 +372,10 @@ class RecentRun:
     timeBoxMs: int | None
     workingMs: int | None
     workStartedAt: int | None
+    findingCount: int
+    mergeSha: str | None
+    prSeenAdditions: int | None
+    prSeenDeletions: int | None
 
 
 def recent_runs(conn, since, limit, until=None):
@@ -382,6 +386,9 @@ def recent_runs(conn, since, limit, until=None):
         until = max(SQLITE_INT64_MIN, min(until, SQLITE_INT64_MAX))
         where = "r.endedAt IS NOT NULL AND r.startedAt >= ? AND r.startedAt < ?"
         params.append(until)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    size = ", ".join(f"r.{name}" if name in columns else "NULL"
+                     for name in PR_SEEN_MEDIA[:2])
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.url, t.title, r.attempt, r.phase,"
         " r.outcome, r.outcomeReason, r.failureKind, r.parkKind, r.startedAt,"
@@ -390,7 +397,10 @@ def recent_runs(conn, since, limit, until=None):
         "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
         " ELSE r.reviewRoundCount END,"
         " r.reviewRoundCap, r.prUrl, r.host, r.timeBoxMs, r.workingMs,"
-        " r.workStartedAt, COUNT(*) OVER ()"
+        " r.workStartedAt,"
+        " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
+        "    FROM reviewRounds rr WHERE rr.runId = r.id),"
+        f" r.mergeSha, {size}, COUNT(*) OVER ()"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         f" WHERE {where}"
         " ORDER BY r.startedAt DESC, r.id DESC LIMIT ?",
