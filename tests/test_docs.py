@@ -408,5 +408,20 @@ class DaemonWritesTests(unittest.TestCase):
                       " ".join(auth.split()))
 
 
+
+class MentionAccountsDocTests(unittest.TestCase):
+    def test_refusal_paragraph_names_its_header_and_exempts_bots(self):
+        from holophyte.babysit.thread_mentions import REFUSAL
+        text = (DOCS / "config.md").read_text()
+        (paragraph,) = [" ".join(block.split()) for block in text.split("\n\n")
+                        if REFUSAL in block and "mention_accounts" in block
+                        and not block.startswith("|")]
+        self.assertIn("opening `---- Comment by holophyte ----`", paragraph)
+        bot = paragraph[paragraph.index("The latest comment of a bot"):]
+        for name in ("`Bot`", "`[bot]`", "`bot_authors`", "`bot_logins`",
+                     "never an instruction and never refused"):
+            self.assertIn(name, bot)
+
+
 if __name__ == "__main__":
     unittest.main()
