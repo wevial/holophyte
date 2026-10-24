@@ -88,7 +88,8 @@ export function Scouts() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const launch = useAction();
-  const projects: LaunchProject[] = scopedHosts(hosts, project).flatMap((host) =>
+  const scoped = scopedHosts(hosts, project);
+  const projects: LaunchProject[] = scoped.flatMap((host) =>
     host.status?.actions === true ? [{ base: host.base, name: projectName(host.status.project) }] : [],
   );
   const canLaunch = projects.length > 0;
@@ -96,7 +97,8 @@ export function Scouts() {
   const navigate = useNavigate();
   const asked = search.new == null ? null : JSON.stringify([search.new, search.about, search.kind, search.ask]);
   const [filled, setFilled] = useState<string | null>(null);
-  if (asked !== filled && (asked == null || canLaunch)) {
+  const fillable = projects.some((each) => each.name === search.new) || scoped.every((host) => host.status != null || host.error != null || host.needs_token);
+  if (asked !== filled && (asked == null || (canLaunch && fillable))) {
     setFilled(asked);
     if (asked != null) {
       setDraft(prefilledDraft(search, projects));
