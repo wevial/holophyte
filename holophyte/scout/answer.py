@@ -65,8 +65,7 @@ def current_ask(conn, scout_id):
     return None if row is None else json.loads(row[0])["message"]
 
 
-def taken_ask(conn, scout_id):
-    ask = current_ask(conn, scout_id)
+def taken_ask(conn, scout_id, ask):
     if ask is None:
         raise RuntimeError(f"scout {scout_id} has taken no ask")
     thread = messages(conn, scout_id)
@@ -128,8 +127,8 @@ def read_answer(ask, turn, cap):
         ref for ref in refs if isinstance(ref, str))))
 
 
-def answer(conn, project, row, worktree, stopping, cap=ANSWER_TURN_S):
-    question, earlier = taken_ask(conn, row.id)
+def answer(conn, project, row, ask, worktree, stopping, cap=ANSWER_TURN_S):
+    question, earlier = taken_ask(conn, row.id, ask)
     config = scout_config(project)
     name = row.lead_route or config.lead
     seat = config.leads.get(name)
@@ -148,6 +147,7 @@ def answer(conn, project, row, worktree, stopping, cap=ANSWER_TURN_S):
     reports, actions = stored(conn, row.id)
     goal = answer_goal(row, question, earlier, reports, actions,
                        lead.session is None)
+    held(conn, row.id, ask)
     return read_answer(question.id, lead.resume(goal, cap), cap)
 
 

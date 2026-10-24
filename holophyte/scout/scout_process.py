@@ -13,7 +13,14 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
-from holophyte.scout.answer import Outcome, answer, current_ask, settle, stop_answer
+from holophyte.scout.answer import (
+    Outcome,
+    answer,
+    current_ask,
+    held,
+    settle,
+    stop_answer,
+)
 from holophyte.scout.lead import run_lead
 from holophyte.scout.stop import stop_reason, stop_request
 from holophyte.scout.swarm import ScoutStopped, Stopping
@@ -215,7 +222,7 @@ def answer_stopped(conn, scout_id, ask):
 def answered(conn, project, row, ask, stopping):
     try:
         worktree = make_lead(project, row.id, row.base_sha)
-        return answer(conn, project, row, worktree, stopping)
+        return answer(conn, project, row, ask, worktree, stopping)
     except ScoutRefused:
         raise
     except Exception as bad:
@@ -226,7 +233,9 @@ def answer_mode(conn, project, row, ask, stopping):
     scout_id = row.id
     interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
     try:
-        beat_scout(conn, scout_id, os.getpid())
+        with store.transaction(conn):
+            held(conn, scout_id, ask)
+            beat_scout(conn, scout_id, os.getpid())
         owner = scout(conn, scout_id).pid
         if owner != os.getpid():
             raise ScoutRefused(scout_id, ANSWERING, f"pid {owner} answers it")

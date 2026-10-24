@@ -22,13 +22,14 @@ from holophyte.scout.answer import (
     ANSWER_OPENING,
     Outcome,
     answer,
+    current_ask,
     fail_answer,
     labels,
     settle,
 )
 from holophyte.scout.lead import PLAN_OPENING, REPORT_OPENING
 from holophyte.scout.run_helpers import HELPER_OPENING
-from holophyte.scout.scout_process import make_lead
+from holophyte.scout.scout_process import answer_mode, make_lead
 from holophyte.scout.swarm import Stopping
 from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
@@ -117,7 +118,8 @@ class AnswerCase(StopCase):
         for the turn."""
         row = scout(self.store_conn, scout_id)
         worktree = make_lead(self.target, scout_id, row.base_sha)
-        outcome = answer(self.store_conn, self.target, row, worktree,
+        outcome = answer(self.store_conn, self.target, row,
+                         current_ask(self.store_conn, scout_id), worktree,
                          Stopping(), cap)
         return settle(self.store_conn, scout_id, outcome)
 
@@ -242,6 +244,22 @@ class AnswerStepTests(AnswerCase):
         (answered,) = self.answers(scout_id)
         self.assertEqual(answered.answers_id, second)
         self.assertEqual(scout(self.store_conn, scout_id).phase, "done")
+
+    def test_a_process_whose_ask_went_stale_runs_no_turn_for_a_newer_ask(self):
+        scout_id = self.done_scout()
+        first = self.ask(scout_id)
+        take_message(self.store_conn, first)
+        row = scout(self.store_conn, scout_id)
+        fail_answer(self.store_conn, scout_id, first, "heartbeat stale")
+        second = self.ask(scout_id)
+        take_message(self.store_conn, second)
+
+        self.assertEqual(answer_mode(self.store_conn, self.target, row, first,
+                                     Stopping()), 1)
+        self.assertEqual(self.stubs.turns("answer"), [])
+        self.assertEqual(self.answers(scout_id), [])
+        now = scout(self.store_conn, scout_id)
+        self.assertEqual((now.phase, now.pid), ("answering", None))
 
     def test_an_answer_without_json_or_cut_at_its_cap_leaves_the_report(self):
         pid_file = self.child("answer-child")
