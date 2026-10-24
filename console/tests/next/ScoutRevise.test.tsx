@@ -133,7 +133,7 @@ test("the facts line links a run, defect, ticket or pull request subject and rea
   for (const [subject, words, href] of cases) {
     await mount(demo({ subject }).fetch);
     expect(facts().textContent).toContain(`· about ${words}`);
-    const link = within(facts()).getByRole<HTMLAnchorElement>("link", { name: words });
+    const link = within(facts()).getByRole<HTMLAnchorElement>("link", { name: `about ${words}` });
     expect(link.getAttribute("href")!.endsWith(href)).toBe(true);
     cleanup();
   }
@@ -171,6 +171,22 @@ test("Save on the handed draft posts it at revision 2, toasts revision 3 and ope
   expect(edits.map((each) => [each.ifMatch, (each.body as { body: string }).body])).toEqual([["2", A2_DRAFT]]);
   expect(toast()).toBe("Saved DEMO-7 as revision 3.");
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-7");
+});
+
+test("a reload of the edit page drops the handed draft and shows DEMO-7 as stored", async () => {
+  const { fetch } = demo();
+  await mount(fetch);
+  await click(reviseButton());
+  cleanup();
+  render(
+    <QueryClientProvider client={consoleQueryClient()}>
+      <NextConsole base={DEMO} pollDeps={fakeDeps(fetch).deps} />
+    </QueryClientProvider>,
+  );
+  await settled();
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-7/edit");
+  expect(title()).toBe("Retry a locked write");
+  expect(screen.queryByText(/scout 31's draft/)).toBeNull();
 });
 
 test("a revise item's title opens the edit page with the draft as Revise does", async () => {

@@ -28,10 +28,10 @@ const ABOUT_LINK = "underline underline-offset-2 hover:text-ink";
 function About({ subject, project }: { subject: ScoutDetail["scout"]["subject"]; project: string }) {
   const target = subject == null ? null : aboutTarget(subject);
   if (target == null) return null;
-  const link = "url" in target ? <a href={target.url} target="_blank" rel="noreferrer" className={ABOUT_LINK}>{target.words}</a>
-    : "ticket" in target ? <Link to="/tickets/$project/$key" params={{ project, key: target.ticket }} search={{}} className={ABOUT_LINK}>{target.words}</Link>
-    : <Link to="/runs/$project/$run" params={{ project, run: target.run }} className={ABOUT_LINK}>{target.words}</Link>;
-  return <><Dot />about {link}</>;
+  const link = "url" in target ? <a href={target.url} target="_blank" rel="noreferrer" className={ABOUT_LINK}>about {target.words}</a>
+    : "ticket" in target ? <Link to="/tickets/$project/$key" params={{ project, key: target.ticket }} search={{}} className={ABOUT_LINK}>about {target.words}</Link>
+    : <Link to="/runs/$project/$run" params={{ project, run: target.run }} className={ABOUT_LINK}>about {target.words}</Link>;
+  return <><Dot />{link}</>;
 }
 
 /** "scout 31 · bug · demo · about run 812 · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · …", each fact the

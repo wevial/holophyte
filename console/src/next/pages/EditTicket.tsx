@@ -1,4 +1,4 @@
-import { useContext, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { editTicket } from "../../lib/boardWrites";
@@ -182,6 +182,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
     return { origin, read: handed == null ? origin : readOf({ ...loaded, body: handed.draft }), handed };
   });
   const { origin, read } = edit;
+  const tookDraft = handed != null;
+  useEffect(() => {
+    if (tookDraft) void navigate({ to: "/tickets/$project/$key/edit", params: { project, key: ticketKey }, search: {}, state: {}, replace: true });
+  }, [tookDraft, navigate, project, ticketKey]);
   const drawn = (part: string) => !read.raw.has(part);
   const [fields, setFields] = useState<EditFields>(read.fields);
   const [picks, setPicks] = useState<Record<string, Pick>>({});
