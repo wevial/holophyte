@@ -6,8 +6,9 @@ from typing import get_args
 
 import store.read
 from holophyte.agents.harness import SCOUT_HELPER, SCOUT_LEAD
+from holophyte.scout.report import read_status
 from holophyte.scout.scout_config import scout_config
-from holophyte.scout.scout_contract import ActionKind, FindingStatus
+from holophyte.scout.scout_contract import ActionKind
 from holophyte.serve.serve_runs import (
     SQLITE_MAX_DIGITS,
     SQLITE_MAX_INT,
@@ -42,7 +43,6 @@ TASK_KEYS = ("id", "pass", "wave", "question", "paths", "mode", "route",
 ACTION_KEYS = ("title", "why", "kind", "body")
 HYPOTHESIS_KEYS = ("hypothesis", "separates", "verdict")
 PRIOR_KEYS = ("scout", "finding", "verdict", "why")
-FINDING_STATUSES = get_args(FindingStatus)
 ACTION_KINDS = get_args(ActionKind)
 
 
@@ -113,10 +113,6 @@ def served_evidence_list(evidence):
     return [served_evidence(item) for item in items]
 
 
-def served_status(status):
-    return status if status in FINDING_STATUSES else "unconfirmed"
-
-
 def served_report_action(action):
     kind = action["kind"]
     return {**{key: action[key] for key in ACTION_KEYS},
@@ -134,7 +130,7 @@ def served_reproduction(reproduction):
 def served_report(report):
     return {"summary": report["summary"],
             "findings": [{"title": finding["title"],
-                          "status": served_status(finding["status"]),
+                          "status": read_status(finding["status"]),
                           "evidence": served_evidence_list(
                               finding["evidence"])}
                          for finding in report["findings"]],

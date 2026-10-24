@@ -34,8 +34,8 @@ SECTION = "## Prior reports\n\n"
 AT = 1_750_000_000_000
 
 
-def finding(title, path, line):
-    return {"title": title, "status": "shown", "evidence": [
+def finding(title, path, line, status="shown"):
+    return {"title": title, "status": status, "evidence": [
         {"file": path, "line": line, "verified": True}]}
 
 
@@ -82,7 +82,7 @@ class PriorCase(ScoutFixture):
 
     def save_and_form(self):
         self.earlier([finding("save drops the title", "app/save.py", 3),
-                      finding("save never logs", "app/save.py", 2)])
+                      finding("save never logs", "app/save.py", 2, "likely")])
         self.earlier([finding("form loses focus", "app/form.py", 1)])
 
     def run_scout(self, ask, report=EMPTY):
@@ -117,7 +117,11 @@ class PlanGoalTests(PriorCase):
         self.assertEqual(self.listed(goal), [1])
         entry = self.entry(goal, 1)
         self.assertIn(f"base {self.first[:12]},", entry)
-        self.assertIn("1. [shown] save drops the title at app/save.py:3", entry)
+        self.assertIn("1. [confirmed] save drops the title at app/save.py:3",
+                      entry)
+        self.assertIn("2. [partial] save never logs at app/save.py:2", entry)
+        self.assertNotIn("[shown]", entry)
+        self.assertNotIn("[likely]", entry)
         self.assertRegex(entry, r"(?m)^Changed since its base: app/save\.py$")
         self.assertNotIn("Scout 2 (", goal)
 

@@ -80,7 +80,7 @@ class TextEvidence(TypedDict):
     text: str
 
 
-FindingStatus = Literal["shown", "likely", "unconfirmed"]
+FindingStatus = Literal["confirmed", "partial", "unconfirmed"]
 
 
 class ScoutFinding(TypedDict):

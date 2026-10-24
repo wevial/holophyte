@@ -29,7 +29,7 @@ from tests.test_scout_process import ScoutFixture
 
 BUG = {
     "summary": "the retry loop never backs off",
-    "findings": [{"title": "no backoff", "status": "shown", "evidence": [
+    "findings": [{"title": "no backoff", "status": "confirmed", "evidence": [
         {"file": "notes.txt", "line": 1},
         {"command": "python3 -m unittest", "output": "FAILED"},
         {"url": "https://example.test/retry"}]}],
@@ -96,6 +96,20 @@ class ReportProblemsTests(unittest.TestCase):
                 self.assertEqual(starts(report_problems(report, "bug")),
                                  [field])
 
+    def test_a_finding_status_is_one_of_the_three_words(self):
+        report = copy.deepcopy(BUG)
+        report["findings"] = [{**BUG["findings"][0], "status": status}
+                              for status in ("confirmed", "partial",
+                                             "unconfirmed")]
+        self.assertEqual(report_problems(report, "bug"), [])
+        for word in ("shown", "likely"):
+            with self.subTest(status=word):
+                report["findings"][0]["status"] = word
+                problems = report_problems(report, "bug")
+                self.assertEqual(starts(problems), ["findings[0].status"])
+                for status in ("confirmed", "partial", "unconfirmed"):
+                    self.assertIn(status, problems[0])
+
     def test_a_bad_action_kind_and_an_empty_body_are_named(self):
         self.assertEqual(starts(report_problems(
             changed(("actions", 0, "kind"), "refactor"), "bug")),
@@ -121,7 +135,7 @@ class ReportGoalTests(unittest.TestCase):
     def test_the_report_goal_names_every_value_the_check_allows(self):
         choices = enumerated([FIELDS, REPRODUCTION])
         self.assertEqual(sorted(choices), sorted([
-            "shown", "likely", "unconfirmed", "fix", "test", "investigate",
+            "confirmed", "partial", "unconfirmed", "fix", "test", "investigate",
             "decide", "revise", "test", "real_tool", "not_reproduced",
             "supported", "ruled_out", "open"]))
         goal = report_goal(SimpleNamespace(kind="bug", subject_kind="defect",
@@ -129,6 +143,8 @@ class ReportGoalTests(unittest.TestCase):
                            SimpleNamespace(tasks=[]), None, False)
         self.assertEqual([choice for choice in choices
                           if f'"{choice}"' not in goal], [])
+        self.assertNotIn('"shown"', goal)
+        self.assertNotIn('"likely"', goal)
         for form in ('{"file": PATH, "line": N}',
                      '{"command": TEXT, "output": TEXT}', '{"url": URL}'):
             self.assertIn(form, goal)

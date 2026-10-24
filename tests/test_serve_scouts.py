@@ -75,12 +75,12 @@ ACTIONS = [
 REPORT = {
     "summary": "The retry loop never backs off.",
     "findings": [
-        {"title": "Retry spins without a delay", "status": "shown",
+        {"title": "Retry spins without a delay", "status": "confirmed",
          "confidence": "high",
          "evidence": [{"file": "app/retry.py", "line": 12, "verified": True},
                       {"command": "python3 -m unittest tests.test_retry",
                        "output": "FAILED (failures=1)"}]},
-        {"title": "The cap may be ignored", "status": "likely",
+        {"title": "The cap may be ignored", "status": "partial",
          "evidence": [{"file": "app/cap.py", "line": 40, "verified": False,
                        "why": UNVERIFIED},
                       {"url": "https://example.test/issues/7"}]},
@@ -324,12 +324,58 @@ class DetailTests(ScoutCase):
         report = body["reports"][0]["report"]
         (finding,) = report["findings"]
         self.assertEqual(finding["evidence"], [{"text": evidence}])
-        self.assertEqual(finding["status"], "unconfirmed")
+        self.assertEqual(finding["status"], "confirmed")
         self.assertEqual(report["actions"],
                          [{**action, "kind": "investigate"}])
         self.assertEqual((report["reproduction"], report["prior"],
                           report["cut"]), (None, None, []))
         walk(body, ScoutDetail, "scout")
+
+    def done_scout(self, statuses):
+        conn = store.open(str(self.store_path))
+        try:
+            project = store.tickets.ensure_project(conn, "native:ALPHA",
+                                                   self.alpha)
+            scout_id = create_scout(conn, project, "Which words hold?", "bug",
+                                    20, lead_route="A", helper_route="C",
+                                    swarm=1, helper_turns=6, waves=1,
+                                    now=NOW - 9_000)
+            move_scout(conn, scout_id, "planning", base_sha="e" * 40,
+                       host="writer", now=NOW - 8_000)
+            move_scout(conn, scout_id, "synthesizing")
+            record_scout_report(conn, scout_id, 1, {
+                "summary": "Each word serves.",
+                "findings": [{"title": f"finding {n}", "status": status,
+                              "evidence": [{"url": "https://example.test"}]}
+                             for n, status in enumerate(statuses, 1)],
+                "actions": [], "cut": []}, now=NOW - 7_000)
+            end_scout(conn, scout_id, "done", "the lead wrote its report",
+                      now=NOW - 6_000)
+        finally:
+            conn.close()
+        return scout_id
+
+    def test_each_stored_status_serves_by_the_stored_word_table(self):
+        cases = [(("shown", "likely", "unconfirmed"),
+                  ["confirmed", "partial", "unconfirmed"]),
+                 (("confirmed", "partial", "unverified", "probable"),
+                  ["confirmed", "partial", "unconfirmed", "unconfirmed"]),
+                 (("confirmed", "partial", "unconfirmed"),
+                  ["confirmed", "partial", "unconfirmed"])]
+        seeded = [(self.done_scout(stored), served)
+                  for stored, served in cases]
+        port = self.serve(self.project)
+        for scout_id, served in seeded:
+            with self.subTest(scout=scout_id):
+                code, body = self.get(port, f"/scouts/{scout_id}")
+                self.assertEqual(code, 200, body)
+                findings = body["reports"][0]["report"]["findings"]
+                self.assertEqual([finding["title"] for finding in findings],
+                                 [f"finding {n}"
+                                  for n in range(1, len(served) + 1)])
+                self.assertEqual([finding["status"] for finding in findings],
+                                 served)
+                walk(body, ScoutDetail, "scout")
 
 
 class RoutesTests(ScoutCase):

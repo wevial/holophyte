@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 from typing import NamedTuple
 
 from holophyte.loop.gates import sh
+from holophyte.scout.report import read_status
 
 SHOWN = 3
 ASK_CHARS = 200
@@ -152,7 +153,7 @@ def evidence_text(item):
 def finding_line(number, finding):
     cited = [evidence_text(item) for item in finding.get("evidence") or ()
              if "file" in item]
-    return (f"{number}. [{finding.get('status')}] {finding.get('title')}"
+    return (f"{number}. [{read_status(finding.get('status'))}] {finding.get('title')}"
             + (f" at {', '.join(cited)}" if cited else ""))
 
 

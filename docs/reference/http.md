@@ -1402,7 +1402,7 @@ One scout whole: what the console's Scout page draws.
             "cost_usd": 0.02, "excerpt": "…"}],
  "reports": [{"pass": 1, "at": 1791569000000, "report": {
    "summary": "…",
-   "findings": [{"title": "…", "status": "shown", "evidence": [
+   "findings": [{"title": "…", "status": "confirmed", "evidence": [
      {"file": "app/retry.py", "line": 12, "verified": true, "why": null},
      {"command": "python3 -m unittest tests.test_retry", "output": "…"},
      {"url": "https://example.test/issues/7"}]}],
@@ -1442,7 +1442,7 @@ the helper `route`, its `phase` (`queued`, `running`, `done`, `failed` or
 `reports` holds one entry per stored pass, its `pass`, the `at` it was
 stored and the `report`. A `report` serves only the fields the report check
 defines, and a key a lead added beside them is left out: its `summary`;
-its `findings`, each a `title`, a `status` of `shown`, `likely` or
+its `findings`, each a `title`, a `status` of `confirmed`, `partial` or
 `unconfirmed`, and its `evidence`; its `actions`; its `reproduction`, a
 `level` and `hypotheses`, each with its `hypothesis`, what it `separates`
 and its `verdict`, or null; `cut`, the helper questions cut at the
@@ -1455,9 +1455,20 @@ offered, those whose reports or sub-tasks named the same paths, each its
 and `why` it did not (null when it did); a command item, `command` and
 `output`; a `url`; or a `text` item, `text`. A report stored before the
 report check serves inside these fields: a finding's free-text `evidence`
-serves as one `text` item holding the string as stored, a `status` outside
-the three above serves `unconfirmed`, and a report action's `kind` outside
-those `actions` lists serves `investigate`.
+serves as one `text` item holding the string as stored, and a report
+action's `kind` outside those `actions` lists serves `investigate`. No
+stored report is rewritten; each finding's stored `status` serves by this
+table:
+
+| stored | served |
+| --- | --- |
+| `shown` | `confirmed` |
+| `likely` | `partial` |
+| `unconfirmed` | `unconfirmed` |
+| `confirmed` | `confirmed` |
+| `partial` | `partial` |
+| `unverified` | `unconfirmed` |
+| any other word | `unconfirmed` |
 
 `actions` are the scout's action items by `position`, which counts across
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
