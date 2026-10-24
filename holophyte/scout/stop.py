@@ -100,12 +100,11 @@ def stop(project, body, via=VIA_DAEMON):
         return 400, {"error": refused}
     if not project.store_path.exists():
         return 503, no_store(project)
-    scout_id = body["scout"]
+    scout_id, author, note = body["scout"], console_author(body), body["note"].strip()
     conn = open_store(project)
     try:
         with store.transaction(conn):
-            code, reply = requested(conn, scout_id, console_author(body),
-                                    body["note"].strip(), via)
+            code, reply = requested(conn, scout_id, author, note, via)
     except ScoutRefused as ended:
         return 200, {"ok": False, "scout": scout_id, "pid": None,
                      "detail": str(ended)}
@@ -116,7 +115,21 @@ def stop(project, body, via=VIA_DAEMON):
         try:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
-            return 200, {**reply, "ok": False,
-                         "detail": f"scout {scout_id}'s process {pid} exited"
-                                   " before the stop reached it"}
+            return gone(project, scout_id, stopped_by(author, note))
     return code, reply
+
+
+def gone(project, scout_id, reason):
+    named = {"scout": scout_id, "pid": None}
+    conn = open_store(project)
+    try:
+        with store.transaction(conn):
+            phase = scout(conn, scout_id).phase
+            if phase not in ENDED:
+                end_scout(conn, scout_id, "stopped", f"{reason}; {NO_PROCESS}")
+                return 200, {"ok": True, **named,
+                             "detail": f"scout {scout_id} stopped"}
+    finally:
+        conn.close()
+    return 200, {"ok": phase == "stopped", **named,
+                 "detail": f"scout {scout_id} is {phase}; its process ended it"}

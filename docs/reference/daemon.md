@@ -422,8 +422,10 @@ by the scout's phase:
   turns, each such helper task ending `stopped`, runs no further turn,
   ends the scout `stopped` with the reason `stopped by AUTHOR: NOTE` read
   from its newest `scout_stop_requested` event, records a `scout_stopped`
-  event and exits 0. The reply comes before that end; a process gone
-  before the signal reaches it is 200 with `ok: false` saying so.
+  event and exits 0. The reply comes before that end. A process gone
+  before the signal reaches it is treated as no running scout process
+  (below), unless the scout has ended meanwhile: that end is kept, and
+  the reply names its phase, `ok` true only when it is `stopped`.
 - live with no running scout process (no `pid`, or one whose command line
   does not name `--scout ID`): the scout ends `stopped` at once, its
   reason `stopped by AUTHOR: NOTE; no scout process was running`, and
