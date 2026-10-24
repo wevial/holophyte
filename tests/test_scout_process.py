@@ -256,6 +256,19 @@ class ScoutSweepTests(ScoutFixture):
         self.assertTrue(row.reason.startswith("heartbeat stale"), row.reason)
         self.assertEqual(scout(conn, fresh), before)
 
+    def test_a_project_with_a_config_error_still_counts_its_live_scouts(self):
+        alpha, beta = self.project("alpha"), self.project("beta")
+        with open(Host.locate().path, "a") as registry:
+            registry.write("\n[scout]\nmax_parallel = 1\n")
+        live = self.a_scout(alpha, "planning")
+        queued = self.a_scout(beta)
+        config = Project.locate(alpha, adopt=False).config_path
+        config.write_text(config.read_text() + '[serve]\nname = ""\n')
+        self.sweep_pass()
+        self.assertEqual(self.spawned, [])
+        self.assertEqual(scout(self.conn(alpha), live).phase, "planning")
+        self.assertEqual(scout(self.conn(beta), queued).phase, "queued")
+
     def test_the_host_starts_the_oldest_queued_scout_under_its_limit(self):
         alpha, beta = self.project("alpha"), self.project("beta")
         with open(Host.locate().path, "a") as registry:

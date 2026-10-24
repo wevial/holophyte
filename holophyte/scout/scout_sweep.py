@@ -78,19 +78,27 @@ def _start(name, target, row, out):
     return True
 
 
+def _account(name, entry, conn, now, out, queued):
+    try:
+        end_stale(name, entry.target, conn, now, out)
+    except (Exception, SystemExit) as bad:  # noqa: BLE001 - its scouts still count
+        print(f"[holo2] {name}: stale scout check failed: {bad}", file=out)
+    if entry.error is None:
+        queued += [(name, entry.target, row) for row in
+                   _project_scouts(conn, entry.target, (QUEUED,))]
+    return len(_project_scouts(conn, entry.target, LIVE))
+
+
 def sweep_scouts(entries, limit, now, out, key=str):
     live, queued = 0, []
     for entry in entries:
-        if entry.error is not None or not entry.target.store_path.exists():
+        if not entry.target.store_path.exists():
             continue
         name = key(entry)
         try:
             conn = store.open(str(entry.target.store_path))
             try:
-                end_stale(name, entry.target, conn, now, out)
-                live += len(_project_scouts(conn, entry.target, LIVE))
-                queued += [(name, entry.target, row) for row in
-                           _project_scouts(conn, entry.target, (QUEUED,))]
+                live += _account(name, entry, conn, now, out, queued)
             finally:
                 conn.close()
         except (Exception, SystemExit) as bad:  # noqa: BLE001 - the project boundary
