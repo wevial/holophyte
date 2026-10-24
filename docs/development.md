@@ -1121,6 +1121,8 @@ The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scou
 `console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
 badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
 `console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm.
+`console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
+findings with their status and evidence, and the newest bug report's hypotheses.
 
 ### Desktop wrapper
 
