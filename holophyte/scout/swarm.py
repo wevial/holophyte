@@ -86,7 +86,7 @@ def reported_answer(seat, output):
     return output, usage
 
 
-def helper_goal(row, task, github=False):
+def helper_goal(row, task, github):
     return (
         f"{HELPER_OPENING}\n\n{READ_ONLY}\n\n{task_fields(row, task)}"
         f"{TOOLS_SENTENCE if github else ''}"

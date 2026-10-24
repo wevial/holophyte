@@ -42,7 +42,7 @@ class ScoutConfig:
     waves: int
     steer_budget_min: int
     steer_helpers: int
-    github: bool = False
+    github: bool
 
     @property
     def prices(self):
