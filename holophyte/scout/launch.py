@@ -56,7 +56,7 @@ def subject_refusal(body):
     if kind not in SUBJECT_REFS:
         return f"subject's kind must be one of {', '.join(SUBJECT_REFS)}"
     valid, shape = SUBJECT_REFS[kind]
-    if not ref.strip() or not valid(ref):
+    if not valid(ref):
         return f"subject's {kind} ref must be {shape}"
     return None
 
@@ -71,7 +71,7 @@ def held_run(conn, ref):
 def run_subject(conn, ref):
     if not held_run(conn, ref):
         return None, f"run {ref} is not in this project's store"
-    return str(int(ref)), None
+    return ref, None
 
 
 def defect_subject(conn, ref):
@@ -81,7 +81,7 @@ def defect_subject(conn, ref):
     ).fetchall() if held_run(conn, ref) else []
     if not any(stop_kind(kind, summary) for kind, summary in stops):
         return None, f"run {ref} has no stop on its ticket's wording"
-    return str(int(ref)), None
+    return ref, None
 
 
 def ticket_subject(conn, ref):
@@ -92,8 +92,8 @@ def ticket_subject(conn, ref):
 
 
 def pr_subject(conn, ref):
-    if conn.execute("SELECT id FROM runs WHERE prUrl = ? ORDER BY id DESC"
-                    " LIMIT 1", (ref,)).fetchone() is None:
+    if conn.execute("SELECT 1 FROM runs WHERE prUrl = ?",
+                    (ref,)).fetchone() is None:
         return None, f"no run of this project opened {ref}"
     return ref, None
 
