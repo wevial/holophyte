@@ -1,5 +1,6 @@
 import hashlib
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -9,7 +10,8 @@ import ticket_template
 from holophyte.review.landmarks import SPAN_RE, declared_new
 
 VERIFY_HEADING = "## Verify command(s)"
-TOKEN_RE = re.compile(r"""(?:[^\s;&|()'"]|'[^']*'|"[^"]*")+""")
+TOKEN_RE = re.compile(
+    r"""(?:\\.|[^\s;&|()'"\\]|'[^']*'|"(?:\\.|[^"\\])*")+""")
 DOTTED_RE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 
 
@@ -168,11 +170,17 @@ def _span(match, spans):
 
 
 def _token(word, tokens):
-    quote = word[0] if word[0] in "'\"" and word[-1] == word[0] else ""
-    bare = word[1:-1] if quote and len(word) > 1 else word
-    if bare not in tokens:
+    try:
+        value = shlex.split(word)
+    except ValueError:
         return word
-    return f"{quote}{tokens[bare]}{quote}"
+    if len(value) != 1 or value[0] not in tokens:
+        return word
+    new = tokens[value[0]]
+    quote = word[0]
+    if word in (f"'{value[0]}'", f'"{value[0]}"'):
+        return f"{quote}{new}{quote}"
+    return shlex.quote(new)
 
 
 def rewrite(body, spans, tokens):
