@@ -17,7 +17,7 @@ class ScoutSubject(TypedDict):
 class ScoutRow(TypedDict):
     id: int
     ask: str
-    kind: Literal["bug", "research", "recon"]
+    kind: Literal["bug", "research", "recon", "guardrails"]
     phase: ScoutPhase
     reason: str | None
     lead: str | None

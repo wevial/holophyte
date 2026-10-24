@@ -12,6 +12,7 @@ from holophyte.config.project import Project, legacy_state_layouts
 from holophyte.holo.grammar import (
     ALIASES,
     COMMANDS,
+    KIND,
     LAUNCH,
     SCOUT_ASK,
     SCOUT_FILE,
@@ -171,7 +172,7 @@ def scout_body(args):
     _, note = arguments(args, args.command)
     kind = SCOUT_KINDS.get(args.command.words) or last(args, "kind")
     if kind is None:
-        args.leaf.error("holo scout needs --kind bug|research|recon")
+        args.leaf.error(f"holo scout needs --kind {KIND.metavar}")
     body = {"ask": note, "kind": kind, "lead": last(args, "lead"),
             "helper": last(args, "helper"),
             "swarm": counted(last(args, "swarm")),
