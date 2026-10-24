@@ -173,17 +173,18 @@ class FollowUpPassTests(GuardrailItemCase):
 
 
 class CutDigestTests(DigestCase):
-    def test_a_row_cut_from_the_digest_text_is_not_in_the_digest(self):
+    def test_a_row_cut_from_the_digest_is_not_in_it_though_a_message_quotes_it(
+            self):
         self.store_for()
         long = "the save is not atomic " * 14
-        for cluster in range(12):
+        unseen = None
+        for cluster in reversed(range(12)):
             for n in (100 + 2 * cluster, 101 + 2 * cluster):
-                self.run_of(n, [([finding(f"app/p{cluster:02}.py", line, long)
-                                  for line in range(1, 5)], self.now - DAY)])
-        (run,) = self.db.execute(
-            "SELECT r.id FROM runs r JOIN tickets t ON t.id = r.ticketId"
-            " WHERE t.linearIdentifier = 'NAT-123'").fetchone()
-        unseen = f"F{run}.1.1"
+                text = f"see - {unseen} · {long}" if cluster == 0 else long
+                run = self.run_of(n, [(
+                    [finding(f"app/p{cluster:02}.py", line, text)
+                     for line in range(1, 5)], self.now - DAY)])
+                unseen = unseen or f"F{run}.1.1"
         covering = fenced(dict(NOTHING, actions=[dict(GUARD,
                                                       covers=[unseen])]))
         self.stubs.answer(report=covering, repair=covering)
@@ -191,7 +192,9 @@ class CutDigestTests(DigestCase):
         code, printed = self.cli("--scout", str(scout_id), str(self.path))
         goal = self.plan_goal()
         self.assertIn("(digest cut at", goal)
-        self.assertNotIn(unseen, goal)
+        self.assertIn(f"- {unseen} · ", goal)
+        self.assertFalse([line for line in goal.splitlines()
+                          if line.startswith(f"- {unseen} ")], goal)
         self.assertEqual(code, 1, printed)
         self.assertEqual(scout(self.db, scout_id).reason,
                          "the lead's report is malformed: actions[0].covers:"

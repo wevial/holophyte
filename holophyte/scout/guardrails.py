@@ -45,9 +45,12 @@ class Digest(NamedTuple):
     since: int
 
     def row_ids(self):
+        rendered = {line[2:].partition(" · ")[0]
+                    for line in self.text.splitlines()
+                    if line.startswith("- ") and " · " in line}
         return {row.id for cluster in self.clusters
                 for row in cluster.newest()[:SHOWN_ROWS]
-                if f"- {row.id} · " in self.text}
+                if row.id in rendered}
 
 
 class DigestUnavailable(RuntimeError):
