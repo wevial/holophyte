@@ -750,6 +750,48 @@
       ],
       "additionalProperties": true
     },
+    "ProposalChoice": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "ask",
+            "steer"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "mode"
+      ],
+      "additionalProperties": true
+    },
+    "ProposalBlock": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "proposal"
+        },
+        "question": {
+          "type": "string"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProposalChoice"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "question",
+        "choices"
+      ],
+      "additionalProperties": true
+    },
     "ThreadMessage": {
       "type": "object",
       "properties": {
@@ -778,6 +820,9 @@
               },
               {
                 "$ref": "#/$defs/ActionBlock"
+              },
+              {
+                "$ref": "#/$defs/ProposalBlock"
               }
             ]
           }

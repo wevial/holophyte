@@ -137,12 +137,23 @@ class ActionBlock(TypedDict):
     position: int
 
 
+class ProposalChoice(TypedDict):
+    label: str
+    mode: Literal["ask", "steer"]
+
+
+class ProposalBlock(TypedDict):
+    type: Literal["proposal"]
+    question: str
+    choices: list[ProposalChoice]
+
+
 class ThreadMessage(TypedDict):
     id: int
     author: str
     mode: Literal["ask", "steer", "answer"]
     text: str
-    blocks: list[FindingBlock | ActionBlock]
+    blocks: list[FindingBlock | ActionBlock | ProposalBlock]
     answers: int | None
     at: int
     consumed_by: int | None
