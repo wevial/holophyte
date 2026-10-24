@@ -38,6 +38,7 @@ test("one build emits the classic page and the new console's page, each with its
       const css = (await Promise.all(localStylesheets.map((href) =>
         Bun.file(outdir + href.replace(/^(?:\.\/|\/)/, "")).text()))).join("\n");
       expect(declarations(css).some(({ name }) => name === "--canvas")).toBe(next);
+      expect(/--row-selected:\s*color-mix\(/.test(css)).toBe(next);
       if (next) {
         const fonts = stylesheets.filter((href) => href.startsWith("https://fonts.googleapis.com/"));
         expect(fonts).toHaveLength(1);

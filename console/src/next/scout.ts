@@ -34,6 +34,20 @@ export type ScoutPage =
       pass: { pass: number; ms: number | null; live: boolean } | null;
     };
 
+/** What the Scout page says in place of scout `shown` while it cannot draw it: a status while it loads, else a notice. */
+export function scoutNotice(page: Exclude<ScoutPage, { kind: "scout" }>, project: string, shown: string): { loading: boolean; text: string } {
+  switch (page.kind) {
+    case "loading":
+      return { loading: true, text: `Asking ${project} for scout ${shown}…` };
+    case "unknown_project":
+      return { loading: false, text: `No project named ${project} answers this console.` };
+    case "not_found":
+      return { loading: false, text: `${project} has no scout ${shown}.` };
+    case "failed":
+      return { loading: false, text: `${project} could not read scout ${shown}${page.status == null ? "" : ` (answered ${page.status})`}.` };
+  }
+}
+
 /** The scout states drawn with a run state's dot. */
 export const SCOUT_DOTS: Record<ScoutState, State> = { running: "running", queued: "queued", done: "merged", stopped: "abandoned", failed: "failed" };
 

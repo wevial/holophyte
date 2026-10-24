@@ -19,7 +19,7 @@ from holophyte.agents.probe_log import record_probe
 from holophyte.agents.probes import PROBE_WORD, ProbeResult
 from holophyte.config.project import Project
 from holophyte.host.registry import Host, settings
-from holophyte.scout.scout_contract import ScoutDetail
+from holophyte.scout.scout_contract import ScoutDetail, Scouts
 from holophyte.scout.views import scout_detail, scout_routes, scouts
 from holophyte.serve.serve_host import HostServer
 from store.scout_thread import post_message, take_message
@@ -27,6 +27,7 @@ from store.scouts import (
     create_scout,
     end_scout,
     end_scout_task,
+    file_scout_action,
     move_scout,
     record_scout_actions,
     record_scout_event,
@@ -377,6 +378,60 @@ class DetailTests(ScoutCase):
                 self.assertEqual([finding["status"] for finding in findings],
                                  served)
                 walk(body, ScoutDetail, "scout")
+
+
+class CountTests(ScoutCase):
+    def reported(self, conn, project, ask, passes, items=()):
+        scout_id = create_scout(conn, project, ask, "bug", 20,
+                                lead_route="A", helper_route="C", swarm=1,
+                                helper_turns=6, waves=2, now=NOW - 9_000)
+        move_scout(conn, scout_id, "planning", base_sha="f" * 40,
+                   host="writer", now=NOW - 8_000)
+        move_scout(conn, scout_id, "synthesizing")
+        for number, findings in enumerate(passes, 1):
+            record_scout_report(conn, scout_id, number, {
+                "summary": f"pass {number}",
+                "findings": [{"title": f"finding {n}", "status": "confirmed",
+                              "evidence": [{"url": "https://example.test"}]}
+                             for n in range(findings)],
+                "actions": ACTIONS, "cut": []}, now=NOW - 7_000 + number)
+        record_scout_actions(conn, scout_id, len(passes), list(items))
+        end_scout(conn, scout_id, "done", "the lead wrote its report",
+                  now=NOW - 6_000)
+        return scout_id
+
+    def test_each_row_counts_findings_actions_filed_and_to_file(self):
+        items = [{"title": f"item {n}", "why": "w", "kind": kind, "body": "b"}
+                 for n, kind in enumerate(
+                     ("fix", "revise", "investigate", "investigate",
+                      "investigate"))]
+        conn = store.open(str(self.store_path))
+        try:
+            project = store.tickets.ensure_project(conn, "native:ALPHA",
+                                                   self.alpha)
+            acted = self.reported(conn, project, "Acted", (3, 2), items)
+            file_scout_action(conn, acted, 1, "ALPHA-9", now=NOW - 5_000)
+            bare = self.reported(conn, project, "Bare", (4,))
+            queued = create_scout(conn, project, "Waiting", "bug", 10,
+                                  lead_route="A", helper_route="C", swarm=1,
+                                  helper_turns=6, waves=1, now=NOW - 4_000)
+        finally:
+            conn.close()
+        port = self.serve(self.project)
+        code, body = self.get(port, "/scouts")
+        self.assertEqual(code, 200, body)
+        walk(body, Scouts, "scouts")
+        rows = {row["id"]: row for row in body["scouts"]}
+        keys = ("findings", "actions", "filed", "to_file")
+        self.assertEqual(
+            [tuple(rows[scout_id][key] for key in keys)
+             for scout_id in (acted, bare, queued)],
+            [(5, 5, 1, 3), (4, 0, 0, 0), (0, 0, 0, 0)])
+        code, body = self.get(port, f"/scouts/{acted}")
+        self.assertEqual(code, 200, body)
+        walk(body, ScoutDetail, "scout")
+        self.assertEqual(tuple(body["scout"][key] for key in keys),
+                         (5, 5, 1, 3))
 
 
 class RoutesTests(ScoutCase):

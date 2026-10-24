@@ -64,6 +64,10 @@ PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
 REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
 PRIOR_SHAPE = ",\n" + fields_shape({"prior": PRIOR})
+MEASURE_SENTENCE = (
+    'A "run" helper measures: it runs the project\'s setup, tests, builds '
+    "and timing commands in its own worktree and reports each command's "
+    "exit status, wall time and output. ")
 
 
 class LeadTurn(NamedTuple):
@@ -128,9 +132,10 @@ def plan_goal(row, limit, context, prior=""):
         f"Plan the work as at most {limit} sub-tasks. Each is one question a "
         "helper answers by reading the code (mode \"read\") or by running "
         "commands in its own checkout (mode \"run\"), with the "
-        "repository-relative paths it should start from. End your answer "
-        "with one fenced json block in this shape, TEXT and PATH standing "
-        "for strings:\n\n"
+        "repository-relative paths it should start from. "
+        f"{'' if row.kind == ScoutKind.BUG.value else MEASURE_SENTENCE}"
+        "End your answer with one fenced json block in this shape, TEXT and "
+        "PATH standing for strings:\n\n"
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 

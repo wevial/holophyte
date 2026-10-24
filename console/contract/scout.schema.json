@@ -134,6 +134,18 @@
         "tasks_total": {
           "type": "integer"
         },
+        "findings": {
+          "type": "integer"
+        },
+        "actions": {
+          "type": "integer"
+        },
+        "filed": {
+          "type": "integer"
+        },
+        "to_file": {
+          "type": "integer"
+        },
         "created_ms": {
           "type": "integer"
         },
@@ -251,6 +263,10 @@
         "swarm",
         "tasks_done",
         "tasks_total",
+        "findings",
+        "actions",
+        "filed",
+        "to_file",
         "created_ms",
         "started_ms",
         "ended_ms",
