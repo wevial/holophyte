@@ -561,6 +561,34 @@
       ],
       "additionalProperties": true
     },
+    "PriorJudgement": {
+      "type": "object",
+      "properties": {
+        "scout": {
+          "type": "integer"
+        },
+        "finding": {
+          "type": "integer"
+        },
+        "verdict": {
+          "enum": [
+            "holds",
+            "fixed",
+            "unchecked"
+          ]
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scout",
+        "finding",
+        "verdict",
+        "why"
+      ],
+      "additionalProperties": true
+    },
     "ScoutReport": {
       "type": "object",
       "properties": {
@@ -601,6 +629,19 @@
               "type": "null"
             }
           ]
+        },
+        "prior": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PriorJudgement"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -608,7 +649,8 @@
         "findings",
         "actions",
         "reproduction",
-        "cut"
+        "cut",
+        "prior"
       ],
       "additionalProperties": true
     },

@@ -1234,12 +1234,21 @@ export const reproductionSchema = z.looseObject({
 });
 export type Reproduction = z.infer<typeof reproductionSchema>;
 
+export const priorJudgementSchema = z.looseObject({
+  scout: z.int(),
+  finding: z.int(),
+  verdict: z.enum(["holds", "fixed", "unchecked"]),
+  why: z.string(),
+});
+export type PriorJudgement = z.infer<typeof priorJudgementSchema>;
+
 export const scoutReportSchema = z.looseObject({
   summary: z.string(),
   findings: z.array(scoutFindingSchema),
   actions: z.array(scoutReportActionSchema),
   reproduction: reproductionSchema.nullable(),
   cut: z.array(z.string()).nullable(),
+  prior: z.array(priorJudgementSchema).nullable(),
 });
 export type ScoutReport = z.infer<typeof scoutReportSchema>;
 

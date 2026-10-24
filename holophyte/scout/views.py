@@ -39,6 +39,7 @@ TASK_KEYS = ("id", "pass", "wave", "question", "paths", "mode", "route",
              "cost_usd", "excerpt")
 ACTION_KEYS = ("title", "why", "kind", "body")
 HYPOTHESIS_KEYS = ("hypothesis", "separates", "verdict")
+PRIOR_KEYS = ("scout", "finding", "verdict", "why")
 
 
 def now_ms(now):
@@ -117,7 +118,10 @@ def served_report(report):
             "actions": [{key: action[key] for key in ACTION_KEYS}
                         for action in report["actions"]],
             "reproduction": served_reproduction(report.get("reproduction")),
-            "cut": report.get("cut")}
+            "cut": report.get("cut"),
+            "prior": (None if report.get("prior") is None
+                      else [{key: judgement[key] for key in PRIOR_KEYS}
+                            for judgement in report["prior"]])}
 
 
 def served_action(item):

@@ -180,6 +180,9 @@ Each module, one line:
 - `holophyte/scout/lead.py` — the scout's lead: its route probe, a plan
   turn under the scout's time budget, the helper waves with a synthesis turn
   between them, and a report turn resuming its session.
+- `holophyte/scout/prior.py` — a scout's paths from its ask, links and
+  context pack, and the newest earlier done scouts' reports that cited
+  them, with what changed since their base, for the lead's plan goal.
 - `holophyte/scout/proposals.py` — a scout's proposal cards: the
   `proposals` an answer turn's ANSWER or a pass's REPORT ends with, each
   read as a question with two to four choices and at most `MAX_PROPOSALS`

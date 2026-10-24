@@ -147,6 +147,14 @@
         },
         "cut": [
           "Does the cap apply to webhooks?"
+        ],
+        "prior": [
+          {
+            "scout": 4,
+            "finding": 1,
+            "verdict": "holds",
+            "why": "app/retry.py still loops without a delay"
+          }
         ]
       }
     }
