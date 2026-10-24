@@ -331,7 +331,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
                 Other sections <span className="normal-case tracking-[.04em] text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">
-                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(origin.fields, other.name)}>
+                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(fields, at, origin.fields)}>
                   <textarea id={`new-${other.name}`} rows={3} className={`${INPUT} resize-y font-sans`} value={other.text}
                     onChange={event => set("others", fields.others.map((each, index) => index === at ? { ...each, text: event.target.value } : each))} />
                 </Field>)}

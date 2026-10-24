@@ -85,8 +85,8 @@ const settled = async () => {
   for (let round = 0; round < 6; round += 1) await act(settle);
 };
 
-async function mount(fetch: Fetch) {
-  window.location.hash = "#/scouts/demo/31";
+async function mount(fetch: Fetch, hash = "#/scouts/demo/31") {
+  window.location.hash = hash;
   const fake = fakeDeps(fetch);
   fake.clock.now = NOW;
   render(
@@ -216,4 +216,10 @@ test("a draft of revision 2 opened over revision 3 names the revision it was dra
 test("actions off disables Revise with the actions-off title", async () => {
   await mount(demo({ actions: false }).fetch);
   expect([reviseButton().disabled, reviseButton().title]).toEqual([true, ACTIONS_OFF]);
+});
+
+test("a ticket with two custom sections of one name opens with no changes", async () => {
+  await mount(demo({ current: `${CURRENT}\n## Notes\n\nFirst note.\n\n## Notes\n\nSecond note.\n` }).fetch, "#/tickets/demo/DEMO-7/edit");
+  expect(screen.getByText("No changes yet.")).toBeTruthy();
+  expect(screen.getByText("Second note.").closest("[data-changed]")).toBeNull();
 });
