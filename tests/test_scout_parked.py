@@ -15,6 +15,7 @@ import store.tickets
 from holophyte.config.project import Project
 from holophyte.review.freshness import stale_comment
 from holophyte.scout.report import report_problems
+from store.scout_thread import post_message, take_message
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
@@ -164,6 +165,21 @@ class ParkedReviseTests(ParkedCase):
         self.assertEqual(row.phase, "failed")
         self.assertTrue(row.reason.startswith(
             "the lead's report is malformed: actions[0].kind:"), row.reason)
+
+    def test_a_steered_pass_on_the_still_parked_ticket_keeps_its_revise_item(
+            self):
+        self.park("critic", CRITIC)
+        scout_id, code, printed = self.run_scout()
+        self.assertEqual(code, 0, printed)
+        self.stubs.answer(pass_plan=EMPTY_PLAN, report=fenced(REPORT),
+                          repair=fenced(REPORT))
+        take_message(self.db, post_message(self.db, scout_id, "maintainer",
+                                           "steer", "Check the form too."))
+        code, printed = self.cli("--scout", str(scout_id), str(self.path))
+        self.assertEqual(code, 0, printed)
+        self.assertIn("revise", self.stubs.turns("report")[-1]["argv"][-1])
+        first, second = self.items(scout_id)
+        self.assertEqual(second["revises"], {"ticket": "NAT-3", "revision": 2})
 
     def test_holo_scout_file_refuses_the_item_naming_the_ticket(self):
         self.park("critic", CRITIC)
