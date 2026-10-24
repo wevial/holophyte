@@ -169,6 +169,23 @@ class MovedLandmarkTests(LoopFixture):
         self.assertNotIn("unittest lotus.agents", body)
         self.assertIn(f"near `{OLD}:2`; plain {OLD} says so.", body)
 
+    def test_a_quoted_verify_path_names_a_shell_special_destination(self):
+        dollar = "lotus/features/cost$usd.py"
+        self.file(NAMING_OLD.replace(
+            "```\necho ok\n```", f'```\nwc -l "{OLD}"\n```'))
+        self.move(new=dollar)
+        self.park(OLD)
+
+        self.sweep()
+
+        self.assertEqual(self.status(), "ready")
+        (line,) = [line for line in self.ticket()[0].splitlines()
+                   if line.startswith("wc -l ")]
+        argument = subprocess.run(
+            ["sh", "-c", "printf %s " + line.removeprefix("wc -l ")],
+            capture_output=True, text=True, check=True, env={}).stdout
+        self.assertEqual(argument, dollar)
+
     def test_a_verify_module_the_ticket_declares_new_is_not_a_landmark(self):
         self.file(NAMING_OLD
                   .replace("* Extend", "* Add `tests/test_fresh.py` (new).\n"
@@ -255,6 +272,27 @@ class MovedLandmarkTests(LoopFixture):
         self.assertEqual(self.ticket(), before)
         self.assertEqual(self.status(), "needs_spec")
         self.assertEqual(self.notes(), [])
+
+    def test_a_failed_history_read_refreshes_nothing(self):
+        self.file(NAMING_OLD)
+        self.move(after=-3600)
+        self.park(OLD)
+        before = self.ticket()
+        git = holophyte.review.moved_landmarks._git
+
+        def rev_list_of_a_missing_ref(repo, *args):
+            if args[0] == "rev-list":
+                args = (*args[:-1], "refs/heads/no-such-branch")
+            return git(repo, *args)
+
+        with patch.object(holophyte.review.moved_landmarks, "_git",
+                          rev_list_of_a_missing_ref):
+            out = self.sweep()
+
+        self.assertEqual(self.ticket(), before)
+        self.assertEqual(self.status(), "needs_spec")
+        self.assertEqual(self.notes(), [])
+        self.assertIn("NAT-1 not re-checked: git rev-list failed", out)
 
     def test_the_refresh_can_be_turned_off(self):
         self.configure(NATIVE + "[loop]\nrefresh_moved_landmarks = false\n")

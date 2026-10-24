@@ -58,14 +58,22 @@ def _git(repo, *args):
                           errors="replace")
 
 
+def _read(repo, *args):
+    done = _git(repo, *args)
+    if done.returncode != 0:
+        raise ValueError(f"git {args[0]} failed, so main's rename history"
+                         f" was not read: {done.stderr.strip()}")
+    return done.stdout
+
+
 def renames_since(repo, written_ms):
-    base = _git(repo, "rev-list", "--first-parent", "-1",
-                f"--before=@{written_ms // 1000}", "main").stdout.strip()
-    listed = _git(repo, "log", "--first-parent", "--diff-merges=first-parent",
-                  "--reverse", "-M", "-C", "--name-status", "--format=%x00%h",
-                  f"{base}..main" if base else "main")
+    base = _read(repo, "rev-list", "--first-parent", "-1",
+                 f"--before=@{written_ms // 1000}", "main").strip()
+    listed = _read(repo, "log", "--first-parent", "--diff-merges=first-parent",
+                   "--reverse", "-M", "-C", "--name-status", "--format=%x00%h",
+                   f"{base}..main" if base else "main")
     commits = []
-    for block in listed.stdout.split("\0")[1:]:
+    for block in listed.split("\0")[1:]:
         sha, *lines = block.strip("\n").split("\n")
         commits.append((sha, [line.split("\t") for line in lines if line]))
     return commits
@@ -177,9 +185,10 @@ def _token(word, tokens):
     if len(value) != 1 or value[0] not in tokens:
         return word
     new = tokens[value[0]]
-    quote = word[0]
-    if word in (f"'{value[0]}'", f'"{value[0]}"'):
-        return f"{quote}{new}{quote}"
+    if word == f"'{value[0]}'" and "'" not in new:
+        return f"'{new}'"
+    if word == f'"{value[0]}"' and not set(new) & set('$`"\\!'):
+        return f'"{new}"'
     return shlex.quote(new)
 
 
