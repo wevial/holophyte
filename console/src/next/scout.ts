@@ -294,7 +294,7 @@ function followUpGroup(detail: ScoutDetail, run: FollowUp, now: number): ScoutGr
 }
 
 /** The newest follow-up pass, its span to its end or, while it runs, to now. */
-function newestPass(detail: ScoutDetail, now: number): { pass: number; ms: number | null; live: boolean } | null {
+function newestPass(detail: ScoutDetail, now: number) {
   const newest = followUps(detail).findLast((each) => each.kind === "pass");
   if (newest == null) return null;
   const live = livePass(detail) != null;

@@ -68,15 +68,13 @@ function answerLine(detail: ScoutDetail, turn: FollowUp): string {
 
 function passLine(detail: ScoutDetail, run: FollowUp): string {
   const { started, pass } = run;
-  const until = run.until ?? Infinity;
-  const helpers = detail.tasks.filter((task) => task.pass === pass && task.started_ms != null && task.started_ms >= started.at && task.started_ms < until).length;
+  const helpers = detail.tasks.filter((task) => task.pass === pass && task.started_ms != null && task.started_ms >= started.at && task.started_ms < (run.until ?? Infinity)).length;
   const route = helpers ? [detail.scout.helper, `×${helpers}`].filter((part) => part != null).join(" ") : null;
   return [`pass ${pass}`, route, formatClock(started.at)].filter((part) => part != null).join(" · ");
 }
 
 function passDoneLine(detail: ScoutDetail, spans: FollowUp[], done: ScoutEvent): string {
   const run = spans.find((each) => each.end === done);
-  const started = run?.started;
   const pass = run?.pass ?? highestPass(detail, done.at + 1);
   const labels = [
     ...numberFindings(detail.reports).filter((each) => each.pass === pass).map((each) => each.id),
@@ -84,7 +82,7 @@ function passDoneLine(detail: ScoutDetail, spans: FollowUp[], done: ScoutEvent):
   ];
   return [
     `pass ${pass} done`,
-    started == null ? null : formatSettled(done.at - started.at),
+    run == null ? null : formatSettled(done.at - run.started.at),
     labels.length ? labels.join(", ") : null,
     formatClock(done.at),
   ].filter((part) => part != null).join(" · ");
