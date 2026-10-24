@@ -163,6 +163,9 @@ Each module, one line:
 - `holophyte/scout/lead.py` — the scout's lead: its route probe, a plan
   turn under the scout's time budget, the helper waves with a synthesis turn
   between them, and a report turn resuming its session.
+- `holophyte/scout/report.py` — a scout report's shape checked field by
+  field, and each `file`/`line` evidence item resolved against the base
+  commit.
 - `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's
   lead and helper routes, each a harness `Seat`, their defaults and budget.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each

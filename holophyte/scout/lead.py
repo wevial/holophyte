@@ -5,10 +5,12 @@ from pathlib import PurePosixPath
 from time import monotonic
 from typing import NamedTuple
 
+import store
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.loop.gates import run_capped
 from holophyte.redact import known_secrets, outbound
+from holophyte.scout.report import report_problems, resolve_evidence
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
 from holophyte.scout.swarm import Swarm, turn_answer
@@ -17,6 +19,7 @@ from store.scouts import (
     SWARMING,
     SYNTHESIZING,
     move_scout,
+    record_scout_actions,
     record_scout_event,
     record_scout_report,
     set_scout_session,
@@ -25,8 +28,10 @@ from store.scouts import (
 REPORT_TURN_S = 600
 PLAN_OPENING = "Scout plan turn"
 REPORT_OPENING = "Scout report turn"
+REPAIR_OPENING = "Scout report repair turn"
 SYNTHESIS_OPENING = "Scout synthesis turn"
 NO_REPORT = "the lead's report turn returned no JSON object"
+MALFORMED = "the lead's report is malformed"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
@@ -34,10 +39,17 @@ PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
 REPORT_SHAPE = (
     '{"summary": TEXT,\n'
-    ' "findings": [{"title": TEXT, "status": TEXT, "evidence": TEXT}, ...],\n'
-    ' "actions": [{"title": TEXT, "why": TEXT, "kind": TEXT, "body": TEXT},'
+    ' "findings": [{"title": TEXT,'
+    ' "status": "shown" or "likely" or "unconfirmed",\n'
+    '   "evidence": [{"file": PATH, "line": N} or'
+    ' {"command": TEXT, "output": TEXT} or {"url": URL}, ...]}, ...],\n'
+    ' "actions": [{"title": TEXT, "why": TEXT,'
+    ' "kind": "fix" or "test" or "investigate" or "decide", "body": TEXT},'
     ' ...]')
-REPRODUCTION_SHAPE = ',\n "reproduction": {"level": TEXT, "hypotheses": [TEXT, ...]}'
+REPRODUCTION_SHAPE = (
+    ',\n "reproduction": {"level": "test" or "real_tool" or "not_reproduced",'
+    '\n   "hypotheses": [{"hypothesis": TEXT, "separates": TEXT,'
+    ' "verdict": "supported" or "ruled_out" or "open"}, ...]}')
 
 
 class LeadTurn(NamedTuple):
@@ -130,12 +142,15 @@ def synthesis_goal(row, swarm, fresh):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
+def report_shape(row):
+    return REPORT_SHAPE + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value
+                           else "") + "}"
+
+
 def report_goal(row, swarm, problem, fresh):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
         answers = f"- none: no plan was stored, because {problem}"
-    shape = REPORT_SHAPE + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value
-                            else "") + "}"
     return (
         f"{REPORT_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
@@ -145,8 +160,22 @@ def report_goal(row, swarm, problem, fresh):
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take. Do not "
         "edit files, commit or push. End your answer with one fenced json "
-        "block in this shape, TEXT standing for a string:\n\n"
-        f"```json\n{shape}\n```\n")
+        "block in this shape, TEXT, PATH and URL standing for strings and N "
+        "for a line number from 1:\n\n"
+        f"```json\n{report_shape(row)}\n```\n")
+
+
+def repair_goal(row, problems, fresh):
+    listed = "\n".join(f"- {problem}" for problem in problems)
+    return (
+        f"{REPAIR_OPENING}\n\n"
+        + (f"{asked(row)}\n\n" if fresh else "")
+        + "The report you wrote does not fit its shape. Each problem names the "
+        f"field and what it must be:\n\n{listed}\n\n"
+        "Write the whole report again with these fixed. Do not edit files, "
+        "commit or push. End your answer with one fenced json block in this "
+        "shape, TEXT, PATH and URL standing for strings and N for a line "
+        f"number from 1:\n\n```json\n{report_shape(row)}\n```\n")
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
@@ -231,6 +260,18 @@ def run_waves(conn, lead, swarm, tasks, waves):
             return
 
 
+def checked_report(lead, report):
+    problems = report_problems(report, lead.row.kind)
+    if not problems:
+        return report, []
+    turn = lead.resume(repair_goal(lead.row, problems,
+                                   lead.session is None), REPORT_TURN_S)
+    report = fenced_json(turn.answer)
+    if not isinstance(report, dict):
+        return None, ["report: the repair turn returned no JSON object"]
+    return report, report_problems(report, lead.row.kind)
+
+
 def run_lead(conn, project, row, worktree, budget_s):
     """Returns the phase the scout ends in and the reason it ends there."""
     config = scout_config(project)
@@ -252,5 +293,11 @@ def run_lead(conn, project, row, worktree, budget_s):
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
-        record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))
+        report, problems = checked_report(lead, report)
+        if problems:
+            return "failed", f"{MALFORMED}: {problems[0]}"
+        report = resolve_evidence(project.path, row.base_sha, report)
+        with store.transaction(conn):
+            record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))
+            record_scout_actions(conn, row.id, 1, report["actions"])
     return "done", "the lead wrote its report"
