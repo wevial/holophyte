@@ -314,7 +314,7 @@ their answers. A failed or empty answer fails the run, as an
 
 Body: a JSON object with `ask` (required, non-blank text: what the scout
 looks into; links, ticket keys and pull request URLs go in its text),
-`kind` (required, `bug`, `research` or `recon`), `lead` (optional, a
+`kind` (required, `bug`, `research`, `recon` or `guardrails`), `lead` (optional, a
 `[scout.leads.NAME]` route; default `[scout] lead`), `helper` (optional, a
 `[scout.helpers.NAME]` route; default `[scout] helper`), `swarm` (optional
 positive integer, helpers at once; default `[scout] swarm`), `minutes`

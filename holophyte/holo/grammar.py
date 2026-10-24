@@ -2,12 +2,15 @@
 import re
 from typing import NamedTuple
 
+from store.enums import ScoutKind
+
 
 class Flag(NamedTuple):
     name: str
     metavar: str | tuple | None = None
     emits: tuple = ()
     const: str | None = None
+    choices: tuple | None = None
 
     @property
     def dest(self):
@@ -56,7 +59,8 @@ NOTES = Flag("--notes")
 WATCH = Flag("--watch", "SECONDS", const="5")
 SINCE = Flag("--since", "AGO")
 EVERY = Flag("--every", "SECONDS")
-KIND = Flag("--kind", "bug|research|recon")
+SCOUT_KIND_NAMES = tuple(kind.value for kind in ScoutKind)
+KIND = Flag("--kind", "|".join(SCOUT_KIND_NAMES), choices=SCOUT_KIND_NAMES)
 LEAD = Flag("--lead", "NAME")
 HELPER_ROUTE = Flag("--helper", "NAME")
 SWARM = Flag("--swarm", "N")
@@ -140,7 +144,7 @@ COMMANDS = (
     Command(("story", "decide"), "--decide", "answer a parked story's decision",
             takes=("KEY", "ID", "[OPTION]"), note=REQUIRED, records=("decide",)),
     Command(("scout", "launch"), None,
-            "launch a scout on an ask: a bug, research or recon",
+            "launch a scout on an ask: a bug, research, recon or guardrails",
             note=REQUIRED, flags=(KIND, *SCOUT_FLAGS), records=()),
     Command(("scout", "file"), None,
             "file a done scout's action item N to Backlog, checked first",
@@ -273,7 +277,8 @@ def _add_leaf(commands, word, command, help_text):
         else:
             nargs = len(flag.metavar) if isinstance(flag.metavar, tuple) else None
             leaf.add_argument(flag.name, dest=flag.dest, action="append",
-                              metavar=flag.metavar, nargs=nargs)
+                              metavar=flag.metavar, nargs=nargs,
+                              choices=flag.choices)
     if command.records is not None:
         leaf.add_argument("--json", dest="json", action="store_true",
                           help="print one JSON result object")

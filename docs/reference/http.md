@@ -1364,7 +1364,7 @@ draws. `GET /scouts?limit=N` reads at most `N`.
 ```
 
 Each row carries the scout's `id`, its `ask`, its `kind` (`bug`,
-`research` or `recon`), its `phase` and the `reason` it ended (null until
+`research`, `recon` or `guardrails`), its `phase` and the `reason` it ended (null until
 it does), the `lead` and `helper` route names it runs on and its `swarm`,
 helpers at once. `tasks_done` counts its helper tasks that have ended and
 `tasks_total` all of them, over every pass. `created_ms`, `started_ms` and
@@ -1951,7 +1951,7 @@ a `[serve]` name or a repository path; `report` also takes `since`,
 `runs` and `scouts` `limit`, `run` the `run` id and its `view`, `ticket`
 the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run` or `body` and the required `note` and
 `author`, `steer` also its `hint` and `now` booleans, and `scout` its
-required `kind` and its optional `lead`, `helper`, `swarm`, `minutes` and
+required `kind` (`bug`, `research`, `recon` or `guardrails`) and its optional `lead`, `helper`, `swarm`, `minutes` and
 `subject` (`KIND:REF`, what the scout is about), the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
 `scout_stop` its required `project` and `scout` id, the note its reason,

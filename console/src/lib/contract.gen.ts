@@ -1114,7 +1114,7 @@ export type ScoutSubject = z.infer<typeof scoutSubjectSchema>;
 export const scoutRowSchema = z.looseObject({
   id: z.int(),
   ask: z.string(),
-  kind: z.enum(["bug", "research", "recon"]),
+  kind: z.enum(["bug", "research", "recon", "guardrails"]),
   phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
   reason: z.string().nullable(),
   lead: z.string().nullable(),
@@ -1148,7 +1148,7 @@ export type ScoutBudget = z.infer<typeof scoutBudgetSchema>;
 export const scoutFullSchema = z.looseObject({
   id: z.int(),
   ask: z.string(),
-  kind: z.enum(["bug", "research", "recon"]),
+  kind: z.enum(["bug", "research", "recon", "guardrails"]),
   phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
   reason: z.string().nullable(),
   lead: z.string().nullable(),
