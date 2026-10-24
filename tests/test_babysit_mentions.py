@@ -26,12 +26,7 @@ from loop_fixture import MergeModeFixture  # noqa: E402
 from mention_accounts_fixture import MentionAccountCases  # noqa: E402
 from triage_mention_fixture import TriageMentionCases  # noqa: E402
 
-import holophyte.agents.agent_output  # noqa: E402 - after the sys.path insert above
-import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
-import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
-import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 from holophyte.babysit.thread_mentions import REFUSAL  # noqa: E402
 
 
