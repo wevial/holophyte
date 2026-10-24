@@ -196,8 +196,8 @@ class ScoutRecordTests(ScoutCase):
                                       [{"question": "edit", "mode": "write"}])
 
     def test_events_count_per_scout_and_scouts_read_by_phase_oldest_first(self):
-        older = self.planning(now=100)
         newer = self.new_scout(now=200)
+        older = self.planning(now=100)
         scouts.move_scout(self.conn, self.planning(now=50), "swarming")
         scouts.record_scout_event(self.conn, newer, "planned", "one")
         scouts.record_scout_event(self.conn, older, "planned", "one")

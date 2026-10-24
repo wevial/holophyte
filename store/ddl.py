@@ -632,7 +632,5 @@ CREATE INDEX IF NOT EXISTS runEvents_runId ON runEvents (runId);
 CREATE INDEX IF NOT EXISTS ledger_runId ON ledger (runId);
 CREATE INDEX IF NOT EXISTS tickets_parentTicketId ON tickets (parentTicketId);
 CREATE INDEX IF NOT EXISTS runEvents_scoutId ON runEvents (scoutId);
-CREATE INDEX IF NOT EXISTS scoutReports_scoutId ON scoutReports (scoutId);
 CREATE INDEX IF NOT EXISTS scoutTasks_scoutId ON scoutTasks (scoutId, pass, wave);
-CREATE INDEX IF NOT EXISTS scoutActions_scoutId ON scoutActions (scoutId);
 """
