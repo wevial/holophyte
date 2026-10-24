@@ -66,7 +66,7 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
       {rows.length > 0 && (
         <ol aria-label="Thread" className="m-0 mt-4 flex list-none flex-col gap-3 p-0">
           {rows.map((row) => row.kind === "message"
-            ? <ThreadMessage key={row.key} head={row.head} at={row.at} text={row.text} agent={row.agent} />
+            ? <ThreadMessage key={row.key} head={row.head} at={row.at} text={row.text} agent={row.agent} indent="ml-6" />
             : (
               <li key={row.key} data-thread-line className={`flex items-center gap-2 font-mono text-[12px] leading-[1.4] [overflow-wrap:anywhere] before:h-px before:w-3 before:shrink-0 before:bg-rule before:content-[''] after:h-px after:w-3 after:shrink-0 after:bg-rule after:content-[''] ${LINE_TONES[row.tone]}`}>
                 {row.text}
