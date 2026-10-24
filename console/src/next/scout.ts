@@ -4,6 +4,7 @@ import { scoutDetailSchema, type ScoutDetail, type ScoutTask } from "../lib/cont
 import { projectName } from "../lib/derive";
 import { AnswerError, POLL_INTERVAL_MS, type Fetch } from "../lib/poll";
 import type { ActivityStep, ActivityTone } from "./activity";
+import { firstLine } from "./history";
 import { fetchRoute, routeKey } from "./queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { scoutState, sentence, type ScoutState } from "./scouts";
@@ -221,8 +222,6 @@ function swarmClauses(tasks: ScoutTask[]): string {
   if (clauses.length < 3) return clauses.join(" and ");
   return `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
 }
-
-const firstLine = (text: string | null) => (text ?? "").split("\n", 1)[0]!.trim();
 
 /** The sentence behind the scout's state dot. */
 function scoutSentence(detail: ScoutDetail): string {
