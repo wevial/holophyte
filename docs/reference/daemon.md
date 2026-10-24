@@ -46,7 +46,9 @@ writer's row of the same name (`restart_supervisor`, `launch_loop`,
 or `operator_note` for `steer`). It is
 null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
-pending. A 400, 404 or 503 answers `{"error": ...}` instead.
+pending. `scout` writes no interventions row, so its `recorded` is always
+null: its record, written before it starts anything, is the scout's own
+row and that row's first event, `scout_queued`. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 
@@ -303,6 +305,48 @@ console keeps its posted comment's `url`, and such a comment, found on the
 pull request, still settles its ask. [`GET /runs/N/asks`](http.md#get-runsnasks) lists the asks and
 their answers. A failed or empty answer fails the run, as an
 `@holophyte ask:` does, and the ask stays unanswered.
+
+## `POST /actions/scout`
+
+Body: a JSON object with `ask` (required, non-blank text: what the scout
+looks into; links, ticket keys and pull request URLs go in its text),
+`kind` (required, `bug`, `research` or `recon`), `lead` (optional, a
+`[scout.leads.NAME]` route; default `[scout] lead`), `helper` (optional, a
+`[scout.helpers.NAME]` route; default `[scout] helper`), `swarm` (optional
+positive integer, helpers at once; default `[scout] swarm`), `minutes`
+(optional positive integer, the wall-clock budget; default `[scout]
+budget_min`) and `author` (optional, default `maintainer`). The helper
+total and the wave count are always the config's `helper_turns` and
+`waves`. `holo scout "ASK" --kind K`, `holo bug`, `holo idea` and the
+`holo mcp` `scout` tool are the same launch.
+
+One transaction records the scout in phase `queued` with its ask, kind,
+routes, swarm, helper total, waves and budget, and its first event,
+`scout_queued` (detail level, payload `{"author", "via"}`, `via` being
+`POST /actions/scout`, `holo scout` or `holo mcp`). After that commit the
+daemon runs the start half of the host sweep's scout step once: while the
+host's live scouts are fewer than `host.toml`'s `[scout] max_parallel`, it
+starts the host's oldest queued scouts, each moved to `planning` at
+`main`'s sha and spawned as `factory.py --scout ID PROJECT`, so a new
+launch never jumps the queue. A scout not started stays `queued` and a
+later host sweep starts it; one whose start failed says why in `detail`
+and is still `ok: true`, since it is recorded and will run.
+
+The reply adds `scout`, the new scout's id, and `queued`, true when it was
+not started; `recorded` is null.
+
+```json
+{"action": "scout", "ok": true, "scout": 7, "queued": true,
+ "detail": "scout 7 queued: 2 of 2 scout slots in use", "recorded": null}
+```
+
+A body that is not a JSON object, a missing or blank `ask`, a `kind`
+outside the three, a `lead` or `helper` that is not a string, or a `swarm`
+or `minutes` that is not a positive integer is 400 naming the field. A
+`lead` or `helper` the config does not define (`detail` names the
+`[scout.leads]` or `[scout.helpers]` table) and a `swarm` above the
+config's `helper_turns` are 200 with `ok: false`. None of these writes
+anything. A project with no store is 503.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 

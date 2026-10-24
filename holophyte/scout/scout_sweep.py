@@ -118,7 +118,8 @@ def _start(name, target, row, out):
 def _account(name, entry, conn, now, out, queued):
     admits = entry.error is None
     try:
-        end_stale(name, entry.target, conn, now, out)
+        if now is not None:
+            end_stale(name, entry.target, conn, now, out)
     except (Exception, SystemExit) as bad:  # noqa: BLE001 - its scouts still count
         print(f"[holo2] {name}: stale scout check failed: {bad}", file=out)
         admits = False
@@ -129,7 +130,11 @@ def _account(name, entry, conn, now, out, queued):
 
 
 def sweep_scouts(entries, limit, now, out, key=str):
-    live, queued, unknown = 0, [], False
+    start_queued(entries, limit, out, key, now)
+
+
+def start_queued(entries, limit, out, key=str, now=None):
+    live, queued, unknown, started = 0, [], False, []
     for entry in entries:
         if not entry.target.store_path.exists():
             continue
@@ -146,12 +151,15 @@ def sweep_scouts(entries, limit, now, out, key=str):
     if unknown and queued:
         print("[holo2] no scout starts this pass: a store's live scouts could"
               " not be counted", file=out)
-        return
+        return live, started
     queued.sort(key=lambda item: (item[2].created_at, item[2].id))
     for name, target, row in queued:
         if live >= limit:
-            return
+            break
         try:
-            live += _start(name, target, row, out)
+            if _start(name, target, row, out):
+                live += 1
+                started.append((target.path, row.id))
         except (Exception, SystemExit) as bad:  # noqa: BLE001 - the project boundary
             print(f"[holo2] {name}: scout start failed: {bad}", file=out)
+    return live, started

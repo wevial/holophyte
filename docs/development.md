@@ -156,6 +156,10 @@ Each module, one line:
   of a role.
 - `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
+- `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
+  the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
+  recorded `queued` with its `scout_queued` event, then started by the host
+  sweep's scout step when a host scout slot is free.
 - `holophyte/scout/lead.py` — the scout's lead: its route probe, a plan
   turn under the scout's time budget, and a report turn resuming its session.
 - `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's

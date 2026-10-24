@@ -12,6 +12,8 @@ from holophyte.config.project import Project, legacy_state_layouts
 from holophyte.holo.grammar import (
     ALIASES,
     COMMANDS,
+    LAUNCH,
+    SCOUT_KINDS,
     arguments,
     canonical,
     factory_argv,
@@ -104,6 +106,8 @@ def call(args, target):
         return send_back(args, target)
     if args.command.words == ("steer",):
         return steer(args, target)
+    if args.command.words in (("scout", LAUNCH), *SCOUT_KINDS):
+        return scout(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -142,6 +146,44 @@ def steer(args, target):
     author = getattr(args, "author", None)
     return steer_ticket(project, values[0], note, hint=args.hint,
                         author=author[-1] if author else None, now=args.now)
+
+
+def last(args, dest):
+    given = getattr(args, dest, None)
+    return given[-1] if given else None
+
+
+def counted(value):
+    return int(value) if value and value.isascii() and value.isdigit() else value
+
+
+def scout_body(args):
+    _, note = arguments(args, args.command)
+    kind = SCOUT_KINDS.get(args.command.words) or last(args, "kind")
+    if kind is None:
+        args.leaf.error("holo scout needs --kind bug|research|recon")
+    return {"ask": note, "kind": kind, "lead": last(args, "lead"),
+            "helper": last(args, "helper"),
+            "swarm": counted(last(args, "swarm")),
+            "minutes": counted(last(args, "minutes")),
+            "author": last(args, "author")}
+
+
+def scout(args, target):
+    from holophyte.holo.mcp_tools import VIA
+    from holophyte.scout.launch import launch
+    body = scout_body(args)
+    if not target:
+        args.leaf.error("holo scout needs its project: -p NAME|PATH")
+    signed = (body["author"] or "").endswith(f" {VIA}")
+    code, reply = launch(located(target), body,
+                         "holo mcp" if signed else "holo scout")
+    if code == 400:
+        args.leaf.error(reply["error"])
+    if code != 200 or not reply["ok"]:
+        return PREFIX + (reply.get("detail") or reply.get("error", ""))
+    print(PREFIX + reply["detail"])
+    return 0
 
 
 def located(target):
