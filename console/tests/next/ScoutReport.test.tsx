@@ -157,6 +157,28 @@ test("a command chip opens its command and output under the finding and closes a
   expect(document.getElementById(chipButton.getAttribute("aria-controls")!)).toBeNull();
 });
 
+test("an opened command closes when the page moves to another scout", async () => {
+  const visit = async (id: number) => {
+    await act(async () => {
+      window.location.hash = `#/scouts/demo/${id}`;
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    for (let round = 0; round < 6; round += 1) await act(settle);
+  };
+  const count = () => within(report()).getByRole("heading", { level: 2 }).textContent;
+  const commandChip = () => within(findingRows()[0]!).getByRole("button", { name: new RegExp(`^${COMMAND}`) });
+  await mount(33);
+  await visit(31);
+  expect(count()).toContain("4 findings");
+  await act(async () => void fireEvent.click(commandChip()));
+  expect(commandChip().getAttribute("aria-expanded")).toBe("true");
+
+  await visit(33);
+  expect(count()).toContain("5 findings");
+  expect(commandChip().getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText(OUTPUT, { exact: false })).toBeNull();
+});
+
 test("a research scout's Report links its url evidence without the scheme and has no Hypotheses", async () => {
   await mount(32);
   expect(meta()).toBe("at base a41c9e2");
