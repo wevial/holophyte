@@ -227,7 +227,10 @@ class Swarm:
     def route_down(self, conn, key, probe):
         with self.probing:
             if key not in self.downs:
-                self.downs[key] = probe()
+                down = probe()
+                if down is not None and self.stopping.stopped:
+                    return down
+                self.downs[key] = down
                 if self.downs[key] is not None:
                     record_scout_event(conn, self.row.id, "scout_helpers",
                                        self.downs[key])
@@ -329,15 +332,16 @@ class Swarm:
         start_scout_task(conn, task.id)
         started = monotonic()
         mine.set()
-        problem = setup_failure(self.project, checkout, self.deadline)
+        seat = run_seat(self.project, self.seat)
+        problem = (setup_failure(self.project, checkout, self.deadline,
+                                 self.stopping.tracked)
+                   or self.isolated_down(conn, seat, checkout))
+        if problem is not None and self.stopping.stopped:
+            self.end(conn, task, STOPPED, "")
+            return
         if problem is not None:
             self.end(conn, task, FAILED,
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
-            return
-        seat = run_seat(self.project, self.seat)
-        down = self.isolated_down(conn, seat, checkout)
-        if down is not None:
-            self.end(conn, task, FAILED, down)
             return
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()

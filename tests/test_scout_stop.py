@@ -22,6 +22,7 @@ import holophyte.scout.scout_sweep as scout_sweep
 import holophyte.scout.stop as stop_module
 import store
 from holophyte.cli.host_modes import FACTORY_PATH
+from holophyte.config.project import Project
 from holophyte.holo.resolve import client_path
 from holophyte.host.registry import Host, settings
 from holophyte.scout.lead import REPORT_OPENING
@@ -252,6 +253,44 @@ class RunningScoutStopTests(StopCase):
         self.assertTrue(wait_for(lambda: not any(map(running, children))))
         self.assertEqual(scout(self.store_conn, scout_id).phase, "stopped")
         self.assertEqual(self.stubs.turns("report"), [])
+
+    def test_a_stop_during_a_run_helpers_setup_kills_it_and_ends_it_stopped(self):
+        pid_file = self.child("setup")
+        config = Project.locate(self.path, adopt=False).config_path
+        config.write_text(config.read_text() + "[worktree]\nsetup = "
+                          f'["echo $$ > {pid_file}; exec sleep 600"]\n')
+        self.stops_one_run_helper(pid_file)
+
+    def test_a_stop_during_a_run_helpers_route_probe_ends_it_stopped(self):
+        pid_file = self.child("helper-probe")
+        self.stubs.answer(binaries={"codex": {
+            "probe_sleep": 600, "probe_pid_file": str(pid_file)}})
+        self.stops_one_run_helper(pid_file)
+        self.assertEqual([payload for kind, payload in self.events(
+            self.scout_id) if kind == "scout_helpers"], [])
+
+    def stops_one_run_helper(self, pid_file):
+        answers = json.loads((self.stubs.directory / "answers.json")
+                             .read_text())
+        self.stubs.answer(**dict(answers, plan=fenced({"tasks": [
+            {"question": QUESTIONS[0], "paths": [], "mode": "run"}]}),
+            report=fenced(REPORT)))
+        self.start_host()
+        self.scout_id = self.planning(kind="bug", swarm=1, helper_turns=1,
+                                      waves=1)
+        proc = self.spawn_scout(self.scout_id)
+        child = self.pid_of(pid_file)
+        status, answer = self.stop(self.scout_id)
+        self.assertEqual((status, answer["ok"], answer["pid"]),
+                         (200, True, proc.pid), answer)
+        self.assertEqual(proc.wait(timeout=WAIT_S), 0)
+        self.assertEqual(self.store_conn.execute(
+            "SELECT phase, excerpt FROM scoutTasks WHERE scoutId = ?",
+            (self.scout_id,)).fetchall(), [("stopped", "")])
+        self.assertTrue(wait_for(lambda: not running(child)))
+        self.assertEqual(scout(self.store_conn, self.scout_id).phase,
+                         "stopped")
+        self.assertEqual(self.stubs.turns("helper"), [])
 
 
 class DirectStopTests(StopCase):

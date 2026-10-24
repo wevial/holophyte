@@ -486,16 +486,17 @@ def run_capped(cmd, cwd, timeout, on_start=None, *, env=None,
 
 
 def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None,
-               project=None, rerun=True):
+               project=None, rerun=True, on_start=None):
     from store.working import working
 
     with working(conn, run_id, verify=True):
         ok, out = _run_verify(cmd, cwd, contracts, timeout, project=project,
-                              run_id=run_id)
+                              run_id=run_id, on_start=on_start)
         if ok or not rerun or not failed_to_finish(out):
             return ok, out
         again_ok, again = _run_verify(cmd, cwd, contracts, timeout,
-                                      project=project, run_id=run_id)
+                                      project=project, run_id=run_id,
+                                      on_start=on_start)
     if again_ok:
         record_flaky(conn, run_id, out)
         return True, (f"{again}\n[verify] passed on an immediate rerun; "
@@ -554,7 +555,7 @@ def _verify_command(project, command, cwd, timeout, on_start=None):
 
 
 def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
-                run_id=None):
+                run_id=None, on_start=None):
     drifted = contract_report(contracts, cwd)
     if drifted:
         return False, drifted
@@ -567,13 +568,13 @@ def _run_verify(cmd, cwd, contracts=None, timeout=None, *, project=None,
         return True, passed + (
             "[verify] not run again: passed earlier in this run at head"
             f" {key[2][:12]} with main at {key[3][:12]}")
-    ok, out = _run_command(cmd, cwd, timeout, project)
+    ok, out = _run_command(cmd, cwd, timeout, project, on_start)
     if ok and key is not None:
         _PASSES.add(key)
     return ok, passed + out if ok else out
 
 
-def _run_command(cmd, cwd, timeout, project):
+def _run_command(cmd, cwd, timeout, project, on_start=None):
     # A compound list runs verbatim: wrapping it in `||` suppresses its errexit.
     lines = [text for text in cmd.splitlines()
              if text.strip() and not text.lstrip().startswith('#')]
@@ -588,7 +589,7 @@ def _run_command(cmd, cwd, timeout, project):
         returncode, out = _verify_command(
             project,
             instrumented_script(clauses, stop_on_failure=True) if marked else cmd,
-            cwd, VERIFY_TIMEOUT if timeout is None else timeout)
+            cwd, VERIFY_TIMEOUT if timeout is None else timeout, on_start)
     except subprocess.TimeoutExpired as expired:
         per_clause, _, cleaned = parse_clause_output(expired.output or "")
         report = timeout_failure_report(cmd, clauses if marked else None,

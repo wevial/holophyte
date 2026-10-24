@@ -59,9 +59,10 @@ def run_seat(project, seat):
     return replace(seat, binary=binary, role=SCOUT_RUNNER)
 
 
-def setup_failure(project, checkout, deadline):
+def setup_failure(project, checkout, deadline, tracked):
     try:
-        ok, report, _ = prepare_worktree(project, checkout, deadline=deadline)
+        ok, report, _ = tracked(partial(prepare_worktree, project, checkout,
+                                        deadline=deadline))
     except LAUNCH_FAILURES as failed:
         return f"[holo2] worktree setup could not launch: {failed}"
     return None if ok else report
