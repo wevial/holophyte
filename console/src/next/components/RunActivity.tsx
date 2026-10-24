@@ -233,7 +233,7 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
     return ending == null ? null : <EndFacts detail={detail} ending={ending} base={base} project={project} />;
   };
   return (
-    <div className="mt-4 flex flex-col gap-3 @[640px]/progress:grid @[640px]/progress:grid-cols-[minmax(0,1fr)_248px] @[640px]/progress:items-start @[640px]/progress:gap-x-6">
+    <div className={`mt-4 flex flex-col gap-3 ${grid == null ? "" : "@[640px]/progress:grid @[640px]/progress:grid-cols-[minmax(0,1fr)_248px] @[640px]/progress:items-start @[640px]/progress:gap-x-6"}`}>
       {grid != null && (
         <div className="@[640px]/progress:sticky @[640px]/progress:top-0 @[640px]/progress:col-start-2 @[640px]/progress:row-start-1">
           <CriteriaGrid grid={grid} />

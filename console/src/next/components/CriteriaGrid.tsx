@@ -100,7 +100,10 @@ function RowLabel({ id, text, shown, onShow, onToggle }: LabelProps) {
         onPointerDown={(event) => (pointer.current = event.pointerType)}
         onPointerCancel={() => (pointer.current = null)}
         onFocus={() => pointer.current == null && onShow(true)}
-        onBlur={() => onShow(false)}
+        onBlur={() => {
+          pointer.current = null;
+          onShow(false);
+        }}
         onKeyDown={(event) => event.key === "Escape" && onShow(false)}
         onClick={() => {
           const by = pointer.current;

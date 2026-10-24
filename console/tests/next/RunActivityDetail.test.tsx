@@ -314,3 +314,15 @@ test("a criterion's label in the grid shows its full text in a tooltip on hover,
   expect(tip()!.textContent).toBe("The export writes a TOML file");
   expect(label.getAttribute("aria-describedby")).toBe(tip()!.id);
 });
+
+test("a press dragged off a criterion's label and released elsewhere still lets a later keyboard focus show its tooltip", async () => {
+  const c1 = { id: "C1", n: 1, text: "The export writes a TOML file", status: "met" as const, note: "", run: 12, round: 3 };
+  await mount({ ...finished, criteria: [c1] });
+  const label = within(grid()!).getByRole("button", { name: "C1" });
+  await act(async () => void fireEvent.pointerDown(label, { pointerType: "touch" }));
+  await act(async () => void fireEvent.focus(label));
+  await act(async () => void fireEvent.blur(label));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  await act(async () => void fireEvent.focus(label));
+  expect(screen.queryByRole("tooltip")!.textContent).toBe("The export writes a TOML file");
+});
