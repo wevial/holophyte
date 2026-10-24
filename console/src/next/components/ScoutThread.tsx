@@ -1,9 +1,11 @@
-import { useState, type Ref } from "react";
+import { useIsMutating } from "@tanstack/react-query";
+import { useCallback, useRef, useState, type Ref } from "react";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { useAction } from "../actions";
-import { composeBlock, nextPass, threadRows, type LineTone } from "../scoutThread";
+import { composeBlock, nextPass, threadRows, type CardRow, type LineTone } from "../scoutThread";
 import { Btn } from "./Btn";
 import { SECTION_LABEL } from "./Criteria";
+import { ScoutCard } from "./ScoutCard";
 import { ThreadMessage } from "./ThreadMessage";
 
 const LINE_TONES: Record<LineTone, string> = { quiet: "text-ink-3", bad: "text-bad", wait: "text-wait" };
@@ -11,22 +13,42 @@ const LINE_TONES: Record<LineTone, string> = { quiet: "text-ink-3", bad: "text-b
 type Mode = "ask" | "steer";
 const MODES: { mode: Mode; label: string }[] = [{ mode: "ask", label: "Ask" }, { mode: "steer", label: "Steer" }];
 
-function ScoutCompose({ base, detail, actions, ref }: { base: string; detail: ScoutDetail; actions: boolean; ref?: Ref<HTMLTextAreaElement> }) {
+const MESSAGE_ROUTE = "/actions/scout-message";
+
+/** Whether any of the thread's posts to `base`, the composer's or a card's, is still in flight. */
+const useSending = (base: string) => useIsMutating({
+  predicate: (mutation) => {
+    const post = mutation.state.variables as { base?: string; route?: string } | undefined;
+    return post?.base === base && post.route === MESSAGE_ROUTE;
+  },
+}) > 0;
+
+function ScoutCompose({ base, detail, actions, sending, answering, onStopAnswering, ref }: {
+  base: string;
+  detail: ScoutDetail;
+  actions: boolean;
+  sending: boolean;
+  answering: CardRow | null;
+  onStopAnswering: () => void;
+  ref?: Ref<HTMLTextAreaElement>;
+}) {
   const [mode, setMode] = useState<Mode>("ask");
   const [text, setText] = useState("");
   const action = useAction();
   const scout = detail.scout.id;
   const blocked = composeBlock(detail, actions);
-  const disabled = blocked != null || action.isPending;
+  const disabled = blocked != null || sending;
   const asking = mode === "ask";
   const send = async () => {
     if (disabled || !text.trim()) return;
     const result = await action.mutateAsync({
-      label: asking ? "Ask" : "Steer", base, route: "/actions/scout-message",
-      body: { scout, mode, text: text.trim() },
+      label: asking ? "Ask" : "Steer", base, route: MESSAGE_ROUTE,
+      body: { scout, mode, text: text.trim(), ...(answering ? { answers: answering.id } : {}) },
       said: asking ? `Asked scout ${scout}.` : `Steered scout ${scout}.`,
     });
-    if (result.ok) setText("");
+    if (!result.ok) return;
+    setText("");
+    onStopAnswering();
   };
   return (
     <div className="mt-4">
@@ -39,6 +61,15 @@ function ScoutCompose({ base, detail, actions, ref }: { base: string; detail: Sc
           </button>
         ))}
       </div>
+      {answering && (
+        <div data-answering className="mt-2.5 flex items-start justify-between gap-2 font-mono text-[12px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
+          <span>Answering: {answering.question}</span>
+          <button type="button" aria-label="Stop answering" title="Stop answering" onClick={onStopAnswering}
+            className="shrink-0 px-1 text-ink-3 hover:text-ink">
+            ✕
+          </button>
+        </div>
+      )}
       <textarea ref={ref} aria-label={asking ? "Question for the scout" : "Note to the scout"}
         placeholder={asking ? "Ask about this report…" : "Tell the scout what to check next…"}
         value={text} disabled={disabled} title={blocked ?? undefined} onChange={(event) => setText(event.target.value)}
@@ -56,9 +87,24 @@ function ScoutCompose({ base, detail, actions, ref }: { base: string; detail: Sc
   );
 }
 
-/** A scout's Thread: its messages, a line for each answer turn and pass between them, and the Ask and Steer composer. */
+/** A scout's Thread: its messages and proposal cards, a line for each answer turn and pass between them, and the Ask and
+ *  Steer composer, which Type an answer points at a card. */
 export function ScoutThread({ base, detail, actions, ref }: { base: string; detail: ScoutDetail; actions: boolean; ref?: Ref<HTMLTextAreaElement> }) {
   const rows = threadRows(detail);
+  const blocked = composeBlock(detail, actions);
+  const sending = useSending(base);
+  const [answeringId, setAnsweringId] = useState<number | null>(null);
+  const answering = rows.find((row): row is CardRow => row.kind === "card" && row.id === answeringId && !row.answered) ?? null;
+  const box = useRef<HTMLTextAreaElement | null>(null);
+  const boxRef = useCallback((node: HTMLTextAreaElement | null) => {
+    box.current = node;
+    if (typeof ref === "function") ref(node);
+    else if (ref) ref.current = node;
+  }, [ref]);
+  const typeAnswer = (card: CardRow) => {
+    setAnsweringId(card.id);
+    box.current?.focus();
+  };
   return (
     <aside id="thread" aria-labelledby="thread-heading" className="@container/agent min-w-0 flex-[1_1_440px] border-t border-rule px-[22px] pb-6 pt-[22px] @[1000px]:min-w-[380px] @[1000px]:border-t-0 max-[720px]:px-4">
       <div id="thread-heading" className={SECTION_LABEL}>Thread</div>
@@ -67,6 +113,8 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
         <ol aria-label="Thread" className="m-0 mt-4 flex list-none flex-col gap-3 p-0">
           {rows.map((row) => row.kind === "message"
             ? <ThreadMessage key={row.key} head={row.head} at={row.at} text={row.text} agent={row.agent} indent="ml-6" />
+            : row.kind === "card"
+            ? <ScoutCard key={row.key} base={base} scout={detail.scout.id} card={row} blocked={blocked} sending={sending} onType={() => typeAnswer(row)} />
             : (
               <li key={row.key} data-thread-line className={`flex items-center gap-2 font-mono text-[12px] leading-[1.4] [overflow-wrap:anywhere] before:h-px before:w-3 before:shrink-0 before:bg-rule before:content-[''] after:h-px after:w-3 after:shrink-0 after:bg-rule after:content-[''] ${LINE_TONES[row.tone]}`}>
                 {row.text}
@@ -74,7 +122,7 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
             ))}
         </ol>
       )}
-      <ScoutCompose base={base} detail={detail} actions={actions} ref={ref} />
+      <ScoutCompose base={base} detail={detail} actions={actions} sending={sending} answering={answering} onStopAnswering={() => setAnsweringId(null)} ref={boxRef} />
     </aside>
   );
 }
