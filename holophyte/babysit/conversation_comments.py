@@ -1,7 +1,7 @@
 import re
 
 from holophyte.babysit.maintainer_notes import is_console_ask
-from holophyte.babysit.thread_mentions import REFUSAL, classify, refuse, refused
+from holophyte.babysit.thread_mentions import REFUSAL, bots, classify, refuse, refused
 from holophyte.config.config_tables import merge_config
 from holophyte.pr.github import Thread, acknowledged
 from holophyte.redact import known_secrets, outbound
@@ -54,7 +54,7 @@ def conversation_threads(target, pull, comments):
         return
     merge = merge_config(target)
     for thread in _unanswered(target, pull, comments, merge):
-        if refused(thread, merge.mention_handle, merge.mention_accounts):
+        if refused(thread, merge):
             refuse(target, pull, thread)
         else:
             yield thread
@@ -65,7 +65,7 @@ def open_requests(target, pull, comments):
         return []
     merge = merge_config(target)
     return [thread for thread in _unanswered(target, pull, comments, merge)
-            if not refused(thread, merge.mention_handle, merge.mention_accounts)]
+            if not refused(thread, merge)]
 
 
 def _unanswered(target, pull, comments, merge):
@@ -90,9 +90,9 @@ def _instruction(comment, pull, merge):
         body=comment.get("body") or "", url=comment.get("url") or pull.url,
         author_kind="user", kind="conversation", node_id=comment.get("id") or "",
         acknowledged=acknowledged(comment)),
-        merge.mention_handle, merge.mention_accounts)
+        merge.mention_handle, merge.mention_accounts, bots(merge))
     if (thread.classification == "MENTIONED"
-            or refused(thread, merge.mention_handle, merge.mention_accounts)):
+            or refused(thread, merge)):
         return thread
     return None
 

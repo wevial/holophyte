@@ -15,36 +15,38 @@ def authorized(author, accounts):
 
 
 def refuse(target, pull, thread, conn=None, run_id=None, beat_s=1):
-    from holophyte.agents.roles import agent_route
     from holophyte.babysit.babysitter import COMMENT_HEADER, _post
 
     if any(c.body.startswith("---- Comment by ") and REFUSAL in c.body
            for c in thread.comments):
         return
-    body = (COMMENT_HEADER.format(model=agent_route(target, "adjudicate"))
-            + "\n\n" + REFUSAL)
+    body = COMMENT_HEADER.format(model="holophyte") + "\n\n" + REFUSAL
     _post(target, conn, run_id, beat_s, pull, thread, body, resolve=False)
 
 
-def refused(thread, handle, accounts):
+def refused(thread, merge):
     from holophyte.babysit.maintainer_notes import is_console_ask
+    latest = thread.comments[-1]
     return (not is_console_ask(thread)
-            and not authorized(thread.comments[-1].author, accounts)
-            and classify(thread, handle).classification == "MENTIONED")
+            and not bot_author(latest.author, bots(merge), latest.author_kind)
+            and not authorized(latest.author, merge.mention_accounts)
+            and classify(thread, merge.mention_handle).classification
+            == "MENTIONED")
 
 
-def classify(thread, handle, accounts=()):
+def classify(thread, handle, accounts=(), bot_logins=()):
     """Only the latest comment can address the factory."""
     from holophyte.babysit.maintainer_notes import is_console_ask
     if is_console_ask(thread):
         return thread
-    if not authorized(thread.comments[-1].author, accounts):
+    latest = thread.comments[-1]
+    if (bot_author(latest.author, bot_logins, latest.author_kind)
+            or not authorized(latest.author, accounts)):
         return replace(thread, classification="", request="",
                        intent="unmarked", triage=None)
     if thread.triage is not None:
         return thread
     pattern = _mention(handle)
-    latest = thread.comments[-1]
     if handle and pattern.search(latest.body):
         request = pattern.sub("", latest.body).strip()
         marker = re.match(r"^(\?|ask\s*:|fix\s*:)\s*", request, re.I)
@@ -64,13 +66,12 @@ def _mention(handle):
 
 def acknowledge(target, conn, run_id, pull, threads, merge):
     handle = merge.mention_handle
-    bots = (*merge.bot_authors, *merge.bot_logins)
     pattern = _mention(handle)
     for thread in threads:
         comment = next((c for c in reversed(thread.comments)
                         if handle and pattern.search(c.body)), None)
         if (comment is None or not comment.node_id or comment.acknowledged
-                or bot_author(comment.author, bots, comment.author_kind)):
+                or bot_author(comment.author, bots(merge), comment.author_kind)):
             continue
         try:
             github.react_eyes(target, pull, comment.node_id)
@@ -81,8 +82,13 @@ def acknowledge(target, conn, run_id, pull, threads, merge):
 
 
 def classified(threads, merge):
-    return tuple(classify(t, merge.mention_handle, merge.mention_accounts)
+    return tuple(classify(t, merge.mention_handle, merge.mention_accounts,
+                          bots(merge))
                  for t in threads)
+
+
+def bots(merge):
+    return (*merge.bot_authors, *merge.bot_logins)
 
 
 def instruction(thread):
