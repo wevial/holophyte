@@ -12,6 +12,7 @@ export type ThreadRow =
 const ANSWER_ENDS = new Set(["scout_answered", "scout_answer_failed", "scout_answer_stopped"]);
 const FAILED = new Set(["scout_answer_failed", "scout_pass_failed"]);
 const STOPPED = new Set(["scout_answer_stopped", "scout_pass_stopped"]);
+const PASS_ENDS = new Set(["scout_pass_done", "scout_pass_failed", "scout_pass_stopped"]);
 
 const asksOrSteers = (message: ThreadMessage) => message.mode === "ask" || message.mode === "steer";
 
@@ -24,25 +25,52 @@ function messageHead(message: ThreadMessage): string {
 const highestPass = (detail: ScoutDetail, before = Infinity) =>
   Math.max(0, ...detail.reports.filter((report) => report.at < before).map((report) => report.pass));
 
-/** The pass a `scout_pass_started` event began: one above the reports written before it. */
-const passOf = (detail: ScoutDetail, started: ScoutEvent) => highestPass(detail, started.at) + 1;
-
 /** The pass a steer would start now. */
 export const nextPass = (detail: ScoutDetail) => highestPass(detail) + 1;
 
-function answerLine(detail: ScoutDetail, events: ScoutEvent[], index: number): string {
-  const started = events[index]!;
-  const later = events.slice(index + 1);
-  const next = later.findIndex((event) => event.kind === "scout_answer_started");
-  const end = (next < 0 ? later : later.slice(0, next)).find((event) => ANSWER_ENDS.has(event.kind));
-  const span = end != null ? formatSpan(end.at - started.at) : detail.scout.phase === "answering" && next < 0 ? "now" : null;
+export interface FollowUp {
+  kind: "answer" | "pass";
+  started: ScoutEvent;
+  /** The first end event of its kind after the start, before the next start of its kind. */
+  end: ScoutEvent | null;
+  /** The next start of its kind, or null for the newest. */
+  until: number | null;
+  /** For a pass, one above the reports written before its start. */
+  pass: number | null;
+}
+
+/** Each answer turn and follow-up pass of the scout, in the order of their start events. */
+export function followUps(detail: ScoutDetail): FollowUp[] {
+  const events = [...detail.events].sort((a, b) => a.at - b.at || a.id - b.id);
+  return events.flatMap((started, index): FollowUp[] => {
+    const kind = started.kind === "scout_answer_started" ? "answer" : started.kind === "scout_pass_started" ? "pass" : null;
+    if (kind == null) return [];
+    const ends = kind === "answer" ? ANSWER_ENDS : PASS_ENDS;
+    const later = events.slice(index + 1);
+    const next = later.findIndex((event) => event.kind === started.kind);
+    const end = (next < 0 ? later : later.slice(0, next)).find((event) => ends.has(event.kind)) ?? null;
+    return [{ kind, started, end, until: next < 0 ? null : later[next]!.at, pass: kind === "pass" ? highestPass(detail, started.at) + 1 : null }];
+  });
+}
+
+/** The pass the scout is in: its newest pass, with no end, while the scout runs. */
+export function livePass(detail: ScoutDetail): FollowUp | null {
+  const { phase } = detail.scout;
+  const newest = followUps(detail).findLast((each) => each.kind === "pass");
+  const running = phase === "planning" || phase === "swarming" || phase === "synthesizing";
+  return running && newest != null && newest.end == null ? newest : null;
+}
+
+const spanOf = (events: FollowUp[], started: ScoutEvent) => events.find((each) => each.started === started)!;
+
+function answerLine(detail: ScoutDetail, turn: FollowUp): string {
+  const span = turn.end != null ? formatSpan(turn.end.at - turn.started.at) : detail.scout.phase === "answering" && turn.until == null ? "now" : null;
   return ["answer turn", detail.scout.lead, span].filter((part) => part != null).join(" · ");
 }
 
-function passLine(detail: ScoutDetail, events: ScoutEvent[], index: number): string {
-  const started = events[index]!;
-  const pass = passOf(detail, started);
-  const until = events.slice(index + 1).find((event) => event.kind === "scout_pass_started")?.at ?? Infinity;
+function passLine(detail: ScoutDetail, run: FollowUp): string {
+  const { started, pass } = run;
+  const until = run.until ?? Infinity;
   const helpers = detail.tasks.filter((task) => task.pass === pass && task.started_ms != null && task.started_ms >= started.at && task.started_ms < until).length;
   const route = helpers ? [detail.scout.helper, `×${helpers}`].filter((part) => part != null).join(" ") : null;
   return [`pass ${pass}`, route, formatClock(started.at)].filter((part) => part != null).join(" · ");
@@ -51,7 +79,7 @@ function passLine(detail: ScoutDetail, events: ScoutEvent[], index: number): str
 function passDoneLine(detail: ScoutDetail, events: ScoutEvent[], index: number): string {
   const done = events[index]!;
   const started = events.slice(0, index).findLast((event) => event.kind === "scout_pass_started");
-  const pass = started != null ? passOf(detail, started) : highestPass(detail, done.at + 1);
+  const pass = started != null ? highestPass(detail, started.at) + 1 : highestPass(detail, done.at + 1);
   const labels = [
     ...numberFindings(detail.reports).filter((each) => each.pass === pass).map((each) => each.id),
     ...detail.actions.filter((action) => action.pass === pass).sort((a, b) => a.position - b.position).map((action) => `A${action.position}`),
@@ -64,10 +92,10 @@ function passDoneLine(detail: ScoutDetail, events: ScoutEvent[], index: number):
   ].filter((part) => part != null).join(" · ");
 }
 
-function eventLine(detail: ScoutDetail, events: ScoutEvent[], index: number): { text: string; tone: LineTone } | null {
+function eventLine(detail: ScoutDetail, events: ScoutEvent[], spans: FollowUp[], index: number): { text: string; tone: LineTone } | null {
   const event = events[index]!;
-  if (event.kind === "scout_answer_started") return { text: answerLine(detail, events, index), tone: "quiet" };
-  if (event.kind === "scout_pass_started") return { text: passLine(detail, events, index), tone: "quiet" };
+  if (event.kind === "scout_answer_started") return { text: answerLine(detail, spanOf(spans, event)), tone: "quiet" };
+  if (event.kind === "scout_pass_started") return { text: passLine(detail, spanOf(spans, event)), tone: "quiet" };
   if (event.kind === "scout_pass_done") return { text: passDoneLine(detail, events, index), tone: "quiet" };
   if (FAILED.has(event.kind)) return { text: event.summary, tone: "bad" };
   if (STOPPED.has(event.kind)) return { text: event.summary, tone: "wait" };
@@ -89,8 +117,9 @@ export function threadRows(detail: ScoutDetail): ThreadRow[] {
         : []),
     ],
   }));
+  const spans = followUps(detail);
   events.forEach((event, index) => {
-    const line = eventLine(detail, events, index);
+    const line = eventLine(detail, events, spans, index);
     if (line != null) timed.push({ at: event.at, order: 1, rows: [{ kind: "line", key: `event-${index}`, ...line }] });
   });
   return timed.sort((a, b) => a.at - b.at || a.order - b.order).flatMap((each) => each.rows);

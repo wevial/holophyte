@@ -21,9 +21,11 @@ function Dot() {
   return <>{" · "}</>;
 }
 
-/** "scout 31 · bug · demo · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · …", each fact the scout has. */
-function Facts({ detail, project, now, live }: { detail: ScoutDetail; project: string; now: number; live: boolean }) {
-  const { scout, tasks } = detail;
+/** "scout 31 · bug · demo · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · …", each fact the
+ *  scout has, its helpers and tokens the first run's, then its newest follow-up pass. */
+function Facts({ detail, project, now, pass }: { detail: ScoutDetail; project: string; now: number; pass: { pass: number; ms: number | null } | null }) {
+  const { scout } = detail;
+  const tasks = detail.tasks.filter((task) => task.pass === 1);
   const head = (
     <>
       <span className={STRONG}>scout {scout.id}</span>
@@ -36,7 +38,7 @@ function Facts({ detail, project, now, live }: { detail: ScoutDetail; project: s
   if (scout.phase === "queued" || scout.started_ms == null) {
     return <>{head}<Dot />queued {formatClock(scout.created_ms)} {zoneName(scout.created_ms)}</>;
   }
-  const end = live || scout.ended_ms == null ? now : scout.ended_ms;
+  const end = scout.ended_ms ?? now;
   const stopped = stoppedCount(tasks);
   const tokens = tasks.flatMap((task) => (task.tokens == null ? [] : [task.tokens]));
   const facts = [
@@ -47,6 +49,7 @@ function Facts({ detail, project, now, live }: { detail: ScoutDetail; project: s
     scout.helper == null ? null : `helpers ${scout.helper}${scout.swarm == null ? "" : ` ×${scout.swarm}`}`,
     tasks.length === 0 ? null : `${backCount(tasks)} of ${tasks.length} back${stopped ? `, ${stopped} stopped` : ""}`,
     tokens.length === 0 ? null : tokenWords(tokens.reduce((sum, each) => sum + each, 0)),
+    pass == null ? null : <>pass {pass.pass}{pass.ms != null && <> <span className={STRONG}>{formatSettled(pass.ms)}</span></>}</>,
   ].filter((fact) => fact != null);
   return (
     <>
@@ -98,10 +101,10 @@ export function ScoutPage() {
         </nav>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 ref={heading} tabIndex={-1} className="m-0 max-w-[64ch] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink [overflow-wrap:anywhere]">{scout.ask}</h1>
-          {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} actions={page.actions} onSent={() => (stopSent.current = true)} />}
+          {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
         </div>
         <p data-scout-facts className="m-0 mt-3 font-mono text-[12px] leading-[1.7] text-ink-3 [overflow-wrap:anywhere]">
-          <Facts detail={page.detail} project={project} now={page.now} live={page.live} />
+          <Facts detail={page.detail} project={project} now={page.now} pass={page.pass} />
         </p>
         <div className="mt-[18px] flex items-start gap-3.5">
           <span className="mt-1">
