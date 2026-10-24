@@ -266,7 +266,7 @@ class BaselineRuns(unittest.TestCase):
         (self.repo / "tests").mkdir()
         (self.repo / "tests" / "test_setup.py").write_text(
             "import unittest\n\n\nclass Setup(unittest.TestCase):\n"
-            "    def test_setup(self):\n        pass\n")
+            "    def test_app(self):\n        pass\n")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "setup check")
         git(self.wt, "merge", "-q", "--no-edit", "main")
@@ -275,6 +275,9 @@ class BaselineRuns(unittest.TestCase):
                 f"echo setup\ntest -f candidate-marker && {VERIFY}",
                 "python3 -m unittest discover -s tests -p 'test_setup.py'\n"
                 f"test -f candidate-marker && {VERIFY}",
+                "sh -c \"python3 -m unittest discover -v -s tests -p "
+                "test_setup.py && test -f candidate-marker && python3 -m "
+                "unittest discover -s tests -p test_app.py\"",
                 "echo setup\nsh -c \"python3 -m unittest discover -s tests -p "
                 "test_setup.py && test -f candidate-marker && python3 -m "
                 "unittest discover -s tests -p test_app.py\"",

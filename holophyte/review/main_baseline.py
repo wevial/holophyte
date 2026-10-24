@@ -167,10 +167,19 @@ def _execution_output(output, command):
                      if not line.startswith("[verify]") and line not in shown)
 
 
+def _identity(path):
+    name, dirs = Path(path).name, Path(path).parent.parts
+    by_name = rf"(?<![\w-]){re.escape(name)}(?![\w-])"
+    if not name.endswith(".py"):
+        return by_name
+    packages = "|".join(re.escape(".".join(dirs[at:]) + ".")
+                        for at in range(len(dirs)))
+    return (rf"{by_name}|(?<![\w.-])(?:{packages})?"
+            rf"{re.escape(name.removesuffix('.py'))}\.[A-Za-z_]")
+
+
 def _check_ran(output, files):
-    return any(re.search(rf"(?<![\w-]){re.escape(stem)}(?![\w-])", output)
-               for stem in (Path(path).name.rsplit(".", 1)[0]
-                            for path in files))
+    return any(re.search(_identity(path), output) for path in files)
 
 
 def _stopped_output(failure, output):
