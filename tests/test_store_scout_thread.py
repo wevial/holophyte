@@ -112,8 +112,8 @@ class PostTests(ThreadCase):
         self.refused(lambda: self.ask(scout_id, "and there?"),
                      f"message {first}")
 
-    def test_asks_off_done_and_steers_while_one_waits_are_refused(self):
-        for phase in ("queued", "swarming", "failed", "stopped"):
+    def test_asks_to_an_ended_scout_and_steers_while_one_waits_are_refused(self):
+        for phase in ("failed", "stopped"):
             scout_id = self.scout_in(phase)
             with self.subTest(phase=phase):
                 self.refused(lambda: self.ask(scout_id), phase)

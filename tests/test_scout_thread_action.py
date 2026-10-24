@@ -152,7 +152,9 @@ class DaemonAskTests(ActionCase):
     def test_a_refused_ask_writes_nothing_and_starts_nothing(self):
         path = self.project("alpha")
         slots(1)
-        swarming = live_scout(self.conn(path), "swarming")
+        live_scout(self.conn(path), "swarming")
+        failed = live_scout(self.conn(path))
+        end_scout(self.conn(path), failed, "failed", "the lead route is down")
         scout_id = done_scout(self.conn(path))
         server = self.serve(path)
         code, first = self.ask(server, {"scout": scout_id})
@@ -173,7 +175,7 @@ class DaemonAskTests(ActionCase):
                 self.assertIn(field, reply["error"])
         code, reply = self.ask(server, {"scout": 999})
         self.assertEqual((code, reply["error"]), (404, "no such scout"))
-        for target, named in ((swarming, "swarming"),
+        for target, named in ((failed, "failed"),
                               (scout_id, f"message {first['message']}")):
             with self.subTest(scout=target):
                 code, reply = self.ask(server, {"scout": target})
@@ -181,7 +183,7 @@ class DaemonAskTests(ActionCase):
                 self.assertIs(reply["ok"], False)
                 self.assertIn(named, reply["detail"])
         self.assertEqual(self.thread(path, scout_id), before)
-        self.assertEqual(self.thread(path, swarming), [])
+        self.assertEqual(self.thread(path, failed), [])
         self.assertEqual(self.spawned, [])
 
     def test_the_host_daemon_guards_the_ask_and_a_closed_daemon_is_404(self):
