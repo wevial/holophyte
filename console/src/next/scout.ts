@@ -71,6 +71,8 @@ interface Wave {
   tasks: ScoutTask[];
   start: number | null;
   end: number | null;
+  /** Whether any helper of the wave started or every one ended. */
+  launched: boolean;
 }
 
 /** Pass 1's tasks by wave, in wave order, each in plan order. A wave of an
@@ -87,8 +89,10 @@ function wavesOf(tasks: ScoutTask[], endedMs: number | null = null, synthesizing
     .map(([wave, each]) => {
       const starts = each.flatMap((task) => (task.started_ms == null ? [] : [task.started_ms]));
       const ends = each.flatMap((task) => (ENDED.has(task.phase) && task.ended_ms != null ? [task.ended_ms] : []));
+      const launched = starts.length > 0 || ends.length === each.length;
+      if (!launched) return { wave, tasks: each, start: null, end: null, launched };
       const end = ends.length === each.length || (synthesizing && ends.length) ? Math.max(...ends) : endedMs;
-      return { wave, tasks: each, start: starts.length ? Math.min(...starts) : null, end };
+      return { wave, tasks: each, start: starts.length ? Math.min(...starts) : null, end, launched };
     });
 }
 
@@ -111,7 +115,7 @@ function waveGroup(wave: Wave, helper: string | null, swarm: number | null, runn
     at: wave.start ?? at,
     title: `Wave ${wave.wave}`,
     sub: [...(helper == null ? [] : [`${helper} ×${width}`]), `${backCount(tasks)} of ${tasks.length} back`, ...(stopped ? [`${stopped} stopped`] : [])],
-    ms: running || wave.start == null || wave.end == null ? null : wave.end - wave.start,
+    ms: running || !wave.launched || wave.start == null || wave.end == null ? null : wave.end - wave.start,
     tone: waveTone(tasks, running),
     running,
     steps: [],
@@ -130,6 +134,18 @@ interface Span {
   tone: ActivityTone;
 }
 
+const subTasks = (n: number, more: string) => `${n} ${more}${n === 1 ? "sub-task" : "sub-tasks"}`;
+
+/** A wave no helper of which ever started, once the scout is past swarming,
+ *  sits at the end of the group before it and takes no time. */
+function pinUnlaunched(waves: Wave[], planEnd: number) {
+  let edge = planEnd;
+  for (const wave of waves) {
+    if (!wave.launched) wave.start = wave.end = edge;
+    edge = wave.end ?? edge;
+  }
+}
+
 /** Plan, each wave with Synthesis between two, and Report, as the timeline's
  *  groups; a live scout's last group runs, and a pending row follows a running wave. */
 function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
@@ -140,10 +156,11 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   const waves = wavesOf(detail.tasks, live ? null : scout.ended_ms, scout.phase === "synthesizing");
   const firstTurn = events.find((event) => event.kind === "agent_turn" && event.at >= scout.started_ms!)?.at ?? null;
   const planEnd = waves[0]?.start ?? waves[0]?.end ?? (scout.phase === "planning" ? null : (firstTurn ?? scout.ended_ms));
+  if (scout.phase !== "planning" && scout.phase !== "swarming") pinUnlaunched(waves, planEnd ?? scout.started_ms);
   const firstWave = waves[0]?.tasks.length ?? 0;
   const endTone = ENDED_TONE[scout.phase] ?? "ok";
   const spans: (Span | Wave)[] = [{
-    key: "plan", kind: "plan", title: "Plan", sub: [...lead, ...(firstWave ? [`${firstWave} sub-tasks`] : [])],
+    key: "plan", kind: "plan", title: "Plan", sub: [...lead, ...(firstWave ? [subTasks(firstWave, "")] : [])],
     start: scout.started_ms, end: planEnd, tone: waves.length || firstTurn != null ? "ok" : endTone,
   }];
   waves.forEach((wave, index) => {
@@ -151,7 +168,7 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
     spans.push(wave);
     if (next == null) return;
     spans.push({
-      key: `synthesis:${wave.wave}`, kind: "synthesis", title: "Synthesis", sub: [...lead, `${next.tasks.length} more sub-tasks`],
+      key: `synthesis:${wave.wave}`, kind: "synthesis", title: "Synthesis", sub: [...lead, subTasks(next.tasks.length, "more ")],
       start: wave.end ?? next.start ?? now, end: next.start ?? (live ? null : scout.ended_ms), tone: "ok",
     });
   });

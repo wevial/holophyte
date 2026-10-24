@@ -285,6 +285,22 @@ test("a synthesizing scout ends its wave on the last helper back, past an unlaun
   ]);
 });
 
+test("a wave whose helpers never started leaves the lead's turn after it to Synthesis, then to Report", async () => {
+  const refused = { ...waveOne[9]!, question: "Does the digest open its own connection?" };
+  const turn = { at: at(11, 47), kind: "agent_turn", summary: "scout-lead turn ended" };
+  const synthesizing: ScoutDetail = { ...live, scout: { ...live.scout, phase: "synthesizing" }, tasks: [refused], events: [turn] };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: synthesizing } }).fetch);
+  expect(groups().map((group) => [row(group).title, row(group).span])).toEqual([
+    ["Plan · opus · 1 sub-task", "1m 00s"],
+    ["Wave 1 · luna ×1 · 0 of 1 back", ""],
+    ["Synthesis · opus", "now"],
+  ]);
+  cleanup();
+  const done: ScoutDetail = { ...synthesizing, scout: { ...live.scout, phase: "done", ended_ms: at(11, 50) }, reports: [report("Nothing came back.")] };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: done } }).fetch);
+  expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 00s"], ["Wave 1", ""], ["Report", "3m 00s"]]);
+});
+
 test("a running Plan shows its steps open, with no control to fold them", async () => {
   const planning: ScoutDetail = {
     ...live,
