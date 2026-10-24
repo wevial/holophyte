@@ -67,7 +67,7 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-test("the footer counts failing hosts once across projects and keeps Settings outside the four page links, including folded", async () => {
+test("the footer counts failing hosts once across projects and keeps Settings outside the five page links, including folded", async () => {
   const view = await mount("#/");
   expect(screen.getByRole("link", { name: "Settings" }).querySelector("[data-badge]")).toBeNull();
   view.failRunner();
@@ -76,7 +76,7 @@ test("the footer counts failing hosts once across projects and keeps Settings ou
   expect(link.getAttribute("href")).toMatch(/#\/settings\/general$/);
   expect(link.querySelector("[data-badge]")?.textContent).toBe("1");
   const pages = within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link").filter((item) => !item.closest("ul"));
-  expect(pages.map((item) => item.textContent?.replace(/\d+$/, ""))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
+  expect(pages.map((item) => item.textContent?.replace(/\d+$/, ""))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
   expect(screen.getAllByRole("link", { name: /^Settings/ })).toHaveLength(1);
   view.staleWriter();
   await view.poll();
