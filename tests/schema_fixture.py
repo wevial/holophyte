@@ -93,6 +93,7 @@ DOCUMENTED_COLUMNS = {
     },
     "runEvents": {
         "id", "runId", "projectId", "seq", "level", "kind", "summary", "payload", "at",
+        "scoutId",
     },
     "interventions": {
         "id", "runId", "projectId", "source", "trigger", "action", "question",
@@ -143,6 +144,16 @@ DOCUMENTED_COLUMNS = {
     "steerNotes": {"id", "ticketId", "runId", "kind", "note", "author", "at",
                    "interventionId", "eventId", "consumedBy", "consumedAt",
                    "interrupt", "withdrawnBy"},
+    "scouts": {"id", "projectId", "ask", "kind", "links", "leadRoute",
+               "leadSession", "helperRoute", "swarm", "helperTurns", "waves",
+               "budgetMin", "phase", "reason", "baseSha", "host", "pid",
+               "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals"},
+    "scoutReports": {"id", "scoutId", "pass", "report", "at"},
+    "scoutTasks": {"id", "scoutId", "pass", "wave", "question", "paths", "mode",
+                   "route", "phase", "startedAt", "endedAt", "durationMs",
+                   "tokens", "costUsd", "excerpt"},
+    "scoutActions": {"id", "scoutId", "pass", "position", "item", "ticketKey",
+                     "filedAt"},
 }
 
 

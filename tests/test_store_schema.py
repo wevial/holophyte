@@ -129,11 +129,12 @@ class StoreSchemaTests(unittest.TestCase):
         self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone(), (1,))
         self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone(), ("wal",))
 
-    def test_init_creates_the_documented_tables_and_columns(self):
+    def test_open_creates_a_fresh_store_stamped_with_the_documented_columns(self):
         conn = self.open()
 
-        store.init(conn)
-
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                         (store.schema.SCHEMA_VERSION,))
+        self.assertEqual(store.schema.READABLE_FROM, 50)
         tables = {
             row[0]
             for row in conn.execute(

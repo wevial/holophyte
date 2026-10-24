@@ -25,6 +25,7 @@ import store.operate
 import store.read
 import store.run_reads
 import store.schema
+import store.scouts
 import store.steer_notes
 import store.stories
 import store.story_proposals
@@ -390,6 +391,20 @@ class StoreSurfaceTests(unittest.TestCase):
                                                       "steer", "steers",
                                                       "withdraw",
                                                       "withdrawn_events"]),
+                                 # The scout process, its swarm, its reads and
+                                 # its filing write and read a scout's record
+                                 # through these.
+                                 (store.scouts, ["beat_scout", "create_scout",
+                                                 "end_scout", "end_scout_task",
+                                                 "file_scout_action",
+                                                 "move_scout",
+                                                 "record_scout_actions",
+                                                 "record_scout_event",
+                                                 "record_scout_report",
+                                                 "record_scout_tasks",
+                                                 "scout", "scouts",
+                                                 "set_scout_session",
+                                                 "start_scout_task"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

@@ -255,6 +255,36 @@ class SteerKind(str, Enum):
     HINT = 'hint'
 
 
+class ScoutKind(str, Enum):
+    BUG = 'bug'
+    RESEARCH = 'research'
+    RECON = 'recon'
+
+
+class ScoutPhase(str, Enum):
+    QUEUED = 'queued'
+    PLANNING = 'planning'
+    SWARMING = 'swarming'
+    SYNTHESIZING = 'synthesizing'
+    ANSWERING = 'answering'
+    DONE = 'done'
+    FAILED = 'failed'
+    STOPPED = 'stopped'
+
+
+class ScoutTaskMode(str, Enum):
+    READ = 'read'
+    RUN = 'run'
+
+
+class ScoutTaskPhase(str, Enum):
+    QUEUED = 'queued'
+    RUNNING = 'running'
+    DONE = 'done'
+    FAILED = 'failed'
+    STOPPED = 'stopped'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -299,6 +329,10 @@ CONSTRAINED_COLUMNS = {
     ('followUps', 'kind'): FollowUpKind,
     ('storyProposals', 'state'): ProposalState,
     ('steerNotes', 'kind'): SteerKind,
+    ('scouts', 'kind'): ScoutKind,
+    ('scouts', 'phase'): ScoutPhase,
+    ('scoutTasks', 'mode'): ScoutTaskMode,
+    ('scoutTasks', 'phase'): ScoutTaskPhase,
 }
 
 

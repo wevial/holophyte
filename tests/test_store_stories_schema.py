@@ -222,7 +222,7 @@ class CarriedRowsMigrationTests(unittest.TestCase):
         self.addCleanup(conn.close)
 
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
-                         (self.MAIN_VERSION + 1,))
+                         (store.schema.SCHEMA_VERSION,))
         self.assertEqual(store.schema.READABLE_FROM, 50)
         self.assertEqual(conn.execute(
             "SELECT mainSha, seconds, carriedFrom FROM witnessResults"

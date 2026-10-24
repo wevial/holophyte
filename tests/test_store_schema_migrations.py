@@ -491,7 +491,8 @@ class AdmissionMigrationTests(unittest.TestCase):
 STORY_TABLES = ('stories', 'storyChildren', 'witnessResults', 'storyDecisions')
 # Tables newer than version 26, left empty by its migration.
 EMPTY_TABLES = (*STORY_TABLES, 'followUps', 'storyProposals', 'steerNotes',
-                'ticketCriteria')
+                'ticketCriteria', 'scouts', 'scoutReports', 'scoutTasks',
+                'scoutActions')
 
 
 class Version26EnumMigrationTests(unittest.TestCase):
@@ -545,6 +546,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
         # Admission and board columns are new; pre-existing values survive.
         after['projects'] = [row[:7] + row[9:-1] for row in after['projects']]
         after['tickets'] = [row[:-11] for row in after['tickets']]
+        after['runEvents'] = [row[:-1] for row in after['runEvents']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
                  'prSeenTitle', 'prSeenState', 'verifyMs', 'verifyStartedAt',
@@ -946,9 +948,9 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 56)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 57)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (56,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (57,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)
