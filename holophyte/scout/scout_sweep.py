@@ -8,6 +8,7 @@ import sys
 import store
 from holophyte.admission import project_of
 from holophyte.admission import state as admission_state
+from holophyte.agents.review_workspace import scratch_git_environment
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.config.config_tables import sweep_config
 from holophyte.loop.gates import sh
@@ -97,7 +98,7 @@ def _start(name, target, row, out):
     conn = store.open(str(target.store_path))
     try:
         base = sh(["git", "rev-parse", "--verify", "main^{commit}"],
-                  cwd=target.path)
+                  cwd=target.path, env=scratch_git_environment())
         move_scout(conn, row.id, PLANNING, base_sha=base,
                    host=socket.gethostname())
         try:

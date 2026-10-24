@@ -8,6 +8,7 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -91,6 +92,22 @@ class ScoutFixture(HostFixture):
         return [kind for (kind,) in self.conn(path).execute(
             "SELECT kind FROM runEvents WHERE scoutId = ? ORDER BY seq",
             (scout_id,))]
+
+    def refused_beats(self):
+        """An event set once the heartbeat thread has a beat refused."""
+        refused, real = threading.Event(), scout_process.beat_scout
+
+        def recording(*args, **kwargs):
+            try:
+                return real(*args, **kwargs)
+            except ScoutRefused:
+                refused.set()
+                raise
+
+        patcher = patch.object(scout_process, "beat_scout", recording)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return refused
 
     def sweep_pass(self):
         out = io.StringIO()
@@ -226,12 +243,13 @@ class ScoutProcessTests(ScoutFixture):
                 time.sleep(0.1)
         self.assertGreaterEqual(len(seen), 3)
 
+        refused = self.refused_beats()
         with self.assertRaises(scout_process.ScoutEnded):
             with scout_process.scout_heartbeat(conn, scout_id, 0.2):
                 time.sleep(0.3)
                 end_scout(other, scout_id, "failed", "ended by another hand")
                 ended_beat = scout(other, scout_id).heartbeat_at
-                time.sleep(0.7)
+                self.assertTrue(refused.wait(10))
         row = scout(other, scout_id)
         self.assertEqual(row.reason, "ended by another hand")
         self.assertEqual(row.heartbeat_at, ended_beat)
@@ -240,11 +258,11 @@ class ScoutProcessTests(ScoutFixture):
         path = self.project("alpha",
                             "[supervisor]\nheartbeat_stale_min = 0.01\n")
         scout_id = self.a_scout(path, "planning")
-        other = self.conn(path)
+        other, refused = self.conn(path), self.refused_beats()
 
         def ended_elsewhere(_project, ended_id, _base):
             end_scout(other, ended_id, "failed", "ended by another hand")
-            time.sleep(1)
+            self.assertTrue(refused.wait(10))
 
         with patch.object(scout_process, "make_lead", ended_elsewhere):
             code, printed = self.cli("--scout", str(scout_id), str(path))
@@ -408,6 +426,17 @@ class ScoutSweepTests(ScoutFixture):
         with patch.object(scout_sweep, "scouts", read_then_beat):
             self.sweep_pass()
         self.assertEqual(scout(other, scout_id).phase, "planning")
+
+    def test_an_inherited_git_dir_does_not_choose_the_base(self):
+        path, elsewhere = self.project("alpha"), self.repo("elsewhere")
+        git(elsewhere, "checkout", "-q", "-b", "main")
+        git(elsewhere, "commit", "-q", "--allow-empty", "-m", "elsewhere")
+        scout_id = self.a_scout(path)
+        os.environ["GIT_DIR"] = str(elsewhere / ".git")
+        self.sweep_pass()
+        del os.environ["GIT_DIR"]
+        self.assertEqual(scout(self.conn(path), scout_id).base_sha,
+                         git(path, "rev-parse", "main"))
 
     def test_a_held_or_disabled_project_starts_none_of_its_scouts(self):
         for admission in ("held", "disabled"):
