@@ -250,6 +250,18 @@ class BaselineRuns(unittest.TestCase):
                 self.assertNotIn("This run is the run C1's", entry)
                 self.assertIsNone(main_baseline.gap(result))
 
+    def test_a_check_after_a_passing_and_clause_is_its_witness(self):
+        _, _, (result,) = self.baselines(
+            [ON_MAIN], verify=f"echo setup && {VERIFY}")
+        self.assertNotEqual(result["exit_status"], 0)
+        self.assertIn("AssertionError", result["output"])
+        self.assertNotIn("unattributed", result)
+        self.assertIn("This run is the run C1's", main_baseline.brief([result]))
+        _, _, (result,) = self.baselines(
+            [ON_MAIN], verify=f"echo setup && test -f absent && {VERIFY}")
+        self.assertIn("test -f absent", result["unattributed"])
+        self.assertIsNone(main_baseline.gap(result))
+
     def test_a_failure_whose_output_shows_no_check_run_is_unattributed(self):
         (self.repo / "tests").mkdir()
         (self.repo / "tests" / "test_setup.py").write_text(

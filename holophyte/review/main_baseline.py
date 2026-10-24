@@ -201,7 +201,8 @@ def _attribution(command, files, failure, output):
     stopped = (failure or {}).get("command") or ""
     naming = [line for line in _commands(command)
               if any(_names(line, path) for path in files)]
-    if naming and stopped and stopped != command and stopped not in naming:
+    if naming and stopped and not any(_names(stopped, path)
+                                      for path in files):
         return {"unattributed": f"it stopped at `{stopped}`, before the "
                                 f"line that names {', '.join(files)}"}
     own = _stopped_output(failure or {}, output)
