@@ -170,7 +170,7 @@ test("a swarming scout's header reads its ask, breadcrumb, facts, wave sentence 
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
   expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe("Scouts / demo / scout 31");
-  expect(facts()).toBe("scout 31 · bug · demo · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · lead opus · helpers luna ×4 · 5 of 10 back");
+  expect(facts()).toBe("scout 31 · bug · demo · about ALPHA-1 · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · lead opus · helpers luna ×4 · 5 of 10 back");
   expect(status()).toBe("Wave 1: 5 of 10 helpers are back, 4 are running, and 1 waits for a slot.");
   expect(screen.getByRole("group", { name: "Stage" }).textContent).toBe("swarming · wave 1 of 2");
 });
@@ -198,7 +198,7 @@ test("a done, failed, stopped or queued scout's status says its report, failure,
 test("a queued scout's facts end on when it was queued", async () => {
   const queued = { ...live, scout: { ...live.scout, id: 29, kind: "research" as const, phase: "queued" as const, started_ms: null, created_ms: at(11, 58) }, tasks: [] };
   await mount("#/scouts/demo/29", scoutFetch({ scouts: { 29: queued } }).fetch);
-  expect(facts()).toBe("scout 29 · research · demo · queued 11:58 PDT");
+  expect(facts()).toBe("scout 29 · research · demo · about ALPHA-1 · queued 11:58 PDT");
 });
 
 test("a scout the project lacks and a project the console lacks each read their notice", async () => {

@@ -1159,7 +1159,9 @@ badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivi
 `console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
 findings with their status and evidence, and the newest bug report's hypotheses.
 `console/src/next/components/ScoutActions.tsx` draws its Action items under the Report, each filed
-with `POST /actions/scout-file`; a checker refusal opens New ticket with the item's draft.
+with `POST /actions/scout-file`; a checker refusal opens New ticket with the item's draft. A revise
+item's Revise opens its ticket's edit page with the item's draft handed in the navigation's history state,
+which `console/src/next/pages/EditTicket.tsx` loads over the current revision for the maintainer to save.
 `console/src/next/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
 composer cannot send; `console/src/next/components/ScoutThread.tsx` draws them as the Scout page's Thread
 with its Ask and Steer composer, posting `POST /actions/scout-message`, and

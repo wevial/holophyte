@@ -97,6 +97,8 @@ declare module "@tanstack/react-router" {
   }
   interface HistoryState {
     draft?: string;
+    scout?: number;
+    revision?: number;
   }
 }
 

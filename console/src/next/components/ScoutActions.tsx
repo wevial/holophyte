@@ -31,6 +31,11 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
     shown.current = true;
     return () => void (shown.current = false);
   }, []);
+  const revises = item.kind === "revise" ? item.revises : null;
+  const revise = revises == null ? null : {
+    to: "/tickets/$project/$key/edit", params: { project, key: revises.ticket }, search: {},
+    state: { draft: item.body, scout, revision: revises.revision },
+  } as const;
   const refused = action.data != null && !action.data.ok ? action.data : null;
   const file = async () => {
     const result = await action.mutateAsync({
@@ -51,9 +56,15 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
       <div className="min-w-0">
         <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-sans text-[15px] font-semibold leading-[1.45] text-ink [overflow-wrap:anywhere]">
           <span data-action-kind className={TAG}>{item.kind}</span>
-          <Link to="/tickets/$project/new" params={{ project }} search={{}} state={{ draft: item.body }} data-action-title className="text-ink hover:underline">
-            {item.title}
-          </Link>
+          {item.kind === "revise" ? (
+            revise == null ? <span data-action-title>{item.title}</span> : (
+              <Link {...revise} data-action-title className="text-ink hover:underline">{item.title}</Link>
+            )
+          ) : (
+            <Link to="/tickets/$project/new" params={{ project }} search={{}} state={{ draft: item.body }} data-action-title className="text-ink hover:underline">
+              {item.title}
+            </Link>
+          )}
           {item.pass > 1 && <span data-action-pass className={TAG}>pass {item.pass}</span>}
         </p>
         <p data-action-why className="m-0 mt-0.5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{item.why}</p>
@@ -62,7 +73,11 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
         )}
       </div>
       <div className="justify-self-end max-[720px]:col-start-2 max-[720px]:mt-2 max-[720px]:justify-self-start">
-        {item.ticket == null ? (
+        {item.kind === "revise" ? (
+          <Btn variant="primary" disabled={!actions || revise == null} title={actions ? undefined : ACTIONS_OFF} onClick={() => revise && void navigate(revise)}>
+            Revise
+          </Btn>
+        ) : item.ticket == null ? (
           <Btn variant="primary" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
             File
           </Btn>
@@ -79,11 +94,12 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   );
 }
 
-/** A scout's action items under its Report: each with File, or its Filed stamp once filed. */
+/** A scout's action items under its Report: each with File, or its Filed stamp once filed, and a
+ *  revise item with Revise, which opens its ticket's edit page with the item's draft. */
 export function ScoutActions({ items, ...scope }: { items: ScoutAction[] } & Scope) {
   if (items.length === 0) return null;
   const rows = [...items].sort((a, b) => a.position - b.position);
-  const open = rows.filter((item) => item.ticket == null).length;
+  const open = rows.filter((item) => item.kind !== "revise" && item.ticket == null).length;
   return (
     <section aria-label="Action items" className="mt-6">
       <h2 className={`m-0 ${SECTION_LABEL}`}>
