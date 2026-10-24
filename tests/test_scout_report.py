@@ -142,7 +142,8 @@ class ReportGoalTests(unittest.TestCase):
 
     def test_each_goal_shows_a_ticket_skeleton_in_template_order_before_its_shape(self):
         structural = ("missing H1", "missing section",
-                      "unknown section", "duplicate section", "out of template")
+                      "unknown section", "duplicate section",
+                      "sections out of template order")
         for kind, name, goal in self.goals():
             with self.subTest(kind=kind, goal=name):
                 shape = goal.index("```json")
