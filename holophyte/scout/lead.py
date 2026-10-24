@@ -178,16 +178,23 @@ def subject_of(row):
             else (row.subject_kind, row.subject_ref))
 
 
-def report_shape(row, offered=None, digest=None):
-    fields = offered_fields(subject_of(row), digest is not None)
+def report_shape(row, offered=None, digest=None, parked=False):
+    fields = offered_fields(subject_of(row), digest is not None, parked)
     return ("{" + fields_shape(fields).lstrip()
             + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value else "")
             + (PRIOR_SHAPE if offered else "") + "}")
 
 
-def revise_rule(row):
-    if not offers_revise(subject_of(row)):
+def revise_rule(row, parked=False):
+    if not offers_revise(subject_of(row), parked):
         return ""
+    if row.subject_kind != "defect":
+        return (
+            f"This scout is about a parked ticket, so one action may be of "
+            f"kind \"{REVISE}\": at most one {REVISE} item, whose body is the "
+            "ticket's whole body in the skeleton's sections, rewritten so the "
+            "park's reason no longer holds and opening with its \"# \" title "
+            "line, and whose why names that reason.\n\n")
     return (
         f"This scout is about a ticket defect, so one action may be of kind "
         f"\"{REVISE}\": at most one {REVISE} item, whose body is the defect "
@@ -210,24 +217,24 @@ def guardrail_rule(digest):
         "covers, for a cluster no guard should answer.\n\n")
 
 
-def report_ending(row, offered=None, digest=None):
+def report_ending(row, offered=None, digest=None, parked=False):
     return (
         "Write each action's body as a ticket draft in this skeleton, "
         "replacing each <...> with the ticket's text: estimate is whole "
         f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
         "ticket keys it waits on.\n\n"
-        f"{ticket_skeleton()}\n\n" + revise_rule(row)
+        f"{ticket_skeleton()}\n\n" + revise_rule(row, parked)
         + guardrail_rule(digest) +
         "Do not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT, PATH and URL standing for strings, "
         "N for a line number from 1 and ID for a sub-task's id, the number "
         "after its T. A finding's tasks lists the sub-tasks its evidence "
         "came from and may be left out:\n\n"
-        f"```json\n{report_shape(row, offered, digest)}\n```\n")
+        f"```json\n{report_shape(row, offered, digest, parked)}\n```\n")
 
 
 def report_goal(row, swarm, problem, fresh, scope="", context="",
-                offered=None, digest=None):
+                offered=None, digest=None, parked=False):
     answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
         answers = f"- none: no plan was stored, because {problem}"
@@ -240,10 +247,11 @@ def report_goal(row, swarm, problem, fresh, scope="", context="",
         f"stopped one was cut at the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take.\n\n"
-        + report_ending(row, offered, digest))
+        + report_ending(row, offered, digest, parked))
 
 
-def repair_goal(row, problems, fresh, offered=None, tasks=(), digest=None):
+def repair_goal(row, problems, fresh, offered=None, tasks=(), digest=None,
+                parked=False):
     listed = "\n".join(f"- {problem}" for problem in problems)
     return (
         f"{REPAIR_OPENING}\n\n"
@@ -254,7 +262,7 @@ def repair_goal(row, problems, fresh, offered=None, tasks=(), digest=None):
            f"and the end of its helper's output:\n\n{labelled(tasks)}\n\n"
            if tasks else "")
         + "Write the whole report again with these fixed.\n\n"
-        + report_ending(row, offered, digest))
+        + report_ending(row, offered, digest, parked))
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap, stopping,
@@ -354,17 +362,19 @@ def unoffered(report, offered):
     return {key: value for key, value in report.items() if key != "prior"}
 
 
-def checked_report(lead, report, offered=None, tasks=(), digest=None):
+def checked_report(lead, report, offered=None, tasks=(), digest=None,
+                   parked=False):
     check = partial(report_problems, kind=lead.row.kind,
                     subject=subject_of(lead.row), offered=offered,
                     scout=lead.row.id, tasks={task[0] for task in tasks},
-                    digest=digest)
+                    digest=digest, parked=parked)
     report = unoffered(report, offered)
     problems = check(report)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems, lead.session is None,
-                                   offered, tasks, digest), REPORT_TURN_S)
+                                   offered, tasks, digest, parked),
+                       REPORT_TURN_S)
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
@@ -372,13 +382,26 @@ def checked_report(lead, report, offered=None, tasks=(), digest=None):
     return report, check(report)
 
 
+def parked_subject(conn, row):
+    if row.subject_kind != "ticket":
+        return False
+    found = conn.execute("SELECT status FROM tickets WHERE linearIdentifier = ?",
+                         (row.subject_ref,)).fetchone()
+    return found is not None and found[0] == "needs_spec"
+
+
 def revised_ticket(conn, row):
-    if not offers_revise(subject_of(row)):
+    if row.subject_kind == "ticket":
+        found = conn.execute(
+            "SELECT linearIdentifier, revision FROM tickets"
+            " WHERE linearIdentifier = ?", (row.subject_ref,)).fetchone()
+    elif offers_revise(subject_of(row)):
+        found = conn.execute(
+            "SELECT t.linearIdentifier, t.revision FROM runs r"
+            " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
+            (row.subject_ref,)).fetchone()
+    else:
         return None
-    found = conn.execute(
-        "SELECT t.linearIdentifier, t.revision FROM runs r"
-        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
-        (row.subject_ref,)).fetchone()
     return None if found is None else {"ticket": found[0],
                                        "revision": found[1]}
 
@@ -472,6 +495,7 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     lead = Lead(conn, project, row, seat, worktree, stopping,
                 config.lead_prices.get(row.lead_route or config.lead))
     deadline = monotonic() + budget_s
+    parked = parked_subject(conn, row)
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
     turn = lead.start(plan_goal(row, limit, context, prior + digest), budget_s,
@@ -481,13 +505,15 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
         run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
                                        lead.session is None, context=context,
-                                       offered=offered, digest=rows),
+                                       offered=offered, digest=rows,
+                                       parked=parked),
                            REPORT_TURN_S, context)
         report = fenced_json(turn.answer)
         if not isinstance(report, dict):
             return "failed", NO_REPORT
         report, problems = checked_report(lead, report, offered,
-                                          scout_tasks(conn, row.id), rows)
+                                          scout_tasks(conn, row.id), rows,
+                                          parked)
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
         report = reproduced(row, swarm, resolve_evidence(project.path,

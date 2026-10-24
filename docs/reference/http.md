@@ -1485,8 +1485,12 @@ passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
 `revise` item, offered only to a scout whose `subject` is a `defect`, is
 the defect ticket's whole body rewritten, and its `revises` is
 `{"ticket": KEY, "revision": N}`: the defect run's ticket and that
-ticket's revision when the item was stored. Every other item's `revises`
-is null. `holo scout show` prints a `revise` item as
+ticket's revision when the item was stored. A scout whose `subject` is a
+parked ticket, one in `needs_spec` when its plan turn started, is offered
+a `revise` item too: that ticket's body rewritten so the park's reason no
+longer holds, its `revises` that ticket and its revision when the item
+was stored. Every other item's `revises` is null. `holo scout show`
+prints a `revise` item as
 `A2 revise NAT-3 r2: TITLE`. A `guardrail` item, offered only to a
 guardrails scout, drafts a guard: its `layer` is the first layer of the
 correction ladder (`impossible`, `static`, `witness`, `guidance` or
