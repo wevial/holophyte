@@ -24,12 +24,6 @@ LIVE = tuple(phase.value for phase in (
 SPAWN = subprocess.Popen
 
 
-def _swept_stores(entries):
-    for entry in entries:
-        if entry.error is None and entry.target.store_path.exists():
-            yield entry
-
-
 def _project_scouts(conn, target, phases):
     project = project_of(conn, target)
     return [row for row in scouts(conn, phases) if row.project_id == project]
@@ -86,7 +80,9 @@ def _start(name, target, row, out):
 
 def sweep_scouts(entries, limit, now, out, key=str):
     live, queued = 0, []
-    for entry in _swept_stores(entries):
+    for entry in entries:
+        if entry.error is not None or not entry.target.store_path.exists():
+            continue
         name = key(entry)
         try:
             conn = store.open(str(entry.target.store_path))

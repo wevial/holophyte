@@ -126,11 +126,6 @@ def make_lead(project, scout_id, base_sha):
     return path
 
 
-def run_scout(project, conn, row, interval_s):
-    with scout_heartbeat(conn, row.id, interval_s):
-        make_lead(project, row.id, row.base_sha)
-
-
 def _end(conn, scout_id, phase, kind, summary, reason):
     record_scout_event(conn, scout_id, kind, summary)
     end_scout(conn, scout_id, phase, reason)
@@ -150,7 +145,8 @@ def scout_mode(project, scout_id):
             record_scout_event(conn, scout_id, "scout_started",
                                f"scout {scout_id} started as pid {os.getpid()}")
             try:
-                run_scout(project, conn, row, interval_s)
+                with scout_heartbeat(conn, scout_id, interval_s):
+                    make_lead(project, scout_id, row.base_sha)
             except (ScoutEnded, ScoutRefused):
                 raise
             except Exception as bad:  # noqa: BLE001 - recorded as the scout's end
