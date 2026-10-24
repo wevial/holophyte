@@ -132,7 +132,6 @@ test("the Scouts page link follows Findings, is current on #/scouts and counts r
   await mount("#/scouts", scoutFetch({ demo: [scout(31, "swarming", 1), scout(30, "planning", 2), scout(28, "done", 3)] }).fetch);
   expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts, 2 running"]);
   expect(scoutsLink().getAttribute("aria-current")).toBe("page");
-  expect(scoutsLink().getAttribute("aria-label")).toBe("Scouts, 2 running");
   expect(scoutsLink().querySelector("[data-badge]")?.textContent).toBe("2");
   cleanup();
   await mount("#/scouts", scoutFetch({ demo: [scout(28, "done", 3)] }).fetch);
@@ -158,7 +157,8 @@ test("a row reads its state, id, ask, kind, project, routes, helper progress and
   });
   const queued = scout(29, "queued", 2, { elapsed_ms: null, started_ms: null, tasks_done: 0, tasks_total: 0 });
   const failed = scout(25, "failed", 3, { reason: "lead route opus is down: probe timed out\nmore" });
-  await mount("#/scouts?project=demo", scoutFetch({ demo: [running, queued, failed] }).fetch);
+  const ended = [scout(24, "done", 4), scout(23, "stopped", 5)];
+  await mount("#/scouts?project=demo", scoutFetch({ demo: [running, queued, failed, ...ended] }).fetch);
   expect(readRow(31)).toMatchObject({
     state: "running", id: "31", ask: "Why do loop runs crash with database is locked?", kind: "bug",
     project: "demo", lead: "opus", helpers: "luna 5 of 10", took: "14m",
@@ -167,6 +167,7 @@ test("a row reads its state, id, ask, kind, project, routes, helper progress and
   const fail = readRow(25);
   expect(fail).toMatchObject({ state: "failed", reason: "lead route opus is down: probe timed out" });
   expect(fail.text).not.toContain("more");
+  expect([readRow(24).state, readRow(23).state]).toEqual(["done", "stopped"]);
 });
 
 test("with no scouts the page says so for its scope", async () => {
@@ -186,6 +187,17 @@ test("New scout opens the form on Ask with Research, the scoped project and the 
   expect(buttons("Lead")).toEqual(["opus", "sol"]);
   expect(pressed("Lead")).toEqual(["opus"]);
   expect(buttons("Helpers")).toEqual(["luna"]);
+});
+
+test("Cancel closes the form and New scout opens it again as typed", async () => {
+  await openForm("#/scouts?project=demo", { demo: [] });
+  await fillForm(ASK);
+  await click(within(form()).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("form", { name: "New scout" })).toBeNull();
+  await click(screen.getByRole("button", { name: "New scout" }));
+  expect((within(form()).getByLabelText("Ask") as HTMLTextAreaElement).value).toBe(ASK);
+  expect(pressed("Kind")).toEqual(["Bug"]);
+  expect(disclosure().textContent).toBe("sol · luna ×2 · 10 min");
 });
 
 test("defaults naming unlisted routes press the first listed, and a project with no lead cannot scout", async () => {
