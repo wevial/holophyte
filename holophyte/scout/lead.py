@@ -144,14 +144,19 @@ def synthesis_goal(row, swarm, fresh):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
+def subject_of(row):
+    return (None if row.subject_kind is None
+            else (row.subject_kind, row.subject_ref))
+
+
 def report_shape(row):
-    return ("{" + fields_shape(offered_fields(row.subject_kind)).lstrip()
+    return ("{" + fields_shape(offered_fields(subject_of(row))).lstrip()
             + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value else "")
             + "}")
 
 
 def revise_rule(row):
-    if not offers_revise(row.subject_kind):
+    if not offers_revise(subject_of(row)):
         return ""
     return (
         f"This scout is about a ticket defect, so one action may be of kind "
@@ -291,7 +296,8 @@ def run_waves(conn, lead, swarm, tasks, waves):
 
 
 def checked_report(lead, report):
-    problems = report_problems(report, lead.row.kind, lead.row.subject_kind)
+    subject = subject_of(lead.row)
+    problems = report_problems(report, lead.row.kind, subject)
     if not problems:
         return report, []
     turn = lead.resume(repair_goal(lead.row, problems,
@@ -299,12 +305,11 @@ def checked_report(lead, report):
     report = fenced_json(turn.answer)
     if not isinstance(report, dict):
         return None, ["report: the repair turn returned no JSON object"]
-    return report, report_problems(report, lead.row.kind,
-                                   lead.row.subject_kind)
+    return report, report_problems(report, lead.row.kind, subject)
 
 
 def revised_ticket(conn, row):
-    if not offers_revise(row.subject_kind):
+    if not offers_revise(subject_of(row)):
         return None
     found = conn.execute(
         "SELECT t.linearIdentifier, t.revision FROM runs r"
