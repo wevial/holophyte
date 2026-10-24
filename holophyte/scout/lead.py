@@ -5,31 +5,31 @@ from pathlib import PurePosixPath
 from time import monotonic
 from typing import NamedTuple
 
-from holophyte.agents.agent_output import claude_result
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.loop.gates import run_capped
 from holophyte.redact import known_secrets, outbound
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import probe_scout_route
+from holophyte.scout.swarm import Swarm, turn_answer
 from store.enums import ScoutKind, ScoutTaskMode
 from store.scouts import (
+    SWARMING,
     SYNTHESIZING,
     move_scout,
     record_scout_event,
     record_scout_report,
-    record_scout_tasks,
     set_scout_session,
 )
 
 REPORT_TURN_S = 600
 PLAN_OPENING = "Scout plan turn"
 REPORT_OPENING = "Scout report turn"
+SYNTHESIS_OPENING = "Scout synthesis turn"
 NO_REPORT = "the lead's report turn returned no JSON object"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
-TOKENS_USED = re.compile(r"tokens used\D{0,4}([\d,]+)", re.IGNORECASE)
 PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
               '"mode": "read" or "run"}, ...]}')
 REPORT_SHAPE = (
@@ -76,13 +76,10 @@ def relative_path(path):
             and ".." not in PurePosixPath(path).parts)
 
 
-def plan_tasks(answer, limit):
+def plan_tasks(answer):
     if not isinstance(answer, dict) or not isinstance(answer.get("tasks"), list):
         return None, "the answer holds no tasks list"
     tasks = answer["tasks"]
-    if len(tasks) > limit:
-        return None, (f"the plan lists {len(tasks)} tasks, more than "
-                      f"helperTurns = {limit}")
     for number, task in enumerate(tasks, 1):
         problem = task_problem(number, task)
         if problem is not None:
@@ -111,32 +108,45 @@ def plan_goal(row, limit):
         f"```json\n{PLAN_SHAPE}\n```\n")
 
 
-def report_goal(row, tasks, problem, fresh):
-    unrun = "\n".join(f"- [{task['mode']}] {task['question']}"
-                      for task in tasks) or "- none: the plan listed no sub-task"
+def answered_tasks(swarm):
+    return "\n\n".join(
+        f"### [{swarm.answered(task).phase}] {task.question}\n"
+        f"{swarm.answered(task).excerpt.strip() or 'no output'}"
+        for task in swarm.tasks)
+
+
+def synthesis_goal(row, swarm, fresh):
+    return (
+        f"{SYNTHESIS_OPENING}\n\n"
+        + (f"{asked(row)}\n\n" if fresh else "")
+        + "Your helpers have answered a wave of the plan. Each sub-task so "
+        "far, with its phase and the end of its output:\n\n"
+        f"{answered_tasks(swarm)}\n\n"
+        "Merge what they found. If one more wave of sub-tasks would settle "
+        "what is still open, plan it as at most "
+        f"{swarm.total - swarm.launched} sub-tasks; otherwise list none. Do "
+        "not edit files, commit or push. End your answer with one fenced "
+        "json block in this shape, TEXT and PATH standing for strings:\n\n"
+        f"```json\n{PLAN_SHAPE}\n```\n")
+
+
+def report_goal(row, swarm, problem, fresh):
+    answers = answered_tasks(swarm) or "- none: the plan listed no sub-task"
     if problem is not None:
-        unrun = f"- none: no plan was stored, because {problem}"
+        answers = f"- none: no plan was stored, because {problem}"
     shape = REPORT_SHAPE + (REPRODUCTION_SHAPE if row.kind == ScoutKind.BUG.value
                             else "") + "}"
     return (
         f"{REPORT_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
-        + "No helper ran. These sub-tasks of the plan stay unanswered:\n"
-        f"{unrun}\n\n"
+        + "The plan's sub-tasks, each with its phase and the end of its "
+        "helper's output (a queued one never ran, a stopped one was cut at "
+        f"the time budget):\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take. Do not "
         "edit files, commit or push. End your answer with one fenced json "
         "block in this shape, TEXT standing for a string:\n\n"
         f"```json\n{shape}\n```\n")
-
-
-def turn_answer(seat, output):
-    if seat.name == "claude":
-        result = claude_result(output)
-        return result if result is not None else (output, None)
-    counts = TOKENS_USED.findall(output)
-    usage = {"total_tokens": int(counts[-1].replace(",", ""))} if counts else None
-    return output, usage
 
 
 def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
@@ -161,19 +171,64 @@ def lead_turn(conn, project, scout_id, seat, argv, worktree, cap):
                            payload=json.dumps(payload))
 
 
-def stored_plan(conn, scout_id, turn, limit):
+class Lead:
+    def __init__(self, conn, project, row, seat, worktree):
+        self.conn, self.project, self.row = conn, project, row
+        self.seat, self.worktree = seat, worktree
+        self.secrets = known_secrets(project.config())
+        self.session = None
+
+    def remember(self, session):
+        if session is not None:
+            self.session = session
+            set_scout_session(self.conn, self.row.id, session)
+
+    def turn(self, argv, cap):
+        return lead_turn(self.conn, self.project, self.row.id, self.seat, argv,
+                         self.worktree, cap)
+
+    def plan(self, limit, cap):
+        argv = self.seat.turn(outbound(plan_goal(self.row, limit), self.secrets))
+        self.remember(self.seat.session(argv))
+        turn = self.turn(argv, cap)
+        if self.session is None:
+            self.remember(self.seat.reported_session(turn.output))
+        return turn
+
+    def resume(self, goal, cap):
+        goal = outbound(goal, self.secrets)
+        return self.turn(self.seat.resume(self.session) + [goal] if self.session
+                         else self.seat.turn(goal), cap)
+
+
+def wave_tasks(conn, swarm, turn, wave, cut):
     if turn.timed_out:
-        tasks, problem = None, "the plan turn was cut at the scout's time budget"
+        tasks, problem = None, f"the {cut} turn was cut at the time budget"
     else:
-        tasks, problem = plan_tasks(fenced_json(turn.answer), limit)
+        tasks, problem = plan_tasks(fenced_json(turn.answer))
     if problem is not None:
-        record_scout_event(conn, scout_id, "scout_plan",
-                           f"no plan stored: {problem}")
+        record_scout_event(conn, swarm.row.id, "scout_plan",
+                           f"no wave {wave} stored: {problem}")
         return [], problem
-    record_scout_tasks(conn, scout_id, 1, 1,
-                       [{key: value for key, value in task.items()
-                         if key != "paths"} for task in tasks])
-    return tasks, None
+    return swarm.plan(wave, tasks), None
+
+
+def run_waves(conn, lead, swarm, tasks, waves):
+    if not (tasks and swarm.left() and swarm.ready()):
+        move_scout(conn, lead.row.id, SYNTHESIZING)
+        return
+    for wave in range(1, waves + 1):
+        move_scout(conn, lead.row.id, SWARMING)
+        swarm.run(tasks)
+        move_scout(conn, lead.row.id, SYNTHESIZING)
+        if wave == waves or not swarm.left():
+            return
+        turn = lead.resume(synthesis_goal(lead.row, swarm,
+                                          lead.session is None),
+                           swarm.remaining_s())
+        tasks, _ = wave_tasks(conn, swarm, turn, wave + 1, "synthesis")
+        if not tasks:
+            return
 
 
 def run_lead(conn, project, row, worktree, budget_s):
@@ -186,24 +241,16 @@ def run_lead(conn, project, row, worktree, budget_s):
     probe = probe_scout_route(project, f"{SCOUT_LEAD}:{name}", seat)
     if not probe.ok:
         return "failed", f"lead route {name} is down: {probe.reason()}"
-    secrets = known_secrets(project.config())
-    argv = seat.turn(outbound(plan_goal(row, limit), secrets))
-    session = seat.session(argv)
-    if session is not None:
-        set_scout_session(conn, row.id, session)
-    turn = lead_turn(conn, project, row.id, seat, argv, worktree, budget_s)
-    if session is None:
-        session = seat.reported_session(turn.output)
-        if session is not None:
-            set_scout_session(conn, row.id, session)
-    tasks, problem = stored_plan(conn, row.id, turn, limit)
-    move_scout(conn, row.id, SYNTHESIZING)
-    goal = outbound(report_goal(row, tasks, problem, session is None),
-                    secrets)
-    argv = seat.resume(session) + [goal] if session else seat.turn(goal)
-    turn = lead_turn(conn, project, row.id, seat, argv, worktree, REPORT_TURN_S)
-    report = fenced_json(turn.answer)
-    if not isinstance(report, dict):
-        return "failed", NO_REPORT
-    record_scout_report(conn, row.id, 1, report)
+    lead = Lead(conn, project, row, seat, worktree)
+    deadline = monotonic() + budget_s
+    turn = lead.plan(limit, budget_s)
+    with Swarm(conn, project, row, config, deadline) as swarm:
+        tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
+        run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
+        turn = lead.resume(report_goal(row, swarm, problem,
+                                       lead.session is None), REPORT_TURN_S)
+        report = fenced_json(turn.answer)
+        if not isinstance(report, dict):
+            return "failed", NO_REPORT
+        record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))
     return "done", "the lead wrote its report"

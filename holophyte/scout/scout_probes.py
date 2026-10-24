@@ -15,20 +15,20 @@ from holophyte.redact import safe_print as print
 from holophyte.scout.scout_config import scout_config
 
 
-def probe_scout_route(project, name, seat):
+def probe_scout_route(project, name, seat, timeout=PROBE_TIMEOUT):
     cmd = seat.turn(PROBE_GOAL)
     started = time.time()
     try:
         with critic_workspace(project) as checkout:
-            code, out = run_capped(cmd, checkout, PROBE_TIMEOUT)
-        probe = ProbeResult(cmd, code, out or "", PROBE_TIMEOUT, seat=name)
+            code, out = run_capped(cmd, checkout, timeout)
+        probe = ProbeResult(cmd, code, out or "", timeout, seat=name)
     except subprocess.TimeoutExpired as expired:
         partial = expired.output or ""
         if isinstance(partial, bytes):
             partial = partial.decode(errors="replace")
-        probe = ProbeResult(cmd, None, partial, PROBE_TIMEOUT, seat=name)
+        probe = ProbeResult(cmd, None, partial, timeout, seat=name)
     except (OSError, RuntimeError) as failed:
-        probe = ProbeResult(cmd, None, "", PROBE_TIMEOUT,
+        probe = ProbeResult(cmd, None, "", timeout,
                             launch_error=launch_failure_reason(failed),
                             launch_diagnostic=str(failed), seat=name)
     record_probe(project, probe, False, started, time.time())
