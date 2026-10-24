@@ -546,8 +546,7 @@ beside it.
 
 An unknown scout is 404 `no such scout`. A `failed` or `stopped` scout is
 200 with `ok: false`, `reason` `not_done` and `detail` naming its phase; a
-scout
-with an ask or steer still waiting is 200 with `ok: false`, `reason`
+scout with an ask or steer still waiting is 200 with `ok: false`, `reason`
 `ask_waiting` and `detail` naming the waiting message's id. An `answers`
 that is not a card of this scout, or a card a person's message already
 answers, is 200 with `ok: false`, `reason` `card_refused` and `detail`
