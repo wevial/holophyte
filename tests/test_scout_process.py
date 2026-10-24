@@ -108,8 +108,8 @@ class ScoutProcessTests(ScoutFixture):
         self.assertLess(events.index("scout_started"), events.index("scout_done"))
         lead = self.lead(path, scout_id)
         self.assertEqual(git(lead, "rev-parse", "HEAD"), main)
-        self.assertNotEqual(git(lead, "rev-parse", "--abbrev-ref", "HEAD"),
-                            "main")
+        self.assertEqual(git(lead, "rev-parse", "--abbrev-ref", "HEAD"),
+                         "HEAD")
         self.assertEqual(len(self.listed(path, lead)), 1)
 
     def test_the_lead_path_is_replaced_whether_a_worktree_or_a_directory(self):

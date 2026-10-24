@@ -13,7 +13,7 @@ from store.scouts import (
     PLANNING,
     QUEUED,
     ScoutRefused,
-     end_scout,
+    end_scout,
     move_scout,
     scouts,
 )
@@ -70,7 +70,11 @@ def _start(name, target, row, out):
                   cwd=target.path)
         move_scout(conn, row.id, PLANNING, base_sha=base,
                    host=socket.gethostname())
-        pid = start_scout(target, row.id)
+        try:
+            pid = start_scout(target, row.id)
+        except OSError as bad:
+            end_scout(conn, row.id, "failed", f"could not start: {bad}")
+            raise
     except ScoutRefused:
         return False
     finally:
