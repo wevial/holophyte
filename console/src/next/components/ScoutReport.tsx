@@ -37,7 +37,6 @@ interface Numbered {
 
 const isFile = (item: Evidence): item is FileEvidence => "file" in item;
 const isCommand = (item: Evidence): item is CommandEvidence => "command" in item;
-const withoutScheme = (url: string) => url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
 
 function FileItem({ item, base }: { item: FileEvidence; base: string }) {
   const place = `${item.file}:${item.line}`;
@@ -52,11 +51,10 @@ function FileItem({ item, base }: { item: FileEvidence; base: string }) {
 }
 
 function UrlItem({ url }: { url: string }) {
-  const text = withoutScheme(url);
   if (!/^https?:\/\//i.test(url)) return <span data-url className={`${MONO} text-ink-2`}>{url}</span>;
   return (
     <a data-url href={url} target="_blank" rel="noreferrer" className={`${MONO} text-ink-2 underline underline-offset-2 hover:text-ink`}>
-      {text}
+      {url.replace(/^https?:\/\//i, "")}
     </a>
   );
 }
