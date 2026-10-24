@@ -301,6 +301,20 @@ test("a wave whose helpers never started leaves the lead's turn after it to Synt
   expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 00s"], ["Wave 1", ""], ["Report", "3m 00s"]]);
 });
 
+test("a done scout's wave ends on its last helper back, past one never started, before Report", async () => {
+  const done: ScoutDetail = {
+    ...live,
+    scout: { ...live.scout, phase: "done", ended_ms: at(11, 55) },
+    tasks: [back(waveOne[0]!.question, { ended_ms: at(11, 50, 12) }), waveOne[9]!],
+    reports: [report("Capped at one helper.")],
+    events: [{ at: at(11, 52), kind: "scout_report", summary: "the lead wrote its report" }],
+  };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: done } }).fetch);
+  expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 12s"], ["Wave 1", "3m 00s"], ["Report", "4m 48s"]]);
+  await click(fold(groupTitled("Report"))!);
+  expect(Array.from(groupTitled("Report").querySelectorAll("[data-step-text]"), (step) => step.textContent)).toEqual(["the lead wrote its report"]);
+});
+
 test("a running Plan shows its steps open, with no control to fold them", async () => {
   const planning: ScoutDetail = {
     ...live,
