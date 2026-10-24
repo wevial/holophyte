@@ -48,7 +48,8 @@ null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
 pending. `scout` writes no interventions row, so its `recorded` is always
 null: its record, written before it starts anything, is the scout's own
-row and that row's first event, `scout_queued`. A 400, 404 or 503 answers `{"error": ...}` instead.
+row and that row's first event, `scout_queued`. `scout-file` writes none
+either: its record is the filed ticket and the action item's filed key. A 400, 404 or 503 answers `{"error": ...}` instead.
 
 ## On a host daemon
 
@@ -354,6 +355,47 @@ or `minutes` that is not a positive integer is 400 naming the field. A
 `[scout.leads]` or `[scout.helpers]` table) and a `swarm` above the
 config's `helper_turns` are 200 with `ok: false`. None of these writes
 anything. A project with no store is 503.
+
+## `POST /actions/scout-file`
+
+Body: a JSON object with `scout` (required, a positive integer: the
+scout's id), `item` (required, a positive integer: the action item's
+position), `note` (optional) and `author` (optional, default
+`maintainer`). It files one action item of a `done` scout as a Backlog
+ticket, never Ready. `holo scout file ID N` and the `holo mcp`
+`scout_file` tool are the same filing. On a host daemon
+`/projects/NAME/actions/scout-file` answers only to the machine token; a
+project's own token is 401.
+
+An unknown scout is 404 `no such scout`, an unknown item 404 `no such
+action item`. A scout not `done` is 200 with `ok: false` naming its
+phase, and nothing is checked or written. An item already filed is 200 with `ok: false`, `ticket` the
+key it was filed as, and `detail` `scout 14 item 2 is already filed as
+KEY`; nothing is checked or written. A project with no `[board]` is
+`ok: false`. Otherwise the item's `body` is judged by the checker
+[`POST /tickets/check`](http.md#post-ticketscheck) answers with, for the
+`backlog` column, and any problem refuses the filing, even one Backlog
+would save as a draft elsewhere: 200 with `ok: false`, `problems` (every
+problem, in the checker's order), `advisories`, and `detail`, the first
+problem. Nothing is filed then, and the item stays unfiled.
+
+A body the checker passes is filed to Backlog through the project's
+board, with the title, estimate and `Depends on` read from it, and the
+item records the filed key and time. A project's filings run one at a
+time, from check to record, so two posts of one item file it once. With a `note`, the filed ticket's
+first board note reads `AUTHOR: NOTE`; a note that cannot be posted
+leaves `ok: true` and `detail` says so. The reply adds `scout`, `item`,
+`ticket`, the new key, and `advisories`; `recorded` is null.
+
+```json
+{"action": "scout-file", "ok": true, "scout": 14, "item": 2,
+ "ticket": "KO-412", "advisories": [],
+ "detail": "scout 14 item 2 filed as KO-412 in Backlog", "recorded": null}
+```
+
+A body that is not a JSON object, a `scout` or `item` that is not a
+positive integer, or a `note` or `author` that is not text is 400 naming
+the field. A project with no store is 503.
 
 ## The project's configuration: `GET /config` and `PUT /config`
 

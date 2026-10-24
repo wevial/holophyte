@@ -255,7 +255,9 @@ def file_scout_action(conn, scout_id, position, ticket_key, now=None):
     if not isinstance(ticket_key, str) or not ticket_key.strip():
         raise ValueError("ticket key must be non-blank text")
     with _transaction(conn):
-        phase = _live(conn, scout_id)
+        phase = _phase(conn, scout_id)
+        if phase != ScoutPhase.DONE.value:
+            raise ScoutRefused(scout_id, phase, "only a done scout's items file")
         row = conn.execute("SELECT ticketKey FROM scoutActions"
                            " WHERE scoutId = ? AND position = ?",
                            (scout_id, position)).fetchone()

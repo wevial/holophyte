@@ -568,6 +568,51 @@
           "additionalProperties": false
         },
         "name": "scout"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": false
+        },
+        "description": "file a done scout's action item to Backlog through the ticket checker, the note and author its first board note (holo scout file ID N --json)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "scout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the scout's id"
+            },
+            "item": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "the action item's position"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "description": "why, in non-blank free text; recorded with the author"
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "description": "who asks, non-blank; recorded as AUTHOR via MCP"
+            }
+          },
+          "required": [
+            "scout",
+            "item",
+            "note",
+            "author"
+          ],
+          "additionalProperties": false
+        },
+        "name": "scout_file"
       }
     ]
   }

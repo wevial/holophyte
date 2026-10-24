@@ -81,6 +81,12 @@ class ScoutCase(unittest.TestCase):
         scouts.move_scout(self.conn, scout_id, "swarming")
         return scout_id
 
+    def ended(self, phase, items):
+        scout_id = self.swarming()
+        scouts.record_scout_actions(self.conn, scout_id, 1, items)
+        scouts.end_scout(self.conn, scout_id, phase, f"ended {phase}")
+        return scout_id
+
 
 class ScoutPhaseTests(ScoutCase):
     def test_planning_records_its_start_and_a_second_planning_is_refused(self):
@@ -172,10 +178,8 @@ class ScoutRecordTests(ScoutCase):
             [(1, 1, '{"title": "a"}'), (1, 2, '{"title": "b"}'),
              (2, 3, '{"title": "c"}')])
 
-    def test_an_action_item_is_filed_once(self):
-        scout_id = self.planning()
-        scouts.record_scout_actions(self.conn, scout_id, 1,
-                                    [{"title": "a"}, {"title": "b"}])
+    def test_an_action_item_of_a_done_scout_is_filed_once(self):
+        scout_id = self.ended("done", [{"title": "a"}, {"title": "b"}])
         scouts.file_scout_action(self.conn, scout_id, 2, "KEY-1", now=8000)
         with self.assertRaises(ScoutRefused):
             scouts.file_scout_action(self.conn, scout_id, 2, "KEY-2")
@@ -185,8 +189,7 @@ class ScoutRecordTests(ScoutCase):
             [(1, None, None), (2, "KEY-1", 8000)])
 
     def test_a_missing_or_blank_ticket_key_files_nothing(self):
-        scout_id = self.planning()
-        scouts.record_scout_actions(self.conn, scout_id, 1, [{"title": "a"}])
+        scout_id = self.ended("done", [{"title": "a"}])
         for key in (None, "", "  "):
             with self.assertRaises(ValueError):
                 scouts.file_scout_action(self.conn, scout_id, 1, key)
@@ -232,29 +235,35 @@ class ScoutRecordTests(ScoutCase):
             " FROM scoutTasks WHERE id = ?", (queued,)).fetchone(),
             ("queued", None, None, None, None))
 
-    def test_an_ended_scout_refuses_task_ends_events_and_filing(self):
+    def test_only_a_done_scout_files_an_action_item(self):
+        live = self.swarming()
+        scouts.record_scout_actions(self.conn, live, 1, [{"title": "a"}])
+        refused = [live] + [self.ended(phase, [{"title": "a"}])
+                            for phase in ("failed", "stopped")]
+        for scout_id in refused:
+            with self.subTest(scout=scout_id), self.assertRaises(ScoutRefused):
+                scouts.file_scout_action(self.conn, scout_id, 1, "KEY-1")
+        self.assertEqual(self.conn.execute(
+            "SELECT DISTINCT ticketKey, filedAt FROM scoutActions").fetchall(),
+            [(None, None)])
+
+    def test_a_done_scout_refuses_task_ends_and_events(self):
         scout_id = self.swarming()
         (task,) = scouts.record_scout_tasks(
             self.conn, scout_id, 1, 1, [{"question": "where", "mode": "read"}])
         scouts.start_scout_task(self.conn, task, now=1000)
-        scouts.record_scout_actions(self.conn, scout_id, 1, [{"title": "a"}])
         scouts.end_scout(self.conn, scout_id, "done", "answered")
 
         with self.assertRaises(ScoutRefused):
             scouts.end_scout_task(self.conn, task, "done", now=2000)
         with self.assertRaises(ScoutRefused):
             scouts.record_scout_event(self.conn, scout_id, "late", "after")
-        with self.assertRaises(ScoutRefused):
-            scouts.file_scout_action(self.conn, scout_id, 1, "KEY-1")
         self.assertEqual(self.conn.execute(
             "SELECT phase, endedAt FROM scoutTasks WHERE id = ?",
             (task,)).fetchone(), ("running", None))
         self.assertEqual(self.conn.execute(
             "SELECT COUNT(*) FROM runEvents WHERE scoutId = ?",
             (scout_id,)).fetchone(), (0,))
-        self.assertEqual(self.conn.execute(
-            "SELECT ticketKey, filedAt FROM scoutActions WHERE scoutId = ?",
-            (scout_id,)).fetchone(), (None, None))
 
     def test_events_count_per_scout_and_scouts_read_by_phase_oldest_first(self):
         newer = self.new_scout(now=200)
