@@ -123,8 +123,8 @@ def _blobs(wt, sha, files):
     return blobs
 
 
-def _check_ran(output, files):
-    if UNITTEST_RAN.search(output):
+def _check_ran(output, files, own):
+    if own and UNITTEST_RAN.search(output):
         return True
     for path in files:
         name = re.escape(Path(path).name)
@@ -142,7 +142,7 @@ def _stopped_output(failure, output):
     head = re.search(rf"^\[verify\]   (?:failing|running) clause: "
                      rf"{re.escape(stopped)}\n", output, re.M)
     if head is None:
-        return output
+        return None
     rest = output[head.end():]
     own = (f"[verify]   --- clause {failure.get('command_index')} "
            f"({'timed out' if status is None else f'exit {status}'}): "
@@ -159,7 +159,8 @@ def _attribution(command, files, failure, output):
     if naming and stopped and stopped != command and stopped not in naming:
         return {"unattributed": f"it stopped at `{stopped}`, before the "
                                 f"line that names {', '.join(files)}"}
-    if not _check_ran(_stopped_output(failure or {}, output), files):
+    own = _stopped_output(failure or {}, output)
+    if not _check_ran(output if own is None else own, files, own is not None):
         return {"unattributed": NO_CHECK_OUTPUT}
     return {}
 

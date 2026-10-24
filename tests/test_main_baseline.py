@@ -255,6 +255,9 @@ class BaselineRuns(unittest.TestCase):
                 "python3 -m unittest discover -s tests -p 'test_setup.py'\n"
                 f"test -f candidate-marker && {VERIFY}",
                 "set -e\ntest -f candidate-marker\n"
+                + VERIFY.replace(" -p", " \\\n  -p"),
+                "set -e\npython3 -m unittest discover -s tests -p "
+                "'test_setup.py'\ntest -f candidate-marker\n"
                 + VERIFY.replace(" -p", " \\\n  -p")):
             with self.subTest(verify=verify):
                 _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
