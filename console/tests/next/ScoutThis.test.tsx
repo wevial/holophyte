@@ -8,7 +8,7 @@ import { ACTIONS_OFF_LINE } from "../../src/next/components/CardActions";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
 import { fakeDeps, settle } from "../harness";
-import { DEMO, fleet, MINUTE, NOW, run, SERVE } from "./needsFleet";
+import { DEMO, fleet, MINUTE, NOW, run, SERVE, WRITER } from "./needsFleet";
 
 const servedRun = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
@@ -61,7 +61,8 @@ const demoRoutes: ScoutRoutes = {
 };
 
 /** DEMO serving runs 12 to 14, DEMO-7, the findings above and its scout
- *  routes, `actions` as given; run 14 is live. Every request is kept. */
+ *  routes, WRITER its scout routes, `actions` as given; run 14 is live.
+ *  Every request is kept. */
 function scoutThisFetch(actions = true) {
   const seen: { url: string; method: string; body: Record<string, unknown> | null }[] = [];
   const polls = fleet({ items: [], runs: [{ ...run(14, "DEMO-8"), phase: "working" }] }, { items: [] });
@@ -72,8 +73,8 @@ function scoutThisFetch(actions = true) {
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticket);
     if (url.startsWith(`${DEMO}/findings?`)) return Response.json(findings);
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: [] });
-    if (url === `${DEMO}/scouts/routes`) return Response.json(demoRoutes);
-    if (url === `${DEMO}/actions/scout`) return Response.json({ ok: true, detail: "scout 32 started" });
+    if (url === `${DEMO}/scouts/routes` || url === `${WRITER}/scouts/routes`) return Response.json(demoRoutes);
+    if (url === `${DEMO}/actions/scout` || url === `${WRITER}/actions/scout`) return Response.json({ ok: true, detail: "scout 32 started" });
     const answer = await polls(url);
     if (!url.endsWith("/status")) return answer;
     return Response.json({ ...(await answer.json()), actions });
@@ -95,6 +96,11 @@ async function mount(hash: string, fetch: Fetch) {
 
 const click = async (element: Element) => {
   await act(async () => void fireEvent.click(element));
+  for (let round = 0; round < 6; round += 1) await act(settle);
+};
+
+const change = async (element: Element, value: string) => {
+  await act(async () => void fireEvent.change(element, { target: { value } }));
   for (let round = 0; round < 6; round += 1) await act(settle);
 };
 
@@ -192,6 +198,19 @@ test("removing the About line launches with no subject", async () => {
   await click(within(form()).getByRole("button", { name: "Scout" }));
   const posts = scoutPosts(daemon.seen);
   expect(posts).toHaveLength(1);
+  expect(Object.keys(posts[0]!.body!)).not.toContain("subject");
+});
+
+test("picking another project drops the subject, so that project's launch names none", async () => {
+  const daemon = scoutThisFetch();
+  await mount("#/runs/demo/12", daemon.fetch);
+  await click(scoutButtons()[0]!);
+  await change(within(form()).getByLabelText("Project"), WRITER);
+  expect(project()).toBe("writer");
+  expect(about()).toBeNull();
+  await click(within(form()).getByRole("button", { name: "Scout" }));
+  const posts = daemon.seen.filter((each) => each.method === "POST" && each.url.endsWith("/actions/scout"));
+  expect(posts.map((each) => each.url)).toEqual([`${WRITER}/actions/scout`]);
   expect(Object.keys(posts[0]!.body!)).not.toContain("subject");
 });
 
