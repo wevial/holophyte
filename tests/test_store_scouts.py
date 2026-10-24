@@ -85,6 +85,8 @@ class ScoutCase(unittest.TestCase):
 class ScoutPhaseTests(ScoutCase):
     def test_planning_records_its_start_and_a_second_planning_is_refused(self):
         scout_id = self.new_scout()
+        with self.assertRaises(ValueError):
+            scouts.move_scout(self.conn, scout_id, "planning")
         self.assertEqual(scouts.scout(self.conn, scout_id).phase, "queued")
         scouts.move_scout(self.conn, scout_id, "planning", base_sha="abc123",
                           now=5000)
@@ -93,8 +95,7 @@ class ScoutPhaseTests(ScoutCase):
         self.assertEqual((row.phase, row.base_sha, row.started_at,
                           row.heartbeat_at), ("planning", "abc123", 5000, 5000))
         with self.assertRaises(ScoutRefused) as refused:
-            scouts.move_scout(self.conn, scout_id, "planning",
-                              base_sha="def456", now=9000)
+            scouts.move_scout(self.conn, scout_id, "planning", now=9000)
         self.assertIn(f"scout {scout_id}", str(refused.exception))
         self.assertIn("planning", str(refused.exception))
         self.assertEqual((refused.exception.scout_id, refused.exception.phase),
@@ -112,8 +113,7 @@ class ScoutPhaseTests(ScoutCase):
             before = scouts.scout(self.conn, refused_id)
             with self.subTest(phase=before.phase, to=phase):
                 with self.assertRaises(ScoutRefused):
-                    scouts.move_scout(self.conn, refused_id, phase,
-                                      base_sha="abc123")
+                    scouts.move_scout(self.conn, refused_id, phase)
                 self.assertEqual(scouts.scout(self.conn, refused_id), before)
 
     def test_an_ended_scout_refuses_every_further_write(self):
@@ -211,7 +211,7 @@ class ScoutRecordTests(ScoutCase):
             [(queued, "queued", None, None, None, None),
              (stopped, "stopped", None, 1750, None, None)])
 
-    def test_an_ended_scout_refuses_task_ends_and_events_but_files_items(self):
+    def test_an_ended_scout_refuses_task_ends_events_and_filing(self):
         scout_id = self.swarming()
         (task,) = scouts.record_scout_tasks(
             self.conn, scout_id, 1, 1, [{"question": "where", "mode": "read"}])
@@ -223,7 +223,8 @@ class ScoutRecordTests(ScoutCase):
             scouts.end_scout_task(self.conn, task, "done", now=2000)
         with self.assertRaises(ScoutRefused):
             scouts.record_scout_event(self.conn, scout_id, "late", "after")
-        scouts.file_scout_action(self.conn, scout_id, 1, "KEY-1", now=3000)
+        with self.assertRaises(ScoutRefused):
+            scouts.file_scout_action(self.conn, scout_id, 1, "KEY-1")
         self.assertEqual(self.conn.execute(
             "SELECT phase, endedAt FROM scoutTasks WHERE id = ?",
             (task,)).fetchone(), ("running", None))
@@ -232,7 +233,7 @@ class ScoutRecordTests(ScoutCase):
             (scout_id,)).fetchone(), (0,))
         self.assertEqual(self.conn.execute(
             "SELECT ticketKey, filedAt FROM scoutActions WHERE scoutId = ?",
-            (scout_id,)).fetchone(), ("KEY-1", 3000))
+            (scout_id,)).fetchone(), (None, None))
 
     def test_events_count_per_scout_and_scouts_read_by_phase_oldest_first(self):
         newer = self.new_scout(now=200)

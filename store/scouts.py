@@ -93,13 +93,13 @@ def create_scout(conn, project_id, ask, kind, budget_min, *, links=(),
 
 
 def move_scout(conn, scout_id, phase, *, base_sha=None, host=None, now=None):
-    if phase == PLANNING and not base_sha:
-        raise ValueError("a scout moves to planning with a base sha")
     with _transaction(conn):
         current = _live(conn, scout_id)
         if phase not in EDGES.get(current, ()):
             raise ScoutRefused(scout_id, current,
                                f"no move from {current} to {phase}")
+        if phase == PLANNING and not base_sha:
+            raise ValueError("a scout moves to planning with a base sha")
         if phase == PLANNING:
             now = _now(now)
             conn.execute(
@@ -228,7 +228,7 @@ def record_scout_actions(conn, scout_id, pass_number, items):
 
 def file_scout_action(conn, scout_id, position, ticket_key, now=None):
     with _transaction(conn):
-        phase = _phase(conn, scout_id)
+        phase = _live(conn, scout_id)
         row = conn.execute("SELECT ticketKey FROM scoutActions"
                            " WHERE scoutId = ? AND position = ?",
                            (scout_id, position)).fetchone()
