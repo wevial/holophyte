@@ -289,6 +289,14 @@ class ApprovalTests(Worktree):
         self.assertFalse(citations.test_unchanged(approved, candidate,
                                                   "LoadTests", "test_broken"))
 
+    def test_a_changed_test_the_cited_test_calls_is_a_change(self):
+        approved = LOAD.replace("self.assertEqual(self.rows, [1])",
+                                "self.test_missing()")
+        candidate = approved.replace("self.assertTrue(self.rows)",
+                                     "self.assertFalse(self.rows)")
+        self.assertFalse(citations.test_unchanged(approved, candidate,
+                                                  "LoadTests", "test_broken"))
+
     def test_a_change_the_cited_test_depends_on_makes_it_stale(self):
         cases = {
             "cited body": ("self.assertEqual(self.rows, [1])",

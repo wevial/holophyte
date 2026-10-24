@@ -88,23 +88,41 @@ def _is_def(node):
 
 
 def _strip(tree, cls, name, bound):
-    _drop_other_tests(tree, None, cls, name)
+    others = _other_tests(tree, None, cls, name)
+    while called := [test for test in others
+                     if test[1].name in _referenced(tree, others)]:
+        others = [test for test in others if test not in called]
+    for parent, test in others:
+        parent.body = [child for child in parent.body if child is not test]
     used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     tree.body = [node for node in tree.body
                  if not (isinstance(node, ast.ClassDef) and not node.body
                          and node.name not in used | bound)]
 
 
-def _drop_other_tests(node, owner, cls, name):
-    kept = []
+def _other_tests(node, owner, cls, name):
+    found = []
     for child in node.body:
         if (_is_def(child) and child.name.startswith("test")
                 and (owner, child.name) != (cls, name)):
-            continue
-        if isinstance(child, ast.ClassDef):
-            _drop_other_tests(child, child.name, cls, name)
-        kept.append(child)
-    node.body = kept
+            found.append((node, child))
+        elif isinstance(child, ast.ClassDef):
+            found += _other_tests(child, child.name, cls, name)
+    return found
+
+
+def _referenced(tree, others):
+    skipped = {id(test) for _, test in others}
+    names, pending = set(), [tree]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        pending += [child for child in ast.iter_child_nodes(node)
+                    if id(child) not in skipped]
+    return names
 
 
 def _binds_new_names_only(added, bound, approved):
