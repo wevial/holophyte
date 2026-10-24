@@ -172,6 +172,17 @@ class ScoutRecordTests(ScoutCase):
             " WHERE scoutId = ? ORDER BY position", (scout_id,)).fetchall(),
             [(1, None, None), (2, "KEY-1", 8000)])
 
+    def test_a_missing_or_blank_ticket_key_files_nothing(self):
+        scout_id = self.planning()
+        scouts.record_scout_actions(self.conn, scout_id, 1, [{"title": "a"}])
+        for key in (None, "", "  "):
+            with self.assertRaises(ValueError):
+                scouts.file_scout_action(self.conn, scout_id, 1, key)
+        scouts.file_scout_action(self.conn, scout_id, 1, "KEY-1", now=8000)
+        self.assertEqual(self.conn.execute(
+            "SELECT ticketKey, filedAt FROM scoutActions WHERE scoutId = ?",
+            (scout_id,)).fetchall(), [("KEY-1", 8000)])
+
     def test_a_task_runs_from_queued_to_stopped_once(self):
         scout_id = self.swarming()
         first, second = scouts.record_scout_tasks(
