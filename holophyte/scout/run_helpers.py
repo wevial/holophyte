@@ -60,6 +60,8 @@ def set_up(project, checkout, deadline):
     """The setup's failure report, or None once every entry has run."""
     try:
         ok, report, _ = prepare_worktree(project, checkout, deadline=deadline)
+        if ok:
+            refuse_push(checkout)
     except LAUNCH_FAILURES as failed:
         return f"[holo2] worktree setup could not launch: {failed}"
     return None if ok else report
@@ -115,10 +117,6 @@ def run_clone(project, scout_id, task_id, base_sha):
         (path / ".git" / "info").mkdir(exist_ok=True)
         shutil.copyfile(common / "info" / "exclude",
                         path / ".git" / "info" / "exclude")
-    hook = path / ".git" / "hooks" / "pre-push"
-    hook.parent.mkdir(exist_ok=True)
-    hook.write_text(PRE_PUSH)
-    hook.chmod(0o755)
     for key in ("user.name", "user.email"):
         value = subprocess.run(["git", "config", "--get", key],
                                cwd=project.path, env=env, capture_output=True,
@@ -126,6 +124,19 @@ def run_clone(project, scout_id, task_id, base_sha):
         if value:
             sh(["git", "config", key, value], cwd=path, env=env)
     return path
+
+
+def refuse_push(clone):
+    env = scratch_git_environment()
+    hooks = clone / ".git" / "refusal-hooks"
+    hooks.mkdir(exist_ok=True)
+    hook = hooks / "pre-push"
+    hook.write_text(PRE_PUSH)
+    hook.chmod(0o755)
+    sh(["git", "config", "extensions.worktreeConfig", "true"], cwd=clone,
+       env=env)
+    sh(["git", "config", "--worktree", "core.hooksPath", str(hooks)],
+       cwd=clone, env=env)
 
 
 def clone_refs(clone):

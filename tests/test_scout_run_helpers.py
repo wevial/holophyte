@@ -61,8 +61,14 @@ def read_only(argv):
 
 
 class ScoutRunHelperTests(ScoutFixture):
-    def scout(self, kind, config="", name="alpha", **routes):
+    def scout(self, kind, config="", name="alpha", githooks=False, **routes):
         path = self.project(name, config)
+        if githooks:
+            (path / ".githooks").mkdir()
+            (path / ".githooks" / "pre-commit").write_text("#!/bin/sh\n")
+            git(path, "add", ".githooks")
+            git(path, "-c", "user.name=w", "-c", "user.email=w@test",
+                "commit", "-qm", "githooks")
         info = Path(git(path, "rev-parse", "--path-format=absolute",
                         "--git-common-dir")) / "info"
         info.mkdir(exist_ok=True)
@@ -143,6 +149,22 @@ class ScoutRunHelperTests(ScoutFixture):
             " AND kind = 'scout_refs'", (scout_id,)))
         self.assertIn("refs/heads/helper-branch", summaries)
         self.assertIn("refs/heads/main", summaries)
+
+    def test_a_run_helper_cannot_push_when_setup_selects_githooks(self):
+        path, conn, scout_id = self.scout("bug", SETUP_RAN, githooks=True)
+        remote = self.root / "remote.git"
+        git(self.root, "init", "-q", "--bare", str(remote))
+        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
+                          helper_sh=[
+                              "echo edited >> notes.txt",
+                              "git -c user.name=h -c user.email=h@test"
+                              " commit -qam edit",
+                              f"git push -q {remote} HEAD:refs/heads/pushed"])
+        self.run_scout(path, scout_id)
+        statuses = [status for status, _ in self.helper(RUN_Q)["sh"]]
+        self.assertEqual(statuses[:2], [0, 0])
+        self.assertNotEqual(statuses[2], 0)
+        self.assertEqual(git(remote, "for-each-ref"), "")
 
     def test_a_run_helper_turn_keeps_refs_another_writer_moves_meanwhile(self):
         path, conn, scout_id = self.scout("bug")
