@@ -116,6 +116,18 @@ class ScoutPhaseTests(ScoutCase):
                     scouts.move_scout(self.conn, refused_id, phase)
                 self.assertEqual(scouts.scout(self.conn, refused_id), before)
 
+    def test_only_an_unclaimed_planning_scout_moves_back_to_queued(self):
+        unclaimed, claimed = self.planning(), self.planning()
+        scouts.claim_scout(self.conn, claimed, 4242)
+        scouts.move_scout(self.conn, unclaimed, "queued")
+        row = scouts.scout(self.conn, unclaimed)
+        self.assertEqual((row.phase, row.base_sha, row.started_at, row.host),
+                         ("queued", None, None, None))
+        before = scouts.scout(self.conn, claimed)
+        with self.assertRaises(ScoutRefused):
+            scouts.move_scout(self.conn, claimed, "queued")
+        self.assertEqual(scouts.scout(self.conn, claimed), before)
+
     def test_an_ended_scout_refuses_every_further_write(self):
         ended = {}
         for phase in ("done", "failed", "stopped"):

@@ -9,7 +9,7 @@ from holophyte.loop.runs import open_store
 from holophyte.scout.scout_config import scout_config
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
-from store.scouts import QUEUED, create_scout, record_scout_event, scout
+from store.scouts import ENDED, QUEUED, create_scout, record_scout_event, scout
 
 SCOUT_ACTION = "scout"
 KINDS = ("bug", "research", "recon")
@@ -103,13 +103,13 @@ def start(project, scout_id):
     return False, said[-1] if said else "not started this pass"
 
 
-def ended(project, scout_id):
+def phase_of(project, scout_id):
     conn = open_store(project)
     try:
         row = scout(conn, scout_id)
     finally:
         conn.close()
-    return None if row.phase == QUEUED else f"{row.phase}: {row.reason}"
+    return row.phase, row.reason
 
 
 def launch(project, body, via=VIA_DAEMON):
@@ -124,12 +124,12 @@ def launch(project, body, via=VIA_DAEMON):
         return 200, {"ok": False, "detail": declined}
     scout_id = record(project, body, picked, config, via)
     ran, said = start(project, scout_id)
-    if ran:
-        return 200, {"ok": True, "scout": scout_id, "queued": False,
-                     "detail": said}
-    failed = ended(project, scout_id)
-    if failed is not None:
+    phase, reason = phase_of(project, scout_id)
+    if phase == QUEUED:
+        return 200, {"ok": True, "scout": scout_id, "queued": True,
+                     "detail": f"scout {scout_id} queued: {said}"}
+    if phase in ENDED:
         return 200, {"ok": False, "scout": scout_id, "queued": False,
-                     "detail": f"scout {scout_id} {failed}"}
-    return 200, {"ok": True, "scout": scout_id, "queued": True,
-                 "detail": f"scout {scout_id} queued: {said}"}
+                     "detail": f"scout {scout_id} {phase}: {reason}"}
+    return 200, {"ok": True, "scout": scout_id, "queued": False,
+                 "detail": said if ran else f"scout {scout_id} started"}

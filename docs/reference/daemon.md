@@ -332,9 +332,11 @@ launch never jumps the queue. Launches and the host sweep count and start
 under one host-wide lock, so launches at once never start more scouts than
 the slots. A scout not started stays `queued`, with
 `ok: true` and why it did not start in `detail`, and a later host sweep
-starts it. A scout whose process could not be spawned is ended `failed` by
-that step, and the answer is `ok: false` with `queued` false and the
-reason in `detail`.
+starts it. That includes a scout whose process could not be spawned: the
+step records a `scout_start_failed` event and moves it back to `queued`,
+and only after its third failed spawn ends it `failed`. A launch whose
+scout another pass started answers `ok: true` with `queued` false; one
+whose scout has ended answers `ok: false` with its phase and reason.
 
 The reply adds `scout`, the new scout's id, and `queued`, true when it was
 not started; `recorded` is null.

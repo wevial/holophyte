@@ -218,7 +218,7 @@ class DaemonLaunchTests(LaunchCase):
         self.assertEqual(sorted(row.phase for row in scout_rows(path)),
                          ["planning", "queued"])
 
-    def test_a_spawn_that_fails_answers_not_ok_with_the_scout_failed(self):
+    def test_a_spawn_that_fails_stays_queued_and_the_next_sweep_starts_it(self):
         path = self.project("alpha")
         server = self.serve(path)
 
@@ -229,10 +229,69 @@ class DaemonLaunchTests(LaunchCase):
             code, reply = self.post(server, "/actions/scout",
                                     {"ask": ASK, "kind": "bug"})
         self.assertEqual(code, 200, reply)
-        self.assertEqual((reply["ok"], reply["queued"]), (False, False))
-        self.assertIn("could not start: no such interpreter", reply["detail"])
-        self.assertEqual(scout(self.conn(path), reply["scout"]).phase,
-                         "failed")
+        self.assertEqual((reply["ok"], reply["queued"]), (True, True))
+        self.assertIn("start failed: no such interpreter", reply["detail"])
+        row = scout(self.conn(path), reply["scout"])
+        self.assertEqual((row.phase, row.base_sha), ("queued", None))
+
+        self.sweep_pass()
+        (argv, phase, base), = self.spawned
+        self.assertEqual(argv[-2], str(reply["scout"]))
+        self.assertEqual((phase, base),
+                         ("planning", git(path, "rev-parse", "main")))
+
+    def test_a_scout_whose_spawn_keeps_failing_ends_failed(self):
+        path = self.project("alpha")
+        server = self.serve(path)
+
+        def refused(argv, **options):
+            raise OSError("no such interpreter")
+
+        with patch.object(scout_sweep, "SPAWN", refused):
+            code, reply = self.post(server, "/actions/scout",
+                                    {"ask": ASK, "kind": "bug"})
+            for _ in range(scout_sweep.START_ATTEMPTS - 1):
+                self.sweep_pass()
+        row = scout(self.conn(path), reply["scout"])
+        self.assertEqual(row.phase, "failed")
+        self.assertIn("no such interpreter", row.reason)
+        self.assertEqual(
+            self.events(path, reply["scout"]).count("scout_start_failed"),
+            scout_sweep.START_ATTEMPTS)
+
+    def test_a_scout_another_pass_started_answers_started(self):
+        path = self.project("alpha")
+        slots(2)
+        server = self.serve(path)
+        real, first = scout_sweep._start_queued, threading.Event()
+
+        def late_pass(*args):
+            if not first.is_set():
+                first.set()
+                for _ in range(100):
+                    if len(scout_rows(path)) == 2:
+                        break
+                    threading.Event().wait(0.02)
+            return real(*args)
+
+        replies = []
+
+        def post():
+            replies.append(self.post(server, "/actions/scout",
+                                     {"ask": ASK, "kind": "bug"})[1])
+
+        with patch.object(scout_sweep, "_start_queued", late_pass):
+            threads = [threading.Thread(target=post) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(len(self.spawned), 2)
+        self.assertEqual([(reply["ok"], reply["queued"]) for reply in replies],
+                         [(True, False)] * 2)
+        self.assertEqual(sorted(reply["detail"] for reply in replies),
+                         sorted(f"scout {reply['scout']} started"
+                                for reply in replies))
 
     def test_a_refused_launch_writes_no_scout_and_starts_nothing(self):
         path = self.project("alpha")

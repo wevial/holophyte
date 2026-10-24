@@ -23,6 +23,7 @@ from store.scouts import (
     ScoutRefused,
     end_scout,
     move_scout,
+    record_scout_event,
     scout,
     scouts,
 )
@@ -32,6 +33,8 @@ LIVE = tuple(phase.value for phase in (
     ScoutPhase.ANSWERING))
 SPAWN = subprocess.Popen
 START_LOCK = "scout-start.lock"
+START_FAILED = "scout_start_failed"
+START_ATTEMPTS = 3
 SYSTEMD_UNIT_VARS = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID",
              "NOTIFY_SOCKET", "MANAGERPID")
 
@@ -98,6 +101,21 @@ def start_scout(name, target, scout_id):
     return f"pid {child.pid}"
 
 
+def _start_failed(conn, scout_id, bad):
+    (tries,) = conn.execute(
+        "SELECT COUNT(*) FROM runEvents WHERE scoutId = ? AND kind = ?",
+        (scout_id, START_FAILED)).fetchone()
+    reason = f"could not start: {bad}"
+    with store.transaction(conn):
+        record_scout_event(conn, scout_id, START_FAILED,
+                           f"attempt {tries + 1} of {START_ATTEMPTS}: {reason}")
+        if tries + 1 < START_ATTEMPTS:
+            move_scout(conn, scout_id, QUEUED)
+        else:
+            end_scout(conn, scout_id, "failed",
+                      f"{reason}, {START_ATTEMPTS} attempts")
+
+
 def _start(name, target, row, out):
     conn = store.open(str(target.store_path))
     try:
@@ -108,7 +126,7 @@ def _start(name, target, row, out):
         try:
             started = start_scout(name, target, row.id)
         except OSError as bad:
-            end_scout(conn, row.id, "failed", f"could not start: {bad}")
+            _start_failed(conn, row.id, bad)
             raise
     except ScoutRefused:
         return False
