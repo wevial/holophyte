@@ -1,4 +1,3 @@
-import store
 from holophyte.loop.runs import open_store
 from holophyte.scout.filing import ROW_ID_LIMIT
 from holophyte.scout.launch import start
@@ -42,7 +41,7 @@ def record(project, scout_id, mode, text, author):
 
 
 def taken(project, scout_id, message):
-    conn = store.open(str(project.store_path))
+    conn = open_store(project)
     try:
         (consumed_by,) = conn.execute(
             "SELECT consumedBy FROM threadMessages WHERE id = ?",
