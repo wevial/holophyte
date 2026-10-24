@@ -333,12 +333,13 @@ test("history shows a merge without a pull request as its plain short sha and da
 });
 
 test("history reads rows from a daemon that serves no findings, sha or size", async () => {
-  const legacy = { ...run(219, "merged", 20, 30), pr_url: null };
+  const legacy = { ...run(219, "merged", 20, 30), pr_url: "https://github.com/example/demo/pull/790" };
   for (const key of ["findings", "merge_sha", "commit_url", "additions", "deletions"]) expect(legacy).not.toHaveProperty(key);
   await mount("#/runs/history", fleet([legacy, run(220, "failed", 10, 30)], []).fetch);
   expect(screen.queryByText(/did not answer/)).toBeNull();
   expect([dayCells(219)[FINDINGS]!.textContent, dayCells(220)[FINDINGS]!.textContent]).toEqual(["–", "–"]);
   expect(dayCells(219)[CHANGE]!.textContent).toBe("");
+  expect(within(dayCells(219)[CHANGE]!).queryByRole("link")).toBeNull();
 });
 
 test("history explains failed and abandoned outcomes and prefixes an end on a later day", async () => {

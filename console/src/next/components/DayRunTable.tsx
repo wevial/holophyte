@@ -25,6 +25,7 @@ function Took({ row }: { row: DayRun }) {
 
 function Change({ row }: { row: DayRun }) {
   if (row.state !== "merged") return <span className={`${MONO} text-ink-3`}>–</span>;
+  if (!("merge_sha" in row)) return <span />;
   const { additions, deletions, merge_sha: sha = null } = row;
   return (
     <span className={`${MONO} relative flex flex-wrap items-baseline gap-x-2 text-ink-3`}>
