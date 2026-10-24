@@ -1149,6 +1149,8 @@ with `POST /actions/scout-file`; a checker refusal opens New ticket with the ite
 composer cannot send; `console/src/next/components/ScoutThread.tsx` draws them as the Scout page's Thread
 with its Ask and Steer composer, posting `POST /actions/scout-message`, and
 `console/src/next/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
+`console/src/next/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
+choice posts it as the card's answer, and Type an answer points the composer at the card.
 
 ### Desktop wrapper
 

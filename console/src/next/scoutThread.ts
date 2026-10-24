@@ -1,5 +1,5 @@
 import { ACTIONS_OFF } from "../lib/actions";
-import type { ScoutDetail, ScoutEvent, ThreadMessage } from "../lib/contract.gen";
+import type { ProposalBlock, ProposalChoice, ScoutDetail, ScoutEvent, ThreadMessage } from "../lib/contract.gen";
 import { formatClock, formatSettled, formatSpan } from "../lib/format";
 import { numberFindings } from "./scout";
 
@@ -7,7 +7,10 @@ export type LineTone = "quiet" | "bad" | "wait";
 
 export type ThreadRow =
   | { kind: "message"; key: string; head: string; at: number; text: string; agent: boolean }
-  | { kind: "line"; key: string; text: string; tone: LineTone };
+  | { kind: "line"; key: string; text: string; tone: LineTone }
+  | { kind: "card"; key: string; id: number; head: string; at: number; question: string; choices: ProposalChoice[]; answered: boolean };
+
+export type CardRow = Extract<ThreadRow, { kind: "card" }>;
 
 const ANSWER_ENDS = new Set(["scout_answered", "scout_answer_failed", "scout_answer_stopped"]);
 const FAILED = new Set(["scout_answer_failed", "scout_pass_failed"]);
@@ -19,6 +22,20 @@ const asksOrSteers = (message: ThreadMessage) => message.mode === "ask" || messa
 function messageHead(message: ThreadMessage): string {
   if (message.mode === "answer") return message.author === "scout" ? "Scout" : message.author;
   return `${message.author === "maintainer" ? "You" : message.author} · ${message.mode}`;
+}
+
+const proposalOf = (message: ThreadMessage) =>
+  message.author === "scout" ? message.blocks.find((block): block is ProposalBlock => block.type === "proposal") : undefined;
+
+function messageRow(detail: ScoutDetail, message: ThreadMessage, index: number): ThreadRow {
+  const proposal = proposalOf(message);
+  if (proposal == null) {
+    return { kind: "message", key: `message-${index}`, head: messageHead(message), at: message.at, text: message.text, agent: message.mode === "answer" };
+  }
+  return {
+    kind: "card", key: `message-${index}`, id: message.id, head: "Scout", at: message.at, question: proposal.question, choices: proposal.choices,
+    answered: detail.thread.some((later) => later.answers === message.id),
+  };
 }
 
 const highestPass = (detail: ScoutDetail, before = Infinity) =>
@@ -76,14 +93,15 @@ function eventLine(detail: ScoutDetail, events: ScoutEvent[], index: number): { 
 
 /** The scout's messages and the lines its answer turns and passes draw, in
  *  time order, a message before an event at the same moment; an ask or steer
- *  no turn has taken yet is followed by its waiting line. */
+ *  no turn has taken yet is followed by its waiting line, and the scout's
+ *  proposal reads as a card, answered once a message names it. */
 export function threadRows(detail: ScoutDetail): ThreadRow[] {
   const events = [...detail.events].sort((a, b) => a.at - b.at || a.id - b.id);
   const timed: { at: number; order: number; rows: ThreadRow[] }[] = detail.thread.map((message, index) => ({
     at: message.at,
     order: 0,
     rows: [
-      { kind: "message", key: `message-${index}`, head: messageHead(message), at: message.at, text: message.text, agent: message.mode === "answer" },
+      messageRow(detail, message, index),
       ...(asksOrSteers(message) && message.consumed_by == null
         ? [{ kind: "line", key: `waiting-${index}`, text: "waiting for a scout slot", tone: "wait" } as const]
         : []),
