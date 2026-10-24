@@ -339,14 +339,14 @@ export interface GridCell {
 
 interface GridColumn {
   label: string;
-  /** The final check's column when that check did not pass. */
-  failed: boolean;
+  /** The label in the narrow side rail. */
+  short: string;
 }
 
 export interface CriteriaGrid {
   columns: GridColumn[];
   /** One row per criterion id in order, a cell per column; null where the column did not judge it. */
-  rows: { id: string; cells: (GridCell | null)[] }[];
+  rows: { id: string; text: string | null; cells: (GridCell | null)[] }[];
 }
 
 /**
@@ -359,7 +359,7 @@ export function criteriaGrid(detail: RunDetail): CriteriaGrid | null {
   const precheck = detail.precheck?.criteria ?? [];
   if (precheck.length > 0) {
     judged.push({
-      column: { label: "pre-check", failed: false },
+      column: { label: "pre-check", short: "pre" },
       cells: new Map(precheck.map((entry) => [entry.id, { status: entry.witnessed ? "met" : "unwitnessed", note: entry.note }])),
       order: new Map(precheck.map((entry) => [entry.id, entry.n])),
     });
@@ -369,7 +369,7 @@ export function criteriaGrid(detail: RunDetail): CriteriaGrid | null {
   for (const round of rounds) {
     const final = round.round > detail.run.max_rounds || isFinalCheck(round, events);
     judged.push({
-      column: { label: final ? "final" : `round ${round.round}`, failed: final && round.ended_ms != null && !PASSED.has(round.verdict) },
+      column: final ? { label: "final check", short: "final" } : { label: `round ${round.round}`, short: `R${round.round}` },
       cells: new Map(round.criteria.map((criterion) => [criterion.id, { status: criterion.status, note: criterion.note }])),
       order: new Map(round.criteria.map((criterion) => [criterion.id, criterion.n])),
     });
@@ -379,6 +379,6 @@ export function criteriaGrid(detail: RunDetail): CriteriaGrid | null {
   const ids = [...order.keys()].sort((a, b) => order.get(a)! - order.get(b)!);
   return {
     columns: judged.map((each) => each.column),
-    rows: ids.map((id) => ({ id, cells: judged.map((each) => each.cells.get(id) ?? null) })),
+    rows: ids.map((id) => ({ id, text: detail.criteria.find((criterion) => criterion.id === id)?.text ?? null, cells: judged.map((each) => each.cells.get(id) ?? null) })),
   };
 }

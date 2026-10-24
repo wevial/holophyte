@@ -1021,19 +1021,18 @@ The Run page’s `console/src/next/components/AgentPanel.tsx` renders the
 agent seat, state and chronological note/question thread from the page’s
 shared run detail and asks queries.
 
-The Run page’s `console/src/next/components/PhaseBar.tsx` opens Progress on
-the phase timing bar, laid out by `console/src/lib/timeline.ts`.
-
 `console/src/next/activity.ts` groups a run's events into timed phases
 (implement, review rounds with their steps, final check, pull request and
 babysit passes) and the live run's Now line, for the Run page's Progress.
 `console/src/next/components/RunActivity.tsx` draws them as a folding
-timeline under a pinned Now bar, and `console/src/next/components/RawLog.tsx`
+timeline that opens only the current group, tinted: the running one, ending
+on the Now line's detail, or an ended run's last, ending on
+`console/src/next/components/EndFacts.tsx`. `console/src/next/components/RawLog.tsx`
 opens every Progress line, heartbeats included, in a modal side panel.
 Its `criteriaGrid` lays out the run's criteria by round for
-`console/src/next/components/CriteriaGrid.tsx`; an open group lists its
-findings as `console/src/next/components/ActivityFinding.tsx` rows, and an
-ended run shows `console/src/next/components/EndCard.tsx` where the Now bar stood.
+`console/src/next/components/CriteriaGrid.tsx`, in a sticky right rail when
+Progress is wide enough; an open group lists its findings as
+`console/src/next/components/ActivityFinding.tsx` rows.
 
 The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns

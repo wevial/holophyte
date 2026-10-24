@@ -134,27 +134,41 @@ test("a reviewing run's header names its ticket, host, box and routes, says wher
   expect(document.querySelector("[data-run-facts]")!.textContent).toBe(
     "DEMO-12 · run 12 · demo on writer-1 · started 11:30 PDT · 16m of a 25m box · implementer claude opus · reviewer codex gpt-6-sol",
   );
-  expect(verdict()).toBe("Reviewing round 2 of 3. None of one criterion is met yet. Nothing needs you.");
+  expect(verdict()).toBe("Reviewing round 2 of 3. None of one criterion is met yet.");
   expect(stage()).toBe("Review · round 2 of 3 · 1 loop back");
 });
 
-test("a failed run waiting in Needs you gives its failure and reason, and a merged run its sha and time", async () => {
+test("neither a reviewing run nor a merged run says Nothing needs you; a failed run waiting in Needs you gives its failure and reason", async () => {
+  await mount("#/runs/demo/12");
+  expect(document.body.textContent).not.toContain("Nothing needs you");
+  cleanup();
   await mount("#/runs/demo/40");
   expect(verdict()).toBe("Failed at verify: 2 tests red in tests/test_board_cache.py.");
   expect(stage()).toBe("Failed at verify");
   cleanup();
   await mount("#/runs/demo/9");
-  expect(verdict()).toBe("Merged to main as 5acc138 at 11:15. Nothing needs you.");
+  expect(verdict()).toBe("Merged to main as 5acc138 at 11:15.");
   expect(stage()).toBe("Merged · 5acc138");
+  expect(document.body.textContent).not.toContain("Nothing needs you");
+});
+
+test("neither a live run's page nor a merged run's has a phase timeline", async () => {
+  await mount("#/runs/demo/12");
+  expect(within(screen.getByRole("region", { name: "Progress" })).getByRole("list", { name: "Run activity" })).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "Phase timeline" })).toBeNull();
+  cleanup();
+  await mount("#/runs/demo/9");
+  expect(within(screen.getByRole("region", { name: "Progress" })).getByRole("list", { name: "Run activity" })).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "Phase timeline" })).toBeNull();
 });
 
 test("a run in its merge phase or its merge gate with no check fix round reads as merging on the Merge stage", async () => {
   await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merging" }));
-  expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
+  expect(verdict()).toBe("Merging. None of one criterion is met yet.");
   expect(stage()).toBe("Merge · 1 loop back");
   cleanup();
   await mount("#/runs/demo/12", runFetch({ ...liveRow, phase: "merge_gate" }));
-  expect(verdict()).toBe("Merging. None of one criterion is met yet. Nothing needs you.");
+  expect(verdict()).toBe("Merging. None of one criterion is met yet.");
   expect(stage()).toBe("Merge · 1 loop back");
 });
 

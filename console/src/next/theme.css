@@ -131,6 +131,7 @@
   --canvas: var(--neutral-1);
   --paper: var(--neutral-2);
   --paper-2: var(--neutral-3);
+  --findings-bg: color-mix(in oklab, var(--canvas) 50%, var(--paper));
   --side: var(--neutral-2);
   --side-hover: var(--neutral-1);
   --ink: var(--neutral-12);
@@ -306,6 +307,7 @@
   --canvas: var(--neutral-1);
   --paper: var(--neutral-2);
   --paper-2: var(--neutral-3);
+  --findings-bg: var(--paper-2);
   --side: var(--neutral-3);
   --side-hover: var(--neutral-1);
   --ink: var(--neutral-12);
@@ -482,6 +484,7 @@
     --canvas: var(--neutral-1);
     --paper: var(--neutral-2);
     --paper-2: var(--neutral-3);
+    --findings-bg: var(--paper-2);
     --side: var(--neutral-3);
     --side-hover: var(--neutral-1);
     --ink: var(--neutral-12);
@@ -546,6 +549,7 @@
   --color-canvas: var(--canvas);
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
+  --color-findings-bg: var(--findings-bg);
   --color-side: var(--side);
   --color-side-hover: var(--side-hover);
   --color-ink: var(--ink);
