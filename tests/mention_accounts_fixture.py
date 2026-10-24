@@ -116,10 +116,8 @@ class MentionAccountCases(OperatorNotePass):
 
     def mentioned(self):
         merge = merge_config(self.project)
-        return [thread_mentions.classify(
-                    t, merge.mention_handle, merge.mention_accounts,
-                    thread_mentions.bots(merge)).classification == "MENTIONED"
-                for t in self.state.threads]
+        return [t.classification == "MENTIONED"
+                for t in thread_mentions.classified(self.state.threads, merge)]
 
     def pull(self):
         return holophyte.pr.pr_status.parse_pr_url(self.URL)

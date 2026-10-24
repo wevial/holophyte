@@ -3,7 +3,7 @@ from dataclasses import replace
 import store
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes
-from holophyte.babysit.thread_mentions import bots, classify, refuse, refused
+from holophyte.babysit.thread_mentions import classified, refuse, refused
 
 
 def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
@@ -18,11 +18,9 @@ def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
     from holophyte.babysit.babysitter import COMMENT_HEADER, _post
 
     threads = []
-    for thread in state.threads:
-        mentioned = classify(thread, merge.mention_handle, merge.mention_accounts,
-                             bots(merge))
-        mentioned = mentioned.classification == "MENTIONED"
-        if maintainer_notes.is_note(thread) or mentioned:
+    for thread, mentioned in zip(state.threads, classified(state.threads, merge)):
+        if (maintainer_notes.is_note(thread)
+                or mentioned.classification == "MENTIONED"):
             threads.append(thread)
             continue
         is_bot = thread.author_kind == "bot" or thread.author in merge.bot_logins
