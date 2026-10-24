@@ -16,12 +16,15 @@ from itertools import takewhile
 from pathlib import Path
 from unittest.mock import patch
 
+import store
 from holophyte.agents.probes import PROBE_GOAL
 from holophyte.config.project import Project
 from holophyte.isolation import launcher
 from holophyte.scout.lead import plan_goal
 from holophyte.scout.scout_process import lead_path
+from store.follow_ups import record_follow_up
 from store.scouts import create_scout, move_scout, scout
+from store.tickets import mirror_ticket, transition
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
 from tests.test_scout_lead import CODEX_LEAD, REPORT
@@ -67,6 +70,18 @@ def plan(*tasks):
                              for question, mode in tasks]})
 
 
+def a_guardrail_follow_up(conn, project):
+    """A pending guardrail follow-up, so the scout's findings digest holds
+    a cluster."""
+    ticket = mirror_ticket(
+        conn, project, linear_issue_id="issue-1", linear_identifier="ALPHA-1",
+        title="ticket 1", acceptance_criteria=["Given it, then it is worked"],
+        verification_commands=["echo ok"])
+    transition(conn, ticket, "in_flight")
+    record_follow_up(conn, store.claim(conn, project, ticket), "f" * 40,
+                     "guardrail", True, "pin the gate", "gate")
+
+
 def read_only(argv):
     if Path(argv[0]).name == "codex":
         at = argv.index("--sandbox") if "--sandbox" in argv else None
@@ -95,6 +110,8 @@ class ScoutRunHelperTests(ScoutFixture):
         (info / "exclude").write_text("setup-ran\n")
         conn = self.conn(path)
         (project,) = conn.execute("SELECT id FROM projects").fetchone()
+        if kind == "guardrails":
+            a_guardrail_follow_up(conn, project)
         scout_id = create_scout(conn, project, "why does the retry spin?", kind,
                                 30, **routes)
         move_scout(conn, scout_id, "planning",

@@ -19,7 +19,6 @@ from unittest.mock import patch
 import store
 import store.schema
 from holophyte.holo.cli import main as holo_main
-from store.follow_ups import record_follow_up
 from store.scouts import (
     create_scout,
     end_scout,
@@ -30,13 +29,18 @@ from store.scouts import (
     record_scout_tasks,
     scout,
 )
-from store.tickets import ensure_project, mirror_ticket, transition
+from store.tickets import ensure_project
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
 from tests.test_holo_mcp import McpCase
 from tests.test_scout_launch import TOKEN, LaunchCase, scout_rows, slots
 from tests.test_scout_lead import REPORT as LEAD_REPORT
-from tests.test_scout_run_helpers import LOOK, SETUP_RAN, plan
+from tests.test_scout_run_helpers import (
+    LOOK,
+    SETUP_RAN,
+    a_guardrail_follow_up,
+    plan,
+)
 from tests.test_serve_scouts import ACTIONS, REPORT
 
 ASK = "Mine the findings"
@@ -196,18 +200,6 @@ class McpTests(McpCase):
             conn.close()
         self.assertEqual((row.ask, row.kind, row.phase),
                          (ASK, "guardrails", "queued"))
-
-
-def a_guardrail_follow_up(conn, project):
-    """A pending guardrail follow-up, so the scout's findings digest holds
-    a cluster."""
-    ticket = mirror_ticket(
-        conn, project, linear_issue_id="issue-1", linear_identifier="ALPHA-1",
-        title="ticket 1", acceptance_criteria=["Given it, then it is worked"],
-        verification_commands=["echo ok"])
-    transition(conn, ticket, "in_flight")
-    record_follow_up(conn, store.claim(conn, project, ticket), "f" * 40,
-                     "guardrail", True, "pin the gate", "gate")
 
 
 class RunTests(LaunchCase):
