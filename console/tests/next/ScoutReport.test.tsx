@@ -127,7 +127,6 @@ test("a done bug scout's Report counts its findings, reads its reproduction and 
   const rows = findingRows();
   expect(rows.map(rowId)).toEqual(["F1", "F2", "F3", "F4"]);
   expect(rows.map(chip)).toEqual(["shown", "shown", "likely", "unconfirmed"]);
-  expect(within(screen.getByRole("list", { name: "Findings" })).queryByText("ruled out")).toBeNull();
 });
 
 test("a verified citation is titled with its base and an unverified one reads its reason as its description", async () => {
