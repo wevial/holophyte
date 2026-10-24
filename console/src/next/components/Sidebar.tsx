@@ -6,6 +6,7 @@ import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { hostsNeedingAttention } from "../settings";
 import { switcherRows } from "../projects";
+import { countScouts, useScouts } from "../scouts";
 import { useBoardStories, useReadiness, type ListedStory } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 import { FILTER_LABELS, TICKET_FILTERS, ticketView, useTicketBoard } from "../tickets";
@@ -18,6 +19,7 @@ import {
   OverviewIcon,
   PanelLeftIcon,
   RunsIcon,
+  ScoutsIcon,
   SignalIcon,
   SettingsIcon,
   TicketsIcon,
@@ -33,7 +35,12 @@ const PAGES = [
   { to: "/runs", label: "Runs", icon: <RunsIcon />, noun: "" },
   { to: "/tickets", label: "Tickets", icon: <TicketsIcon />, noun: "" },
   { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
+  { to: "/scouts", label: "Scouts", icon: <ScoutsIcon />, noun: "running" },
 ] as const;
+
+type PageTo = (typeof PAGES)[number]["to"];
+
+const BADGE_TONE: Partial<Record<PageTo, string>> = { "/scouts": "text-live" };
 
 function readFolded(key = RAIL_KEY): boolean {
   try {
@@ -77,10 +84,10 @@ function ThemeToggle({ folded }: { folded: boolean }) {
   );
 }
 
-function LinkBadge({ badge, folded }: { badge: number; folded: boolean }) {
+function LinkBadge({ badge, folded, tone = "text-need" }: { badge: number; folded: boolean; tone?: string }) {
   if (badge <= 0) return null;
   return (
-    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal text-need ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
+    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal ${tone} ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
       {badge}
     </span>
   );
@@ -95,7 +102,7 @@ function PageLink({
   folded,
   active,
 }: {
-  to: (typeof PAGES)[number]["to"];
+  to: PageTo;
   label: string;
   icon: ReactNode;
   noun: string;
@@ -117,10 +124,10 @@ function PageLink({
     >
       <span className="relative">
         {icon}
-        {folded && <LinkBadge badge={badge} folded />}
+        {folded && <LinkBadge badge={badge} folded tone={BADGE_TONE[to]} />}
       </span>
       {!folded && <span className="flex-1">{label}</span>}
-      {!folded && <LinkBadge badge={badge} folded={false} />}
+      {!folded && <LinkBadge badge={badge} folded={false} tone={BADGE_TONE[to]} />}
     </Link>
   );
 }
@@ -217,7 +224,8 @@ export function Sidebar() {
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const open = useOpenCount(scopedHosts(hosts, project), now);
-  const badges: Partial<Record<(typeof PAGES)[number]["to"], number>> = { "/": needs, "/findings": open };
+  const scouting = countScouts(useScouts().rows, "running");
+  const badges: Partial<Record<PageTo, number>> = { "/": needs, "/findings": open, "/scouts": scouting };
   const failing = hosts.some((host) => host.error != null);
   const footer = footerLine(hosts, now);
   const polled = footer == null ? "polling…" : footer.tail == null ? footer.lead : `${footer.lead} · ${footer.tail.text}`;

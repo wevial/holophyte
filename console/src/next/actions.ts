@@ -20,13 +20,14 @@ export function useConfigSave() {
 }
 
 /** One post: `route` for `label` on the daemon whose project answers at
- *  `base`, and the sentence the toast says when the daemon takes it. */
+ *  `base`, and the sentence the toast says when the daemon takes it, or
+ *  makes of the daemon's `detail`. */
 interface ActionPost {
   label: string;
   base: string;
   route: string;
   body: Record<string, unknown>;
-  said: string;
+  said: string | ((detail: string) => string);
   /** What an `ok` answer makes of the cached `pr_open` item of a run. */
   patch?: { run: number; change: (item: PrOpenItem) => PrOpenItem };
 }
@@ -43,7 +44,7 @@ export function useAction() {
     mutationFn: (post: ActionPost) => postAction(actionBase(post.label, post.base), post.route, post.body, deps.fetch),
     onSuccess: (result, post) => {
       if (!result.ok) return;
-      toast(post.said);
+      toast(typeof post.said === "string" ? post.said : post.said(result.detail));
       if (post.patch) patchFleetItem(client, post.base, post.patch.run, post.patch.change);
       void client.invalidateQueries({ queryKey: ["fleet"] });
       void client.invalidateQueries({ queryKey: ["route", post.base] });

@@ -65,7 +65,7 @@ test("a scoped hash opens its page, marks its link current and keeps the scope o
   await mount("#/runs?project=demo");
   expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe("Runs");
   const links = pages();
-  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
+  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
   expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Runs"]);
   for (const link of links) {
     expect(new URLSearchParams(link.getAttribute("href")!.split("?")[1]).get("project")).toBe("demo");
@@ -165,8 +165,8 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
   const expand = screen.getByRole("button", { name: "Expand sidebar" });
   expect(expand.getAttribute("aria-expanded")).toBe("false");
-  expect(pages().map((link) => link.textContent)).toEqual(["", "", "", ""]);
-  expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings"]);
+  expect(pages().map((link) => link.textContent)).toEqual(["", "", "", "", ""]);
+  expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
   const classic = screen.getByRole("link", { name: "Classic console" });
   expect(classic.textContent).toBe("");
   expect(classic.getAttribute("title")).toBe("Classic console");
@@ -250,15 +250,15 @@ test("the footer names the host and how long ago it was polled, and reads pollin
   }
 });
 
-test("the four page icons differ from one another and from the All projects icon, unfolded and folded", async () => {
+test("the five page icons differ from one another and from the All projects icon, unfolded and folded", async () => {
   await mount("#/", peersFetch(ORIGIN, { [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf([]) } }));
   const drawn = () => {
     const switcher = screen.getByRole("button", { name: /^Project: All projects/ });
     return [...pages(), switcher].map((control) => control.querySelector("svg")!.outerHTML);
   };
-  expect(new Set(drawn()).size).toBe(5);
+  expect(new Set(drawn()).size).toBe(6);
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-  expect(new Set(drawn()).size).toBe(5);
+  expect(new Set(drawn()).size).toBe(6);
 });
 
 const DRAG = "[-webkit-app-region:drag]";

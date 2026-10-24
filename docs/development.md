@@ -1096,6 +1096,9 @@ share page framing in `console/src/next/pages/runShared.tsx`.
 The Turn page’s `console/src/next/components/TurnEntries.tsx` lists transcript
 entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/next/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
+`console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
+`console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
+`console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 
 ### Desktop wrapper
 
