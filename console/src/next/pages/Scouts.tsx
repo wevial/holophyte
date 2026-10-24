@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
+import { useAction } from "../actions";
 import { formatSettled } from "../../lib/format";
 import { Btn } from "../components/Btn";
 import { EMPTY_DRAFT, ScoutLaunch, type LaunchProject } from "../components/ScoutLaunch";
@@ -86,6 +87,7 @@ export function Scouts() {
   const { hosts } = useConsolePeers();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const launch = useAction();
   const projects: LaunchProject[] = scopedHosts(hosts, project).flatMap((host) =>
     host.status?.actions === true ? [{ base: host.base, name: projectName(host.status.project) }] : [],
   );
@@ -118,6 +120,7 @@ export function Scouts() {
       {open && canLaunch && (
         <ScoutLaunch
           projects={projects}
+          action={launch}
           draft={draft}
           onDraft={setDraft}
           onCancel={() => setOpen(false)}

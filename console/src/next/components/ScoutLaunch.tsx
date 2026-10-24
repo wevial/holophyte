@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ScoutRoute, ScoutRow } from "../../lib/contract.gen";
-import { useAction } from "../actions";
+import type { useAction } from "../actions";
 import { defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks } from "../scouts";
 import { Btn } from "./Btn";
 import { FoldChevron } from "./icons";
@@ -79,8 +79,11 @@ function Band({ children }: { children: ReactNode }) {
 
 /** The New scout form: the ask, its kind and project, and one disclosure
  *  for the routes, swarm size and minutes, posted to the picked project. */
-export function ScoutLaunch({ projects, draft, onDraft, onCancel, onLaunched }: {
+export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaunched }: {
   projects: LaunchProject[];
+  /** Held by the page, so a launch still pending when the form closes
+   *  keeps its Scout button busy when the form opens again. */
+  action: ReturnType<typeof useAction>;
   draft: ScoutDraft;
   onDraft: (draft: ScoutDraft) => void;
   onCancel: () => void;
@@ -90,7 +93,6 @@ export function ScoutLaunch({ projects, draft, onDraft, onCancel, onLaunched }: 
   useEffect(() => askRef.current?.focus(), []);
   const project = projects.find((each) => each.base === draft.base) ?? projects[0]!;
   const { data: routes } = useScoutRoutes(project.base);
-  const action = useAction();
   const leads = routes?.leads ?? [];
   const helperRoutes = routes?.helpers ?? [];
   const picks: ScoutPicks | null = draft.picks?.base === project.base ? draft.picks : routes ? defaultPicks(routes) : null;

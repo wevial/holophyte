@@ -35,7 +35,7 @@ interface Daemons {
   writer?: ScoutRow[];
   routes?: ScoutRoutes;
   actions?: boolean;
-  launch?: () => Response;
+  launch?: () => Response | Promise<Response>;
 }
 
 /** DEMO and WRITER with `/scouts` and `/scouts/routes` answered from
@@ -237,6 +237,23 @@ test("Scout posts the form once, closes it, says the daemon's detail and reads t
   expect(screen.queryByRole("form", { name: "New scout" })).toBeNull();
   expect(document.querySelector("[data-toast]")!.textContent).toBe("Scout 32 queued: 2 of 2 scout slots in use.");
   expect(listReads()).toBeGreaterThan(before);
+});
+
+test("a launch still pending when the form closes keeps Scout busy when it opens again", async () => {
+  let answer = (_response: Response) => {};
+  const launch = () => new Promise<Response>((resolve) => (answer = resolve));
+  const { seen } = await openForm("#/scouts?project=demo", { demo: [], launch });
+  await fillForm(ASK);
+  await click(scoutButton());
+  await click(within(form()).getByRole("button", { name: "Cancel" }));
+  await click(screen.getByRole("button", { name: "New scout" }));
+  const busy = within(form()).getByRole("button", { name: "Scouting…" });
+  await click(busy);
+  expect(seen.filter((request) => request.method === "POST")).toHaveLength(1);
+  await act(async () => answer(Response.json({ ok: true, detail: "scout 32 queued: 2 of 2 scout slots in use" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(screen.queryByRole("form", { name: "New scout" })).toBeNull();
+  expect(document.querySelector("[data-toast]")!.textContent).toBe("Scout 32 queued: 2 of 2 scout slots in use.");
 });
 
 test("a refusal keeps the form open as typed and reads under its buttons", async () => {
