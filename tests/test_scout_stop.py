@@ -5,6 +5,7 @@ lead and helper CLIs, `holo scout stop` over the local transport, and the
 
 Run: python3 -m unittest discover -s tests -p 'test_scout_stop.py' -v
 """
+import errno
 import http.client
 import json
 import os
@@ -314,6 +315,28 @@ class DirectStopTests(StopCase):
                          ("stopped", "stopped by maintainer: wrong project;"
                                      " no scout process was running"))
         self.assertEqual(self.events(scout_id)[-1][1]["pid"], named.pid)
+
+    def test_a_signal_the_process_owner_refuses_leaves_the_scout_live(self):
+        scout_id = self.planning()
+        named = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(600)",
+             "--scout", str(scout_id)])
+        self.addCleanup(named.wait)
+        self.addCleanup(named.kill)
+        claim_scout(self.store_conn, scout_id, named.pid)
+        move_scout(self.store_conn, scout_id, "swarming")
+
+        def denied(_pid, _signal):
+            raise PermissionError(errno.EPERM, os.strerror(errno.EPERM))
+
+        self.start_host()
+        with patch.object(stop_module, "os", SimpleNamespace(kill=denied)):
+            status, answer = self.stop(scout_id)
+        self.assertEqual((status, answer["ok"]), (200, False), answer)
+        self.assertIn(str(named.pid), answer["detail"])
+        self.assertIsNone(named.poll())
+        row = scout(self.store_conn, scout_id)
+        self.assertEqual((row.phase, row.reason), ("swarming", None))
 
     def test_a_scout_live_on_another_host_is_left_unchanged(self):
         scout_id = self.planning(host="other-writer")

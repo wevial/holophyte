@@ -114,8 +114,12 @@ def stop(project, body, via=VIA_DAEMON):
     if pid is not None:
         try:
             os.kill(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError:
             return gone(project, scout_id, stopped_by(author, note))
+        except PermissionError as denied:
+            return 200, {**reply, "ok": False,
+                         "detail": f"scout {scout_id}'s process {pid} was not"
+                                   f" signalled: {denied.strerror}"}
     return code, reply
 
 

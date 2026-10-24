@@ -425,7 +425,9 @@ by the scout's phase:
   event and exits 0. The reply comes before that end. A process gone
   before the signal reaches it is treated as no running scout process
   (below), unless the scout has ended meanwhile: that end is kept, and
-  the reply names its phase, `ok` true only when it is `stopped`.
+  the reply names its phase, `ok` true only when it is `stopped`. A
+  signal the process's owner refuses is 200 with `ok: false` saying so,
+  the scout left live.
 - live with no running scout process (no `pid`, or one whose command line
   does not name `--scout ID`): the scout ends `stopped` at once, its
   reason `stopped by AUTHOR: NOTE; no scout process was running`, and
