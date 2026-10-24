@@ -30,10 +30,12 @@ PLAN = {"tasks": [
     {"question": "Does the retry test fail on main?", "paths": [],
      "mode": "run"}]}
 REPORT = {"summary": "the retry loop never backs off",
-          "findings": [{"title": "no backoff", "status": "confirmed",
-                        "evidence": "notes.txt:1"}],
-          "actions": [], "reproduction": {"level": "read",
-                                          "hypotheses": ["no sleep"]}}
+          "findings": [{"title": "no backoff", "status": "shown",
+                        "evidence": [{"url": "https://example.test/retry"}]}],
+          "actions": [],
+          "reproduction": {"level": "test", "hypotheses": [
+              {"hypothesis": "no sleep", "separates": "the loop's timing",
+               "verdict": "supported"}]}}
 SECRET = "sk-scout-lead-0123456789abcdef"
 
 

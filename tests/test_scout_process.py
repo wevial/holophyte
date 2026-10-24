@@ -51,7 +51,8 @@ class ScoutFixture(HostFixture):
         os.environ.pop("INVOCATION_ID", None)
         self.stubs = LeadStubs(self.root / "lead-stubs",
                                plan=fenced({"tasks": []}),
-                               report=fenced({"summary": "nothing found"}))
+                               report=fenced({"summary": "nothing found",
+                                              "findings": [], "actions": []}))
         self.stubs.on_path()
 
     def project(self, name, supervisor=""):
