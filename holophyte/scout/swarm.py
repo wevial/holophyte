@@ -244,8 +244,15 @@ class Swarm:
     def run_helper(self, conn, task, mine):
         if self.remaining_s() <= 0:
             return
-        checkout = run_clone(self.project, self.row.id, task.id,
-                             self.row.base_sha)
+        try:
+            checkout = run_clone(self.project, self.row.id, task.id,
+                                 self.row.base_sha)
+        except (RuntimeError, OSError) as error:
+            start_scout_task(conn, task.id)
+            mine.set()
+            self.end(conn, task, FAILED,
+                     redact_prose(str(error), self.secrets)[:EXCERPT_CHARS])
+            return
         try:
             self.run_in(conn, task, mine, checkout)
         finally:

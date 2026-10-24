@@ -104,6 +104,14 @@ def run_clone(project, scout_id, task_id, base_sha):
     env = scratch_git_environment()
     shutil.rmtree(path, ignore_errors=True)
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        return cloned(project, path, base_sha, env)
+    except BaseException:
+        shutil.rmtree(path, ignore_errors=True)
+        raise
+
+
+def cloned(project, path, base_sha, env):
     sh(["git", "-c", "init.templateDir=", "clone", "--shared", "--no-checkout",
         "--quiet", str(project.path), str(path)], cwd=project.path, env=env)
     sh(["git", "remote", "remove", "origin"], cwd=path, env=env)

@@ -132,6 +132,24 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertEqual(self.report(conn, scout_id)["summary"],
                          REPORT["summary"])
 
+    def test_a_run_helper_whose_clone_fails_fails_its_task_and_the_scout_goes_on(self):
+        path, conn, scout_id = self.scout("bug")
+        self.assertIsNone(conn.execute("SELECT id FROM scoutTasks").fetchone())
+        scouts = Project.locate(path, adopt=False).holo_dir / "scouts"
+        (scouts / str(scout_id)).mkdir(parents=True)
+        (scouts / str(scout_id) / "run-1").write_text("not a directory\n")
+        self.stubs.answer(plan=plan((RUN_Q, "run"), (READ_Q, "read")),
+                          report=fenced(REPORT))
+        self.run_scout(path, scout_id)
+        phase, excerpt = self.task(conn, scout_id, RUN_Q)
+        self.assertEqual(phase, "failed")
+        self.assertIn("clone", excerpt)
+        self.assertEqual([call.get("question")
+                          for call in self.stubs.turns("helper")], [READ_Q])
+        self.assertEqual(self.task(conn, scout_id, READ_Q)[0], "done")
+        self.assertEqual(self.report(conn, scout_id)["summary"],
+                         REPORT["summary"])
+
     def test_a_run_helper_leaves_no_branch_and_main_where_it_was(self):
         path, conn, scout_id = self.scout("bug")
         listed = git(path, "for-each-ref", "refs/heads", "refs/tags")
