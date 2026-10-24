@@ -223,11 +223,7 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
   const fates = useMemo(() => reviewFates(groups), [groups]);
   const ending = detail.run.outcome == null ? null : endingOf(detail, activity);
   const lineOf = (index: number): Line => (groups.length < 2 ? "none" : index === 0 ? "first" : index === groups.length - 1 ? "last" : "middle");
-  const currentOf = (group: ActivityGroup, index: number): Current => {
-    if (index !== groups.length - 1) return null;
-    if (group.running) return "live";
-    return ending?.tone ?? null;
-  };
+  const currentOf = (group: ActivityGroup, index: number): Current => (index !== groups.length - 1 ? null : group.running ? "live" : (ending?.tone ?? null));
   const tailOf = (group: ActivityGroup, current: Current): ReactNode => {
     if (current == null) return null;
     if (group.running) {

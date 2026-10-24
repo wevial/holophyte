@@ -104,11 +104,10 @@ export function EndFacts({ detail, ending, base, project }: { detail: RunDetail;
   const nextLink = next == null ? null : <Link {...runPage(project, next)} className="font-mono underline underline-offset-2 hover:text-ink">run {next}</Link>;
   const reason = run.outcome_reason ?? "";
   if (ending.kind === "final_check") {
-    const { final, review } = ending;
     return (
       <Facts title="Failed at the final check" aside={run.ended_ms == null ? null : formatClock(run.ended_ms)}>
         <ul className="m-0 list-disc pl-5 [&>li+li]:mt-1">
-          <li>{finalCheckBullet(final.criteria, review?.criteria ?? null, review?.round ?? null)}</li>
+          <li>{finalCheckBullet(ending.final.criteria, ending.review?.criteria ?? null, ending.review?.round ?? null)}</li>
           {ending.parked && <li>Its review rounds were used up, so it parked on the steer cap.</li>}
           {nextLink != null && (
             <li>
