@@ -7,6 +7,7 @@ from holophyte.admission import project_row
 from holophyte.host.registry import Host, HostError, registered_at, settings
 from holophyte.loop.runs import open_store
 from holophyte.scout.scout_config import scout_config
+from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from store.scouts import QUEUED, create_scout, record_scout_event, scout
 
@@ -14,7 +15,6 @@ SCOUT_ACTION = "scout"
 KINDS = ("bug", "research", "recon")
 ROUTES = (("lead", "leads"), ("helper", "helpers"))
 COUNTS = (("swarm", "swarm"), ("minutes", "budget_min"))
-DEFAULT_AUTHOR = "maintainer"
 VIA_DAEMON = "POST /actions/scout"
 
 
@@ -55,13 +55,6 @@ def chosen(body, config):
     return picked, None
 
 
-def author_of(body):
-    author = body.get("author")
-    if not isinstance(author, str) or not author.strip():
-        return DEFAULT_AUTHOR
-    return author.strip()
-
-
 def record(project, body, picked, config, via):
     conn = open_store(project)
     try:
@@ -73,9 +66,9 @@ def record(project, body, picked, config, via):
                 helper_turns=config.helper_turns, waves=config.waves)
             record_scout_event(
                 conn, scout_id, "scout_queued",
-                f"{body['kind']} scout queued by {author_of(body)} ({via})",
+                f"{body['kind']} scout queued by {console_author(body)} ({via})",
                 level="detail",
-                payload=json.dumps({"author": author_of(body), "via": via}))
+                payload=json.dumps({"author": console_author(body), "via": via}))
     finally:
         conn.close()
     return scout_id
