@@ -34,6 +34,7 @@ from tests.loop_fixture import BRANCH, LoopFixture, StubProvider, a_task
 
 ROOT = Path(__file__).resolve().parents[1]
 SHADOW = '[agents.implementer_shadow]\nharness = "claude"\nmodel = "sonnet"\n'
+NAMED_SHADOW = f'{SHADOW}[serve]\nname = "alpha"\n'
 T0 = 1_700_000_000_000
 
 
@@ -109,9 +110,7 @@ class ShadowStartTests(LoopFixture):
         self.assertEqual(fields["goal"], fake.turns[0].goal)
         self.assertEqual(fields["base_sha"], self.base)
         self.assertEqual(fields["branch"], BRANCH)
-        [(payload,)] = self.read(
-            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
-        self.assertEqual(json.loads(payload), {
+        self.assertEqual(self.started(), {
             "pid": NeverExits.pid, "branch": "shadow/ko-131-add-a-thing",
             "route": "claude sonnet", "unit": None, "error": None})
 
@@ -134,17 +133,13 @@ class ShadowStartTests(LoopFixture):
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE)
         self.assertEqual(self.last_outcome(), "merged")
         self.assertEqual(spawn.calls, [])
-        [(payload,)] = self.read(
-            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
-        self.assertIn("Permission denied", json.loads(payload)["error"])
+        self.assertIn("Permission denied", self.started()["error"])
 
     def test_a_spawn_that_raises_is_recorded_and_the_run_still_merges(self):
         self.shadow_loop(Commit("the thing"), APPROVE,
                          spawn=Spawn(OSError("spawn refused")))
         self.assertEqual(self.last_outcome(), "merged")
-        [(payload,)] = self.read(
-            "SELECT payload FROM runEvents WHERE kind = 'shadow_started'")
-        started = json.loads(payload)
+        started = self.started()
         self.assertIsNone(started["pid"])
         self.assertIn("spawn refused", started["error"])
         self.assertEqual(list(self.db.parent.glob("shadows/*.json")), [])
@@ -154,7 +149,7 @@ class ShadowStartTests(LoopFixture):
         self.systemd_run_stub(f'printf "%s\\n" "$@" > "{record}"')
         os.environ["INVOCATION_ID"] = "loop-run"
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE,
-                                    config=f'{SHADOW}[serve]\nname = "alpha"\n')
+                                    config=NAMED_SHADOW)
         self.assertEqual(self.last_outcome(), "merged")
         self.assertEqual(spawn.calls, [])
         [(run_id,)] = self.read("SELECT id FROM runs")
@@ -178,7 +173,7 @@ class ShadowStartTests(LoopFixture):
                               " already exists.' >&2\nexit 1")
         os.environ["INVOCATION_ID"] = "loop-run"
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE,
-                                    config=f'{SHADOW}[serve]\nname = "alpha"\n')
+                                    config=NAMED_SHADOW)
         self.assertEqual(self.last_outcome(), "merged")
         self.assertEqual(spawn.calls, [])
         started = self.started()
@@ -191,7 +186,7 @@ class ShadowStartTests(LoopFixture):
     def test_outside_systemd_the_shadow_spawns_though_systemd_run_is_present(self):
         self.systemd_run_stub(f'touch "{self.db.parent / "ran"}"')
         spawn, _ = self.shadow_loop(Commit("the thing"), APPROVE,
-                                    config=f'{SHADOW}[serve]\nname = "alpha"\n')
+                                    config=NAMED_SHADOW)
         self.assertEqual(self.last_outcome(), "merged")
         [(_, kwargs)] = spawn.calls
         self.assertTrue(kwargs["start_new_session"])
