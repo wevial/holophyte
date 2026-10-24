@@ -12,7 +12,7 @@ from holophyte.agents.agent_output import claude_result
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
-from holophyte.loop.gates import run_capped, sh
+from holophyte.loop.gates import reap_group, run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.scout.scout_probes import probe_scout_route
 from store.enums import ScoutTaskPhase
@@ -79,11 +79,9 @@ def helper_goal(row, task):
         "commands you ran with excerpts of their output, or links.\n")
 
 
-def capped_turn(argv, checkout, cap):
-    if cap <= 0:
-        return HelperTurn(STOPPED, None, "")
+def capped_turn(argv, checkout, cap, on_start):
     try:
-        code, output = run_capped(argv, checkout, cap)
+        code, output = run_capped(argv, checkout, cap, on_start=on_start)
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
     except OSError as failed:
@@ -170,32 +168,35 @@ class Swarm:
         refuse_push(repo, path, self.scratch / "hooks", env)
         return path
 
-    def started_in_plan_order(self, conn, task, previous, mine):
+    def prepared(self, task):
+        if self.remaining_s() <= 0:
+            return None
+        checkout = self.checkout(task)
+        return self.seat.turn(outbound(helper_goal(self.row, task),
+                                       self.secrets)), checkout
+
+    def helper(self, task, previous, mine):
+        conn, started = store.open(self.store_path), []
+
+        def start(proc):
+            try:
+                start_scout_task(conn, task.id)
+            except BaseException:
+                reap_group(proc, subprocess.TimeoutExpired(proc.args, 0))
+                raise
+            started.append(monotonic())
+            mine.set()
+
         try:
             if previous is not None:
                 previous.wait()
-            if self.remaining_s() <= 0:
-                return None
-            checkout = self.checkout(task)
-            argv = self.seat.turn(outbound(helper_goal(self.row, task),
-                                           self.secrets))
-            if self.remaining_s() <= 0:
-                return None
-            start_scout_task(conn, task.id)
-            return argv, checkout
-        finally:
-            mine.set()
-
-    def helper(self, task, previous, mine):
-        conn = store.open(self.store_path)
-        try:
-            launch = self.started_in_plan_order(conn, task, previous, mine)
-            if launch is None:
+            prepared, cap = self.prepared(task), self.remaining_s()
+            if prepared is None or cap <= 0:
                 return
-            argv, checkout = launch
-            started = monotonic()
-            turn = capped_turn(argv, checkout, self.remaining_s())
-            self.record(conn, task, argv, turn, monotonic() - started)
+            argv, checkout = prepared
+            turn = capped_turn(argv, checkout, cap, start)
+            if started:
+                self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
             mine.set()
             conn.close()
