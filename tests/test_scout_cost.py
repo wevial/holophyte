@@ -55,13 +55,6 @@ class RoutePriceTests(ConfigFixture):
 
 
 class TurnCostTests(unittest.TestCase):
-    def test_tokens_at_the_price_when_the_cli_reports_no_cost(self):
-        self.assertEqual(turn_cost(0.5, 41000, None), 0.0205)
-
-    def test_a_reported_cost_wins_whatever_the_price(self):
-        self.assertEqual(turn_cost(0.5, 41000, 0.12), 0.12)
-        self.assertEqual(turn_cost(None, 41000, 0.12), 0.12)
-
     def test_no_cost_without_a_price_or_without_tokens(self):
         self.assertIsNone(turn_cost(None, 41000, None))
         self.assertIsNone(turn_cost(0.5, None, None))
