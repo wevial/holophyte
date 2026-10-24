@@ -11,6 +11,7 @@ import { ScoutStop } from "../components/ScoutStop";
 import { ScoutThread } from "../components/ScoutThread";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
+import { aboutTarget } from "../scouts";
 import { backCount, SCOUT_DOTS, stoppedCount, tokenWords, useScoutPage } from "../scout";
 import { hasThread } from "../scoutThread";
 import { CRUMB_LINK, Notice, Page, zoneName } from "./runShared";
@@ -21,7 +22,19 @@ function Dot() {
   return <>{" · "}</>;
 }
 
-/** "scout 31 · bug · demo · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · …", each fact the
+const ABOUT_LINK = "underline underline-offset-2 hover:text-ink";
+
+/** "about run 812", linked to its subject's page or, for a pull request, its address. */
+function About({ subject, project }: { subject: ScoutDetail["scout"]["subject"]; project: string }) {
+  const target = subject == null ? null : aboutTarget(subject);
+  if (target == null) return null;
+  const link = "url" in target ? <a href={target.url} target="_blank" rel="noreferrer" className={ABOUT_LINK}>about {target.words}</a>
+    : "ticket" in target ? <Link to="/tickets/$project/$key" params={{ project, key: target.ticket }} search={{}} className={ABOUT_LINK}>about {target.words}</Link>
+    : <Link to="/runs/$project/$run" params={{ project, run: target.run }} className={ABOUT_LINK}>about {target.words}</Link>;
+  return <><Dot />{link}</>;
+}
+
+/** "scout 31 · bug · demo · about run 812 · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · …", each fact the
  *  scout has, its helpers and tokens the first run's, then its newest follow-up pass. */
 function Facts({ detail, project, now, pass }: { detail: ScoutDetail; project: string; now: number; pass: { pass: number; ms: number | null } | null }) {
   const { scout } = detail;
@@ -33,6 +46,7 @@ function Facts({ detail, project, now, pass }: { detail: ScoutDetail; project: s
       {scout.kind}
       <Dot />
       {project}
+      <About subject={scout.subject} project={project} />
     </>
   );
   if (scout.phase === "queued" || scout.started_ms == null) {

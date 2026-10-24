@@ -1,5 +1,5 @@
-import { useContext, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useContext, useEffect, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { editTicket } from "../../lib/boardWrites";
 import { formatAge, formatClock } from "../../lib/format";
@@ -11,7 +11,7 @@ import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { pickedBody, pickedSide, priorityPart, sectionParts, type Part, type Pick } from "../sectionPicks";
 import { useTicketPage } from "../ticket";
-import { changedNames, composeEdit, hasHeader, hasMockup, loadEdit, rawParts, same, type EditFields } from "../ticketEdit";
+import { changedNames, composeEdit, hasHeader, hasMockup, loadEdit, otherText, rawParts, removedOthers, same, type EditFields } from "../ticketEdit";
 import { clampEstimate } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
@@ -61,6 +61,7 @@ export function EditTicket() {
   const host = page.kind === "ticket" ? [page.host] : [];
   const board = useBoards(host, deps)[0]?.board;
   const readiness = useReadiness(host, deps);
+  const handed = useLocation({ select: location => handedDraft(location.state) });
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "not_mirrored") {
     return <Frame project={project} ticketKey={key}><p className="mt-6 font-mono text-[13px] text-ink-3">No host of {project} has mirrored {key}.</p></Frame>;
@@ -89,7 +90,18 @@ export function EditTicket() {
     column: ticket.current?.column ?? card?.column ?? null,
   };
   const cards = hostCards(page.host, board, readiness, page.now);
-  return <EditForm key={`${project}/${key}`} project={project} ticketKey={key} base={page.host.base} loaded={loaded} cards={cards} now={page.now} />;
+  return <EditForm key={`${project}/${key}`} project={project} ticketKey={key} base={page.host.base} loaded={loaded} cards={cards} now={page.now} handed={handed} />;
+}
+
+/** A scout's draft handed to the page: its body, the scout, and the revision it revises. */
+interface Handed {
+  draft: string;
+  scout: number;
+  revision: number;
+}
+
+function handedDraft({ draft, scout, revision }: { draft?: string; scout?: number; revision?: number }): Handed | null {
+  return draft == null || scout == null || revision == null ? null : { draft, scout, revision };
 }
 
 /** What the page read of revision `loaded`: its fields as the form draws them. */
@@ -160,16 +172,20 @@ function ConflictBanner({ ticketKey, started, newer, parts, picks, onPick, onLoa
   );
 }
 
-function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: string; ticketKey: string; base: string; loaded: Loaded; cards: ReturnType<typeof hostCards>; now: number }) {
+function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { project: string; ticketKey: string; base: string; loaded: Loaded; cards: ReturnType<typeof hostCards>; now: number; handed: Handed | null }) {
   const deps = useContext(PollDepsContext);
   const navigate = useNavigate();
   const toast = useToast();
   const client = useQueryClient();
-  const [edit, setEdit] = useState<{ origin: Read; read: Read }>(() => {
+  const [edit, setEdit] = useState<{ origin: Read; read: Read; handed: Handed | null }>(() => {
     const origin = readOf(loaded);
-    return { origin, read: origin };
+    return { origin, read: handed == null ? origin : readOf({ ...loaded, body: handed.draft }), handed };
   });
   const { origin, read } = edit;
+  const tookDraft = handed != null;
+  useEffect(() => {
+    if (tookDraft) void navigate({ to: "/tickets/$project/$key/edit", params: { project, key: ticketKey }, search: {}, state: {}, replace: true });
+  }, [tookDraft, navigate, project, ticketKey]);
   const drawn = (part: string) => !read.raw.has(part);
   const [fields, setFields] = useState<EditFields>(read.fields);
   const [picks, setPicks] = useState<Record<string, Pick>>({});
@@ -178,11 +194,12 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
   const [refusal, setRefusal] = useState<string[]>([]);
   const body = composeEdit(read.body, read.fields, fields);
   const named = changedNames(origin.fields, fields);
+  const removed = removedOthers(origin.fields, fields);
   const changes = named.length || body === origin.body ? named
     : sectionParts(origin.body, origin.body, body).filter(part => part.side === "mine").map(part => part.name);
   const newer = loaded.revision > origin.revision;
   const loadRevision = (next: Read, form: Read = next) => {
-    setEdit({ origin: next, read: form });
+    setEdit({ origin: next, read: form, handed: null });
     setFields(form.fields);
     setPicks({});
     setRefusal([]);
@@ -235,6 +252,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
     void navigate({ to: "/tickets/$project/$key", params: { project, key: ticketKey }, search: {} });
   };
   const line = parts ? `revision ${origin.revision} · newer revision ${loaded.revision} exists`
+    : edit.handed != null ? `revision ${origin.revision} + scout ${edit.handed.scout}'s draft${edit.handed.revision === origin.revision ? "" : ` of revision ${edit.handed.revision}`}`
     : read !== origin ? `revision ${origin.revision} + your picks`
     : [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
 
@@ -307,15 +325,18 @@ function EditForm({ project, ticketKey, base, loaded, cards, now }: { project: s
           {read.header && <EvidenceField evidence={fields.evidence} onChange={next => set("evidence", next)} marks={checked}
             changed={index => !same(fields.evidence[index], origin.fields.evidence[index])} />}
           {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
-          {fields.others.length > 0 && <div>
-            <details open={read.raw.size > 0}>
+          {fields.others.length + removed.length > 0 && <div>
+            <details open={read.raw.size > 0 || removed.length > 0}>
               <summary className="cursor-pointer font-mono text-[11px] font-medium uppercase tracking-[.12em] text-ink-2">
-                Other sections <span className="normal-case tracking-[.04em] text-ink-3">{fields.others.map(other => other.name).join(" · ")}</span>
+                Other sections <span className="normal-case tracking-[.04em] text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">
-                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== origin.fields.others[at]?.text}>
+                {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(fields, at, origin.fields)}>
                   <textarea id={`new-${other.name}`} rows={3} className={`${INPUT} resize-y font-sans`} value={other.text}
                     onChange={event => set("others", fields.others.map((each, index) => index === at ? { ...each, text: event.target.value } : each))} />
+                </Field>)}
+                {removed.map(other => <Field key={other.index} label={other.name} optional changed extra=" · removed on save">
+                  <p id={`new-${other.name}`} className="mt-2 whitespace-pre-wrap text-[14px] text-ink-3 line-through [overflow-wrap:anywhere]">{other.text}</p>
                 </Field>)}
               </div>
             </details>
