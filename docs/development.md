@@ -212,6 +212,9 @@ Each module, one line:
   briefs a reviewer is sent, with the git scope they read.
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
   witness checks and a verdict.
+- `holophyte/review/citations.py` — near-miss witness citations: the classes
+  that define a cited test, the dotted-module file, and whether an approved
+  test is unchanged at the candidate.
 - `holophyte/review/blast_radius.py` — a review round's blast-radius tier: the
   built-in high path list, the diff signals, the raising sources and the
   implementer's `BLAST RADIUS:` line.

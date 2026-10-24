@@ -377,9 +377,9 @@ class ReviewRoundRowTests(unittest.TestCase):
         self.assertEqual(json.loads(only["findings"]), [])
 
     def test_a_witness_naming_a_missing_test_is_unwitnessed(self):
-        """A confidently named test that is fiction — the method, the class
-        or the whole file absent — does not witness anything: the criterion
-        is downgraded and the round asks for changes."""
+        """A named test that is fiction — the method or the whole file absent
+        — witnesses nothing and the round asks for changes; a wrong class
+        whose method sits on one other class resolves to it and passes."""
         cases = {
             "method": ("class VerifyGateTests:\n    def test_other(self):\n"
                        "        pass\n"),
@@ -399,6 +399,10 @@ class ReviewRoundRowTests(unittest.TestCase):
                     "VERDICT: APPROVE")
 
                 first = self.rounds()[0]
+                if label == "class":
+                    self.assertEqual(first["verdict"], "pass")
+                    self.assertEqual(json.loads(first["findings"]), [])
+                    continue
                 self.assertEqual(first["verdict"], "changes_requested")
                 (finding,) = json.loads(first["findings"])
                 self.assertEqual((finding["path"], finding["line"]),
