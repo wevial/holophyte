@@ -229,6 +229,16 @@ class BaselineRuns(unittest.TestCase):
                 self.assertNotIn("This run is the run C1's", entry)
                 self.assertIsNone(main_baseline.gap(result))
 
+    def test_a_failure_not_traced_to_one_command_is_not_its_witness(self):
+        self.commit({"marker": "candidate only\n"})
+        verify = "set -e\ntest -f marker\n" + VERIFY.replace(" -p", " \\\n  -p")
+        _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
+        entry = main_baseline.brief([result])
+        self.assertNotEqual(result["exit_status"], 0)
+        self.assertNotIn("AssertionError", result["output"])
+        self.assertIn("the failure is not traced to one command", entry)
+        self.assertNotIn("This run is the run C1's", entry)
+
     def test_a_failing_block_naming_no_file_witnesses_by_its_output(self):
         _, _, (result,) = self.baselines(
             [ON_MAIN], verify="python3 -m unittest discover -s tests")

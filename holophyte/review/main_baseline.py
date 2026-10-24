@@ -112,6 +112,8 @@ def _stopped(command, files, failure, output):
     stopped = (failure or {}).get("command") or ""
     names = any(_names(line, path) for line in command.splitlines()
                 for path in files)
+    if names and stopped == command and len(_commands(command)) > 1:
+        return {"unattributed": True}
     witness = stopped if names else output
     if not any(_names(witness, path) for path in files):
         return {"stopped_at": stopped}
@@ -214,6 +216,12 @@ def _entry(result):
                 f"{result['exit_status']} before {files} ran, so this is not "
                 f"the run C{n}'s on-main clause asks for; the implementer "
                 f"output must supply it. Output tail:\n{result['output']}\n")
+    if result.get("unattributed"):
+        return (f"{ran}It failed with exit status {result['exit_status']}, "
+                f"and the failure is not traced to one command, so it may "
+                f"have stopped before {files} ran; this is not the run "
+                f"C{n}'s on-main clause asks for, and the implementer output "
+                f"must supply it. Output tail:\n{result['output']}\n")
     whole = (" The whole base tree ran with the candidate's test, not only "
              "the named code as on main." if result["form"] == "as_on_main"
              else "")
