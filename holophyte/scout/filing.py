@@ -17,7 +17,6 @@ DONE = ScoutPhase.DONE.value
 
 class Answered(Exception):
     def __init__(self, code, reply):
-        super().__init__(reply.get("detail") or reply.get("error"))
         self.answer = code, reply
 
 
