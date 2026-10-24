@@ -30,6 +30,7 @@ import { TicketPage } from "./pages/Ticket";
 import { NewTicket } from "./pages/NewTicket";
 import { EditTicket } from "./pages/EditTicket";
 import { Tickets } from "./pages/Tickets";
+import { validateScoutsSearch } from "./scouts";
 import { validateTicketsSearch } from "./tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
@@ -76,7 +77,7 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   pageRoute("/findings", Findings),
-  pageRoute("/scouts", Scouts),
+  createRoute({ getParentRoute: () => rootRoute, path: "/scouts", validateSearch: validateScoutsSearch, component: Scouts }),
   createRoute({ getParentRoute: () => rootRoute, path: "/scouts/$project/$scout", component: ScoutPage }),
   pageRoute("/settings", Settings),
   pageRoute("/settings/$tab", Settings),

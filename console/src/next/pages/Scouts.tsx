@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
 import { useAction } from "../actions";
 import { formatSettled } from "../../lib/format";
 import { Btn } from "../components/Btn";
-import { EMPTY_DRAFT, ScoutLaunch, type LaunchProject } from "../components/ScoutLaunch";
+import { EMPTY_DRAFT, prefilledDraft, ScoutLaunch, type LaunchProject } from "../components/ScoutLaunch";
 import { StateDot } from "../components/StateDot";
 import { firstLine } from "../history";
-import { scopedHosts, useConsolePeers } from "../scope";
+import { keepScope, scopedHosts, useConsolePeers } from "../scope";
 import { SCOUT_DOTS, scoutPage } from "../scout";
 import { countScouts, scoutState, useScouts, type ScoutListRow } from "../scouts";
 
@@ -88,10 +88,27 @@ export function Scouts() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const launch = useAction();
-  const projects: LaunchProject[] = scopedHosts(hosts, project).flatMap((host) =>
+  const scoped = scopedHosts(hosts, project);
+  const projects: LaunchProject[] = scoped.flatMap((host) =>
     host.status?.actions === true ? [{ base: host.base, name: projectName(host.status.project) }] : [],
   );
   const canLaunch = projects.length > 0;
+  const search = useSearch({ from: "/scouts" });
+  const navigate = useNavigate();
+  const asked = search.new == null ? null : JSON.stringify([search.new, search.about, search.kind, search.ask]);
+  const [filled, setFilled] = useState<string | null>(null);
+  const fillable = projects.some((each) => each.name === search.new) || scoped.every((host) => host.status != null || host.error != null || host.needs_token);
+  if (asked !== filled && (asked == null || (canLaunch && fillable))) {
+    setFilled(asked);
+    if (asked != null) {
+      setDraft(prefilledDraft(search, projects));
+      setOpen(true);
+    }
+  }
+  const close = () => {
+    setOpen(false);
+    if (asked != null) void navigate({ to: "/scouts", search: keepScope, replace: true });
+  };
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-6 pt-3.5 pb-7 max-[720px]:px-4">
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-rule pb-[18px]">
@@ -112,20 +129,24 @@ export function Scouts() {
           expanded={open}
           disabled={!canLaunch}
           title={canLaunch ? undefined : ACTIONS_OFF}
-          onClick={() => setOpen(!open)}
+          onClick={() => (open ? close() : setOpen(true))}
         >
           New scout
         </Btn>
       </header>
       {open && canLaunch && (
         <ScoutLaunch
+          key={filled ?? ""}
           projects={projects}
           action={launch}
           draft={draft}
           onDraft={setDraft}
-          onCancel={() => setOpen(false)}
+          onCancel={() => {
+            close();
+            if (draft.about != null) setDraft({ ...draft, about: null });
+          }}
           onLaunched={() => {
-            setOpen(false);
+            close();
             setDraft(EMPTY_DRAFT);
           }}
         />

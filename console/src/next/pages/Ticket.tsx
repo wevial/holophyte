@@ -8,6 +8,7 @@ import { classicHref } from "../../lib/view";
 import { Btn } from "../components/Btn";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot } from "../components/StateDot";
+import { ScoutThis } from "../components/ScoutThis";
 import { SteerBox } from "../components/SteerBox";
 import { SteerNotes } from "../components/SteerNotes";
 import { StoryPanel } from "../components/StoryPanel";
@@ -102,6 +103,7 @@ export function TicketPage() {
                 Steer
               </Btn>
             )}
+            <ScoutThis target={{ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actionsOn ? null : ACTIONS_OFF }} />
             <TicketMoves key={`${project}/${key}`} project={project} ticketKey={key} ticket={ticket} host={page.host} liveRun={page.liveRun} />
           </div>
         </div>
