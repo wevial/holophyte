@@ -11,6 +11,7 @@ import store
 from holophyte.agents.agent_output import claude_result
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
+from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
 from holophyte.loop.gates import reap_group, run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
@@ -123,8 +124,9 @@ class Swarm:
         if self.seat is None:
             why = f"no [scout.helpers.{self.route}]"
         else:
-            probe = probe_scout_route(self.project,
-                                      f"{SCOUT_HELPER}:{self.route}", self.seat)
+            probe = probe_scout_route(
+                self.project, f"{SCOUT_HELPER}:{self.route}", self.seat,
+                min(PROBE_TIMEOUT, self.remaining_s()))
             if probe.ok:
                 return True
             why = probe.reason()
@@ -176,7 +178,7 @@ class Swarm:
                                        self.secrets)), checkout
 
     def helper(self, task, previous, mine):
-        conn, started = store.open(self.store_path), []
+        conn, started = None, []
 
         def start(proc):
             try:
@@ -188,6 +190,7 @@ class Swarm:
             mine.set()
 
         try:
+            conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
             prepared, cap = self.prepared(task), self.remaining_s()
@@ -199,7 +202,8 @@ class Swarm:
                 self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
             mine.set()
-            conn.close()
+            if conn is not None:
+                conn.close()
 
     def record(self, conn, task, argv, turn, seconds):
         _, usage = turn_answer(self.seat, turn.output)

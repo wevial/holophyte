@@ -214,7 +214,7 @@ def wave_tasks(conn, swarm, turn, wave, cut):
 
 
 def run_waves(conn, lead, swarm, tasks, waves):
-    if not (tasks and swarm.ready()):
+    if not (tasks and swarm.left() and swarm.ready()):
         move_scout(conn, lead.row.id, SYNTHESIZING)
         return
     for wave in range(1, waves + 1):

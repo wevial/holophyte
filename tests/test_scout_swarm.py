@@ -5,12 +5,15 @@ helper CLIs over a real git repository.
 Run: python3 -m unittest discover -s tests -p 'test_scout_swarm.py' -v
 """
 import json
+import threading
 import time
 from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.scout.lead as lead
 import holophyte.scout.scout_process as scout_process
+import holophyte.scout.swarm as swarm
+import store
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
 from tests.scout_stubs import fenced
@@ -117,6 +120,38 @@ class ScoutSwarmTests(ScoutFixture):
             self.run_scout(path, scout_id)
         self.assertEqual([phase for _, _, phase, *_ in self.tasks(conn, scout_id)],
                          ["done"])
+
+    def test_a_scout_with_no_budget_left_after_its_plan_skips_the_helper_probe(self):
+        path, conn, scout_id = self.research_scout()
+        self.stubs.answer(plan=plan(*QUESTIONS[:2]), report=fenced(REPORT))
+        with patch.object(lead, "monotonic", lambda: time.monotonic() - 3600):
+            self.run_scout(path, scout_id)
+        self.assertEqual([Path(call["argv"][0]).name
+                          for call in self.stubs.turns("probe")], ["claude"])
+        self.assertEqual(self.report(conn, scout_id)["cut"], QUESTIONS[:2])
+
+    def test_a_helper_whose_store_fails_to_open_ends_the_scout_without_hanging(self):
+        path, conn, scout_id = self.research_scout(swarm=2)
+        self.stubs.answer(plan=plan(*QUESTIONS[:2]), report=fenced(REPORT))
+        opened = []
+
+        def open_once_failing(store_path):
+            opened.append(store_path)
+            if len(opened) == 1:
+                time.sleep(1)
+                raise OSError("store is locked")
+            return store.open(store_path)
+
+        finished = threading.Thread(
+            target=self.cli, args=("--scout", str(scout_id), str(path)),
+            daemon=True)
+        with patch.object(swarm, "store",
+                          type("Store", (), {"open": staticmethod(
+                              open_once_failing)})):
+            finished.start()
+            finished.join(30)
+        self.assertFalse(finished.is_alive())
+        self.assertEqual(scout(conn, scout_id).phase, "failed")
 
     def test_a_second_wave_follows_a_synthesis_turn_resuming_the_lead(self):
         path, conn, scout_id = self.research_scout(waves=2)
