@@ -30,10 +30,13 @@ def finding(path, line, message="the save is not atomic", severity="p1"):
 
 
 def cluster(goal, label):
-    """The cluster's block in the plan goal: its line and the rows under it."""
+    """The cluster's block in the plan goal: its line and the rows under it;
+    fails the test when the goal holds no cluster of that label."""
     found = re.search(rf"^Cluster \d+ · {re.escape(label)} · .*?(?=\n\n|\Z)",
                       goal, re.M | re.S)
-    return None if found is None else found.group(0)
+    if found is None:
+        raise AssertionError(f"no cluster {label!r} in the plan goal:\n{goal}")
+    return found.group(0)
 
 
 class DigestCase(ScoutFixture):
@@ -143,7 +146,6 @@ class DigestGoalTests(DigestCase):
         goal = self.plan_goal()
         self.assertIn("Findings digest", goal)
         block = cluster(goal, "app/save.py")
-        self.assertIsNotNone(block, goal)
         self.assertIn("· 2 tickets ·", block.splitlines()[0])
         for row_id in ids:
             self.assertIn(f"- {row_id} · p1 · app/save.py:", block)
@@ -156,9 +158,9 @@ class DigestGoalTests(DigestCase):
         self.ran(self.a_scout())
         goal = self.plan_goal()
         self.assertIn(f"- U{pending} · guardrail · app/form.py:7 · NAT-6",
-                      cluster(goal, "app/form.py") or goal)
+                      cluster(goal, "app/form.py"))
         self.assertIn(f"- U{ledger} · guardrail · NAT-6",
-                      cluster(goal, "follow-ups with no path") or goal)
+                      cluster(goal, "follow-ups with no path"))
 
     def test_a_ticket_defect_is_a_row_of_its_stop_kinds_cluster(self):
         self.store_for()
@@ -168,7 +170,7 @@ class DigestGoalTests(DigestCase):
         self.ran(self.a_scout())
         goal = self.plan_goal()
         self.assertIn(f"- D{run} · contradiction · NAT-7 · C2, C4",
-                      cluster(goal, "ticket wording: contradiction") or goal)
+                      cluster(goal, "ticket wording: contradiction"))
 
     def test_rounds_ended_31_days_ago_are_out_of_the_window(self):
         self.store_for()
@@ -182,7 +184,7 @@ class DigestGoalTests(DigestCase):
                            started=old - DAY)
         self.ran(self.a_scout())
         goal = self.plan_goal()
-        self.assertIsNotNone(cluster(goal, "app/save.py"), goal)
+        cluster(goal, "app/save.py")
         self.assertNotIn("app/old.py", goal)
         self.assertNotIn(f"F{eight}.1.", goal)
         self.assertNotIn(f"F{nine}.", goal)
