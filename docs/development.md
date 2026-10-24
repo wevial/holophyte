@@ -1128,6 +1128,8 @@ badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivi
 `console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm.
 `console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
 findings with their status and evidence, and the newest bug report's hypotheses.
+`console/src/next/components/ScoutActions.tsx` draws its Action items under the Report, each filed
+with `POST /actions/scout-file`; a checker refusal opens New ticket with the item's draft.
 
 ### Desktop wrapper
 

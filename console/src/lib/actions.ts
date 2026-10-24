@@ -44,11 +44,14 @@ export const ACTIONS_OFF = "This daemon has not opted into actions ([serve] acti
 export const NOT_WIRED = "not wired yet";
 
 /** What a `POST /actions/...` answered: the daemon's `ok` and `detail`
- *  (holophyte/serve/server.py `unit_action()`, `requeue_action()`), or for a
+ *  (holophyte/serve/server.py `unit_action()`, `requeue_action()`), with its `problems`
+ *  and `ticket` when it names them, or for a
  *  non-2xx answer `ok: false` with its status and `error` as the detail. */
 export interface ActionResult {
   ok: boolean;
   detail: string;
+  problems?: string[];
+  ticket?: string;
 }
 
 /** One action: `POST` `route` at `base` with `body` as JSON, the bearer
@@ -84,8 +87,11 @@ export async function postAction(
     const error = typeof record.error === "string" ? record.error : "";
     return { ok: false, detail: `${url} answered ${response.status}${error ? `: ${error}` : ""}` };
   }
+  const problems = Array.isArray(record.problems) ? record.problems.filter((each): each is string => typeof each === "string") : null;
   return {
     ok: record.ok === true,
     detail: typeof record.detail === "string" ? record.detail : record.ok === true ? "done" : "the daemon gave no detail",
+    ...(problems == null ? {} : { problems }),
+    ...(typeof record.ticket === "string" ? { ticket: record.ticket } : {}),
   };
 }
