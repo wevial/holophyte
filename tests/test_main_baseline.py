@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,8 +25,8 @@ from fake_agent import (  # noqa: E402 - after sys.path
     Commit,
     Idle,
     Reply,
+    _git,
 )
-from fake_agent import _git as git  # noqa: E402 - as above
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
 import holophyte.config.project  # noqa: E402 - as above
@@ -53,6 +54,11 @@ APPROVE_APP = Reply("CRITERION 1: met — tests/test_app.py::AppTests::"
 REQUEST_CHANGES = Reply("Blocker: tidy the notes.\nVERDICT: REQUEST_CHANGES")
 CHANGE_AND_TEST = {"app.py": NEW,
                    "tests/test_app.py": TEST_APP.format(expected="new")}
+
+
+def git(cwd, *args):
+    return subprocess.run(["git", *args], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout.strip()
 
 
 def payloads(conn, run):
@@ -215,8 +221,8 @@ class Writes(Commit):
         for name, text in self.files.items():
             (cwd / name).parent.mkdir(parents=True, exist_ok=True)
             (cwd / name).write_text(text)
-        git(cwd, "add", "-A")
-        git(cwd, "commit", "-q", "-m", self.message)
+        _git(cwd, "add", "-A")
+        _git(cwd, "commit", "-q", "-m", self.message)
         return f"committed: {self.message}"
 
 
