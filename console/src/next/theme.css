@@ -144,7 +144,6 @@
   --act-ink: var(--pink-on);
   --act-wash: var(--pink-3);
   --need-wash: color-mix(in oklab, var(--pink-3) 50%, var(--pink-2));
-  --row-selected: color-mix(in oklab, var(--act-wash) 55%, var(--paper));
   --live: var(--green-9);
   --live-wash: var(--green-3);
   --ok-ink: var(--green-11);
@@ -175,6 +174,11 @@
   --edge: var(--neutral-9);
   --edge-dim: var(--neutral-7);
   --card-shadow: 0 8px 24px rgba(29, 24, 43, 0.12);
+}
+
+/* Its own rule: the bundler keeps only a rule's first color-mix() of var()s. */
+:root {
+  --row-selected: color-mix(in oklab, var(--act-wash) 55%, var(--paper));
 }
 
 :root[data-theme="dark"] {
@@ -321,7 +325,6 @@
   --act-ink: var(--pink-on);
   --act-wash: var(--pink-4);
   --need-wash: var(--pink-3);
-  --row-selected: var(--act-wash);
   --live: var(--green-9);
   --live-wash: var(--green-3);
   --ok-ink: var(--green-11);
@@ -352,6 +355,7 @@
   --edge: var(--neutral-9);
   --edge-dim: var(--neutral-7);
   --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --row-selected: var(--act-wash);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -499,7 +503,6 @@
     --act-ink: var(--pink-on);
     --act-wash: var(--pink-4);
     --need-wash: var(--pink-3);
-    --row-selected: var(--act-wash);
     --live: var(--green-9);
     --live-wash: var(--green-3);
     --ok-ink: var(--green-11);
@@ -530,6 +533,7 @@
     --edge: var(--neutral-9);
     --edge-dim: var(--neutral-7);
     --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    --row-selected: var(--act-wash);
   }
 }
 

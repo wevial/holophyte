@@ -20,8 +20,11 @@ function Sentence({ text }: { text: string }) {
       if (node != null && !open) setClipped(node.scrollHeight > node.clientHeight + 1);
     };
     measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    const node = ref.current;
+    if (node == null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
   }, [text, open]);
   return (
     <div className="min-w-0">
