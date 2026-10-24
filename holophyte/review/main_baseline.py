@@ -54,10 +54,12 @@ def wanted(pairs):
 
 def _names(line, path):
     name = Path(path).name
-    spellings = (path, path.removesuffix(".py").replace("/", "."),
-                 name.rsplit(".", 1)[0] if "." in name else name)
-    return any(re.search(rf"(?<![\w-]){re.escape(spelling)}(?![\w-])", line)
-               for spelling in spellings)
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    spellings = ((path, r"[\w-]"),
+                 (path.removesuffix(".py").replace("/", "."), r"[\w-]"),
+                 (stem, r"[\w/.-]"))
+    return any(re.search(rf"(?<!{before}){re.escape(spelling)}(?![\w-])", line)
+               for spelling, before in spellings)
 
 
 def lines_for(verify_cmd, files):
