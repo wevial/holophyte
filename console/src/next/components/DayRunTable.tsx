@@ -41,7 +41,7 @@ function Change({ row }: { row: DayRun }) {
 function DayRow({ row, since }: { row: DayRun; since: number }) {
   const ended = row.ended_ms == null ? "–" : `${localMidnight(row.ended_ms) > since ? `${weekday.format(row.ended_ms)} ` : ""}${formatClock(row.ended_ms)}`;
   const took = row.working_ms == null ? "" : `, took ${formatSettled(row.working_ms)}${row.estimate_ms == null ? "" : ` against ${formatSettled(row.estimate_ms)}`}`;
-  const detail = reason(row);
+  const detail = row.state === "resumed" ? <ResumedAs row={row} /> : reason(row);
   return (
     <li data-run={row.id} className={`${GRID} relative min-h-[52px] border-b border-rule-2 p-3 transition-colors duration-(--motion-colour) hover:bg-paper-2`}>
       <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${STATES[row.state].word}${took}, ended ${ended}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
@@ -52,11 +52,7 @@ function DayRow({ row, since }: { row: DayRun; since: number }) {
       <span className={`${MONO} text-ink-3 [overflow-wrap:anywhere]`}>{row.project}</span>
       <span>
         <span className="flex items-center gap-1.5"><StateDot state={row.state} hideWord /><span className={`${MONO} font-medium ${TONE_TEXT[STATES[row.state].tone]}`}>{STATES[row.state].word}</span></span>
-        {(detail || row.state === "resumed") && (
-          <span className="mt-1 block font-mono text-[11.5px] leading-[1.4] text-ink-3 [overflow-wrap:anywhere]">
-            {row.state === "resumed" ? <ResumedAs row={row} /> : detail}
-          </span>
-        )}
+        {detail && <span className="mt-1 block font-mono text-[11.5px] leading-[1.4] text-ink-3 [overflow-wrap:anywhere]">{detail}</span>}
       </span>
       <span className={`${MONO} text-ink-3`}>{row.rounds || "–"}</span>
       <span className={`${MONO} text-ink-3`}>{row.findings || "–"}</span>
