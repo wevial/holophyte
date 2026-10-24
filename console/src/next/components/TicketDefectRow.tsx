@@ -21,7 +21,7 @@ function RequeueNote({ note }: { note: string }) {
   const more = note.includes("\n") || note.length > NOTE_LINE;
   return (
     <div className="flex items-baseline gap-x-3 pl-1">
-      <p id={noteId} data-note className={`m-0 min-w-0 flex-1 font-read text-[14px] leading-[1.5] text-ink-2 ${open ? "whitespace-pre-line [overflow-wrap:anywhere]" : "truncate"}`}>
+      <p id={noteId} data-note className={`m-0 min-w-0 flex-1 font-read text-[14px] leading-[1.5] text-ink-2 ${open || !more ? "whitespace-pre-line [overflow-wrap:anywhere]" : "truncate"}`}>
         {open ? note : note.split("\n")[0]}
       </p>
       {more && (
