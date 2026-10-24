@@ -53,6 +53,9 @@ else:
 for args in answers.get(turn + "_git", []):
     ran = subprocess.run(["git", *args], capture_output=True, text=True)
     done["git"].append([ran.returncode, ran.stdout.strip()])
+for command in answers.get(turn + "_sh", []):
+    ran = subprocess.run(command, shell=True, capture_output=True, text=True)
+    done.setdefault("sh", []).append([ran.returncode, ran.stdout.strip()])
 if answers.get(turn + "_tokens"):
     print("tokens used\n" + answers[turn + "_tokens"], flush=True)
 if turn == "helper":
@@ -68,7 +71,8 @@ class LeadStubs:
     turn writes its pid to; `TURN_shared` to a directory the turn holds a
     file in while it sleeps, logging how many files it saw there;
     `TURN_git` to git argument lists it runs, logging each exit status and
-    output; `TURN_tokens` to a count printed under a `tokens used` line;
+    output; `TURN_sh` to shell commands it runs, logged the same way;
+    `TURN_tokens` to a count printed under a `tokens used` line;
     `helpers` maps a helper's question to answers overriding these for it;
     and `store` to a store whose scouts' lead sessions each call logs."""
 

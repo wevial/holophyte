@@ -34,6 +34,7 @@ LIVE = tuple(phase.value for phase in (
 SPAWN = subprocess.Popen
 START_LOCK = "scout-start.lock"
 START_FAILED = "scout_start_failed"
+SANDBOX_UNAVAILABLE = "scout_sandbox_unavailable"
 SYSTEMD_UNIT_VARS = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID",
              "NOTIFY_SOCKET", "MANAGERPID")
 
@@ -72,6 +73,21 @@ def scout_unit(name, scout_id):
 
 def _systemd_run():
     return os.environ.get("INVOCATION_ID") and shutil.which("systemd-run")
+
+
+def _private_tmp_spawn():
+    return bool(os.environ.get("INVOCATION_ID")) and not shutil.which(
+        "systemd-run")
+
+
+def _fail_sandboxless(conn, scout_id):
+    reason = ("systemd-run is missing under a systemd unit, so the scout would"
+              " inherit its PrivateTmp, where Codex read-only turns cannot"
+              " start")
+    with store.transaction(conn):
+        record_scout_event(conn, scout_id, SANDBOX_UNAVAILABLE, reason)
+        end_scout(conn, scout_id, "failed", reason)
+    return reason
 
 
 def start_scout(name, target, scout_id):
@@ -114,6 +130,11 @@ def _start(name, target, row, out):
                   cwd=target.path, env=scratch_git_environment())
         move_scout(conn, row.id, PLANNING, base_sha=base,
                    host=socket.gethostname())
+        if _private_tmp_spawn():
+            reason = _fail_sandboxless(conn, row.id)
+            print(f"[holo2] {name}: scout {row.id} ended failed: {reason}",
+                  file=out)
+            return False
         try:
             started = start_scout(name, target, row.id)
         except OSError as bad:

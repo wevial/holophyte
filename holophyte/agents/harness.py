@@ -15,6 +15,8 @@ TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",
 WRITING_ROLES = ("implementer", "trimmer")
 SCOUT_LEAD = "scout-lead"
 SCOUT_HELPER = "scout-helper"
+SCOUT_RUNNER = "scout-runner"
+READ_ONLY_ROLES = (SCOUT_LEAD, SCOUT_HELPER)
 TABLE_KEYS = ("harness", "model", "effort")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 SHADOW_KEY = "implementer_shadow"
@@ -72,7 +74,10 @@ class Claude(Adapter):
 
     @staticmethod
     def subagents(role):
-        return ["--disallowedTools", "Agent", "Task"] if role == SCOUT_LEAD else []
+        tools = ["Agent", "Task"] if role == SCOUT_LEAD else []
+        if role in READ_ONLY_ROLES:
+            tools += ["Bash", "Edit", "Write", "NotebookEdit"]
+        return ["--disallowedTools", *tools] if tools else []
 
     @staticmethod
     def output_format(role):
@@ -101,7 +106,7 @@ class Codex(Adapter):
         if role in WRITING_ROLES:
             return [binary, "exec", *self.IMPLEMENTER, *self.route(options)]
         return [binary, "exec", *self.route(options), *self.subagents(role),
-                "--dangerously-bypass-approvals-and-sandbox"]
+                *self.sandbox(role)]
 
     def session(self, argv):
         return None
@@ -110,13 +115,21 @@ class Codex(Adapter):
         if role in WRITING_ROLES:
             return [binary, "exec", "resume", session, *self.IMPLEMENTER,
                     *self.route(options)]
-        return [binary, "exec", "resume", *self.route(options),
-                *self.subagents(role),
-                "--dangerously-bypass-approvals-and-sandbox", session]
+        tail = [*self.route(options), *self.subagents(role)]
+        if role in READ_ONLY_ROLES:
+            return [binary, "exec", *self.sandbox(role), "resume", *tail,
+                    session]
+        return [binary, "exec", "resume", *tail, *self.sandbox(role), session]
 
     @staticmethod
     def subagents(role):
         return ["--disable", "multi_agent"] if role == SCOUT_LEAD else []
+
+    @staticmethod
+    def sandbox(role):
+        if role in READ_ONLY_ROLES:
+            return ["--sandbox", "read-only"]
+        return ["--dangerously-bypass-approvals-and-sandbox"]
 
     def reported_session(self, binary, output, role, run):
         """An implementer's id must be a UUID for a resume to name it."""

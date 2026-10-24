@@ -400,7 +400,8 @@ def unwinding_on_signal(name):
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
            project=None, mounts=(), keep_session=False, carry=None, quiet=None,
-           on_event=None):
+           on_event=None, around=None):
+    around = around or (lambda checkout: contextlib.nullcontext())
     hook = {"on_start": on_start} if on_start is not None else {}
     if quiet is not None:
         hook["quiet"] = quiet
@@ -408,7 +409,9 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
         hook["on_event"] = on_event
     if route.backend == "none":
         kwargs = {} if env is None else {"env": env}
-        return (runner or run_capped)(argv, worktree, timeout, **hook, **kwargs)
+        with around(worktree):
+            return (runner or run_capped)(argv, worktree, timeout, **hook,
+                                          **kwargs)
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
     from holophyte.config.worktree_settings import carry_directories
@@ -424,7 +427,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
                 else contextlib.nullcontext((worktree, {})))
     with (unwinding_on_signal(name),
           credential_copy(route, worktree, project) as scratch,
-          checkout as (workspace, git_env)):
+          checkout as (workspace, git_env), around(workspace)):
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
