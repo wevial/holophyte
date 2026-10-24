@@ -41,6 +41,7 @@ from store.scouts import (
     beat_scout,
     claim_scout,
     end_scout,
+    holding_scout,
     record_scout_event,
     scout,
 )
@@ -302,6 +303,20 @@ def passed(conn, project, row, steered, stopping):
                            failure=str(bad).strip() or type(bad).__name__)
 
 
+def held_pass_run(conn, project, row, steered, stopping, interval_s):
+    with scout_heartbeat(conn, row.id, interval_s):
+        outcome = passed(conn, project, row, steered, stopping)
+    try:
+        return settle_pass(conn, row.id, outcome)
+    except ScoutRefused:
+        raise
+    except Exception as bad:
+        if conn.in_transaction:
+            conn.rollback()
+        reason = str(bad).strip() or type(bad).__name__
+        return settle_pass(conn, row.id, outcome._replace(failure=reason))
+
+
 def pass_mode(conn, project, row, steered, stopping):
     scout_id = row.id
     interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
@@ -314,18 +329,9 @@ def pass_mode(conn, project, row, steered, stopping):
               flush=True)
         return 1
     try:
-        with scout_heartbeat(conn, scout_id, interval_s):
-            outcome = passed(conn, project, row, steered, stopping)
-        try:
-            return settle_pass(conn, scout_id, outcome)
-        except ScoutRefused:
-            raise
-        except Exception as bad:
-            if conn.in_transaction:
-                conn.rollback()
-            reason = str(bad).strip() or type(bad).__name__
-            return settle_pass(conn, scout_id,
-                               outcome._replace(failure=reason))
+        with holding_scout(conn, scout_id, os.getpid()):
+            return held_pass_run(conn, project, row, steered, stopping,
+                                 interval_s)
     except (ScoutEnded, ScoutRefused) as ended:
         print(f"[holo2] scout {scout_id} ended elsewhere: {ended}", flush=True)
         return 1

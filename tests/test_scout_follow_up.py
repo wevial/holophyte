@@ -8,8 +8,10 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_follow_up.py' -v
 import json
 import os
 import re
+import sys
 import time
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -35,9 +37,11 @@ from store.scout_thread import messages, post_message, take_message
 from store.scouts import (
     ScoutRefused,
     beat_scout,
+    claim_scout,
     create_scout,
     end_scout,
     file_scout_action,
+    holding_scout,
     move_scout,
     record_scout_actions,
     record_scout_report,
@@ -75,6 +79,17 @@ SECOND = {"summary": "the digest retries too",
                         "evidence": [{"url": "https://example.test/digest"}]}],
           "actions": [{"title": "share the backoff", "why": "same loop",
                        "kind": "fix", "body": "Share the backoff."}]}
+
+ROOT = Path(__file__).resolve().parent.parent
+REPLACE = """import store
+from holophyte.scout.follow_up import current_pass, fail_pass
+from store.scout_thread import post_message, take_message
+
+conn = store.open("{store}")
+fail_pass(conn, {scout}, current_pass(conn, {scout}), "heartbeat stale")
+take_message(conn, post_message(conn, {scout}, "maintainer", "steer",
+                                "And the cron?"))
+"""
 
 
 def plan(*questions):
@@ -405,6 +420,49 @@ class EndedPassTests(PassCase):
         self.assertNotEqual(current_pass(self.store_conn, scout_id)["message"],
                             targeted["message"])
         self.assertEqual(self.payloads(scout_id, "scout_pass_stopped"), [])
+
+
+class ReplacedPassTests(PassCase):
+    def test_a_stale_process_writes_nothing_once_its_steer_is_replaced(self):
+        scout_id = self.done_scout()
+        take_message(self.store_conn, self.steer(scout_id))
+        row = scout(self.store_conn, scout_id)
+        earlier = current_pass(self.store_conn, scout_id)
+        replace = self.root / "replace.py"
+        replace.write_text(REPLACE.format(store=self.target.store_path,
+                                          scout=scout_id))
+        self.stubs.answer(pass_plan=plan(QUESTIONS[0]), report=fenced(SECOND),
+                          pass_plan_sh=[f"PYTHONPATH={ROOT} {sys.executable}"
+                                        f" {replace}"])
+
+        self.assertEqual(pass_mode(self.store_conn, self.target, row, earlier,
+                                   Stopping()), 1)
+        now = scout(self.store_conn, scout_id)
+        self.assertEqual((now.phase, now.pid), ("planning", None))
+        self.assertEqual(self.tasks(scout_id), [])
+        self.assertEqual(self.stubs.turns("helper"), [])
+        self.assertEqual(self.stubs.turns("report"), [])
+
+        self.stubs.answer(pass_plan=plan(QUESTIONS[0]), report=fenced(SECOND))
+        self.assertEqual(pass_mode(self.store_conn, self.target, now,
+                                   current_pass(self.store_conn, scout_id),
+                                   Stopping()), 0)
+        self.assertEqual(self.reports(scout_id)[2], dict(SECOND, cut=[]))
+        self.assertEqual(scout(self.store_conn, scout_id).phase, "done")
+
+
+    def test_a_stale_process_beat_is_refused_once_its_steer_is_replaced(self):
+        scout_id = self.done_scout()
+        take_message(self.store_conn, self.steer(scout_id))
+        claim_scout(self.store_conn, scout_id, os.getpid())
+        fail_pass(self.store_conn, scout_id,
+                  current_pass(self.store_conn, scout_id), "heartbeat stale")
+        take_message(self.store_conn, self.steer(scout_id, "And the cron?"))
+        beaten = scout(self.store_conn, scout_id).heartbeat_at
+        with holding_scout(self.store_conn, scout_id, os.getpid()):
+            with self.assertRaises(ScoutRefused):
+                beat_scout(self.store_conn, scout_id, now=beaten + MINUTE)
+        self.assertEqual(scout(self.store_conn, scout_id).heartbeat_at, beaten)
 
 
 class StoppedPassTests(PassCase):

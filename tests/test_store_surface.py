@@ -395,10 +395,14 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # The scout process, its swarm, its reads and
                                  # its filing write and read a scout's record
                                  # through these.
+                                 # HOLO-525: `holding_scout`, a pass process's
+                                 # writes refused once it no longer holds the
+                                 # scout's pid.
                                  (store.scouts, ["beat_scout", "claim_scout",
                                                  "create_scout",
                                                  "end_scout", "end_scout_task",
                                                  "file_scout_action",
+                                                 "holding_scout",
                                                  "move_scout",
                                                  "record_scout_actions",
                                                  "record_scout_event",
