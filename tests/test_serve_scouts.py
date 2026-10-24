@@ -359,7 +359,9 @@ class DetailTests(ScoutCase):
         cases = [(("shown", "likely", "unconfirmed"),
                   ["confirmed", "partial", "unconfirmed"]),
                  (("confirmed", "partial", "unverified", "probable"),
-                  ["confirmed", "partial", "unconfirmed", "unconfirmed"])]
+                  ["confirmed", "partial", "unconfirmed", "unconfirmed"]),
+                 (("confirmed", "partial", "unconfirmed"),
+                  ["confirmed", "partial", "unconfirmed"])]
         seeded = [(self.done_scout(stored), served)
                   for stored, served in cases]
         port = self.serve(self.project)
