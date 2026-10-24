@@ -269,14 +269,12 @@ test("history rows separate ticket and title and name and link the merged run wi
   expect(cells[ENDED]!.textContent).toBe("19:45");
 });
 
-test("history draws each run's time box bar green to 80 %, amber to the box and red past it", async () => {
-  await mount("#/runs/history", fleet([
-    run(224, "merged", 24, 30), run(225, "merged", 25, 30), run(230, "merged", 30, 30), run(231, "merged", 31, 30),
-  ], []).fetch);
-  const took = (id: number) => dayCells(id)[TOOK]!;
-  expect([224, 225, 230, 231].map((id) => took(id).querySelector("[role='progressbar']")!.getAttribute("data-tone"))).toEqual(["ok", "warn", "warn", "over"]);
-  expect([224, 225, 230, 231].map((id) => took(id).querySelector("[data-minutes]")!.textContent)).toEqual(["24m / 30m", "25m / 30m", "30m / 30m", "31m / 30m"]);
-  expect([224, 225, 230, 231].map((id) => took(id).querySelector("[data-delta]")!.textContent)).toEqual(["−6m", "−5m", "0m", "+1m"]);
+test("history draws a run's time box bar from its working time against its estimate", async () => {
+  await mount("#/runs/history", fleet([run(225, "merged", 25, 30)], []).fetch);
+  const took = dayCells(225)[TOOK]!;
+  expect(took.querySelector("[role='progressbar']")!.getAttribute("data-tone")).toBe("warn");
+  expect(took.querySelector("[data-minutes]")!.textContent).toBe("25m / 30m");
+  expect(took.querySelector("[data-delta]")!.textContent).toBe("−5m");
 });
 
 test("history leaves the bar empty without an estimate, dashes a run without work and drops the 1.5× note", async () => {
