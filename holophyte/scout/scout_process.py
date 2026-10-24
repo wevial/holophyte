@@ -15,6 +15,7 @@ from store.scouts import (
     PLANNING,
     ScoutRefused,
     beat_scout,
+    claim_scout,
     end_scout,
     record_scout_event,
     scout,
@@ -130,8 +131,9 @@ def make_lead(project, scout_id, base_sha):
 
 
 def _end(conn, scout_id, phase, kind, summary, reason):
-    record_scout_event(conn, scout_id, kind, summary)
-    end_scout(conn, scout_id, phase, reason)
+    with store.transaction(conn):
+        record_scout_event(conn, scout_id, kind, summary)
+        end_scout(conn, scout_id, phase, reason)
 
 
 def scout_mode(project, scout_id):
@@ -144,7 +146,12 @@ def scout_mode(project, scout_id):
             return 1
         interval_s = sweep_config(project).heartbeat_stale_ms / 1000 / BEATS_PER_STALE
         try:
-            beat_scout(conn, scout_id, pid=os.getpid())
+            claim_scout(conn, scout_id, os.getpid())
+        except ScoutRefused as lost:
+            print(f"[holo2] scout {scout_id} was claimed elsewhere: {lost}",
+                  flush=True)
+            return 1
+        try:
             record_scout_event(conn, scout_id, "scout_started",
                                f"scout {scout_id} started as pid {os.getpid()}")
             try:

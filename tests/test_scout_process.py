@@ -5,6 +5,7 @@ host registry.
 Run: python3 -m unittest discover -s tests -p 'test_scout_process.py' -v
 """
 import io
+import os
 import subprocess
 import sys
 import time
@@ -22,7 +23,9 @@ from holophyte.config.project import Project  # noqa: E402
 from holophyte.host.registry import Host, HostError, settings  # noqa: E402
 from holophyte.host.sweep_host import supervise_host  # noqa: E402
 from store.scouts import (  # noqa: E402
+    ScoutRefused,
     beat_scout,
+    claim_scout,
     create_scout,
     end_scout,
     move_scout,
@@ -244,6 +247,30 @@ class ScoutProcessTests(ScoutFixture):
                          ("failed", "ended by another hand"))
         self.assertNotIn("scout_done", self.events(path, scout_id))
 
+    def test_a_process_that_loses_the_claim_leaves_the_lead_alone(self):
+        path = self.project("alpha")
+        scout_id = self.a_scout(path, "planning")
+        unclaimed = scout(self.conn(path), scout_id)
+        claim_scout(self.conn(path), scout_id, 111)
+        with patch.object(scout_process, "scout", lambda *_: unclaimed):
+            code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 1, printed)
+        self.assertEqual(scout(self.conn(path), scout_id).pid, 111)
+        self.assertFalse(self.lead(path, scout_id).exists())
+        self.assertEqual(self.events(path, scout_id), [])
+
+    def test_an_end_refused_after_its_event_leaves_no_end_event(self):
+        path = self.project("alpha")
+        scout_id = self.a_scout(path, "planning")
+
+        def ended_elsewhere(_conn, ended_id, *_args, **_options):
+            raise ScoutRefused(ended_id, "stopped", "the scout has already ended")
+
+        with patch.object(scout_process, "end_scout", ended_elsewhere):
+            code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 1, printed)
+        self.assertEqual(self.events(path, scout_id), ["scout_started"])
+
 
 class ScoutSweepTests(ScoutFixture):
     def setUp(self):
@@ -327,3 +354,84 @@ class ScoutSweepTests(ScoutFixture):
                 self.assertIn(key, str(raised.exception))
         registry.write_text("")
         self.assertEqual(settings(Host.locate()).scout_max_parallel, 2)
+
+    def test_a_beat_landing_after_the_stale_read_spares_the_scout(self):
+        path = self.project("alpha",
+                            "[supervisor]\nheartbeat_stale_min = 1\n")
+        scout_id = self.a_scout(path, "planning")
+        beat_scout(self.conn(path), scout_id, now=now_ms() - 2 * MINUTE)
+        other, read = self.conn(path), scout_sweep.scouts
+
+        def read_then_beat(conn, phases):
+            rows = read(conn, phases)
+            beat_scout(other, scout_id)
+            return rows
+
+        with patch.object(scout_sweep, "scouts", read_then_beat):
+            self.sweep_pass()
+        self.assertEqual(scout(other, scout_id).phase, "planning")
+
+    def test_a_held_or_disabled_project_starts_none_of_its_scouts(self):
+        for admission in ("held", "disabled"):
+            with self.subTest(admission=admission):
+                path = self.project(admission)
+                queued = self.a_scout(path)
+                conn = self.conn(path)
+                (project,) = conn.execute("SELECT id FROM projects").fetchone()
+                store.set_admission(conn, project, admission, "operator says")
+                self.sweep_pass()
+                self.assertEqual(self.spawned, [])
+                self.assertEqual(scout(conn, queued).phase, "queued")
+
+    def test_a_store_that_cannot_be_counted_stops_every_start(self):
+        alpha, beta = self.project("alpha"), self.project("beta")
+        queued = self.a_scout(beta)
+        unreadable = Project.locate(alpha, adopt=False).store_path
+        for leftover in unreadable.parent.glob(unreadable.name + "-*"):
+            leftover.unlink()
+        unreadable.write_bytes(b"not a database" * 512)
+        self.sweep_pass()
+        self.assertEqual(self.spawned, [])
+        self.assertEqual(scout(self.conn(beta), queued).phase, "queued")
+
+    def test_a_project_whose_stale_check_fails_starts_none_of_its_scouts(self):
+        alpha, beta = self.project("alpha"), self.project("beta")
+        stranded = self.a_scout(alpha, created=1000)
+        started = self.a_scout(beta, created=2000)
+        config = Project.locate(alpha, adopt=False).config_path
+        config.write_text(config.read_text()
+                          + '[supervisor]\nheartbeat_stale_min = "soon"\n')
+        self.sweep_pass()
+        self.assertEqual([argv[-2] for argv, _ in self.spawned], [str(started)])
+        self.assertEqual(scout(self.conn(alpha), stranded).phase, "queued")
+
+    def test_under_systemd_a_scout_starts_as_its_own_user_unit(self):
+        path = self.project("alpha")
+        with open(Host.locate().path, "a") as registry:
+            registry.write("\n[scout]\nmax_parallel = 1\n")
+        first = self.a_scout(path, created=1000)
+        second = self.a_scout(path, created=2000)
+        stubs, record = self.root / "bin", self.root / "systemd-run.argv"
+        stubs.mkdir()
+        stub = stubs / "systemd-run"
+        stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{record}"\n')
+        stub.chmod(0o755)
+        log = scout_process.scout_dir(Project.locate(path, adopt=False),
+                                      first) / "scout.log"
+        with patch.dict(os.environ, {
+                "PATH": f"{stubs}{os.pathsep}{os.environ['PATH']}",
+                "INVOCATION_ID": "sweep-run"}):
+            self.sweep_pass()
+            argv = record.read_text().splitlines()
+            record.unlink()
+            end_scout(self.conn(path), first, "done", "answered")
+            del os.environ["INVOCATION_ID"]
+            self.sweep_pass()
+        self.assertEqual(argv[:5], ["--user", "--collect", "--quiet", "--unit",
+                                    f"holophyte-scout-alpha-{first}"])
+        self.assertIn(f"--property=StandardOutput=append:{log}", argv)
+        self.assertIn("--setenv=PATH", argv)
+        self.assertNotIn("--setenv=INVOCATION_ID", argv)
+        self.assertEqual(argv[-3:], ["--scout", str(first), str(path)])
+        self.assertFalse(record.exists())
+        self.assertEqual([argv[-2] for argv, _ in self.spawned], [str(second)])
