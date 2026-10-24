@@ -97,7 +97,8 @@ class ScoutPhaseTests(ScoutCase):
                               base_sha="def456", now=9000)
         self.assertIn(f"scout {scout_id}", str(refused.exception))
         self.assertIn("planning", str(refused.exception))
-        self.assertEqual(refused.exception.phase, "planning")
+        self.assertEqual((refused.exception.scout_id, refused.exception.phase),
+                         (scout_id, "planning"))
         self.assertEqual(scouts.scout(self.conn, scout_id), row)
 
     def test_moves_follow_the_edges_and_others_change_nothing(self):
@@ -194,6 +195,44 @@ class ScoutRecordTests(ScoutCase):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "CHECK"):
             scouts.record_scout_tasks(self.conn, scout_id, 1, 2,
                                       [{"question": "edit", "mode": "write"}])
+
+    def test_a_queued_task_may_end_stopped_but_not_done_or_failed(self):
+        scout_id = self.swarming()
+        queued, stopped = scouts.record_scout_tasks(
+            self.conn, scout_id, 1, 1, [{"question": "where", "mode": "read"},
+                                        {"question": "why", "mode": "read"}])
+        for phase in ("done", "failed"):
+            with self.subTest(phase=phase), self.assertRaises(ScoutRefused):
+                scouts.end_scout_task(self.conn, queued, phase, tokens=5)
+        scouts.end_scout_task(self.conn, stopped, "stopped", now=1750)
+        self.assertEqual(self.conn.execute(
+            "SELECT id, phase, startedAt, endedAt, durationMs, tokens"
+            " FROM scoutTasks ORDER BY id").fetchall(),
+            [(queued, "queued", None, None, None, None),
+             (stopped, "stopped", None, 1750, None, None)])
+
+    def test_an_ended_scout_refuses_task_ends_and_events_but_files_items(self):
+        scout_id = self.swarming()
+        (task,) = scouts.record_scout_tasks(
+            self.conn, scout_id, 1, 1, [{"question": "where", "mode": "read"}])
+        scouts.start_scout_task(self.conn, task, now=1000)
+        scouts.record_scout_actions(self.conn, scout_id, 1, [{"title": "a"}])
+        scouts.end_scout(self.conn, scout_id, "done", "answered")
+
+        with self.assertRaises(ScoutRefused):
+            scouts.end_scout_task(self.conn, task, "done", now=2000)
+        with self.assertRaises(ScoutRefused):
+            scouts.record_scout_event(self.conn, scout_id, "late", "after")
+        scouts.file_scout_action(self.conn, scout_id, 1, "KEY-1", now=3000)
+        self.assertEqual(self.conn.execute(
+            "SELECT phase, endedAt FROM scoutTasks WHERE id = ?",
+            (task,)).fetchone(), ("running", None))
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM runEvents WHERE scoutId = ?",
+            (scout_id,)).fetchone(), (0,))
+        self.assertEqual(self.conn.execute(
+            "SELECT ticketKey, filedAt FROM scoutActions WHERE scoutId = ?",
+            (scout_id,)).fetchone(), ("KEY-1", 3000))
 
     def test_events_count_per_scout_and_scouts_read_by_phase_oldest_first(self):
         newer = self.new_scout(now=200)

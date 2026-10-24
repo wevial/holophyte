@@ -30,7 +30,7 @@ SELECT = f"SELECT {', '.join(COLUMNS)} FROM scouts"
 class ScoutRefused(Exception):
     def __init__(self, scout_id, phase, detail):
         super().__init__(f"scout {scout_id} is {phase}: {detail}")
-        self.phase = phase
+        self.scout_id, self.phase = scout_id, phase
 
 
 class Scout(NamedTuple):
@@ -196,9 +196,14 @@ def end_scout_task(conn, task_id, phase, *, tokens=None, cost_usd=None,
     now = _now(now)
     with _transaction(conn):
         scout_id, scout_phase, current, started_at = _task(conn, task_id)
+        _live(conn, scout_id)
         if current in TASK_ENDED:
             raise ScoutRefused(scout_id, scout_phase,
                                f"task {task_id} has already ended {current}")
+        if current == ScoutTaskPhase.QUEUED.value \
+                and phase != ScoutTaskPhase.STOPPED.value:
+            raise ScoutRefused(scout_id, scout_phase,
+                               f"task {task_id} is queued and can only stop")
         conn.execute(
             "UPDATE scoutTasks SET phase = ?, endedAt = ?, durationMs = ?,"
             " tokens = ?, costUsd = ?, excerpt = ? WHERE id = ?",
@@ -245,17 +250,16 @@ def record_scout_event(conn, scout_id, kind, summary, level="narrative",
         raise ValueError("payload is a detail-level field")
     summary, payload = _redact_event(summary, payload)
     with _transaction(conn):
-        row = conn.execute("SELECT projectId FROM scouts WHERE id = ?",
-                           (scout_id,)).fetchone()
-        if row is None:
-            raise ValueError(f"no scout {scout_id}")
+        _live(conn, scout_id)
+        (project_id,) = conn.execute("SELECT projectId FROM scouts"
+                                     " WHERE id = ?", (scout_id,)).fetchone()
         (seq,) = conn.execute(
             "SELECT COALESCE(MAX(seq), 0) + 1 FROM runEvents"
             " WHERE scoutId = ?", (scout_id,)).fetchone()
         conn.execute(
             "INSERT INTO runEvents (runId, projectId, scoutId, seq, level,"
             " kind, summary, payload, at) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (row[0], scout_id, seq, level, kind, summary, payload, _now(now)))
+            (project_id, scout_id, seq, level, kind, summary, payload, _now(now)))
         return seq
 
 
