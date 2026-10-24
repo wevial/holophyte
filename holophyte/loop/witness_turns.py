@@ -1,4 +1,6 @@
 """Witness pre-check gaps sent back to the implementer before the round 1 review."""
+from functools import partial
+
 import store
 import store.read
 from holophyte.agents.fix_session import witness_turn
@@ -7,7 +9,7 @@ from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.runs import set_phase
 from holophyte.loop.stop import boundary
 from holophyte.redact import safe_print as print
-from holophyte.review import criterion_ids, witness_precheck
+from holophyte.review import criterion_ids, main_baseline, witness_precheck
 from holophyte.review.briefs import witness_brief
 
 WITNESS_TURNS = 2
@@ -33,6 +35,15 @@ def _turn_gaps(entries):
             if not any(gap.startswith(f"criterion C{entry['criterion']} names "
                                       f"`{path}`;")
                        for path in _unchecked(entry))]
+
+
+def _with_baseline(entries, results):
+    for result in results:
+        found = main_baseline.gap(result)
+        for entry in entries:
+            if found and entry["criterion"] == result["criterion"]:
+                entry["gaps"].append(found)
+    return entries
 
 
 def _unnamed(entries):
@@ -76,6 +87,9 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
     if entries is None and ok:
         return sha, ok, out, ""
+    baseline = partial(main_baseline.baselines, project, conn, run_id, beat_s,
+                       wt, base_sha, criteria=criteria, verify_cmd=verify_cmd)
+    results = baseline(sha, ok=ok)
     checked = sha if entries is not None else None
     if entries is None:
         pairs = criterion_ids.numbered(conn, run_id, criteria)
@@ -83,6 +97,7 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
         entries = [{"criterion": n, "id": f"C{n}", "gaps": [], "checks": [],
                     "named": "ok" if files else "no_file"}
                    for (n, _), files in zip(pairs, files_by_criterion)]
+    entries = _with_baseline(entries, results)
     while ok and (gaps := _turn_gaps(entries)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
@@ -105,8 +120,10 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
         ok, out = checks()
         fresh = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                         base_sha, sha, criteria, verify_cmd, ok)
+        results = baseline(sha, ok=ok)
         if fresh is not None:
-            entries, checked = fresh, sha
+            entries, checked = _with_baseline(fresh, results), sha
     when = (None if checked is None else "before this review" if checked == sha
             else f"at {checked[:12]}, before verify went red")
-    return sha, ok, out, witness_brief(_gaps(entries), _unnamed(entries), when)
+    return sha, ok, out, (witness_brief(_gaps(entries), _unnamed(entries), when)
+                          + main_baseline.brief(results))
