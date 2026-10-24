@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CleanReviewLine, FindingRow } from "../components/FindingRow";
 import { StateDot } from "../components/StateDot";
+import { TicketDefectRow } from "../components/TicketDefectRow";
 import { byProject, useFindingsPage, type FindingRowView, type FindingsPage, type Idle, type OpenFinding } from "../findings";
 import { storeScope } from "../projects";
 import type { State } from "../state";
@@ -103,6 +104,15 @@ export function Findings() {
   const groups = [
     { label: "Open", empty: `Nothing open${where}.`, parts: findingRows(page.open) },
     { label: "Follow-ups", empty: `No follow-ups${where}.`, parts: findingRows(page.followUps) },
+    ...(page.defects.length === 0
+      ? []
+      : [
+          {
+            label: "Ticket defects",
+            empty: "",
+            parts: split(page.defects, (defect) => defect.project, (defect) => <TicketDefectRow key={`${defect.base} ${defect.run} ${defect.at}`} defect={defect} />),
+          },
+        ]),
     { label: "Settled this week", empty: `Nothing settled${where} this week.`, parts: findingRows(page.settled, true) },
     {
       label: "Clean reviews",

@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
-import type { AdvisoryFinding, Findings, FindingsRun, FollowUpRow, Status, StatusRun } from "../lib/contract.gen";
+import type { AdvisoryFinding, Findings, FindingsRun, FollowUpRow, Status, StatusRun, TicketDefect } from "../lib/contract.gen";
 import { ACTIONS_OFF } from "../lib/actions";
 import { projectName } from "../lib/derive";
 import { findingKey, findingParts, findingPath, findingsHistory, severityOf, type HistoryFinding, type Severity } from "../lib/findings";
@@ -88,6 +88,11 @@ interface CleanReview {
   reviewer: string | null;
 }
 
+export interface DefectView extends TicketDefect {
+  project: string;
+  base: string;
+}
+
 export interface FindingsPage {
   project: string | undefined;
   /** Whether some scoped host has answered `/findings`, or lacks it. */
@@ -100,6 +105,7 @@ export interface FindingsPage {
   followUps: FollowUp[];
   settled: TaggedFinding[];
   clean: CleanReview[];
+  defects: DefectView[];
 }
 
 type Host = HostRecord<ContractBodies>;
@@ -331,16 +337,18 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
     page.followUps.push({ pending: row.state === "pending", at: row.created_ms, row: followUpRow(project, host.base, row, run) });
     if (row.kind === "feature" && row.state === "pending") page.drafts += 1;
   }
+  for (const defect of answer.ticket_defects) page.defects.push({ ...defect, project, base: host.base });
 }
 
 function useSortedPage(hosts: Host[], now: number, project: string | undefined): FindingsPage {
   const { answered, answers } = useFindings(hosts, now, useContext(PollDepsContext));
   const since = weekSince(now);
-  const page: FindingsPage = { project, answered, reviews: 0, findings: 0, drafts: 0, open: [], followUps: [], settled: [], clean: [] };
+  const page: FindingsPage = { project, answered, reviews: 0, findings: 0, drafts: 0, open: [], followUps: [], settled: [], clean: [], defects: [] };
   for (const { host, findings } of answers) addHost(page, host, findings, since);
   page.open.sort(worstFirst);
   page.settled.sort(worstFirst);
   page.followUps.sort(pendingFirst);
+  page.defects.sort((a, b) => b.at - a.at);
   return page;
 }
 

@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Findings, FindingsRun, FollowUpRow, Round, Status } from "../../src/lib/contract.gen";
+import type { Findings, FindingsRun, FollowUpRow, Round, Status, TicketDefect } from "../../src/lib/contract.gen";
+import { formatStamp } from "../../src/lib/format";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
@@ -46,6 +47,7 @@ interface Daemon {
   runs?: FindingsRun[];
   followUps?: FollowUpRow[];
   live?: Status["runs"];
+  defects?: TicketDefect[];
   /** `/findings` answers 404, as a daemon without the route does. */
   missing?: boolean;
 }
@@ -63,7 +65,7 @@ function fleet(demo: Daemon, writer: Daemon, names = ["demo", "writer"]) {
     for (const [base, body] of [[DEMO, demo], [WRITER, writer]] as const) {
       if (!url.startsWith(`${base}/findings?`)) continue;
       if (body.missing) return new Response("not found", { status: 404 });
-      return Response.json({ ...pinned, since: 0, runs: body.runs ?? [], follow_ups: body.followUps ?? [] });
+      return Response.json({ ...pinned, since: 0, runs: body.runs ?? [], follow_ups: body.followUps ?? [], ticket_defects: body.defects ?? [] });
     }
     return polls(url);
   };
@@ -208,4 +210,88 @@ test("clean reviews group under the same per-project sub-headings", async () => 
     ["ALPHA-1 passed round 1 with no findings.", "ALPHA-2 passed round 1 with no findings."],
     ["BETA-3 passed round 1 with no findings."],
   ]);
+});
+
+const REVISED = NOW - 30 * MINUTE;
+
+const defect = (ticket: string, run: number, facts: Partial<TicketDefect> = {}): TicketDefect => ({
+  ticket,
+  run,
+  kind: "contradiction",
+  criteria: ["C4"],
+  reason: "the criterion contradicts the verify",
+  at: AT,
+  revision: 2,
+  revised_ms: REVISED,
+  requeue_note: null,
+  ...facts,
+});
+
+const defectRows = (scope: ParentNode = group("Ticket defects")) => [...scope.querySelectorAll("[data-defect-row]")];
+const defectTickets = (scope: ParentNode) => defectRows(scope).map((row) => row.querySelector("a")!.textContent);
+const moreOf = (row: Element) => [...row.querySelectorAll("button")].find((button) => button.textContent === "More" || button.textContent === "Less") ?? null;
+
+test("a ticket defect reads its ticket, criterion, stop, revision with its time and note, and links its ticket page", async () => {
+  const note = "C4 now names the export's columns";
+  await mount("#/findings", fleet({ defects: [defect("DEMO-7", 7, { requeue_note: note })] }, {}).fetch);
+  const [row, ...rest] = defectRows();
+  expect(rest).toHaveLength(0);
+  const text = row!.textContent!;
+  for (const part of ["DEMO-7", "C4", "contradiction", "revision 2", formatStamp(REVISED), note]) expect(text).toContain(part);
+  expect(screen.getByRole("link", { name: "DEMO-7" }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-7");
+});
+
+test("a stuck criterion shows its criterion tag and a stuck review shows none", async () => {
+  const stuck = [
+    defect("DEMO-2", 2, { kind: "criterion_stuck", criteria: ["C2"], at: AT + 2 * MINUTE }),
+    defect("DEMO-3", 3, { kind: "review_stuck", criteria: [], at: AT + MINUTE }),
+  ];
+  await mount("#/findings", fleet({ defects: stuck }, {}).fetch);
+  const [first, second] = defectRows();
+  expect(first!.querySelector("[data-stop]")!.textContent).toBe("stuck criterion");
+  expect([...first!.querySelectorAll("[data-tag]")].map((tag) => tag.textContent)).toEqual(["C2"]);
+  expect(second!.querySelector("[data-stop]")!.textContent).toBe("stuck review");
+  expect(second!.querySelectorAll("[data-tag]")).toHaveLength(0);
+});
+
+test("ticket defects group by project, newest stop first, and a chosen project lists only its own", async () => {
+  const demo = { defects: [defect("DEMO-1", 1, { at: AT }), defect("DEMO-2", 2, { at: AT + 5 * MINUTE })] };
+  const writer = { defects: [defect("WRITER-4", 4, { at: AT + 2 * MINUTE })] };
+  await mount("#/findings", fleet(demo, writer).fetch);
+  expect(subheadings("Ticket defects")).toEqual(["demo 2", "writer 1"]);
+  const parts = [...group("Ticket defects").querySelectorAll("[data-project-group]")];
+  expect(parts.map(defectTickets)).toEqual([["DEMO-2", "DEMO-1"], ["WRITER-4"]]);
+  cleanup();
+
+  sessionStorage.setItem("holophyte.next.project", "writer");
+  await mount("#/findings?project=writer", fleet(demo, writer).fetch);
+  expect(defectTickets(group("Ticket defects"))).toEqual(["WRITER-4"]);
+  expect(subheadings("Ticket defects")).toEqual([]);
+});
+
+test("a two-line requeue note shows its first line until More opens it, then More reads Less", async () => {
+  await mount("#/findings", fleet({ defects: [defect("DEMO-7", 7, { requeue_note: "C4 now names the columns\nand drops the count" })] }, {}).fetch);
+  const [row] = defectRows();
+  expect(row!.textContent).toContain("C4 now names the columns");
+  expect(row!.textContent).not.toContain("and drops the count");
+  fireEvent.click(moreOf(row!)!);
+  expect(row!.textContent).toContain("and drops the count");
+  expect(moreOf(row!)!.textContent).toBe("Less");
+});
+
+test("a short requeue note has no More, and a missing note draws no note", async () => {
+  const defects = [defect("DEMO-7", 7, { requeue_note: "C4 names the columns", at: AT + MINUTE }), defect("DEMO-8", 8, { requeue_note: null })];
+  await mount("#/findings", fleet({ defects }, {}).fetch);
+  const [short, none] = defectRows();
+  expect(short!.textContent).toContain("C4 names the columns");
+  expect(moreOf(short!)).toBeNull();
+  expect(none!.querySelector("[data-note]")).toBeNull();
+  expect(moreOf(none!)).toBeNull();
+});
+
+test("with no ticket defects the page has no Ticket defects group and keeps its other groups", async () => {
+  await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
+  expect(screen.queryByRole("region", { name: "Ticket defects" })).toBeNull();
+  expect(document.body.textContent!.toLowerCase()).not.toContain("defect");
+  for (const label of GROUPS) expect(group(label)).toBeTruthy();
 });
