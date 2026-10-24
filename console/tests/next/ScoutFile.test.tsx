@@ -27,7 +27,7 @@ const A4_TITLE = "Route the digest's writes through the store writer";
 const REFUSAL = "'Depends on' names no ticket of this project: DEMO-9";
 
 const item = (position: number, kind: ScoutAction["kind"], title: string, why: string, fields: Partial<ScoutAction> = {}): ScoutAction => ({
-  position, pass: 1, title, why, kind, body: draft(title), revises: null, ticket: null, filed_ms: null, ...fields,
+  position, pass: 1, title, why, kind, body: draft(title), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, ...fields,
 });
 
 const items: ScoutAction[] = [
