@@ -225,11 +225,21 @@ the project's `supervisor.lock`, and when no live pid holds it spawns
 and stderr appended to `supervisor.log` in the state directory, and prints
 `[holo2] started a supervisor for PROJECT as pid N`; when a live supervisor
 already holds the lock it prints `[holo2] supervisor pid N is watching
-PROJECT` and carries on. The spawned supervisor outlives the loop on purpose
-and takes the lock itself, so two loops starting at once resolve at the lock
-like two `--supervise`s. `[loop] spawn_supervisor = false` turns the spawn
-off for an operator whose service manager runs the supervisor
-([Config](config.md)).
+PROJECT` and carries on. How long the started supervisor lives depends on
+where the loop runs. Under a systemd unit (`INVOCATION_ID` set and
+`systemctl` on `PATH`) the loop instead runs `systemctl --user start
+holophyte-supervise@NAME`, NAME the project's `[serve] name`, and prints
+`[holo2] started a supervisor for PROJECT as unit holophyte-supervise@NAME`;
+that supervisor lives in its own unit and runs until stopped, outliving the
+loop's pass. When that start fails (the unit file is not installed, the
+instance's `serve.env` is missing) the loop prints a line naming the unit and
+`systemctl`'s error and spawns as below, so the pass is still watched.
+Otherwise the loop spawns the supervisor in its own session: it outlives a
+loop run by hand, but a stop of the unit the loop runs in also kills it.
+Either way the supervisor takes the lock itself, so two loops starting at
+once resolve at the lock like two `--supervise`s. `[loop] spawn_supervisor =
+false` turns the spawn off for an operator whose service manager runs the
+supervisor ([Config](config.md)).
 
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
 clean. One supervisor per project: the first takes

@@ -603,6 +603,70 @@ class SupervisorSpawnTests(StartupCheckTests):
         self.popen.assert_not_called()
         self.assertNotIn("supervisor", printed)
 
+    def stub_systemctl(self, body="exit 0\n"):
+        """A `systemctl` first on PATH that appends its arguments to a file."""
+        bindir = self.stub_path()
+        calls = bindir / "systemctl.calls"
+        self.stub(bindir / "systemctl", f'echo "$@" >> "{calls}"\n' + body)
+        return calls
+
+    @staticmethod
+    def stub_runs(calls):
+        return calls.read_text().splitlines() if calls.exists() else []
+
+    def test_under_systemd_the_supervisor_starts_as_its_own_unit(self):
+        target = self.locate(self.BOARD + '[serve]\nname = "alpha"\n').path
+        calls = self.stub_systemctl()
+
+        with patch.dict(os.environ, {"INVOCATION_ID": "abc"}):
+            printed = self.start_loop(target)
+
+        self.assertEqual(self.stub_runs(calls),
+                         ["--user start holophyte-supervise@alpha"])
+        self.popen.assert_not_called()
+        self.assertIn(f"[holo2] started a supervisor for {target} as unit "
+                      "holophyte-supervise@alpha", printed)
+
+        self.start_loop(target)
+
+        self.assertEqual(len(self.stub_runs(calls)), 1)
+        self.popen.assert_called_once()
+        self.assertTrue(self.popen.call_args.kwargs["start_new_session"])
+
+    def test_a_failed_unit_start_names_the_error_and_spawns_instead(self):
+        target = self.locate(self.BOARD + '[serve]\nname = "alpha"\n').path
+        error = "Unit holophyte-supervise@alpha.service not found."
+        calls = self.stub_systemctl(f'echo "{error}" >&2\nexit 5\n')
+
+        with patch.dict(os.environ, {"INVOCATION_ID": "abc"}):
+            printed = self.start_loop(target)
+
+        self.assertEqual(len(self.stub_runs(calls)), 1)
+        named = [line for line in printed.splitlines()
+                 if "holophyte-supervise@alpha" in line and error in line]
+        self.assertEqual(len(named), 1, printed)
+        self.popen.assert_called_once()
+        self.assertEqual(self.popen.call_args.args[0][-2:],
+                         ["--supervise", str(target)])
+        self.assertIn(f"[holo2] started a supervisor for {target} as pid 4242",
+                      printed)
+
+    def test_under_systemd_a_held_lock_or_spawn_off_runs_no_systemctl(self):
+        cases = {"held lock": "", "spawn off": "[loop]\nspawn_supervisor = false\n"}
+        for case, extra in cases.items():
+            with self.subTest(case=case):
+                target = self.locate(
+                    self.BOARD + '[serve]\nname = "alpha"\n' + extra).path
+                if case == "held lock":
+                    self.hold_lock(os.getpid())
+                calls = self.stub_systemctl()
+
+                with patch.dict(os.environ, {"INVOCATION_ID": "abc"}):
+                    self.start_loop(target)
+
+                self.assertEqual(self.stub_runs(calls), [])
+                self.popen.assert_not_called()
+
     def test_a_non_boolean_spawn_supervisor_is_a_startup_error_naming_it(self):
         target = self.locate(self.BOARD + '[loop]\nspawn_supervisor = "no"\n').path
 
