@@ -83,9 +83,9 @@ class ScoutLeadTests(ScoutFixture):
         code, printed = self.run_scout(path, scout_id)
         self.assertEqual(code, 0, printed)
         self.assertEqual(self.tasks(conn, scout_id), [
-            (1, 1, "Where is the retry loop?", "[]", "read", "queued"),
-            (1, 1, "Does the retry test fail on main?", "[]", "run", "queued")])
-        self.assertEqual(self.report(conn, scout_id), [REPORT])
+            (1, 1, "Where is the retry loop?", "[]", "read", "done"),
+            (1, 1, "Does the retry test fail on main?", "[]", "run", "done")])
+        self.assertEqual(self.report(conn, scout_id), [dict(REPORT, cut=[])])
         self.assertEqual(scout(conn, scout_id).phase, "done")
 
     def test_a_claude_lead_resumes_the_session_it_recorded_at_dispatch(self):
@@ -136,7 +136,7 @@ class ScoutLeadTests(ScoutFixture):
         while running(pid) and time.monotonic() < deadline:
             time.sleep(0.1)
         self.assertFalse(running(pid))
-        self.assertEqual(self.report(conn, scout_id), [REPORT])
+        self.assertEqual(self.report(conn, scout_id), [dict(REPORT, cut=[])])
         self.assertEqual(scout(conn, scout_id).phase, "done")
         self.assertLess(elapsed, 30)
 
@@ -153,7 +153,7 @@ class ScoutLeadTests(ScoutFixture):
         self.assertIn("question", summary)
         self.assertEqual(self.tasks(conn, scout_id), [])
         self.assertEqual(len(self.stubs.turns("report")), 1)
-        self.assertEqual(self.report(conn, scout_id), [REPORT])
+        self.assertEqual(self.report(conn, scout_id), [dict(REPORT, cut=[])])
 
     def test_a_report_turn_with_no_json_block_ends_the_scout_failed(self):
         path, conn, scout_id = self.bug_scout()
@@ -186,13 +186,15 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(code, 0, printed)
         turns = self.turn_events(conn, scout_id)
         self.assertEqual([turn["role"] for turn in turns],
-                         ["scout-lead", "scout-lead"])
+                         ["scout-lead", "scout-helper", "scout-helper",
+                          "scout-lead", "scout-lead"])
         for turn in turns:
             self.assertLessEqual({"label", "route", "exit_status",
                                   "timed_out", "seconds"}, set(turn))
         calls = self.stubs.calls()
         self.assertEqual([call["turn"] for call in calls],
-                         ["probe", "plan", "report"])
+                         ["probe", "plan", "probe", "helper", "helper",
+                          "synthesis", "report"])
         self.assertFalse([arg for call in calls for arg in call["argv"]
                           if SECRET in arg])
 

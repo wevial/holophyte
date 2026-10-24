@@ -157,7 +157,8 @@ Each module, one line:
 - `holophyte/agents/probe_log.py` — locked, atomic records of each route’s last probe.
 - `holophyte/agents/probes.py` — route probes, run once before a role dispatches.
 - `holophyte/scout/lead.py` — the scout's lead: its route probe, a plan
-  turn under the scout's time budget, and a report turn resuming its session.
+  turn under the scout's time budget, the helper waves with a synthesis turn
+  between them, and a report turn resuming its session.
 - `holophyte/scout/scout_config.py` — `scout_config`: the `[scout]` table's
   lead and helper routes, each a harness `Seat`, their defaults and budget.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
@@ -167,6 +168,9 @@ Each module, one line:
 - `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
   scouts whose heartbeat is stale and starts queued ones under `[scout]
   max_parallel`.
+- `holophyte/scout/swarm.py` — one wave of a scout's helper turns: the helper
+  route probe, a detached worktree per helper, the swarm and helper-total
+  caps, and each helper's task record.
 - `holophyte/agents/fallback.py` — outage detection and the switch to a probed
   fallback route.
 - `holophyte/agents/review_workspace.py` — review refs and the scratch checkouts a
