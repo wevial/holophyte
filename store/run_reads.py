@@ -159,9 +159,9 @@ PR_SEEN_MEDIA = ("prSeenAdditions", "prSeenDeletions", "prSeenChangedFiles",
                  "prSeenPreviewUrl", "prSeenScreenshots", "prSeenVideos")
 
 
-def _pr_seen_media_sql(columns):
+def _pr_seen_media_sql(columns, names=PR_SEEN_MEDIA):
     return ", ".join(f"r.{name}" if name in columns else "NULL"
-                     for name in PR_SEEN_MEDIA)
+                     for name in names)
 
 
 def _pr_seen_media(row):
@@ -387,8 +387,7 @@ def recent_runs(conn, since, limit, until=None):
         where = "r.endedAt IS NOT NULL AND r.startedAt >= ? AND r.startedAt < ?"
         params.append(until)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
-    size = ", ".join(f"r.{name}" if name in columns else "NULL"
-                     for name in PR_SEEN_MEDIA[:2])
+    size = _pr_seen_media_sql(columns, PR_SEEN_MEDIA[:2])
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, t.url, t.title, r.attempt, r.phase,"
         " r.outcome, r.outcomeReason, r.failureKind, r.parkKind, r.startedAt,"
