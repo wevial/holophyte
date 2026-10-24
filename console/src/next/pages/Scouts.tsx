@@ -39,7 +39,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
       data-scout={row.id}
       className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 border-b border-rule-2 px-3 py-3 text-[14px] transition-colors duration-(--motion-colour) last:border-b-0 hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
     >
-      <span data-cell="state" className="pt-0.5"><StateDot state={DOTS[state]} label={state} hideWord /></span>
+      <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={DOTS[state]} label={state} hideWord /></span>
       <span data-cell="ask" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
         {row.ask}
         {reason && <span data-reason className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{reason}</span>}
@@ -47,7 +47,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
       <span className={`col-start-2 flex flex-wrap ${MONO} min-[720px]:contents`}>
         <span data-cell="id" className={`${FACT} min-[720px]:order-1 min-[720px]:text-ink-2`}>{row.id}</span>
         <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
-          <span className="min-[720px]:border min-[720px]:border-rule min-[720px]:px-1 min-[720px]:text-[11px] min-[720px]:font-semibold min-[720px]:text-ink-2">{row.kind}</span>
+          <span className="min-[720px]:inline-block min-[720px]:align-top min-[720px]:leading-[15px] min-[720px]:border min-[720px]:border-rule min-[720px]:px-1 min-[720px]:text-[11px] min-[720px]:font-semibold min-[720px]:text-ink-2">{row.kind}</span>
         </span>
         <span data-cell="project" className={`${FACT} min-[720px]:order-4`}>{row.project}</span>
         <span data-cell="lead" className={`${FACT} min-[720px]:order-5`}>{row.lead ?? DASH}</span>
