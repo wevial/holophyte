@@ -52,6 +52,8 @@ SINCE = Field("since", {
 LIMIT = Field("limit", {"type": "integer", "minimum": 1,
                         "description": "at most this many runs"},
               option("--limit"))
+SCOUT_LIMIT = LIMIT._replace(schema={**LIMIT.schema,
+                                    "description": "at most this many scouts"})
 RUN = Field("run", {"type": "integer", "minimum": 1,
                     "description": "the run's id"}, None)
 VIEW = Field("view", {
@@ -132,6 +134,8 @@ READS = (
          (PROJECT,)),
     Tool("ticket", "one ticket's detail (holo ticket KEY --json)",
          ("ticket",), (PROJECT, KEY), required=("key",)),
+    Tool("scouts", "recent scouts, newest first (holo scouts --json)",
+         ("scouts",), (PROJECT, SCOUT_LIMIT)),
     Tool("board_diff", "where the store's ready queue differs from the"
          " board's, as text (holo board diff)", ("board", "diff"),
          (PROJECT,), json=False, answered=BOARD_DIFF_SUMMARY),

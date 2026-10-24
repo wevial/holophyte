@@ -62,6 +62,14 @@ survives without a worktree, in a real repository: one file modified,
 added, deleted and renamed off `main`. `run` becomes 1 and the range's
 shas `BASE_SHA` and `HEAD_SHA`.
 
+`scouts.json`, `scout.json` and `scout-routes.json` pin `GET /scouts`,
+`GET /scouts/ID` for the done scout and `GET /scouts/routes`, built in
+`tests/test_serve_scouts.py` from a store seeded through the scout writers
+at a frozen clock: three scouts (queued, swarming with two of three tasks
+ended, done with one report pass and two action items), and leads A and B
+and helpers C and D, A and C probed green, B red and D never; every scout
+and task `id` becomes 1.
+
 `mcp-tools-list.json` pins `holo mcp --http`'s reply to `tools/list` with
 `[serve] actions` true, reads and writes, as served on loopback; nothing in
 it depends on the host.

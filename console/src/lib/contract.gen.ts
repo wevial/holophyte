@@ -1104,3 +1104,194 @@ export const storyDetailSchema = z.looseObject({
   decisions: z.array(storyDecisionRowSchema),
 });
 export type StoryDetail = z.infer<typeof storyDetailSchema>;
+
+export const scoutRowSchema = z.looseObject({
+  id: z.int(),
+  ask: z.string(),
+  kind: z.enum(["bug", "research", "recon"]),
+  phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
+  reason: z.string().nullable(),
+  lead: z.string().nullable(),
+  helper: z.string().nullable(),
+  swarm: z.int().nullable(),
+  tasks_done: z.int(),
+  tasks_total: z.int(),
+  created_ms: z.int(),
+  started_ms: z.int().nullable(),
+  ended_ms: z.int().nullable(),
+  elapsed_ms: z.int().nullable(),
+  heartbeat_age_ms: z.int().nullable(),
+});
+export type ScoutRow = z.infer<typeof scoutRowSchema>;
+
+export const scoutsSchema = z.looseObject({
+  scouts: z.array(scoutRowSchema),
+  limit: z.int(),
+  truncated: z.boolean(),
+});
+export type Scouts = z.infer<typeof scoutsSchema>;
+
+export const scoutBudgetSchema = z.looseObject({
+  minutes: z.int(),
+  helper_turns: z.int().nullable(),
+  waves: z.int().nullable(),
+});
+export type ScoutBudget = z.infer<typeof scoutBudgetSchema>;
+
+export const scoutFullSchema = z.looseObject({
+  id: z.int(),
+  ask: z.string(),
+  kind: z.enum(["bug", "research", "recon"]),
+  phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
+  reason: z.string().nullable(),
+  lead: z.string().nullable(),
+  helper: z.string().nullable(),
+  swarm: z.int().nullable(),
+  tasks_done: z.int(),
+  tasks_total: z.int(),
+  created_ms: z.int(),
+  started_ms: z.int().nullable(),
+  ended_ms: z.int().nullable(),
+  elapsed_ms: z.int().nullable(),
+  heartbeat_age_ms: z.int().nullable(),
+  base_sha: z.string().nullable(),
+  host: z.string().nullable(),
+  budget: scoutBudgetSchema,
+  totals: z.record(z.string(), z.union([z.int(), z.number(), z.string(), z.boolean()]).nullable()).nullable(),
+});
+export type ScoutFull = z.infer<typeof scoutFullSchema>;
+
+export const scoutTaskSchema = z.looseObject({
+  id: z.int(),
+  pass: z.int(),
+  wave: z.int(),
+  question: z.string(),
+  paths: z.array(z.string()),
+  mode: z.enum(["read", "run"]),
+  route: z.string().nullable(),
+  phase: z.enum(["queued", "running", "done", "failed", "stopped"]),
+  started_ms: z.int().nullable(),
+  ended_ms: z.int().nullable(),
+  duration_ms: z.int().nullable(),
+  tokens: z.int().nullable(),
+  cost_usd: z.number().nullable(),
+  excerpt: z.string().nullable(),
+});
+export type ScoutTask = z.infer<typeof scoutTaskSchema>;
+
+export const fileEvidenceSchema = z.looseObject({
+  file: z.string(),
+  line: z.int(),
+  verified: z.boolean(),
+  why: z.string().nullable(),
+});
+export type FileEvidence = z.infer<typeof fileEvidenceSchema>;
+
+export const commandEvidenceSchema = z.looseObject({
+  command: z.string(),
+  output: z.string(),
+});
+export type CommandEvidence = z.infer<typeof commandEvidenceSchema>;
+
+export const urlEvidenceSchema = z.looseObject({
+  url: z.string(),
+});
+export type UrlEvidence = z.infer<typeof urlEvidenceSchema>;
+
+export const scoutFindingSchema = z.looseObject({
+  title: z.string(),
+  status: z.enum(["shown", "likely", "unconfirmed"]),
+  evidence: z.array(z.union([fileEvidenceSchema, commandEvidenceSchema, urlEvidenceSchema])),
+});
+export type ScoutFinding = z.infer<typeof scoutFindingSchema>;
+
+export const scoutReportActionSchema = z.looseObject({
+  title: z.string(),
+  why: z.string(),
+  kind: z.enum(["fix", "test", "investigate", "decide"]),
+  body: z.string(),
+});
+export type ScoutReportAction = z.infer<typeof scoutReportActionSchema>;
+
+export const hypothesisSchema = z.looseObject({
+  hypothesis: z.string(),
+  separates: z.string(),
+  verdict: z.enum(["supported", "ruled_out", "open"]),
+});
+export type Hypothesis = z.infer<typeof hypothesisSchema>;
+
+export const reproductionSchema = z.looseObject({
+  level: z.enum(["test", "real_tool", "not_reproduced"]),
+  hypotheses: z.array(hypothesisSchema),
+});
+export type Reproduction = z.infer<typeof reproductionSchema>;
+
+export const scoutReportSchema = z.looseObject({
+  summary: z.string(),
+  findings: z.array(scoutFindingSchema),
+  actions: z.array(scoutReportActionSchema),
+  reproduction: reproductionSchema.nullable(),
+  cut: z.array(z.string()).nullable(),
+});
+export type ScoutReport = z.infer<typeof scoutReportSchema>;
+
+export const scoutReportPassSchema = z.looseObject({
+  pass: z.int(),
+  at: z.int(),
+  report: scoutReportSchema,
+});
+export type ScoutReportPass = z.infer<typeof scoutReportPassSchema>;
+
+export const scoutActionSchema = z.looseObject({
+  position: z.int(),
+  pass: z.int(),
+  title: z.string(),
+  why: z.string(),
+  kind: z.enum(["fix", "test", "investigate", "decide"]),
+  body: z.string(),
+  ticket: z.string().nullable(),
+  filed_ms: z.int().nullable(),
+});
+export type ScoutAction = z.infer<typeof scoutActionSchema>;
+
+export const scoutEventSchema = z.looseObject({
+  at: z.int(),
+  kind: z.string(),
+  summary: z.string(),
+});
+export type ScoutEvent = z.infer<typeof scoutEventSchema>;
+
+export const scoutDetailSchema = z.looseObject({
+  scout: scoutFullSchema,
+  tasks: z.array(scoutTaskSchema),
+  reports: z.array(scoutReportPassSchema),
+  actions: z.array(scoutActionSchema),
+  events: z.array(scoutEventSchema),
+});
+export type ScoutDetail = z.infer<typeof scoutDetailSchema>;
+
+export const scoutRouteSchema = z.looseObject({
+  name: z.string(),
+  harness: z.string(),
+  model: z.string(),
+  default: z.boolean(),
+  probe: routeProbeSchema.nullable(),
+});
+export type ScoutRoute = z.infer<typeof scoutRouteSchema>;
+
+export const scoutDefaultsSchema = z.looseObject({
+  lead: z.string(),
+  helper: z.string(),
+  swarm: z.int(),
+  minutes: z.int(),
+  helper_turns: z.int(),
+  waves: z.int(),
+});
+export type ScoutDefaults = z.infer<typeof scoutDefaultsSchema>;
+
+export const scoutRoutesSchema = z.looseObject({
+  leads: z.array(scoutRouteSchema),
+  helpers: z.array(scoutRouteSchema),
+  defaults: scoutDefaultsSchema,
+});
+export type ScoutRoutes = z.infer<typeof scoutRoutesSchema>;

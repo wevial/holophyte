@@ -150,6 +150,7 @@ COMMANDS = (
             takes=("[ADDR]",)),
 )
 
+SHOW = "show"
 READS = (
     Command(("runs",), "GET /runs", "recent ended runs", flags=(JSON, LIMIT)),
     Command(("run",), "GET /runs/N",
@@ -161,6 +162,11 @@ READS = (
     Command(("board",), "GET /board", "the board's columns", flags=(JSON,)),
     Command(("ticket",), "GET /tickets/KEY", "one ticket's detail",
             takes=("KEY",), flags=(JSON,)),
+    Command(("scouts",), "GET /scouts", "recent scouts, newest first",
+            flags=(JSON, LIMIT)),
+    Command(("scout", SHOW), "GET /scouts/ID",
+            "one scout's tasks, report, action items and events",
+            takes=("ID",), flags=(JSON,)),
 )
 
 COMPLETION = Command(("completion",), None,
@@ -179,7 +185,6 @@ MCP = Command(("mcp",), None,
               " with --http on HOST:PORT behind the host's machine token",
               flags=(MCP_HTTP,))
 
-SHOW = "show"
 LAUNCH = "launch"
 SCOUT_KINDS = {("bug",): "bug", ("idea",): "research"}
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}

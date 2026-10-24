@@ -21,6 +21,7 @@ from holophyte.holo.grammar import (
     READS,
     REQUIRED,
     SCOUT_KINDS,
+    SHOW,
     arguments,
 )
 from holophyte.holo.resolve import (
@@ -339,6 +340,8 @@ HTTP_ROUTES = {
     ("attention",): Route("GET", "/attention"),
     ("board",): Route("GET", "/board", local=(("editable", False),)),
     ("ticket",): Route("GET", "/tickets/{KEY}"),
+    ("scouts",): Route("GET", "/scouts"),
+    ("scout", SHOW): Route("GET", "/scouts/{N}"),
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note", "force")),
     ("send-back",): Route("POST", "/actions/send-back",
                           ("run", "note", "author")),

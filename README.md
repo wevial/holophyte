@@ -120,6 +120,8 @@ holo runs [--limit N] [--json] -p NAME|PATH      # recent runs; --json prints GE
 holo run N [--files|--ledger|--turns] [--json] -p NAME|PATH # one run's detail, files, ledger or turns, as GET /runs/N[/files|/ledger|/turns]
 holo attention [--json] [-p NAME|PATH]           # what waits on the operator, as GET /attention; the host's when no project is named
 holo board [--json] | ticket KEY [--json] -p NAME|PATH # the board's columns or one ticket's detail, as GET /board and /tickets/KEY
+holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; --json prints GET /scouts's body
+holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
 ```
 
 `--file-ticket` validates the file against the project, creates the issue,

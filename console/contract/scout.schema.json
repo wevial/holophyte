@@ -1,0 +1,722 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScoutDetail",
+  "description": "GET /scouts/ID",
+  "$ref": "#/$defs/ScoutDetail",
+  "$defs": {
+    "ScoutBudget": {
+      "type": "object",
+      "properties": {
+        "minutes": {
+          "type": "integer"
+        },
+        "helper_turns": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waves": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "minutes",
+        "helper_turns",
+        "waves"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutFull": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ask": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "bug",
+            "research",
+            "recon"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "queued",
+            "planning",
+            "swarming",
+            "synthesizing",
+            "answering",
+            "done",
+            "failed",
+            "stopped"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lead": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "helper": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "swarm": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tasks_done": {
+          "type": "integer"
+        },
+        "tasks_total": {
+          "type": "integer"
+        },
+        "created_ms": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeat_age_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "budget": {
+          "$ref": "#/$defs/ScoutBudget"
+        },
+        "totals": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "ask",
+        "kind",
+        "phase",
+        "reason",
+        "lead",
+        "helper",
+        "swarm",
+        "tasks_done",
+        "tasks_total",
+        "created_ms",
+        "started_ms",
+        "ended_ms",
+        "elapsed_ms",
+        "heartbeat_age_ms",
+        "base_sha",
+        "host",
+        "budget",
+        "totals"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutTask": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "pass": {
+          "type": "integer"
+        },
+        "wave": {
+          "type": "integer"
+        },
+        "question": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "enum": [
+            "read",
+            "run"
+          ]
+        },
+        "route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "enum": [
+            "queued",
+            "running",
+            "done",
+            "failed",
+            "stopped"
+          ]
+        },
+        "started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pass",
+        "wave",
+        "question",
+        "paths",
+        "mode",
+        "route",
+        "phase",
+        "started_ms",
+        "ended_ms",
+        "duration_ms",
+        "tokens",
+        "cost_usd",
+        "excerpt"
+      ],
+      "additionalProperties": true
+    },
+    "FileEvidence": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "verified",
+        "why"
+      ],
+      "additionalProperties": true
+    },
+    "CommandEvidence": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "output"
+      ],
+      "additionalProperties": true
+    },
+    "UrlEvidence": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutFinding": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "shown",
+            "likely",
+            "unconfirmed"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileEvidence"
+              },
+              {
+                "$ref": "#/$defs/CommandEvidence"
+              },
+              {
+                "$ref": "#/$defs/UrlEvidence"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "title",
+        "status",
+        "evidence"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutReportAction": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "fix",
+            "test",
+            "investigate",
+            "decide"
+          ]
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "why",
+        "kind",
+        "body"
+      ],
+      "additionalProperties": true
+    },
+    "Hypothesis": {
+      "type": "object",
+      "properties": {
+        "hypothesis": {
+          "type": "string"
+        },
+        "separates": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "supported",
+            "ruled_out",
+            "open"
+          ]
+        }
+      },
+      "required": [
+        "hypothesis",
+        "separates",
+        "verdict"
+      ],
+      "additionalProperties": true
+    },
+    "Reproduction": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "enum": [
+            "test",
+            "real_tool",
+            "not_reproduced"
+          ]
+        },
+        "hypotheses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          }
+        }
+      },
+      "required": [
+        "level",
+        "hypotheses"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutReport": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutFinding"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutReportAction"
+          }
+        },
+        "reproduction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reproduction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cut": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "summary",
+        "findings",
+        "actions",
+        "reproduction",
+        "cut"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutReportPass": {
+      "type": "object",
+      "properties": {
+        "pass": {
+          "type": "integer"
+        },
+        "at": {
+          "type": "integer"
+        },
+        "report": {
+          "$ref": "#/$defs/ScoutReport"
+        }
+      },
+      "required": [
+        "pass",
+        "at",
+        "report"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutAction": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "type": "integer"
+        },
+        "pass": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "fix",
+            "test",
+            "investigate",
+            "decide"
+          ]
+        },
+        "body": {
+          "type": "string"
+        },
+        "ticket": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "filed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "position",
+        "pass",
+        "title",
+        "why",
+        "kind",
+        "body",
+        "ticket",
+        "filed_ms"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutEvent": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "integer"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "summary"
+      ],
+      "additionalProperties": true
+    },
+    "ScoutDetail": {
+      "type": "object",
+      "properties": {
+        "scout": {
+          "$ref": "#/$defs/ScoutFull"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutTask"
+          }
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutReportPass"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutAction"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ScoutEvent"
+          }
+        }
+      },
+      "required": [
+        "scout",
+        "tasks",
+        "reports",
+        "actions",
+        "events"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

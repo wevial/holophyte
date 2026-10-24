@@ -1,0 +1,47 @@
+{
+  "leads": [
+    {
+      "name": "A",
+      "harness": "claude",
+      "model": "opus",
+      "default": true,
+      "probe": {
+        "ok": true,
+        "at_ms": 1750000000000,
+        "duration_ms": 10000,
+        "why": null,
+        "age_ms": 20000
+      }
+    }
+  ],
+  "helpers": [
+    {
+      "name": "C",
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "default": true,
+      "probe": {
+        "ok": true,
+        "at_ms": 1750000000000,
+        "duration_ms": 10000,
+        "why": null,
+        "age_ms": 20000
+      }
+    },
+    {
+      "name": "D",
+      "harness": "claude",
+      "model": "haiku",
+      "default": false,
+      "probe": null
+    }
+  ],
+  "defaults": {
+    "lead": "A",
+    "helper": "C",
+    "swarm": 2,
+    "minutes": 20,
+    "helper_turns": 6,
+    "waves": 1
+  }
+}

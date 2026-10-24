@@ -182,6 +182,31 @@
           "destructiveHint": false,
           "readOnlyHint": true
         },
+        "description": "recent scouts, newest first (holo scouts --json)",
+        "inputSchema": {
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "description": "a registered [serve] name or a repository path; omitted, the project holo finds itself, or the host form"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "at most this many scouts"
+            }
+          },
+          "required": [],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "name": "scouts"
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "readOnlyHint": true
+        },
         "description": "where the store's ready queue differs from the board's, as text (holo board diff)",
         "inputSchema": {
           "properties": {

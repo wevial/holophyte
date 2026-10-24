@@ -337,6 +337,7 @@ true`.
 | `run` | `run`, required; `view`: `detail` (default), `files`, `ledger` or `turns` | `holo run N --json`, with `--files`, `--ledger` or `--turns` for the view |
 | `board` | | `holo board --json` |
 | `ticket` | `key`, required | `holo ticket KEY --json` |
+| `scouts` | `limit` | `holo scouts --json [--limit N]` |
 | `board_diff` | | `holo board diff` |
 | `sweep_preview` | | `holo sweep`, which acts on nothing and writes only sightings |
 
