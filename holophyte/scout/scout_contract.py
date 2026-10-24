@@ -25,6 +25,10 @@ class ScoutRow(TypedDict):
     swarm: int | None
     tasks_done: int
     tasks_total: int
+    findings: int
+    actions: int
+    filed: int
+    to_file: int
     created_ms: int
     started_ms: int | None
     ended_ms: int | None

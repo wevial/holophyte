@@ -176,6 +176,11 @@
   --card-shadow: 0 8px 24px rgba(29, 24, 43, 0.12);
 }
 
+/* Its own rule: the bundler keeps only a rule's first color-mix() of var()s. */
+:root {
+  --row-selected: color-mix(in oklab, var(--act-wash) 55%, var(--paper));
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
 
@@ -350,6 +355,7 @@
   --edge: var(--neutral-9);
   --edge-dim: var(--neutral-7);
   --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --row-selected: var(--act-wash);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -527,6 +533,7 @@
     --edge: var(--neutral-9);
     --edge-dim: var(--neutral-7);
     --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    --row-selected: var(--act-wash);
   }
 }
 
@@ -640,6 +647,7 @@
   --color-rail: var(--canvas);
   --color-rail-fg: var(--ink);
   --color-rail-selected: var(--act-wash);
+  --color-row-selected: var(--row-selected);
   --color-badge-text: var(--act-ink);
 
   --shadow-card: var(--card-shadow);
