@@ -52,10 +52,20 @@ def test_unchanged(approved, candidate, cls, name):
         return False
     bound = _module_bindings(trees[0])
     before, after = (_strip(tree, cls, name, bound) for tree in trees)
-    return (ast.dump(trees[0]) == ast.dump(trees[1]) and before.keys() <= after.keys()
-            and _binds_new_names_only(
-                [node for key, node in after.items() if key not in before],
-                bound, before.values()))
+    added = _added_imports(before, after)
+    return (ast.dump(trees[0]) == ast.dump(trees[1]) and added is not None
+            and _binds_new_names_only(added, bound,
+                                      [node for _, node in before]))
+
+
+def _added_imports(before, after):
+    pending, added = [key for key, _ in before], []
+    for key, node in after:
+        if pending and key == pending[0]:
+            pending.pop(0)
+        else:
+            added.append(node)
+    return None if pending else added
 
 
 def _cited(tree, cls, name):
@@ -71,8 +81,8 @@ def _is_def(node):
 
 
 def _strip(tree, cls, name, bound):
-    imports = {ast.dump(node): node for node in tree.body
-               if isinstance(node, ast.Import | ast.ImportFrom)}
+    imports = [(ast.dump(node), node) for node in tree.body
+               if isinstance(node, ast.Import | ast.ImportFrom)]
     tree.body = [node for node in tree.body
                  if not isinstance(node, ast.Import | ast.ImportFrom)]
     _drop_other_tests(tree, None, cls, name)
@@ -119,7 +129,13 @@ def _module_bindings(tree):
             bound.add(child.id)
         elif isinstance(child, ast.alias):
             bound.add(child.asname or child.name.split(".")[0])
-    return bound
+        elif isinstance(child, ast.MatchAs | ast.MatchStar | ast.ExceptHandler):
+            bound.add(child.name)
+        elif isinstance(child, ast.MatchMapping):
+            bound.add(child.rest)
+    bound.update(name for node in ast.walk(tree) if isinstance(node, ast.Global)
+                 for name in node.names)
+    return bound - {None}
 
 
 def _module_level(node):

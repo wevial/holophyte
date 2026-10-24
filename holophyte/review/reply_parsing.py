@@ -306,11 +306,17 @@ for path, cls, name in json.loads(sys.argv[1]):
         found = (callable(getattr(getattr(module, cls, None), name, None))
                  if module is not None else None)
         if found is False:
-            found = sorted(
-                value.__name__ for value in vars(module).values()
-                if isinstance(value, type)
-                and value.__module__ == module.__name__
-                and callable(vars(value).get(name)))
+            pending, seen, found = list(vars(module).values()), set(), []
+            while pending:
+                value = pending.pop()
+                if (not isinstance(value, type) or id(value) in seen
+                        or value.__module__ != module.__name__):
+                    continue
+                seen.add(id(value))
+                pending.extend(vars(value).values())
+                if callable(vars(value).get(name)):
+                    found.append(value.__name__)
+            found.sort()
     results.append(found)
 print(json.dumps(results))
 """

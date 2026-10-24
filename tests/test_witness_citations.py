@@ -112,6 +112,21 @@ class OtherClassTests(Worktree):
         self.assertEqual(entry["status"], "unwitnessed")
         self.assertNotIn("resolved", entry)
 
+    def test_a_nested_class_or_a_second_binding_still_counts_once(self):
+        nested = ("import unittest\n\n\nclass Outer:\n"
+                  "    class Reads(unittest.TestCase):\n"
+                  "        def test_reads(self):\n            pass\n")
+        sources = {"nested": nested,
+                   "aliased": alpha(("Reads", READS)) + "Alias = Reads\n"}
+        for case, source in sources.items():
+            for prelude in ("", UNIMPORTABLE):
+                with self.subTest(case=case, importable=not prelude):
+                    self.write("tests/test_alpha.py", source.replace(
+                        "import unittest\n", "import unittest\n" + prelude))
+                    entry = self.status()
+                    self.assertEqual((entry["status"], entry.get("resolved")),
+                                     ("met", OTHER_CLASS))
+
 
 class DottedModuleTests(Worktree):
     REPLY = ("CRITERION 1: met — python3 -m ci.check tests.core.test_sources"
@@ -210,6 +225,28 @@ class ApprovalTests(Worktree):
                            "    def test_more(self):\n        pass\n")
         self.assertFalse(citations.test_unchanged(LOAD, shadowed, "LoadTests",
                                                   "test_broken"))
+
+    def test_reordered_imports_are_a_change(self):
+        approved = LOAD.replace("import json\n", "import json\nfrom json import "
+                                "loads\nfrom pickle import loads\n")
+        reordered = approved.replace("from json import loads\nfrom pickle",
+                                     "from pickle import loads\nfrom json")
+        self.assertFalse(citations.test_unchanged(approved, reordered,
+                                                  "LoadTests", "test_broken"))
+
+    def test_an_added_import_rebinding_a_name_bound_without_assignment(self):
+        bindings = {
+            "match capture": "match 3:\n    case limit:\n        pass\n",
+            "except name": "try:\n    pass\nexcept OSError as limit:\n    pass\n",
+            "global": "def setup():\n    global limit\n    limit = 3\n",
+        }
+        for case, binding in bindings.items():
+            with self.subTest(case=case):
+                approved = f"{LOAD}\n\n{binding}"
+                candidate = approved.replace(
+                    "import json\n", "import json\nfrom sys import maxsize as limit\n")
+                self.assertFalse(citations.test_unchanged(
+                    approved, candidate, "LoadTests", "test_broken"))
 
     def test_a_change_the_cited_test_depends_on_makes_it_stale(self):
         cases = {
