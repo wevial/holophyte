@@ -65,7 +65,7 @@ export function dayGroups(hosts: HostRecord<ContractBodies>[], answers: DayAnswe
     let estimateMs: number | null = null;
     for (const row of rows) {
       const group = stateGroup(row.state);
-      if (group !== "active") counts[group] += 1;
+      if (group !== "active" && group !== "superseded") counts[group] += 1;
       if (row.working_ms != null && row.estimate_ms != null) {
         workMs = (workMs ?? 0) + row.working_ms;
         estimateMs = (estimateMs ?? 0) + row.estimate_ms;

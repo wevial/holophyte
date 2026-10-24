@@ -241,6 +241,8 @@ PINNED = {
     "holophyte/scout/context.py": 0,
     "holophyte/scout/filing.py": 0,
     "holophyte/scout/follow_up.py": 0,
+    "holophyte/scout/github_mcp.py": 1,
+    "holophyte/scout/github_reads.py": 2,
     "holophyte/scout/guardrails.py": 0,
     "holophyte/scout/launch.py": 0,
     "holophyte/scout/lead.py": 1,

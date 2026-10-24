@@ -123,7 +123,7 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
     turn = (lead.resume(goal, budget_s) if lead.session
             else lead.start(goal, budget_s))
     with Swarm(conn, project, row, config, deadline, stopping, number,
-               config.steer_helpers) as swarm:
+               config.steer_helpers, lead.server) as swarm:
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         run_waves(conn, lead, swarm, tasks, 1)
         turn = lead.resume(report_goal(row, swarm, problem,

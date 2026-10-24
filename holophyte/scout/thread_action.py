@@ -1,11 +1,11 @@
 from holophyte.loop.runs import open_store
 from holophyte.scout.filing import ROW_ID_LIMIT
 from holophyte.scout.follow_up import PASS_PHASES, current_pass
-from holophyte.scout.launch import start
+from holophyte.scout.launch import phase_of, start
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from store.scout_thread import ASK, STEER, ThreadRefused, post_message
-from store.scouts import ANSWERING, DONE, scout
+from store.scouts import ANSWERING, DONE, ENDED, scout
 
 SCOUT_MESSAGE_ACTION = "scout-message"
 MODES = (ASK, STEER)
@@ -27,7 +27,7 @@ def refusal(body):
 
 
 def refusal_reason(row, refused, answers):
-    if row.phase != DONE:
+    if row.phase in ENDED and row.phase != DONE:
         return "not_done"
     if refused.subject == f"message {answers}":
         return "card_refused"
@@ -78,6 +78,12 @@ def message_action(project, body):
                            console_author(body), body.get("answers"))
     if isinstance(message, dict):
         return code, message
+    phase, _ = phase_of(project, scout_id)
+    if phase not in ENDED:
+        return 200, {"ok": True, "scout": scout_id, "message": message,
+                     "queued": True, "recorded": None,
+                     "detail": f"scout {scout_id} is {phase}; message"
+                               f" {message} waits for its next wave or its end"}
     _, said = start(project, scout_id)
     consumed, phase, number = taken(project, scout_id, message)
     if not consumed:

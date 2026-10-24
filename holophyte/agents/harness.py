@@ -53,6 +53,9 @@ class Adapter:
     def reported_session(self, binary, output, role, run):
         return None
 
+    def mcp_flags(self, server):
+        raise ValueError(f"harness {self.name!r} takes no MCP server")
+
 
 class Claude(Adapter):
     name = "claude"
@@ -78,6 +81,14 @@ class Claude(Adapter):
         if role in READ_ONLY_ROLES:
             tools += ["Bash", "Edit", "Write", "NotebookEdit"]
         return ["--disallowedTools", *tools] if tools else []
+
+    @staticmethod
+    def mcp_flags(server):
+        entry = {"type": "stdio", "command": server["command"],
+                 "args": server["args"], "env": server["env"]}
+        return ["--mcp-config",
+                json.dumps({"mcpServers": {server["name"]: entry}}),
+                "--allowedTools", f"mcp__{server['name']}"]
 
     @staticmethod
     def output_format(role):
@@ -124,6 +135,16 @@ class Codex(Adapter):
     @staticmethod
     def subagents(role):
         return ["--disable", "multi_agent"] if role == SCOUT_LEAD else []
+
+    @staticmethod
+    def mcp_flags(server):
+        key = f"mcp_servers.{server['name']}"
+        env = ", ".join(f"{name} = {json.dumps(value)}"
+                        for name, value in server["env"].items())
+        return ["-c", f"{key}.command={json.dumps(server['command'])}",
+                "-c", f"{key}.args={json.dumps(server['args'])}",
+                "-c", f"{key}.env={{{env}}}",
+                "-c", f"{key}.env_vars={json.dumps(server['forward'])}"]
 
     @staticmethod
     def sandbox(role):
@@ -237,14 +258,21 @@ class Seat:
     def name(self):
         return self.adapter.name
 
-    def turn(self, goal):
-        return self.adapter.turn(self.binary, self.options, self.role) + [goal]
+    def turn(self, goal, server=None):
+        return self.served(self.adapter.turn(self.binary, self.options,
+                                             self.role), server) + [goal]
 
     def session(self, argv):
         return self.adapter.session(argv)
 
-    def resume(self, session):
-        return self.adapter.resume(self.binary, self.options, session, self.role)
+    def resume(self, session, server=None):
+        return self.served(self.adapter.resume(self.binary, self.options,
+                                               session, self.role), server)
+
+    def served(self, argv, server):
+        if server is None:
+            return argv
+        return argv[:2] + self.adapter.mcp_flags(server) + argv[2:]
 
     def reported_session(self, output, run=None):
         return self.adapter.reported_session(self.binary, output, self.role,

@@ -153,10 +153,10 @@ COMMANDS = (
             "stop a scout: a queued one ends now, a running one is signalled",
             takes=("ID",), note=REQUIRED, flags=(AUTHOR,), records=()),
     Command(("scout", "ask"), None,
-            "ask a done scout about its report; its lead answers in the thread",
+            "ask a scout about its report; its lead answers once it is done",
             takes=("ID",), note=REQUIRED, flags=(ANSWERS, AUTHOR), records=()),
     Command(("scout", "steer"), None,
-            "steer a done scout to look further; it runs one more pass",
+            "steer a scout: a running one at its next wave, a done one by a pass",
             takes=("ID",), note=REQUIRED, flags=(ANSWERS, AUTHOR), records=()),
     Command(("bug",), None, "launch a bug scout on an ask",
             note=REQUIRED, flags=SCOUT_FLAGS, records=()),
@@ -236,7 +236,7 @@ GROUPS = {
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
     "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
              " show ID: one scout's detail; holo scout ask ID TEXT: ask a"
-             " done scout; holo scout steer ID TEXT: steer one",
+             " scout; holo scout steer ID TEXT: steer one, running or done",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"

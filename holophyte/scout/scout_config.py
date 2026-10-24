@@ -42,6 +42,7 @@ class ScoutConfig:
     waves: int
     steer_budget_min: int
     steer_helpers: int
+    github: bool
 
     @property
     def prices(self):
@@ -76,9 +77,13 @@ def scout_config(project):
             f"{where}: [scout] steer_helpers: {steer_helpers} helpers for a "
             f"steered pass is more than helper_turns = "
             f"{counts['helper_turns']}")
+    github = table.get("github", False)
+    if not isinstance(github, bool):
+        raise SystemExit(
+            f"{where}: [scout] github must be true or false, got {github!r}")
     return ScoutConfig(leads, helpers, lead_prices, helper_prices, lead,
                        helper, waves=waves, steer_budget_min=steer_budget_min,
-                       steer_helpers=steer_helpers, **counts)
+                       steer_helpers=steer_helpers, github=github, **counts)
 
 
 def route_seats(project, where, table, key, defaults, role):
