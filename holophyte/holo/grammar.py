@@ -66,6 +66,7 @@ HELPER_ROUTE = Flag("--helper", "NAME")
 SWARM = Flag("--swarm", "N")
 MINUTES = Flag("--minutes", "M")
 ABOUT = Flag("--about", "KIND:REF")
+TASK = Flag("--task", "N")
 SCOUT_FLAGS = (LEAD, HELPER_ROUTE, SWARM, MINUTES, ABOUT, AUTHOR)
 
 REQUIRED, OPTIONAL = "required", "optional"
@@ -151,7 +152,7 @@ COMMANDS = (
             takes=("ID", "N"), note=OPTIONAL, flags=(AUTHOR,), records=()),
     Command(("scout", "stop"), None,
             "stop a scout: a queued one ends now, a running one is signalled",
-            takes=("ID",), note=REQUIRED, flags=(AUTHOR,), records=()),
+            takes=("ID",), note=OPTIONAL, flags=(TASK, AUTHOR), records=()),
     Command(("scout", "ask"), None,
             "ask a scout about its report; its lead answers once it is done",
             takes=("ID",), note=REQUIRED, flags=(ANSWERS, AUTHOR), records=()),

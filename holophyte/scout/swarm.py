@@ -48,6 +48,8 @@ EXCERPT_CHARS = 4000
 QUEUED, DONE = ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.DONE.value
 FAILED, STOPPED = ScoutTaskPhase.FAILED.value, ScoutTaskPhase.STOPPED.value
 TOKENS_USED = re.compile(r"tokens used\D{0,4}(\d[\d,]*)", re.IGNORECASE)
+TASK_STOP_REQUESTED = "scout_task_stop_requested"
+TASK_STOP_POLL_S = 2.0
 
 
 class Planned(NamedTuple):
@@ -153,14 +155,14 @@ class Stopping:
             raise ScoutStopped()
 
 
-def capped_turn(turn, stopping, failures=(OSError,)):
+def capped_turn(turn, stopped, failures=(OSError,)):
     try:
         code, output = turn()
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
     except failures as failed:
         return HelperTurn(FAILED, None, str(failed))
-    if code != 0 and stopping.stopped:
+    if code != 0 and stopped():
         return HelperTurn(STOPPED, code, output or "")
     return HelperTurn(DONE if code == 0 else FAILED, code, output or "")
 
@@ -186,6 +188,7 @@ class Swarm:
         self.launched, self.tasks, self.answers = 0, [], {}
         self.scratch = None
         self.probing, self.downs = threading.Lock(), {}
+        self.halting, self.halted, self.procs = threading.Lock(), set(), {}
         self.stack = ExitStack()
 
     def __enter__(self):
@@ -261,8 +264,65 @@ class Swarm:
             self.scratch = self.stack.enter_context(
                 review_scratch(self.project.path))
         starts = [threading.Event() for _ in launch]
-        with ThreadPoolExecutor(max_workers=self.size) as pool:
-            list(pool.map(self.helper, launch, [None] + starts[:-1], starts))
+        done, ready, failed = threading.Event(), threading.Event(), []
+        watcher = threading.Thread(target=self.watch,
+                                   args=(done, ready, failed), daemon=True)
+        watcher.start()
+        ready.wait()
+        if failed:
+            raise failed[0]
+        try:
+            with ThreadPoolExecutor(max_workers=self.size) as pool:
+                list(pool.map(self.helper, launch, [None] + starts[:-1],
+                              starts))
+        finally:
+            done.set()
+            watcher.join()
+
+    def watch(self, done, ready, failed):
+        try:
+            conn = store.open(self.store_path)
+        except Exception as error:
+            failed.append(error)
+            return
+        finally:
+            ready.set()
+        try:
+            while True:
+                self.halt(conn)
+                if done.wait(TASK_STOP_POLL_S):
+                    return
+        finally:
+            conn.close()
+
+    def halt(self, conn):
+        asked = {json.loads(payload)["task"] for (payload,) in conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ? AND kind = ?",
+            (self.row.id, TASK_STOP_REQUESTED))}
+        with self.halting:
+            for task_id in asked - self.halted:
+                for proc in self.procs.get(task_id, ()):
+                    kill_group(proc)
+            self.halted |= asked
+
+    def task_tracked(self, task, run, on_start=None):
+        def start(proc):
+            with self.halting:
+                self.procs.setdefault(task.id, []).append(proc)
+                if task.id in self.halted:
+                    kill_group(proc)
+            if on_start is not None:
+                on_start(proc)
+
+        return self.stopping.tracked(run, start)
+
+    def cut_short(self, task):
+        return self.stopping.stopped or task.id in self.halted
+
+    def skip(self, conn, task, mine):
+        start_scout_task(conn, task.id)
+        mine.set()
+        self.end(conn, task, STOPPED, "")
 
     def checkout(self, task):
         path = self.scratch / f"helper-{task.id}"
@@ -295,6 +355,9 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
+            if task.id in self.halted:
+                self.skip(conn, task, mine)
+                return
             if runs(task):
                 self.run_helper(conn, task, mine)
                 return
@@ -304,8 +367,9 @@ class Swarm:
             if prepared is None or cap <= 0:
                 return
             argv, checkout = prepared
-            turn = capped_turn(lambda: self.stopping.run_capped(
-                argv, checkout, cap, start), self.stopping)
+            turn = capped_turn(lambda: self.task_tracked(
+                task, partial(run_capped, argv, checkout, cap), start),
+                partial(self.cut_short, task))
             if started:
                 self.record(conn, task, argv, turn, monotonic() - started[0])
         finally:
@@ -336,9 +400,9 @@ class Swarm:
         mine.set()
         seat = run_seat(self.project, self.seat)
         problem = (setup_failure(self.project, checkout, self.deadline,
-                                 self.stopping.tracked)
+                                 partial(self.task_tracked, task))
                    or self.isolated_down(conn, seat, checkout))
-        if problem is not None and self.stopping.stopped:
+        if problem is not None and self.cut_short(task):
             self.end(conn, task, STOPPED, "")
             return
         if problem is not None:
@@ -349,8 +413,8 @@ class Swarm:
         cap = self.remaining_s()
         around = partial(audited, conn, self.row.id)
         launch = partial(launch_turn, self.project, argv, checkout, cap, around)
-        turn = (capped_turn(lambda: self.stopping.tracked(launch),
-                            self.stopping, LAUNCH_FAILURES)
+        turn = (capped_turn(lambda: self.task_tracked(task, launch),
+                            partial(self.cut_short, task), LAUNCH_FAILURES)
                 if cap > 0 else HelperTurn(STOPPED, None, ""))
         self.record(conn, task, argv, turn, monotonic() - started)
 

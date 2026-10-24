@@ -230,9 +230,10 @@ def scout_file(args, target):
 
 def scout_stop_body(args):
     values, note = arguments(args, args.command)
-    if note is None or not note.strip():
+    task = counted(last(args, "task"))
+    if task is None and (note is None or not note.strip()):
         args.leaf.error("holo scout stop's note must say why (non-blank text)")
-    body = {"scout": counted(values[0]), "note": note,
+    body = {"scout": counted(values[0]), "task": task, "note": note,
             "author": last(args, "author")}
     return {key: value for key, value in body.items() if value is not None}
 

@@ -444,8 +444,9 @@ the field. A project with no store is 503.
 ## `POST /actions/scout-stop`
 
 Body: a JSON object with `scout` (required, a positive integer: the
-scout's id), `note` (required, non-blank: why) and `author` (optional,
-default `maintainer`). It stops one scout. `holo scout stop ID "note"`
+scout's id), `note` (required without `task`, non-blank: why), `task`
+(optional, below) and `author` (optional, default `maintainer`). It stops
+one scout. `holo scout stop ID "note"`
 and the `holo mcp` `scout_stop` tool are the same stop. On a host daemon
 it is `/projects/NAME/actions/scout-stop`, admitted as the other project
 actions are.
@@ -488,10 +489,37 @@ process P` or `scout N stopped`, and `recorded` is null.
  "detail": "stop sent to scout 14's process 48213", "recorded": null}
 ```
 
-A body that is not a JSON object or a `scout` that is not a positive
-integer is 400 naming the field; a `note` missing or blank is 400 `note
-must say why`, and an `author` that is not text is 400. A project with no
-store is 503.
+With `task` (optional, a positive integer: a helper task's `id` as `GET
+/scouts/ID` serves it in `tasks`) the route stops that one helper task,
+not the scout, and `note` is optional. `holo scout stop ID --task N
+["note"]` and the `scout_stop` tool's `task` field send it. It is taken
+when the scout is `swarming` on this host with a recorded `pid` that runs
+it, and the task is the scout's and `queued` or `running`. The route then
+records a `scout_task_stop_requested` event at the `detail` level, its
+payload `{"task", "author", "note", "via"}` (`note` null when none was
+given) and its summary `helper task T stop asked by AUTHOR`, signals
+nothing, and answers `ok: true` with `task`, `pid` null and `detail`
+`scout N stops helper task T`. The scout process reads those events at
+most two seconds apart while a wave runs: a running task has its turn's
+process group killed (a read helper's turn, or a run helper's setup step
+or turn), a queued one is never launched, and either way the task ends
+`stopped`, its excerpt what its turn printed before it was killed. The
+other helpers run on, and the lead reads the stopped task as any other.
+Refusals write nothing: a task that is not the scout's is 404 `no such
+task`; a task already ended is `ok: false` naming its phase; a scout not
+`swarming` is `ok: false` naming its phase; a scout on another host is
+`ok: false` naming that host; and a scout with no running process is `ok:
+false` with `detail` `scout N has no running process to stop task T`.
+
+```json
+{"action": "scout-stop", "ok": true, "scout": 14, "task": 52, "pid": null,
+ "detail": "scout 14 stops helper task 52", "recorded": null}
+```
+
+A body that is not a JSON object, a `scout` or `task` that is not a
+positive integer is 400 naming the field; without `task` a `note` missing
+or blank is 400 `note must say why`, and an `author` that is not text is
+400. A project with no store is 503.
 
 ## `POST /actions/scout-message`
 

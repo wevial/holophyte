@@ -11,12 +11,15 @@ from holophyte.loop.runs import open_store
 from holophyte.scout.answer import current_ask, stop_answer
 from holophyte.scout.filing import ROW_ID_LIMIT
 from holophyte.scout.follow_up import current_pass, stop_pass
+from holophyte.scout.swarm import TASK_STOP_REQUESTED
 from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
+from store.enums import ScoutTaskPhase
 from store.scouts import (
     ANSWERING,
     ENDED,
     QUEUED,
+    SWARMING,
     ScoutRefused,
     end_scout,
     record_scout_event,
@@ -26,6 +29,7 @@ from store.scouts import (
 SCOUT_STOP_ACTION = "scout-stop"
 VIA_DAEMON = "POST /actions/scout-stop"
 REQUESTED = "scout_stop_requested"
+TASK_LIVE = (ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.RUNNING.value)
 NO_PROCESS = "no scout process was running"
 BY_SIGNAL = "stopped by signal"
 PS_TIMEOUT_S = 10
@@ -35,8 +39,12 @@ def refusal(body):
     value = body.get("scout")
     if type(value) is not int or value < 1:
         return "scout must be a positive integer"
-    note = body.get("note")
-    if not isinstance(note, str) or not note.strip():
+    task, note = body.get("task"), body.get("note")
+    if task is not None and (type(task) is not int or task < 1):
+        return "task must be a positive integer"
+    if task is not None and note is not None and not isinstance(note, str):
+        return "note must be text"
+    if task is None and (not isinstance(note, str) or not note.strip()):
         return "note must say why (non-blank text)"
     if body.get("author") is not None and not isinstance(body["author"], str):
         return "author must be text"
@@ -124,12 +132,69 @@ def requested(conn, project, scout_id, author, note, via):
                  }, (ask, steered)
 
 
+def refused_task(conn, row, task_id):
+    if row.phase != SWARMING:
+        return (f"scout {row.id} is {row.phase}, not swarming;"
+                " it has no helper task to stop")
+    here = socket.gethostname()
+    if row.host not in (None, here):
+        return (f"scout {row.id} runs on {row.host}, not on {here};"
+                f" stop its task from {row.host}'s daemon")
+    (phase,) = conn.execute("SELECT phase FROM scoutTasks WHERE id = ?",
+                            (task_id,)).fetchone()
+    if phase not in TASK_LIVE:
+        return f"task {task_id} is {phase}; nothing to stop"
+    return None
+
+
+def task_requested(conn, project, scout_id, task_id, author, note, via):
+    named = {"scout": scout_id, "task": task_id, "pid": None}
+    row = scout(conn, scout_id) if scout_id < ROW_ID_LIMIT else None
+    if row is None:
+        return 404, {"error": "no such scout", **named,
+                     "detail": f"no scout {scout_id}"}
+    owner = (conn.execute("SELECT scoutId FROM scoutTasks WHERE id = ?",
+                          (task_id,)).fetchone()
+             if task_id < ROW_ID_LIMIT else None)
+    if owner is None or owner[0] != scout_id:
+        return 404, {"error": "no such task", **named,
+                     "detail": f"scout {scout_id} has no task {task_id}"}
+    declined = refused_task(conn, row, task_id)
+    if declined is None and not (row.pid and runs_scout(row.pid, scout_id,
+                                                        project.path)):
+        declined = (f"scout {scout_id} has no running process to stop"
+                    f" task {task_id}")
+    if declined is not None:
+        return 200, {"ok": False, **named, "detail": declined}
+    record_scout_event(
+        conn, scout_id, TASK_STOP_REQUESTED,
+        f"helper task {task_id} stop asked by {author}", level="detail",
+        payload=json.dumps({"task": task_id, "author": author, "note": note,
+                            "via": via}))
+    return 200, {"ok": True, **named,
+                 "detail": f"scout {scout_id} stops helper task {task_id}"}
+
+
+def stop_task(project, body, via):
+    note = (body.get("note") or "").strip() or None
+    scout_id, task_id = body["scout"], body["task"]
+    conn = open_store(project)
+    try:
+        with store.transaction(conn):
+            return task_requested(conn, project, scout_id, task_id,
+                                  console_author(body), note, via)
+    finally:
+        conn.close()
+
+
 def stop(project, body, via=VIA_DAEMON):
     refused = refusal(body)
     if refused is not None:
         return 400, {"error": refused}
     if not project.store_path.exists():
         return 503, no_store(project)
+    if body.get("task") is not None:
+        return stop_task(project, body, via)
     scout_id, author, note = body["scout"], console_author(body), body["note"].strip()
     conn = open_store(project)
     try:
