@@ -59,7 +59,6 @@ function UrlItem({ url }: { url: string }) {
   );
 }
 
-/** One finding: its id, status chip, title and evidence line, with each opened command's output under it. */
 function FindingItem({ numbered, base }: { numbered: Numbered; base: string }) {
   const { id, pass, finding } = numbered;
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
