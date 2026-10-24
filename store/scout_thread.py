@@ -27,7 +27,6 @@ SELECT = f"SELECT {', '.join(COLUMNS)} FROM threadMessages"
 class ThreadRefused(Exception):
     def __init__(self, subject, detail):
         super().__init__(f"{subject}: {detail}")
-        self.subject = subject
 
 
 class Message(NamedTuple):
