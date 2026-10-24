@@ -213,6 +213,18 @@ class BaselineRuns(unittest.TestCase):
         self.assertNotIn("later-command", result["command"])
         self.assertIsNone(main_baseline.gap(result))
 
+    def test_a_here_document_runs_through_its_terminator(self):
+        verify = ("python3 - tests/test_app.py <<'CHECK'\n"
+                  "import sys, unittest\n"
+                  "unittest.main(module=\"tests.test_app\", argv=sys.argv[:1])\n"
+                  "CHECK\n"
+                  "echo later-command")
+        _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
+        self.assertTrue(result["command"].endswith("\nCHECK"))
+        self.assertNotEqual(result["exit_status"], 0)
+        self.assertIn("AssertionError", result["output"])
+        self.assertNotIn("unattributed", result)
+
     def test_a_base_run_stopped_before_the_test_line_is_not_its_witness(self):
         lint = self.root / "lint.sh"
         lint.write_text("echo lint-failed; exit 4\n")
@@ -224,26 +236,33 @@ class BaselineRuns(unittest.TestCase):
                     [ON_MAIN], verify=f"sh '{lint}'\n{check}")
                 entry = main_baseline.brief([result])
                 self.assertEqual(result["exit_status"], 4)
-                self.assertIn(f"It stopped at `sh '{lint}'` with exit status 4"
-                              " before tests/test_app.py ran", entry)
+                self.assertIn("the base failed before the named check ran",
+                              entry)
                 self.assertNotIn("This run is the run C1's", entry)
                 self.assertIsNone(main_baseline.gap(result))
 
-    def test_a_failure_not_traced_to_one_command_is_not_its_witness(self):
-        self.commit({"marker": "candidate only\n"})
-        verify = "set -e\ntest -f marker\n" + VERIFY.replace(" -p", " \\\n  -p")
-        _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
-        entry = main_baseline.brief([result])
-        self.assertNotEqual(result["exit_status"], 0)
-        self.assertNotIn("AssertionError", result["output"])
-        self.assertIn("the failure is not traced to one command", entry)
-        self.assertNotIn("This run is the run C1's", entry)
+    def test_a_failure_whose_output_shows_no_check_run_is_unattributed(self):
+        self.commit({"candidate-marker": "candidate only\n"})
+        for verify in (
+                f"echo setup\ntest -f candidate-marker && {VERIFY}",
+                "set -e\ntest -f candidate-marker\n"
+                + VERIFY.replace(" -p", " \\\n  -p")):
+            with self.subTest(verify=verify):
+                _, _, (result,) = self.baselines([ON_MAIN], verify=verify)
+                entry = main_baseline.brief([result])
+                self.assertNotEqual(result["exit_status"], 0)
+                self.assertEqual(result["unattributed"],
+                                 main_baseline.NO_CHECK_OUTPUT)
+                self.assertIn("the base failed before the named check ran",
+                              entry)
+                self.assertNotIn("This run is the run C1's", entry)
+                self.assertIsNone(main_baseline.gap(result))
 
     def test_a_failing_block_naming_no_file_witnesses_by_its_output(self):
         _, _, (result,) = self.baselines(
             [ON_MAIN], verify="python3 -m unittest discover -s tests")
         self.assertNotEqual(result["exit_status"], 0)
-        self.assertNotIn("stopped_at", result)
+        self.assertNotIn("unattributed", result)
         self.assertIn("This run is the run C1's", main_baseline.brief([result]))
 
     def test_a_named_file_pattern_runs_with_its_matches(self):

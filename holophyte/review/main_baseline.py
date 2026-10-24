@@ -22,6 +22,10 @@ OUTPUT_TAIL = 2000
 HEADING = "Baseline at the merge base"
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
 VERIFY_FAILED = "verify failed at the candidate"
+HEREDOC = re.compile(r"(?<!<)<<(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\""
+                     r"|\\?([^\s;&|<>()'\"]+))")
+UNITTEST_RAN = re.compile(r"^Ran \d+ tests? in ", re.M)
+NO_CHECK_OUTPUT = "its output shows no run of the named check"
 
 
 def _form(sentence):
@@ -66,14 +70,25 @@ def _names(line, path):
         for token in patterns)
 
 
+def _heredocs(text):
+    return [(dash == "-", "".join(words))
+            for dash, *words in HEREDOC.findall(text)]
+
+
 def _commands(verify_cmd):
-    commands, pending = [], ""
+    commands, pending, ends = [], "", []
     for text in (verify_cmd or "").splitlines():
-        if not pending and (not text.strip()
-                            or text.lstrip().startswith("#")):
+        if ends:
+            strip, word = ends[0]
+            if (text.lstrip("\t") if strip else text) == word:
+                ends.pop(0)
+        elif not pending and (not text.strip()
+                              or text.lstrip().startswith("#")):
             continue
+        else:
+            ends = _heredocs(text)
         pending += text
-        if pending.endswith("\\") or not _complete(pending):
+        if ends or pending.endswith("\\") or not _complete(pending):
             pending += "\n"
         else:
             commands.append(pending)
@@ -108,15 +123,29 @@ def _blobs(wt, sha, files):
     return blobs
 
 
-def _stopped(command, files, failure, output):
+def _check_ran(output, files):
+    if UNITTEST_RAN.search(output):
+        return True
+    for path in files:
+        name = re.escape(Path(path).name)
+        stem = re.escape(Path(path).name.rsplit(".", 1)[0])
+        if re.search(rf"^(?:FAIL|ERROR): \w+ \((?:[\w.]*\.)?{stem}\.", output,
+                     re.M) or re.search(rf"{name}:\d+", output) or re.search(
+                rf"^(?:FAILED |ERROR )?{re.escape(path)}(?:::|\s|$)", output,
+                re.M):
+            return True
+    return False
+
+
+def _attribution(command, files, failure, output):
     stopped = (failure or {}).get("command") or ""
-    names = any(_names(line, path) for line in command.splitlines()
-                for path in files)
-    if names and stopped == command and len(_commands(command)) > 1:
-        return {"unattributed": True}
-    witness = stopped if names else output
-    if not any(_names(witness, path) for path in files):
-        return {"stopped_at": stopped}
+    naming = [line for line in _commands(command)
+              if any(_names(line, path) for path in files)]
+    if naming and stopped and stopped != command and stopped not in naming:
+        return {"unattributed": f"it stopped at `{stopped}`, before the "
+                                f"line that names {', '.join(files)}"}
+    if not _check_ran(output, files):
+        return {"unattributed": NO_CHECK_OUTPUT}
     return {}
 
 
@@ -147,7 +176,7 @@ def _run(project, conn, run_id, beat_s, wt, base, sha, files, command):
     status = 0 if ok else (failure or {}).get("exit_status")
     return {"ran": True, "passed": ok, "exit_status": status,
             "output": str(out)[-OUTPUT_TAIL:],
-            **({} if ok else _stopped(command, files, failure, str(out)))}
+            **({} if ok else _attribution(command, files, failure, str(out)))}
 
 
 def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
@@ -211,17 +240,12 @@ def _entry(result):
     ran = (f"C{n}: at the merge base {base}, with {files} taken from the "
            f"candidate {result['sha'][:12]}, the factory ran:\n"
            f"{result['command']}\n")
-    if result.get("stopped_at"):
-        return (f"{ran}It stopped at `{result['stopped_at']}` with exit status "
-                f"{result['exit_status']} before {files} ran, so this is not "
-                f"the run C{n}'s on-main clause asks for; the implementer "
-                f"output must supply it. Output tail:\n{result['output']}\n")
     if result.get("unattributed"):
         return (f"{ran}It failed with exit status {result['exit_status']}, "
-                f"and the failure is not traced to one command, so it may "
-                f"have stopped before {files} ran; this is not the run "
-                f"C{n}'s on-main clause asks for, and the implementer output "
-                f"must supply it. Output tail:\n{result['output']}\n")
+                f"but the base failed before the named check ran: "
+                f"{result['unattributed']}. This is not the run C{n}'s on-main "
+                f"clause asks for, and the implementer output must supply it. "
+                f"Output tail:\n{result['output']}\n")
     whole = (" The whole base tree ran with the candidate's test, not only "
              "the named code as on main." if result["form"] == "as_on_main"
              else "")
