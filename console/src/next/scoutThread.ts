@@ -96,7 +96,6 @@ export function threadRows(detail: ScoutDetail): ThreadRow[] {
   return timed.sort((a, b) => a.at - b.at || a.order - b.order).flatMap((each) => each.rows);
 }
 
-/** Whether the Scout page draws its Thread panel. */
 export const hasThread = (detail: ScoutDetail) => detail.scout.phase === "done" || detail.thread.length > 0;
 
 /** Why the composer cannot send now, or null when it can: the daemon takes a
