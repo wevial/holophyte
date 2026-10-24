@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,8 +24,8 @@ from fake_agent import (  # noqa: E402 - after sys.path
     Commit,
     Idle,
     Reply,
-    _git,
 )
+from fake_agent import _git as git  # noqa: E402 - as above
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
 import holophyte.config.project  # noqa: E402 - as above
@@ -52,11 +51,8 @@ HEADING = "Baseline at the merge base"
 APPROVE_APP = Reply("CRITERION 1: met — tests/test_app.py::AppTests::"
                     "test_value\nVERDICT: APPROVE")
 REQUEST_CHANGES = Reply("Blocker: tidy the notes.\nVERDICT: REQUEST_CHANGES")
-
-
-def git(cwd, *args):
-    return subprocess.run(["git", *args], cwd=cwd, check=True,
-                          capture_output=True, text=True).stdout.strip()
+CHANGE_AND_TEST = {"app.py": NEW,
+                   "tests/test_app.py": TEST_APP.format(expected="new")}
 
 
 def payloads(conn, run):
@@ -91,8 +87,7 @@ class BaselineRuns(unittest.TestCase):
         self.wt = self.root / "wts" / "ko-1"
         git(self.repo, "worktree", "add", "-q", "-b", "task/ko-1",
             str(self.wt), "main")
-        self.commit({"app.py": NEW,
-                     "tests/test_app.py": TEST_APP.format(expected="new")})
+        self.commit(CHANGE_AND_TEST)
 
     def commit(self, files):
         for name, text in files.items():
@@ -145,7 +140,7 @@ class BaselineRuns(unittest.TestCase):
     def test_only_the_three_on_main_forms_naming_a_test_file_are_run(self):
         named = "Given `tests/test_app.py`, when it runs, then it passes. "
         criteria = [
-            named + f"On main the test fails, {OUTPUT}",
+            ON_MAIN,
             named + f"With `VALUE` as on main the test fails, {OUTPUT}",
             named + f"With the change reverted the test fails, {OUTPUT}",
             named + f"On the first ticket's branch the test fails, {OUTPUT}",
@@ -220,13 +215,9 @@ class Writes(Commit):
         for name, text in self.files.items():
             (cwd / name).parent.mkdir(parents=True, exist_ok=True)
             (cwd / name).write_text(text)
-        _git(cwd, "add", "-A")
-        _git(cwd, "commit", "-q", "-m", self.message)
+        git(cwd, "add", "-A")
+        git(cwd, "commit", "-q", "-m", self.message)
         return f"committed: {self.message}"
-
-
-CHANGE_AND_TEST = {"app.py": NEW,
-                   "tests/test_app.py": TEST_APP.format(expected="new")}
 
 
 class BaselineInTheLoop(LoopFixture):
