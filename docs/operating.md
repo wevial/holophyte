@@ -237,9 +237,9 @@ instance's `serve.env` is missing) the loop prints a line naming the unit and
 Otherwise the loop spawns the supervisor in its own session: it outlives a
 loop run by hand, but a stop of the unit the loop runs in also kills it.
 Either way the supervisor takes the lock itself, so two loops starting at
-once resolve at the lock like two `--supervise`s. `[loop] spawn_supervisor = false` turns the spawn
-off for an operator whose service manager runs the supervisor
-([Config](config.md)).
+once resolve at the lock like two `--supervise`s. `[loop] spawn_supervisor =
+false` turns the spawn off for an operator whose service manager runs the
+supervisor ([Config](config.md)).
 
 It runs until SIGINT or SIGTERM, finishing the pass in hand and exiting
 clean. One supervisor per project: the first takes
