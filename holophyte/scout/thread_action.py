@@ -62,11 +62,11 @@ def message_action(project, body):
                            console_author(body))
     if isinstance(message, dict):
         return code, message
-    ran, said = start(project, scout_id)
+    _, said = start(project, scout_id)
     consumed, phase = taken(project, scout_id, message)
     if not consumed:
         detail = f"message {message} waits for a scout slot: {said}"
-    elif ran or phase == ANSWERING:
+    elif phase == ANSWERING:
         detail = f"scout {scout_id} is answering message {message}"
     else:
         detail = f"message {message} was taken but its answer ended: {said}"

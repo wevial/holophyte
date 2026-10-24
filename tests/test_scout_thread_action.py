@@ -112,6 +112,22 @@ class DaemonAskTests(ActionCase):
         (message,) = self.thread(path, scout_id)
         self.assertIsNotNone(message.consumed_by)
 
+    def test_an_answer_that_ends_before_the_reply_is_not_called_answering(self):
+        path = self.project("alpha")
+        scout_id = done_scout(self.conn(path))
+        server = self.serve(path)
+
+        def ends_at_once(argv, **options):
+            end_scout(self.conn(path), scout_id, "done", "the answer failed")
+            return SimpleNamespace(pid=4242)
+
+        with patch.object(scout_sweep, "SPAWN", ends_at_once):
+            code, reply = self.ask(server, {"scout": scout_id})
+        self.assertEqual(code, 200, reply)
+        self.assertEqual((reply["ok"], reply["queued"]), (True, False))
+        self.assertNotIn("is answering", reply["detail"])
+        self.assertIn("answer ended", reply["detail"])
+
     def test_an_answer_without_a_sandbox_waits_untaken_and_unspawned(self):
         path = self.project("alpha")
         scout_id = done_scout(self.conn(path))
