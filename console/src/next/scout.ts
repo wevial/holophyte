@@ -77,25 +77,29 @@ interface Wave {
 
 /** Pass 1's tasks by wave, in wave order, each in plan order. A wave of an
  *  ended scout (`endedMs`) whose started tasks never all ended ends with the
- *  scout; once the lead is `synthesizing`, or the scout ended with only
- *  never-started tasks left, a wave ends with its last task back. */
+ *  scout; once the lead is `synthesizing`, a later wave has launched, or the
+ *  scout ended with only never-started tasks left, a wave ends with its last
+ *  task back. */
 function wavesOf(tasks: ScoutTask[], endedMs: number | null = null, synthesizing = false): Wave[] {
   const byWave = new Map<number, ScoutTask[]>();
   for (const task of tasks) {
     if (task.pass !== 1) continue;
     byWave.set(task.wave, [...(byWave.get(task.wave) ?? []), task]);
   }
-  return [...byWave.entries()]
+  const waves = [...byWave.entries()]
     .sort(([a], [b]) => a - b)
     .map(([wave, each]) => {
       const starts = each.flatMap((task) => (task.started_ms == null ? [] : [task.started_ms]));
       const ends = each.flatMap((task) => (ENDED.has(task.phase) && task.ended_ms != null ? [task.ended_ms] : []));
-      const launched = starts.length > 0 || ends.length === each.length;
-      if (!launched) return { wave, tasks: each, start: null, end: null, launched };
-      const cut = endedMs != null && each.every((task) => (ENDED.has(task.phase) && task.ended_ms != null) || task.started_ms == null);
-      const end = ends.length && (ends.length === each.length || synthesizing || cut) ? Math.max(...ends) : endedMs;
-      return { wave, tasks: each, start: starts.length ? Math.min(...starts) : null, end, launched };
+      return { wave, each, starts, ends, launched: starts.length > 0 || ends.length === each.length };
     });
+  return waves.map(({ wave, each, starts, ends, launched }, index) => {
+    if (!launched) return { wave, tasks: each, start: null, end: null, launched };
+    const followed = waves.slice(index + 1).some((later) => later.launched);
+    const cut = endedMs != null && each.every((task) => (ENDED.has(task.phase) && task.ended_ms != null) || task.started_ms == null);
+    const end = ends.length && (ends.length === each.length || synthesizing || followed || cut) ? Math.max(...ends) : endedMs;
+    return { wave, tasks: each, start: starts.length ? Math.min(...starts) : null, end, launched };
+  });
 }
 
 function waveTone(tasks: ScoutTask[], running: boolean): ActivityTone {

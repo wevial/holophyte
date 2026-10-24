@@ -285,6 +285,25 @@ test("a synthesizing scout ends its wave on the last helper back, past an unlaun
   ]);
 });
 
+test("a swarming second wave ends the first on its last helper back, past one never started, so Synthesis spans the gap", async () => {
+  const second: ScoutDetail = {
+    ...live,
+    tasks: [
+      back(waveOne[0]!.question, { started_ms: at(11, 47, 12), ended_ms: at(11, 50, 12) }),
+      waveOne[9]!,
+      task("Does publish need the transaction open?", "running", { wave: 2, started_ms: at(11, 52) }),
+    ],
+  };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: second } }).fetch);
+  expect(groups().map((group) => [row(group).title, row(group).span])).toEqual([
+    ["Plan · opus · 2 sub-tasks", "1m 12s"],
+    ["Wave 1 · luna ×2 · 1 of 2 back", "3m 00s"],
+    ["Synthesis · opus · 1 more sub-task", "1m 48s"],
+    ["Wave 2 · luna ×1 · 0 of 1 back", "now"],
+    ["Report · opus", ""],
+  ]);
+});
+
 test("a wave whose helpers never started leaves the lead's turn after it to Synthesis, then to Report", async () => {
   const refused = { ...waveOne[9]!, question: "Does the digest open its own connection?" };
   const turn = { at: at(11, 47), kind: "agent_turn", summary: "scout-lead turn ended" };
@@ -343,7 +362,7 @@ test("a wave the reader closed stays closed when the next poll brings a helper b
   expect(opened(groupTitled("Wave"))).toBe(false);
 });
 
-test("Stop asks for a reason, posts it once, closes on ok and says so in the toast", async () => {
+test("Stop asks for a reason, posts it once, closes on ok with focus on Stop and says so in the toast", async () => {
   const { fetch, seen } = scoutFetch({ scouts: { 31: live }, stop: () => Response.json({ ok: true, detail: "stop requested for scout 31" }) });
   await mount("#/scouts/demo/31", fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
@@ -356,6 +375,22 @@ test("Stop asks for a reason, posts it once, closes on ok and says so in the toa
   expect(posts.map((post) => [post.url, post.body])).toEqual([[`${DEMO}/actions/scout-stop`, { scout: 31, note: "wrong project" }]]);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(toast()).toBe("Stop sent to scout 31.");
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Stop" }));
+});
+
+test("a sent stop that ends the scout puts focus on the ask once Stop is gone", async () => {
+  const bodies: Record<number, ScoutDetail> = { 31: live };
+  const stop = () => {
+    bodies[31] = { ...live, scout: { ...live.scout, phase: "stopped", reason: "wrong project", ended_ms: at(11, 59) } };
+    return Response.json({ ok: true, detail: "stop requested for scout 31" });
+  };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies, stop }).fetch);
+  await click(screen.getByRole("button", { name: "Stop" }));
+  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
+  await click(within(dialog).getByRole("button", { name: "Stop scout" }));
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1, name: ASK }));
 });
 
 test("a refused stop reads inside the dialog, and Escape closes it with focus back on Stop", async () => {

@@ -1,4 +1,5 @@
 import { Link, useParams } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { formatClock, formatSettled } from "../../lib/format";
 import { shortSha } from "../../lib/shipped";
@@ -55,6 +56,14 @@ export function ScoutPage() {
   const { project, scout: param } = useParams({ from: "/scouts/$project/$scout" });
   const id = /^\d+$/.test(param) ? Number(param) : null;
   const page = useScoutPage(project, id);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const stopSent = useRef(false);
+  const stoppable = page.kind === "scout" && page.stoppable;
+  useEffect(() => {
+    if (stoppable || !stopSent.current) return;
+    stopSent.current = false;
+    if (document.activeElement === document.body) heading.current?.focus();
+  }, [stoppable]);
   const shown = id == null ? param : String(id);
   const label = `scout ${shown}`;
   const notice = (text: string) => <Notice label={label} text={text} back={{ to: "/scouts", search: { project } }} backLabel="Back to Scouts" />;
@@ -82,8 +91,8 @@ export function ScoutPage() {
           <span>scout {scout.id}</span>
         </nav>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          <h1 className="m-0 max-w-[64ch] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink [overflow-wrap:anywhere]">{scout.ask}</h1>
-          {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} actions={page.actions} />}
+          <h1 ref={heading} tabIndex={-1} className="m-0 max-w-[64ch] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink [overflow-wrap:anywhere]">{scout.ask}</h1>
+          {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} actions={page.actions} onSent={() => (stopSent.current = true)} />}
         </div>
         <p data-scout-facts className="m-0 mt-3 font-mono text-[12px] leading-[1.7] text-ink-3 [overflow-wrap:anywhere]">
           <Facts detail={page.detail} project={project} now={page.now} live={page.live} />

@@ -7,8 +7,9 @@ import { ConfirmDialog } from "./ConfirmDialog";
 const STOP = "Stop";
 
 /** Stop for a queued or live scout: a confirm that asks for a reason, then
- *  `POST /actions/scout-stop`; a refusal reads inside the confirm. */
-export function ScoutStop({ base, project, scout, actions }: { base: string; project: string; scout: number; actions: boolean }) {
+ *  `POST /actions/scout-stop`; a refusal reads inside the confirm. A sent stop
+ *  puts focus back on Stop and calls `onSent`. */
+export function ScoutStop({ base, project, scout, actions, onSent }: { base: string; project: string; scout: number; actions: boolean; onSent: () => void }) {
   const action = useAction();
   const [stopping, setStopping] = useState(false);
   const [reason, setReason] = useState("");
@@ -29,7 +30,10 @@ export function ScoutStop({ base, project, scout, actions }: { base: string; pro
     const result = await action.mutateAsync({
       label: STOP, base, route: "/actions/scout-stop", body: { scout, note: reason.trim() }, said: `Stop sent to scout ${scout}.`,
     });
-    if (result.ok) setStopping(false);
+    if (!result.ok) return;
+    setStopping(false);
+    opener.current?.focus();
+    onSent();
   };
 
   return (
