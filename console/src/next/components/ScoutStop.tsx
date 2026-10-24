@@ -9,8 +9,8 @@ const STOP = "Stop";
 /** Stop for a queued or live scout, or its live follow-up `pass`: a confirm that asks for a reason, then
  *  `POST /actions/scout-stop`; a refusal reads inside the confirm. A sent stop
  *  puts focus back on Stop and calls `onSent`. */
-export function ScoutStop({ base, project, scout, pass = null, actions, onSent }: {
-  base: string; project: string; scout: number; pass?: number | null; actions: boolean; onSent: () => void;
+export function ScoutStop({ base, project, scout, pass, actions, onSent }: {
+  base: string; project: string; scout: number; pass: number | null; actions: boolean; onSent: () => void;
 }) {
   const action = useAction();
   const [stopping, setStopping] = useState(false);
