@@ -76,10 +76,10 @@ python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cance
 python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
 python3 factory.py --witness-step /path/to/repo   # internal: one witness pass the pool's scheduler spawns under [loop] workers > 1
 python3 factory.py --shadow BRIEF /path/to/repo   # internal: the shadow implementer a fresh claim spawns under [agents.implementer_shadow]
-python3 factory.py --scout-probe /path/to/repo   # probe each [scout] lead and helper route once; exit 1 when any fails
+python3 factory.py --scout-probe /path/to/repo    # probe each [scout] lead and helper route once; exit 1 when any fails
 python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
 holo --version                                   # the package version and the checkout's short HEAD
-holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but the internal --worker, --witness-step and --shadow, and --scout-probe, has a holo command
+holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but --scout-probe and the internal --worker, --witness-step and --shadow has a holo command
 holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
 holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
 holo mcp                                         # an MCP server on stdio: tools for the holo reads and six signed writes (file_ticket, send_back, babysit, steer, requeue, hold); see docs/reference/cli.md#holo
