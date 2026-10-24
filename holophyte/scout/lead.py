@@ -173,7 +173,7 @@ def steered_scope(steers):
         "Say in the report what the steer changed.\n\n" for steer in steers)
 
 
-def synthesis_goal(row, swarm, fresh, steer=None, card=""):
+def synthesis_goal(row, swarm, fresh, steer, card):
     return (
         f"{SYNTHESIS_OPENING}\n\n"
         + (f"{asked(row)}\n\n" if fresh else "")
