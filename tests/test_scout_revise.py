@@ -16,7 +16,9 @@ import store
 import store.board
 import store.tickets
 from holophyte.config.project import Project
+from holophyte.scout.follow_up import PassOutcome, current_pass, settle_pass
 from holophyte.scout.report import report_problems
+from store.scout_thread import post_message, take_message
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import REPO, git
 from tests.scout_stubs import fenced
@@ -138,6 +140,21 @@ class DefectScoutTests(ReviseCase):
         self.assertIn("revise", self.goal("report"))
         fix, revise = self.items(scout_id)
         self.assertEqual(revise["revises"], {"ticket": "NAT-3", "revision": 2})
+        self.assertNotIn("revises", fix)
+
+    def test_a_follow_up_passs_revise_item_is_stamped_at_the_current_revision(
+            self):
+        scout_id, code, printed = self.run_scout("defect")
+        self.assertEqual(code, 0, printed)
+        store.board.edit_ticket(self.db, self.project_id, "NAT-3",
+                                body("Save keeps the label"), 2)
+        take_message(self.db, post_message(self.db, scout_id, "maintainer",
+                                           "steer", "Check the label too."))
+        message = current_pass(self.db, scout_id)["message"]
+        self.assertEqual(settle_pass(self.db, scout_id, PassOutcome(
+            2, message, dict(REPORT, cut=[]))), 0)
+        fix, revise = self.items(scout_id)[2:]
+        self.assertEqual(revise["revises"], {"ticket": "NAT-3", "revision": 3})
         self.assertNotIn("revises", fix)
 
     def test_a_run_scouts_revise_item_fails_its_report_after_the_repair(self):
