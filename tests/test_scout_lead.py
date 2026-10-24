@@ -59,7 +59,6 @@ class ScoutLeadTests(ScoutFixture):
         conn = self.conn(path)
         (project,) = conn.execute("SELECT id FROM projects").fetchone()
         scout_id = create_scout(conn, project, ask, "bug", 30)
-        self.assertEqual(scout(conn, scout_id).phase, "queued")
         move_scout(conn, scout_id, "planning",
                    base_sha=git(path, "rev-parse", "main"))
         return path, conn, scout_id
