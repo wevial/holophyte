@@ -244,7 +244,7 @@ test("folding a row while its filing is out keeps it Filing…, so reopening it 
   expect(fateOf(row)).toBe("filed as HOLO-248 · Backlog");
 });
 
-test("a /status with no actions draws both buttons disabled under ACTIONS_OFF and posts nothing, and a finding being fixed has no button", async () => {
+test("a /status with no actions draws both buttons disabled under ACTIONS_OFF and posts nothing, and a finding being fixed has no row action", async () => {
   const { fetch, posts } = daemon({ runs: [demo11, demo7, holo229], actions: null, live: reviewing7 });
   await mount(fetch);
   const steer = buttonOf(unfold("Open", "Flag is ignored"), /^Steer into next run$/)!;
@@ -256,7 +256,7 @@ test("a /status with no actions draws both buttons disabled under ACTIONS_OFF an
   }
   await act(settle);
   expect(posts).toHaveLength(0);
-  expect(buttonOf(unfold("Open", "Lease never expires"), /./)).toBeUndefined();
+  expect(buttonOf(unfold("Open", "Lease never expires"), /^(?!Scout$)/)).toBeUndefined();
 });
 
 test("on a project daemon with actions on File ticket draws disabled while Steer into next run stays enabled", async () => {

@@ -1,9 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { ACTIONS_OFF } from "../../lib/actions";
 import type { TicketDefect } from "../../lib/contract.gen";
 import { formatStamp } from "../../lib/format";
 import type { DefectView } from "../findings";
 import { keepScope } from "../scope";
+import type { ScoutTarget } from "../scouts";
+import { ScoutThis } from "./ScoutThis";
 import { TONE_TEXT } from "./StateDot";
 
 const STOP: Record<TicketDefect["kind"], string> = {
@@ -39,6 +42,11 @@ function RequeueNote({ note }: { note: string }) {
   );
 }
 
+function defectScout(defect: DefectView): ScoutTarget {
+  const ask = `What in ${defect.ticket}'s wording stopped run ${defect.run}, and how should it read?`;
+  return { project: defect.project, about: `defect:${defect.run}`, kind: "research", ask, off: defect.actions ? null : ACTIONS_OFF };
+}
+
 /** A run that stopped on a wrong ticket: its ticket, criteria and stop, the revision that fixed the ticket, and the requeue note. */
 export function TicketDefectRow({ defect }: { defect: DefectView }) {
   return (
@@ -60,6 +68,9 @@ export function TicketDefectRow({ defect }: { defect: DefectView }) {
         <span data-stop className={`font-sans text-[13px] font-medium ${TONE_TEXT.need}`}>{STOP[defect.kind]}</span>
         <span data-place className="font-mono text-[12px] text-ink-3">
           revision {defect.revision} · {formatStamp(defect.revised_ms)}
+        </span>
+        <span className="ml-auto">
+          <ScoutThis target={defectScout(defect)} />
         </span>
       </div>
       {defect.requeue_note != null && <RequeueNote note={defect.requeue_note} />}

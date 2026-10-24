@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ScoutRoute, ScoutRow } from "../../lib/contract.gen";
 import type { useAction } from "../actions";
-import { defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks } from "../scouts";
+import { aboutWords, defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks, type ScoutsSearch } from "../scouts";
 import { Btn } from "./Btn";
 import { FoldChevron } from "./icons";
 import { INPUT } from "./TicketFields";
@@ -20,16 +20,45 @@ export interface LaunchProject {
 }
 
 /** What the reader has typed and picked; `picks` hold for the project at
- *  `picks.base` only, so another project starts from its own defaults. */
+ *  `picks.base` only, so another project starts from its own defaults.
+ *  `about` is the launch's `subject`. */
 interface ScoutDraft {
   ask: string;
   kind: Kind;
   base: string | null;
   disclosed: boolean;
   picks: (ScoutPicks & { base: string }) | null;
+  about: string | null;
 }
 
-export const EMPTY_DRAFT: ScoutDraft = { ask: "", kind: "research", base: null, disclosed: false, picks: null };
+export const EMPTY_DRAFT: ScoutDraft = { ask: "", kind: "research", base: null, disclosed: false, picks: null, about: null };
+
+/** The form a Scout button opened: the search's project when `projects`
+ *  offers it, with its subject; else the blank form's project and none. */
+export function prefilledDraft(search: ScoutsSearch, projects: LaunchProject[]): ScoutDraft {
+  const base = projects.find((project) => project.name === search.new)?.base ?? null;
+  const about = base != null && search.about != null && aboutWords(search.about) != null ? search.about : null;
+  return { ...EMPTY_DRAFT, ask: search.ask ?? "", kind: search.kind ?? "research", base, about };
+}
+
+function AboutLine({ about, onRemove }: { about: string; onRemove: () => void }) {
+  const words = aboutWords(about);
+  if (words == null) return null;
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <p data-about className="m-0 min-w-0 font-mono text-[12.5px] [overflow-wrap:anywhere] text-ink-2">About {words}</p>
+      <button
+        type="button"
+        aria-label={`Remove ${words}`}
+        title={`Remove ${words}`}
+        onClick={onRemove}
+        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center font-mono text-[14px] leading-none text-ink-3 hover:text-ink"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 const LABEL = "font-sans text-[14px] font-semibold text-ink";
 const PRESS =
@@ -90,8 +119,13 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   onLaunched: () => void;
 }) {
   const askRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => askRef.current?.focus(), []);
+  useEffect(() => {
+    const ask = askRef.current;
+    ask?.focus();
+    ask?.setSelectionRange(ask.value.length, ask.value.length);
+  }, []);
   const project = projects.find((each) => each.base === draft.base) ?? projects[0]!;
+  const about = project.base === draft.base ? draft.about : null;
   const { data: routes } = useScoutRoutes(project.base);
   const leads = routes?.leads ?? [];
   const helperRoutes = routes?.helpers ?? [];
@@ -106,7 +140,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   const pick = (change: Partial<ScoutPicks>) => picks && set({ picks: { ...picks, ...change, base: project.base } });
   const launch = () => {
     if (!ready) return;
-    const body = { ask: draft.ask.trim(), kind: draft.kind, lead: picks.lead, helper: picks.helper, swarm, minutes };
+    const body = { ask: draft.ask.trim(), kind: draft.kind, lead: picks.lead, helper: picks.helper, swarm, minutes, ...(about == null ? {} : { subject: about }) };
     action.mutate(
       { label: "Scout", base: project.base, route: "/actions/scout", body, said: sentence },
       { onSuccess: (result) => result.ok && onLaunched() },
@@ -123,6 +157,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
       className="mb-4 border border-rule bg-paper"
     >
       <Band>
+        {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
         <label htmlFor="scout-ask" className="flex flex-col">
           <span className={LABEL}>Ask</span>
           <textarea id="scout-ask" ref={askRef} rows={2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans`} />
@@ -133,7 +168,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
           <Pressed label="Kind" options={KINDS} picked={draft.kind} onPick={(kind) => set({ kind })} />
           <label htmlFor="scout-project" className="flex w-full max-w-[260px] flex-col">
             <span className={LABEL}>Project</span>
-            <select id="scout-project" value={project.base} onChange={(event) => set({ base: event.target.value, picks: null })} className={`${INPUT} font-sans`}>
+            <select id="scout-project" value={project.base} onChange={(event) => set({ base: event.target.value, picks: null, about: null })} className={`${INPUT} font-sans`}>
               {projects.map((each) => <option key={each.base} value={each.base}>{each.name}</option>)}
             </select>
           </label>

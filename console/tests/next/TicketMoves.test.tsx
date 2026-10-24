@@ -97,7 +97,7 @@ afterEach(() => {
 test("Move to backlog posts the move once at the read revision with the bearer, toasts and re-reads the board", async () => {
   const write = fakeFetch({ ticket: "DEMO-2", revision: 4 });
   await mount("DEMO-2", { write: write.fetchImpl });
-  expect(within(actions()).getAllByRole("button").map((button) => button.textContent)).toEqual(["Steer", "Move to backlog", "Cancel ticket"]);
+  expect(within(actions()).getAllByRole("button").map((button) => button.textContent)).toEqual(["Steer", "Scout", "Move to backlog", "Cancel ticket"]);
   const boardReads = reads("/board");
   await press("Move to backlog");
   expect(write.seen.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
@@ -165,5 +165,5 @@ test("Esc or Keep it closes the cancel dialog, returns focus to Cancel ticket an
 
 test("a host whose /board is not editable draws none of the moves", async () => {
   await mount("DEMO-2", { editable: false });
-  expect(within(actions()).getAllByRole("button").map((button) => button.textContent)).toEqual(["Steer"]);
+  expect(within(actions()).getAllByRole("button").map((button) => button.textContent)).toEqual(["Steer", "Scout"]);
 });

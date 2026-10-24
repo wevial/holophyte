@@ -5,6 +5,7 @@ import { useAction } from "../actions";
 import { filedFate, type FindingRowView, type RowAction, type RowFate } from "../findings";
 import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
+import { ScoutThis } from "./ScoutThis";
 import { FactIcon, FoldChevron, FolderIcon } from "./icons";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { useToast } from "./Toast";
@@ -137,6 +138,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
                 </a>
               )}
               {row.action != null && done == null && <RowActionButton action={row.action} busy={busy} press={press} />}
+              {row.scout != null && <ScoutThis target={row.scout} />}
             </div>
           </div>
         )}
