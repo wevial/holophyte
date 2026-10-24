@@ -8,7 +8,7 @@ export type LineTone = "quiet" | "bad" | "wait";
 export type ThreadRow =
   | { kind: "message"; key: string; head: string; at: number; text: string; agent: boolean }
   | { kind: "line"; key: string; text: string; tone: LineTone }
-  | { kind: "card"; key: string; id: number; head: string; at: number; question: string; choices: ProposalChoice[]; answered: boolean };
+  | { kind: "card"; key: string; id: number; at: number; question: string; choices: ProposalChoice[]; answered: boolean };
 
 export type CardRow = Extract<ThreadRow, { kind: "card" }>;
 
@@ -33,7 +33,7 @@ function messageRow(detail: ScoutDetail, message: ThreadMessage, index: number):
     return { kind: "message", key: `message-${index}`, head: messageHead(message), at: message.at, text: message.text, agent: message.mode === "answer" };
   }
   return {
-    kind: "card", key: `message-${index}`, id: message.id, head: "Scout", at: message.at, question: proposal.question, choices: proposal.choices,
+    kind: "card", key: `message-${index}`, id: message.id, at: message.at, question: proposal.question, choices: proposal.choices,
     answered: detail.thread.some((later) => later.answers === message.id),
   };
 }
