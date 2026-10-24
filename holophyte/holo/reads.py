@@ -171,6 +171,9 @@ def scout_lines(body):
 
 def action_line(item):
     revises = item["revises"]
+    if item["kind"] == "guardrail":
+        return (f"A{item['position']} guardrail {item['layer']}:"
+                f" {item['title']} (covers {len(item['covers'])})")
     if revises is not None:
         return (f"A{item['position']} {item['kind']} {revises['ticket']}"
                 f" r{revises['revision']}: {item['title']}")

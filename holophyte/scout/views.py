@@ -6,7 +6,7 @@ from typing import get_args
 
 import store.read
 from holophyte.agents.harness import SCOUT_HELPER, SCOUT_LEAD
-from holophyte.scout.report import read_status
+from holophyte.scout.report import GUARDRAIL, read_status
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_contract import ActionKind
 from holophyte.serve.serve_runs import (
@@ -124,10 +124,17 @@ def served_evidence_list(evidence):
     return [served_evidence(item) for item in items]
 
 
+def guardrail_keys(action):
+    if action["kind"] != GUARDRAIL:
+        return {"layer": None, "covers": None}
+    return {"layer": action["layer"], "covers": action["covers"]}
+
+
 def served_report_action(action):
     kind = action["kind"]
     return {**{key: action[key] for key in ACTION_KEYS},
-            "kind": kind if kind in ACTION_KINDS else "investigate"}
+            "kind": kind if kind in ACTION_KINDS else "investigate",
+            **guardrail_keys(action)}
 
 
 def served_reproduction(reproduction):
@@ -156,7 +163,7 @@ def served_report(report):
 
 def served_action(item):
     return {**{key: item[key] for key in ACTION_KEYS},
-            "revises": item.get("revises")}
+            **guardrail_keys(item), "revises": item.get("revises")}
 
 
 def served_message(message):
