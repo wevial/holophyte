@@ -1,11 +1,12 @@
 import subprocess
 from contextlib import contextmanager
 from dataclasses import replace
+from pathlib import Path
 
 from holophyte.agents.harness import SCOUT_RUNNER
 from holophyte.agents.review_workspace import scratch_git_environment
 from holophyte.isolation import launcher
-from holophyte.loop.gates import sh
+from holophyte.loop.gates import RunFailure, sh
 from holophyte.loop.task_worktree import prepare_worktree
 from store.enums import ScoutKind, ScoutTaskMode, ScoutTaskPhase
 from store.scouts import record_scout_event
@@ -26,6 +27,7 @@ RUN_REPORT = (
 CLAIMED = ("test", "real_tool")
 NO_RUN_FINISHED = "no run helper finished"
 REF_KINDS = ("refs/heads", "refs/tags")
+LAUNCH_FAILURES = (OSError, RuntimeError, RunFailure)
 
 
 def runs(row, task):
@@ -53,7 +55,10 @@ def run_seat(project, seat):
 
 def set_up(project, checkout, deadline):
     """The setup's failure report, or None once every entry has run."""
-    ok, report, _ = prepare_worktree(project, checkout, deadline=deadline)
+    try:
+        ok, report, _ = prepare_worktree(project, checkout, deadline=deadline)
+    except LAUNCH_FAILURES as failed:
+        return f"[holo2] worktree setup could not launch: {failed}"
     return None if ok else report
 
 
@@ -85,7 +90,24 @@ def ref_values(repo):
     for line in listed.splitlines():
         ref, oid, target = (line + " ").split(" ", 2)
         values[ref] = (oid, target.strip())
-    return values
+    return dict(dangling_symrefs(repo, values), **values)
+
+
+def dangling_symrefs(repo, listed):
+    env = scratch_git_environment()
+    common = Path(sh(["git", "rev-parse", "--path-format=absolute",
+                      "--git-common-dir"], cwd=repo, env=env))
+    for kind in REF_KINDS:
+        for path in (common / kind).rglob("*"):
+            ref = path.relative_to(common).as_posix()
+            if ref in listed or ref.endswith(".lock") or not path.is_file():
+                continue
+            try:
+                text = path.read_text(errors="replace").strip()
+            except OSError:
+                continue
+            if text.startswith("ref: "):
+                yield ref, ("", text[5:].strip())
 
 
 def update_ref(repo, *args):

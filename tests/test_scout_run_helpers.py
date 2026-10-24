@@ -145,6 +145,9 @@ class ScoutRunHelperTests(ScoutFixture):
                 "git symbolic-ref refs/heads/main refs/heads/helper"],
             "parent replaced by a child": [
                 "git branch -D saved", "git branch saved/helper"],
+            "parent replaced by a dangling symbolic child": [
+                "git branch -D saved",
+                "git symbolic-ref refs/heads/saved/helper refs/heads/missing"],
         }
         for number, (case, commands) in enumerate(cases.items()):
             with self.subTest(case=case):
@@ -195,6 +198,24 @@ class ScoutRunHelperTests(ScoutFixture):
                             for arg in runs[0]))
         self.assertEqual(self.stubs.turns("helper"), [])
         self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+
+    def test_a_setup_that_cannot_launch_fails_its_task_and_the_report_is_stored(self):
+        path, conn, scout_id = self.scout(
+            "bug", '[agents]\nimplementer_isolation = "container"\n'
+            '[worktree]\nsetup = ["true"]\n')
+        self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT))
+
+        def missing(route):
+            raise RuntimeError("implementer image is not built")
+
+        with patch.object(launcher, "image_ready", missing):
+            self.run_scout(path, scout_id)
+        phase, excerpt = self.task(conn, scout_id, RUN_Q)
+        self.assertEqual(phase, "failed")
+        self.assertIn("implementer image is not built", excerpt)
+        self.assertEqual(self.stubs.turns("helper"), [])
+        self.assertEqual(self.report(conn, scout_id)["summary"],
+                         REPORT["summary"])
 
     def test_a_finished_run_helper_keeps_the_lead_s_level(self):
         path, conn, scout_id = self.scout("bug")

@@ -13,10 +13,11 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
-from holophyte.loop.gates import RunFailure, reap_group, run_capped, sh
+from holophyte.loop.gates import reap_group, run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.scout.run_helpers import (
     HELPER_OPENING,
+    LAUNCH_FAILURES,
     READ_ONLY,
     launch_turn,
     ref_values,
@@ -39,7 +40,6 @@ from store.scouts import (
 EXCERPT_CHARS = 4000
 QUEUED, DONE = ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.DONE.value
 FAILED, STOPPED = ScoutTaskPhase.FAILED.value, ScoutTaskPhase.STOPPED.value
-LAUNCH_FAILURES = (OSError, RuntimeError, RunFailure)
 TOKENS_USED = re.compile(r"tokens used\D{0,4}(\d[\d,]*)", re.IGNORECASE)
 
 
