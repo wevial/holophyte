@@ -94,6 +94,9 @@ declare module "@tanstack/react-router" {
   interface Register {
     router: ReturnType<typeof createConsoleRouter>;
   }
+  interface HistoryState {
+    draft?: string;
+  }
 }
 
 export function NextConsole({

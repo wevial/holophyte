@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext } from "react";
-import { actionBase, postAction } from "../lib/actions";
+import { actionBase, postAction, type ActionResult } from "../lib/actions";
 import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
 import { putConfig, type ConfigWrite } from "../lib/config";
 import { useToast } from "./components/Toast";
@@ -27,7 +27,7 @@ interface ActionPost {
   base: string;
   route: string;
   body: Record<string, unknown>;
-  said: string | ((detail: string) => string);
+  said: string | ((detail: string, result: ActionResult) => string);
   /** What an `ok` answer makes of the cached `pr_open` item of a run. */
   patch?: { run: number; change: (item: PrOpenItem) => PrOpenItem };
 }
@@ -44,7 +44,7 @@ export function useAction() {
     mutationFn: (post: ActionPost) => postAction(actionBase(post.label, post.base), post.route, post.body, deps.fetch),
     onSuccess: (result, post) => {
       if (!result.ok) return;
-      toast(typeof post.said === "string" ? post.said : post.said(result.detail));
+      toast(typeof post.said === "string" ? post.said : post.said(result.detail, result));
       if (post.patch) patchFleetItem(client, post.base, post.patch.run, post.patch.change);
       void client.invalidateQueries({ queryKey: ["fleet"] });
       void client.invalidateQueries({ queryKey: ["route", post.base] });
