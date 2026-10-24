@@ -213,12 +213,6 @@ def wave_tasks(conn, swarm, turn, wave, cut):
     return swarm.plan(wave, tasks), None
 
 
-def next_wave(conn, lead, swarm, wave):
-    turn = lead.resume(synthesis_goal(lead.row, swarm, lead.session is None),
-                       swarm.remaining_s())
-    return wave_tasks(conn, swarm, turn, wave, "synthesis")[0]
-
-
 def run_waves(conn, lead, swarm, tasks, waves):
     if not (tasks and swarm.ready()):
         move_scout(conn, lead.row.id, SYNTHESIZING)
@@ -229,7 +223,10 @@ def run_waves(conn, lead, swarm, tasks, waves):
         move_scout(conn, lead.row.id, SYNTHESIZING)
         if wave == waves or not swarm.left():
             return
-        tasks = next_wave(conn, lead, swarm, wave + 1)
+        turn = lead.resume(synthesis_goal(lead.row, swarm,
+                                          lead.session is None),
+                           swarm.remaining_s())
+        tasks, _ = wave_tasks(conn, swarm, turn, wave + 1, "synthesis")
         if not tasks:
             return
 

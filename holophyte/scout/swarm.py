@@ -67,14 +67,6 @@ def usage_tokens(usage):
     return sum(counts) if counts else None
 
 
-def store_wave(conn, scout_id, wave, tasks, route):
-    ids = record_scout_tasks(conn, scout_id, 1, wave, [
-        {"question": task["question"], "mode": task["mode"], "route": route}
-        for task in tasks])
-    return [Planned(task_id, task["question"], list(task["paths"]),
-                    task["mode"]) for task_id, task in zip(ids, tasks)]
-
-
 def helper_goal(row, task):
     paths = ", ".join(task.paths) or "none"
     return (
@@ -141,7 +133,11 @@ class Swarm:
         return False
 
     def plan(self, wave, tasks):
-        planned = store_wave(self.conn, self.row.id, wave, tasks, self.route)
+        ids = record_scout_tasks(self.conn, self.row.id, 1, wave, [
+            {"question": task["question"], "mode": task["mode"],
+             "route": self.route} for task in tasks])
+        planned = [Planned(task_id, task["question"], list(task["paths"]),
+                           task["mode"]) for task_id, task in zip(ids, tasks)]
         self.tasks.extend(planned)
         return planned
 
