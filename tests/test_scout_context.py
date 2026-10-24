@@ -243,6 +243,9 @@ class SubjectContextTests(ContextCase):
     def test_a_secret_inside_the_redaction_mark_is_still_cut_to_the_cap(self):
         self.redacted_body_section("red")
 
+    def test_a_body_whose_secrets_redact_shorter_is_still_cut_to_the_cap(self):
+        self.redacted_body_section("sk-long-scout-secret-0123456789abcdef")
+
     def test_a_scout_with_no_subject_gets_no_context(self):
         self.start()
         scout_id = self.run_scout()

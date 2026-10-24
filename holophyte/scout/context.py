@@ -263,8 +263,12 @@ PACKS = {"run": lambda pack, ref: run_pack(pack, int(ref)),
          "defect": defect_pack, "ticket": ticket_pack, "pr": pr_pack}
 
 
+def longest(text, secrets):
+    return max(len(text), len(outbound(text, secrets)))
+
+
 def capped(text, pack, secrets):
-    if len(outbound(text, secrets)) <= PACK_CAP:
+    if longest(text, secrets) <= PACK_CAP:
         return text
     pack.note(f"cut at {PACK_CAP}")
     end = PACK_CAP - len(CUT_LINE) - 1
@@ -272,7 +276,7 @@ def capped(text, pack, secrets):
         line_end = text.rfind("\n", 0, end + 1)
         head = text[:line_end if line_end > 0 else end]
         cut = f"{head}\n{CUT_LINE}"
-        over = len(outbound(cut, secrets)) - PACK_CAP
+        over = longest(cut, secrets) - PACK_CAP
         if over <= 0 or not head:
             return cut
         end = max(len(head) - over, 0)
