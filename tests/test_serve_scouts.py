@@ -341,7 +341,16 @@ class McpTests(ScoutCase):
                          [self.queued, self.swarming])
         self.assertIs(result.structured_content["truncated"], True)
 
-    def test_the_scout_show_tool_answers_get_scouts_id(self):
+    def test_the_scout_show_tool_is_a_listed_read_answering_get_scouts_id(self):
+        async def use(client, _):
+            return (await client.list_tools()).tools
+        tools = {tool.name: tool for tool in self.session(use)}
+        self.assertEqual(
+            {name: tools[name].annotations.read_only_hint
+             for name in ("scouts", "scout_show", "scout")},
+            {"scouts": True, "scout_show": True, "scout": False})
+        self.assertEqual(tools["scout_show"].input_schema["required"],
+                         ["scout"])
         result = self.call("scout_show", {"project": "alpha",
                                           "scout": self.done})
         self.assertIs(result.is_error, False, result.content)
