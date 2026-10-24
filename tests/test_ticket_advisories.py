@@ -83,6 +83,12 @@ class HardCodedCountTests(unittest.TestCase):
                 problems = tt.validate(ticket(criterion=criterion))
                 self.assertEqual(matching(problems, SAME_COUNT), [])
 
+    def test_a_count_after_a_conjunction_is_advised(self):
+        found = matching(tt.validate(ticket(
+            criterion='then stdout reports success and 93 passed.')), SAME_COUNT)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("'93 passed'", found[0])
+
 
 class WideVerifyTests(unittest.TestCase):
     def test_directory_wider_than_in_scope_is_advised(self):
@@ -115,6 +121,14 @@ class WideVerifyTests(unittest.TestCase):
             in_scope), repo=repo)
         self.assertEqual(matching(narrow, WIDE), [])
 
+    def test_bare_glob_wider_than_in_scope_is_advised(self):
+        repo = make_repo(self, {'test_a.py': '', 'test_b.py': ''})
+        found = matching(tt.validate(ticket(
+            'python3 -m pytest test_*', '- `test_a.py`'), repo=repo), WIDE)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn('selects test_*', found[0])
+        self.assertIn('2 files', found[0])
+
 
 class MainLintTests(unittest.TestCase):
     def failing_main(self):
@@ -133,10 +147,12 @@ class MainLintTests(unittest.TestCase):
         self.assertEqual(matching(problems, LINT), [])
 
     @unittest.skipUnless(shutil.which('ruff'), NO_RUFF)
-    def test_named_path_lint_is_not_advised(self):
+    def test_lint_that_does_not_run_ruff_on_the_whole_repository_is_not_advised(self):
         repo = self.failing_main()
-        problems = tt.validate(ticket('ruff check a.py'), repo=repo)
-        self.assertEqual(matching(problems, LINT), [])
+        for verify in ('ruff check a.py', 'echo ruff check .'):
+            with self.subTest(verify=verify):
+                problems = tt.validate(ticket(verify), repo=repo)
+                self.assertEqual(matching(problems, LINT), [])
 
     def test_missing_ruff_gives_no_advice(self):
         repo = self.failing_main()

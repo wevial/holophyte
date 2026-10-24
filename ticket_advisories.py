@@ -16,9 +16,13 @@ COUNT_RE = re.compile(
     r"|(?<![\w#.-])\d+ (?:tests? )?"
     r"(?:pass(?:ed|ing)?|fail(?:ed|s|ing|ures)?)\b")
 ORDINAL_WORDS = frozenset((
-    "and", "attempt", "case", "check", "code", "criteria", "criterion", "exit",
-    "item", "line", "or", "phase", "round", "run", "stage", "status", "step",
-    "test"))
+    "attempt", "case", "check", "code", "criteria", "criterion", "exit",
+    "item", "line", "phase", "round", "run", "stage", "status", "step", "test"))
+ID_CHAIN_RE = re.compile(r"(?:\b([A-Za-z]*)\d+\s*(?:,|\band\b|\bor\b)\s*)+$")
+GLOB_TOKEN_RE = re.compile(r"[\w.*?/\[\]-]*[*?][\w.*?/\[\]-]*")
+NON_PATH_OPTIONS = ("-k", "-m")
+LAUNCHERS = ("env", "exec", "time")
+PYTHON_RE = re.compile(r"(?:.*/)?python[\d.]*")
 LINT_VALUE_OPTIONS = frozenset((
     "--select", "--ignore", "--extend-select", "--extend-ignore", "--fixable",
     "--unfixable", "--extend-fixable", "--per-file-ignores",
@@ -48,14 +52,19 @@ def _suite_advisories(t):
             if any(_discovers_whole_suite(c) for c in tt._shell_commands(cmd))]
 
 
+def _names_an_item(before):
+    chain = ID_CHAIN_RE.search(before)
+    if chain:
+        if chain.group(1):
+            return True
+        before = before[:chain.start()]
+    word = re.search(r"(\w+)\W*$", before)
+    return bool(word) and word.group(1).lower() in ORDINAL_WORDS
+
+
 def _counts(text):
-    found = []
-    for match in COUNT_RE.finditer(text):
-        before = re.search(r"(\w+)\W*$", text[:match.start()])
-        if before and before.group(1).lower() in ORDINAL_WORDS:
-            continue
-        found.append(match.group())
-    return found
+    return [match.group() for match in COUNT_RE.finditer(text)
+            if not _names_an_item(text[:match.start()])]
 
 
 def _count_advisories(t):
@@ -104,10 +113,9 @@ def _selections(tokens, tracked):
         return
     if tokens[:1] and tokens[0] in CD_COMMANDS:
         return
-    for token in tokens:
+    for previous, token in zip([""] + tokens, tokens):
         token = token.removeprefix("./")
-        pathish = "/" in token or Path(token).suffix in tt.SOURCE_EXTENSIONS
-        if pathish and any(c in token for c in GLOB_CHARS):
+        if previous not in NON_PATH_OPTIONS and GLOB_TOKEN_RE.fullmatch(token):
             glob = _glob_re(token)
             yield token, _base(token), [f for f in tracked if glob.fullmatch(f)]
     for path in tt._repo_paths(" ".join(tokens)):
@@ -138,19 +146,23 @@ def _wide_verify_advisories(t, repo):
     return advisories
 
 
+def _ruff_arguments(tokens):
+    while tokens and (tokens[0] in LAUNCHERS or "=" in tokens[0]):
+        tokens = tokens[1:]
+    if tokens and (tokens[0] == "ruff" or tokens[0].endswith("/ruff")):
+        return tokens[1:]
+    if tokens and PYTHON_RE.fullmatch(tokens[0]) and tokens[1:3] == ["-m", "ruff"]:
+        return tokens[3:]
+    return None
+
+
 def _lints_whole_repository(tokens):
-    for i, token in enumerate(tokens):
-        if token == "ruff" or token.endswith("/ruff"):
-            rest = tokens[i + 1:]
-        elif tokens[i:i + 2] == ["-m", "ruff"]:
-            rest = tokens[i + 2:]
-        else:
-            continue
-        if rest[:1] == ["check"]:
-            paths = [a for before, a in zip(rest, rest[1:])
-                     if not a.startswith("-") and before not in LINT_VALUE_OPTIONS]
-            return all(p in (".", "./") for p in paths)
-    return False
+    rest = _ruff_arguments(tokens) or []
+    if rest[:1] != ["check"]:
+        return False
+    paths = [a for before, a in zip(rest, rest[1:])
+             if not a.startswith("-") and before not in LINT_VALUE_OPTIONS]
+    return all(p in (".", "./") for p in paths)
 
 
 def _main_sha(repo):
