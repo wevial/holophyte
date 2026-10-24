@@ -3,7 +3,7 @@
 Each stub logs its argv, working directory and the scouts' recorded lead
 sessions at launch, then answers by the goal's opening line: `ready` to a
 probe, and the test's own text to a plan, synthesis, report, repair,
-helper or answer turn.
+helper, answer or pass plan turn.
 """
 import json
 import os
@@ -22,7 +22,7 @@ turn = next((name for opening, name in (
     ("Scout plan turn", "plan"), ("Scout report turn", "report"),
     ("Scout report repair turn", "repair"),
     ("Scout synthesis turn", "synthesis"), ("Scout helper turn", "helper"),
-    ("Scout answer turn", "answer"))
+    ("Scout answer turn", "answer"), ("Scout pass plan turn", "pass_plan"))
     if goal.startswith(opening)), "probe")
 sessions = None
 if answers.get("store"):
@@ -67,11 +67,12 @@ if turn == "helper":
 
 
 class LeadStubs:
-    """`answers` maps `probe`, `plan`, `synthesis`, `report`, `repair`,
-    `helper` and `answer` to the printed text, or `BINARY_TURN` to one binary's text;
-    `TURN_sleep` to seconds slept after it; `TURN_pid_file` to a file a child of that
-    turn writes its pid to; `TURN_shared` to a directory the turn holds a
-    file in while it sleeps, logging how many files it saw there;
+    """`answers` maps `probe`, `plan`, `synthesis`, `report`, `repair`, `helper`,
+    `answer` and `pass_plan` to the printed text, or `BINARY_TURN` to one
+    binary's text; `TURN_sleep` to seconds slept after it; `TURN_pid_file` to a
+    file a child of that turn writes its pid to; `TURN_shared` to a
+    directory the turn holds a file in while it sleeps, logging how many
+    files it saw there;
     `TURN_git` to git argument lists it runs, logging each exit status and
     output; `TURN_sh` to shell commands it runs, logged the same way;
     `TURN_tokens` to a count printed under a `tokens used` line;

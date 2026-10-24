@@ -165,6 +165,11 @@ Each module, one line:
   judged by the ticket checker for Backlog, filed to Backlog through the
   project's board (as a draft whose first note lists the checker's
   problems, when it has any), and its filed key recorded on the item.
+- `holophyte/scout/follow_up.py` — a steered scout's follow-up pass: the
+  lead's session resumed to plan one wave on the steer, the helpers under
+  the pass's own small budget, and the pass's report and action items
+  appended after the earlier passes', or the failure or stop recorded, as
+  the scout returns to `done`.
 - `holophyte/scout/launch.py` — `POST /actions/scout`, `holo scout` and
   the `holo mcp` `scout` tool: a scout's launch validated against `[scout]`,
   recorded `queued` with its `scout_queued` event, then started by the host
@@ -188,10 +193,10 @@ Each module, one line:
   scout route in a detached checkout of main, recorded in `route-probes.json`.
 - `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
   process, its lead worktree with pushes refused, its heartbeat and its end,
-  or an `answering` scout's answer turn.
+  an `answering` scout's answer turn, or a steered scout's follow-up pass.
 - `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
-  scouts whose heartbeat is stale and starts queued ones and waiting asks
-  under `[scout] max_parallel` and a host-wide lock, putting a scout whose
+  scouts whose heartbeat is stale and starts queued ones, waiting asks and
+  waiting steers under `[scout] max_parallel` and a host-wide lock, putting a scout whose
   spawn failed back in `queued` for the next pass.
 - `holophyte/scout/stop.py` — `POST /actions/scout-stop`, `holo scout
   stop` and the `holo mcp` `scout_stop` tool: a stop recorded as the

@@ -17,10 +17,12 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.host.registry import home
 from holophyte.loop.gates import sh
 from holophyte.scout.answer import current_ask, fail_answer
+from holophyte.scout.follow_up import current_pass, fail_pass
 from holophyte.scout.scout_process import scout_dir
 from store.enums import ScoutPhase
 from store.scout_thread import (
     ASK,
+    STEER,
     Message,
     ThreadRefused,
     take_message,
@@ -57,11 +59,15 @@ def _project_scouts(conn, target, phases):
 def _end_one_stale(conn, row, reason, now):
     if scout(conn, row.id).heartbeat_at != row.heartbeat_at:
         return None
-    if row.phase != ANSWERING:
-        end_scout(conn, row.id, "failed", reason, now=now)
-        return "ended failed"
-    fail_answer(conn, row.id, current_ask(conn, row.id), reason)
-    return "answer failed, back to done"
+    if row.phase == ANSWERING:
+        fail_answer(conn, row.id, current_ask(conn, row.id), reason)
+        return "answer failed, back to done"
+    steered = current_pass(conn, row.id)
+    if steered is not None:
+        fail_pass(conn, row.id, steered, reason)
+        return f"pass {steered['pass']} failed, back to done"
+    end_scout(conn, row.id, "failed", reason, now=now)
+    return "ended failed"
 
 
 def end_stale(name, target, conn, now, out):
@@ -177,31 +183,40 @@ def _config_refusal(target):
     return None
 
 
-def _start_answer(name, target, message, out):
+def _message_failed(conn, message, reason):
+    if message.mode == ASK:
+        fail_answer(conn, message.scout_id, message.id, reason)
+    else:
+        fail_pass(conn, message.scout_id,
+                  current_pass(conn, message.scout_id), reason)
+
+
+def _start_message(name, target, message, out):
+    work = "answer" if message.mode == ASK else "pass"
     refused = _config_refusal(target)
     if refused is not None:
-        print(f"[holo2] {name}: scout {message.scout_id}'s ask {message.id}"
-              f" waits: {refused}", file=out)
+        print(f"[holo2] {name}: scout {message.scout_id}'s {message.mode}"
+              f" {message.id} waits: {refused}", file=out)
         return False
     conn = store.open(str(target.store_path))
     try:
         take_message(conn, message.id, host=socket.gethostname())
         if _private_tmp_spawn():
-            fail_answer(conn, message.scout_id, message.id, SANDBOXLESS)
-            print(f"[holo2] {name}: scout {message.scout_id} answer failed:"
+            _message_failed(conn, message, SANDBOXLESS)
+            print(f"[holo2] {name}: scout {message.scout_id} {work} failed:"
                   f" {SANDBOXLESS}", file=out)
             return False
         try:
             started = start_scout(name, target, message.scout_id)
         except OSError as bad:
-            fail_answer(conn, message.scout_id, message.id,
-                        f"could not start: {bad}")
+            _message_failed(conn, message, f"could not start: {bad}")
             raise
     except ThreadRefused:
         return False
     finally:
         conn.close()
-    print(f"[holo2] {name}: started scout {message.scout_id} answering message"
+    doing = "answering" if message.mode == ASK else "on a pass steered by"
+    print(f"[holo2] {name}: started scout {message.scout_id} {doing} message"
           f" {message.id} as {started}", file=out)
     return True
 
@@ -209,7 +224,8 @@ def _start_answer(name, target, message, out):
 def _waiting(conn, target):
     project = project_of(conn, target)
     asks = [(message.at, message) for message in waiting_messages(conn)
-            if message.mode == ASK and message.project_id == project]
+            if message.mode in (ASK, STEER)
+            and message.project_id == project]
     return [(row.created_at, row) for row in
             _project_scouts(conn, target, (QUEUED,))] + asks
 
@@ -268,7 +284,7 @@ def _start_queued(entries, limit, out, key, now):
             break
         answers = isinstance(row, Message)
         try:
-            if (_start_answer if answers else _start)(name, target, row, out):
+            if (_start_message if answers else _start)(name, target, row, out):
                 live += 1
                 started.append((target.path,
                                 row.scout_id if answers else row.id))

@@ -1860,6 +1860,8 @@ apply.
 | `swarm` | Default: `4` | Integer of at least 1, at most `helper_turns`; the helpers at work at once. |
 | `helper_turns` | Default: `12` | Integer of at least 1; the helpers a scout starts in all. |
 | `waves` | Default: `2` | `1` or `2`. |
+| `steer_budget_min` | Default: `10` minutes | Integer of at least 1; a steered follow-up pass's time budget, counted from its plan turn. |
+| `steer_helpers` | Default: `4` | Integer of at least 1, at most `helper_turns`; the helpers a steered follow-up pass starts in all, in one wave. |
 
 ```toml
 [scout]
@@ -1876,7 +1878,7 @@ An unknown `[scout]` key or route-table key, a route name with anything but
 letters, digits, `_` and `-`, a `harness` that is no adapter or takes no scout
 role, a `model` or `effort` that is not a non-empty string (or a Codex effort
 outside its list), a `lead` or `helper` naming no route, a count that is not an
-integer of at least 1, a `swarm` above `helper_turns` or a `waves` other than 1
-or 2 is a startup error naming the table and the key.
+integer of at least 1, a `swarm` or `steer_helpers` above `helper_turns` or a
+`waves` other than 1 or 2 is a startup error naming the table and the key.
 `factory.py --scout-probe PROJECT` probes each route; see
 [the CLI reference](reference/cli.md).

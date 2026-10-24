@@ -16,6 +16,7 @@ from store.scouts import (
     ScoutRefused,
     move_scout,
     record_scout_event,
+    scout,
 )
 
 ANSWER_TURN_S = 300
@@ -152,10 +153,13 @@ def answer(conn, project, row, ask, worktree, stopping, cap=ANSWER_TURN_S):
 
 
 def held(conn, scout_id, ask):
-    current = current_ask(conn, scout_id)
+    current, phase = current_ask(conn, scout_id), scout(conn, scout_id).phase
     if current != ask:
-        raise ScoutRefused(scout_id, ANSWERING,
+        raise ScoutRefused(scout_id, phase,
                            f"it answers message {current}, not {ask}")
+    if phase != ANSWERING:
+        raise ScoutRefused(scout_id, phase,
+                           f"its answer to message {ask} has already ended")
 
 
 def return_done(conn, scout_id, ask, kind, summary, payload):
