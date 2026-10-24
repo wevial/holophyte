@@ -36,7 +36,7 @@ export function scoutPage(project: string, id: number) {
   return { to: "/scouts/$project/$scout", params: { project: projectName(project), scout: String(id) }, search: keepScope } as const;
 }
 
-export type ScoutGroupKind = "plan" | "wave" | "synthesis" | "report" | "next";
+type ScoutGroupKind = "plan" | "wave" | "synthesis" | "report" | "next";
 
 export interface ScoutGroup {
   /** Stable across polls: "plan", "wave:1:2", "synthesis:1", "report", "next". */
@@ -63,7 +63,7 @@ export const stoppedCount = (tasks: ScoutTask[]) => tasks.filter((task) => task.
 /** A token count in thousands: "38k tok". */
 export const tokenWords = (tokens: number) => `${Math.round(tokens / 1000)}k tok`;
 
-export const isLive = (phase: ScoutDetail["scout"]["phase"]) => phase === "planning" || phase === "swarming" || phase === "synthesizing";
+const isLive = (phase: ScoutDetail["scout"]["phase"]) => phase === "planning" || phase === "swarming" || phase === "synthesizing";
 
 interface Wave {
   wave: number;
@@ -131,7 +131,7 @@ interface Span {
 
 /** Plan, each wave with Synthesis between two, and Report, as the timeline's
  *  groups; a live scout's last group runs, and a pending row follows a running wave. */
-export function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
+function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   const { scout, events } = detail;
   if (scout.started_ms == null) return [];
   const live = isLive(scout.phase);
@@ -225,7 +225,7 @@ function swarmClauses(tasks: ScoutTask[]): string {
 const firstLine = (text: string | null) => (text ?? "").split("\n", 1)[0]!.trim();
 
 /** The sentence behind the scout's state dot. */
-export function scoutSentence(detail: ScoutDetail): string {
+function scoutSentence(detail: ScoutDetail): string {
   const { scout } = detail;
   switch (scout.phase) {
     case "queued":
@@ -251,7 +251,7 @@ export function scoutSentence(detail: ScoutDetail): string {
 }
 
 /** The Stage chip: the phase, with its wave while swarming or synthesizing. */
-export function scoutStage(detail: ScoutDetail): { label: string; sub: string | null } {
+function scoutStage(detail: ScoutDetail): { label: string; sub: string | null } {
   const { scout } = detail;
   const wave = wavesOf(detail.tasks).at(-1);
   if ((scout.phase !== "swarming" && scout.phase !== "synthesizing") || wave == null) return { label: scout.phase, sub: null };

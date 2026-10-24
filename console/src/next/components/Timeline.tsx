@@ -4,7 +4,7 @@ import type { ActivityStep, ActivityTone } from "../activity";
 import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
 
-export const ROW = "grid grid-cols-[48px_30px_minmax(0,1fr)_auto_14px] items-center gap-x-3.5 max-[720px]:grid-cols-[42px_30px_minmax(0,1fr)_auto_14px] max-[720px]:gap-x-2.5";
+const ROW = "grid grid-cols-[48px_30px_minmax(0,1fr)_auto_14px] items-center gap-x-3.5 max-[720px]:grid-cols-[42px_30px_minmax(0,1fr)_auto_14px] max-[720px]:gap-x-2.5";
 const BADGE_CENTRE = 27;
 const CONNECTOR = { first: { top: BADGE_CENTRE, bottom: 0 }, middle: { top: 0, bottom: 0 }, last: { top: 0, height: BADGE_CENTRE } };
 
