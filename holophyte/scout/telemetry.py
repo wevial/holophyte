@@ -120,10 +120,7 @@ def by_route(items):
     return sorted(routes.items(), key=lambda route: str(route[0]))
 
 
-def scouts_line(conn, turns):
-    ended = conn.execute(
-        "SELECT s.phase, COALESCE(s.endedAt - s.startedAt, 0) FROM scouts s"
-        f" WHERE {IN_ENDED}", ENDED).fetchall()
+def scouts_line(ended, turns):
     counts = " · ".join(f"{phase} {sum(row[0] == phase for row in ended)}"
                         for phase in ENDED)
     spent = sum(ms for _, ms in ended) / MINUTE_MS
@@ -147,12 +144,13 @@ def helper_line(route, tasks, cited):
 
 
 def scout_report_lines(conn):
-    (ended,) = conn.execute(f"SELECT COUNT(*) FROM scouts s WHERE {IN_ENDED}",
-                            ENDED).fetchone()
+    ended = conn.execute(
+        "SELECT s.phase, COALESCE(s.endedAt - s.startedAt, 0) FROM scouts s"
+        f" WHERE {IN_ENDED}", ENDED).fetchall()
     if not ended:
         return []
     turns, tasks, cited = lead_turns(conn), helper_tasks(conn), cited_tasks(conn)
-    return ([scouts_line(conn, turns + tasks)]
+    return ([scouts_line(ended, turns + tasks)]
             + [lead_line(route, mine) for route, mine in by_route(turns)]
             + [helper_line(route, mine, cited)
                for route, mine in by_route(tasks)])
