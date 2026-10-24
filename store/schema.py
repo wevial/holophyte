@@ -381,26 +381,23 @@ def _rebuild_enum_tables(conn, version):
               if version < 50 else ("scouts",))
     for table in tables:
         # `_widen_interventions_action()` rebuilds it and translates its history.
-        if table != "interventions":
-            _rebuild_enum_table(conn, table)
-
-
-def _rebuild_enum_table(conn, table):
-    indexes = conn.execute(
-        "SELECT sql FROM sqlite_master WHERE tbl_name = ?"
-        " AND type IN ('index', 'trigger') AND sql IS NOT NULL", (table,)
-    ).fetchall()
-    ddl = SCHEMA.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
-    ddl = ddl.split(");", 1)[0]
-    conn.execute(f"CREATE TABLE {table}_enum_new (" + ddl + ")")
-    columns = ", ".join(f'"{row[1]}"' for row in conn.execute(
-        f"PRAGMA table_info({table})"))
-    conn.execute(f"INSERT INTO {table}_enum_new ({columns})"
-                 f" SELECT {columns} FROM {table}")
-    conn.execute(f"DROP TABLE {table}")
-    conn.execute(f"ALTER TABLE {table}_enum_new RENAME TO {table}")
-    for (sql,) in indexes:
-        conn.execute(sql)
+        if table == "interventions":
+            continue
+        indexes = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE tbl_name = ?"
+            " AND type IN ('index', 'trigger') AND sql IS NOT NULL", (table,)
+        ).fetchall()
+        ddl = SCHEMA.split(f"CREATE TABLE IF NOT EXISTS {table} (", 1)[1]
+        ddl = ddl.split(");", 1)[0]
+        conn.execute(f"CREATE TABLE {table}_enum_new (" + ddl + ")")
+        columns = ", ".join(f'"{row[1]}"' for row in conn.execute(
+            f"PRAGMA table_info({table})"))
+        conn.execute(f"INSERT INTO {table}_enum_new ({columns})"
+                     f" SELECT {columns} FROM {table}")
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute(f"ALTER TABLE {table}_enum_new RENAME TO {table}")
+        for (sql,) in indexes:
+            conn.execute(sql)
 
 
 def _widen_runs_outcomes(conn):
