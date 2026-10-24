@@ -70,7 +70,7 @@ class ScoutLeadTests(ScoutFixture):
 
     def tasks(self, conn, scout_id):
         return conn.execute(
-            "SELECT pass, wave, question, mode, phase FROM scoutTasks"
+            "SELECT pass, wave, question, paths, mode, phase FROM scoutTasks"
             " WHERE scoutId = ? ORDER BY id", (scout_id,)).fetchall()
 
     def turn_events(self, conn, scout_id):
@@ -83,8 +83,8 @@ class ScoutLeadTests(ScoutFixture):
         code, printed = self.run_scout(path, scout_id)
         self.assertEqual(code, 0, printed)
         self.assertEqual(self.tasks(conn, scout_id), [
-            (1, 1, "Where is the retry loop?", "read", "queued"),
-            (1, 1, "Does the retry test fail on main?", "run", "queued")])
+            (1, 1, "Where is the retry loop?", "[]", "read", "queued"),
+            (1, 1, "Does the retry test fail on main?", "[]", "run", "queued")])
         self.assertEqual(self.report(conn, scout_id), [REPORT])
         self.assertEqual(scout(conn, scout_id).phase, "done")
 

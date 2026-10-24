@@ -170,7 +170,9 @@ def stored_plan(conn, scout_id, turn, limit):
         record_scout_event(conn, scout_id, "scout_plan",
                            f"no plan stored: {problem}")
         return [], problem
-    record_scout_tasks(conn, scout_id, 1, 1, tasks)
+    record_scout_tasks(conn, scout_id, 1, 1,
+                       [{key: value for key, value in task.items()
+                         if key != "paths"} for task in tasks])
     return tasks, None
 
 
