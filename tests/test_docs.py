@@ -230,10 +230,8 @@ class CliReferenceTests(unittest.TestCase):
     """KO-626: `docs/reference/cli.md` has a row for every mode the parser
     registers and every `project` verb the real entry point lists."""
 
-    PAGE = DOCS / "reference" / "cli.md"
-
     def test_names_every_option_and_project_verb(self):
-        text = self.PAGE.read_text()
+        text = CLI_PAGE.read_text()
         # Exact option tokens from the tables' Invocation cells only, so a
         # mention in the prose, or `--close` inside `--close-pr`, is no row.
         cells = " ".join(re.split(r"(?<!\\)\|", line)[1]
@@ -256,7 +254,7 @@ class CliReferenceTests(unittest.TestCase):
         self.assertIn("--store", invoked)
 
     def test_failure_lines_board_needs_and_exit_codes(self):
-        text = self.PAGE.read_text()
+        text = CLI_PAGE.read_text()
         for mode in ("`--report PROJECT`", "`--sweep PROJECT`"):
             (row,) = [line for line in text.splitlines()
                       if line.startswith(f"| {mode}")]
