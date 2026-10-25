@@ -10,7 +10,7 @@ import { ScoutThread } from "../components/ScoutThread";
 import { StageChip } from "../components/StageChip";
 import { StateDot } from "../components/StateDot";
 import { SCOUT_DOTS, scoutNotice, useScoutPage } from "../scout";
-import { hasThread } from "../scoutThread";
+import { hasThread, takesMessages } from "../scoutThread";
 import { CRUMB_LINK, Notice, Page } from "./runShared";
 
 export function ScoutPage() {
@@ -55,7 +55,7 @@ export function ScoutPage() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 ref={heading} tabIndex={-1} className="m-0 max-w-[64ch] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink [overflow-wrap:anywhere]">{scout.ask}</h1>
           {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
-          {thread && scout.phase === "done" && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
+          {thread && takesMessages(scout.phase) && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
             event.preventDefault();
             composeRef.current?.focus();
             composeRef.current?.scrollIntoView({ block: "nearest" });
@@ -93,7 +93,8 @@ export function ScoutPage() {
                 </span>
               )}
             </h2>
-            <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)} />
+            <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)}
+              stop={scout.phase === "swarming" ? { base: page.base, scout: scout.id, actions: page.actions } : null} />
           </section>
           <ScoutReport key={`${page.base}/${scout.id}`} reports={page.detail.reports} baseSha={scout.base_sha} />
           <ScoutActions key={`${page.base}/${scout.id}/actions`} items={page.detail.actions} base={page.base} project={project} scout={scout.id} actions={page.actions} />

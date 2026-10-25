@@ -1194,7 +1194,8 @@ The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scou
 or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
 `console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
 badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
-`console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm.
+`console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm; a
+swarming scout's queued or running helper row posts it with its `task`, no confirm, from Stop this branch.
 `console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
 findings with their status and evidence, and the newest bug report's hypotheses.
 `console/src/next/components/ScoutActions.tsx` draws its Action items under the Report, each filed
