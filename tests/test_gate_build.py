@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import io
+import os
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(HERE))
+from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
+from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
+
+import holophyte.host.startup  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+
+BRANCH = "task/ko-131-add-a-thing"
+
+
+class GateBuildTests(LoopFixture):
+    """A pool worker whose factory checkout moved under its run hands the
+    approved candidate to the next build instead of gating it."""
+
+    def worker(self, *script, provider, build):
+        fake = FakeAgent(*script)
+        out = io.StringIO()
+        with no_agent_processes(), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
+                patch.object(holophyte.loop.implement, "agent", fake), \
+                patch.object(holophyte.loop.review_round, "agent", fake), \
+                patch.object(holophyte.loop.adjudicate, "agent", fake), \
+                patch.object(holophyte.host.startup, "BUILD", build), \
+                patch.dict(os.environ, {holophyte.loop.pool.WORKER_SLOT_ENV: "2"}), \
+                patch.object(sys, "stdout", out):
+            rc = holophyte.loop.pool.worker(self.project, provider)
+        return rc, out.getvalue()
+
+    def test_a_moved_checkout_hands_the_approved_run_off_before_the_gate(self):
+        (self.target / "guard.txt").write_text("a guard merged mid-run\n")
+        self.git("add", "guard.txt")
+        self.git("commit", "-q", "-m", "a guard lands")
+        head = self.git("rev-parse", "HEAD").strip()
+
+        rc, _ = self.worker(Commit("the scripted work"), APPROVE,
+                            provider=StubProvider(a_task(1)), build=self.base)
+
+        self.assertNotIn(f"Merge {BRANCH}: add a thing", self.subjects())
+        self.assertNotIn("reviewing -> merge_gate", self.transitions())
+        handoffs = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'gate_handoff'")
+        self.assertEqual(len(handoffs), 1, handoffs)
+        self.assertIn(self.base[:12], handoffs[0][0])
+        self.assertIn(head[:12], handoffs[0][0])
+        self.assertEqual(len(self.read(
+            "SELECT 1 FROM runEvents WHERE kind = 'approval_carried'")), 1)
+        candidate = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(
+            self.read("SELECT outcome, resumePhase, candidateSha FROM runs"),
+            [("paused", "merge_gate", candidate)])
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("ready",)])
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_HANDOFF)
+
+
+if __name__ == "__main__":
+    unittest.main()
