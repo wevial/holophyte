@@ -280,8 +280,10 @@ test("a view link shows only its tickets and marks itself current, and All drops
   expect(countLine()).toBe("demo · 2 tickets / 0 in flight / 0 need you / 0 ready");
   expect(screen.getAllByText(/^Showing/).map((line) => line.textContent)).toEqual(["Showing demo only"]);
   expect(viewLinks().map((link) => link.getAttribute("aria-current"))).toEqual([null, "page", null]);
+  const state = screen.getByRole<HTMLSelectElement>("combobox", { name: "State" });
+  expect(state.selectedOptions[0]?.textContent).toBe("Needs spec");
 
-  fireEvent.click(within(screen.getByRole("group", { name: "State" })).getByRole("button", { name: "All" }));
+  fireEvent.change(state, { target: { value: "all" } });
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(window.location.hash).toBe("#/tickets?project=demo");
   expect(shownKeys()).toEqual(["DEMO-1", "DEMO-2", "DEMO-5", "DEMO-6", "DEMO-7"]);
