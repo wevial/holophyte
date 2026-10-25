@@ -3,7 +3,13 @@ from dataclasses import replace
 import store
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import maintainer_notes
-from holophyte.babysit.thread_mentions import classify, refuse, refused
+from holophyte.babysit.thread_mentions import (
+    bot_author,
+    bots,
+    classified,
+    refuse,
+    refused,
+)
 
 
 def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
@@ -11,22 +17,21 @@ def route_bot_threads(target, conn, run_id, beat_s, pull, state, merge):
         for thread in state.threads:
             if maintainer_notes.is_note(thread):
                 continue
-            if refused(thread, merge.mention_handle, merge.mention_accounts):
+            if refused(thread, merge):
                 refuse(target, pull, thread, conn, run_id, beat_s)
     if merge.bot_threads != "advisory" or state.merged or state.closed:
         return state
     from holophyte.babysit.babysitter import COMMENT_HEADER, _post
 
     threads = []
-    for thread in state.threads:
-        mentioned = classify(thread, merge.mention_handle, merge.mention_accounts)
-        mentioned = mentioned.classification == "MENTIONED"
-        if maintainer_notes.is_note(thread) or mentioned:
+    for thread, mentioned in zip(state.threads, classified(state.threads, merge)):
+        if (maintainer_notes.is_note(thread)
+                or mentioned.classification == "MENTIONED"):
             threads.append(thread)
             continue
-        is_bot = thread.author_kind == "bot" or thread.author in merge.bot_logins
+        is_bot = bot_author(thread.author, bots(merge), thread.author_kind)
         human_reply = any(
-            c.author_kind != "bot" and c.author not in merge.bot_logins
+            not bot_author(c.author, bots(merge), c.author_kind)
             and not c.body.startswith("---- Comment by ")
             for c in thread.replies)
         if not is_bot:

@@ -104,6 +104,9 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
                           "@holophyte fix: preserve validation"),)))
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- fix tokens\n"
+                        "THREAD 2: ADDRESS -- fix tokens\n"
+                        "THREAD 3: ADDRESS -- fix tokens"),
                   Commit("fix tokens"), APPROVE, Idle(""), provider=self.provider())
         findings = json.loads(self.read(
             "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
@@ -127,6 +130,7 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
         ]
         self.fake_route(states=[self.pr_state(threads), self.pr_state()])
         self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  Reply("THREAD 1: ADDRESS -- handle empty tokens"),
                   Commit("fix tokens"), APPROVE, Idle(""), provider=self.provider())
         findings = json.loads(self.read(
             "SELECT findings FROM reviewRounds WHERE round = 2")[0][0])
@@ -134,7 +138,7 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
         bot, person = findings
         self.assertNotEqual(bot.get("kind"), "instruction")
         self.assertEqual(bot["author"], "coderabbitai")
-        self.assertIn("**Handle empty tokens.**\nPreserve validation.", bot["message"])
+        self.assertIn("**Handle empty tokens.**\nPreserve validation.", bot["raw"])
         self.assertEqual(person["kind"], "instruction")
         self.assertEqual(person["author"], "operator")
         self.assertEqual(person["request"], "preserve validation")
@@ -211,12 +215,14 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
                 subjects.append(body["variables"]["subject"])
         return subjects
 
-    def mention_fixed(self, thread, eyes=(), refuse_reactions=False, config=""):
+    def mention_fixed(self, thread, eyes=(), refuse_reactions=False, config="",
+                      judged=()):
         self.configure('[merge]\nmode = "pr"\n' + config)
         self.fake_route(states=[self.with_node_ids(self.pr_state([thread]), eyes),
                                 self.pr_state()],
                         refuse_reactions=refuse_reactions)
         fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            *judged,
                             Commit("fix: use path token"), APPROVE, Idle(""),
                             provider=self.provider())
         self.assertTrue(any("use the path tokenId" in t.goal for t in fake.turns))
@@ -254,7 +260,8 @@ class MergeModeBabysitMentionTests(MentionAccountCases, TriageMentionCases,
         thread = ("src/app.py", 30, ("service", "User"),
                   "@holophyte fix: use the path tokenId")
         self.assertEqual(self.mention_fixed(
-            thread, config='bot_logins = ["service"]\n'), [])
+            thread, config='bot_logins = ["service"]\n',
+            judged=(Reply("THREAD 1: ADDRESS -- use the path tokenId"),)), [])
 
     def test_a_refused_reaction_is_a_run_event_and_the_fix_still_runs(self):
         thread = ("src/app.py", 30, ("operator", "User"),

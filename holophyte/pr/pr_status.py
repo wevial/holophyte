@@ -11,7 +11,7 @@ from holophyte.babysit.conversation_comments import (
     pull_comments,
 )
 from holophyte.babysit.review_body import review_threads
-from holophyte.babysit.thread_mentions import classify
+from holophyte.babysit.thread_mentions import classified
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr.github import (
@@ -332,8 +332,7 @@ def _reopened(target, thread):
     if HEADER.match(thread.comments[-1].body):
         return False
     merge = merge_config(target)
-    return classify(thread, merge.mention_handle,
-                    merge.mention_accounts).classification == "MENTIONED"
+    return classified((thread,), merge)[0].classification == "MENTIONED"
 
 
 def _check_reads(target, pull, sha):
