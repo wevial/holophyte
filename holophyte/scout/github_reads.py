@@ -21,10 +21,11 @@ GITHUB_TEST_ROWS = 300
 OK, FAILED, REFUSED = "ok", "failed", "refused"
 ALLOWED = re.compile(
     r"(actions/runs(/\d+(/jobs|/attempts/\d+/jobs|/timing|/artifacts)?)?"
-    r"|actions/jobs/\d+|actions/workflows(/[^/]+/runs)?"
-    r"|pulls(/\d+(/files)?)?|commits/.+/(check-runs|status)"
+    r"|actions/jobs/\d+(/logs)?|actions/workflows(/[^/]+/runs)?"
+    r"|pulls(/\d+(/files)?)?|commits|commits/.+/(check-runs|status)"
     r"|issues/\d+(/comments)?|contents/.+)")
-COMMIT_REF = re.compile(r"(/commits/)(.+)(/(check-runs|status)/?)$")
+JOB_LOG = re.compile(r"repos/[^/]+/[^/]+/actions/jobs/(\d+)/logs/?")
+COMMIT_REF = re.compile(r"((?:^|/)commits/)(.+)(/(check-runs|status)/?)$")
 SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 UNPRINTABLE = re.compile(r"[\x00-\x20\x7f]")
 PLAYWRIGHT_STATUS = {"expected": "passed", "unexpected": "failed",
@@ -36,8 +37,8 @@ class Refused(Exception):
 
 
 class Answer:
-    def __init__(self, text, status=OK):
-        self.text, self.status = text, status
+    def __init__(self, text, status=OK, path=None):
+        self.text, self.status, self.path = text, status, path
 
     @property
     def error(self):
@@ -80,6 +81,8 @@ def guarded(repo, path, method="GET"):
     if route.split("/")[0] == "graphql":
         raise Refused("graphql is not allowed; only REST reads are")
     prefix = f"repos/{repo.owner}/{repo.name}/"
+    if not route.lower().startswith("repos/"):
+        path, route = prefix + path, prefix + route
     if not route.lower().startswith(prefix.lower()):
         raise Refused(f"the path must be under {prefix}")
     if not ALLOWED.fullmatch(route[len(prefix):].rstrip("/")):
@@ -104,16 +107,30 @@ def capped(text):
             f"{GITHUB_ANSWER_CHARS} of {len(text)} characters shown")
 
 
+def tail_capped(text):
+    if len(text) <= GITHUB_ANSWER_CHARS:
+        return text
+    return (f"[holo2] truncated: last {GITHUB_ANSWER_CHARS} of {len(text)} "
+            f"characters shown\n{text[-GITHUB_ANSWER_CHARS:]}")
+
+
+def fetched(project, repo, path):
+    job = JOB_LOG.fullmatch(path.partition("?")[0])
+    if job:
+        return tail_capped(github.job_log(project, repo, job[1]))
+    answer = github._call(project, repo.host, "GET", path, None)
+    return capped(json.dumps(trimmed(answer), ensure_ascii=False))
+
+
 def github_get(project, repo, path, method="GET"):
     try:
         path = guarded(repo, path, method)
     except Refused as refused:
         return Answer(f"[holo2] github_get refused: {refused}", REFUSED)
     try:
-        answer = github._call(project, repo.host, "GET", path, None)
+        return Answer(fetched(project, repo, path), path=path)
     except (InfraFailure, OSError) as failure:
-        return Answer(f"[holo2] github_get failed: {failure}", FAILED)
-    return Answer(capped(json.dumps(trimmed(answer), ensure_ascii=False)))
+        return Answer(f"[holo2] github_get failed: {failure}", FAILED, path)
 
 
 def playwright_rows(report, suites=None, titles=()):

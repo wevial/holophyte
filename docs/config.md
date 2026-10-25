@@ -1910,17 +1910,24 @@ ID` (`--mcp-config` and `--allowedTools mcp__holo_github` for Claude,
 Its two tools read the project's own repository through the factory's own
 GitHub route (`gh api`, or the token route when `gh` is absent), so no token
 enters a turn's argv or config. `github_get` takes a `path` and answers a
-GET of it only when it lies under `repos/OWNER/NAME/` on the allow-list:
+GET of it only when it lies on the allow-list of the repository's own
+reads, given either in full under `repos/OWNER/NAME/` or as the part after
+it, which is read and recorded at the full `repos/OWNER/NAME/` path:
 `actions/runs`, `actions/runs/ID`, `actions/runs/ID/jobs`,
 `actions/runs/ID/attempts/N/jobs`, `actions/runs/ID/timing`,
-`actions/runs/ID/artifacts`, `actions/jobs/ID`, `actions/workflows`,
-`actions/workflows/ID/runs`, `pulls`, `pulls/N`, `pulls/N/files`,
-`commits/REF/check-runs`, `commits/REF/status`, `issues/N`,
-`issues/N/comments` and `contents/PATH`, with an optional query string. Any
-other method, repository or path, `graphql`, `..`, a `#` fragment, a scheme or a host is
-refused naming its rule. The answer drops `node_id`, `url` and every `*_url`
-key but `html_url` at every depth and is cut at 40000 characters with a
-`[holo2] truncated: 40000 of N characters shown` line. `github_tests` takes
+`actions/runs/ID/artifacts`, `actions/jobs/ID`, `actions/jobs/ID/logs`,
+`actions/workflows`, `actions/workflows/ID/runs`, `pulls`, `pulls/N`,
+`pulls/N/files`, `commits` (the commit listing), `commits/REF/check-runs`,
+`commits/REF/status`, `issues/N`, `issues/N/comments` and `contents/PATH`,
+with an optional query string. Any other method, a `repos/` path naming
+another repository, any other path, `graphql`, `..`, a `#` fragment, a
+scheme or a host is refused naming its rule. The answer drops `node_id`,
+`url` and every `*_url` key but `html_url` at every depth and is cut at
+40000 characters with a `[holo2] truncated: 40000 of N characters shown`
+line. A job's log (`actions/jobs/ID/logs`) answers as plain text, untrimmed,
+and is cut from its head instead, keeping its tail where the timing summary
+sits: a `[holo2] truncated: last 40000 of N characters shown` line, then the
+log's last 40000 characters. `github_tests` takes
 a workflow `run` and an optional `artifact` name and reads the run's
 unexpired artifacts of at most 50 MB, each JUnit XML and Playwright JSON
 report in them, answering `artifacts`, `total`, `failed`, `flaky` and the
