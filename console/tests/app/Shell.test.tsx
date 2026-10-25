@@ -110,7 +110,14 @@ test("the sidebar footer, folded or not, holds Settings and the theme toggle and
     if (fold) fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     const footer = screen.getByRole("complementary", { name: "Console" }).querySelector("footer")!;
     expect(within(footer).getByRole("link", { name: "Settings" })).toBeTruthy();
-    expect(within(footer).getByRole("button", { name: /^Colour theme:/ })).toBeTruthy();
+    expect(within(footer).getByRole("group", { name: "Theme" })).toBeTruthy();
+    expect(within(footer).queryByRole("button", { name: /colour theme|switch to/i })).toBeNull();
+    if (!fold) {
+      const row = within(footer).getByRole("link", { name: "Settings" }).parentElement!;
+      expect(row.parentElement).toBe(footer);
+      expect(row.previousElementSibling).toBe(footer.querySelector("p"));
+      expect([...row.children]).toEqual([within(footer).getByRole("link", { name: "Settings" }), within(footer).getByRole("group", { name: "Theme" })]);
+    }
     expect(screen.queryByRole("link", { name: /classic/i })).toBeNull();
     expect(document.querySelector('a[href*="classic"]')).toBeNull();
   }
@@ -150,26 +157,52 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   }
 });
 
-test("the theme toggle follows a dark system preference, then stores and stamps Dawn", async () => {
-  device.prefersColorScheme = "dark";
+const themeGroup = () => screen.getByRole("group", { name: "Theme" });
+const pressed = () => within(themeGroup()).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("aria-label"));
+
+test("the theme group's Dawn, Night and System buttons stamp and store the choice and press only it", async () => {
   await mount("#/");
-  const toggle = screen.getByRole("button", { name: "Colour theme: night. Switch to dawn" });
-  expect(toggle.textContent).toBe("Night");
-  fireEvent.click(toggle);
+  const buttons = within(themeGroup()).getAllByRole("button");
+  expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["Dawn", "Night", "System"]);
+  expect(buttons.map((button) => button.getAttribute("title"))).toEqual(["Dawn", "Night", "System"]);
+  expect(buttons.map((button) => button.textContent)).toEqual(["", "", ""]);
+  expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "true"]);
+  const choose = (name: string) => fireEvent.click(within(themeGroup()).getByRole("button", { name }));
+
+  choose("Dawn");
   expect(document.documentElement.getAttribute("data-theme")).toBe("light");
   expect(localStorage.getItem(THEME_KEY)).toBe("light");
-  expect(screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" }).textContent).toBe("Dawn");
+  expect(pressed()).toEqual(["Dawn"]);
+
+  choose("Night");
+  expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+  expect(localStorage.getItem(THEME_KEY)).toBe("dark");
+  expect(pressed()).toEqual(["Night"]);
+
+  choose("System");
+  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  expect(localStorage.getItem(THEME_KEY)).toBeNull();
+  expect(pressed()).toEqual(["System"]);
 });
 
-test("with no stored choice the toggle follows a later system preference change", async () => {
+test("a stored Night presses Night, and with nothing stored System stays pressed across a system preference change", async () => {
+  localStorage.setItem(THEME_KEY, "dark");
   await mount("#/");
-  expect(screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" })).toBeTruthy();
+  expect(pressed()).toEqual(["Night"]);
+  cleanup();
+  localStorage.clear();
+  document.documentElement.removeAttribute("data-theme");
+
   device.prefersColorScheme = "dark";
+  await mount("#/");
+  expect(pressed()).toEqual(["System"]);
+  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  device.prefersColorScheme = "light";
   try {
     act(() => happyDOM.setViewport({ width: 1000 }));
-    fireEvent.click(screen.getByRole("button", { name: "Colour theme: night. Switch to dawn" }));
-    expect(localStorage.getItem(THEME_KEY)).toBe("light");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(pressed()).toEqual(["System"]);
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    expect(localStorage.getItem(THEME_KEY)).toBeNull();
   } finally {
     happyDOM.setViewport({ width: 1024 });
   }
