@@ -9,11 +9,11 @@ from pathlib import Path, PurePosixPath
 from holophyte.capture_playwright import TICKET
 from holophyte.config.config_tables import merge_config
 from holophyte.environment_git import factory_identity
+from holophyte.isolation.isolation_clone import MAIN_REFS
 from holophyte.loop.gates import InfraFailure, sh
 
 SUFFIX = ".capture.ts"
 OUTPUT = ".holophyte-capture"
-BASES = ("refs/remotes/origin/main", "refs/heads/main")
 
 
 def default_spec(command):
@@ -39,11 +39,11 @@ def added_capture_files(project, repo, ref):
     cfg = merge_config(project)
     if not cfg.ui_capture_local or not cfg.ui_capture.strip():
         return []
-    base = next((b for b in BASES if subprocess.run(
+    base = next((b for b in MAIN_REFS if subprocess.run(
         ["git", "rev-parse", "--verify", "-q", b], cwd=repo,
         capture_output=True).returncode == 0), None)
     if base is None:
-        raise InfraFailure(f"neither {' nor '.join(BASES)} resolves in {repo};"
+        raise InfraFailure(f"neither {' nor '.join(MAIN_REFS)} resolves in {repo};"
                            " the candidate's capture files cannot be listed")
     added = sh(["git", "diff", "--name-only", "--no-renames", "--diff-filter=A",
                 "-z", f"{base}...{ref}"], repo).split("\0")
