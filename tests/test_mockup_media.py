@@ -29,9 +29,9 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-import ticket_template as tt  # noqa: E402 - after the sys.path insert above
 from holophyte.board import projection  # noqa: E402 - after the sys.path insert
 from holophyte.pr import mockup  # noqa: E402 - after the sys.path insert above
+from holophyte.tickets import ticket_template as tt  # noqa: E402
 from tests.test_ticket_template import (  # noqa: E402 - after the insert
     APPROVAL,
     with_ui_change,

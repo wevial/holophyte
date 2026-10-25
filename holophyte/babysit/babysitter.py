@@ -5,7 +5,6 @@ from time import monotonic, time
 
 import store
 import store.read
-import ticket_template
 from holophyte import failure_reason, note_privacy
 from holophyte.agents.review_workspace import review_refs
 from holophyte.agents.roles import agent_route
@@ -82,6 +81,7 @@ from holophyte.review.reply_parsing import (
     stale_approvals,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
+from holophyte.tickets import ticket_template
 
 
 def _merge_origin_main(project, conn, run_id, provider, task_id, branch, wt,

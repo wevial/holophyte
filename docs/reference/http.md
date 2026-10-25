@@ -1378,8 +1378,9 @@ A project's scouts, newest first by id: what the console's Scouts list
 draws. `GET /scouts?limit=N` reads at most `N`.
 
 ```json
-{"scouts": [{"id": 3, "ask": "Why does the retry spin?", "kind": "bug",
-             "phase": "swarming", "reason": null, "lead": "opus",
+{"scouts": [{"id": 3, "title": "Why does the retry spin?",
+             "ask": "Why does the retry spin? It never backs off.",
+             "kind": "bug", "phase": "swarming", "reason": null, "lead": "opus",
              "helper": "luna", "swarm": 4, "tasks_done": 2, "tasks_total": 3,
              "findings": 0, "actions": 0, "filed": 0, "to_file": 0,
              "created_ms": 1791568800000, "started_ms": 1791568810000,
@@ -1389,7 +1390,7 @@ draws. `GET /scouts?limit=N` reads at most `N`.
  "limit": 20, "truncated": false}
 ```
 
-Each row carries the scout's `id`, its `ask`, its `kind` (`bug`,
+Each row carries the scout's `id`, its `title`, its `ask`, its `kind` (`bug`,
 `research`, `recon` or `guardrails`), its `phase` and the `reason` it ended (null until
 it does), the `lead` and `helper` route names it runs on and its `swarm`,
 helpers at once. `tasks_done` counts its helper tasks that have ended and
@@ -1408,6 +1409,13 @@ running scout's last heartbeat, null while it is queued or once it ended.
 ticket key or the pull request URL; it is null for a scout launched
 without one.
 
+`title` is the scout's name: the `title` its lead wrote in its pass 1
+report, else one cut from the ask, its first sentence (the text before
+the first `.`, `?` or `!` followed by whitespace, or before the first
+line break; a closing `?` or `!` kept, a closing `.` dropped) with its
+whitespace collapsed, and one over 70 characters cut back to its last
+whole word within 69 and ended with `…`. Nothing stored is rewritten.
+
 `limit` defaults to 20 and is capped at 200. The body echoes the applied
 `limit`; `truncated` is true when more scouts exist than it returns. There
 is no paging past `limit` and no filter. A non-positive or non-integer
@@ -1421,18 +1429,22 @@ daemon this route is `GET /projects/NAME/scouts`. `holo scouts [--limit N]
 One scout whole: what the console's Scout page draws.
 
 ```json
-{"scout": {"id": 3, "ask": "Why does the retry spin?", "kind": "bug",
+{"scout": {"id": 3, "title": "Why does the retry spin?",
+           "ask": "Why does the retry spin?", "kind": "bug",
            "phase": "done", "...": "the GET /scouts row's keys",
            "base_sha": "a1b2…", "host": "writer",
            "budget": {"minutes": 30, "helper_turns": 12, "waves": 2},
            "totals": null},
- "tasks": [{"id": 7, "pass": 1, "wave": 1, "question": "Where does the loop sleep?",
+ "tasks": [{"id": 7, "pass": 1, "wave": 1, "title": "Find where the loop sleeps",
+            "question": "Where does the loop sleep?",
             "paths": ["app/retry.py"], "mode": "read", "route": "luna",
             "phase": "done", "started_ms": 1791568820000,
             "ended_ms": 1791568900000, "duration_ms": 80000, "tokens": 5100,
-            "cost_usd": 0.02, "excerpt": "…"}],
+            "cost_usd": 0.02, "excerpt": "…", "reason": null}],
  "reports": [{"pass": 1, "at": 1791569000000, "report": {
+   "headline": "The retry loop never backs off.",
    "summary": "…",
+   "bullets": ["…", "…", "…"],
    "findings": [{"title": "…", "status": "confirmed", "evidence": [
      {"file": "app/retry.py", "line": 12, "verified": true, "why": null},
      {"command": "python3 -m unittest tests.test_retry", "output": "…"},
@@ -1457,7 +1469,7 @@ One scout whole: what the console's Scout page draws.
              "consumed_ms": null}]}
 ```
 
-`scout` holds the `GET /scouts` row's keys, `id`, `ask`, `kind`, `phase`,
+`scout` holds the `GET /scouts` row's keys, `id`, `title`, `ask`, `kind`, `phase`,
 `reason`, `lead`, `helper`, `swarm`, `tasks_done`, `tasks_total`,
 `findings`, `actions`, `filed`, `to_file`, `created_ms`, `started_ms`, `ended_ms`, `elapsed_ms`,
 `heartbeat_age_ms` and `subject` (its `kind` and `ref`, or null), plus the `base_sha` it planned
@@ -1466,14 +1478,29 @@ at and the `host` it ran on (each null while queued), its `budget` of
 null.
 
 `tasks` are its helper tasks ordered by `pass`, `wave` and `id`. Each
-carries the lead's `question` and `paths`, its `mode` (`read` or `run`),
+carries the lead's `title`, `question` and `paths`, its `mode` (`read` or `run`),
 the helper `route`, its `phase` (`queued`, `running`, `done`, `failed` or
 `stopped`), `started_ms`, `ended_ms` and `duration_ms`, and the `tokens`,
 `cost_usd` and answer `excerpt` it recorded, each null until it does.
+A task stored with no `title` serves its question's first clause: the
+text before the first `: `, `; `, `, `, ` (` or `. `, or through the
+first `? ` with its `?` kept; one of more than 8 words keeps its first 8
+and ends with `…`, and one still over 60 characters is cut as the scout's
+`title` is, within 59. `reason` is null unless the task's `phase` is
+`failed`; then it is one line read from its `excerpt`: a line holding
+`could not launch: TEXT` reads `could not start: TEXT` (with
+`implementer credential variable NAME is not set` read as
+`implementer credential not set`), else the excerpt's last non-empty
+line, or `no output` for an empty one, cut as the scout's `title` is at
+100 characters.
 
 `reports` holds one entry per stored pass, its `pass`, the `at` it was
 stored and the `report`. A `report` serves only the fields the report check
-defines, and a key a lead added beside them is left out: its `summary`;
+defines, and a key a lead added beside them is left out: its `headline`,
+the answer in one sentence, its `summary`, and its `bullets`, 3 to 5
+short lines, `headline` and `bullets` each null for a report stored
+without them (the report's own `title` serves as the scout's `title`,
+not here);
 its `findings`, each a `title`, a `status` of `confirmed`, `partial` or
 `unconfirmed`, and its `evidence`; its `actions`; its `reproduction`, a
 `level` and `hypotheses`, each with its `hypothesis`, what it `separates`

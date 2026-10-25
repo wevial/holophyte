@@ -6,6 +6,7 @@ from typing import get_args
 
 import store.read
 from holophyte.agents.harness import SCOUT_HELPER, SCOUT_LEAD
+from holophyte.scout.brief import failed_reason, scout_title, task_title
 from holophyte.scout.report import GUARDRAIL, read_status
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_contract import ActionKind
@@ -17,6 +18,7 @@ from holophyte.serve.serve_runs import (
     parse_limit,
 )
 from holophyte.serve.views import route_probe_view
+from store.enums import ScoutTaskPhase
 from store.scout_thread import messages
 from store.scouts import ENDED, QUEUED, TASK_ENDED, scout
 
@@ -40,18 +42,21 @@ ROWS = (f"SELECT {', '.join(f's.{column}' for column in ROW_COLUMNS)},"
         " WHERE a.scoutId = s.id),"
         " (SELECT COUNT(*) FROM scoutActions a WHERE a.scoutId = s.id"
         " AND a.ticketKey IS NULL"
-        " AND json_extract(a.item, '$.kind') IS NOT 'revise')"
+        " AND json_extract(a.item, '$.kind') IS NOT 'revise'),"
+        " (SELECT json_extract(r.report, '$.title') FROM scoutReports r"
+        " WHERE r.scoutId = s.id AND r.pass = 1)"
         " FROM scouts s")
-TASK_COLUMNS = ("id", "pass", "wave", "question", "paths", "mode", "route",
-                "phase", "startedAt", "endedAt", "durationMs", "tokens",
-                "costUsd", "excerpt")
-TASK_KEYS = ("id", "pass", "wave", "question", "paths", "mode", "route",
-             "phase", "started_ms", "ended_ms", "duration_ms", "tokens",
-             "cost_usd", "excerpt")
+TASK_COLUMNS = ("id", "pass", "wave", "title", "question", "paths", "mode",
+                "route", "phase", "startedAt", "endedAt", "durationMs",
+                "tokens", "costUsd", "excerpt")
+TASK_KEYS = ("id", "pass", "wave", "title", "question", "paths", "mode",
+             "route", "phase", "started_ms", "ended_ms", "duration_ms",
+             "tokens", "cost_usd", "excerpt")
 ACTION_KEYS = ("title", "why", "kind", "body")
 HYPOTHESIS_KEYS = ("hypothesis", "separates", "verdict")
 PRIOR_KEYS = ("scout", "finding", "verdict", "why")
 ACTION_KINDS = get_args(ActionKind)
+TASK_FAILED = ScoutTaskPhase.FAILED.value
 
 
 def now_ms(now):
@@ -61,9 +66,12 @@ def now_ms(now):
 def scout_row(row, now):
     (scout_id, ask, kind, phase, reason, lead, helper, swarm, created,
      started, ended, beat, subject_kind, subject_ref, done, total, findings,
-     actions, filed, to_file) = row
+     actions, filed, to_file, title) = row
     live = phase != QUEUED and phase not in ENDED and beat is not None
-    return {"id": scout_id, "ask": ask, "kind": kind, "phase": phase,
+    if not isinstance(title, str) or not title.strip():
+        title = scout_title(ask)
+    return {"id": scout_id, "title": title, "ask": ask, "kind": kind,
+            "phase": phase,
             "reason": reason, "lead": lead, "helper": helper, "swarm": swarm,
             "tasks_done": done, "tasks_total": total, "findings": findings,
             "actions": actions, "filed": filed, "to_file": to_file,
@@ -146,7 +154,9 @@ def served_reproduction(reproduction):
 
 
 def served_report(report):
-    return {"summary": report["summary"],
+    return {"headline": report.get("headline"),
+            "summary": report["summary"],
+            "bullets": report.get("bullets"),
             "findings": [{"title": finding["title"],
                           "status": read_status(finding["status"]),
                           "evidence": served_evidence_list(
@@ -159,6 +169,13 @@ def served_report(report):
             "prior": (None if report.get("prior") is None
                       else [{key: judgement[key] for key in PRIOR_KEYS}
                             for judgement in report["prior"]])}
+
+
+def served_task(task):
+    return {**task, "paths": json.loads(task["paths"]),
+            "title": task["title"] or task_title(task["question"]),
+            "reason": (failed_reason(task["excerpt"])
+                       if task["phase"] == TASK_FAILED else None)}
 
 
 def served_action(item):
@@ -188,8 +205,7 @@ def scout_parts(conn, scout_id):
         "SELECT id, at, kind, summary FROM runEvents WHERE scoutId = ?"
         " ORDER BY seq", (scout_id,)).fetchall()
     return {
-        "tasks": [{**dict(zip(TASK_KEYS, task)), "paths": json.loads(task[4])}
-                  for task in tasks],
+        "tasks": [served_task(dict(zip(TASK_KEYS, task))) for task in tasks],
         "reports": [{"pass": number, "at": at,
                      "report": served_report(json.loads(report))}
                     for number, at, report in reports],

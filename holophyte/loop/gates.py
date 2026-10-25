@@ -10,9 +10,9 @@ from pathlib import Path
 from time import monotonic, sleep, time
 from typing import NamedTuple
 
-import ticket_template
 from holophyte.config.reader import VERIFY_TIMEOUT
 from holophyte.config.worktree_settings import carry_directories
+from holophyte.tickets import ticket_template
 
 DEFAULT_BUDGET_MIN = 20
 

@@ -2,7 +2,7 @@ import json
 import time
 from types import SimpleNamespace
 
-from ticket_criteria import split_id, witness_problems, witnesses
+from holophyte.tickets.ticket_criteria import split_id, witness_problems, witnesses
 
 
 def _append(conn, ticket_id, criterion, position, text, kind, target,

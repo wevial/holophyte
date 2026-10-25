@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { expect, test } from "bun:test";
-import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import TEMPLATE from "../../../holophyte/tickets/templates/ticketTemplate.md" with { type: "text" };
 import { blankForm, composeBody, fieldOf, parseBody, withField } from "../../src/app/ticketForm";
 import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFieldsBody, commentedCriteriaBody, closedCommentsBody, continuedHowBody, detailedBody, fencedBody, fencedProseBody, inlineHtmlBody, labeledCommentBody, literalVerifyBody, mockupBody, openMarkerVerifyBody, multilineInlineCodeBody, unclosedCommentBody, windowsBody } from "./ticketBodies";
 
@@ -8,7 +8,7 @@ import { adjacentFencesBody, adjacentHtmlBody, adjacentMarkdownBody, annotatedFi
 function checkerFieldsWithoutComments(body: string) {
   const result = Bun.spawnSync(["python3", "-c", `
 import json, sys
-from ticket_template import COMMENT_RE, parse
+from holophyte.tickets.ticket_template import COMMENT_RE, parse
 ticket = parse(COMMENT_RE.sub("", sys.stdin.read()))
 print(json.dumps({"summary": ticket.summary, "criteria": ticket.acceptance,
                   "how": ticket.how, "estimate": ticket.estimate_min}))

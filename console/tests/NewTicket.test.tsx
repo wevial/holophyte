@@ -8,7 +8,7 @@ import { settle } from "./harness";
 
 const BASE = "http://writer:7710/projects/nat";
 const ADDRESS = "writer:7710";
-const TEMPLATE = await Bun.file(new URL("../../ticketTemplate.md", import.meta.url)).text();
+const TEMPLATE = await Bun.file(new URL("../../holophyte/tickets/templates/ticketTemplate.md", import.meta.url)).text();
 const host = { base: BASE, project: "/srv/dev/nat" };
 
 afterEach(() => {

@@ -65,6 +65,9 @@
         "id": {
           "type": "integer"
         },
+        "title": {
+          "type": "string"
+        },
         "ask": {
           "type": "string"
         },
@@ -254,6 +257,7 @@
       },
       "required": [
         "id",
+        "title",
         "ask",
         "kind",
         "phase",
@@ -291,6 +295,9 @@
         },
         "wave": {
           "type": "integer"
+        },
+        "title": {
+          "type": "string"
         },
         "question": {
           "type": "string"
@@ -385,12 +392,23 @@
               "type": "null"
             }
           ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "id",
         "pass",
         "wave",
+        "title",
         "question",
         "paths",
         "mode",
@@ -401,7 +419,8 @@
         "duration_ms",
         "tokens",
         "cost_usd",
-        "excerpt"
+        "excerpt",
+        "reason"
       ],
       "additionalProperties": true
     },
@@ -656,8 +675,31 @@
     "ScoutReport": {
       "type": "object",
       "properties": {
+        "headline": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "summary": {
           "type": "string"
+        },
+        "bullets": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "findings": {
           "type": "array",
@@ -709,7 +751,9 @@
         }
       },
       "required": [
+        "headline",
         "summary",
+        "bullets",
         "findings",
         "actions",
         "reproduction",

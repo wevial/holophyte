@@ -26,7 +26,7 @@ from store.scouts import (
     scout,
     start_scout_task,
 )
-from tests.scout_stubs import fenced
+from tests.scout_stubs import fenced, titled
 from tests.test_holo_mcp import McpCase
 from tests.test_scout_lead import running
 from tests.test_scout_stop import REPORT, ROOT, WAIT_S, StopCase, wait_for
@@ -57,8 +57,9 @@ class TaskStopCase(StopCase):
     def swarming(self, questions, helpers, kind="research", mode="read",
                  swarm=2, helper_turns=None, **answers):
         self.stubs.answer(
-            plan=fenced({"tasks": [{"question": question, "paths": [],
-                                    "mode": mode} for question in questions]}),
+            plan=fenced({"tasks": [titled({"question": question, "paths": [],
+                                            "mode": mode})
+                                   for question in questions]}),
             report=fenced(REPORT), helpers=helpers, **answers)
         scout_id = self.planning(kind=kind, swarm=swarm,
                                  helper_turns=helper_turns or len(questions),

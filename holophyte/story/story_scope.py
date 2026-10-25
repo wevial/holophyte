@@ -16,7 +16,7 @@ from holophyte.agents.review_workspace import cleanup_review_refs
 from holophyte.agents.roles import agent
 from holophyte.loop.gates import sh
 from holophyte.pr import github
-from story_template import parse_story
+from holophyte.tickets.story_template import parse_story
 
 IN_STORY = "in_story"
 STANDALONE = "standalone"

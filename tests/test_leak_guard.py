@@ -28,11 +28,11 @@ import holophyte.redact  # noqa: E402
 import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
-import ticket_template  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.leak_guard import PrivateMatch  # noqa: E402
 from holophyte.loop.gates import InfraFailure  # noqa: E402
 from holophyte.pr import github, pr_status, pullrequest  # noqa: E402
+from holophyte.tickets import ticket_template  # noqa: E402
 from tests.test_provider import ticket_body  # noqa: E402
 
 PATTERNS = r"['\bnever-published\.invalid\b', '(?i)\bbuild-host\.lan\b']"

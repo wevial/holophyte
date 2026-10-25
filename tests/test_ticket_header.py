@@ -19,8 +19,8 @@ from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path ins
 
 import holophyte.cli.entry  # noqa: E402
 import linear_provider  # noqa: E402
-import ticket_template  # noqa: E402
 from holophyte.pr import mockup  # noqa: E402
+from holophyte.tickets import ticket_template  # noqa: E402
 from tests.test_provider import ticket_body  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent

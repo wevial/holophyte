@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
-import ticket_template
 from holophyte.config.config_tables import board_config, board_mode
+from holophyte.tickets import ticket_template
 
 # The same fence `linear_provider.parse_task()` reads.
 VERIFY_RE = re.compile(r"## Verify command\(s\)\s*```[^\n]*\n(.*?)```", re.S)

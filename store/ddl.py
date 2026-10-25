@@ -576,6 +576,7 @@ CREATE TABLE IF NOT EXISTS scoutTasks (
     pass       INTEGER NOT NULL CHECK (pass > 0),
     wave       INTEGER NOT NULL CHECK (wave > 0),
     question   TEXT    NOT NULL,
+    title      TEXT,
     paths      TEXT    NOT NULL DEFAULT '[]',  -- JSON string[] the lead gave
     mode       TEXT    NOT NULL
         {_enums.check_clause('mode', _enums.ScoutTaskMode)},

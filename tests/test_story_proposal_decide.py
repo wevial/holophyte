@@ -30,10 +30,10 @@ import linear_provider  # noqa: E402
 import provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
-import ticket_template  # noqa: E402
 from holophyte.board.native_board import NativeBoard  # noqa: E402
 from holophyte.loop.follow_ups import draft_title  # noqa: E402
 from holophyte.story import story_claim  # noqa: E402
+from holophyte.tickets import ticket_template  # noqa: E402
 from store.stories import (  # noqa: E402
     approve_story,
     close_story,

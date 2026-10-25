@@ -14,6 +14,7 @@ Each module, one line:
 - `holophyte/babysit/__init__.py` — the `babysit` package; empty.
 - `holophyte/review/__init__.py` — the `review` package; empty.
 - `holophyte/story/__init__.py` — the `story` package; empty.
+- `holophyte/tickets/__init__.py` — the `tickets` package; empty.
 - `holophyte/board/__init__.py` — the `board` package; empty.
 - `holophyte/isolation/__init__.py` — the `isolation` package; empty.
 - `holophyte/agents/__init__.py` — the `agents` package; empty.
@@ -160,6 +161,9 @@ Each module, one line:
   ask, its report labelled `F1`, `F2` and `A1` on, the lead's session
   resumed in the lead worktree, and the answer posted to the thread, or the
   failure recorded, as the scout returns to `done`.
+- `holophyte/scout/brief.py` — the short texts served for a scout whose
+  lead wrote none: a scout title cut from its ask, a task title cut from its
+  question, and a failed task's one-line reason read from its excerpt.
 - `holophyte/scout/context.py` — a scout's context pack: its subject's
   run, ledger, verify tail, findings, files and ticket, cut to a cap, for
   the lead's plan goal.
@@ -882,6 +886,39 @@ The store is its own package:
   type, no SQL elsewhere.
 - `store/run_reads.py` — the typed reads of runs, re-exported by `store/read.py`.
 
+The ticket checker, in `holophyte/tickets/`:
+
+- `holophyte/tickets/ticket_criteria.py` — explicit criterion ids, test and
+  verify witnesses, and blocking post-merge or operator witness checks for
+  native filings.
+- `holophyte/tickets/ticket_template.py` — parser/validator for the ticket
+  shape; `python3 ticket_template.py TICKET.md [...]` (or
+  `holo ticket check TICKET.md [...]`) exits 0 iff the ticket is
+  pickable-ready.
+- `holophyte/tickets/ticket_advisories.py` — the checker's verify-block and
+  criterion advisories: a whole-suite discover, a hard-coded test count, a
+  verify wider than In scope, a repository-wide `ruff check` that fails on
+  main, and a criterion asking for a run's output the factory does not make.
+- `holophyte/tickets/ticket_header.py` — finds, parses and checks the `+++`
+  TOML header a ticket can open with, setting the same `Ticket` fields as the
+  magic lines.
+- `holophyte/tickets/ticket_depends.py` — finds a ticket body's estimate line
+  and rewrites its `Depends on:` list, for story filing and a cancel's rewire.
+- `holophyte/tickets/story_template.py` — validator for a story directory's
+  body, witness files and children;
+  `python3 ticket_template.py --repo PATH --story DIR` exits 0 iff the story
+  is valid.
+- `holophyte/tickets/templates/ticketTemplate.md` — the ticket shape. Its
+  typed fields (`ui_change`, `estimate`, `depends_on`, `[mockup]`,
+  `[[evidence]]` and the rest) sit in the `+++` TOML header above the H1; a
+  body without one keeps the magic-line form. Verify commands go in the
+  "Verify command(s)" section (exit 0 = pass, relative paths only);
+  estimate is the budget in minutes. The optional "Contract checks" section
+  declares `relative/path: exact literal` lines the gate asserts verbatim, so
+  a required value (a port, a URL) cannot drift while the commands still pass.
+- `holophyte/tickets/templates/storyTemplate.md` — the story shape: the
+  story body, its witness files and its children.
+
 At the root:
 
 - `factory.py` — the entry point: imports `cli` from the package and calls
@@ -891,30 +928,9 @@ At the root:
   set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `review_runner.py` — exact-SHA staging and the model-neutral local
   reviewer boundary (see [Reviewing](reviewing.md)).
-- `ticket_criteria.py` — explicit criterion ids, test and verify witnesses,
-  and blocking post-merge or operator witness checks for native filings.
-- `ticket_template.py` — parser/validator for the ticket shape;
-  `python3 ticket_template.py TICKET.md [...]` exits 0 iff the ticket is
-  pickable-ready.
-- `ticket_advisories.py` — the checker's verify-block and criterion
-  advisories: a whole-suite discover, a hard-coded test count, a verify
-  wider than In scope, a repository-wide `ruff check` that fails on main,
-  and a criterion asking for a run's output the factory does not make.
-- `ticket_header.py` — finds, parses and checks the `+++` TOML header a
-  ticket can open with, setting the same `Ticket` fields as the magic lines.
-- `ticket_depends.py` — finds a ticket body's estimate line and rewrites its
-  `Depends on:` list, for story filing and a cancel's rewire.
-- `story_template.py` — validator for a story directory's body, witness
-  files and children; `python3 ticket_template.py --repo PATH --story DIR` exits
-  0 iff the story is valid.
-- `ticketTemplate.md` — the ticket shape. Its typed fields (`ui_change`,
-  `estimate`, `depends_on`, `[mockup]`, `[[evidence]]` and the rest) sit in
-  the `+++` TOML header above the H1; a body without one keeps the magic-line
-  form. Verify commands go in the
-  "Verify command(s)" section (exit 0 = pass, relative paths only);
-  estimate is the budget in minutes. The optional "Contract checks" section
-  declares `relative/path: exact literal` lines the gate asserts verbatim, so
-  a required value (a port, a URL) cannot drift while the commands still pass.
+- `ticket_template.py` — runs `holophyte/tickets/ticket_template.py`'s
+  `main()`, so `python3 ticket_template.py` checks tickets as before.
+- `story_template.py` — runs `holophyte/tickets/story_template.py`'s `main()`.
 - `docker/reviewer.Dockerfile` — pinned minimal reviewer image.
 - `landing/` — the static landing page at https://holophyte.ai, served by its
   own Worker from `landing/public/` ([design note 6](design/0006-docs-hosting.md));

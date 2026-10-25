@@ -1,4 +1,4 @@
-import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import TEMPLATE from "../../../holophyte/tickets/templates/ticketTemplate.md" with { type: "text" };
 import { HeaderDate, headerSpan, readHeader, withEntries, withEntryKey, withKey, type Table, type Value } from "./ticketHeader";
 
 export interface Evidence { file: string; state: string }

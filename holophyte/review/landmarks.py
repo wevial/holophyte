@@ -3,7 +3,7 @@ import subprocess
 from functools import cached_property
 from pathlib import Path
 
-import ticket_template
+from holophyte.tickets import ticket_template
 
 FUNCTION_SPAN_RE = re.compile(r"((?:[A-Za-z_]\w*\.)*)([A-Za-z_]\w*)\(\)")
 # At least one lowercase letter, so a constant like `MAX_RUNS` is no class.

@@ -3,7 +3,7 @@ import time
 from typing import NamedTuple
 
 import store
-from ticket_criteria import amendment_edits
+from holophyte.tickets.ticket_criteria import amendment_edits
 
 from . import criteria, operator_notes
 from .operate import record_intervention, record_project_intervention

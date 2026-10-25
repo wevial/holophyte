@@ -12,8 +12,14 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-import ticket_template
-from holophyte.scout.lead import fenced_json, repair_goal, report_goal
+from holophyte.scout.follow_up import pass_plan_goal
+from holophyte.scout.lead import (
+    fenced_json,
+    plan_goal,
+    repair_goal,
+    report_goal,
+    synthesis_goal,
+)
 from holophyte.scout.report import (
     FIELDS,
     REPRODUCTION,
@@ -21,13 +27,15 @@ from holophyte.scout.report import (
     report_problems,
     resolve_evidence,
 )
+from holophyte.tickets import ticket_template
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced
 from tests.test_scout_lead import CLAUDE_LEAD
 from tests.test_scout_process import ScoutFixture
 
 BUG = {
+    **BRIEF,
     "summary": "the retry loop never backs off",
     "findings": [{"title": "no backoff", "status": "confirmed", "evidence": [
         {"file": "notes.txt", "line": 1},
@@ -118,6 +126,28 @@ class ReportProblemsTests(unittest.TestCase):
             changed(("actions", 0, "body"), ""), "bug")),
             ["actions[0].body"])
 
+    def test_the_title_headline_and_bullets_are_bounded_one_line_texts(self):
+        bullets = BRIEF["bullets"]
+        for path, value, field in (
+                (("title",), "t" * 71, "title"),
+                (("headline",), "h" * 121, "headline"),
+                (("headline",), "Not reproduced:\nrun alone", "headline"),
+                (("bullets",), bullets[:2], "bullets"),
+                (("bullets",), bullets * 2, "bullets"),
+                (("bullets", 2), "b" * 121, "bullets[2]")):
+            with self.subTest(field=field, value=value):
+                self.assertEqual(starts(report_problems(
+                    changed(path, value), "bug")), [field])
+        at_limits = changed(("title",), "t" * 70)
+        at_limits.update(headline="h" * 120, bullets=["b" * 120] * 5)
+        self.assertEqual(report_problems(at_limits, "bug"), [])
+
+    def test_a_report_missing_its_title_headline_or_bullets_names_it(self):
+        for field in ("title", "headline", "bullets"):
+            with self.subTest(field=field):
+                self.assertEqual(starts(report_problems(
+                    changed((field,), None), "bug")), [field])
+
     def test_a_bug_report_needs_a_reproduction_in_its_shape(self):
         for path, value, field in (
                 (("reproduction",), None, "reproduction"),
@@ -148,6 +178,33 @@ class ReportGoalTests(unittest.TestCase):
         for form in ('{"file": PATH, "line": N}',
                      '{"command": TEXT, "output": TEXT}', '{"url": URL}'):
             self.assertIn(form, goal)
+
+    def test_each_plan_goal_shows_a_titled_task_and_each_report_goal_the_brief(self):
+        row = SimpleNamespace(kind="recon", subject_kind=None,
+                              subject_ref=None, ask="Map the merge gate",
+                              links=[], base_sha="a" * 40)
+        swarm = SimpleNamespace(tasks=[], total=4, launched=2)
+        plans = {"plan": plan_goal(row, 4, ""),
+                 "synthesis": synthesis_goal(row, swarm, True, None, ""),
+                 "pass plan": pass_plan_goal(row, "look further", "", 2, [],
+                                             [], 3, True)}
+        for name, goal in plans.items():
+            with self.subTest(goal=name):
+                shape = goal[goal.index("```json"):]
+                self.assertIn('{"title": TEXT, "question": TEXT', shape)
+                self.assertIn("at most 8 words and 60 characters", goal)
+        reports = {"report": report_goal(row, swarm, None, True),
+                   "repair": repair_goal(row, ["title: must be"], True)}
+        for name, goal in reports.items():
+            with self.subTest(goal=name):
+                shape = goal[goal.index("```json"):]
+                for field in ('"title": TEXT', '"headline": TEXT',
+                              '"bullets": [TEXT, ...]'):
+                    self.assertIn(field, shape)
+                prose = goal[:goal.index("```json")]
+                for limit in ("at most 70 characters", "at most 120",
+                              "3 to 5 lines of at most 120 characters"):
+                    self.assertIn(limit, prose)
 
     def goals(self):
         for kind in ("bug", "recon"):

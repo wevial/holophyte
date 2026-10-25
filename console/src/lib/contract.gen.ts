@@ -1120,6 +1120,7 @@ export type ScoutSubject = z.infer<typeof scoutSubjectSchema>;
 
 export const scoutRowSchema = z.looseObject({
   id: z.int(),
+  title: z.string(),
   ask: z.string(),
   kind: z.enum(["bug", "research", "recon", "guardrails"]),
   phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
@@ -1158,6 +1159,7 @@ export type ScoutBudget = z.infer<typeof scoutBudgetSchema>;
 
 export const scoutFullSchema = z.looseObject({
   id: z.int(),
+  title: z.string(),
   ask: z.string(),
   kind: z.enum(["bug", "research", "recon", "guardrails"]),
   phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
@@ -1188,6 +1190,7 @@ export const scoutTaskSchema = z.looseObject({
   id: z.int(),
   pass: z.int(),
   wave: z.int(),
+  title: z.string(),
   question: z.string(),
   paths: z.array(z.string()),
   mode: z.enum(["read", "run"]),
@@ -1199,6 +1202,7 @@ export const scoutTaskSchema = z.looseObject({
   tokens: z.int().nullable(),
   cost_usd: z.number().nullable(),
   excerpt: z.string().nullable(),
+  reason: z.string().nullable(),
 });
 export type ScoutTask = z.infer<typeof scoutTaskSchema>;
 
@@ -1265,7 +1269,9 @@ export const priorJudgementSchema = z.looseObject({
 export type PriorJudgement = z.infer<typeof priorJudgementSchema>;
 
 export const scoutReportSchema = z.looseObject({
+  headline: z.string().nullable(),
   summary: z.string(),
+  bullets: z.array(z.string()).nullable(),
   findings: z.array(scoutFindingSchema),
   actions: z.array(scoutReportActionSchema),
   reproduction: reproductionSchema.nullable(),

@@ -41,7 +41,7 @@ BESIDE = (
 
 def split(text):
     """`text` without its header, and None or the header's (fields, problem)."""
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     lines = text.splitlines(keepends=True)
     opening = next((index for index, line in enumerate(lines)
                     if line.rstrip("\r\n") == FENCE or tt.H1_RE.match(line)), None)
@@ -83,7 +83,7 @@ def apply(t, header, body):
 
 
 def _field_line(body, key):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     in_fence = False
     for line in body.splitlines():
         in_fence ^= bool(tt.FENCE_RE.match(line.strip()))
@@ -100,7 +100,7 @@ def mockup_media_kind(url):
 
 def _checked(fields):
     """The fields that pass their checks, and a problem for each that does not."""
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     checks = {
         "ui_change": lambda v: _choice("ui_change", v, tt.UI_CHANGE_VALUES[::-1]),
         "blast_radius": lambda v: _choice("blast_radius", v,
@@ -144,7 +144,7 @@ def _choice(name, value, choices):
 
 
 def _estimate_problems(value):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     if type(value) is int and 1 <= value <= tt.MAX_ESTIMATE_MIN:
         return []
     return [f"header estimate must be whole minutes from 1 to "
@@ -152,7 +152,7 @@ def _estimate_problems(value):
 
 
 def _depends_problems(value):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     if isinstance(value, list) and all(
             isinstance(key, str) and tt.LINEAR_ID_RE.fullmatch(key)
             for key in value):
@@ -161,7 +161,7 @@ def _depends_problems(value):
 
 
 def _implementer_problems(value):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     if isinstance(value, str) and tt.IMPLEMENTER_NAME_RE.fullmatch(value):
         return []
     return ["header implementer must name one profile of letters, digits, _ "
@@ -180,7 +180,7 @@ def _approved(value):
 
 
 def _mockup_problems(value):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     if not isinstance(value, dict):
         return [f"header mockup must be a [mockup] table, not {_show(value)}"]
     problems = _unknown("mockup.", value, MOCKUP_FIELDS)
@@ -246,7 +246,7 @@ def _evidence_problems(value):
 
 def _set_mockup(t, mockup):
     """The `## Mock-up` section a magic-line ticket would give for `mockup`."""
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     note = " ".join(mockup["note"].split())
     t.mockup_source = "\n".join(
         [mockup["url"], f"Approved {_approved(mockup['approved'])}: {note}"]
@@ -266,7 +266,7 @@ class Unconvertible(ValueError):
 
 
 def converted(body):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     if split(body)[1] is not None:
         return body
     lines = body.splitlines(keepends=True)
@@ -288,7 +288,7 @@ def converted(body):
 
 
 def _sections(lines):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     sections = [(None, [])]
     for line in lines:
         heading = tt.H2_RE.match(line)
@@ -299,14 +299,14 @@ def _sections(lines):
 
 
 def _stated(text, unwrap=True):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     if unwrap:
         text = tt.MD_LINK_RE.sub(r"\1", text)
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
 def _unfielded(fields, lines):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     kept, in_fence = [], False
     for line in lines:
         in_fence ^= bool(tt.FENCE_RE.match(line.strip()))
@@ -316,7 +316,7 @@ def _unfielded(fields, lines):
 
 
 def _bold_field(fields, line):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     found = tt.BOLD_KEY_RE.match(tt.MD_LINK_RE.sub(r"\1", line).strip())
     if not (found and found.group(1) in BOLD_FIELDS):
         return False
@@ -329,7 +329,7 @@ def _bold_field(fields, line):
 
 
 def _estimate(fields, text):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     for line in _stated(text):
         estimate = tt.ESTIMATE_RE.match(line)
         mode = tt.ORCHESTRATION_RE.match(line)
@@ -354,7 +354,7 @@ def _mockup(fields, text):
 
 
 def _mockup_line(mockup, line):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     approval = APPROVAL_RE.fullmatch(line)
     if approval and "approved" not in mockup:
         try:
@@ -382,7 +382,7 @@ def _mockup_line(mockup, line):
 
 
 def _evidence(fields, text):
-    import ticket_template as tt
+    from holophyte.tickets import ticket_template as tt
     states = [state for state in tt._evidence_states(tt.MD_LINK_RE.sub(r"\1", text))
               if state.strip()]
     entries = fields.setdefault("evidence", [])

@@ -2,8 +2,7 @@
 import json
 import tomllib
 
-import ticket_header
-import ticket_template
+from holophyte.tickets import ticket_header, ticket_template
 
 ESTIMATE_SECTION = "Estimate & dependencies"
 

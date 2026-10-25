@@ -26,7 +26,7 @@ from store.scouts import (
     start_scout_task,
 )
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced, titled
 from tests.test_scout_process import ScoutFixture
 from tests.test_wiring_telemetry import ReportStoreCase
 
@@ -45,7 +45,7 @@ FINDING = {"title": "the retry loop never backs off", "status": "confirmed",
 
 
 def a_report(*cited):
-    return {"summary": "found", "actions": [],
+    return {**BRIEF, "summary": "found", "actions": [],
             "findings": [dict(FINDING, tasks=tasks) for tasks in cited]}
 
 
@@ -77,8 +77,8 @@ class CitedTaskCheckTests(unittest.TestCase):
 
 class CitedTaskRunTests(ScoutFixture):
     def test_the_report_turn_labels_each_task_and_the_stored_finding_cites_one(self):
-        plan = {"tasks": [{"question": question, "paths": ["notes.txt"],
-                           "mode": "read"}
+        plan = {"tasks": [titled({"question": question,
+                                  "paths": ["notes.txt"], "mode": "read"})
                           for question in ("Where is the retry loop?",
                                            "Who calls the retry loop?")]}
         self.stubs.answer(plan=fenced(plan), report=fenced(a_report([1])))

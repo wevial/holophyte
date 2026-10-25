@@ -11,7 +11,7 @@ request the babysitter watches through its checks and review threads;
 `[merge] approve = "human"` parks it for an operator either way. Python and
 SQLite, with two pinned runtime dependencies.
 
-A ticket can belong to a [story](storyTemplate.md) ([its config](docs/config.md#story)), and where
+A ticket can belong to a [story](holophyte/tickets/templates/storyTemplate.md) ([its config](docs/config.md#story)), and where
 `[merge] ui_paths` is set one declaring a major UI change needs an approved mock-up
 ([The shape](docs/operating/tickets.md#the-shape)). A run can pass a [trim step](docs/config.md#trim)
 before review, have a failure's cause [triaged](docs/config.md#questionsfailures)
@@ -43,6 +43,7 @@ holo start ["note"] -p NAME|PATH                 # start the project's loop unit
 holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
 holo board [--json] -p NAME|PATH                 # the board's columns
 holo draft [KEY] -p NAME|PATH                    # a ticket skeleton to fill, or KEY's stored body to edit
+holo ticket check TICKET.md [--repo R]           # check a draft as python3 ticket_template.py does
 holo file TICKET.md [--backlog] -p NAME|PATH     # file a ticket after checking it; --update KEY replaces a body
 holo steer KEY "note" -p NAME|PATH               # amend a ticket, or steer its live run
 holo requeue KEY "note" -p NAME|PATH             # put a failed run's ticket back in the queue
