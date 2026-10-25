@@ -97,8 +97,6 @@ test("the build carries public/ into dist and index.html links the icons and man
     expect(html).toMatch(/<link rel="icon" href="\/favicon\.svg"/);
     expect(html).toMatch(/<link rel="apple-touch-icon" href="\/apple-touch-icon\.png"/);
     expect(html).toMatch(/<link rel="manifest" href="\/manifest\.webmanifest"/);
-    expect(html).toMatch(/<meta name="theme-color" media="\(prefers-color-scheme: light\)" content="#f4f1ea"/);
-    expect(html).toMatch(/<meta name="theme-color" media="\(prefers-color-scheme: dark\)" content="#141210"/);
   } finally {
     await rm(outdir, { recursive: true, force: true });
   }

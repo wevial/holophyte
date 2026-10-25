@@ -45,7 +45,6 @@ from holophyte.serve.server import (
     listen_address,
     load_token,
     run,
-    static_file,
     supervisor_view,
 )
 from store.schema import SCHEMA_VERSION, SchemaNewer, _readable_from
@@ -358,10 +357,7 @@ class HostHandler(StatusHandler):
                 "error": "not found", "path": path,
                 "detail": "a host daemon answers project routes under"
                           f" {PROJECTS_PREFIX}NAME"})
-        found = static_file(self.server.console_dir, path)
-        if isinstance(found[0], bytes):
-            return self.answer_bytes(*found)
-        self.answer(*found)
+        self.answer_static(path, parts.query)
 
     def dispatch(self, scope, path, query):
         if path == "/tickets/check":

@@ -11,7 +11,7 @@ import {
 } from "../lib/shipped";
 import { chainNote } from "../lib/runs";
 import type { ShippedRow } from "../lib/types";
-import { ActualVsBox, PrLink, Sha } from "../next/components/MergeFacts";
+import { ActualVsBox, PrLink, Sha } from "../app/components/MergeFacts";
 import { PhasePill } from "./PhasePill";
 import { RunDetail } from "./RunDetail";
 

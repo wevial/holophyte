@@ -1011,10 +1011,11 @@ own), which
 registers `happy-dom` so component tests render with
 `@testing-library/react` and no browser; `console/src/lib/` tests stay free
 of the DOM. `build` runs `console/build.ts`, which hands both pages,
-`console/index.html` and `console/next.html`, to one `Bun.build` call with
-`bun-plugin-tailwind` and writes the static bundle to `console/dist/` —
-each page keeps its name there, next to its own hashed script, and
-`index.html` is the stable entry the daemon serves. `console/dist/` and
+`console/index.html` (the new console) and `console/classic.html` (the
+classic console), to one `Bun.build` call with `bun-plugin-tailwind` and
+writes the static bundle to `console/dist/` — each page keeps its name
+there, next to its own hashed script, and `index.html` is the stable entry
+the daemon serves at `/`. `console/dist/` and
 `console/node_modules/` are git-ignored.
 
 The daemon owns the types of the routes the console polls.
@@ -1045,7 +1046,11 @@ since the fixture boots the daemon. A ticket's spec is
 resolves the console's `@playwright/test`), is never committed (the push
 untracks it), and saves `NN-slug.png` files
 into `CAPTURE_OUT`; `console/e2e/CAPTURE-0.capture.ts` is the smoke spec,
-which writes the Board as `01-board.png`. Neither `bun test` nor the
+which writes the new console's Tickets board at `/#/tickets` as
+`01-board.png`. `console/e2e/console-routes.spec.ts` checks which console
+each address opens, run as
+`python3 -m tests.console_fixture --build 'bun --cwd=console run build' bun --cwd=console run capture console-routes`.
+Neither `bun test` nor the
 typecheck reaches `console/e2e/`, and Playwright's `console/test-results/`
 is git-ignored. The verify's capture command, from the repo root:
 
@@ -1061,53 +1066,55 @@ that PATH, so nothing in the loop changes. The writer host runs Bun 1.4.2.
 
 ### The new console
 
-The new console is built beside the classic one until it replaces it. It
-lives in `console/src/next/`, with its tests under `console/tests/next/`,
-and is served at `/next.html` beside the classic console at `/`; the
-classic rail's "New view" and the new sidebar's "Classic console" swap
-between them, and `/` reopens the one chosen last (`console/src/lib/view.ts`)
-unless the address carries `?classic`. The classic console opens on the view a
+The new console lives in `console/src/app/`, with its tests under
+`console/tests/app/`, and is served at `/`; the classic console, kept until
+it is removed, is `console/classic.html`, served at `/classic.html`. The
+daemon answers the new console's old address, `/next.html`, with a 301 to
+`/`. The classic rail's "New view" links to `/` and the new sidebar's
+"Classic console" to `/classic.html`; neither is remembered, and
+`classicHref()` in `console/src/lib/view.ts` builds a link into the classic
+console. The classic console opens on the view a
 `#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
 console page can link to the classic view behind it.
 
-`console/src/next/focus.ts` derives blocked-card headlines and extracts asks.
-`console/src/next/components/LimitedMarkdown.tsx` renders asks and latest events
+`console/src/app/focus.ts` derives blocked-card headlines and extracts asks.
+`console/src/app/components/LimitedMarkdown.tsx` renders asks and latest events
 with a restricted Markdown vocabulary and expandable line clamps.
 
-Browser appearance choices live in `console/src/next/appearance.ts`;
-`console/src/next/components/AppearanceTab.tsx` renders theme and reading-font
+Browser appearance choices live in `console/src/app/appearance.ts`;
+`console/src/app/components/AppearanceTab.tsx` renders theme and reading-font
 radio cards, sharing theme state with the sidebar.
-Its own `console/src/next/theme.css` supplies the Night and Dawn tokens and
+Its own `console/src/app/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
 
-`console/src/next/router.tsx` routes it with TanStack Router over hash
+`console/src/app/router.tsx` routes it with TanStack Router over hash
 history, since the static route has no single-page fallback: `#/` is
 Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
 each in the shell its root renders. Settings lives at `#/settings` (General)
 and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
-`console/src/next/settingsDraft.ts` holds per-project field and raw drafts for the Settings page.
-`console/src/next/components/TomlEditor.tsx` edits and checks the whole TOML file with a line gutter.
-`console/src/next/components/SettingRow.tsx` binds the shared field rows, and
-`console/src/next/components/UnsavedBar.tsx` lists and discards pending changes.
-`console/src/next/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
-`console/src/next/components/HostsTab.tsx` renders their health, projects and last reports.
-`console/src/next/components/RouteTable.tsx` lists their agent routes, probes and recorded fallback use.
-`console/src/next/checker.ts` places each `/tickets/check` message on the New ticket field it names and words the Checker panel's summary.
+`console/src/app/settingsDraft.ts` holds per-project field and raw drafts for the Settings page.
+`console/src/app/components/TomlEditor.tsx` edits and checks the whole TOML file with a line gutter.
+`console/src/app/components/SettingRow.tsx` binds the shared field rows, and
+`console/src/app/components/UnsavedBar.tsx` lists and discards pending changes.
+`console/src/app/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
+`console/src/app/components/HostsTab.tsx` renders their health, projects and last reports.
+`console/src/app/components/RouteTable.tsx` lists their agent routes, probes and recorded fallback use.
+`console/src/app/checker.ts` places each `/tickets/check` message on the New ticket field it names and words the Checker panel's summary.
 
-`console/src/next/settings.ts` defines the grouped tabs and host attention
-count; `console/src/next/pages/Settings.tsx` frames the project picker and
+`console/src/app/settings.ts` defines the grouped tabs and host attention
+count; `console/src/app/pages/Settings.tsx` frames the project picker and
 placeholder panels. The sidebar footer links to Settings. Any other path
 is a not-found page.
 The root route's search holds one optional `project`, the project's name
-as the sidebar shows it, so `/next.html#/runs?project=demo` reproduces a
+as the sidebar shows it, so `/#/runs?project=demo` reproduces a
 scoped view; every route inherits it, the sidebar's links carry it, and
-`scopedHosts()` in `console/src/next/scope.ts` narrows the polled hosts to
+`scopedHosts()` in `console/src/app/scope.ts` narrows the polled hosts to
 it. The root reads the fleet once with `useFleet()` and shares the result
 with the sidebar and the pages through a React context.
 
 The new console reads its data through one TanStack Query client,
-`consoleQueryClient()` in `console/src/next/fleet.ts`, which its entry
+`consoleQueryClient()` in `console/src/app/fleet.ts`, which its entry
 mounts; a failed read is not retried, since the next poll is the retry.
 `useFleet()` is one query keyed by the origin: `pollPeers()` fans out to
 every daemon each `POLL_INTERVAL_MS`, `mergeHosts()` keeps each daemon's
@@ -1117,96 +1124,96 @@ the one poll. Every body is parsed with the generated schemas in
 fails at the fetch with a contract error naming the endpoint and field. A
 view that reads another route adds its own query keyed by the daemon base
 and the path, parsed with that route's generated schema.
-An action is a mutation, `useAction()` in `console/src/next/actions.ts`:
+An action is a mutation, `useAction()` in `console/src/app/actions.ts`:
 when the daemon takes it, it invalidates the fleet query and every route
 query of that daemon base, so the view re-reads at once, not at the next poll.
 
-The sidebar's project switcher (`console/src/next/components/ProjectSwitcher.tsx`)
+The sidebar's project switcher (`console/src/app/components/ProjectSwitcher.tsx`)
 sets that scope. Its rows come from `switcherRows()` in
-`console/src/next/projects.ts`: "All projects", then one row per project
+`console/src/app/projects.ts`: "All projects", then one row per project
 name, pooling the hosts that serve it, with its held tag, need count and
 open runs, or "not answering" when every host of it failed its last poll.
 A find box filters them; arrow keys move, Enter picks, Esc closes. A pick
 rewrites `project` on the current route and is kept in session storage under
-`holophyte.next.project`, so opening `/next.html` with an empty hash starts
+`holophyte.next.project`, so opening `/` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
 
-`console/src/next/pages/NewTicket.tsx` presents the ticket template as text
+`console/src/app/pages/NewTicket.tsx` presents the ticket template as text
 fields and files to an editable project’s Backlog from the Tickets page.
-`console/src/next/pages/EditTicket.tsx` loads a native ticket's current
-revision into the same fields (`console/src/next/components/TicketFields.tsx`),
+`console/src/app/pages/EditTicket.tsx` loads a native ticket's current
+revision into the same fields (`console/src/app/components/TicketFields.tsx`),
 marks each changed one and saves it as the next revision with `If-Match`;
-`console/src/next/ticketEdit.ts` rewrites only the fields that changed.
-When a newer revision lands during an edit, `console/src/next/sectionPicks.ts`
+`console/src/app/ticketEdit.ts` rewrites only the fields that changed.
+When a newer revision lands during an edit, `console/src/app/sectionPicks.ts`
 sorts each body section by which side changed it and builds the body from
 the section the maintainer picks for each one both sides changed.
 
-`console/src/next/runDays.ts` defines thirty local-day windows and aggregates
-each day’s runs. `console/src/next/pages/RunsHistory.tsx` renders their counts,
+`console/src/app/runDays.ts` defines thirty local-day windows and aggregates
+each day’s runs. `console/src/app/pages/RunsHistory.tsx` renders their counts,
 work totals and five-day pager.
 
 The Run page’s `next/components/CriteriaList.tsx` shows review marks and
 witness notes, with its verdict count supplied by `criteriaClause()` in
 `next/run.ts`.
 
-The Run page’s `console/src/next/components/AgentPanel.tsx` renders the
+The Run page’s `console/src/app/components/AgentPanel.tsx` renders the
 agent seat, state and chronological note/question thread from the page’s
 shared run detail and asks queries.
 
-`console/src/next/activity.ts` groups a run's events into timed phases
+`console/src/app/activity.ts` groups a run's events into timed phases
 (implement, review rounds with their steps, final check, pull request and
 babysit passes) and the live run's Now line, for the Run page's Progress.
-`console/src/next/components/RunActivity.tsx` draws them as a folding
+`console/src/app/components/RunActivity.tsx` draws them as a folding
 timeline that opens only the current group, tinted: the running one, ending
 on the Now line's detail, or an ended run's last, ending on
-`console/src/next/components/EndFacts.tsx`. `console/src/next/components/RawLog.tsx`
+`console/src/app/components/EndFacts.tsx`. `console/src/app/components/RawLog.tsx`
 opens every Progress line, heartbeats included, in a modal side panel.
 Its `criteriaGrid` lays out the run's criteria by round for
-`console/src/next/components/CriteriaGrid.tsx`, in a sticky right rail when
+`console/src/app/components/CriteriaGrid.tsx`, in a sticky right rail when
 Progress is wide enough; an open group lists its findings as
-`console/src/next/components/ActivityFinding.tsx` rows.
+`console/src/app/components/ActivityFinding.tsx` rows.
 
-The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
+The Run page’s `console/src/app/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
 queries in `next/queries.ts` fetch only while the fold is open.
-Under each round, `console/src/next/components/RoundInstructions.tsx` draws
+Under each round, `console/src/app/components/RoundInstructions.tsx` draws
 the maintainer notes that drove it and the pull request comments it acted on.
 
-The Turn page (`console/src/next/pages/Turn.tsx`) shows one recorded turn’s
-figures and links to its neighbours. `console/src/next/turn.ts` selects its
+The Turn page (`console/src/app/pages/Turn.tsx`) shows one recorded turn’s
+figures and links to its neighbours. `console/src/app/turn.ts` selects its
 host and run and shares turn titles with the Details fold. Run and Turn
-share page framing in `console/src/next/pages/runShared.tsx`.
-The Turn page’s `console/src/next/components/TurnEntries.tsx` lists transcript
+share page framing in `console/src/app/pages/runShared.tsx`.
+The Turn page’s `console/src/app/components/TurnEntries.tsx` lists transcript
 entries with folded prompts and tool calls, opening failed calls automatically.
-`console/src/next/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
-`console/src/next/scouts.ts` reads every scoped host's scouts and a project's scout routes;
-`console/src/next/pages/Scouts.tsx` lists the scouts newest first, and
-`console/src/next/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
-At 1400px and wider, which `useWide()` in `console/src/next/viewport.ts` reads, the Scouts page puts the list
-beside `console/src/next/components/ScoutPane.tsx`, which draws the scout its `scout` search selects, condensed
+`console/src/app/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
+`console/src/app/scouts.ts` reads every scoped host's scouts and a project's scout routes;
+`console/src/app/pages/Scouts.tsx` lists the scouts newest first, and
+`console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
+At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
+beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `scout` search selects, condensed
 to its header, Action items, Report and Thread, or the New scout form; it and the Scout page share the facts
-line of `console/src/next/components/ScoutFacts.tsx`.
+line of `console/src/app/components/ScoutFacts.tsx`.
 A failed run's page, open findings, follow-ups and ticket defect rows on Findings, and a ticket's actions each carry a
-Scout button (`console/src/next/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
+Scout button (`console/src/app/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
 and `ask`, which the Scouts page reads into a filled New scout form whose launch sends `about` as `subject`.
-The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
-`console/src/next/scout.ts`, which also groups it into Plan, waves, Synthesis and Report, then an Answer
+The Scout page (`console/src/app/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
+`console/src/app/scout.ts`, which also groups it into Plan, waves, Synthesis and Report, then an Answer
 or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
-`console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
-badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
-`console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm; a
+`console/src/app/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
+badges and steps of `console/src/app/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
+`console/src/app/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm; a
 swarming scout's queued or running helper row posts it with its `task`, no confirm, from Stop this branch.
-`console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
+`console/src/app/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
 findings with their status and evidence, and the newest bug report's hypotheses.
-`console/src/next/components/ScoutActions.tsx` draws its Action items under the Report, each filed
+`console/src/app/components/ScoutActions.tsx` draws its Action items under the Report, each filed
 with `POST /actions/scout-file`; a checker refusal opens New ticket with the item's draft. A revise
 item's Revise opens its ticket's edit page with the item's draft handed in the navigation's history state,
-which `console/src/next/pages/EditTicket.tsx` loads over the current revision for the maintainer to save.
-`console/src/next/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
-composer cannot send; `console/src/next/components/ScoutThread.tsx` draws them as the Scout page's Thread
+which `console/src/app/pages/EditTicket.tsx` loads over the current revision for the maintainer to save.
+`console/src/app/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
+composer cannot send; `console/src/app/components/ScoutThread.tsx` draws them as the Scout page's Thread
 with its Ask and Steer composer, posting `POST /actions/scout-message`, and
-`console/src/next/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
-`console/src/next/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
+`console/src/app/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
+`console/src/app/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
 choice posts it as the card's answer, and Type an answer points the composer at the card.
 
 ### Desktop wrapper
@@ -1323,7 +1330,7 @@ platforms are not covered. The packaged app finds the console URL exactly as
 the repository run does: from `HOLOPHYTE_CONSOLE_URL` or `console.json`,
 never from anything baked into the bundle.
 
-`console/src/next/components/HostToken.tsx` manages each Hosts card’s browser token, including saving, forgetting and undo.
+`console/src/app/components/HostToken.tsx` manages each Hosts card’s browser token, including saving, forgetting and undo.
 
-`console/src/next/components/HoldTab.tsx` shows project admission, reasoned hold
+`console/src/app/components/HoldTab.tsx` shows project admission, reasoned hold
 and release actions, and the polled admission history.

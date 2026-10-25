@@ -2042,8 +2042,9 @@ killed so its SQLite transaction rolls back, and its reply is lost.
 
 ## Static files
 
-`GET /` answers `console/dist/index.html` and `GET /PATH` answers
-`console/dist/PATH` for a regular file under that directory: the
+`GET /` answers `console/dist/index.html`, the new console, and
+`GET /PATH` answers `console/dist/PATH` for a regular file under that
+directory (`GET /classic.html` is the classic console): the
 repository's own `console/dist/`, where the renderer's build writes the
 console, found from the package rather than the project's checkout. The
 JSON routes above, and any added later, take precedence over a file of
@@ -2065,6 +2066,11 @@ Every file answer is `Cache-Control: no-store`; there is no compression,
 no other caching header and no range support. A path that resolves outside
 the directory (`..`, an encoded `..`, an absolute path, a symlink pointing
 out) or names no regular file is the same 404 JSON as an unknown route.
+`GET /next.html`, the new console's old address, answers
+`301 Moved Permanently` with `Location: /` (`/?QUERY` when the request
+carries a query), with or without a token and whether or not the console
+is built; the browser keeps the fragment, so `/next.html#/runs` lands on
+`/#/runs`.
 When `console/dist/` does not exist, `/` is 404 JSON whose `detail` says
 the console is not built, and the JSON routes answer as before: a daemon
 on a host without the renderer's toolchain still serves its JSON.

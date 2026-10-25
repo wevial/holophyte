@@ -49,7 +49,7 @@ export async function buildConsole(outdir: string = `${here}dist/`): Promise<str
   const tree = sourceTree();
   const files = await publicFiles();
   const result = await Bun.build({
-    entrypoints: [`${here}index.html`, `${here}next.html`],
+    entrypoints: [`${here}index.html`, `${here}classic.html`],
     outdir,
     plugins: [tailwind, keepPublic(files)],
     minify: true,

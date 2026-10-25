@@ -223,6 +223,9 @@ def authorized(header, tokens):
     return any(matches)
 
 
+MOVED_PAGES = {"/next.html": "/"}
+
+
 def static_file(console_dir, path):
     if not console_dir.is_dir():
         return 404, {"error": "not found", "path": path,
@@ -353,11 +356,18 @@ class StatusHandler(BaseHTTPRequestHandler):
             handler, segment = shaped
             code, body = handler(project, segment)
         else:
-            found = static_file(self.server.console_dir, path)
-            if isinstance(found[0], bytes):
-                return self.answer_bytes(*found)
-            code, body = found
+            return self.answer_static(path, query)
         self.answer(code, body)
+
+    def answer_static(self, path, query):
+        if path in MOVED_PAGES:
+            target = MOVED_PAGES[path] + (f"?{query}" if query else "")
+            return self.answer_bytes(b"", "text/plain", code=301,
+                                     extra=[("Location", target)])
+        found = static_file(self.server.console_dir, path)
+        if isinstance(found[0], bytes):
+            return self.answer_bytes(*found)
+        self.answer(*found)
 
     def do_POST(self):
         self.post(self.server.scope, urlsplit(self.path).path)
