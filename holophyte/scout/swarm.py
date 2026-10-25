@@ -308,14 +308,12 @@ class Swarm:
                     kill_group(proc)
             self.halted |= asked
 
-    def task_tracked(self, task, run, on_start=None):
+    def task_tracked(self, task, run):
         def start(proc):
             with self.halting:
                 self.procs.setdefault(task.id, []).append(proc)
                 if task.id in self.halted:
                     kill_group(proc)
-            if on_start is not None:
-                on_start(proc)
 
         return self.stopping.tracked(run, start)
 
