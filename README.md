@@ -50,8 +50,8 @@ holo scout "ASK" --kind bug|research|recon|guardrails -p NAME|PATH # launch a sc
 holo serve [ADDR] [-p NAME|PATH]                 # the JSON daemon and the console
 ```
 
-Every `holo` command and every `factory.py` mode is in the
-[CLI reference](docs/reference/cli.md).
+The [CLI reference](docs/reference/cli.md) has every `factory.py` mode and
+the other `holo` commands.
 
 ## Read next
 
