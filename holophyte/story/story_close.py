@@ -95,12 +95,12 @@ def _plan(conn, found, sha):
     met = {witness.key for witness in found.witnesses
            if witness.key in latest and latest[witness.key].verdict == "green"
            and latest[witness.key].fileHash == witness.sourceHash}
+    idle = not _open_children(conn, found.ticketId)
     if met == {witness.key for witness in found.witnesses}:
-        return [] if _open_children(conn, found.ticketId) else "close"
+        return "close" if idle else []
     greens = {row.witnessKey for row in main_ledger(conn, found.ticketId)
               if row.mainSha != sha and row.verdict == "green"}
     owed = rerun_owed(conn, found.ticketId, sha)
-    idle = not _open_children(conn, found.ticketId)
     decisions = []
     for witness in found.witnesses:
         row = latest.get(witness.key)

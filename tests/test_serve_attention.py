@@ -32,12 +32,13 @@ CLOSED_AT = "a" * 40
 CLOSE_NOTE = f"Story closed on its witnesses at {CLOSED_AT}: W1 green."
 
 
-def story_ticket(conn, project_id, name):
+def story_ticket(conn, project_id, name, depends_on=None):
     return store.tickets.mirror_ticket(
         conn, project_id, linear_issue_id=f"issue-{name}",
         linear_identifier=name, title=f"ticket {name}",
         acceptance_criteria=["Given it, then it works"],
-        verification_commands=["echo ok"])
+        verification_commands=["echo ok"],
+        depends_on=[f"issue-{depends_on}"] if depends_on else [])
 
 
 def approved_story(conn, project_id, parent, children):
@@ -693,12 +694,7 @@ class StuckWaitStatesTests(ServeTestCase):
             self.conn, "team-1", self.target)
 
     def file(self, name, depends_on=None, status="ready"):
-        ticket = store.tickets.mirror_ticket(
-            self.conn, self.project_id, linear_issue_id=f"issue-{name}",
-            linear_identifier=name, title=f"ticket {name}",
-            acceptance_criteria=["Given it, then it works"],
-            verification_commands=["echo ok"],
-            depends_on=[f"issue-{depends_on}"] if depends_on else [])
+        ticket = story_ticket(self.conn, self.project_id, name, depends_on)
         for step in {"ready": (), "blocked_on_deps": ("blocked_on_deps",),
                      "in_flight": ("in_flight",),
                      "abandoned": ("in_flight", "abandoned"),
