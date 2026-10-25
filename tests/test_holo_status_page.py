@@ -217,6 +217,38 @@ class PageOrderTests(StatusPageTests):
         self.assertTrue(self.running_line("ALPHA-21").endswith(
             "merge_gate · heartbeat 20 s ago"), self.running_line("ALPHA-21"))
 
+    def running_line_at(self, key, now):
+        lines = page(host_snapshot(Host.locate(), now=now), now, ZoneInfo("UTC"))
+        running = lines[lines.index("Running (1)") + 1:lines.index("Quiet")]
+        (line,) = [line for line in running if key in line]
+        return line
+
+    def test_a_healthy_live_row_shows_no_heartbeat_age_between_beats(self):
+        run = store.claim(self.conn, self.project_id, self.ticket("ALPHA-20"),
+                          now=NOW - 53_000)
+        store.set_phase(self.conn, run, "working", now=NOW - 53_000)
+        first = self.running_line_at("ALPHA-20", NOW)
+        store.heartbeat(self.conn, run, now=NOW + 97_000)
+        store.heartbeat(self.conn, run, now=NOW + 247_000)
+        later = self.running_line_at("ALPHA-20", NOW + 300_000)
+
+        self.assertTrue(first.endswith("working"), first)
+        self.assertNotIn("heartbeat", first)
+        self.assertEqual(later, first)
+
+    def test_a_silent_live_row_says_so_and_its_json_row_is_silent(self):
+        self.go_live("ALPHA-20", NOW - 6 * MINUTE)
+
+        line = self.running_line_at("ALPHA-20", NOW)
+        (alpha,) = [row for row in self.snapshot()["projects"]
+                    if row["name"] == "alpha"]
+        (live,) = alpha["store"]["live"]
+
+        self.assertTrue(line.endswith("working · silent, heartbeat 6 min ago"),
+                        line)
+        self.assertEqual((live.get("silent"), live["heartbeat_age_s"]),
+                         (True, 360))
+
     def test_the_client_zone_shows_clock_time_and_the_stranded_wait(self):
         (self.home / "client.toml").write_text('timezone = "America/Los_Angeles"\n')
         self.write_sweep(NOW - 40_000)
