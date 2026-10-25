@@ -153,7 +153,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
                       " vercel", self.question())
 
 
-    def test_a_red_optional_check_merges_and_is_recorded_once(self):
+    def test_a_red_optional_check_merges_and_records_the_optional_failures(self):
         self.configure('[merge]\nmode = "pr"\napprove = "auto"\n'
                        'pr_quiet_sec = 0\n')
         self.fake_route(states=[self.pr_state(checks="FAILURE")])
