@@ -3,7 +3,7 @@ import re
 
 SCOUT_TITLE_CHARS, TASK_TITLE_CHARS, TASK_TITLE_WORDS = 70, 60, 8
 REASON_CHARS = 100
-SENTENCE_END = re.compile(r"[.?!](?=\s|$)|\n")
+SENTENCE_END = re.compile(r"[.?!](?=\s|$)|[\r\n]")
 CLAUSE_END = re.compile(r": |; |, | \(|\. |\? ")
 LAUNCH = re.compile(r"could not launch: (.*)")
 CREDENTIAL = re.compile(r"implementer credential variable \S+ is not set")
@@ -18,7 +18,9 @@ def trimmed(text, limit):
     if len(text) <= limit:
         return text
     cut = text[:limit - 1]
-    return (cut.rpartition(" ")[0] or cut).rstrip() + "…"
+    if text[limit - 1] != " ":
+        cut = cut.rpartition(" ")[0] or cut
+    return cut.rstrip() + "…"
 
 
 def scout_title(ask):

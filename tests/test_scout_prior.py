@@ -22,12 +22,12 @@ from store.scouts import (
     record_scout_tasks,
 )
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced
 from tests.test_scout_lead import CLAUDE_LEAD
 from tests.test_scout_process import ScoutFixture
 from tests.test_serve_board import ServeBoardCase
 
-EMPTY = {"summary": "nothing new", "findings": [], "actions": []}
+EMPTY = {**BRIEF, "summary": "nothing new", "findings": [], "actions": []}
 JUDGED = [{"scout": 1, "finding": 1, "verdict": "holds",
            "why": "still unchecked at line 3"}]
 SECTION = "## Prior reports\n\n"
