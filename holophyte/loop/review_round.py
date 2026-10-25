@@ -363,7 +363,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                f"Reviewer findings:\n{verdict}\n\n"
                f"Implementer response:\n{fixes}", provider)
         contradiction.park(conn, run_id, provider, task_id, wt, "fix", fixes,
-                           timed_out)
+                           timed_out, ticket)
         boundary(conn, run_id, "verifying", rnd=rnd + 1)
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
         if timed_out or (head == sha and capture_spec_digest(
