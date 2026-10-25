@@ -211,7 +211,11 @@ class HostRegistryTests(HostFixture):
         alpha = self.repo("alpha")
         self.cli("project", "add", str(alpha))
         host = Host.locate()
-        registry = host.path.stat()
+        def stamp():
+            stat = host.path.stat()
+            return stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+        registry = stamp()
         first = host.projects()
         self.assertIs(host.projects(), first)
         [entry] = first
@@ -221,7 +225,7 @@ class HostRegistryTests(HostFixture):
             '[board]\nkind = "native"\nkey = "NAT"\n')
         [entry] = host.projects()
         self.assertEqual(board_mode(entry.target).kind, "native")
-        self.assertEqual(host.path.stat(), registry)
+        self.assertEqual(stamp(), registry)
 
 
 class HostStatusTests(HostFixture):
