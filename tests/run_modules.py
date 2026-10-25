@@ -14,7 +14,9 @@ each to the shard with the smallest recorded total so far (ties to the lower
 shard), so each module is in exactly one shard. `--list` prints the modules
 the run would run, one per line in run order, and runs none. `--record PATH`
 writes each module's wall seconds from this run to PATH, in the times file's
-format.
+format. `--junit PATH` writes each module's name and wall seconds to PATH as
+a JUnit XML `<testsuite>`, one `<testcase>` a module, with a `<failure>` in
+each module that failed.
 
 A module still running after `--module-timeout` seconds has its process
 group killed and fails as timed out. With `--max-module-sec`, a module that
@@ -31,7 +33,8 @@ it runs only the modules whose file names match; otherwise every module.
 
 Run: python3 tests/run_modules.py [--jobs N] [--module-timeout SECONDS]
                                   [--max-module-sec SECONDS] [--shard I/N]
-                                  [--list] [--record PATH] [--dir TESTS]
+                                  [--list] [--record PATH] [--junit PATH]
+                                  [--dir TESTS]
                                   [MODULE ...]
 """
 
@@ -50,6 +53,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from xml.etree import ElementTree
 
 RAN = re.compile(r"^Ran (\d+) tests? in ", re.MULTILINE)
 TAIL_LINES = 40
@@ -195,6 +199,9 @@ def parse_args(argv):
                              "order, and run none")
     parser.add_argument("--record", type=Path, metavar="PATH",
                         help="write each module's wall seconds to PATH")
+    parser.add_argument("--junit", type=Path, metavar="PATH",
+                        help="write each module's wall seconds to PATH as "
+                             "JUnit XML")
     parser.add_argument("--dir", type=Path, default=Path(__file__).parent,
                         help="tests directory (default: this file's)")
     parser.add_argument("modules", nargs="*", metavar="MODULE",
@@ -248,6 +255,20 @@ def run_all(args, tests, modules):
     return results, failed, total
 
 
+def write_junit(path, results, failed):
+    reasons = {name: result for name, result, _ in failed}
+    suite = ElementTree.Element("testsuite", name="unit",
+                                tests=str(len(results)),
+                                failures=str(len(reasons)))
+    for name, seconds in sorted(results):
+        case = ElementTree.SubElement(suite, "testcase", classname="tests",
+                                      name=name, time=f"{seconds:.3f}")
+        if name in reasons:
+            ElementTree.SubElement(case, "failure", message=reasons[name])
+    ElementTree.ElementTree(suite).write(path, encoding="utf-8",
+                                         xml_declaration=True)
+
+
 def main(argv=None):
     args = parse_args(argv)
     tests = args.dir.resolve()
@@ -270,6 +291,8 @@ def main(argv=None):
         args.record.write_text(json.dumps(
             {name: round(seconds, 1) for name, seconds in results},
             indent=2, sort_keys=True) + "\n")
+    if args.junit:
+        write_junit(args.junit, results, failed)
     names = ", ".join(name for name, _, _ in sorted(failed))
     print(f"\n{len(modules)} modules, {total} tests, {len(failed)} failed, "
           f"{time.monotonic() - started:.1f}s"
