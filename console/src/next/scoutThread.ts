@@ -39,9 +39,6 @@ function messageRow(detail: ScoutDetail, message: ThreadMessage, index: number):
 const highestPass = (detail: ScoutDetail, before = Infinity) =>
   Math.max(0, ...detail.reports.filter((report) => report.at < before).map((report) => report.pass));
 
-/** The pass a steer would start now. */
-const nextPass = (detail: ScoutDetail) => highestPass(detail) + 1;
-
 export interface FollowUp {
   kind: "answer" | "pass";
   started: ScoutEvent;
@@ -164,6 +161,6 @@ export function composeBlock(detail: ScoutDetail, actions: boolean): string | nu
 /** What the composer's line says a message in `mode` does: on a live scout an
  *  ask waits for its end and a steer for its next wave, or starts the pass after the running one. */
 export function composeLine(detail: ScoutDetail, mode: ThreadMessage["mode"]): string {
-  if (!isLive(detail.scout.phase)) return mode === "ask" ? "Answers from the report." : `Starts pass ${nextPass(detail)}.`;
+  if (!isLive(detail.scout.phase)) return mode === "ask" ? "Answers from the report." : `Starts pass ${highestPass(detail) + 1}.`;
   return mode === "ask" ? "Answered when the scout is done." : `Taken at the next wave, or as pass ${(livePass(detail)?.pass ?? 1) + 1}.`;
 }
