@@ -174,8 +174,7 @@ class ListingTests(WriteCase):
             with self.subTest(tool=tool.name):
                 required = set(tool.input_schema["required"])
                 self.assertIn("author", required)
-                self.assertTrue("note" in required or {"required": ["note"]}
-                                == tool.input_schema.get("then"))
+                self.assertTrue("note" in required or tool.name == "scout_stop")
                 self.assertIs(tool.annotations.read_only_hint, False)
                 self.assertIs(tool.annotations.destructive_hint, False)
 

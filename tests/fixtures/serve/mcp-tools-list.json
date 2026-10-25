@@ -660,19 +660,7 @@
             "scout",
             "author"
           ],
-          "additionalProperties": false,
-          "if": {
-            "not": {
-              "required": [
-                "task"
-              ]
-            }
-          },
-          "then": {
-            "required": [
-              "note"
-            ]
-          }
+          "additionalProperties": false
         },
         "name": "scout_stop"
       },

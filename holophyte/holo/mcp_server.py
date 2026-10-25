@@ -8,6 +8,7 @@ from holophyte.holo.mcp_tools import (
     blank,
     input_schema,
     run_tool,
+    unexcused,
     unsigned_road,
 )
 
@@ -33,7 +34,7 @@ def refusal(tool, arguments):
         jsonschema.validate(arguments, input_schema(tool))
     except jsonschema.ValidationError as bad:
         return bad.message
-    return unsigned_road(tool)
+    return unexcused(tool, arguments) or unsigned_road(tool)
 
 
 def build(version, tools=TOOLS):

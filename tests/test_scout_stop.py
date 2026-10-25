@@ -506,7 +506,6 @@ class McpScoutStopTests(McpCase):
                    if tool.name == "scout_stop"]
         self.assertLessEqual({"project", "scout", "author"},
                              set(tool.input_schema["required"]))
-        self.assertEqual(tool.input_schema["then"], {"required": ["note"]})
 
         client_path().write_text('default_project = "alpha"\n')
         unnamed = self.call("scout_stop", {

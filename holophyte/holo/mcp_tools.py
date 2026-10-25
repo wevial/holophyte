@@ -245,17 +245,18 @@ def unsigned_road(tool):
 
 def input_schema(tool):
     fields = tool.fields + signature(tool)
-    unless = tool.note_unless
-    schema = {"type": "object",
-              "properties": {field.name: field.schema for field in fields},
-              "required": [*tool.required,
-                           *(field.name for field in signature(tool)
-                             if unless is None or field.name != "note")],
-              "additionalProperties": False}
-    if unless is not None:
-        schema.update({"if": {"not": {"required": [unless]}},
-                       "then": {"required": ["note"]}})
-    return schema
+    return {"type": "object",
+            "properties": {field.name: field.schema for field in fields},
+            "required": [*tool.required,
+                         *(field.name for field in signature(tool)
+                           if field.name != "note" or not tool.note_unless)],
+            "additionalProperties": False}
+
+
+def unexcused(tool, arguments):
+    if tool.note_unless and not {"note", tool.note_unless} & set(arguments):
+        return "'note' is a required property"
+    return None
 
 
 def argv(tool, arguments):
