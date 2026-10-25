@@ -316,6 +316,10 @@ class Swarm:
 
         return self.stopping.tracked(run, start)
 
+    def halted_now(self, conn, task):
+        self.halt(conn)
+        return task.id in self.halted
+
     def cut_short(self, task):
         return self.stopping.stopped or task.id in self.halted
 
@@ -355,8 +359,7 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
-            self.halt(conn)
-            if task.id in self.halted:
+            if self.halted_now(conn, task):
                 self.end_unrun(conn, task, mine, STOPPED, "")
                 return
             if runs(task):
@@ -368,6 +371,9 @@ class Swarm:
             if prepared is None or cap <= 0:
                 return
             argv, checkout = prepared
+            if self.halted_now(conn, task):
+                self.end_unrun(conn, task, mine, STOPPED, "")
+                return
             turn = capped_turn(lambda: self.task_tracked(
                 task, partial(run_capped, argv, checkout, cap), start),
                 partial(self.cut_short, task))
@@ -389,6 +395,9 @@ class Swarm:
                 str(error), self.secrets)[:EXCERPT_CHARS])
             return
         try:
+            if self.halted_now(conn, task):
+                self.end_unrun(conn, task, mine, STOPPED, "")
+                return
             self.run_in(conn, task, mine, checkout)
         finally:
             shutil.rmtree(checkout, ignore_errors=True)
@@ -407,6 +416,9 @@ class Swarm:
         if problem is not None:
             self.end(conn, task, FAILED,
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
+            return
+        if self.halted_now(conn, task):
+            self.end(conn, task, STOPPED, "")
             return
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()

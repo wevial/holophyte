@@ -53,11 +53,11 @@ class TaskStopCase(StopCase):
         return self.tasks(scout_id).get(question, (None, None, None))[1]
 
     def swarming(self, questions, helpers, kind="research", mode="read",
-                 swarm=2):
+                 swarm=2, **answers):
         self.stubs.answer(
             plan=fenced({"tasks": [{"question": question, "paths": [],
                                     "mode": mode} for question in questions]}),
-            report=fenced(REPORT), helpers=helpers)
+            report=fenced(REPORT), helpers=helpers, **answers)
         scout_id = self.planning(kind=kind, swarm=swarm,
                                  helper_turns=len(questions), waves=1)
         return scout_id, self.spawn_scout(scout_id)
@@ -129,6 +129,18 @@ class RunningTaskStopTests(TaskStopCase):
         self.assertEqual(tasks[questions[1]][1], "done")
         self.assertNotIn(questions[2], [call["question"] for call
                                         in self.stubs.turns("helper")])
+
+    def test_a_task_stopped_during_its_route_probe_is_never_launched(self):
+        probing = self.root / "probing"
+        probing.mkdir()
+        scout_id, proc = self.swarming([SLOW], {}, swarm=1, binaries={
+            "codex": {"probe_sleep": 1.2, "probe_shared": str(probing)}})
+        self.assertTrue(wait_for(lambda: any(probing.iterdir())))
+        status, answer = self.ask(scout_id, self.tasks(scout_id)[SLOW][0])
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        self.assertEqual(proc.wait(timeout=WAIT_S), 0)
+        self.assertEqual(self.tasks(scout_id)[SLOW][1:], ("stopped", ""))
+        self.assertEqual(self.stubs.turns("helper"), [])
 
     def test_a_stopped_run_helper_turn_is_killed_and_ends_stopped(self):
         pid_file = self.child("run-helper")
@@ -230,7 +242,7 @@ class McpTaskStopTests(McpCase):
         self.assertEqual(tool.input_schema["properties"]["task"]["type"],
                          "integer")
 
-    def test_the_scout_stop_tool_stops_a_task_without_a_note(self):
+    def test_the_scout_stop_tool_needs_a_note_only_without_a_task(self):
         sleeper = subprocess.Popen(["sleep", "600"])
         self.addCleanup(sleeper.wait)
         self.addCleanup(sleeper.kill)
