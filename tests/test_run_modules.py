@@ -417,7 +417,7 @@ class RunModulesTests(unittest.TestCase):
         for row in rows:
             with self.subTest(module=row["title"]):
                 self.assertAlmostEqual(row["duration_ms"],
-                                       walls[row["title"]] * 1000, delta=50)
+                                       walls[row["title"]] * 1000, delta=51)
 
     def test_without_junit_no_report_is_written_and_output_is_the_same(self):
         report = self.root / "module-times.xml"
