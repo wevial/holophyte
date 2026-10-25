@@ -24,6 +24,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
+    VALID_BODY,
     LoopFixture,
     StubProvider,
     a_task,
@@ -177,6 +178,42 @@ class RequeueAfterContradictionTests(LoopFixture):
         conn = store.open(str(self.db))
         self.addCleanup(conn.close)
         self.assertEqual(holophyte.board.projection.failure_history(conn, 1), [])
+
+
+AMENDED = ("Given one bot thread, when the page renders, then it says"
+           " 'parked · 1 thread open'")
+
+
+def scoped_two_criteria():
+    criteria = two_criteria()["criteria"]
+    body = VALID_BODY.replace("* The thing.", "* `page.py`: the parked word.")
+    body = body.replace(
+        "- [ ] Given the thing, when it runs, then it works (a test witnesses"
+        " this)", "\n".join(f"- [ ] {c} (a test witnesses this)"
+                            for c in criteria))
+    return dict(two_criteria(), body=body)
+
+
+class Propose(Commit):
+    """An implement turn that declares criterion 2 and proposes its
+    replacement on the next line."""
+
+    def play(self, cwd, turn):
+        return (f"{super().play(cwd, turn)}\n{DECLARED}\n"
+                f"PROPOSED_AMENDMENT: REPLACE C2: {AMENDED}")
+
+
+class ProposedAmendmentTests(LoopFixture):
+
+    def test_an_in_scope_replacement_amends_the_ticket_and_requeues_it(self):
+        self.loop(Propose("render the parked word", path="page.py"),
+                  REQUEST_CHANGES, provider=StubProvider(scoped_two_criteria()))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("abandoned",)])
+        self.assertEqual(self.read(
+            "SELECT status, blockedQuestion FROM tickets"), [("ready", None)])
+        self.assertEqual(self.read("SELECT author, note FROM steerNotes"),
+                         [("factory", f"REPLACE C2: {AMENDED}")])
 
 
 class CancelAfterContradictionTests(LoopFixture):
