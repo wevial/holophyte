@@ -13,3 +13,4 @@ console/test-results/
 uv.lock
 *.egg-info/
 /build/
+.holophyte-capture/

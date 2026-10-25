@@ -23,7 +23,7 @@ from holophyte.config.config_tables import merge_config
 from holophyte.config.worktree_settings import capture_environment, carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import InfraFailure, sh
-from holophyte.pr import github, mockup
+from holophyte.pr import capture_files, github, mockup
 
 CAPTURE_TIMEOUT = 300
 CAPTURE_GRACE = 30  # Seconds a stopped capture's teardown gets.
@@ -62,7 +62,9 @@ def implementer_brief(project, ticket, task_id):
         where = (f"\n\nWrite the capture spec `{spec}` for this ticket, "
                  f"runnable by `{cfg.ui_capture}`. The file stays in the "
                  "worktree and is never committed: its directory ignores "
-                 "itself.")
+                 "itself. It is the only copy: no capture spec or capture "
+                 "output is committed, and no copy of the spec is kept "
+                 "anywhere else in the tree.")
     else:
         where = (f"\n\nAdd or update a capture script under "
                  f"`{cfg.ui_capture_dir}` for this ticket, runnable by "
@@ -108,13 +110,10 @@ def capture_spec_digest(project, wt, task_id, evidence_states=()):
     cfg = merge_config(project)
     if not cfg.ui_capture_local:
         return None
-    words = shlex.split(cfg.ui_capture)
-    defaults = [after if word == "--default" else word.removeprefix("--default=")
-                for word, after in zip(words, words[1:] + [""])
-                if word == "--default" or word.startswith("--default=")]
+    default = capture_files.default_spec(cfg.ui_capture)
     if "\n".join(evidence_states).strip():
-        defaults = []
-    for spec in (_local_spec(cfg, task_id), *defaults[-1:]):
+        default = None
+    for spec in (_local_spec(cfg, task_id), *filter(None, [default])):
         path = Path(wt, spec)
         if path.is_file():
             return hashlib.sha256(path.read_bytes()).hexdigest()

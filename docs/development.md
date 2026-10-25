@@ -612,6 +612,10 @@ Each module, one line:
   media publishing and evidence shared by PR descriptions and review prompts.
   See [merge configuration](config.md#merge) for capture commands, destinations
   and size limits.
+- `holophyte/pr/capture_files.py` — under `[merge] ui_capture_local =
+  true`, the capture specs and capture output a candidate adds: the factory
+  commit that untracks them before each push, keeping the working copies and
+  excluding them, and the list the merge refuses a head by.
 - `holophyte/pr/evidence_refresh.py` — before the covering review of a
   babysit fix, writing the capture at the fix head into the pull request's
   Evidence section, or marking its earlier images stale when that capture
@@ -1033,7 +1037,8 @@ the states beyond those.
 1440×900 light viewport, `baseURL` from `CONSOLE_URL`, and no `webServer`,
 since the fixture boots the daemon. A ticket's spec is
 `<KEY>.capture.ts` in the capture directory under `console/` (so it
-resolves the console's `@playwright/test`), and saves `NN-slug.png` files
+resolves the console's `@playwright/test`), is never committed (the push
+untracks it), and saves `NN-slug.png` files
 into `CAPTURE_OUT`; `console/e2e/CAPTURE-0.capture.ts` is the smoke spec,
 which writes the Board as `01-board.png`. Neither `bun test` nor the
 typecheck reaches `console/e2e/`, and Playwright's `console/test-results/`
