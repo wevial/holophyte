@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { FILTER_LABELS, STATE_FILTERS, type TicketFilter, type TicketsSearch } from "../tickets";
+import { FILTER_LABELS, STATE_FILTERS, type TicketsSearch } from "../tickets";
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -55,31 +55,32 @@ export function TicketSearchField() {
         setText("");
         write(undefined);
       }}
-      className="min-h-9 w-56 border border-rule bg-paper px-3 font-mono text-[12.5px] text-ink placeholder:text-ink-3 focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
+      className="min-h-8 w-56 border border-rule bg-paper px-3 font-sans text-[12.5px] text-ink placeholder:text-ink-3 focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
     />
   );
 }
 
-/** All, then each state of `STATE_FILTERS`, as the address's `filter`. */
+/** All states, then each state of `STATE_FILTERS`, as the address's `filter`. */
 export function StatePicker() {
   const { filter }: TicketsSearch = useSearch({ from: "/tickets" });
   const navigate = useNavigate();
-  const states: (TicketFilter | undefined)[] = [undefined, ...STATE_FILTERS];
   return (
-    <div role="group" aria-label="State" className="mt-2 inline-flex flex-wrap self-start border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
-      {states.map((state) => (
-        <button
-          key={state ?? "all"}
-          type="button"
-          aria-pressed={state === filter}
-          onClick={() => void navigate({ to: ".", search: (previous: TicketsSearch) => ({ ...previous, filter: state }) })}
-          className={`inline-flex min-h-9 cursor-pointer items-center px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.08em] ${
-            state === filter ? "bg-act-wash text-act" : "text-ink-3 hover:text-ink"
-          }`}
-        >
-          {state == null ? "All" : FILTER_LABELS[state]}
-        </button>
+    <select
+      aria-label="State"
+      value={filter ?? "all"}
+      onChange={(event) => {
+        const picked = event.target.value;
+        const state = STATE_FILTERS.find((each) => each === picked);
+        void navigate({ to: ".", search: (previous: TicketsSearch) => ({ ...previous, filter: state }) });
+      }}
+      className="min-h-8 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
+    >
+      <option value="all">All states</option>
+      {STATE_FILTERS.map((state) => (
+        <option key={state} value={state}>
+          {FILTER_LABELS[state]}
+        </option>
       ))}
-    </div>
+    </select>
   );
 }

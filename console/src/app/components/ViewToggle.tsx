@@ -32,7 +32,7 @@ export function ViewToggle({ view, onPick }: { view: TicketView; onPick: (view: 
           type="button"
           aria-pressed={each.view === view}
           onClick={() => onPick(each.view)}
-          className={`inline-flex min-h-9 cursor-pointer items-center gap-[7px] px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.08em] ${
+          className={`inline-flex min-h-8 cursor-pointer items-center gap-[7px] px-3 font-sans text-[12.5px] leading-none ${
             each.view === view ? "bg-act-wash text-act" : "text-ink-3 hover:text-ink"
           }`}
         >

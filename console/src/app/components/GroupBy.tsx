@@ -1,4 +1,3 @@
-import { useId } from "react";
 import type { GroupMode } from "../tickets";
 
 const GROUP_KEY = "holophyte.next.tickets.group";
@@ -23,20 +22,21 @@ export function writeGroup(mode: GroupMode): void {
 }
 
 export function GroupBy({ modes, mode, onPick }: { modes: GroupMode[]; mode: GroupMode; onPick: (mode: GroupMode) => void }) {
-  const label = useId();
   return (
-    <div className="flex items-center gap-2.5">
-      <span id={label} className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-ink-3">
-        Group by
+    <div className="flex items-center gap-2">
+      <span aria-hidden="true" className="font-sans text-[12.5px] text-ink-3">
+        Group
       </span>
-      <div role="group" aria-labelledby={label} className="inline-flex border border-ink-3">
+      <div role="group" aria-label="Group by" className="inline-flex border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
         {modes.map((each) => (
           <button
             key={each}
             type="button"
             aria-pressed={each === mode}
             onClick={() => onPick(each)}
-            className={`min-h-9 cursor-pointer px-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] ${each === mode ? "bg-ink text-paper" : "text-ink-2"}`}
+            className={`inline-flex min-h-8 cursor-pointer items-center px-3 font-sans text-[12.5px] leading-none ${
+              each === mode ? "bg-act-wash text-act" : "text-ink-3 hover:text-ink"
+            }`}
           >
             {LABELS[each]}
           </button>
