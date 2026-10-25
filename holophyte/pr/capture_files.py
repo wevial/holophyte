@@ -86,8 +86,8 @@ def untrack_capture_files(project, branch):
         ["git", *factory_identity(wt), "commit-tree", tree, "-p", old],
         cwd=wt, input=message, check=True, capture_output=True,
         text=True).stdout.strip()
+    sh(["git", "rm", "-q", "--cached", "-f", "--ignore-unmatch", "--", *paths], wt)
     sh(["git", "update-ref", f"refs/heads/{branch}", new, old], wt)
-    sh(["git", "rm", "-q", "--cached", "--ignore-unmatch", "--", *paths], wt)
     _exclude(wt, paths)
 
 
