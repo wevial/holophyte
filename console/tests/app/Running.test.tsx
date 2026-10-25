@@ -264,7 +264,7 @@ test("a backticked span in a running row's title shows as inline code, and its a
 const onCiRows = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-on-ci]")];
 const laneItems = (name: string) =>
   within(lane(name)).getAllByRole("list").map((list) =>
-    [...list.children].map((item) => (item.hasAttribute("data-on-ci") ? "on-ci" : item.querySelector("a[data-row]") ? "run" : item.textContent)),
+    [...list.children].map((item) => (item.hasAttribute("data-on-ci-divider") ? item.getAttribute("aria-label") : item.hasAttribute("data-on-ci") ? "on-ci" : item.querySelector("a[data-row]") ? "run" : item.textContent)),
   );
 
 test("a run fixing a pull request names it under its title, and the lane lists its pull requests on CI in its one list under the runs without counting them busy", async () => {
