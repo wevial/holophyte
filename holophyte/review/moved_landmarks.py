@@ -26,6 +26,7 @@ class Chain:
         self.copied = False
         self.directory = False
         self.emptied = None
+        self.refilled = set()
 
     @property
     def touched(self):
@@ -51,19 +52,26 @@ class Chain:
         prefix = self.path + "/"
         under = [row for row in rows if row[1].startswith(prefix)]
         moves = [row for row in under if row[0][0] in "RC"]
-        if all(row[2].startswith(prefix) for row in moves):
-            moves = []
         places = {row[2]: _moved_under(row[1].removeprefix(prefix), row[2])
                   for row in moves}
-        if None in places.values() or len(set(places.values())) > 1:
+        landed = set(places.values())
+        if None in landed and all(row[2].startswith(prefix) for row in moves):
+            moves, landed = [], set()
+        if None in landed or len(landed) > 1:
             self.split = (commit, sorted({place or destination for
                                           destination, place in places.items()}))
+        elif any(row[1] in self.refilled for row in moves):
+            self.deleted = self.emptied
         elif any(row[0][0] == "R" for row in moves):
-            (new,) = set(places.values())
+            (new,) = landed
             self.hops.append((commit, self.path, new))
             self.path, self.directory, self.emptied = new, True, None
+            self.refilled = set()
         elif under and all(row[0] == "D" for row in under):
-            self.emptied = commit
+            self.emptied, self.refilled = commit, set()
+        elif self.emptied:
+            self.refilled.update(row[-1] for row in rows
+                                 if row[-1].startswith(prefix))
         self.copied = self.copied or bool(moves)
         return self.deleted is None and self.split is None
 
@@ -162,8 +170,7 @@ def _why_unmapped(written, chain, tree):
         return f"`{written}` was deleted in {deleted}{via}"
     if not chain.hops:
         return f"`{written}` has no rename since the body was written"
-    if not (tree.has(chain.path) if chain.directory
-            else chain.path in tree.files):
+    if chain.path not in (tree.trees if chain.directory else tree.files):
         return (f"`{written}` was renamed to `{chain.path}` in"
                 f" {chain.hops[-1][0]}, which is not on main")
     return None
@@ -210,9 +217,10 @@ def map_landmarks(tree, paths, modules, commits):
 
 
 def _under(path, folders):
+    bare = re.sub(r"^(?:\./)+", "", path)
     for old in sorted(folders, key=len, reverse=True):
-        if path == old or path.startswith(old + "/"):
-            return folders[old] + path[len(old):]
+        if bare == old or bare.startswith(old + "/"):
+            return folders[old] + bare[len(old):]
     return None
 
 
