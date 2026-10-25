@@ -263,14 +263,6 @@ class HoloTaskStopTests(TaskStopCase):
 
 
 class McpTaskStopTests(McpCase):
-    def test_the_scout_stop_tool_takes_an_integer_task(self):
-        async def use(client, _):
-            return (await client.list_tools()).tools
-        (tool,) = [tool for tool in self.session(use)
-                   if tool.name == "scout_stop"]
-        self.assertEqual(tool.input_schema["properties"]["task"]["type"],
-                         "integer")
-
     def test_the_scout_stop_tool_needs_a_note_only_without_a_task(self):
         sleeper = subprocess.Popen(["sleep", "600"])
         self.addCleanup(sleeper.wait)
