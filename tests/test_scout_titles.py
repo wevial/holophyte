@@ -28,6 +28,10 @@ from tests.test_question_backends import (
 DOCS = Path(__file__).resolve().parents[1] / "docs" / "config.md"
 ASK = ("How long does test_babysit_threads.py take against its 90 s ceiling?"
        " Use SECRET-TOKEN-1 if needed.")
+INSTRUCTION = (
+    "Name this scout in a short title of plain words that says what it looks"
+    " into: at most 8 words and 60 characters on one line, with no quotes and"
+    " no closing punctuation. Answer with the title as `title`.")
 TITLE_SCHEMA = {"type": "object", "properties": {"title": {"type": "string"}},
                 "required": ["title"], "additionalProperties": False}
 
@@ -154,7 +158,7 @@ class ScoutTitleTests(unittest.TestCase):
                                   for i in range(len(argv))])
         self.assertEqual(json.loads(call["schema"]), TITLE_SCHEMA)
         text = argv[-1]
-        self.assertIn(titler.INSTRUCTION, text)
+        self.assertIn(INSTRUCTION, text)
         record = json.loads(re.search(r"```json\n(.*?)\n```", text,
                                       re.DOTALL).group(1))
         self.assertEqual(record, {
