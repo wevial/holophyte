@@ -21,7 +21,7 @@ import { TitleText } from "../components/TitleText";
 import { useTicket } from "../queries";
 import { useRunPage } from "../run";
 import { PollDepsContext } from "../scope";
-import { CRUMB_LINK, Notice, Page, zoneName } from "./runShared";
+import { CRUMB_LINK, Loading, Notice, Page, zoneName } from "./runShared";
 
 const STRONG = "font-medium text-ink-2";
 
@@ -63,15 +63,7 @@ export function RunPage() {
   const label = `run ${shown}`;
   if (page.kind === "unknown_project") return <Notice label={label} text={`No project named ${project} answers this console.`} />;
   if (page.kind === "not_found") return <Notice label={label} text={`${project} has no run ${shown}.`} />;
-  if (page.kind === "loading") {
-    return (
-      <Page label={label}>
-        <p role="status" className="m-0 font-mono text-[13px] text-ink-3">
-          Asking {project} for run {shown}…
-        </p>
-      </Page>
-    );
-  }
+  if (page.kind === "loading") return <Page label={label}><Loading /></Page>;
   const { run } = page.detail;
   const box = page.agentMs == null ? null : (
     <>

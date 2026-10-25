@@ -23,7 +23,7 @@ const ASK = "Why do loop runs crash with database is locked?";
 const STEER = "check the digest email too";
 
 const task = (id: number, question: string, phase: ScoutTask["phase"], fields: Partial<ScoutTask> = {}): ScoutTask => ({
-  ...servedTask!, id, question, phase, pass: 1, wave: 1, route: "luna", mode: "read", tokens: null,
+  ...servedTask!, id, title: question, question, phase, pass: 1, wave: 1, route: "luna", mode: "read", tokens: null,
   started_ms: phase === "queued" ? null : at(11, 47, 12), ended_ms: null, duration_ms: null, ...fields,
 });
 const RUNNING = task(7, "Repro: two loop workers claim at once", "running");
@@ -100,21 +100,21 @@ const reread = async (queries: Awaited<ReturnType<typeof mount>>) => {
   await settled();
 };
 
-const region = () => screen.getByRole("complementary", { name: "Thread" });
+const region = () => screen.getByRole("region", { name: "Thread" });
 const rows = () => Array.from(within(region()).getByRole("list", { name: "Thread" }).children, (li) =>
   li.hasAttribute("data-thread-line") ? li.textContent : li.firstElementChild!.textContent);
 const send = () => within(region()).getByRole("button", { name: "Send" }) as HTMLButtonElement;
-const composeLine = () => region().querySelector("[data-compose-line]")!.textContent;
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 type Seen = { url: string; method: string; body: unknown }[];
 const posts = (seen: Seen, route: string) => seen.filter((each) => each.method === "POST" && each.url === `${DEMO}${route}`);
 
 const helperRows = () => Array.from(document.querySelectorAll<HTMLElement>("[data-helper]"));
-const rowOf = (question: string) => helperRows().find((li) => li.querySelector("[data-question]")!.textContent === question)!;
+const rowOf = (title: string) => helperRows().find((li) => li.querySelector("[data-task-title]")!.textContent === title)!;
 const stopButton = (li: HTMLElement) => within(li).queryByRole("button", { name: "Stop this branch" }) as HTMLButtonElement | null;
 const lastFact = (li: HTMLElement) => li.querySelector("[data-tokens]")!.textContent;
 const openEveryGroup = async () => {
-  for (const fold of Array.from(document.querySelectorAll("[aria-expanded='false']"))) await click(fold);
+  const folds = Array.from(document.querySelectorAll("[data-group]"), (group) => group.querySelector("[aria-expanded='false']"));
+  for (const fold of folds) if (fold != null) await click(fold);
 };
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -130,15 +130,11 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a swarming scout with no thread holds the Thread, an enabled composer and Ask or steer, its line by mode", async () => {
+test("a swarming scout with no thread holds the Thread, an enabled composer and Ask or steer", async () => {
   await mount(scoutFetch({ scout: swarming }).fetch);
   const panel = within(region());
   expect(screen.getByRole("link", { name: "Ask or steer" })).toBeTruthy();
   expect((panel.getByRole("textbox", { name: "Question for the scout" }) as HTMLTextAreaElement).disabled).toBe(false);
-  await click(panel.getByRole("button", { name: "Steer" }));
-  expect(composeLine()).toBe("Taken at the next wave, or as pass 2.");
-  await click(panel.getByRole("button", { name: "Ask" }));
-  expect(composeLine()).toBe("Answered when the scout is done.");
 });
 
 test("a steer sent to a swarming scout posts once, waits for the next wave, and reads as taken once a wave takes it", async () => {
@@ -178,40 +174,40 @@ test("Stop this branch on a running helper posts its task, reads stopping throug
   const daemon: Daemon = { scout: swarming, stop: () => Response.json({ ok: true, detail: "stopping task 7 of scout 31" }) };
   const { fetch, seen } = scoutFetch(daemon);
   const queries = await mount(fetch);
-  expect([RUNNING, QUEUED, BACK].map((each) => stopButton(rowOf(each.question)) != null)).toEqual([true, true, false]);
-  await click(stopButton(rowOf(RUNNING.question))!);
+  expect([RUNNING, QUEUED, BACK].map((each) => stopButton(rowOf(each.title)) != null)).toEqual([true, true, false]);
+  await click(stopButton(rowOf(RUNNING.title))!);
   expect(posts(seen, "/actions/scout-stop").map((each) => each.body)).toEqual([{ scout: 31, task: RUNNING.id }]);
-  expect(lastFact(rowOf(RUNNING.question))).toBe("stopping");
+  expect(lastFact(rowOf(RUNNING.title))).toBe("stopping");
   const wave = document.querySelector("[data-group='wave'] [aria-expanded]")!;
   await click(wave);
   await click(wave);
-  expect(lastFact(rowOf(RUNNING.question))).toBe("stopping");
-  expect(stopButton(rowOf(RUNNING.question))).toBeNull();
+  expect(lastFact(rowOf(RUNNING.title))).toBe("stopping");
+  expect(stopButton(rowOf(RUNNING.title))).toBeNull();
   daemon.scout = { ...swarming, tasks: [{ ...RUNNING, phase: "stopped", ended_ms: at(11, 53) }, QUEUED, BACK] };
   await reread(queries);
-  const stopped = rowOf(RUNNING.question);
+  const stopped = rowOf(RUNNING.title);
   expect(lastFact(stopped)).toBe("stopped");
-  expect(stopped.querySelector("[data-question]")!.classList.contains("line-through")).toBe(true);
+  expect(stopped.querySelector("[data-task-title]")!.classList.contains("line-through")).toBe(true);
   expect(stopButton(stopped)).toBeNull();
 });
 
 test("a refused Stop this branch says its detail in the toast and can be pressed again", async () => {
   await mount(scoutFetch({ scout: swarming, stop: () => Response.json({ ok: false, detail: "task 7 is done" }) }).fetch);
-  await click(stopButton(rowOf(RUNNING.question))!);
+  await click(stopButton(rowOf(RUNNING.title))!);
   expect(toast()).toBe("task 7 is done");
-  expect(stopButton(rowOf(RUNNING.question))!.disabled).toBe(false);
-  expect(lastFact(rowOf(RUNNING.question))).toBe("…");
+  expect(stopButton(rowOf(RUNNING.title))!.disabled).toBe(false);
+  expect(lastFact(rowOf(RUNNING.title))).toBe("…");
 });
 
 test("a synthesizing or done scout's helpers have no Stop this branch, and with actions off it is disabled", async () => {
   for (const phase of ["synthesizing", "done"] as const) {
     await mount(scoutFetch({ scout: { ...swarming, scout: { ...swarming.scout, phase } } }).fetch);
     await openEveryGroup();
-    expect(rowOf(QUEUED.question)).toBeTruthy();
+    expect(rowOf(QUEUED.title)).toBeTruthy();
     expect(helperRows().map(stopButton)).toEqual([null, null, null]);
     cleanup();
   }
   await mount(scoutFetch({ scout: swarming, actions: false }).fetch);
-  const button = stopButton(rowOf(RUNNING.question))!;
+  const button = stopButton(rowOf(RUNNING.title))!;
   expect([button.disabled, button.title]).toEqual([true, ACTIONS_OFF]);
 });

@@ -20,6 +20,7 @@ const servedAction = served.actions[0]!;
 
 const at = (hour: number, minute: number) => new Date(2026, 9, 15, hour, minute).getTime();
 const ASK = "Why do loop runs crash with database is locked?";
+const TITLE = "Loop runs crash with database is locked";
 
 const row = (id: number, fields: Partial<ScoutRow> = {}): ScoutRow => ({ ...servedRow, id, ...fields });
 const listed = [row(31), row(30), row(29)];
@@ -35,7 +36,7 @@ const action = (position: number, ticket: string | null): ScoutAction => ({
 const done: ScoutDetail = {
   ...served,
   scout: {
-    ...served.scout, id: 31, ask: ASK, kind: "bug", phase: "done", lead: "opus", helper: "luna", swarm: 4, subject: null,
+    ...served.scout, id: 31, ask: ASK, title: TITLE, kind: "bug", phase: "done", lead: "opus", helper: "luna", swarm: 4, subject: null,
     base_sha: "a41c9e2b7d0f4c3e9a1b2c3d4e5f60718293a4b5", created_ms: at(11, 45), started_ms: at(11, 46), ended_ms: at(12, 0),
     budget: { ...served.scout.budget, minutes: 30 },
   },
@@ -109,23 +110,25 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a wide Scouts page shows the first scout in a pane with Action items, Report and Thread but no Progress, Stage or Hypotheses", async () => {
+test("a wide Scouts page shows the first scout in a pane under its title, its ask folded, with Action items, Findings and its hypotheses line, Progress and Thread", async () => {
   await mount("#/scouts");
   const region = screen.getByRole("region", { name: "scout 31" });
   expect(pane().contains(region)).toBe(true);
-  expect(within(region).getByRole("heading", { name: ASK })).toBeTruthy();
+  expect(within(region).getByRole("heading", { level: 2, name: TITLE })).toBeTruthy();
+  expect(within(region).getByRole("button", { name: "Ask", expanded: false })).toBeTruthy();
+  expect(within(region).queryByText(ASK)).toBeNull();
   const items = within(region).getByRole("region", { name: "Action items" });
   expect(items.querySelector("[data-to-file]")!.textContent).toBe("2 to file");
   expect(current()).toEqual([["31", "true"]]);
-  expect(within(region).queryByRole("region", { name: "Progress" })).toBeNull();
-  expect(within(region).queryByText("Stage")).toBeNull();
-  expect(within(region).queryByRole("heading", { name: "Hypotheses" })).toBeNull();
-  const report = within(region).getByRole("region", { name: "Report" });
-  expect(items.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const findings = within(region).getByRole("region", { name: "Findings" });
+  expect(items.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(findings.querySelector("button[data-reproduction]")!.textContent).toBe("reproduced in a test · 1 hypothesis · 1 supported");
+  const progress = within(region).getByRole("region", { name: "Progress" });
+  expect(findings.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(within(region).getByRole("textbox", { name: "Question for the scout" })).toBeTruthy();
-  expect(region.querySelector("[data-scout-facts]")!.textContent).toBe(
-    "scout 31 · bug · demo · base a41c9e2 · started 11:46 PDT · 14m of a 30m budget · lead opus · helpers luna ×4 · 10 of 10 back",
-  );
+  const facts = region.querySelector("[data-scout-facts]")!;
+  expect(facts.querySelector("[data-scout-what]")!.textContent).toBe("scout 31 · bug · demo · base a41c9e2 · started Thu 11:46 PDT");
+  expect(facts.querySelector("[data-scout-cost]")!.textContent).toBe("14m of 30m · lead opus · helpers luna ×4 · 10 of 10 back");
   expect(within(region).getByRole("link", { name: "Open scout 31" }).getAttribute("href")).toBe("/#/scouts/demo/31");
 });
 
