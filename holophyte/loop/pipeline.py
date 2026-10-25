@@ -18,9 +18,9 @@ from holophyte.loop.claim import (
     claimed_run,
     merge_conflicts,
 )
-from holophyte.loop.dispatch import HANDED_OFF, SWEPT
-from holophyte.loop.gate_build import GateHandoff, before_gate
-from holophyte.loop.gates import InfraFailure, sh
+from holophyte.loop.dispatch import HANDED_OFF, REEXEC, SWEPT
+from holophyte.loop.gate_build import GateHandoff, GateReexec, before_gate
+from holophyte.loop.gates import InfraFailure, RunFailure, sh
 from holophyte.loop.gates import (
     MergeParked as MergeParked,
 )
@@ -73,11 +73,40 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
         print(f"[holo2] run {swept.run_id} was ended by the supervisor"
               f" ({swept.reason}); stopping this turn")
         return SWEPT
+    except GateReexec:
+        return REEXEC
+
+
+def _ticket_text(project, conn, run_id, title, body):
+    ticket = f"{title}\n\n{body}" if body else title
+    if conn is not None:
+        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+        ticket += story_brief(project, conn, ticket_id)
+        ticket += moved_landmarks.renamed_brief(conn, ticket_id)
+        ticket = maintainer_notes.carry_amendments(conn, run_id, ticket)
+    return ticket
+
+
+def _resume_into_gate(run, task):
+    gate, wt = task["_gate"], run.wt
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt) if wt.exists() else None
+    if head != gate["sha"]:
+        raise RunFailure(f"the worktree {wt} is at {head}, not the approved"
+                         f" {gate['sha']}; not resuming at the merge gate")
+    body = (task.get("body") or "").strip()
+    ticket = _ticket_text(run.project, run.conn, run.run_id, task["title"], body)
+    ticket = reviewed_ticket(run.conn, run.run_id, ticket)
+    beat_s = sweep_config(run.project).heartbeat_stale_ms / 2000
+    return _merge_stage(run, beat_s, gate["sha"], gate["rnd"], ticket,
+                        task.get("verify"), task.get("contracts"), body,
+                        list(task.get("criteria") or ()), task.get("url"))
 
 
 def _run_stages(run, task):
+    if task.get("_gate"):
+        return _resume_into_gate(run, task)
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
-    task_id, issue_id, started = run.task_id, run.issue_id, run.started
+    task_id = run.task_id
     verify_cmd, budget_min = task.get("verify"), task["budget_min"]
     contracts = task.get("contracts")
     body = (task.get("body") or "").strip()
@@ -104,12 +133,7 @@ def _run_stages(run, task):
     base_sha = sh(["git", "rev-parse", "main"], project.path)
     start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
-    ticket = f"{task}\n\n{body}" if body else task
-    if conn is not None:
-        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-        ticket += story_brief(project, conn, ticket_id)
-        ticket += moved_landmarks.renamed_brief(conn, ticket_id)
-        ticket = maintainer_notes.carry_amendments(conn, run_id, ticket)
+    ticket = _ticket_text(project, conn, run_id, task, body)
     conflicts = merge_conflicts(wt)
     resume = continuation(conn, run_id)
     test = None if resume or conflicts else reproduce.first_turn(
@@ -161,7 +185,16 @@ def _run_stages(run, task):
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)
-    before_gate(conn, run_id, sha)
+    before_gate(project, conn, run_id, sha, rnd)
+    return _merge_stage(run, beat_s, sha, rnd, ticket, verify_cmd, contracts,
+                        body, criteria, issue_url)
+
+
+def _merge_stage(run, beat_s, sha, rnd, ticket, verify_cmd, contracts, body,
+                 criteria, issue_url):
+    project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
+    task_id, issue_id, started = run.task_id, run.issue_id, run.started
+    task, branch, wt, budget_min = run.task, run.branch, run.wt, run.budget_min
     merge = merge_config(project)
     # Under `mode = "pr"` the merge lock covers the push-and-open alone.
     if merge.mode == "pr":

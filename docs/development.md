@@ -831,9 +831,12 @@ Each module, one line:
 - `holophyte/host/startup.py` — eager package imports, build identity and live-worker checkout guard.
 - `holophyte/loop/pool_handoff.py` — schema-aware restart and child ownership across exec.
 - `holophyte/loop/gate_build.py` — before the merge gate, a pool worker whose
-  factory checkout moved since it loaded hands the approved run to the next
-  build: the run pauses at `merge_gate` with its candidate and the worker
-  exits `WORKER_HANDOFF`.
+  factory checkout moved since it loaded re-executes into the merge gate when
+  the schema at the checkout's HEAD is unchanged: it records a `gate_reexec`
+  event and `execv`s itself in the same pid with `HOLOPHYTE_GATE_RUN` naming
+  the run, which the new image resumes straight at the merge stage.
+  Otherwise it hands the approved run off to the next build: the run pauses
+  at `merge_gate` with its candidate and the worker exits `WORKER_HANDOFF`.
 - `holophyte/loop/pool.py` — the worker pool and its scheduler (KO-343):
   `scheduler()` over `factory.py --worker` children under
   `[loop] workers > 1`, `worker()` as one child, the spawn and wait

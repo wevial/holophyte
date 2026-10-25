@@ -4,6 +4,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+from dataclasses import dataclass
 from time import monotonic, sleep
 
 import store
@@ -13,7 +14,7 @@ from holophyte.config.config_tables import loop_config
 from holophyte.host.reconcile import _reconcile_at_startup
 from holophyte.host.startup import banner
 from holophyte.host.supervisor import Sweep, linear_budget_low
-from holophyte.loop import pool_handoff
+from holophyte.loop import gate_build, pool_handoff
 from holophyte.loop.gates import MergeLockHeld, merge_lock
 from holophyte.loop.reexec import reexec_command
 from holophyte.loop.runs import open_store
@@ -30,6 +31,11 @@ WORKER_HANDOFF = 6
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
 SPAWN = subprocess.Popen
+
+
+@dataclass(frozen=True)
+class Reexec:
+    run_id: int
 
 
 WAIT_POLL_S = 0.5
@@ -82,9 +88,11 @@ def worker(target, provider):
             if not startup_routes(target, provider, critic=False):
                 return WORKER_STOP
         result = _worker(target, provider)
-        return WORKER_STOP if routes(target).failed else result
+        if not isinstance(result, Reexec):
+            return WORKER_STOP if routes(target).failed else result
     finally:
         reset(target)
+    return gate_build.replace_into_gate(result.run_id)
 
 
 def witness_child(target, provider):
@@ -107,23 +115,33 @@ def witness_child(target, provider):
 def _worker(target, provider):
     from holophyte.loop.claim import _claim_next
     from holophyte.loop.claim_store import BOARD_DOWN
-    from holophyte.loop.dispatch import HANDED_OFF, PARKED, _dispatch
+    from holophyte.loop.dispatch import HANDED_OFF, PARKED, REEXEC, _dispatch
 
+    gate_run = os.environ.pop(gate_build.GATE_RUN_ENV, None)
     knobs = loop_config(target)
     conn = open_store(target)
     try:
         project = store.tickets.ensure_project(conn, provider.team, target.path)
-        if linear_budget_low():
+        if gate_run:
+            resumed = gate_build.gate_task(target, conn, provider, int(gate_run))
+            if resumed is None:
+                print(f"[holo2] run {gate_run} is not waiting at the merge gate;"
+                      " nothing to resume")
+                return WORKER_IDLE
+            (task, ticket_id), run_id = resumed, int(gate_run)
+        elif linear_budget_low():
             return WORKER_IDLE
-        task, ticket_id, run_id = _claim_next(target, conn, project, provider,
-                                              knobs.order, set(), NOTHING_SEEN)
-        if task is BOARD_DOWN:
-            return WORKER_BOARD_DOWN
-        if not task:
-            print("[holo2] nothing left to claim; worker done.")
-            return WORKER_IDLE
-        if run_id is None:
-            return WORKER_STOP
+        else:
+            task, ticket_id, run_id = _claim_next(
+                target, conn, project, provider, knobs.order, set(),
+                NOTHING_SEEN)
+            if task is BOARD_DOWN:
+                return WORKER_BOARD_DOWN
+            if not task:
+                print("[holo2] nothing left to claim; worker done.")
+                return WORKER_IDLE
+            if run_id is None:
+                return WORKER_STOP
         merged = _dispatch(target, conn, run_id, provider, task, ticket_id,
                            refresh=False)
         if merged is PARKED:
@@ -131,6 +149,8 @@ def _worker(target, provider):
             return WORKER_PARKED
         if merged is HANDED_OFF:
             return WORKER_HANDOFF
+        if merged is REEXEC:
+            return Reexec(run_id)
         if not merged:
             _render_findings_locked(target, conn, run_id, task)
             return WORKER_FAILED

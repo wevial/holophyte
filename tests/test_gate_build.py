@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import json
 import os
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -26,10 +28,11 @@ BRANCH = "task/ko-131-add-a-thing"
 
 
 class GateBuildTests(LoopFixture):
-    """A pool worker whose factory checkout moved under its run hands the
+    """A pool worker whose factory checkout moved under its run re-executes
+    into the merge gate under an unchanged schema and otherwise hands the
     approved candidate to the next build instead of gating it."""
 
-    def worker(self, *script, provider, build):
+    def worker(self, *script, provider, build, env=()):
         fake = FakeAgent(*script)
         out = io.StringIO()
         with no_agent_processes(), \
@@ -39,7 +42,8 @@ class GateBuildTests(LoopFixture):
                 patch.object(holophyte.loop.review_round, "agent", fake), \
                 patch.object(holophyte.loop.adjudicate, "agent", fake), \
                 patch.object(holophyte.host.startup, "BUILD", build), \
-                patch.dict(os.environ, {holophyte.loop.pool.WORKER_SLOT_ENV: "2"}), \
+                patch.dict(os.environ, {holophyte.loop.pool.WORKER_SLOT_ENV: "2",
+                                        **dict(env)}), \
                 patch.object(sys, "stdout", out):
             rc = holophyte.loop.pool.worker(self.project, provider)
         return rc, out.getvalue()
@@ -89,32 +93,88 @@ class GateBuildTests(LoopFixture):
         self.assertIn(f"Merge {BRANCH}: add a thing", self.subjects())
         self.git("merge-base", "--is-ancestor", candidate, "main")
 
-    def test_a_moved_checkout_under_an_unchanged_schema_reexecutes_in_place(self):
+    def commit_schema(self, version):
         (self.target / "store").mkdir(exist_ok=True)
         (self.target / "store" / "schema.py").write_text(
-            f"SCHEMA_VERSION = {store.schema.SCHEMA_VERSION}\n")
+            f"SCHEMA_VERSION = {version}\n")
         self.git("add", "store/schema.py")
-        self.git("commit", "-q", "-m", "the schema stays put")
+        self.git("commit", "-q", "-m", "the schema at the checkout's HEAD")
+        return self.git("rev-parse", "HEAD").strip()
+
+    def test_a_moved_checkout_under_an_unchanged_schema_reexecutes_in_place(self):
+        head = self.commit_schema(store.schema.SCHEMA_VERSION)
+        provider = StubProvider(a_task(1))
         calls = []
 
         def record(*args):
             calls.append(
                 (args, os.environ.get("HOLOPHYTE_GATE_RUN"),
-                 self.read("SELECT id, endedAt FROM runs")))
+                 self.read("SELECT id, endedAt FROM runs"), self.transitions()))
 
         with patch.object(holophyte.loop.gate_build, "EXEC", record,
                           create=True):
             rc, _ = self.worker(Commit("the scripted work"), APPROVE,
-                                provider=StubProvider(a_task(1)),
-                                build=self.base)
+                                provider=provider, build=self.base)
 
         self.assertEqual(self.read(
             "SELECT 1 FROM runEvents WHERE kind = 'gate_handoff'"), [])
         self.assertNotEqual(rc, holophyte.loop.pool.WORKER_HANDOFF)
         self.assertEqual(len(calls), 1, calls)
-        (run_id, ended), = calls[0][2]
-        self.assertEqual(calls[0][1], str(run_id))
+        _, gate_run, runs, transitions = calls[0]
+        (run_id, ended), = runs
+        self.assertEqual(gate_run, str(run_id))
         self.assertIsNone(ended)
+        self.assertNotIn("reviewing -> merge_gate", transitions)
+        candidate = self.git("rev-parse", BRANCH).strip()
+        (payload,), = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'gate_reexec'")
+        payload = json.loads(payload)
+        self.assertEqual((payload["leaving"], payload["arriving"],
+                          payload["sha"]), (self.base, head, candidate))
+
+        rc, _ = self.worker(provider=provider, build=head,
+                            env={"HOLOPHYTE_GATE_RUN": gate_run})
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_MERGED)
+        self.assertEqual(self.read("SELECT id, outcome FROM runs"),
+                         [(run_id, "merged")])
+        self.assertIn(f"Merge {BRANCH}: add a thing", self.subjects())
+        self.git("merge-base", "--is-ancestor", candidate, "main")
+
+    def test_a_moved_checkout_under_a_changed_schema_still_hands_off(self):
+        self.commit_schema(store.schema.SCHEMA_VERSION + 1)
+        calls = []
+
+        with patch.object(holophyte.loop.gate_build, "EXEC",
+                          lambda *a: calls.append(a)):
+            rc, _ = self.worker(Commit("the scripted work"), APPROVE,
+                                provider=StubProvider(a_task(1)),
+                                build=self.base)
+
+        self.assertEqual(calls, [])
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_HANDOFF)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        self.assertEqual(len(self.read(
+            "SELECT 1 FROM runEvents WHERE kind = 'gate_handoff'")), 1)
+        self.assertEqual(self.read(
+            "SELECT 1 FROM runEvents WHERE kind = 'gate_reexec'"), [])
+
+    def test_a_gate_run_that_has_ended_resumes_nothing(self):
+        head = self.git("rev-parse", "HEAD").strip()
+        provider = StubProvider(a_task(1))
+        self.worker(Commit("the scripted work"), APPROVE, provider=provider,
+                    build=head)
+        (run_id, outcome), = self.read("SELECT id, outcome FROM runs")
+        self.assertEqual(outcome, "merged")
+        provider.queue.append(a_task(2))
+
+        rc, out = self.worker(provider=provider, build=head,
+                              env={"HOLOPHYTE_GATE_RUN": str(run_id)})
+
+        self.assertIn(f"run {run_id} is not waiting at the merge gate;"
+                      " nothing to resume", out)
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_IDLE)
+        self.assertEqual(self.read("SELECT id FROM runs"), [(run_id,)])
 
     def assert_gated_in_place(self, build):
         rc, _ = self.worker(Commit("the scripted work"), APPROVE,
@@ -130,6 +190,33 @@ class GateBuildTests(LoopFixture):
 
     def test_a_worker_with_no_loaded_build_gates_the_run_in_place(self):
         self.assert_gated_in_place(None)
+
+
+REEXEC_CHILD = f"""
+import os, sys
+sys.path.insert(0, {str(ROOT)!r})
+from holophyte.loop import gate_build
+print("pid", os.getpid(), flush=True)
+if os.environ.get("HOLOPHYTE_GATE_RUN"):
+    print("gate", os.environ["HOLOPHYTE_GATE_RUN"])
+    sys.exit(0)
+gate_build.replace_into_gate(7)
+"""
+
+
+class ReplaceIntoGateTests(unittest.TestCase):
+    def test_the_worker_reexecutes_in_its_own_pid_with_the_gate_run_set(self):
+        env = {k: v for k, v in os.environ.items() if k != "HOLOPHYTE_GATE_RUN"}
+
+        done = subprocess.run([sys.executable, "-c", REEXEC_CHILD], env=env,
+                              capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        lines = done.stdout.split("\n")
+        pids = [line.split()[1] for line in lines if line.startswith("pid ")]
+        self.assertEqual(len(pids), 2, done.stdout)
+        self.assertEqual(pids[0], pids[1])
+        self.assertIn("gate 7", lines)
 
 
 if __name__ == "__main__":

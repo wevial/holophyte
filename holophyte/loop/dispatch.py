@@ -146,6 +146,17 @@ class _HandedOff:
 HANDED_OFF = _HandedOff()
 
 
+class _Reexec:
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return "REEXEC"
+
+
+REEXEC = _Reexec()
+
+
 def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
     from holophyte.loop.pipeline import run_task
 
@@ -173,7 +184,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         cleanup_review_refs(target.path, run_id)
         if merged is PARKED:
             release_lease_label(target, conn, ticket_id, provider, run_id)
-        elif merged is SWEPT or merged is HANDED_OFF:
+        elif merged is SWEPT or merged is HANDED_OFF or merged is REEXEC:
             pass
         elif merged:
             release_run(conn, run_id, True,

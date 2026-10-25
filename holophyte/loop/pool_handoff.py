@@ -40,13 +40,13 @@ def next_slot(pool):
 SCHEMA_LITERALS = ("SCHEMA_VERSION", "READABLE_FROM")
 
 
-def fetched_schema(target):
+def fetched_schema(target, ref="origin/main"):
     """Read without importing the arriving store; an unreadable one keeps the drain."""
     from holophyte.cli.operator import sh
 
     found = {}
     try:
-        tree = ast.parse(sh(["git", "show", "origin/main:store/schema.py"],
+        tree = ast.parse(sh(["git", "show", f"{ref}:store/schema.py"],
                             factory_checkout()))
     except (OSError, RuntimeError, SyntaxError, ValueError):
         return None, None
