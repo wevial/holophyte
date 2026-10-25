@@ -11,10 +11,8 @@ import { StateDot } from "./StateDot";
 
 type Shown = Extract<ScoutPage, { kind: "scout" }>;
 
-const CLAMPS = { 3: "line-clamp-3" } as const;
-
-/** `text` clamped to `lines`, with More shown only when the clamp hides some of it. */
-function Sentence({ text, lines }: { text: string; lines: keyof typeof CLAMPS }) {
+/** `text` clamped to three lines, with More shown only when the clamp hides some of it. */
+function Sentence({ text }: { text: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const [open, setOpen] = useState(false);
   const [clipped, setClipped] = useState(false);
@@ -32,7 +30,7 @@ function Sentence({ text, lines }: { text: string; lines: keyof typeof CLAMPS })
   }, [text, open]);
   return (
     <div className="min-w-0">
-      <p ref={ref} role="status" className={`m-0 max-w-[70ch] font-read text-[17px] leading-[1.5] text-ink ${open ? "" : CLAMPS[lines]}`}>
+      <p ref={ref} role="status" className={`m-0 max-w-[70ch] font-read text-[17px] leading-[1.5] text-ink ${open ? "" : "line-clamp-3"}`}>
         {text}
       </p>
       {(clipped || open) && (
@@ -67,7 +65,7 @@ function Verdict({ page }: { page: Shown }) {
       </>
     );
   } else if (report != null) {
-    body = <Sentence key={report.summary} text={report.summary} lines={3} />;
+    body = <Sentence key={report.summary} text={report.summary} />;
   } else {
     body = <p role="status" className="m-0 max-w-[70ch] font-read text-[17px] leading-[1.5] text-ink [overflow-wrap:anywhere]">{page.sentence}</p>;
   }

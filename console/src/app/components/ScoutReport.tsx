@@ -130,23 +130,21 @@ function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: stri
 
 function Hypotheses({ hypotheses }: { hypotheses: Hypothesis[] }) {
   return (
-    <>
-      <ol aria-label="Hypotheses" className="m-0 mt-2 list-none p-0">
-        {hypotheses.map((each, index) => {
-          const verdict = VERDICTS[each.verdict];
-          return (
-            <li key={index} data-hypothesis className={ROW}>
-              <span data-hypothesis-id className={ID}>H{index + 1}</span>
-              <span><span data-verdict className={`${CHIP} ${verdict.tone}`}>{verdict.word}</span></span>
-              <div className="min-w-0 max-[720px]:col-start-2">
-                <p data-hypothesis-text className={TEXT}>{each.hypothesis}</p>
-                <p data-separates className="m-0 mt-0.5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{each.separates}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </>
+    <ol aria-label="Hypotheses" className="m-0 mt-2 list-none p-0">
+      {hypotheses.map((each, index) => {
+        const verdict = VERDICTS[each.verdict];
+        return (
+          <li key={index} data-hypothesis className={ROW}>
+            <span data-hypothesis-id className={ID}>H{index + 1}</span>
+            <span><span data-verdict className={`${CHIP} ${verdict.tone}`}>{verdict.word}</span></span>
+            <div className="min-w-0 max-[720px]:col-start-2">
+              <p data-hypothesis-text className={TEXT}>{each.hypothesis}</p>
+              <p data-separates className="m-0 mt-0.5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{each.separates}</p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

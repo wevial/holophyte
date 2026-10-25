@@ -157,4 +157,3 @@ export function composeBlock(detail: ScoutDetail, actions: boolean): string | nu
   const waiting = detail.thread.find((message) => asksOrSteers(message) && message.consumed_by == null);
   return waiting == null ? null : `Message ${waiting.id} waits for ${waitingFor(detail)}.`;
 }
-
