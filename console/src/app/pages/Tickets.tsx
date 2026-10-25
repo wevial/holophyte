@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { projectName } from "../../lib/derive";
 import { Btn } from "../components/Btn";
@@ -7,15 +7,17 @@ import { BoardLane, GRID, LaneGrid } from "../components/BoardLane";
 import { GroupBy, readGroup, writeGroup } from "../components/GroupBy";
 import { StateDot } from "../components/StateDot";
 import { TicketPeek } from "../components/TicketPeek";
+import { StatePicker, TicketSearchField } from "../components/TicketSearch";
 import { TicketTable } from "../components/TicketTable";
 import { readView, ViewToggle, writeView, type TicketView } from "../components/ViewToggle";
 import { storeScope, switcherRows } from "../projects";
-import type { ScopeSearch } from "../scope";
+import { useTicketSearch } from "../queries";
+import { PollDepsContext, type ScopeSearch } from "../scope";
 import {
   boardLanes,
   COLUMN_HEADS,
   COLUMN_IDS,
-  FILTER_LABELS,
+  cardMatches,
   ticketView,
   useTicketBoard,
   type ColumnId,
@@ -38,8 +40,10 @@ function findCard(columns: Record<ColumnId, TicketCard[]>, id: string | null): {
 
 export function Tickets() {
   const board = useTicketBoard();
-  const { filter }: TicketsSearch = useSearch({ from: "/tickets" });
-  const shown = (cards: TicketCard[]) => (filter == null ? cards : cards.filter((card) => ticketView(card) === filter));
+  const { filter, q }: TicketsSearch = useSearch({ from: "/tickets" });
+  const hits = useTicketSearch(board.boards.map(({ host }) => host), q ?? "", useContext(PollDepsContext));
+  const kept = (card: TicketCard) => (filter == null || ticketView(card) === filter) && (q == null || cardMatches(card, q, hits));
+  const shown = (cards: TicketCard[]) => cards.filter(kept);
   const columns = Object.fromEntries(COLUMN_IDS.map((id) => [id, shown(board.columns[id])])) as Record<ColumnId, TicketCard[]>;
   const cards = shown(board.cards);
   const view = { ...board, columns, cards, total: cards.length };
@@ -48,7 +52,8 @@ export function Tickets() {
   const newProject = projects.find(row => row.name != null && board.boards.some(({ host, board }) =>
     board?.editable && host.project != null && projectName(host.project) === row.name))?.name;
   const [openId, setOpenId] = useState<string | null>(null);
-  const [layout, setLayout] = useState<TicketView>(readView);
+  const [chosen, setChosen] = useState<TicketView>(readView);
+  const layout: TicketView = filter == null ? chosen : "table";
   const [group, setGroup] = useState<GroupMode>(readGroup);
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const modes: GroupMode[] = view.project == null ? ["project", "story", "none"] : ["story", "none"];
@@ -61,7 +66,7 @@ export function Tickets() {
   };
   const pickView = (next: TicketView) => {
     writeView(next);
-    setLayout(next);
+    setChosen(next);
   };
   const foldLane = (id: string) => {
     const next = new Set(folded);
@@ -88,6 +93,7 @@ export function Tickets() {
   const empty = (
     <p className="mt-4 font-mono text-[13px] text-ink-3">{view.project == null ? "No open tickets." : `No open tickets in ${view.project}.`}</p>
   );
+  const noMatch = (filter != null || q != null) && view.total === 0;
   return (
     <section aria-labelledby="page-title" className="flex flex-col px-8 pt-3.5 pb-7 min-[720px]:h-full">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
@@ -123,24 +129,12 @@ export function Tickets() {
             </button>
           </div>
         )}
-        {filter != null && (
-          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
-            <span>
-              Showing <b className="font-medium text-act">{FILTER_LABELS[filter]}</b> tickets only
-            </span>
-            <button
-              type="button"
-              onClick={() => void navigate({ to: ".", search: (previous: ScopeSearch & TicketsSearch) => ({ ...previous, filter: undefined }) })}
-              className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
-            >
-              Show all tickets
-            </button>
-          </div>
-        )}
+        <StatePicker />
       </header>
       {view.answered && (
         <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2.5">
-          <ViewToggle view={layout} onPick={pickView} />
+          <TicketSearchField />
+          {filter == null && <ViewToggle view={layout} onPick={pickView} />}
           <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
           {mode !== "none" && (
             <button
@@ -153,7 +147,8 @@ export function Tickets() {
           )}
         </div>
       )}
-      {view.answered && layout === "table" && (
+      {view.answered && noMatch && <p className="mt-4 font-mono text-[13px] text-ink-3">No tickets match</p>}
+      {view.answered && !noMatch && layout === "table" && (
         <div data-table-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
           {view.total === 0 ? (
             empty
@@ -162,7 +157,7 @@ export function Tickets() {
           )}
         </div>
       )}
-      {view.answered && layout === "board" && (
+      {view.answered && !noMatch && layout === "board" && (
         <div data-board-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
           <div className="min-w-[1160px]">
             <div data-column-heads className={`${GRID} sticky top-0 z-10 bg-canvas ${mode === "none" ? "px-3" : "px-[17px]"}`}>

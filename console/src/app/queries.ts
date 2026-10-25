@@ -19,6 +19,7 @@ import {
   shippedSchema,
   storyDetailSchema,
   ticketDetailSchema,
+  ticketSearchSchema,
   transcriptSchema,
   type Board,
   type BoardStory,
@@ -188,6 +189,27 @@ export function ticketQuery(base: string, key: string, fetch: Fetch) {
 
 export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
   return useQuery(ticketQuery(base, key, deps.fetch));
+}
+
+/** Each status-answering host's `/tickets?q=` answer for `text`, as its
+ *  base to the keys it named; asked once per host and text, idle while
+ *  `text` is blank. A host whose read failed names none. */
+export function useTicketSearch(hosts: HostRecord<PollBodies>[], text: string, deps: { fetch: Fetch }): Map<string, Set<string>> {
+  const asked = text.trim() === "" ? [] : hosts.filter((host) => host.status != null);
+  const path = `/tickets?q=${encodeURIComponent(text.trim())}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, ticketSearchSchema),
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const hits = new Map<string, Set<string>>();
+  asked.forEach((host, index) => {
+    const result = results[index];
+    if (result?.status === "success" && result.data) hits.set(host.base, new Set(result.data.tickets));
+  });
+  return hits;
 }
 
 export interface StoryAnswer<R> {
