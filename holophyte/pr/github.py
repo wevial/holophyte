@@ -537,9 +537,10 @@ def pull_body_html(target, pull):
     return answer.get("body_html") or ""
 
 
-def job_log(target, pull, job_id):
+def job_log(target, pull, job_id, query=""):
     """The endpoint redirects to plain text, not JSON."""
     path = f"repos/{pull.owner}/{pull.name}/actions/jobs/{job_id}/logs"
+    path += f"?{query}" if query else ""
     if shutil.which(GH) is not None:
         return _gh_output(target, pull.host, "GET", path, None)
     return _api_output(pull.host, "GET", path, None, _route_token())

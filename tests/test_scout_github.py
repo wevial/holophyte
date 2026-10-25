@@ -286,6 +286,20 @@ class GetTests(GithubCase):
                                             path).text, short_log)
         self.assertEqual({call[-1] for call in self.gh.calls()}, {full})
 
+    def test_a_job_log_query_is_fetched_and_recorded_with_the_path(self):
+        conn, scout_id = self.live_scout(self.path)
+        full = "repos/example/repo/actions/jobs/41/logs?probe=1"
+        self.gh.answer("repos/example/repo/actions/jobs/41/logs", "plain")
+        self.gh.answer(full, "queried")
+        answer = called(self.target(self.path), scout_id, "github_get",
+                        {"path": "actions/jobs/41/logs?probe=1"})
+        self.assertEqual(answer.text, "queried")
+        self.assertEqual([call[-1] for call in self.gh.calls()], [full])
+        (payload,) = conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_github'", (scout_id,)).fetchone()
+        self.assertEqual(json.loads(payload)["path"], full)
+
     def test_the_commit_listing_is_read_less_api_links_at_every_depth(self):
         listing = "repos/example/repo/commits?per_page=2"
         self.gh.answer(listing, json.dumps([{

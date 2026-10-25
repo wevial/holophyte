@@ -117,7 +117,8 @@ def tail_capped(text):
 
 def fetched(project, repo, path, job):
     if job:
-        return tail_capped(github.job_log(project, repo, job[1]))
+        return tail_capped(github.job_log(project, repo, job[1],
+                                          path.partition("?")[2]))
     answer = github._call(project, repo.host, "GET", path, None)
     return capped(json.dumps(trimmed(answer), ensure_ascii=False))
 
@@ -127,9 +128,11 @@ def github_get(project, repo, path, method="GET"):
         path = guarded(repo, path, method)
     except Refused as refused:
         return Answer(f"[holo2] github_get refused: {refused}", REFUSED)
-    job = JOB_LOG.fullmatch(path.partition("?")[0])
+    route, mark, query = path.partition("?")
+    job = JOB_LOG.fullmatch(route)
     if job:
-        path = job[0]
+        path = f"repos/{repo.owner}/{repo.name}/actions/jobs/{job[1]}/logs"
+        path += mark + query
     try:
         return Answer(fetched(project, repo, path, job), path=path)
     except (InfraFailure, OSError) as failure:
