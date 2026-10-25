@@ -172,6 +172,7 @@ PINNED = {
     "holophyte/loop/escalation.py": 0,
     "holophyte/loop/failure_triage.py": 0,
     "holophyte/loop/follow_ups.py": 5,
+    "holophyte/loop/gate_build.py": 1,
     "holophyte/loop/gates.py": 20,
     "holophyte/loop/implement.py": 8,
     "holophyte/loop/implementer_profile.py": 2,
