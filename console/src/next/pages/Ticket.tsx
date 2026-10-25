@@ -13,6 +13,7 @@ import { SteerBox } from "../components/SteerBox";
 import { SteerNotes } from "../components/SteerNotes";
 import { StoryPanel } from "../components/StoryPanel";
 import { Chip, Fact, NUMBER } from "../components/TicketPeek";
+import { TicketBody, type BodyView } from "../components/TicketBody";
 import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
 import { TitleText } from "../components/TitleText";
@@ -70,6 +71,8 @@ export function TicketPage() {
   const { project, key } = useParams({ from: "/tickets/$project/$key" });
   const page = useTicketPage(project, key);
   const [steeringKey, setSteeringKey] = useState<string | null>(null);
+  const [body, setBody] = useState<{ at: string; view: BodyView; editing: number | null } | null>(null);
+  if (body != null && body.at !== `${project}/${key}`) setBody(null);
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "loading") return <Page project={project} ticketKey={key} />;
   if (page.kind === "not_mirrored") {
@@ -90,6 +93,8 @@ export function TicketPage() {
   const waitsOn = page.card?.waitsOn ?? [];
   const actionsOn = page.host.status?.actions === true;
   const steering = steeringKey === `${project}/${key}`;
+  const { view, editing } = body?.at === `${project}/${key}` ? body : { view: "fields" as const, editing: null };
+  const showBody = (next: { view: BodyView; editing: number | null }) => setBody({ at: `${project}/${key}`, ...next });
   return (
     <Page project={project} ticketKey={key}>
       <div className="border-b border-rule pb-3">
@@ -104,7 +109,16 @@ export function TicketPage() {
               </Btn>
             )}
             <ScoutThis target={{ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actionsOn ? null : ACTIONS_OFF }} />
-            <TicketMoves key={`${project}/${key}`} project={project} ticketKey={key} ticket={ticket} host={page.host} liveRun={page.liveRun} />
+            <TicketMoves
+              key={`${project}/${key}`}
+              project={project}
+              ticketKey={key}
+              ticket={ticket}
+              host={page.host}
+              liveRun={page.liveRun}
+              onEditRaw={view === "markdown" ? (revision) => showBody({ view, editing: revision }) : undefined}
+              editOpen={editing != null}
+            />
           </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} base={page.host.base} />}
@@ -114,26 +128,36 @@ export function TicketPage() {
       )}
       <div className="mt-3.5 grid border border-rule bg-paper min-[860px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 border-b border-rule px-8 pb-8 pt-[22px] max-[720px]:px-5 min-[860px]:border-b-0 min-[860px]:border-r">
-          <div className={SECTION_LABEL}>Summary</div>
-          <p className="m-0 mt-3 max-w-[75ch] font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
-          <div className="mt-[26px]">
-            <Criteria
-              rows={criteriaRows(ticket.criteria, typeof judged === "string" ? [] : judged, ticket.run != null)}
-              run={ticket.run}
-              held={typeof judged === "string" ? judged : null}
-            />
-          </div>
-          <details className="mt-2.5">
-            <summary className="flex min-h-11 cursor-pointer items-center gap-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-2">
-              Verify
-              <span className="normal-case tracking-[.04em] text-ink-3">
-                {commands.length} {commands.length === 1 ? "command" : "commands"}
-              </span>
-            </summary>
-            <pre className="m-0 whitespace-pre-wrap border border-rule bg-paper-2 px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] [overflow-wrap:anywhere] text-ink">
-              {commands.join("\n")}
-            </pre>
-          </details>
+          <TicketBody
+            ticketKey={key}
+            base={page.host.base}
+            text={ticket.current?.body ?? ticket.body}
+            view={view}
+            editing={editing}
+            onView={(next) => showBody({ view: next, editing: null })}
+            onClose={() => showBody({ view: "markdown", editing: null })}
+          >
+            <div className={SECTION_LABEL}>Summary</div>
+            <p className="m-0 mt-3 max-w-[75ch] font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
+            <div className="mt-[26px]">
+              <Criteria
+                rows={criteriaRows(ticket.criteria, typeof judged === "string" ? [] : judged, ticket.run != null)}
+                run={ticket.run}
+                held={typeof judged === "string" ? judged : null}
+              />
+            </div>
+            <details className="mt-2.5">
+              <summary className="flex min-h-11 cursor-pointer items-center gap-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-2">
+                Verify
+                <span className="normal-case tracking-[.04em] text-ink-3">
+                  {commands.length} {commands.length === 1 ? "command" : "commands"}
+                </span>
+              </summary>
+              <pre className="m-0 whitespace-pre-wrap border border-rule bg-paper-2 px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] [overflow-wrap:anywhere] text-ink">
+                {commands.join("\n")}
+              </pre>
+            </details>
+          </TicketBody>
           <TicketRuns ticketKey={key} runs={ticket.runs} liveRuns={page.liveRuns} staleMs={page.staleMs} base={page.host.base} now={now} />
           <SteerNotes steers={ticket.steers} now={now} />
         </div>
