@@ -1,5 +1,6 @@
 """Capture specs and capture output a local-capture candidate never pushes."""
 import os
+import posixpath
 import re
 import shlex
 import subprocess
@@ -24,10 +25,21 @@ def default_spec(command):
     return defaults[-1] if defaults else None
 
 
-def is_capture_file(path, capture_dir, default):
+def default_spellings(spec, roots):
+    if spec is None:
+        return set()
+    if not os.path.isabs(spec):
+        return {PurePosixPath(posixpath.normpath(spec))}
+    spec = os.path.realpath(spec)
+    return {PurePosixPath(Path(os.path.relpath(spec, root)).as_posix())
+            for root in map(os.path.realpath, roots)
+            if os.path.commonpath([spec, root]) == root}
+
+
+def is_capture_file(path, capture_dir, defaults=frozenset()):
     path = PurePosixPath(path)
     if path.name.endswith(SUFFIX) and TICKET.match(path.name[:-len(SUFFIX)]):
-        if default is None or path != PurePosixPath(default):
+        if path not in defaults:
             return True
     if path.is_relative_to(PurePosixPath(capture_dir)):
         return True
@@ -47,9 +59,15 @@ def added_capture_files(project, repo, ref):
                            " the candidate's capture files cannot be listed")
     added = sh(["git", "diff", "--name-only", "--no-renames", "--diff-filter=A",
                 "-z", f"{base}...{ref}"], repo).split("\0")
-    default = default_spec(cfg.ui_capture)
+    defaults = default_spellings(default_spec(cfg.ui_capture), worktrees(repo))
     return [p for p in added
-            if p and is_capture_file(p, cfg.ui_capture_dir, default)]
+            if p and is_capture_file(p, cfg.ui_capture_dir, defaults)]
+
+
+def worktrees(repo):
+    listing = sh(["git", "worktree", "list", "--porcelain"], repo)
+    return [line[len("worktree "):] for line in listing.splitlines()
+            if line.startswith("worktree ")]
 
 
 def checkout_of(repo, branch):

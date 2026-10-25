@@ -54,9 +54,9 @@ class Repository(unittest.TestCase):
         self.script.write_text(CAPTURE)
         self.project = holophyte.config.project.Project.locate(self.repo)
 
-    def configure(self, local):
+    def configure(self, local, default=DEFAULT):
         command = shlex.join([sys.executable, str(self.script),
-                              "--default", DEFAULT])
+                              "--default", str(default)])
         self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.project.config_path.write_text(
             '[merge]\nmode = "pr"\nui_paths = ["ui/*"]\n'
@@ -114,6 +114,15 @@ class PushTests(Repository):
                                        evidence_states=["State shown"])
 
         self.assertIn("(https://example.test/01-state.png)", section)
+
+    def test_the_default_spec_is_pushed_under_any_spelling_of_its_path(self):
+        for default in (self.wt / DEFAULT, f"console/../{DEFAULT}"):
+            with self.subTest(default=default):
+                self.configure("true", default)
+                github.push_branch(self.project, "task")
+
+                self.assertIn(DEFAULT, self.pushed_tree())
+                self.assertFalse(set(CAPTURED) & self.pushed_tree())
 
     def test_a_later_push_without_capture_files_adds_no_commit(self):
         self.configure("true")
