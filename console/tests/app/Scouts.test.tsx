@@ -81,7 +81,7 @@ const change = async (element: Element, value: string) => {
 const pages = () => within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link").filter((link) => !link.closest("ul"));
 const scoutsLink = () => pages().at(-1)!;
 const list = () => screen.getByRole("list", { name: "Scouts, newest first" });
-const ids = () => within(list()).getAllByRole("listitem").map((row) => row.getAttribute("data-scout"));
+const ids = () => [...list().querySelectorAll("[data-scout]")].map((row) => row.getAttribute("data-scout"));
 const countLine = () => document.querySelector("[data-count-line]")!.textContent;
 const form = () => screen.getByRole("form", { name: "New scout" });
 const pressed = (group: string) =>
@@ -95,8 +95,7 @@ function readRow(id: number) {
   const cell = (name: string) => row.querySelector(`[data-cell="${name}"]`)!.textContent;
   return {
     state: within(row as HTMLElement).getByRole("img").getAttribute("aria-label"),
-    id: cell("id"), ask: row.querySelector("[data-cell='ask']")!.firstChild!.textContent, kind: cell("kind"),
-    project: cell("project"), lead: cell("lead"), helpers: cell("helpers"), took: cell("took"),
+    title: row.querySelector("[data-cell='title']")!.firstChild!.textContent, kind: cell("kind"), lead: cell("lead"), helpers: cell("helpers"), took: cell("took"),
     reason: row.querySelector("[data-reason]")?.textContent ?? null, text: row.textContent,
   };
 }
@@ -139,10 +138,10 @@ test("the Scouts page link follows Findings, is current on #/scouts and counts r
   expect(scoutsLink().querySelector("[data-badge]")).toBeNull();
 });
 
-test("the list merges every scoped project's scouts newest first under its count line", async () => {
+test("the list groups every scoped project's scouts newest first under its count line", async () => {
   const daemons = { demo: [scout(31, "swarming", 1), scout(29, "queued", 3), scout(27, "done", 4)], writer: [scout(30, "planning", 2)] };
   await mount("#/scouts", scoutFetch(daemons).fetch);
-  expect(ids()).toEqual(["31", "30", "29", "27"]);
+  expect(ids()).toEqual(["31", "29", "27", "30"]);
   expect(countLine()).toBe("all projects · 4 scouts / 2 running / 1 queued / newest first");
   cleanup();
   await mount("#/scouts?project=demo", scoutFetch(daemons).fetch);
@@ -150,9 +149,9 @@ test("the list merges every scoped project's scouts newest first under its count
   expect(countLine()).toStartWith("demo · 3 scouts");
 });
 
-test("a row reads its state, id, ask, kind, project, routes, helper progress and time taken", async () => {
+test("a row reads its state, title not ask, kind, routes, helper progress and time taken, with no id or project", async () => {
   const running = scout(31, "swarming", 1, {
-    ask: "Why do loop runs crash with database is locked?", kind: "bug", lead: "opus", helper: "luna",
+    ask: "Why do loop runs crash with database is locked?", title: "Loop runs crash with database is locked", kind: "bug", lead: "opus", helper: "luna",
     tasks_done: 5, tasks_total: 10, elapsed_ms: 14 * MINUTE,
   });
   const queued = scout(29, "queued", 2, { elapsed_ms: null, started_ms: null, tasks_done: 0, tasks_total: 0 });
@@ -160,9 +159,10 @@ test("a row reads its state, id, ask, kind, project, routes, helper progress and
   const ended = [scout(24, "done", 4), scout(23, "stopped", 5)];
   await mount("#/scouts?project=demo", scoutFetch({ demo: [running, queued, failed, ...ended] }).fetch);
   expect(readRow(31)).toMatchObject({
-    state: "running", id: "31", ask: "Why do loop runs crash with database is locked?", kind: "bug",
-    project: "demo", lead: "opus", helpers: "luna 5 of 10", took: "14m",
+    state: "running", title: "Loop runs crash with database is locked", kind: "bug", lead: "opus", helpers: "luna 5 of 10", took: "14m",
   });
+  expect(readRow(31).text).not.toContain("Why do loop runs crash");
+  expect(list().querySelector('[data-cell="id"], [data-cell="project"]')).toBeNull();
   expect(readRow(29)).toMatchObject({ state: "queued", took: "–" });
   const fail = readRow(25);
   expect(fail).toMatchObject({ state: "failed", reason: "lead route opus is down: probe timed out" });

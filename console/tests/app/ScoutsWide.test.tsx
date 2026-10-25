@@ -145,7 +145,7 @@ test("pressing a row selects it in the search, and a fresh mount at that address
   expect(current()).toEqual([["29", "true"]]);
 });
 
-test("each wide row reads its kind, project, time taken and start, then what it found", async () => {
+test("each wide row reads its kind, time taken and start, never its project, then what it found", async () => {
   const counts = { findings: 0, actions: 0, filed: 0, to_file: 0 };
   const rows = [
     row(31, { phase: "done", kind: "bug", elapsed_ms: 13 * MINUTE, started_ms: new Date(2026, 9, 24, 2, 28).getTime(), findings: 7, actions: 4, filed: 1, to_file: 3 }),
@@ -157,7 +157,7 @@ test("each wide row reads its kind, project, time taken and start, then what it 
   const facts = (id: number) => rowOf(id).querySelector("[data-scout-row-facts]")!.textContent;
   const outcome = (id: number) => rowOf(id).querySelector("[data-scout-outcome]")!.textContent;
   await mount("#/scouts", wideFetch(rows));
-  expect(facts(31)).toBe("bug demo · 13m · Sat 02:28 PDT");
+  expect(facts(31)).toBe("bug · 13m · Sat 02:28 PDT");
   expect(outcome(31)).toBe("7 findings · 4 actions · 1 filed · 3 to file");
   expect(rowOf(31).querySelector("[data-to-file]")!.textContent).toBe("3 to file");
   expect(outcome(30)).toBe("11 findings");

@@ -16,7 +16,9 @@ export interface ScoutListRow extends ScoutRow {
   project: string;
 }
 
-export type ScoutState = "running" | "queued" | "done" | "stopped" | "failed";
+export const SCOUT_STATES = ["running", "queued", "done", "stopped", "failed"] as const;
+
+export type ScoutState = (typeof SCOUT_STATES)[number];
 
 export function scoutState(phase: ScoutRow["phase"]): ScoutState {
   return phase === "queued" || phase === "done" || phase === "stopped" || phase === "failed" ? phase : "running";
@@ -31,6 +33,37 @@ function scoutRows(answers: { host: HostRecord<ContractBodies>; scouts: Scouts }
       return scouts.scouts.map((scout) => ({ ...scout, base: host.base, project }));
     })
     .sort((a, b) => b.created_ms - a.created_ms || b.id - a.id);
+}
+
+export interface ScoutGroup {
+  base: string;
+  project: string;
+  rows: ScoutListRow[];
+}
+
+/** `rows`, newest first, as one group per host base and project in the
+ *  order of each group's newest scout. */
+export function scoutGroups(rows: ScoutListRow[]): ScoutGroup[] {
+  const groups = new Map<string, ScoutGroup>();
+  for (const row of rows) {
+    const key = JSON.stringify([row.base, row.project]);
+    const group = groups.get(key) ?? { base: row.base, project: row.project, rows: [] };
+    group.rows.push(row);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+/** The rows the search keeps: `q` in the title or ask, ignoring case, of
+ *  the `filter` state and the `type` kind. */
+export function shownScouts(rows: ScoutListRow[], { q, filter, type }: ScoutsSearch): ScoutListRow[] {
+  const text = q?.toLowerCase();
+  return rows.filter(
+    (row) =>
+      (text == null || row.title.toLowerCase().includes(text) || row.ask.toLowerCase().includes(text)) &&
+      (filter == null || scoutState(row.phase) === filter) &&
+      (type == null || row.kind === type),
+  );
 }
 
 export function countScouts(rows: ScoutRow[], state: ScoutState): number {
@@ -111,15 +144,21 @@ type ScoutKind = ScoutRow["kind"];
 
 const SCOUT_KINDS: ScoutKind[] = ["bug", "research", "recon"];
 
+export const LISTED_KINDS: ScoutKind[] = [...SCOUT_KINDS, "guardrails"];
+
 /** The Scouts page's search: `new` opens the New scout form for that
  *  project, filled from `about`, `kind` and `ask`; `scout`, as
- *  `PROJECT/ID`, is the scout the wide page's pane shows. */
+ *  `PROJECT/ID`, is the scout the wide page's pane shows; `q`, `filter`
+ *  and `type` narrow the list by text, state and kind. */
 export interface ScoutsSearch {
   new?: string;
   about?: string;
   kind?: ScoutKind;
   ask?: string;
   scout?: string;
+  q?: string;
+  filter?: ScoutState;
+  type?: ScoutKind;
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
@@ -129,7 +168,13 @@ const SELECTION = /^[^/]+\/\d+$/;
 export function validateScoutsSearch(search: Record<string, unknown>): ScoutsSearch {
   const kind = SCOUT_KINDS.find((each) => each === search.kind);
   const scout = text(search.scout);
-  return { new: text(search.new), about: text(search.about), kind, ask: text(search.ask), scout: scout != null && SELECTION.test(scout) ? scout : undefined };
+  const q = text(search.q)?.trim();
+  return {
+    new: text(search.new), about: text(search.about), kind, ask: text(search.ask), scout: scout != null && SELECTION.test(scout) ? scout : undefined,
+    q: q === "" ? undefined : q,
+    filter: SCOUT_STATES.find((each) => each === search.filter),
+    type: LISTED_KINDS.find((each) => each === search.type),
+  };
 }
 
 /** A row's `scout` search value. */

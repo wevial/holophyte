@@ -1,10 +1,12 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
 import { useAction } from "../actions";
 import { formatSettled } from "../../lib/format";
 import { Btn } from "../components/Btn";
+import { LaneHead } from "../components/LaneHead";
+import { FilterSelect, SearchField } from "../components/ListFilters";
 import { EMPTY_DRAFT, prefilledDraft, ScoutLaunch, type LaunchProject } from "../components/ScoutLaunch";
 import { dayClock } from "../components/ScoutFacts";
 import { ScoutPane } from "../components/ScoutPane";
@@ -12,12 +14,36 @@ import { StateDot } from "../components/StateDot";
 import { firstLine } from "../history";
 import { keepScope, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 import { SCOUT_DOTS, scoutPage } from "../scout";
-import { countScouts, scoutKey, scoutOutcome, scoutState, useScouts, type ScoutListRow, type ScoutOutcome, type ScoutsSearch } from "../scouts";
+import {
+  countScouts,
+  LISTED_KINDS,
+  SCOUT_STATES,
+  scoutGroups,
+  scoutKey,
+  scoutOutcome,
+  scoutState,
+  shownScouts,
+  useScouts,
+  type ScoutGroup,
+  type ScoutListRow,
+  type ScoutOutcome,
+  type ScoutsSearch,
+} from "../scouts";
 import { useWide } from "../viewport";
 
-const GRID = "min-[720px]:grid min-[720px]:grid-cols-[16px_40px_minmax(0,1fr)_76px_92px_52px_88px_56px] min-[720px]:items-start min-[720px]:gap-3";
+const GRID = "min-[720px]:grid min-[720px]:grid-cols-[16px_minmax(0,1fr)_76px_52px_88px_56px] min-[720px]:items-start min-[720px]:gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
+const EMPTY_LINE = "m-0 border border-rule bg-paper px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3";
+
+const capital = (word: string) => word[0]!.toUpperCase() + word.slice(1);
+const STATE_OPTIONS = SCOUT_STATES.map((state) => ({ value: state, label: capital(state) }));
+const KIND_OPTIONS = LISTED_KINDS.map((kind) => ({ value: kind, label: capital(kind) }));
+
+/** The search a move within the Scouts page keeps: its scope and what narrows the list. */
+const keepList = (previous: ScoutsSearch & ScopeSearch): ScoutsSearch & ScopeSearch => ({
+  ...keepScope(previous), q: previous.q, filter: previous.filter, type: previous.type,
+});
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
@@ -43,16 +69,14 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
         className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 px-3 py-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
       >
         <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
-        <span data-cell="ask" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
-          {row.ask}
+        <span data-cell="title" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
+          {row.title}
           {reason && <span data-reason className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{reason}</span>}
         </span>
         <span className={`col-start-2 flex flex-wrap ${MONO} min-[720px]:contents`}>
-          <span data-cell="id" className={`${FACT} min-[720px]:order-1 min-[720px]:text-ink-2`}>{row.id}</span>
           <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
             <span className="min-[720px]:inline-block min-[720px]:align-top min-[720px]:leading-[15px] min-[720px]:border min-[720px]:border-rule min-[720px]:px-1 min-[720px]:text-[11px] min-[720px]:font-semibold min-[720px]:text-ink-2">{row.kind}</span>
           </span>
-          <span data-cell="project" className={`${FACT} min-[720px]:order-4`}>{row.project}</span>
           <span data-cell="lead" className={`${FACT} min-[720px]:order-5`}>{row.lead ?? DASH}</span>
           <span data-cell="helpers" className={`${FACT} min-[720px]:order-6`}>{helpers(row)}</span>
           <span data-cell="took" className={`${FACT} whitespace-nowrap min-[720px]:order-7 min-[720px]:text-right`}>{took}</span>
@@ -62,25 +86,33 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
   );
 }
 
-function ScoutTable({ rows, empty }: { rows: ScoutListRow[]; empty: string }) {
+function ScoutGroups({ groups, row }: { groups: ScoutGroup[]; row: (row: ScoutListRow) => ReactNode }) {
   return (
-    <div data-scout-table className="border border-rule bg-paper">
-      <div aria-hidden="true" className={`${GRID} hidden border-b border-rule px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
+    <ol aria-label="Scouts, newest first" className="m-0 flex list-none flex-col gap-[22px] p-0">
+      {groups.map((group) => (
+        <li key={`${group.base} ${group.project}`} data-scout-group>
+          <LaneHead name={group.project} held={false} meta={`${group.rows.length} ${group.rows.length === 1 ? "scout" : "scouts"}`} />
+          <ol aria-label={`${group.project} scouts`} className="m-0 list-none border border-rule bg-paper p-0">
+            {group.rows.map(row)}
+          </ol>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ScoutTable({ groups }: { groups: ScoutGroup[] }) {
+  return (
+    <div data-scout-table className="flex flex-col">
+      <div aria-hidden="true" className={`${GRID} hidden px-[13px] pb-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
         <span />
-        <span>#</span>
-        <span>Ask</span>
+        <span>Title</span>
         <span>Kind</span>
-        <span>Project</span>
         <span>Lead</span>
         <span>Helpers</span>
         <span className="text-right">Took</span>
       </div>
-      <ol aria-label="Scouts, newest first" className="m-0 list-none p-0">
-        {rows.map((row) => (
-          <ScoutTableRow key={`${row.base} ${row.id}`} row={row} />
-        ))}
-      </ol>
-      {rows.length === 0 && <p className="m-0 px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
+      <ScoutGroups groups={groups} row={(row) => <ScoutTableRow key={`${row.base} ${row.id}`} row={row} />} />
     </div>
   );
 }
@@ -98,7 +130,7 @@ function Outcome({ outcome }: { outcome: ScoutOutcome }) {
   ));
 }
 
-function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: boolean; current: boolean }) {
+function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }) {
   const state = scoutState(row.phase);
   const took = state === "queued" || row.elapsed_ms == null ? DASH : formatSettled(row.elapsed_ms);
   const outcome = scoutOutcome(row);
@@ -107,16 +139,14 @@ function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: bo
     <li data-row data-scout={row.id} aria-current={current ? "true" : undefined} className={`border-b border-rule-2 last:border-b-0 ${current ? "bg-row-selected shadow-[inset_2px_0_0_var(--act)]" : ""}`}>
       <Link
         to="/scouts"
-        search={(previous: ScopeSearch) => ({ ...keepScope(previous), scout: scoutKey(row) })}
-        className={`grid grid-cols-[16px_20px_minmax(0,1fr)] gap-x-2.5 px-3.5 py-[13px] no-underline transition-colors duration-(--motion-colour) ${current ? "" : "hover:bg-paper-2"}`}
+        search={(previous: ScoutsSearch & ScopeSearch) => ({ ...keepList(previous), scout: scoutKey(row) })}
+        className={`grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 px-3.5 py-[13px] no-underline transition-colors duration-(--motion-colour) ${current ? "" : "hover:bg-paper-2"}`}
       >
         <span className="mt-[15px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
-        <span data-cell="id" className={`${MONO} pt-0.5 text-ink-2`}>{row.id}</span>
         <span className="flex min-w-0 flex-col gap-1.5">
           <span data-cell="title" className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink">{row.title}</span>
           <span data-scout-row-facts className={`${MONO} [overflow-wrap:anywhere]`}>
             <span className="inline-block border border-rule px-1 align-top text-[11px] font-semibold leading-[15px] text-ink-2">{row.kind}</span>
-            {!scoped && <> {row.project}</>}
             {" · "}{took}{" · "}{dayClock(row.started_ms ?? row.created_ms)}
           </span>
           {!empty && <span data-scout-outcome className={`${MONO} text-ink-2 [overflow-wrap:anywhere]`}><Outcome outcome={outcome} /></span>}
@@ -126,20 +156,15 @@ function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: bo
   );
 }
 
-function ScoutList({ rows, empty, scoped, current }: { rows: ScoutListRow[]; empty: string; scoped: boolean; current: string | null }) {
+function ScoutList({ groups, empty, current }: { groups: ScoutGroup[]; empty: ReactNode; current: string | null }) {
   return (
-    <div data-scout-list className="max-h-full w-[min(624px,45%)] shrink-0 self-start overflow-y-auto border border-rule bg-paper">
-      <ol aria-label="Scouts, newest first" className="m-0 list-none p-0">
-        {rows.map((row) => (
-          <ScoutListItem key={`${row.base} ${row.id}`} row={row} scoped={scoped} current={scoutKey(row) === current} />
-        ))}
-      </ol>
-      {rows.length === 0 && <p className="m-0 px-3.5 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
+    <div data-scout-list className="max-h-full w-[min(624px,45%)] shrink-0 self-start overflow-y-auto">
+      {empty ?? <ScoutGroups groups={groups} row={(row) => <ScoutListItem key={`${row.base} ${row.id}`} row={row} current={scoutKey(row) === current} />} />}
     </div>
   );
 }
 
-/** The pane's scout: the `scout` search's, else the list's first. */
+/** The pane's scout: the `scout` search's, else the first shown row. */
 function selection(search: ScoutsSearch, rows: ScoutListRow[]): { project: string; id: number } | null {
   if (search.scout != null) {
     const split = search.scout.lastIndexOf("/");
@@ -150,7 +175,7 @@ function selection(search: ScoutsSearch, rows: ScoutListRow[]): { project: strin
 }
 
 export function Scouts() {
-  const { project, rows } = useScouts();
+  const { project, rows: listed } = useScouts();
   const { hosts } = useConsolePeers();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -161,6 +186,8 @@ export function Scouts() {
   );
   const canLaunch = projects.length > 0;
   const search = useSearch({ from: "/scouts" });
+  const rows = shownScouts(listed, search);
+  const groups = scoutGroups(rows);
   const navigate = useNavigate();
   const asked = search.new == null ? null : JSON.stringify([search.new, search.about, search.kind, search.ask]);
   const [filled, setFilled] = useState<string | null>(null);
@@ -175,7 +202,7 @@ export function Scouts() {
   const wide = useWide();
   const close = () => {
     setOpen(false);
-    if (asked != null) void navigate({ to: "/scouts", search: (previous: ScoutsSearch & ScopeSearch) => ({ ...keepScope(previous), scout: previous.scout }), replace: true });
+    if (asked != null) void navigate({ to: "/scouts", search: (previous: ScoutsSearch & ScopeSearch) => ({ ...keepList(previous), scout: previous.scout }), replace: true });
     if (draft.about != null) setDraft({ ...draft, about: null });
   };
   const launching = open && canLaunch;
@@ -194,7 +221,8 @@ export function Scouts() {
       pane={pane}
     />
   );
-  const empty = `No scouts in ${project ?? "any project"}.`;
+  const narrowed = search.q != null || search.filter != null || search.type != null;
+  const empty = rows.length > 0 ? null : <p className={EMPTY_LINE}>{narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}</p>;
   const shown = selection(search, rows);
   return (
     <section aria-labelledby="page-title" className={`flex flex-col gap-6 px-6 pt-3.5 pb-7 max-[720px]:px-4 ${wide ? "h-full" : ""}`}>
@@ -209,6 +237,11 @@ export function Scouts() {
             {countScouts(rows, "queued")} queued
             {!wide && <><Slash />newest first</>}
           </p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <SearchField label="Search scouts" />
+            <FilterSelect label="State" param="filter" allLabel="All states" options={STATE_OPTIONS} />
+            <FilterSelect label="Kind" param="type" allLabel="All kinds" options={KIND_OPTIONS} />
+          </div>
         </div>
         <Btn
           variant="primary"
@@ -222,7 +255,7 @@ export function Scouts() {
       </header>
       {wide ? (
         <div className="flex min-h-0 flex-1 items-stretch gap-4">
-          <ScoutList rows={rows} empty={empty} scoped={project != null} current={launching || shown == null ? null : scoutKey(shown)} />
+          <ScoutList groups={groups} empty={empty} current={launching || shown == null ? null : scoutKey(shown)} />
           <div data-scout-pane className="min-w-0 flex-1 overflow-y-auto border border-rule bg-paper">
             {launching ? form(true) : shown != null && <ScoutPane key={scoutKey(shown)} project={shown.project} id={shown.id} />}
           </div>
@@ -230,7 +263,7 @@ export function Scouts() {
       ) : (
         <>
           {launching && form(false)}
-          <ScoutTable rows={rows} empty={empty} />
+          {empty ?? <ScoutTable groups={groups} />}
         </>
       )}
     </section>
