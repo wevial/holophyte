@@ -27,6 +27,8 @@ const TITLE_CELL = "min-w-0 font-read text-[15px] font-medium leading-[1.35] max
 const FIXING_LINE = "-mt-2.5 pb-3.5 pl-[254px] pr-5 font-mono text-[12px] text-ink-3 max-[820px]:pl-5 @max-[640px]/ov-col:pl-5";
 const TIME_CELL = "grid gap-[7px] whitespace-nowrap text-right max-[820px]:col-start-3 @max-[640px]/ov-col:col-start-3 max-[820px]:row-start-1 @max-[640px]/ov-col:row-start-1";
 
+const CI_STATUS_CELL = "min-w-0 text-right [overflow-wrap:anywhere] max-[820px]:col-start-3 @max-[640px]/ov-col:col-start-3 max-[820px]:row-start-1 @max-[640px]/ov-col:row-start-1";
+
 const bareNumber = (url: string) => prLabel(url).replace(/^PR (?=#)/, "");
 
 interface OnCiRow {
@@ -150,7 +152,7 @@ function OnCiLaneRow({ row }: { row: OnCiRow }) {
       <span className={TITLE_CELL}>
         <span className="block text-ink">{prTitle(item) ?? ""}</span>
       </span>
-      <span className={TIME_CELL}>{row.line}</span>
+      <span className={CI_STATUS_CELL}>{row.line}</span>
     </li>
   );
 }
@@ -198,9 +200,10 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
   const stale = group.runs.filter(quiet);
   const queued = group.queued ?? [];
   const held = group.status.admission === "held";
+  const listed = live.length > 0 || group.onCi.length > 0;
   return (
     <div role="group" aria-label={group.name}>
-      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${group.runs.length} of ${group.workers} workers busy`}>
+      <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${group.runs.length} of ${group.workers} workers busy`} attached={listed}>
         {stale.length > 0 ? (
           <span>· {quietSentence(stale.map((run) => run.ticket))}</span>
         ) : live.length > 0 ? null : group.onCi.length > 0 ? (
@@ -220,14 +223,16 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
           </button>
         )}
       </LaneHead>
-      {(live.length > 0 || group.onCi.length > 0) && (
+      {listed && (
         <ul aria-label={`${group.name} running`} className="border border-rule bg-paper">
           {live.map((run) => (
             <RunLaneRow key={run.id} run={run} project={group.path} sinceMs={sinceMs} />
           ))}
           {group.onCi.length > 0 && (
-            <li data-on-ci-divider className={`px-5 pb-1.5 pt-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 ${live.length > 0 ? "border-t border-rule-2" : ""}`}>
-              On CI
+            <li data-on-ci-divider aria-label="On CI" className="flex border-b border-rule px-5 pt-1.5">
+              <span className="relative -mb-px border border-b-0 border-rule bg-paper px-2 py-1">
+                <StageChip label="CI" state="on_ci" />
+              </span>
             </li>
           )}
           {group.onCi.map((row, index) => (
