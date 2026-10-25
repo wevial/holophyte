@@ -6,9 +6,11 @@ and helper CLIs, `holo scout stop --task` over the local transport, and the
 Run: python3 -m unittest discover -s tests -p 'test_scout_task_stop.py' -v
 """
 import os
+import shutil
 import subprocess
 import sys
 import time
+from unittest.mock import patch
 
 import store
 from holophyte.config.project import Project
@@ -194,6 +196,24 @@ class RunningTaskStopTests(TaskStopCase):
             STOP_WITHIN_S), self.tasks(scout_id))
         self.assertTrue(wait_for(lambda: not running(child), STOP_WITHIN_S))
         proc.wait(timeout=WAIT_S)
+
+    def test_a_run_task_stopped_while_its_clone_fails_ends_stopped(self):
+        bin_dir, cloning = self.root / "slow-git", self.root / "cloning"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text(
+            f"#!/bin/sh\ncase \"$*\" in *\"clone --shared\"*)\n"
+            f"  touch {cloning}; sleep 2; echo clone disk failure >&2;"
+            f" exit 128;;\nesac\nexec {shutil.which('git')} \"$@\"\n")
+        (bin_dir / "git").chmod(0o755)
+        self.enterContext(patch.dict(os.environ, {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}))
+        scout_id, proc = self.swarming([SLOW], {}, kind="bug", mode="run",
+                                       swarm=1)
+        self.assertTrue(wait_for(cloning.exists), self.tasks(scout_id))
+        status, answer = self.ask(scout_id, self.tasks(scout_id)[SLOW][0])
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        proc.wait(timeout=WAIT_S)
+        self.assertEqual(self.tasks(scout_id)[SLOW][1:], ("stopped", ""))
 
 
 class RefusedTaskStopTests(TaskStopCase):

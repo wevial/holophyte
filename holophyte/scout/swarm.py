@@ -403,8 +403,12 @@ class Swarm:
             checkout = run_clone(self.project, self.row.id, task.id,
                                  self.row.base_sha)
         except (RuntimeError, OSError) as error:
-            self.end_unrun(conn, task, mine, FAILED, redact_prose(
-                str(error), self.secrets)[:EXCERPT_CHARS])
+            with store.transaction(conn):
+                if self.halted_now(conn, task):
+                    self.end_unrun(conn, task, mine, STOPPED, "")
+                    return
+                self.end_unrun(conn, task, mine, FAILED, redact_prose(
+                    str(error), self.secrets)[:EXCERPT_CHARS])
             return
         try:
             self.run_in(conn, task, mine, checkout)
