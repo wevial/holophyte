@@ -211,6 +211,9 @@ EXPECTED_READ = [
     "review_rounds",
     "rounds_of",
     "run_detail",
+    # The `serve` daemon's `/tickets?q=` read of the tickets whose
+    # identifier, title, labels or body hold the text.
+    "search_tickets",
     "strike",
     # The `/attention` and `--status` read of the waits only a
     # person can end.

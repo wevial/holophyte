@@ -25,8 +25,8 @@ those writing routes. A project with no store answers 503.
 and `GET /attention`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
-`GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board` and
-`GET /tickets/KEY`, of the scout reads `GET /scouts`, `GET /scouts/ID`
+`GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
+`GET /tickets/KEY` and `GET /tickets?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
 and `GET /scouts/routes`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
@@ -1316,6 +1316,25 @@ it, which only an amendment can be. An identifier
 the store has never mirrored is 404 with an empty object, like an absent
 run. The endpoint reads the store's mirror and nothing more; it never
 calls the provider.
+
+## `GET /tickets?q=TEXT`
+
+The identifiers of the tickets whose text holds a search: how the console's
+Tickets page finds a ticket by a word only in its body, which `GET /board`
+does not serve.
+
+```json
+{"q": "quokka", "tickets": ["KO-2", "KO-3"]}
+```
+
+`q` is the search as asked, trimmed; `tickets` lists, in identifier order,
+every ticket in the project's store whose identifier, title, one of its
+labels or current body contains `q`, ignoring case. Merged and abandoned
+tickets are included. A missing or blank `q` is 400
+`{"error": "q is required"}`. The read takes the read token, like
+`GET /board`, and a host daemon serves it as
+`GET /projects/NAME/tickets?q=TEXT`. It reads the store's mirror and
+never calls the provider.
 
 ## `GET /stories/KO-n`
 

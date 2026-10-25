@@ -160,6 +160,7 @@ def contract_answers(case):
         "findings": holophyte.serve.serve_findings.findings(target, "since=0"),
         "board": holophyte.serve.views.board(target, now=NOW),
         "ticket": holophyte.serve.views.ticket_detail(target, "KO-8"),
+        "ticket-search": holophyte.serve.views.ticket_search(target, "q=ticket"),
     }.items():
         case.assertEqual(code, 200)
         answers[name] = normalize_contract(body)
