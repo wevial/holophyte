@@ -21,7 +21,8 @@ type Page = Extract<RunPage, { kind: "run" }>;
 function labelsOf(page: Page, newest: boolean): string[] {
   const { run } = page.detail;
   if (page.state === "paused") return [RESUME];
-  if (page.liveRun != null) return page.liveRun.stop_requested == null && !PARKED.has(page.state) ? [PAUSE, ABORT] : [];
+  if (PARKED.has(page.state)) return run.ended_ms == null ? [ABORT] : [];
+  if (page.liveRun != null) return page.liveRun.stop_requested == null ? [PAUSE, ABORT] : [];
   return ENDED.has(run.outcome ?? "") && newest && !page.liveTicket ? [REQUEUE] : [];
 }
 
@@ -34,6 +35,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const ticket = useTicket(page.base, page.detail.run.ticket, deps);
   const [aborting, setAborting] = useState(false);
   const [reason, setReason] = useState("");
+  const [closing, setClosing] = useState(false);
   const reasonId = useId();
   const opener = useRef<HTMLButtonElement>(null);
   const labels = labelsOf(page, ticket.isSuccess && ticket.data?.runs[0]?.run === page.detail.run.id);
@@ -51,6 +53,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
     [ABORT]: () => {
       action.reset();
       setReason("");
+      setClosing(false);
       setAborting(true);
     },
   };
@@ -58,11 +61,15 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
     setAborting(false);
     opener.current?.focus();
   };
+  const pr = run.pr_url == null ? null : prLabel(run.pr_url);
+  const close = pr != null && closing;
   const confirmAbort = async () => {
-    const result = await post(ABORT, ROUTES[ABORT]!, { run: run.id, close: false, note: reason.trim() }, `Aborted run ${run.id}.`);
+    const said = close ? `Aborted run ${run.id} and closed ${pr}.` : `Aborted run ${run.id}.`;
+    const result = await post(ABORT, ROUTES[ABORT]!, { run: run.id, close, note: reason.trim() }, said);
     if (result.ok) setAborting(false);
   };
-  const kept = run.pr_url == null ? "" : ` and ${prLabel(run.pr_url)}`;
+  const branch = run.branch == null ? "Its branch" : `The branch ${run.branch}`;
+  const kept = close ? `${branch} is kept, ${pr} is closed` : pr == null ? `${branch} is kept` : `${branch} and ${pr} are kept`;
 
   return (
     <div data-run-actions className="flex shrink-0 flex-col items-end gap-2">
@@ -91,7 +98,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
         <ConfirmDialog
           label={`Abort · ${project}`}
           heading={`Abort run ${run.id}?`}
-          confirm="Abort run"
+          confirm={close ? `Abort run and close ${pr}` : "Abort run"}
           busyLabel={BUSY[ABORT]!}
           busy={pending === ABORT}
           cancelLabel="Keep running"
@@ -108,8 +115,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           }
         >
           <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">
-            {page.stops} stops now. {run.branch == null ? "Its branch" : `The branch ${run.branch}`}
-            {kept} {kept === "" ? "is" : "are"} kept, and {run.ticket} waits for you to requeue it.
+            {page.stops} stops now. {kept}, and {run.ticket} waits for you to requeue it.
           </p>
           <label htmlFor={reasonId} className="mt-4 block font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">
             Reason · saved with the run
@@ -122,6 +128,12 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
             placeholder="Why stop it?"
             className="mt-2 block w-full resize-y border border-rule bg-paper px-3 py-2.5 font-plex text-[14px] leading-[1.5] text-ink placeholder:text-ink-3"
           />
+          {pr != null && (
+            <label className="mt-3 flex min-h-10 items-center gap-2 font-sans text-[14px] leading-[1.5] text-ink-2">
+              <input type="checkbox" checked={closing} onChange={(event) => setClosing(event.target.checked)} className="m-0 accent-bad" />
+              Close {pr}
+            </label>
+          )}
         </ConfirmDialog>
       )}
     </div>
