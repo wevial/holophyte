@@ -2044,8 +2044,7 @@ killed so its SQLite transaction rolls back, and its reply is lost.
 
 `GET /` answers `console/dist/index.html`, the new console, and
 `GET /PATH` answers `console/dist/PATH` for a regular file under that
-directory (`GET /classic.html` is the classic console): the
-repository's own `console/dist/`, where the renderer's build writes the
+directory: the repository's own `console/dist/`, where the renderer's build writes the
 console, found from the package rather than the project's checkout. The
 JSON routes above, and any added later, take precedence over a file of
 the same name. The content type follows the extension:
@@ -2070,7 +2069,7 @@ out) or names no regular file is the same 404 JSON as an unknown route.
 `301 Moved Permanently` with `Location: /` (`/?QUERY` when the request
 carries a query), with or without a token and whether or not the console
 is built; the browser keeps the fragment, so `/next.html#/runs` lands on
-`/#/runs`.
+`/#/runs`. The classic console is `GET /classic.html`.
 When `console/dist/` does not exist, `/` is 404 JSON whose `detail` says
 the console is not built, and the JSON routes answer as before: a daemon
 on a host without the renderer's toolchain still serves its JSON.
