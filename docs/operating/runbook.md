@@ -276,7 +276,11 @@ Publish a done scout's page, the output of `holo scout page -p PROJECT ID`,
 as `scout-PROJECT-ID`, owned by the operator seat's handle. Its "Decisions
 for the maintainer" table holds one row per unfiled action item that is not
 a `revise`, and each answer names its row's question, `decision-aN` for
-item N. Relay each answer by its choice:
+item N. Relay every File answer before any Look further or question on the
+same scout: a taken `steer` or `ask` reopens the scout, and `holo scout
+file` is refused until it is done again, so relay a File answer that
+arrives later only once `holo scout show -p PROJECT ID` reads `done`.
+Relay each answer by its choice:
 
 ```
 holo scout file -p PROJECT ID N "NOTE" --author "maintainer via Lotuspod"
