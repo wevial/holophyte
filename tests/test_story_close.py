@@ -317,11 +317,12 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual([(kind, key) for kind, key, *_ in
                           self.decisions(parent)], [("regressed", "W1")])
 
-    def scaffolded(self):
-        """A story of W1 with A (completes, merged at W1's tip) and B open."""
+    def scaffolded(self, column="ready"):
+        """A story of W1 with A (completes, merged at W1's tip) and B filed
+        in `column`."""
         parent, completes = self.tickets()
         scaffolding = self.ticket_id(store.board.file_ticket(
-            self.conn, self.project_id, "NAT", VALID_BODY, column="ready"))
+            self.conn, self.project_id, "NAT", VALID_BODY, column=column))
         file_story(self.conn, parent, [witness("W1", W1_FILE)],
                    [(completes, "completes", ["W1"]),
                     (scaffolding, "scaffolding", [])])
@@ -366,6 +367,14 @@ class StoryCloseTests(StoryCloseFixture):
 
     def test_a_story_with_a_claimed_scaffolding_child_stays_open_on_green(self):
         self.assert_closes_once_the_open_child_ends(claimed=True)
+
+    def test_a_backlog_child_with_no_run_does_not_hold_the_close(self):
+        parent, _, tip = self.scaffolded(column="backlog")
+
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", tip))
 
     def test_the_story_closes_at_the_tip_its_last_childs_merge_moves(self):
         parent, scaffolding, _ = self.scaffolded()

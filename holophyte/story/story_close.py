@@ -96,7 +96,7 @@ def _plan(conn, found, sha):
            if witness.key in latest and latest[witness.key].verdict == "green"
            and latest[witness.key].fileHash == witness.sourceHash}
     if met == {witness.key for witness in found.witnesses}:
-        return [] if _unsettled_children(conn, found.ticketId) else "close"
+        return [] if _open_children(conn, found.ticketId) else "close"
     greens = {row.witnessKey for row in main_ledger(conn, found.ticketId)
               if row.mainSha != sha and row.verdict == "green"}
     owed = rerun_owed(conn, found.ticketId, sha)
@@ -160,16 +160,10 @@ def _unmet(row):
 def _open_children(conn, story_id):
     return conn.execute(
         "SELECT 1 FROM tickets WHERE id IN (SELECT ticketId FROM storyChildren"
-        " WHERE storyId = ?) AND status NOT IN (?, ?)"
-        " AND COALESCE(boardColumn, '') NOT IN ('backlog', 'canceled')",
-        (story_id, *CLOSED_STATUSES)).fetchone() is not None
-
-
-def _unsettled_children(conn, story_id):
-    return conn.execute(
-        "SELECT 1 FROM tickets WHERE id IN (SELECT ticketId FROM storyChildren"
-        " WHERE storyId = ?) AND status NOT IN (?, ?)"
-        " AND COALESCE(boardColumn, '') != 'canceled'",
+        " WHERE storyId = ?) AND ((status NOT IN (?, ?)"
+        " AND COALESCE(boardColumn, '') NOT IN ('backlog', 'canceled'))"
+        " OR EXISTS (SELECT 1 FROM runs r WHERE r.ticketId = tickets.id"
+        " AND r.endedAt IS NULL))",
         (story_id, *CLOSED_STATUSES)).fetchone() is not None
 
 
