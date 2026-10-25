@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Board, BoardColumn, BoardTicket, ShippedRow, Status } from "../../src/lib/contract.gen";
@@ -6,7 +6,7 @@ import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
-import { DEMO, NOW, SERVE, WRITER } from "./needsFleet";
+import { DEMO, MINUTE, NOW, SERVE, WRITER } from "./needsFleet";
 
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
@@ -28,9 +28,10 @@ function boardOf(keys: Partial<Record<State, string[]>>, facts: Record<string, P
 }
 
 /** `demo` on DEMO with `board`, and `writer` on WRITER with no board; each
- *  answers `/tickets?q=TEXT` from `searches` by its text, else 404. Every
+ *  answers `/tickets?q=TEXT` from `searches` by its text, 503 for a null
+ *  entry, else 404. Every
  *  url asked is kept. */
-function fleet(board: Board, searches: Record<string, string[]> = {}) {
+function fleet(board: Board, searches: Record<string, string[] | null> = {}) {
   const asked: string[] = [];
   const daemon = (project: string) => ({
     status: { ...working, project, runs: [], queued: [], admission: "enabled", now: NOW },
@@ -44,6 +45,7 @@ function fleet(board: Board, searches: Record<string, string[]> = {}) {
       if (url === `${base}/shipped?limit=50`) return Response.json({ rows: [] as ShippedRow[], next_before: null, limit: 50 });
     }
     const search = url.startsWith(`${DEMO}/tickets?q=`) ? searches[decodeURIComponent(url.slice(`${DEMO}/tickets?q=`.length))] : undefined;
+    if (search === null) return new Response("store locked", { status: 503 });
     if (search) return Response.json({ q: "", tickets: search });
     return polls(url);
   };
@@ -112,6 +114,22 @@ test("a search keeps a card its host's search route names by body", async () => 
   await search("quokka");
   expect(cardKeys()).toEqual(["DEMO-5"]);
   expect(asked).toContain(`${DEMO}/tickets?q=quokka`);
+});
+
+test("a host whose search read fails after an answer no longer names a card by body", async () => {
+  const searches: Record<string, string[] | null> = { quokka: ["DEMO-5"] };
+  await mount("#/tickets", fleet(demoBoard, searches).fetch);
+  await search("quokka");
+  expect(cardKeys()).toEqual(["DEMO-5"]);
+  await search("demo-3");
+  searches.quokka = null;
+  setSystemTime(new Date(Date.now() + MINUTE));
+  try {
+    await search("quokka");
+  } finally {
+    setSystemTime();
+  }
+  expect(cardKeys()).toEqual([]);
 });
 
 test("the debounced search is the address's q, and a fresh mount on it searches again", async () => {

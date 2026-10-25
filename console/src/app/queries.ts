@@ -206,8 +206,8 @@ export function useTicketSearch(hosts: HostRecord<PollBodies>[], text: string, d
   });
   const hits = new Map<string, Set<string>>();
   asked.forEach((host, index) => {
-    const data = results[index]?.data;
-    if (data) hits.set(host.base, new Set(data.tickets));
+    const result = results[index];
+    if (result?.status === "success" && result.data) hits.set(host.base, new Set(result.data.tickets));
   });
   return hits;
 }
