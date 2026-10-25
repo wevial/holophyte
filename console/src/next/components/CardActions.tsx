@@ -23,6 +23,8 @@ import { TitleText } from "./TitleText";
 type Host = HostRecord<ContractBodies>;
 
 const MERGE = "Merge";
+const MERGE_BYPASS = "Merge without review";
+const isMerge = (label: string | undefined) => label === MERGE || label === MERGE_BYPASS;
 const PR_COMMENT = "Comment on the PR (optional)";
 const REASONED = new Set([RESUME, ABORT, ABORT_CLOSE]);
 
@@ -35,6 +37,7 @@ export const BUSY: Record<string, string> = {
   "Restart supervisor": "Restarting…",
   [RUN_SWEEP]: "Sweeping…",
   [MERGE]: "Merging…",
+  [MERGE_BYPASS]: "Merging…",
 };
 
 export const ACTIONS_OFF_LINE = "Actions are off on this host. [serve] actions = true turns them on.";
@@ -71,6 +74,8 @@ function saidFor(label: string, item: AttentionItem, host: Host): string {
       return `Started a host sweep on ${str(item.host) ?? host.label}.`;
     case MERGE:
       return `Approved ${prOf(item)}. The loop merges it on its next claim.`;
+    case MERGE_BYPASS:
+      return `Approved ${prOf(item)} without its review. The loop merges it on its next claim.`;
     default:
       return `${label}: done.`;
   }
@@ -114,7 +119,8 @@ const linkBtn = "btn no-underline";
 
 /** The focus card's actions: its first label as the one primary button,
  *  the rest under More, then "Open run" and "Open ticket"; `only="primary"`
- *  draws the primary alone. Each post runs through `useAction()`; a refusal
+ *  draws the primary alone; `bypassReview` makes its Merge the one that
+ *  bypasses the required review. Each post runs through `useAction()`; a refusal
  *  shows the daemon's detail under them, a taken one calls `onActed`. */
 export function CardActions({
   entry,
@@ -122,6 +128,7 @@ export function CardActions({
   actions,
   title,
   only,
+  bypassReview = false,
   onActed,
 }: {
   entry: NeedsYouEntry;
@@ -129,6 +136,7 @@ export function CardActions({
   actions: string[];
   title: string | null;
   only?: "primary";
+  bypassReview?: boolean;
   onActed?: (said: string) => void;
 }) {
   const action = useAction();
@@ -145,11 +153,12 @@ export function CardActions({
   const ticket = str(item.ticket);
   const ticketUrl = str(item.ticket_url);
   const prUrl = str(item.pr_url);
-  const [primary, ...more] = entry.readyToMerge ? [MERGE, ...actions.filter((label) => label !== MERGE)] : actions;
+  const merge = bypassReview ? MERGE_BYPASS : MERGE;
+  const [primary, ...more] = entry.readyToMerge ? [merge, ...actions.filter((label) => label !== MERGE)] : actions;
   const on = (primary != null && ROOT_LABELS.has(primary) ? host.host_status?.actions : host.status?.actions) === true;
   const pending = action.isPending ? action.variables?.label : undefined;
   const last = action.variables?.label;
-  const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && last !== MERGE ? action.data.detail : null;
+  const refused = action.data != null && !action.data.ok && last != null && !REASONED.has(last) && !isMerge(last) ? action.data.detail : null;
 
   const post = async (label: string, route: string, body: Record<string, unknown>) => {
     const said = saidFor(label, item, host);
@@ -161,14 +170,14 @@ export function CardActions({
   /** What pressing `label` does, or undefined when it cannot be pressed. */
   const pressOf = (label: string): (() => void) | undefined => {
     if (label === OPEN_PR) return prUrl == null ? undefined : () => window.open(prUrl, "_blank", "noopener,noreferrer");
-    if (label === MERGE) return run == null ? undefined : () => { action.reset(); setMerging(true); };
+    if (isMerge(label)) return run == null ? undefined : () => { action.reset(); setMerging(true); };
     if (label === RESUME) return ticket == null ? undefined : () => setReasoning(label);
     if (label === ABORT || label === ABORT_CLOSE) return run == null ? undefined : () => setReasoning(label);
     const route = ROUTES[label];
     if (label === "Requeue" && ticket == null) return undefined;
     return route == null ? undefined : () => void post(label, route, actionBody(label, ticket));
   };
-  const titleOf = (label: string) => (label === OPEN_PR ? (prUrl == null ? NO_PR_URL : undefined) : ROUTES[label] == null && label !== RESUME ? NOT_WIRED : undefined);
+  const titleOf = (label: string) => (label === OPEN_PR ? (prUrl == null ? NO_PR_URL : undefined) : ROUTES[label] == null && label !== RESUME && !isMerge(label) ? NOT_WIRED : undefined);
 
   const closeMore = () => {
     setMoreOpen(false);
@@ -185,7 +194,7 @@ export function CardActions({
   };
   const confirmMerge = async () => {
     if (run == null) return;
-    const result = await post(MERGE, ROUTES[MERGE]!, { run });
+    const result = await post(merge, ROUTES[MERGE]!, bypassReview ? { run, bypass_review: true } : { run });
     if (result.ok) closeMerge();
   };
 
@@ -194,7 +203,7 @@ export function CardActions({
     return (
       <Btn
         key={label}
-        ref={label === MERGE ? mergeRef : undefined}
+        ref={isMerge(label) ? mergeRef : undefined}
         variant={variant}
         busy={pending === label}
         busyLabel={BUSY[label]}
@@ -266,10 +275,11 @@ export function CardActions({
       {merging && run != null && (
         <ConfirmDialog
           label={`Merge · ${projectOf(host)}`}
-          heading={`Merge ${prOf(item)}?`}
+          heading={bypassReview ? `Merge ${prOf(item)} without its review?` : `Merge ${prOf(item)}?`}
           confirm={`Merge ${prOf(item)}`}
-          busyLabel={BUSY[MERGE]!}
-          busy={pending === MERGE}
+          confirmVariant={bypassReview ? "danger-fill" : undefined}
+          busyLabel={BUSY[merge]!}
+          busy={pending === merge}
           onConfirm={() => void confirmMerge()}
           onCancel={closeMerge}
         >
@@ -278,7 +288,7 @@ export function CardActions({
             run={run}
             title={title}
             ticket={ticket}
-            refused={action.data != null && !action.data.ok && last === MERGE ? action.data.detail : null}
+            refused={action.data != null && !action.data.ok && last === merge ? action.data.detail : null}
           />
         </ConfirmDialog>
       )}

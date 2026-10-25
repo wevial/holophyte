@@ -38,123 +38,20 @@ only to build the console (`bun --cwd=console run build`); see
 ## Usage
 
 ```
-python3 factory.py /path/to/repo                  # run the loop
-python3 factory.py --report /path/to/repo         # estimate-vs-actual table
-python3 factory.py /path/to/repo --hold --note TEXT # stop new admission; existing runs continue
-python3 factory.py /path/to/repo --release-hold --note TEXT # enable admission again
-python3 factory.py --sweep [--act] /path/to/repo  # tripped runs; --act fails them
-python3 factory.py /path/to/repo --board-diff    # where the store's ready queue differs from the board's; writes nothing
-python3 factory.py /path/to/repo --status [--json] # projects, live and parked runs, ready count, locks
-python3 factory.py --import-store PATH --dry-run /path/to/repo # what importing another store would move; writes nothing
-python3 factory.py --board-import [--dry-run] /path/to/repo # copy every open Linear issue into the store; --dry-run writes nothing
-python3 factory.py --supervise /path/to/repo      # the acting sweep on a timer (optional: the loop starts one)
-python3 factory.py --supervise [--once]          # the host sweep over every project in host.toml; --once is one run
-python3 factory.py --serve 7710 /path/to/repo         # JSON daemon on loopback, the console at /; reads, and writes only with [serve] actions or config_edit; HOST:PORT to bind elsewhere
-python3 factory.py --serve [HOST:PORT]          # the host daemon: every project in host.toml under /projects/NAME, socket-activated under systemd
-python3 factory.py --status [--json]            # every project in host.toml, the last host sweep, the locks
-python3 factory.py --requeue KO-n --note TEXT /path/to/repo   # back in the queue
-python3 factory.py --approve KO-n [--note TEXT] /path/to/repo  # release a run parked for merge approval
-python3 factory.py --approve KO-n --force --note TEXT /path/to/repo # ...though its pull request is not ready to merge
-python3 factory.py --babysit KO-n [--note TEXT [--author NAME]] /path/to/repo # look at a parked run's pull request again
-python3 factory.py /path/to/repo --pause KO-n --note TEXT # stop at the next safe point
-python3 factory.py /path/to/repo --resume KO-n --note TEXT # continue a paused run
-python3 factory.py /path/to/repo --abort KO-n --note TEXT # end a run now, preserving its work
-python3 factory.py /path/to/repo --abort KO-n --close-pr [--pr-comment TEXT] --note TEXT # ...and close its pull request
-python3 factory.py --repoint KO-n SHA --note TEXT /path/to/repo # move a parked candidate to a rebuilt branch tip
-python3 factory.py /path/to/repo --close KO-n --landed URL [--note TEXT] # record a change landed outside the factory
-python3 factory.py /path/to/repo --gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] [--found-by witness|operator] # where a gap's lesson landed: impossible, static, witness, guidance, review or none; who found it
-python3 factory.py --file-ticket TICKET.md [--state Todo|Backlog] [--priority urgent|high|medium|low] [--note TEXT [--author NAME]] /path/to/repo
-python3 factory.py --file-ticket TICKET.md --update KO-n /path/to/repo   # replace the body
-python3 factory.py --file-ticket TICKET.md --update KEY-n --revision N [--priority urgent|high|medium|low] [--labels a,b] /path/to/repo # a native board's edit
-python3 factory.py --file-story SLUG [--priority urgent|high|medium|low] /path/to/repo # a native or store-mode Linear board's story, filed from stories/SLUG
-python3 factory.py --file-story SLUG --update KEY-n --revision N [--priority urgent|high|medium|low] /path/to/repo # apply a redrafted stories/SLUG to a filed story
-python3 factory.py --approve-story KEY-n --revision N --note TEXT [--baseline-green W] [--baseline-red-kind exception W] /path/to/repo # approve a planned story on its red baseline and release its children
-python3 factory.py --witness-pass KEY-n /path/to/repo # run an open story's witnesses at main's tip and print each verdict
-python3 factory.py --decide KEY-n ID [OPTION] --note TEXT /path/to/repo # answer a parked story's decision ID with option OPTION (default: the default) and apply it
-python3 factory.py --move KEY-n ready|backlog --revision N [--note TEXT] /path/to/repo # a native ticket to Ready or Backlog
-python3 factory.py --cancel KEY-n --revision N --note TEXT /path/to/repo # cancel a native ticket; a live run ends abandoned
-python3 factory.py --worker /path/to/repo         # internal: one worker of the pool [loop] workers > 1 spawns
-python3 factory.py --witness-step /path/to/repo   # internal: one witness pass the pool's scheduler spawns under [loop] workers > 1
-python3 factory.py --shadow BRIEF /path/to/repo   # internal: the shadow implementer a fresh claim spawns under [agents.implementer_shadow]
-python3 factory.py --scout ID /path/to/repo      # internal: one scout's own process the host sweep spawns
-python3 factory.py --scout-probe /path/to/repo    # probe each [scout] lead and helper route once; exit 1 when any fails
-python3 factory.py project add|remove|list|enable|hold|disable [--store PATH] # register projects and change their admission
-holo --version                                   # the package version and the checkout's short HEAD
-holo status [--json]                             # one project when -p, HOLO_PROJECT, the current repository or default_project names it, else the host; every factory.py mode but --scout-probe and the internal --worker, --witness-step, --shadow and --scout has a holo command
-holo status --watch [SECONDS]                    # the status page redrawn every SECONDS (default 5) until Ctrl-C
-holo follow [--since AGO] [--every SECONDS] [--json] -p NAME|PATH # one line per run event and ledger entry as it is written, and one when a heartbeat goes stale
-holo mcp                                         # an MCP server on stdio: tools for the holo reads and eleven signed writes (file_ticket, send_back, babysit, steer, requeue, hold, scout, scout_file, scout_stop, scout_ask, scout_steer); see docs/reference/cli.md#holo
-holo mcp --http [HOST:PORT]                      # the same tools at POST /mcp when [serve] actions = true, else the reads only; behind the host's machine token, 127.0.0.1:7711 by default; see docs/reference/http.md#post-mcp
-holo requeue KEY "note" -p NAME|PATH             # factory.py --requeue KEY --note "note" PATH; -p takes a [serve] name or a path, and without it the project is found as for status
-holo ticket requeue KEY "note" -p NAME|PATH      # the same: ticket VERB is an alias of each ticket verb
-holo approve KEY ["note"] -p NAME|PATH           # each ticket verb takes the factory mode's arguments, the note last; see docs/reference/cli.md#holo
-holo hold "note" -p NAME|PATH                    # and holo release "note"
-holo send-back RUN "note" -p NAME|PATH           # the console's send-back of run RUN; no factory.py equivalent
-holo steer KEY "note" [--hint] [--withdraw] [--author NAME] [--now] -p NAME|PATH # amend a ticket, or a live run before its pull request at its next implementer turn, or one babysitting its pull request at its next fix round (--hint: advice for its next implement turn alone; --now: stop the live implementer turn and resume its session with the note), or send its run parked on a pull request back; --withdraw drops the ticket's amendments; no factory.py equivalent
-holo start ["note"] [--foreground] -p NAME|PATH  # start the project's loop unit and return; the note releases a hold
+holo status [--json]                             # what the factory is doing: one project, or every project on the host
+holo start ["note"] -p NAME|PATH                 # start the project's loop unit and return; the note releases a hold
 holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
-holo scout "ASK" --kind bug|research|recon|guardrails [--lead NAME] [--helper NAME] [--swarm N] [--minutes M] [--about KIND:REF] [--author NAME] -p NAME|PATH # launch a scout on the ask, about a run:N, defect:N, ticket:KEY or pr:URL when --about names one, queued while the host's [scout] max_parallel slots are full; holo scout launch "ASK" is the same, and an ask that starts with a scout verb (show, file, stop, ask, steer, thread) must be written that way; see docs/reference/daemon.md#post-actionsscout
-holo bug "ASK" [--lead NAME] ... [--about KIND:REF] -p NAME|PATH # holo scout "ASK" --kind bug; and holo idea "ASK" [--about KIND:REF], --kind research
-holo sweep [--act] | board diff | board import -p NAME|PATH
-holo store import PATH --dry-run -p NAME|PATH     # factory.py --import-store PATH --dry-run
-holo report [--since WINDOW] [--notes] [--json] -p NAME|PATH # the window's counts, read from the store
-holo draft [KEY] -p NAME|PATH                    # ticketTemplate.md naming the project's implementer profiles, or KEY's stored body with its fields moved into the +++ header, for holo file --update
-holo file TICKET.md [--backlog] [--priority P] ["note" [--author NAME]] -p NAME|PATH # factory.py --file-ticket; --update KEY [--revision N] replaces the body
-holo move KEY ready|backlog --revision N ["note"] -p NAME|PATH # factory.py --move
-holo cancel KEY --revision N "note" -p NAME|PATH  # factory.py --cancel
-holo babysit KEY ["note" [--author NAME]] -p NAME|PATH # factory.py --babysit
-holo repoint KEY SHA "note" -p NAME|PATH         # factory.py --repoint
-holo pause KEY "note" -p NAME|PATH               # factory.py --pause
-holo resume KEY "note" -p NAME|PATH              # factory.py --resume
-holo abort KEY "note" [--close-pr [--pr-comment TEXT]] -p NAME|PATH # factory.py --abort
-holo close KEY URL ["note"] -p NAME|PATH         # factory.py --close KEY --landed URL
-holo gap KEY LAYER "note" [--carried-by KEY] [--found-by F] -p NAME|PATH # factory.py --gap-layer
-holo loop start|stop ...                         # the same as holo start and holo stop
-holo story file|approve|witness|decide ... -p NAME|PATH # the story modes
-holo supervise [--once]                          # the host form when no source names a project; --once is one run
-holo supervise -p NAME|PATH                      # the project form, without --once
-holo serve [ADDR] [-p NAME|PATH]                 # likewise the host daemon
-holo project add|remove|list|enable|hold|disable   # factory.py project, unchanged
-holo completion bash|zsh|fish                     # the shell's completion script; see docs/reference/cli.md#holo
-holo runs [--limit N] [--json] -p NAME|PATH      # recent runs; --json prints GET /runs's body
-holo run N [--files|--ledger|--turns] [--json] -p NAME|PATH # one run's detail, files, ledger or turns, as GET /runs/N[/files|/ledger|/turns]
-holo attention [--json] [-p NAME|PATH]           # what waits on the operator, as GET /attention; the host's when no project is named
-holo board [--json] | ticket KEY [--json] -p NAME|PATH # the board's columns or one ticket's detail, as GET /board and /tickets/KEY
-holo scouts [--limit N] [--json] -p NAME|PATH    # recent scouts, newest first; --json prints GET /scouts's body
-holo scout show ID [--json] -p NAME|PATH         # one scout's tasks, report, action items and events, as GET /scouts/ID
-holo scout file ID N ["note" [--author NAME]] [--json] -p NAME|PATH # file a done scout's action item N to Backlog through the ticket checker, as a draft when the checker reports problems, printing each problem; see docs/reference/daemon.md#post-actionsscout-file
-holo scout stop ID ["note"] [--task N] [--author NAME] [--json] -p NAME|PATH # stop a scout: a queued one ends at once, a running one's process is signalled to end it stopped; the note is required unless --task N stops that one helper task alone; see docs/reference/daemon.md#post-actionsscout-stop
-holo scout ask ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # ask a scout about its report: its lead answers in the thread once the scout is done, the ask waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the ask answers; see docs/reference/daemon.md#post-actionsscout-message
-holo scout steer ID "TEXT" [--answers MSG] [--author NAME] [--json] -p NAME|PATH # steer a scout: a running one takes the steer at its lead's next synthesis turn, else once done it runs one more pass on the steer, waiting while the host's [scout] max_parallel slots are full; --answers names the scout's card the steer answers
-holo scout thread ID [--json] -p NAME|PATH       # a scout's thread, oldest first: one line per message, a waiting ask or steer marked waiting, and under a card each choice with its mode; --json prints {"scout", "thread"}
+holo board [--json] -p NAME|PATH                 # the board's columns
+holo draft [KEY] -p NAME|PATH                    # a ticket skeleton to fill, or KEY's stored body to edit
+holo file TICKET.md [--backlog] -p NAME|PATH     # file a ticket after checking it; --update KEY replaces a body
+holo steer KEY "note" -p NAME|PATH               # amend a ticket, or steer its live run
+holo requeue KEY "note" -p NAME|PATH             # put a failed run's ticket back in the queue
+holo scout "ASK" --kind bug|research|recon|guardrails -p NAME|PATH # launch a scout on an ask
+holo serve [ADDR] [-p NAME|PATH]                 # the JSON daemon and the console
 ```
 
-`--file-ticket` validates the file against the project, creates the issue,
-reads the stored body back and validates that again, so a transfer that
-rewrites the body is caught. With `--update KO-n` it replaces that issue's
-title, description and estimate from the file instead of creating one, with
-the same validation on both sides. It adds the blockers the file names and
-the board does not yet hold, and leaves in place one the board holds and the
-file no longer names; state and priority stay as they are, so `--state` and
-`--priority` are refused beside it. On a native board `--update KEY-n`
-requires `--revision N`, the revision the ticket was read at, and takes
-`--priority` and `--labels`; a ticket that moved past `N` is left unchanged
-and its current revision printed. It prints `[holo2] updated KO-n: TITLE`,
-naming any blocker it added with a `+`, or exits 1 with the problem and nothing
-changed when the file is invalid and 2 with the identifier and the problem
-when the stored body is.
-
-A native board's column is a person's: `--move KEY-n ready|backlog` and
-`--cancel KEY-n --note TEXT` act at `--revision N` as `--update` does, and
-a live run continues through a move but is aborted by a cancel, ending
-`abandoned` at its next safe point. Both are usage errors on a Linear
-project, whose tickets are moved in Linear.
-
-`--report`, `--status`, `--sweep` and `--import-store --dry-run` read the
-store and call nobody; `--serve` reads it too, and writes only through its
-two opt-ins, `[serve] actions` and `config_edit`
-([The daemon's actions](docs/reference/daemon.md)); the loop and
-`--supervise` need a `[board]` table. `--help` is safe: the command line is parsed, not indexed.
+The [CLI reference](docs/reference/cli.md) has every `factory.py` mode and
+the other `holo` commands.
 
 ## Read next
 
