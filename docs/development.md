@@ -217,6 +217,11 @@ Each module, one line:
   `holophyte/serve/contract.py`.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
   scout route in a detached checkout of main, recorded in `route-probes.json`.
+- `holophyte/scout/scout_page.py` — `holo scout page`: a done scout's
+  `GET /scouts/ID` body as Lotuspod markdown, its findings numbered as the
+  thread's labels are, its action items with their drafts, and a
+  "Decisions for the maintainer" table of its unfiled items, with fenced
+  lines and table cells escaped for Lotuspod's converter.
 - `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
   process, its lead worktree with pushes refused, its heartbeat and its end,
   an `answering` scout's answer turn, or a steered scout's follow-up pass.

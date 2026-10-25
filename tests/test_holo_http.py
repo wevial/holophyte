@@ -76,6 +76,7 @@ COVERED = {
     ("scout", "file"): ["scout", "file", "1", "1"],
     ("scout", "stop"): ["scout", "stop", "1", "not needed"],
     ("scout", "thread"): ["scout", "thread", "1"],
+    ("scout", "page"): ["scout", "page", "1"],
     ("scout", "ask"): ["scout", "ask", "1", "Go on"],
     ("scout", "steer"): ["scout", "steer", "1", "Go on", "--answers", "7"],
 }
