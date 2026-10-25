@@ -85,9 +85,6 @@ function ScoutTable({ rows, empty }: { rows: ScoutListRow[]; empty: string }) {
   );
 }
 
-/** "Sat 02:28 PDT": when the scout started, or was queued, in the browser's zone. */
-const startWords = (row: ScoutListRow) => dayClock(row.started_ms ?? row.created_ms);
-
 function Outcome({ outcome }: { outcome: ScoutOutcome }) {
   if (outcome.kind === "failed") return <span className="font-semibold text-bad">{outcome.text}</span>;
   if (outcome.kind === "back") return <>{outcome.text}</>;
@@ -120,7 +117,7 @@ function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: bo
           <span data-scout-row-facts className={`${MONO} [overflow-wrap:anywhere]`}>
             <span className="inline-block border border-rule px-1 align-top text-[11px] font-semibold leading-[15px] text-ink-2">{row.kind}</span>
             {!scoped && <> {row.project}</>}
-            {" · "}{took}{" · "}{startWords(row)}
+            {" · "}{took}{" · "}{dayClock(row.started_ms ?? row.created_ms)}
           </span>
           {!empty && <span data-scout-outcome className={`${MONO} text-ink-2 [overflow-wrap:anywhere]`}><Outcome outcome={outcome} /></span>}
         </span>
