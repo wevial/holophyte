@@ -949,9 +949,9 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 61)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 62)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (61,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (62,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)
@@ -979,7 +979,7 @@ class ScoutTaskTitleMigrationTests(unittest.TestCase):
             self.addCleanup(conn.close)
 
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
-                             (61,))
+                             (62,))
             self.assertEqual(store.schema.READABLE_FROM, 50)
             columns = [row[1] for row in conn.execute(
                 "PRAGMA table_info(scoutTasks)") if row[1] != "title"]

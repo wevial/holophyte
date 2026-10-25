@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import tempfile
+from functools import partial
 from pathlib import Path
 
 from holophyte import questions, redact
@@ -79,22 +80,22 @@ def command(route):
     return route.backend
 
 
-def claude_argv(route, question, text):
+def claude_argv(route, answer_schema, text, system):
     return [
         "claude", "-p", "--model", route.model, "--effort", route.effort,
         "--output-format", "json", "--tools", "", "--no-session-persistence",
         "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands",
-        "--system-prompt", SYSTEM_PROMPT, "--json-schema",
-        json.dumps(schema(question)), text,
+        "--system-prompt", system, "--json-schema", json.dumps(answer_schema),
+        text,
     ]
 
 
-def codex_argv(route, schema_file, text):
+def codex_argv(route, schema_file, text, system):
     return [
         "codex", "exec", "--json", "-s", "read-only", "--skip-git-repo-check",
         "--ephemeral", "--disable", "shell_tool", "-m", route.model,
         "-c", f"model_reasoning_effort={route.effort}",
-        "--output-schema", str(schema_file), f"{SYSTEM_PROMPT}\n\n{text}",
+        "--output-schema", str(schema_file), f"{system}\n\n{text}",
     ]
 
 
@@ -108,30 +109,41 @@ def launch(argv, cwd):
     try:
         stdout, _ = process.communicate(timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
-        process.stdout.close()
-        process.stderr.close()
+        killed(process)
         return None, ""
+    except BaseException:
+        killed(process)
+        raise
     return process.returncode, stdout.decode(errors="replace")
+
+
+def killed(process):
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+    process.stdout.close()
+    process.stderr.close()
 
 
 def answer(route, question, state, config):
     text = prompt(question, state, redact.known_secrets(config))
+    return asked(route, schema(question), text, partial(checked, question=question))
+
+
+def asked(route, answer_schema, text, check, system=SYSTEM_PROMPT):
     with tempfile.TemporaryDirectory() as root:
         work = Path(root, "work")
         work.mkdir()
         if route.backend == "claude":
-            argv, parse = claude_argv(route, question, text), parse_claude
+            argv, parse = claude_argv(route, answer_schema, text, system), parse_claude
         else:
             schema_file = Path(root, "schema.json")
-            schema_file.write_text(json.dumps(schema(question)))
-            argv, parse = codex_argv(route, schema_file, text), parse_codex
+            schema_file.write_text(json.dumps(answer_schema))
+            argv, parse = codex_argv(route, schema_file, text, system), parse_codex
         status, output = launch(argv, work)
     if status is None:
         return questions.Failure("timeout"), {}, output
-    result, usage = parse(output, question)
+    result, usage = parse(output, check)
     if status != 0:
         result = questions.Failure("service_error")
     return result, usage, output
@@ -149,7 +161,7 @@ def checked(document, question):
     return questions.Failure("invalid_response")
 
 
-def parse_claude(output, question):
+def parse_claude(output, check):
     try:
         document = json.loads(output)
     except ValueError:
@@ -159,7 +171,7 @@ def parse_claude(output, question):
     tokens = claude_usage(document)
     if document.get("is_error"):
         return questions.Failure("service_error"), tokens
-    return checked(document.get("structured_output"), question), tokens
+    return check(document.get("structured_output")), tokens
 
 
 def events(output):
@@ -172,7 +184,7 @@ def events(output):
             yield event
 
 
-def parse_codex(output, question):
+def parse_codex(output, check):
     found = list(events(output))
     usage = next((e.get("usage") for e in reversed(found)
                   if e.get("type") == "turn.completed"), None)
@@ -186,10 +198,11 @@ def parse_codex(output, question):
         document = json.loads(texts[-1])
     except (IndexError, TypeError, ValueError):
         return questions.Failure("invalid_response"), tokens
-    return checked(document, question), tokens
+    return check(document), tokens
 
 
-def active_route(options, config, conn, run_id, seat="questions"):
+def active_route(options, config, conn, run_id, seat="questions",
+                 project_id=None):
     primary = questions.Route(options["backend"], options["model"], options["effort"])
     if primary.backend == "jev":
         return primary
@@ -198,11 +211,12 @@ def active_route(options, config, conn, run_id, seat="questions"):
         fallback = questions.Route(*(options[key] for key in questions.FALLBACK_KEYS))
     key = (seat, primary, fallback)
     if key not in ROUTES:
-        ROUTES[key] = probed(primary, fallback, config, options, conn, run_id, seat)
+        ROUTES[key] = probed(primary, fallback, config, options, conn, run_id,
+                             seat, project_id)
     return ROUTES[key]
 
 
-def probed(primary, fallback, config, options, conn, run_id, seat):
+def probed(primary, fallback, config, options, conn, run_id, seat, project_id):
     reason = probe(primary, config, options)
     if reason is None:
         return primary
@@ -210,9 +224,10 @@ def probed(primary, fallback, config, options, conn, run_id, seat):
         return None
     evidence = {"seat": seat, "reason": reason, "command": command(fallback)}
     if conn is not None and run_id is not None:
-        (project,) = conn.execute("SELECT projectId FROM runs WHERE id = ?",
-                                  (run_id,)).fetchone()
-        agent_routes.switched(conn, project, evidence, run_id)
+        (project_id,) = conn.execute("SELECT projectId FROM runs WHERE id = ?",
+                                     (run_id,)).fetchone()
+    if conn is not None and project_id is not None:
+        agent_routes.switched(conn, project_id, evidence, run_id)
     redact.safe_print(f"[holo2] {seat} route down ({reason}); "
                       f"using fallback: {evidence['command']}")
     return fallback

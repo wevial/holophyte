@@ -556,7 +556,8 @@ CREATE TABLE IF NOT EXISTS scouts (
     totals      TEXT,  -- JSON
     subjectKind TEXT
         {_enums.check_clause('subjectKind', _enums.ScoutSubject)},
-    subjectRef  TEXT
+    subjectRef  TEXT,
+    title       TEXT
 );
 
 -- scoutReports: a scout pass's report, at most one per pass.

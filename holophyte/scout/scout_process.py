@@ -34,6 +34,7 @@ from holophyte.scout.lead import run_lead
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.stop import BY_SIGNAL, stop_reason, stop_request, stopped_by
 from holophyte.scout.swarm import ScoutStopped, Stopping
+from holophyte.scout.titler import title_scout
 from store.scouts import (
     ANSWERING,
     PLANNING,
@@ -389,6 +390,8 @@ def run_scout(conn, project, row, stopping):
                            f"scout {scout_id} started as pid {os.getpid()}")
         try:
             with scout_heartbeat(conn, scout_id, interval_s):
+                if row.title is None:
+                    title_scout(conn, project.config(), row)
                 lead = make_lead(project, scout_id, row.base_sha)
                 phase, reason = run_lead(conn, project, row, lead,
                                          row.budget_min * 60, stopping)

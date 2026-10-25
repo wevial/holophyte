@@ -164,6 +164,9 @@ Each module, one line:
 - `holophyte/scout/brief.py` — the short texts served for a scout whose
   lead wrote none: a scout title cut from its ask, a task title cut from its
   question, and a failed task's one-line reason read from its excerpt.
+- `holophyte/scout/titler.py` — a scout's short title, asked of the
+  `[questions.titles]` route from its ask as its first run starts, stored on
+  the scout and recorded as a `scout_title` event.
 - `holophyte/scout/context.py` — a scout's context pack: its subject's
   run, ledger, verify tail, findings, files and ticket, cut to a cap, for
   the lead's plan goal.
@@ -685,7 +688,8 @@ Each module, one line:
   fingerprints and answer markers.
 - `holophyte/babysit/thread_answers.py` — read-only mention answers and thread replies.
 - `holophyte/babysit/thread_mentions.py` — mention markers and typed intent triage.
-- `holophyte/questions.py` — typed choice requests and safe service failures.
+- `holophyte/questions.py` — typed choice requests, the seats' settings for
+  choices and for text answers, and safe service failures.
 - `holophyte/question_cli.py` — typed questions through the `claude` or `codex`
   CLI: prompt, schema, parsing, usage, and the probe with its fallback.
 - `holophyte/loop/follow_ups.py` — a fix turn's `FOLLOW_UP` lines parsed

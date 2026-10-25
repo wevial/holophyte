@@ -33,6 +33,7 @@ from store.scouts import (
     record_scout_event,
     record_scout_report,
     record_scout_tasks,
+    record_scout_title,
     start_scout_task,
 )
 from tests.serve_contract_fixture import NOW, normalize_contract
@@ -455,12 +456,14 @@ BRIEF = {"title": "Measure test_babysit_threads.py against the 90 s ceiling",
 
 
 class BriefTests(ScoutCase):
-    def ended(self, conn, project, ask, tasks, report):
+    def ended(self, conn, project, ask, tasks, report, title=None):
         scout_id = create_scout(conn, project, ask, "recon", 20,
                                 lead_route="A", helper_route="C", swarm=2,
                                 helper_turns=6, waves=1, now=NOW - 9_000)
         move_scout(conn, scout_id, "planning", base_sha="9" * 40,
                    host="writer", now=NOW - 8_000)
+        if title is not None:
+            record_scout_title(conn, scout_id, title)
         move_scout(conn, scout_id, "swarming")
         ids = record_scout_tasks(conn, scout_id, 1, 1, [
             {key: value for key, value in task.items() if key != "end"}
@@ -556,6 +559,26 @@ class BriefTests(ScoutCase):
                           report["report"]["bullets"]),
                          (BRIEF["headline"], BRIEF["bullets"]))
         self.assertNotIn("title", report["report"])
+
+    def test_a_stored_title_is_served_before_its_lead_report_title(self):
+        conn = store.open(str(self.store_path))
+        try:
+            project = store.tickets.ensure_project(conn, "native:ALPHA",
+                                                   self.alpha)
+            scout_id = self.ended(
+                conn, project, QUEUED_ASK, [],
+                {**BRIEF, "summary": "The module runs in 38 s alone."},
+                title="Babysit thread timing")
+        finally:
+            conn.close()
+        port = self.serve(self.project)
+        code, listed = self.get(port, "/scouts")
+        self.assertEqual(code, 200, listed)
+        code, detail = self.get(port, f"/scouts/{scout_id}")
+        self.assertEqual(code, 200, detail)
+        (row,) = [row for row in listed["scouts"] if row["id"] == scout_id]
+        self.assertEqual((row["title"], detail["scout"]["title"]),
+                         ("Babysit thread timing", "Babysit thread timing"))
 
 
 class RoutesTests(ScoutCase):
