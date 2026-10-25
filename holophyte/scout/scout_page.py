@@ -106,7 +106,7 @@ def decision_lines(actions):
 
 
 def section(title, lines):
-    return [f"## {title}", "", *lines] if lines else []
+    return [f"## {title}", "", *lines]
 
 
 def page_lines(body):

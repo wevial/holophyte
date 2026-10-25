@@ -1,9 +1,3 @@
-"""`holo scout page ID`: a done scout's report printed as Lotuspod markdown
-from `GET /scouts/ID` over the local transport, its decisions table and its
-fenced blocks shaped for Lotuspod's converter, and a scout not done refused.
-
-Run: python3 -m unittest discover -s tests -p 'test_scout_page.py' -v
-"""
 import contextlib
 import io
 import os
@@ -88,9 +82,6 @@ def fenced_block(lines, opening_index):
 
 
 class ScoutPageCase(unittest.TestCase):
-    """A project whose store holds 13 queued scouts, then done bug scout 14
-    with two passes and items A1-A3, done scout 15 whose items are all filed
-    or `revise`, and scout 16 in `swarming`."""
 
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -118,6 +109,8 @@ class ScoutPageCase(unittest.TestCase):
                                      "research", 30)
         move_scout(conn, self.swarming, "planning", base_sha="b" * 40)
         move_scout(conn, self.swarming, "swarming")
+        self.empty = self.done(conn, project_id, "research",
+                               [(1, report("Nothing found.", []), [])])
 
     def done(self, conn, project_id, kind, passes):
         scout_id = create_scout(conn, project_id, ASK, kind, 30)
@@ -200,6 +193,12 @@ class ScoutPageTests(ScoutPageCase):
     def test_no_decisions_heading_when_every_item_is_filed_or_a_revise(self):
         lines = self.printed(self.decided)
         self.assertTrue(any(line.startswith("### A2 ") for line in lines))
+        self.assertNotIn(DECISIONS, lines)
+
+    def test_a_scout_with_no_findings_or_items_keeps_both_headings(self):
+        lines = self.printed(self.empty)
+        self.assertIn("## Findings", lines)
+        self.assertIn("## Action items", lines)
         self.assertNotIn(DECISIONS, lines)
 
     def test_a_scout_not_done_is_refused_with_nothing_on_stdout(self):
