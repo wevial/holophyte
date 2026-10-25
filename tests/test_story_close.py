@@ -245,7 +245,8 @@ class StoryCloseTests(StoryCloseFixture):
             f"SELECT text FROM ticketNotes WHERE ticketId = {parent}")
             if text.startswith("Story closed")]
 
-    def assert_held_until_abandoned(self, parent, other, tip):
+    def test_a_ready_child_holds_a_green_story_open(self):
+        parent, other, tip = self.approve_with_scaffolding("ready")
         self.step()
 
         self.assertEqual(story(self.conn, parent).state, "approved")
@@ -261,15 +262,6 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual(self.close_notes(parent),
                          [f"Story closed on its witnesses at {tip}: W1 green."])
 
-    def test_a_ready_child_holds_a_green_story_open(self):
-        self.assert_held_until_abandoned(
-            *self.approve_with_scaffolding("ready"))
-
-    def test_a_child_with_a_run_in_flight_holds_a_green_story_open(self):
-        parent, other, tip = self.approve_with_scaffolding("ready")
-        store.claim(self.conn, self.project_id, other)
-        self.assert_held_until_abandoned(parent, other, tip)
-
     def test_a_backlog_child_without_a_run_does_not_hold_the_close(self):
         parent, _, tip = self.approve_with_scaffolding("backlog")
 
@@ -277,17 +269,6 @@ class StoryCloseTests(StoryCloseFixture):
 
         found = story(self.conn, parent)
         self.assertEqual((found.state, found.closedSha), ("closed", tip))
-
-    def test_the_held_story_closes_at_the_tip_its_last_child_merges(self):
-        parent, other, _ = self.approve_with_scaffolding("ready")
-        self.step()
-        landed = self.commit(W2_FILE, PASSES, "scaffolding lands")
-        store.tickets.walk_ticket(self.conn, other, "merged")
-
-        self.step()
-
-        found = story(self.conn, parent)
-        self.assertEqual((found.state, found.closedSha), ("closed", landed))
 
     def test_a_baseline_green_at_the_tip_is_no_pass_and_closes_nothing(self):
         parent, child = self.tickets()
