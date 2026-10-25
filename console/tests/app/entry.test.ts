@@ -25,10 +25,10 @@ test("one build emits the new console at index.html and the classic console at c
       expect(written).toContain(script!);
       scripts.push(script!);
       const document = new DOMParser().parseFromString(html, "text/html");
-      const next = page === "index.html";
+      const app = page === "index.html";
       for (const [preference, color] of [
-        ["light", next ? "#eceaf3" : "#f4f1ea"],
-        ["dark", next ? "#0d0a15" : "#141210"],
+        ["light", app ? "#eceaf3" : "#f4f1ea"],
+        ["dark", app ? "#0d0a15" : "#141210"],
       ]) {
         expect(document.querySelector(`meta[name="theme-color"][media="(prefers-color-scheme: ${preference})"]`)
           ?.getAttribute("content")).toBe(color);
@@ -39,9 +39,9 @@ test("one build emits the new console at index.html and the classic console at c
       expect(localStylesheets.length).toBeGreaterThan(0);
       const css = (await Promise.all(localStylesheets.map((href) =>
         Bun.file(outdir + href.replace(/^(?:\.\/|\/)/, "")).text()))).join("\n");
-      expect(declarations(css).some(({ name }) => name === "--canvas")).toBe(next);
-      expect(/--row-selected:\s*color-mix\(/.test(css)).toBe(next);
-      if (next) {
+      expect(declarations(css).some(({ name }) => name === "--canvas")).toBe(app);
+      expect(/--row-selected:\s*color-mix\(/.test(css)).toBe(app);
+      if (app) {
         const fonts = stylesheets.filter((href) => href.startsWith("https://fonts.googleapis.com/"));
         expect(fonts).toHaveLength(1);
         expect(new URL(fonts[0]!).searchParams.getAll("family")).toEqual([
