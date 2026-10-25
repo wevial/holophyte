@@ -330,3 +330,25 @@ class MovedLandmarkTests(LoopFixture):
         self.assertEqual(self.ticket()[0], edited)
         self.assertEqual(self.authors().count("factory"), factory)
         self.assertIn("NAT-1 was claimed, edited or parked again", out)
+
+    def test_a_renamed_directory_is_followed_with_the_files_under_it(self):
+        (self.target / "lotus" / "tools").mkdir()
+        for name in ("run.py", "stop.py"):
+            (self.target / "lotus" / "tools" / name).write_text(f"NAME = {name!r}\n")
+        self.git("add", "lotus/tools")
+        self.commit("add the tools")
+        self.file(VALID_BODY.replace(
+            "## Implementation notes\n\n* None.\n",
+            "## Implementation notes\n\n* Extend `lotus/tools` and"
+            " `lotus/tools/run.py`.\n"))
+        sha = self.move("lotus/tools", "lotus/kit")
+        self.park("lotus/tools", "lotus/tools/run.py")
+
+        self.sweep()
+
+        body = self.ticket()[0]
+        self.assertEqual(self.status(), "ready")
+        self.assertIn("* Extend `lotus/kit` and `lotus/kit/run.py`.", body)
+        (note,) = self.notes()
+        for part in ("`lotus/tools`", "`lotus/kit`", sha):
+            self.assertIn(part, note)
