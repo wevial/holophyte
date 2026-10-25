@@ -60,6 +60,8 @@ NAMING_TOOLS = (VALID_BODY
                          "## Implementation notes\n\n* Extend `lotus/tools`"
                          " (`lotus/tools/`) through `lotus/tools/run.py`.\n"
                          "* Add `lotus/tools/fresh.py` (new).\n"))
+NAMING_DIR = VALID_BODY.replace("## Implementation notes\n\n* None.\n",
+                                f"## Implementation notes\n\n* Extend `{TOOLS}`.\n")
 
 
 def no_linear(*args, **kwargs):
@@ -411,14 +413,11 @@ class MovedLandmarkTests(LoopFixture):
             self.assertIn(part, note)
 
     def test_a_directory_split_or_deleted_keeps_the_park_with_one_note(self):
-        naming_dir = VALID_BODY.replace(
-            "## Implementation notes\n\n* None.\n",
-            f"## Implementation notes\n\n* Extend `{TOOLS}`.\n")
         for moved in ("split", "deleted"):
             with self.subTest(moved):
                 self.setUp()
                 self.add_tools()
-                self.file(naming_dir)
+                self.file(NAMING_DIR)
                 if moved == "split":
                     for name, place in (("run.py", "lotus/a"),
                                         ("stop.py", "lotus/b")):
@@ -440,6 +439,23 @@ class MovedLandmarkTests(LoopFixture):
                     f"`{TOOLS}` went to more than one place in {sha}:"
                     " `lotus/a`, `lotus/b`" if moved == "split"
                     else f"`{TOOLS}` was deleted in {sha}", note)
+
+    def test_a_delete_or_move_inside_the_directory_does_not_end_its_chain(self):
+        self.add_tools()
+        self.file(NAMING_DIR)
+        self.git("rm", "-q", f"{TOOLS}/stop.py")
+        self.git("mv", f"{TOOLS}/run.py", f"{TOOLS}/runner.py")
+        self.commit("trim the tools", self.filed + 30)
+        sha = self.move(TOOLS, KIT)
+        self.park(TOOLS)
+
+        self.sweep()
+
+        self.assertEqual(self.status(), "ready")
+        self.assertIn(f"* Extend `{KIT}`.", self.ticket()[0])
+        (note,) = self.notes()
+        self.assertIn(f"`{TOOLS}` → `{KIT}` (renamed to `{KIT}` in {sha})",
+                      note)
 
     def test_the_implementer_of_a_refreshed_ticket_is_told_the_new_paths(self):
         sha = self.refreshed_tools()

@@ -25,10 +25,12 @@ class Chain:
         self.split = None
         self.copied = False
         self.directory = False
+        self.emptied = None
 
     @property
     def touched(self):
-        return bool(self.hops or self.copied) or self.deleted or self.split
+        return (bool(self.hops or self.copied) or self.deleted or self.split
+                or self.emptied)
 
     def follow(self, commit, rows):
         sources = [row for row in rows if row[1] == self.path]
@@ -48,7 +50,8 @@ class Chain:
     def _follow_directory(self, commit, rows):
         prefix = self.path + "/"
         under = [row for row in rows if row[1].startswith(prefix)]
-        moves = [row for row in under if row[0][0] in "RC"]
+        moves = [row for row in under if row[0][0] in "RC"
+                 and not row[2].startswith(prefix)]
         places = {row[2]: _moved_under(row[1].removeprefix(prefix), row[2])
                   for row in moves}
         if None in places.values() or len(set(places.values())) > 1:
@@ -57,9 +60,9 @@ class Chain:
         elif any(row[0][0] == "R" for row in moves):
             (new,) = set(places.values())
             self.hops.append((commit, self.path, new))
-            self.path, self.directory = new, True
+            self.path, self.directory, self.emptied = new, True, None
         elif under and all(row[0] == "D" for row in under):
-            self.deleted = commit
+            self.emptied = commit
         self.copied = self.copied or bool(moves)
         return self.deleted is None and self.split is None
 
@@ -150,9 +153,12 @@ def _why_unmapped(written, chain, tree):
         sha, places = chain.split
         return (f"`{written}` went to more than one place in {sha}: "
                 + ", ".join(f"`{place}`" for place in places))
-    if chain.deleted is not None:
+    deleted = chain.deleted
+    if deleted is None and chain.emptied and not tree.has(chain.path):
+        deleted = chain.emptied
+    if deleted is not None:
         via = "".join(f" (as `{old}`)" for _, old, _ in chain.hops[-1:])
-        return f"`{written}` was deleted in {chain.deleted}{via}"
+        return f"`{written}` was deleted in {deleted}{via}"
     if not chain.hops:
         return f"`{written}` has no rename since the body was written"
     if not (tree.has(chain.path) if chain.directory
