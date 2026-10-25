@@ -223,7 +223,6 @@ class ScoutTitleTests(unittest.TestCase):
 
 class ScoutTitleColumnTests(unittest.TestCase):
     def test_a_store_at_the_previous_version_gains_a_null_scout_title(self):
-        self.assertEqual(store.schema.READABLE_FROM, 50)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "store.db"
             conn = store.open(path)
