@@ -789,9 +789,10 @@ class StuckWaitStatesTests(ServeTestCase):
             "NAT-2": ("NAT-1", "closed", CLOSE_NOTE, "attention")})
 
     def test_ended_open_and_shelved_story_children_are_no_stuck_waits(self):
-        parent, merged, _ = approved_story(
-            self.conn, self.project_id, "NAT-1", ["NAT-2", "NAT-4"])
+        parent, merged, abandoned, _ = approved_story(
+            self.conn, self.project_id, "NAT-1", ["NAT-2", "NAT-3", "NAT-4"])
         store.tickets.walk_ticket(self.conn, merged, "merged")
+        store.tickets.walk_ticket(self.conn, abandoned, "abandoned")
         close_story(self.conn, parent, CLOSED_AT, CLOSE_NOTE)
         approved_story(self.conn, self.project_id, "NAT-5", ["NAT-6"])
         self.assertEqual(self.stuck_waits(), {})
