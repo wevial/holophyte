@@ -23,7 +23,7 @@ export function LaneHead({
       data-lane-head
       className={`${edge} relative z-[1] flex w-fit max-w-full flex-wrap items-center gap-x-3.5 gap-y-1 px-3.5 py-2 font-mono text-[12px] leading-[1.3] text-ink-3`}
     >
-      <span className="font-sans text-[13px] font-semibold text-ink">{name}</span>
+      <span className="font-sans text-[11.5px] font-semibold uppercase tracking-[0.1em] text-ink-2">{name}</span>
       {held && <span className="text-wait">held{holdNote ? ` · ${holdNote}` : ""}</span>}
       <span>{meta}</span>
       {children}
