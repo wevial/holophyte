@@ -220,6 +220,11 @@ Each module, one line:
   `holophyte/serve/contract.py`.
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
   scout route in a detached checkout of main, recorded in `route-probes.json`.
+- `holophyte/scout/scout_page.py` — `holo scout page`: a done scout's
+  `GET /scouts/ID` body as Lotuspod markdown, its findings numbered as the
+  thread's labels are, its action items with their drafts, and a
+  "Decisions for the maintainer" table of its unfiled items, with fenced
+  lines and table cells escaped for Lotuspod's converter.
 - `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
   process, its lead worktree with pushes refused, its heartbeat and its end,
   an `answering` scout's answer turn, or a steered scout's follow-up pass.
@@ -1131,8 +1136,6 @@ at Overview in that scope; a hash that names a route is shown as written.
 
 `console/src/next/pages/NewTicket.tsx` presents the ticket template as text
 fields and files to an editable project’s Backlog from the Tickets page.
-`console/e2e/HOLO-406.capture.ts` captures its themes, Tickets entry, filing
-refusal and narrow layout, and checks the commands’ rendered monospace font.
 `console/src/next/pages/EditTicket.tsx` loads a native ticket's current
 revision into the same fields (`console/src/next/components/TicketFields.tsx`),
 marks each changed one and saves it as the next revision with `If-Match`;
@@ -1194,7 +1197,8 @@ The Scout page (`console/src/next/pages/Scout.tsx`) reads one scout's `GET /scou
 or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
 `console/src/next/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
 badges and steps of `console/src/next/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
-`console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm.
+`console/src/next/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm; a
+swarming scout's queued or running helper row posts it with its `task`, no confirm, from Stop this branch.
 `console/src/next/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
 findings with their status and evidence, and the newest bug report's hypotheses.
 `console/src/next/components/ScoutActions.tsx` draws its Action items under the Report, each filed

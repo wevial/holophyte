@@ -39,9 +39,6 @@ function messageRow(detail: ScoutDetail, message: ThreadMessage, index: number):
 const highestPass = (detail: ScoutDetail, before = Infinity) =>
   Math.max(0, ...detail.reports.filter((report) => report.at < before).map((report) => report.pass));
 
-/** The pass a steer would start now. */
-export const nextPass = (detail: ScoutDetail) => highestPass(detail) + 1;
-
 export interface FollowUp {
   kind: "answer" | "pass";
   started: ScoutEvent;
@@ -109,7 +106,15 @@ function eventLine(detail: ScoutDetail, events: ScoutEvent[], spans: FollowUp[],
   if (event.kind === "scout_pass_done") return { text: passDoneLine(detail, spans, event), tone: "quiet" };
   if (FAILED.has(event.kind)) return { text: event.summary, tone: "bad" };
   if (STOPPED.has(event.kind)) return { text: event.summary, tone: "wait" };
+  if (event.kind === "scout_steer_taken") return { text: `${event.summary} · ${formatClock(event.at)}`, tone: "quiet" };
   return null;
+}
+
+/** What an ask or steer no turn has taken yet waits for, or null on a scout that will take none. */
+function waitingFor(detail: ScoutDetail): string | null {
+  const { phase } = detail.scout;
+  if (phase === "failed" || phase === "stopped") return null;
+  return isLive(phase) ? "the next wave or the end" : "a scout slot";
 }
 
 /** The scout's messages and the lines its answer turns and passes draw, in
@@ -118,13 +123,14 @@ function eventLine(detail: ScoutDetail, events: ScoutEvent[], spans: FollowUp[],
  *  proposal reads as a card, answered once a message names it. */
 export function threadRows(detail: ScoutDetail): ThreadRow[] {
   const events = [...detail.events].sort((a, b) => a.at - b.at || a.id - b.id);
+  const waiting = waitingFor(detail);
   const timed: { at: number; order: number; rows: ThreadRow[] }[] = detail.thread.map((message, index) => ({
     at: message.at,
     order: 0,
     rows: [
       messageRow(detail, message, index),
-      ...(asksOrSteers(message) && message.consumed_by == null
-        ? [{ kind: "line", key: `waiting-${index}`, text: "waiting for a scout slot", tone: "wait" } as const]
+      ...(waiting != null && asksOrSteers(message) && message.consumed_by == null
+        ? [{ kind: "line", key: `waiting-${index}`, text: `waiting for ${waiting}`, tone: "wait" } as const]
         : []),
     ],
   }));
@@ -136,14 +142,25 @@ export function threadRows(detail: ScoutDetail): ThreadRow[] {
   return timed.sort((a, b) => a.at - b.at || a.order - b.order).flatMap((each) => each.rows);
 }
 
-export const hasThread = (detail: ScoutDetail) => detail.scout.phase === "done" || detail.thread.length > 0;
+/** Whether the composer sends to a scout in `phase`, its actions and waiting messages aside. */
+export const takesMessages = (phase: ScoutDetail["scout"]["phase"]) => phase === "done" || isLive(phase);
+
+export const hasThread = (detail: ScoutDetail) =>
+  takesMessages(detail.scout.phase) || detail.scout.phase === "answering" || detail.thread.length > 0;
 
 /** Why the composer cannot send now, or null when it can: the daemon takes a
- *  message only on a done scout with no ask or steer waiting. */
+ *  message on a done or live scout with no ask or steer waiting. */
 export function composeBlock(detail: ScoutDetail, actions: boolean): string | null {
   const { scout } = detail;
   if (!actions) return ACTIONS_OFF;
-  if (scout.phase !== "done") return `Scout ${scout.id} is ${scout.phase}.`;
+  if (!takesMessages(scout.phase)) return `Scout ${scout.id} is ${scout.phase}.`;
   const waiting = detail.thread.find((message) => asksOrSteers(message) && message.consumed_by == null);
-  return waiting == null ? null : `Message ${waiting.id} waits for a scout slot.`;
+  return waiting == null ? null : `Message ${waiting.id} waits for ${waitingFor(detail)}.`;
+}
+
+/** What the composer's line says a message in `mode` does: on a live scout an
+ *  ask waits for its end and a steer for its next wave, or starts the pass after the running one. */
+export function composeLine(detail: ScoutDetail, mode: ThreadMessage["mode"]): string {
+  if (!isLive(detail.scout.phase)) return mode === "ask" ? "Answers from the report." : `Starts pass ${highestPass(detail) + 1}.`;
+  return mode === "ask" ? "Answered when the scout is done." : `Taken at the next wave, or as pass ${(livePass(detail)?.pass ?? 1) + 1}.`;
 }

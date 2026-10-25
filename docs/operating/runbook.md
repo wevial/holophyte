@@ -270,6 +270,39 @@ page with the line the verb printed, a refusal included. Any other comment,
 by another handle, naming no ticket or several, or asking no change, is
 answered on the page and not relayed.
 
+### A maintainer answers a scout's Lotuspod page
+
+Publish a done scout's page, the output of `holo scout page -p PROJECT ID`,
+as `scout-PROJECT-ID`, owned by the operator seat's handle. Its "Decisions
+for the maintainer" table holds one row per unfiled action item that is not
+a `revise`, and each answer names its row's question, `decision-aN` for
+item N. Relay every File answer before any Look further or question on the
+same scout: a taken `steer` or `ask` reopens the scout, and `holo scout
+file` is refused until it is done again, so relay a File answer that
+arrives later only once `holo scout show -p PROJECT ID` reads `done`.
+Relay each answer by its choice:
+
+```
+holo scout file -p PROJECT ID N "NOTE" --author "maintainer via Lotuspod"
+holo scout steer -p PROJECT ID "NOTE" --author "maintainer via Lotuspod"
+holo scout ask -p PROJECT ID "COMMENT" --author "maintainer via Lotuspod"
+```
+
+- **File** runs `holo scout file`, the answer's note as the filed ticket's
+  first note, or no note when the answer has none. File with edits is a
+  File whose note names the edits: the draft lands in Backlog with that
+  note, where it is edited before it is readied.
+- **Look further** runs `holo scout steer`, the steer being the answer's
+  note, or `Look further into AN: TITLE` when it has none.
+- **Drop** changes nothing in the factory.
+- A page comment from the maintainer that asks about the report runs
+  `holo scout ask` with the comment as written; reply on the page with the
+  scout's answer once `holo scout thread -p PROJECT ID` shows it.
+
+An item filed from the console is recorded on the page with Lotuspod's
+`record-answer`. After a follow-up pass, publish the page again: new items
+join the table while answered rows keep their answers.
+
 ### A manual merge to `main`
 
 A merge outside the loop goes through a pull request, never a push straight
