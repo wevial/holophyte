@@ -2,6 +2,7 @@
   "scouts": [
     {
       "id": 1,
+      "title": "Show owner initials",
       "ask": "Show owner initials",
       "kind": "research",
       "phase": "queued",
@@ -24,6 +25,7 @@
     },
     {
       "id": 1,
+      "title": "Map the merge gate",
       "ask": "Map the merge gate",
       "kind": "recon",
       "phase": "swarming",
@@ -46,6 +48,7 @@
     },
     {
       "id": 1,
+      "title": "Why does the retry spin?",
       "ask": "Why does the retry spin?",
       "kind": "bug",
       "phase": "done",

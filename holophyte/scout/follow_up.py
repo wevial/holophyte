@@ -10,6 +10,7 @@ from holophyte.scout.lead import (
     NO_REPORT,
     PLAN_SHAPE,
     REPORT_TURN_S,
+    TITLE_SENTENCE,
     Lead,
     asked,
     checked_report,
@@ -93,6 +94,7 @@ def pass_plan_goal(row, steer, card, number, reports, actions, total, fresh):
         "is one question a helper answers by reading the code (mode "
         "\"read\") or by running commands in its own checkout (mode "
         "\"run\"), with the repository-relative paths it should start from. "
+        f"{TITLE_SENTENCE}"
         "End your answer with one fenced json block in this shape, TEXT and "
         "PATH standing for strings:\n\n"
         f"```json\n{PLAN_SHAPE}\n```\n")

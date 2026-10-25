@@ -22,11 +22,14 @@ from holophyte.scout.prior import (
 )
 from holophyte.scout.proposals import card_line
 from holophyte.scout.report import (
+    BULLETS,
     GUARDRAIL,
     LAYERS,
+    LINE_CHARS,
     PRIOR,
     REPRODUCTION,
     REVISE,
+    TITLE_CHARS,
     fields_shape,
     offered_fields,
     offers_revise,
@@ -63,8 +66,19 @@ CONTEXT_SLOT = "\x00context\x00"
 MODES = tuple(mode.value for mode in ScoutTaskMode)
 FENCED_JSON = re.compile(r"^[ \t]*```json[ \t]*\n(.*?)^[ \t]*```",
                          re.DOTALL | re.MULTILINE)
-PLAN_SHAPE = ('{"tasks": [{"question": TEXT, "paths": [PATH, ...], '
-              '"mode": "read" or "run"}, ...]}')
+PLAN_SHAPE = ('{"tasks": [{"title": TEXT, "question": TEXT, '
+              '"paths": [PATH, ...], "mode": "read" or "run"}, ...]}')
+TASK_TITLE_WORDS, TASK_TITLE_CHARS = 8, 60
+TASK_TITLE_RULE = (f"non-empty text of at most {TASK_TITLE_WORDS} words and "
+                   f"{TASK_TITLE_CHARS} characters on one line")
+TITLE_SENTENCE = (f"Each sub-task's title names what its helper finds out, in "
+                  f"{TASK_TITLE_RULE}. ")
+BRIEF_SENTENCE = (
+    f"The report's title names the scout in at most {TITLE_CHARS} "
+    f"characters, its headline gives the answer in one sentence of at most "
+    f"{LINE_CHARS} characters, and its bullets are {BULLETS[0]} to "
+    f"{BULLETS[1]} lines of at most {LINE_CHARS} characters each, each of "
+    "the three on one line. ")
 REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
 PRIOR_SHAPE = ",\n" + fields_shape({"prior": PRIOR})
 MEASURE_SENTENCE = (
@@ -95,12 +109,21 @@ def task_problem(number, task):
     question = task.get("question")
     if not isinstance(question, str) or not question.strip():
         return f"task {number}: question must be non-empty text"
+    if not task_titled(task.get("title")):
+        return f"task {number}: title must be {TASK_TITLE_RULE}"
     paths = task.get("paths")
     if not isinstance(paths, list) or not all(map(relative_path, paths)):
         return f"task {number}: paths must be a list of repository-relative paths"
     if task.get("mode") not in MODES:
         return f"task {number}: mode must be one of {', '.join(MODES)}"
     return None
+
+
+def task_titled(title):
+    return (isinstance(title, str) and bool(title.strip())
+            and len(title) <= TASK_TITLE_CHARS
+            and len(title.split()) <= TASK_TITLE_WORDS
+            and not any(mark in title for mark in "\r\n"))
 
 
 def relative_path(path):
@@ -137,7 +160,7 @@ def plan_goal(row, limit, context, prior="", github=False):
         "commands in its own checkout (mode \"run\"), with the "
         "repository-relative paths it should start from. "
         f"{'' if row.kind == ScoutKind.BUG.value else MEASURE_SENTENCE}"
-        f"{TOOLS_SENTENCE if github else ''}"
+        f"{TOOLS_SENTENCE if github else ''}{TITLE_SENTENCE}"
         "End your answer with one fenced json block in this shape, TEXT and "
         "PATH standing for strings:\n\n"
         f"```json\n{PLAN_SHAPE}\n```\n")
@@ -185,7 +208,8 @@ def synthesis_goal(row, swarm, fresh, steer, card):
         f"{answered_tasks(swarm)}\n\n" + live_steer(steer, card)
         + "Merge what they found. If one more wave of sub-tasks would settle "
         "what is still open, plan it as at most "
-        f"{swarm.total - swarm.launched} sub-tasks; otherwise list none. Do "
+        f"{swarm.total - swarm.launched} sub-tasks; otherwise list none. "
+        f"{TITLE_SENTENCE}Do "
         "not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT and PATH standing for strings:\n\n"
         f"```json\n{PLAN_SHAPE}\n```\n")
@@ -242,7 +266,7 @@ def report_ending(row, offered=None, digest=None, parked=False):
         f"minutes, at most {MAX_ESTIMATE_MIN}, and depends_on lists the "
         "ticket keys it waits on.\n\n"
         f"{ticket_skeleton()}\n\n" + revise_rule(row, parked)
-        + guardrail_rule(digest) +
+        + guardrail_rule(digest) + BRIEF_SENTENCE +
         "Do not edit files, commit or push. End your answer with one fenced "
         "json block in this shape, TEXT, PATH and URL standing for strings, "
         "N for a line number from 1 and ID for a sub-task's id, the number "

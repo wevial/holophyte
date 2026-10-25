@@ -25,6 +25,16 @@ LINE = Rule(lambda value: type(value) is int and value > 0,
 URL = Rule(lambda value: isinstance(value, str)
            and value.startswith(("http://", "https://")),
            "a URL starting http:// or https://", "URL")
+TITLE_CHARS, LINE_CHARS, BULLETS = 70, 120, (3, 5)
+
+
+def short(limit):
+    return Rule(lambda value: isinstance(value, str) and bool(value.strip())
+                and len(value) <= limit
+                and not any(mark in value for mark in "\r\n"),
+                f"text of at most {limit} characters on one line", "TEXT")
+
+
 TASK_IDS = Rule(lambda value: isinstance(value, list)
                 and all(type(item) is int for item in value),
                 "a list of task ids", "[ID, ...]")
@@ -39,6 +49,7 @@ def one_of(*choices):
 class Each(NamedTuple):
     item: object
     nonempty: bool = False
+    count: tuple = ()
 
 
 class Omittable(NamedTuple):
@@ -90,7 +101,10 @@ EVIDENCE = Either({
     "url": {"url": URL},
 })
 FIELDS = {
+    "title": short(TITLE_CHARS),
+    "headline": short(LINE_CHARS),
     "summary": TEXT,
+    "bullets": Each(short(LINE_CHARS), count=BULLETS),
     "findings": Each({"title": TEXT,
                       "status": one_of(*STATUSES),
                       "evidence": Each(EVIDENCE, nonempty=True),
@@ -146,6 +160,9 @@ def walk_fields(value, rule, path):
 def walk_each(value, rule, path):
     if not isinstance(value, list) or (rule.nonempty and not value):
         return [f"{path}: must be a {'non-empty ' * rule.nonempty}list"]
+    if rule.count and not rule.count[0] <= len(value) <= rule.count[1]:
+        return [f"{path}: must be a list of {rule.count[0]} to"
+                f" {rule.count[1]} items"]
     return [problem for index, item in enumerate(value)
             for problem in walk(item, rule.item, f"{path}[{index}]")]
 

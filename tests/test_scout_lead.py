@@ -17,7 +17,7 @@ import holophyte.scout.scout_process as scout_process
 from holophyte.config.project import Project
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced
 from tests.test_scout_process import ScoutFixture
 
 CLAUDE_LEAD = ('[scout]\nlead = "opus"\n[scout.leads.opus]\nharness = "claude"\n'
@@ -25,11 +25,14 @@ CLAUDE_LEAD = ('[scout]\nlead = "opus"\n[scout.leads.opus]\nharness = "claude"\n
 CODEX_LEAD = ('[scout]\nlead = "sol"\n[scout.leads.sol]\nharness = "codex"\n'
               'model = "gpt-6.1-sol"\neffort = "high"\n')
 PLAN = {"tasks": [
-    {"question": "Where is the retry loop?", "paths": ["notes.txt"],
-     "mode": "read"},
-    {"question": "Does the retry test fail on main?", "paths": [],
+    {"title": "Find the retry loop", "question": "Where is the retry loop?",
+     "paths": ["notes.txt"], "mode": "read"},
+    {"title": "Run the retry test on main",
+     "question": "Does the retry test fail on main?", "paths": [],
      "mode": "run"}]}
-REPORT = {"summary": "the retry loop never backs off",
+TITLE_RULE = ("title must be non-empty text of at most 8 words and 60"
+              " characters on one line")
+REPORT = {**BRIEF, "summary": "the retry loop never backs off",
           "findings": [{"title": "no backoff", "status": "confirmed",
                         "evidence": [{"url": "https://example.test/retry"}]}],
           "actions": [],
@@ -75,7 +78,8 @@ class ScoutLeadTests(ScoutFixture):
 
     def tasks(self, conn, scout_id):
         return conn.execute(
-            "SELECT pass, wave, question, paths, mode, phase FROM scoutTasks"
+            "SELECT pass, wave, title, question, paths, mode, phase"
+            " FROM scoutTasks"
             " WHERE scoutId = ? ORDER BY id", (scout_id,)).fetchall()
 
     def turn_events(self, conn, scout_id):
@@ -88,8 +92,10 @@ class ScoutLeadTests(ScoutFixture):
         code, printed = self.run_scout(path, scout_id)
         self.assertEqual(code, 0, printed)
         self.assertEqual(self.tasks(conn, scout_id), [
-            (1, 1, "Where is the retry loop?", "[]", "read", "done"),
-            (1, 1, "Does the retry test fail on main?", "[]", "run", "done")])
+            (1, 1, "Find the retry loop", "Where is the retry loop?", "[]",
+             "read", "done"),
+            (1, 1, "Run the retry test on main",
+             "Does the retry test fail on main?", "[]", "run", "done")])
         self.assertEqual(self.report(conn, scout_id), [dict(REPORT, cut=[])])
         self.assertEqual(scout(conn, scout_id).phase, "done")
 
@@ -160,6 +166,31 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(self.tasks(conn, scout_id), [])
         self.assertEqual(len(self.stubs.turns("report")), 1)
         self.assertEqual(self.report(conn, scout_id), [dict(UNSHOWN, cut=[])])
+
+    def run_unstored_plan(self, tasks):
+        path, conn, scout_id = self.bug_scout()
+        self.stubs.answer(plan=fenced({"tasks": tasks}), report=fenced(REPORT))
+        code, printed = self.run_scout(path, scout_id)
+        self.assertEqual(code, 0, printed)
+        summaries = [summary for (summary,) in conn.execute(
+            "SELECT summary FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_plan'", (scout_id,))]
+        self.assertEqual(self.tasks(conn, scout_id), [])
+        self.assertEqual(len(self.stubs.turns("report")), 1)
+        self.assertEqual(self.report(conn, scout_id), [dict(UNSHOWN, cut=[])])
+        return summaries
+
+    def test_a_task_with_no_title_stores_no_plan_but_a_report(self):
+        untitled = {key: value for key, value in PLAN["tasks"][1].items()
+                    if key != "title"}
+        self.assertEqual(self.run_unstored_plan([PLAN["tasks"][0], untitled]),
+                         [f"no wave 1 stored: task 2: {TITLE_RULE}"])
+
+    def test_a_task_title_of_nine_words_stores_no_plan_but_a_report(self):
+        long = dict(PLAN["tasks"][0],
+                    title="Find where the retry loop sleeps between its attempts")
+        self.assertEqual(self.run_unstored_plan([long, PLAN["tasks"][1]]),
+                         [f"no wave 1 stored: task 1: {TITLE_RULE}"])
 
     def test_a_report_turn_with_no_json_block_ends_the_scout_failed(self):
         path, conn, scout_id = self.bug_scout()

@@ -21,7 +21,7 @@ from holophyte.scout.report import report_problems
 from store.scout_thread import post_message, take_message
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import REPO, git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced
 from tests.test_scout_lead import CLAUDE_LEAD
 from tests.test_scout_process import ScoutFixture
 from tests.test_serve_board import ServeBoardCase
@@ -32,7 +32,7 @@ FIX = {"title": "Back off between retries", "why": "the loop spins",
        "kind": "fix", "body": body("Back off between retries")}
 REVISE = {"title": "Name the saved field", "why": "C2 says 'the name'",
           "kind": "revise", "body": REVISION}
-REPORT = {"summary": "the ticket names the wrong field", "findings": [],
+REPORT = {**BRIEF, "summary": "the ticket names the wrong field", "findings": [],
           "actions": [dict(FIX, revises={"ticket": "NAT-9", "revision": 7}),
                       dict(REVISE,
                            revises={"ticket": "NAT-9", "revision": 7})]}
@@ -41,7 +41,7 @@ NATIVE = '[board]\nkind = "native"\nprefix = "NAT"\n'
 
 
 def checked(actions, subject):
-    return report_problems({"summary": "found", "findings": [],
+    return report_problems({**BRIEF, "summary": "found", "findings": [],
                             "actions": actions}, "research", subject)
 
 

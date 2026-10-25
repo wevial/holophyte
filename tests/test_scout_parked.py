@@ -18,7 +18,7 @@ from holophyte.scout.report import report_problems
 from store.scout_thread import post_message, take_message
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced
 from tests.test_scout_lead import CLAUDE_LEAD
 from tests.test_scout_process import ScoutFixture
 from tests.test_scout_revise import EMPTY_PLAN, NATIVE, REVISE, ReviseCase
@@ -27,7 +27,7 @@ from tests.test_serve_ticket_check import body
 
 CRITIC = "critic: stale — the save path moved to app/forms/save.py"
 LANDMARK = "`app/save.py` (named in What / Why / How) is not on main"
-REPORT = {"summary": "the save path moved", "findings": [],
+REPORT = {**BRIEF, "summary": "the save path moved", "findings": [],
           "actions": [dict(REVISE,
                            revises={"ticket": "NAT-9", "revision": 7})]}
 T0 = 1_700_000_000_000
@@ -92,7 +92,7 @@ class ParkedCase(ScoutFixture):
 
 class ReportCheckTests(unittest.TestCase):
     def checked(self, subject, parked):
-        return report_problems({"summary": "found", "findings": [],
+        return report_problems({**BRIEF, "summary": "found", "findings": [],
                                 "actions": [REVISE]}, "research", subject,
                                parked=parked)
 

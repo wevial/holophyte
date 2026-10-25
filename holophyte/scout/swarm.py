@@ -246,8 +246,8 @@ class Swarm:
     def plan(self, wave, tasks):
         ids = record_scout_tasks(
             self.conn, self.row.id, self.pass_number, wave,
-            [{"question": task["question"], "mode": task["mode"],
-              "route": self.route} for task in tasks])
+            [{"question": task["question"], "title": task.get("title"),
+              "mode": task["mode"], "route": self.route} for task in tasks])
         planned = [Planned(task_id, task["question"], list(task["paths"]),
                            task["mode"]) for task_id, task in zip(ids, tasks)]
         self.tasks.extend(planned)

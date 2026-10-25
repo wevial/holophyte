@@ -49,7 +49,7 @@ OLD_KINDS = "CHECK (kind IN ('bug', 'research', 'recon'))"
 
 
 def old_store(path):
-    """A store stamped one version below this build's, its `scouts` table
+    """A store stamped at version 59, before the kind, its `scouts` table
     rebuilt with the three-kind CHECK, holding a done recon scout with a
     report, a task, an action item and two events; the scout's id."""
     conn = store.open(path)
@@ -81,7 +81,7 @@ def old_store(path):
     conn.execute("ALTER TABLE scouts_old RENAME TO scouts")
     for (sql,) in indexes:
         conn.execute(sql)
-    conn.execute(f"PRAGMA user_version = {store.schema.SCHEMA_VERSION - 1:d}")
+    conn.execute("PRAGMA user_version = 59")
     conn.commit()
     conn.close()
     return scout_id

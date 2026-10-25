@@ -241,9 +241,9 @@ def record_scout_tasks(conn, scout_id, pass_number, wave, tasks):
     with _transaction(conn):
         _live(conn, scout_id)
         return [conn.execute(
-            "INSERT INTO scoutTasks (scoutId, pass, wave, question, paths,"
-            " mode, route, phase) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (scout_id, pass_number, wave, task["question"],
+            "INSERT INTO scoutTasks (scoutId, pass, wave, question, title,"
+            " paths, mode, route, phase) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (scout_id, pass_number, wave, task["question"], task.get("title"),
              json.dumps(list(task.get("paths") or ())), task["mode"],
              task.get("route"), ScoutTaskPhase.QUEUED.value)).lastrowid
             for task in tasks]
