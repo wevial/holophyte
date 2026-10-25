@@ -1,5 +1,5 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { TicketLink } from "../../components/TicketLink";
+import { TicketLink } from "../components/TicketLink";
 import type { RunTurn } from "../../lib/contract.gen";
 import { formatClockSeconds, formatSpan } from "../../lib/format";
 import { TitleText } from "../components/TitleText";

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { TicketLink } from "../src/components/TicketLink";
+import { TicketLink } from "../../src/app/components/TicketLink";
 
 afterEach(cleanup);
 

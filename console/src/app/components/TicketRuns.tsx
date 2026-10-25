@@ -1,8 +1,9 @@
+import { Link } from "@tanstack/react-router";
 import type { StatusRun, TicketRun } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 import { phaseLabel } from "../../lib/runs";
 import { dayLabel, daysAgo, prLabel } from "../../lib/shipped";
-import { classicHref } from "../../lib/view";
+import { runPage } from "../run";
 import { STATES, stateOf } from "../state";
 import { SECTION_LABEL } from "./Criteria";
 import { roundLabel } from "./StageChip";
@@ -20,16 +21,16 @@ export function startedLabel(ms: number, now: number): string {
   return `${day} ${formatClock(ms)}`;
 }
 
-function RunRow({ run, live, staleMs, base, now }: { run: TicketRun; live: StatusRun | undefined; staleMs: number; base: string; now: number }) {
+function RunRow({ run, live, staleMs, project, now }: { run: TicketRun; live: StatusRun | undefined; staleMs: number; project: string; now: number }) {
   const state = stateOf({ run: { ...live, phase: run.phase, outcome: run.outcome }, staleMs });
   const word = state === "running" ? phaseLabel(run.phase, run.pr_url) : STATES[state].word;
   const rounds = run.outcome == null && live != null ? roundLabel(live.round + 1, live.max_rounds) : run.rounds > 0 ? String(run.rounds) : DASH;
   return (
     <tr data-run={run.run}>
       <td className={CELL}>
-        <a href={classicHref(`#run=${run.run}&daemon=${encodeURIComponent(base)}`)} className={LINK}>
+        <Link {...runPage(project, run.run)} className={LINK}>
           run {run.run}
-        </a>
+        </Link>
       </td>
       <td className={CELL}>
         <span className="inline-flex items-center gap-[7px]">
@@ -47,12 +48,12 @@ function RunRow({ run, live, staleMs, base, now }: { run: TicketRun; live: Statu
 }
 
 /** Every run of the ticket, newest first; a live run's rounds come from `/status`. */
-export function TicketRuns({ ticketKey, runs, liveRuns, staleMs, base, now }: {
+export function TicketRuns({ project, ticketKey, runs, liveRuns, staleMs, now }: {
+  project: string;
   ticketKey: string;
   runs: TicketRun[];
   liveRuns: StatusRun[];
   staleMs: number;
-  base: string;
   now: number;
 }) {
   const newest = [...runs].sort((a, b) => b.started_ms - a.started_ms || b.run - a.run);
@@ -79,7 +80,7 @@ export function TicketRuns({ ticketKey, runs, liveRuns, staleMs, base, now }: {
             </thead>
             <tbody>
               {newest.map((run) => (
-                <RunRow key={run.run} run={run} live={liveRuns.find((each) => each.id === run.run)} staleMs={staleMs} base={base} now={now} />
+                <RunRow key={run.run} run={run} live={liveRuns.find((each) => each.id === run.run)} staleMs={staleMs} project={project} now={now} />
               ))}
             </tbody>
           </table>

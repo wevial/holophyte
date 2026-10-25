@@ -224,7 +224,7 @@ def authorized(header, tokens):
     return any(matches)
 
 
-MOVED_PAGES = {"/next.html": "/"}
+MOVED_PAGES = {"/next.html": "/", "/classic.html": "/"}
 
 
 def static_file(console_dir, path):

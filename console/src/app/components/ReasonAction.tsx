@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ACTIONS_OFF, postAction, type ActionResult } from "../lib/actions";
+import { ACTIONS_OFF, postAction, type ActionResult } from "../../lib/actions";
 import type { RowDaemon } from "./RowActions";
 import { ActionButton } from "./ActionButton";
 

@@ -171,7 +171,7 @@ test("a row folds open from its tag, title and path to its place and a link to i
   expect(button.getAttribute("aria-expanded")).toBe("true");
   expect(body.hidden).toBe(false);
   expect(body.querySelector("[data-place]")!.textContent).toBe("holophyte/serve/server.py:142 · DEMO-7 · round 1");
-  expect(within(body).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(`/classic.html#run=7&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(body).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/7");
 });
 
 test("an open row's fate says who is fixing it, or why nobody is", async () => {

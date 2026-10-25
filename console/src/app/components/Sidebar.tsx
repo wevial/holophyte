@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTheme } from "../appearance";
-import { APP_DRAG, APP_NO_DRAG, classicHref, inMacApp } from "../../lib/view";
+import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { hostsNeedingAttention } from "../settings";
@@ -12,7 +12,6 @@ import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSea
 import { FILTER_LABELS, TICKET_FILTERS, ticketView, useTicketBoard } from "../tickets";
 import {
   ChevronIcon,
-  ClassicIcon,
   FindingsIcon,
   Mark,
   MoonIcon,
@@ -327,15 +326,6 @@ export function Sidebar() {
           {!folded && <span>Settings</span>}
           {!folded && <LinkBadge badge={hostNeeds} folded={false} />}
         </Link>
-        <a
-          href={classicHref()}
-          aria-label={folded ? "Classic console" : undefined}
-          title={folded ? "Classic console" : undefined}
-          className={FOOTER_BUTTON}
-        >
-          <ClassicIcon />
-          {!folded && <span>Classic console</span>}
-        </a>
         <ThemeToggle folded={folded} />
       </footer>
     </aside>

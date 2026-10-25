@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { countsByKind, describe, needsYouEntries, type ReadinessMap } from "../src/lib/attention";
+import { describe, needsYouEntries, type ReadinessMap } from "../src/lib/attention";
 import { runKey } from "../src/lib/runs";
 import type { Attention, Status } from "../src/lib/types";
 import { fixture } from "./harness";
@@ -49,7 +49,6 @@ test("a stuck wait names its dependency, the dependency's state and reason, and 
   expect(second.body).toBe("Waits on NAT-2, which was abandoned");
   expect(second.meta).toBeNull();
   expect(second.actions).toEqual([]);
-  expect(countsByKind([spec, gone]).stuck_wait).toBe(2);
 });
 
 test("newer-daemon fields show only when present", () => {
@@ -66,10 +65,6 @@ test("newer-daemon fields show only when present", () => {
   expect(rich.ageMs).toBe(90000);
   const failed = describe({ kind: "failed", level: "attention", run: 88, ticket: "KO-229", reason: "x", attempt: 2 }, thresholds);
   expect(failed.meta).toBe("run #88 · strike 2 of 3");
-});
-
-test("the fixture's counts are one per kind", () => {
-  expect(countsByKind(allKinds.attention.items)).toEqual({ all: 4, blocked: 1, pr_open: 0, paused: 0, stale_run: 1, failed: 1, stuck_wait: 0, supervisor: 1, unreachable: 0 });
 });
 
 const HOUR = 3_600_000;

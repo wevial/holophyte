@@ -138,7 +138,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("an in-flight ticket's page has its breadcrumb, title, board chip with run and phase, and a link to the classic run view", async () => {
+test("an in-flight ticket's page has its breadcrumb, title, board chip with run and phase, and a link to its Run page", async () => {
   await mount("#/tickets/demo/DEMO-3");
   const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
   expect(crumb.textContent).toBe("Tickets / demo tickets / DEMO-3");
@@ -146,7 +146,7 @@ test("an in-flight ticket's page has its breadcrumb, title, board chip with run 
   expect(within(crumb).getByRole("link", { name: "demo tickets" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-3 title");
   expect(chip()).toBe("In flight · run 9 · reviewing · round 2 of 3");
-  expect(screen.getByRole("link", { name: "open run 9" }).getAttribute("href")).toBe(`/classic.html#run=9&daemon=${encodeURIComponent(DEMO)}`);
+  expect(screen.getByRole("link", { name: "open run 9" }).getAttribute("href")).toEndWith("#/runs/demo/9");
 });
 
 test("the panel shows the summary, keyed criteria counted in their run, the folded verify commands and the ticket's facts", async () => {
@@ -220,7 +220,7 @@ test("Expand in the peek opens the ticket's page", async () => {
 
 const story = () => within(facts()).getByRole("region", { name: "Story" });
 
-test("the Runs table lists every attempt newest first with its outcome, rounds, pull request and start, each linking to the classic run view", async () => {
+test("the Runs table lists every attempt newest first with its outcome, rounds, pull request and start, each linking to its Run page", async () => {
   await mount("#/tickets/demo/DEMO-3", undefined, LATER);
   const section = screen.getByRole("region", { name: "Runs 2" });
   const rows = within(section).getAllByRole("row").slice(1);
@@ -228,8 +228,8 @@ test("the Runs table lists every attempt newest first with its outcome, rounds, 
     "run 9 · reviewing · round 2 of 3 · PR #524 · today 16:36",
     "run 5 · failed · 1 · – · yesterday 15:10",
   ]);
-  expect(within(section).getByRole("link", { name: "run 9" }).getAttribute("href")).toBe(`/classic.html#run=9&daemon=${encodeURIComponent(DEMO)}`);
-  expect(within(section).getByRole("link", { name: "run 5" }).getAttribute("href")).toBe(`/classic.html#run=5&daemon=${encodeURIComponent(DEMO)}`);
+  expect(within(section).getByRole("link", { name: "run 9" }).getAttribute("href")).toEndWith("#/runs/demo/9");
+  expect(within(section).getByRole("link", { name: "run 5" }).getAttribute("href")).toEndWith("#/runs/demo/5");
   expect(within(section).getByRole("link", { name: "PR #524" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/524");
 });
 

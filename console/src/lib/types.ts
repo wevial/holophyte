@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { hostProjectSchema, hostStatusSchema, statusSchema, supervisorSchema, sweepSchema, runSchema, queuedSchema, findingSchema, roundSchema, runDetailSchema, runEventSchema, mergeReadinessSchema, runAsksSchema } from "./schemas";
+import type { hostProjectSchema, hostStatusSchema, statusSchema, supervisorSchema, runSchema, queuedSchema, findingSchema, roundSchema, runEventSchema } from "./schemas";
 
 /** The daemon's `/attention` body (holophyte/serve/server.py `attention()`). */
 export interface Attention {
@@ -15,25 +15,6 @@ export interface AttentionItem {
   /** On an item that names a run: the pull request it opened, else null. */
   pr_url?: string | null;
   [key: string]: unknown;
-}
-
-/** One file of `/runs/N/files`: git's status letter and its line counts. */
-export interface TouchedFile {
-  path: string;
-  status: string;
-  added: number;
-  deleted: number;
-}
-
-/** The daemon's `/runs/N/files` body (holophyte/serve/server.py `run_files()`). */
-export interface RunFilesBody {
-  run?: number;
-  base?: string;
-  head?: string;
-  files: TouchedFile[];
-  total_added: number;
-  total_deleted: number;
-  truncated?: boolean;
 }
 
 /** One finished run of `/shipped` (holophyte/serve/server.py `shipped()`), newest
@@ -81,54 +62,17 @@ export interface ShippedRow {
 /** A `/shipped` row as the daemon sends it, before the console's stamps. */
 export type ShippedWireRow = Omit<ShippedRow, "daemon" | "project">;
 
-/** The daemon's `/shipped` body: one page and the cursor for the next,
- *  null on the last page. */
-export interface ShippedBody {
-  rows: ShippedWireRow[];
-  limit: number;
-  before?: number | null;
-  next_before?: number | null;
-}
-
 /** The open ticket states, in the order `/board` answers them: left to
  *  right the path to merge (holophyte/serve/server.py `BOARD_STATES`), after
  *  the `backlog` column a native project answers first. */
 export type BoardState = "backlog" | "needs_spec" | "blocked_on_deps" | "ready" | "blocked_on_operator" | "in_flight";
 
-/** One open ticket of `/board` (holophyte/serve/server.py `board()`): `run` is
- *  the live run's id or null, `question` the blocked question or null,
- *  `waits_on` the open tickets its dependencies name. */
-export interface BoardWireTicket {
-  ticket: string;
-  ticket_url?: string | null;
-  title: string | null;
-  time_box_ms: number | null;
-  run: number | null;
-  question: string | null;
-  waits_on: string[];
-  mirrored_ms: number | null;
-}
-
-/** The daemon's `/board` body: every column present, empty or not, in
- *  path order. `editable` is true only for a native project on a host
- *  daemon with actions on, where the console may file; a daemon older
- *  than the field sends none. */
-export interface BoardBody {
-  columns: { state: BoardState; tickets: BoardWireTicket[] }[];
-  now: number;
-  editable?: boolean;
-}
-
 export type Status = z.infer<typeof statusSchema>;
 export type HostStatus = z.infer<typeof hostStatusSchema>;
 export type HostProject = z.infer<typeof hostProjectSchema>;
-export type Sweep = z.infer<typeof sweepSchema>;
 export type Supervisor = z.infer<typeof supervisorSchema>;
 export type Run = z.infer<typeof runSchema>;
 export type Queued = z.infer<typeof queuedSchema>;
 export type Finding = z.infer<typeof findingSchema>;
 export type Round = z.infer<typeof roundSchema>;
-export type RunDetailBody = z.infer<typeof runDetailSchema>;
 export type RunEvent = z.infer<typeof runEventSchema>;
-export type MergeReadiness = z.infer<typeof mergeReadinessSchema>;
-export type RunAsks = z.infer<typeof runAsksSchema>;

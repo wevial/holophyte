@@ -1,6 +1,5 @@
-import type { ProjectChoice } from "./attention";
 import { isSupervisorStale, isStale } from "./derive";
-import type { ClassicBodies, PollBodies, PollFailure, ProjectAnswer } from "./poll";
+import type { PollBodies, PollFailure, ProjectAnswer } from "./poll";
 import type { AttentionItem, HostStatus, Status } from "./types";
 
 /** One project the console polls, at the base its routes hang off: a
@@ -10,7 +9,7 @@ import type { AttentionItem, HostStatus, Status } from "./types";
  *  projects are a record each, so every view keyed by `base` -- run
  *  detail, the Board, the ledger of finished runs -- tells two projects on
  *  one daemon apart; the host card groups them again by `address`. */
-export interface HostRecord<B extends PollBodies = ClassicBodies> {
+export interface HostRecord<B extends PollBodies> {
   /** The record's identity: the address for a project daemon, the
    *  address and `/projects/NAME` for a project behind a host daemon. */
   key: string;
@@ -121,7 +120,7 @@ export function baseOf(address: string): string {
 /** One poll's answer for one address: a project daemon's two bodies, a
  *  host daemon's root answers with each project's own, or the failure of
  *  the daemon's root. */
-export type PollResult<B extends PollBodies = ClassicBodies> =
+export type PollResult<B extends PollBodies> =
   | { address: string; base: string; ok: true; status: B["status"]; attention: B["attention"] }
   | { address: string; base: string; ok: true; host: B["host"]; host_attention: B["hostAttention"]; projects: ProjectAnswer<B>[] }
   | ({ address: string; base: string } & PollFailure);
@@ -131,7 +130,7 @@ export function hostProject(status: Pick<Status, "project"> | null): string | nu
   return status ? status.project : null;
 }
 
-type Where = Pick<HostRecord, "key" | "address" | "base">;
+type Where = Pick<HostRecord<PollBodies>, "key" | "address" | "base">;
 
 /** A record for a good answer at `where`. */
 function answered<B extends PollBodies>(where: Where, answer: { status: B["status"]; attention: B["attention"] }, now: number): HostRecord<B> {
@@ -182,7 +181,7 @@ function failed<B extends PollBodies>(where: Where, failure: PollFailure, before
  *  broken entries stay in view. A 401 is not a failure to reach the
  *  daemon: the record is marked `needs_token` with no error, and
  *  `token_rejected` when the request carried a saved token. */
-export function mergeHosts<B extends PollBodies = ClassicBodies>(previous: HostRecord<B>[], results: PollResult<B>[], now: number): HostRecord<B>[] {
+export function mergeHosts<B extends PollBodies>(previous: HostRecord<B>[], results: PollResult<B>[], now: number): HostRecord<B>[] {
   const byKey = new Map(previous.map((host) => [host.key, host]));
   return results.flatMap((result): HostRecord<B>[] => {
     const { address, base } = result;
@@ -207,13 +206,6 @@ export function mergeHosts<B extends PollBodies = ClassicBodies>(previous: HostR
   });
 }
 
-/** The hosts a view shows: every one under "All projects", else the ones
- *  serving the selected project. A host that never answered has no
- *  project and shows only under "All projects". */
-export function visibleHosts(hosts: HostRecord[], project: ProjectChoice): HostRecord[] {
-  return project === "all" ? hosts : hosts.filter((host) => host.project === project);
-}
-
 /** The name the page shows for a host: what `/status` calls it (a host
  *  daemon's root, before a project has answered, by its first project's
  *  label), else the host part of its address. */
@@ -223,7 +215,7 @@ export function hostName(host: HostRecord<PollBodies>): string {
 }
 
 /** The daemons under one host label: the card the rail draws. */
-export interface HostGroup<R extends HostRecord<PollBodies> = HostRecord> {
+export interface HostGroup<R extends HostRecord<PollBodies>> {
   /** What `/status` calls the host, else the host part of the address. */
   label: string;
   /** The records on that host, in poll order. */
@@ -257,28 +249,6 @@ export function byDaemon<R extends HostRecord<PollBodies>>(hosts: R[]): R[][] {
   const daemons = new Map<string, R[]>();
   for (const host of hosts) daemons.set(host.address, [...(daemons.get(host.address) ?? []), host]);
   return [...daemons.values()];
-}
-
-/** The foot of a host card: `daemons up 12h` when every answered daemon
- *  started within a minute of the others, else the shortest uptime; null
- *  when none has said when it started. Each uptime is read against its
- *  own daemon's clock. */
-export function daemonsUp(hosts: HostRecord[]): number | null {
-  const uptimes = hosts.flatMap((host) => (host.status?.daemon ? [host.status.now - host.status.daemon.started_ms] : []));
-  return uptimes.length === 0 ? null : Math.min(...uptimes);
-}
-
-/** A host's dot and border: bad when unreachable or its supervisor is
- *  stale, ok when the supervisor is live, faint otherwise, including
- *  while the daemon waits for its token. */
-export type HostTone = "ok" | "bad" | "faint";
-
-export function hostTone(host: HostRecord): HostTone {
-  if (host.error != null) return "bad";
-  if (host.needs_token) return "faint";
-  if (!host.status) return "faint";
-  if (supervisorStale(host.name != null, host.status)) return "bad";
-  return host.status.supervisor.state === "live" ? "ok" : "faint";
 }
 
 /** Whether `status`'s supervisor is stale. Under a host daemon (`onHost`)
@@ -374,22 +344,6 @@ export function runCounts(status: Pick<Status, "runs" | "thresholds">): { active
   const threshold = status.thresholds.heartbeat_stale_ms;
   const stale = status.runs.filter((run) => isStale(run.heartbeat_age_ms, threshold)).length;
   return { active: status.runs.length - stale, stale };
-}
-
-/** A host card's Toil cell: `24h 0.50 · 7d 1.25`, each window's
- *  interventions per merged run, `—` for a window with no merges; and the
- *  week's two most frequent actions, ties by name, as `requeue 5 · babysit
- *  3`, null when the week has none. */
-export function toilLines(toil: NonNullable<Status["toil"]>): { rates: string; actions: string | null } {
-  const rate = (perMerge: number | null) => (perMerge == null ? "—" : perMerge.toFixed(2));
-  const top = Object.entries(toil["7d"].by_action)
-    .sort(([a, x], [b, y]) => y - x || (a < b ? -1 : a > b ? 1 : 0))
-    .slice(0, 2)
-    .map(([action, count]) => `${action} ${count}`);
-  return {
-    rates: `24h ${rate(toil["24h"].per_merge)} · 7d ${rate(toil["7d"].per_merge)}`,
-    actions: top.length === 0 ? null : top.join(" · "),
-  };
 }
 
 /** The oldest `polled_ms` across hosts, null before the first poll. */

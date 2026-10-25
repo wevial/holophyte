@@ -1,4 +1,4 @@
-import { Markdown } from "../../components/Markdown";
+import { Markdown } from "./Markdown";
 import { formatClock } from "../../lib/format";
 
 /** One message of a thread: a person's indented on their background, an agent's flush. */

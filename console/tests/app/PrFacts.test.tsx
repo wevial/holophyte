@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
-import { PrFacts } from "../../src/components/PrFacts";
+import { PrFacts } from "../../src/app/components/PrFacts";
 import type { Fact } from "../../src/lib/attention";
 
 afterEach(cleanup);

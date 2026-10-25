@@ -1,4 +1,4 @@
-import { Markdown } from "../../components/Markdown";
+import { Markdown } from "./Markdown";
 import type { OperatorNote, Round, RoundInstruction, RunEvent } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
 

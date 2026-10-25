@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { TicketLink } from "../../components/TicketLink";
+import { TicketLink } from "./TicketLink";
 import { ageOf, orderByAge, prTitle } from "../../lib/attention";
 import { isStale } from "../../lib/derive";
 import { formatDuration, formatSettled } from "../../lib/format";
@@ -51,8 +51,7 @@ function onCiRows(items: AttentionItem[], key: string, clockNow: number): OnCiRo
   });
 }
 
-/** The project groups of the hosts that answered `/status` well. The
- *  lanes read no route labels, whose contract type the classic one lacks. */
+/** The project groups of the hosts that answered `/status` well. */
 export function laneGroups(hosts: HostRecord<ContractBodies>[], items: AttentionItem[], now: number): LaneGroup[] {
   const answered = hosts.flatMap((host) =>
     host.status && !host.contract_error ? [{ key: host.key, base: host.base, status: host.status, seen_ms: host.seen_ms }] : [],

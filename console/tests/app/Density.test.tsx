@@ -128,7 +128,7 @@ test("the shared compact rule tightens marked rows to a 44 px minimum and 6 px b
 
 test("compact density selectors leave Story graph steps and cards untouched", async () => {
   root.setAttribute("data-density", "compact");
-  const { container } = render(<StoryGraph base={DEMO} nodes={[
+  const { container } = render(<StoryGraph project="demo" nodes={[
     { ticket: "DEMO-1", title: "First step", run: null, time_box_ms: null, state: "todo", word: "to do", kind: "ready", depends_on: [] },
     { ticket: "DEMO-2", title: "Dependent step", run: null, time_box_ms: null, state: "todo", word: "to do", kind: "ready", depends_on: ["DEMO-1"] },
   ]} />);

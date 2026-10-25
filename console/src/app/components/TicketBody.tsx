@@ -1,6 +1,6 @@
 import { useContext, useId, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Markdown } from "../../components/Markdown";
+import { Markdown } from "./Markdown";
 import { editTicket } from "../../lib/boardWrites";
 import { PollDepsContext } from "../scope";
 import { HeaderDate, headerSpan, readHeader, type Table, type Value } from "../ticketHeader";

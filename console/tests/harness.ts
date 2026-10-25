@@ -1,5 +1,5 @@
 import { addressOf, type HostRecord } from "../src/lib/hosts";
-import { POLL_INTERVAL_MS, type Fetch, type PollDeps } from "../src/lib/poll";
+import { POLL_INTERVAL_MS, type Fetch, type PollBodies, type PollDeps } from "../src/lib/poll";
 import type { Attention, Status } from "../src/lib/types";
 
 const FIXTURES = new URL("../../tests/fixtures/drawer/", import.meta.url);
@@ -50,8 +50,11 @@ export function peersFetch(origin: string, daemons: Record<string, StubDaemon>):
   };
 }
 
+/** A host record whose `/status` is a drawer fixture's. */
+export type FixtureHost = HostRecord<PollBodies & { status: Status }>;
+
 /** A host record as one good poll of `base` would leave it. */
-export function hostOf(status: Status, attention: Attention, base = "http://writer:7710", polledMs = 0): HostRecord {
+export function hostOf(status: Status, attention: Attention, base = "http://writer:7710", polledMs = 0): FixtureHost {
   return {
     key: addressOf(base),
     address: addressOf(base),

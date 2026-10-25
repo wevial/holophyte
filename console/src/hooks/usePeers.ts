@@ -1,22 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { addressOf, mergeHosts, oldestPoll, peerAddresses, rootOf, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
-import { forgetToken } from "../lib/token";
-import {
-  POLL_INTERVAL_MS,
-  REQUEST_TIMEOUT_MS,
-  TICK_MS,
-  classicSchemas,
-  defaultPollDeps,
-  fetchJson,
-  pollDaemon,
-  pollFailure,
-  type ClassicBodies,
-  type PollBodies,
-  type PollDeps,
-  type PollSchemas,
-} from "../lib/poll";
+import { peerAddresses, rootOf, type HostRecord, type PeersBody, type PollResult } from "../lib/hosts";
+import { fetchJson, pollDaemon, pollFailure, type PollBodies, type PollDeps, type PollSchemas } from "../lib/poll";
 
-export interface PeersState<B extends PollBodies = ClassicBodies> {
+export interface PeersState<B extends PollBodies> {
   /** The origin first, then each peer `/peers` named, in its order. */
   hosts: HostRecord<B>[];
   /** Milliseconds since the oldest host was last polled, null before the first. */
@@ -24,12 +9,6 @@ export interface PeersState<B extends PollBodies = ClassicBodies> {
   /** Ticks completed; a dependent fetch keys off it. */
   polls: number;
   /** The console's clock as of the last tick. */
-  now: number;
-}
-
-interface Inner {
-  hosts: HostRecord[];
-  polls: number;
   now: number;
 }
 
@@ -42,32 +21,24 @@ interface Inner {
  *  nor pre-empts the known daemons' polls. A failed `/peers` reports the
  *  addresses last known, in their order. Every body is parsed with
  *  `schemas`. */
-export function pollPeers(origin: string, known: HostRecord[], deps: Pick<PollDeps, "fetch">, timeoutMs?: number): Promise<PollResult[]>;
-export function pollPeers<B extends PollBodies>(
+export async function pollPeers<B extends PollBodies>(
   origin: string,
   known: HostRecord<B>[],
   deps: Pick<PollDeps, "fetch">,
   timeoutMs: number,
   schemas: PollSchemas<B>,
-): Promise<PollResult<B>[]>;
-export async function pollPeers(
-  origin: string,
-  known: HostRecord<PollBodies>[],
-  deps: Pick<PollDeps, "fetch">,
-  timeoutMs = REQUEST_TIMEOUT_MS,
-  schemas: PollSchemas<PollBodies> = classicSchemas,
-): Promise<PollResult<PollBodies>[]> {
+): Promise<PollResult<B>[]> {
   const signal = AbortSignal.timeout(timeoutMs);
-  const inFlight = new Map<string, Promise<PollResult<PollBodies>>>();
-  const start = ({ address, base }: { address: string; base: string }): Promise<PollResult<PollBodies>> => {
+  const inFlight = new Map<string, Promise<PollResult<B>>>();
+  const start = ({ address, base }: { address: string; base: string }): Promise<PollResult<B>> => {
     let pending = inFlight.get(address);
     if (!pending) {
       pending = pollDaemon(base, deps.fetch, signal, schemas).then(
-        (answer): PollResult<PollBodies> =>
+        (answer): PollResult<B> =>
           answer.kind === "host"
             ? { address, base, ok: true, host: answer.host, host_attention: answer.attention, projects: answer.projects }
             : { address, base, ok: true, status: answer.status, attention: answer.attention },
-        (failure: unknown): PollResult<PollBodies> => ({ address, base, ...pollFailure(failure) }),
+        (failure: unknown): PollResult<B> => ({ address, base, ...pollFailure(failure) }),
       );
       inFlight.set(address, pending);
     }
@@ -83,59 +54,4 @@ export async function pollPeers(
     // Discovery failed: the tick reports the addresses it started with.
   }
   return Promise.all(addresses.map(start));
-}
-
-/** Fan out to every daemon `/peers` names every `POLL_INTERVAL_MS`, keeping
- *  each host's last good answer through its failures. The one-daemon page
- *  is the `hosts.length === 1` case. `deps` injects fetch, the clock and
- *  the timer; `timeoutMs` bounds each tick's requests. */
-export function usePeers(origin: string, deps: PollDeps = defaultPollDeps, timeoutMs = REQUEST_TIMEOUT_MS): PeersState {
-  const depsRef = useRef(deps);
-  depsRef.current = deps;
-  const hostsRef = useRef<HostRecord[]>([]);
-  const [state, setState] = useState<Inner>(() => ({ hosts: [], polls: 0, now: deps.now() }));
-
-  useEffect(() => {
-    let alive = true;
-    let cancel: (() => void) | undefined;
-    // The next tick is booked when this one starts, so the cadence is the
-    // interval itself and a slow daemon (bounded by `timeoutMs`, below the
-    // interval) cannot stretch it to interval + timeout.
-    const run = async () => {
-      const { now, timer } = depsRef.current;
-      cancel = timer(run, POLL_INTERVAL_MS);
-      const results = await pollPeers(origin, hostsRef.current, depsRef.current, timeoutMs);
-      if (!alive) return;
-      // A 401 after a stored token means the token is wrong: forget it,
-      // once per tick, so the Hosts card asks again rather than the next
-      // tick retrying the same value.
-      for (const result of results) if (!result.ok && result.status === 401) forgetToken(addressOf(result.base));
-      const at = now();
-      hostsRef.current = mergeHosts(hostsRef.current, results, at);
-      setState((previous) => ({ hosts: hostsRef.current, polls: previous.polls + 1, now: at }));
-    };
-    void run();
-    return () => {
-      alive = false;
-      cancel?.();
-    };
-  }, [origin, timeoutMs]);
-
-  useEffect(() => {
-    let cancel: (() => void) | undefined;
-    const tick = () => {
-      setState((previous) => ({ ...previous, now: depsRef.current.now() }));
-      cancel = depsRef.current.timer(tick, TICK_MS);
-    };
-    cancel = depsRef.current.timer(tick, TICK_MS);
-    return () => cancel?.();
-  }, []);
-
-  const oldest = oldestPoll(state.hosts);
-  return {
-    hosts: state.hosts,
-    polls: state.polls,
-    now: state.now,
-    polledAgo: oldest == null ? null : Math.max(0, state.now - oldest),
-  };
 }

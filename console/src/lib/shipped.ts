@@ -137,24 +137,6 @@ export function deltaTone(actualMin: number, estimateMin: number | null): DeltaT
   return delta < 0 ? "ok" : delta > 0 ? "over" : "muted";
 }
 
-/** The median of the rows' review rounds; null with no rows. An even
- *  count averages the middle two. */
-export function medianRounds(rows: { rounds: number }[]): number | null {
-  if (rows.length === 0) return null;
-  const sorted = rows.map((row) => row.rounds).sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
-}
-
-/** `existing` and `incoming` as one ledger: one row per id, the newer
- *  answer winning, newest end first and ties by id. */
-export function mergeRows(existing: ShippedRow[], incoming: ShippedRow[]): ShippedRow[] {
-  const byId = new Map<number, ShippedRow>();
-  for (const row of existing) byId.set(row.id, row);
-  for (const row of incoming) byId.set(row.id, row);
-  return [...byId.values()].sort((a, b) => b.ended_ms - a.ended_ms || b.id - a.id);
-}
-
 /** The short form of a merge sha; empty with none. */
 export function shortSha(sha: string | null): string {
   return sha ? sha.slice(0, 7) : "";

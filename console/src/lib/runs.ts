@@ -12,16 +12,7 @@ export function latestEvents(events: RunEvent[], count: number): RunEvent[] {
     .slice(0, count);
 }
 
-/** The newest action, regardless of event order; supervisor bookkeeping is not activity. */
-export function lastActivity(events: RunEvent[]): RunEvent | null {
-  return latestEvents(events, 1)[0] ?? null;
-}
-
-/** The Floor's phase pills. Store phases fold into three working words;
- *  anything else keeps its own name on the neutral pill. */
-export type PhaseTone = "implementing" | "reviewing" | "verifying" | "neutral";
-
-const PHASE_LABELS: Record<string, Exclude<PhaseTone, "neutral">> = {
+const PHASE_LABELS: Record<string, string> = {
   working: "implementing",
   addressing: "implementing",
   verifying: "verifying",
@@ -38,48 +29,12 @@ export function phaseLabel(phase: string, pr_url?: string | null, note?: string 
   return PHASE_LABELS[phase] ?? phase;
 }
 
-/** An end event closes the wait even while the run remains at the gate. */
-export function mergeLockNote(events: RunEvent[] = []): string | null {
-  const event = events.findLast((event) => event.kind === "merge_lock_wait");
-  if (!event) return null;
-  try {
-    const wait = JSON.parse(event.summary);
-    return wait.state === "begin" && Number.isInteger(wait.holder)
-      ? `waiting for merge lock (run ${wait.holder})` : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The pill wash for a label: the three working words have one each. */
-export function phaseTone(label: string): PhaseTone {
-  return label === "implementing" || label === "reviewing" || label === "verifying" ? label : "neutral";
-}
-
 /** Elapsed as a share of the time box in percent, capped at 100 so a run
  *  past its box fills the bar and no further. A box of nothing is full
  *  the moment any time has elapsed. */
 export function boxPercent(elapsedMs: number, boxMs: number): number {
   if (boxMs <= 0) return elapsedMs > 0 ? 100 : 0;
   return Math.min(100, Math.max(0, (elapsedMs / boxMs) * 100));
-}
-
-export type BoxTone = "teal" | "amber" | "red";
-
-/** Teal below 70 % of the box, amber from 70 %, red at or over 100 %. */
-export function boxTone(percent: number): BoxTone {
-  if (percent >= 100) return "red";
-  if (percent >= 70) return "amber";
-  return "teal";
-}
-
-export type StrikeTone = "amber" | "red";
-
-/** Red once the run stands on its last strike (the next one is `max`,
- *  the one that fails the ticket out), amber below that; null with none. */
-export function strikeTone(strikes: number, max: number): StrikeTone | null {
-  if (strikes <= 0) return null;
-  return strikes >= max - 1 ? "red" : "amber";
 }
 
 /** One `/status` body and the base URL of the daemon that answered it.
@@ -91,7 +46,7 @@ export interface DaemonStatus {
   seen_ms?: number | null;
 }
 
-/** One project's block on the Floor: the daemon that serves it, its
+/** One project's block of runs: the daemon that serves it, its
  *  live runs and its tickets queued for the next claim. Two daemons serving one project path are two blocks, each
  *  under its own daemon's supervisor line. */
 export interface ProjectGroup {
@@ -126,7 +81,7 @@ export function groupByProject(daemons: DaemonStatus[]): ProjectGroup[] {
   return groups;
 }
 
-/** The Floor's selection key for a run: the same id on two daemons is two
+/** A run's selection key: the same id on two daemons is two
  *  rows, so the key names the daemon the run belongs to. */
 export function runKey(base: string, id: number): string {
   return `${base}#${id}`;
@@ -146,26 +101,4 @@ export function agentMs(
 ): number | null {
   if (run.agent_ms == null) return workingMs(run, sinceMs);
   return run.agent_ms + (run.work_started_ms != null && run.verify_started_ms == null ? sinceMs : 0);
-}
-
-/** The run's verify time, which counts on between polls only while a
- *  verify is open; null from a daemon that does not serve `verify_ms`. */
-export function verifyMs(run: { verify_ms?: number | null; verify_started_ms?: number | null }, sinceMs = 0): number | null {
-  return run.verify_ms == null ? null : run.verify_ms + (run.verify_started_ms != null ? sinceMs : 0);
-}
-
-/** The name of the clock `agentMs()` reads for this run. */
-export function boxClock(run: { agent_ms?: number | null }): "agent" | "working" {
-  return run.agent_ms == null ? "working" : "agent";
-}
-
-/** The suffix a wall reading carries when its ticket's chain spans more
- *  than one run; empty for a single run or a daemon that does not say. */
-export function chainNote(runCount?: number | null): string {
-  return runCount != null && runCount > 1 ? ` · ${runCount} runs` : "";
-}
-
-/** One-based ordinal among this run's recorded review rounds. */
-export function roundLabel(ordinal: number, cap?: number): string {
-  return `Round ${ordinal}${cap == null ? "" : ` of ${cap}`}`;
 }

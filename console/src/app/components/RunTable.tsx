@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { formatClock, formatSettled } from "../../lib/format";
 import { localMidnight } from "../../lib/ledger";
-import { classicHref } from "../../lib/view";
 import type { RunRow } from "../history";
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
@@ -31,9 +30,7 @@ export function RunRowLink({ row, ...props }: {
 }) {
   const host = useConsolePeers().hosts.find((each) => each.base === row.base);
   const target = host?.status == null ? null : runPage(host.status.project, row.id);
-  return target ? <Link {...target} {...props} /> : (
-    <a href={classicHref(`#run=${row.id}&daemon=${encodeURIComponent(row.base)}`)} {...props} />
-  );
+  return target ? <Link {...target} {...props} /> : <span className={props.className}>{props.children}</span>;
 }
 
 export function ResumedAs({ row }: { row: { base: string; resumed_as?: number | null } }) {

@@ -4,7 +4,6 @@ import { ACTIONS_OFF } from "../../lib/actions";
 import { criteriaRows } from "../../lib/criteria";
 import { formatAge, formatClock } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
-import { classicHref } from "../../lib/view";
 import { Btn } from "../components/Btn";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot } from "../components/StateDot";
@@ -17,6 +16,7 @@ import { TicketBody, type BodyView } from "../components/TicketBody";
 import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
 import { TitleText } from "../components/TitleText";
+import { runPage } from "../run";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
 
@@ -39,7 +39,7 @@ function Page({ project, ticketKey, children }: { project: string; ticketKey: st
   );
 }
 
-function BoardLine({ chip, liveRun, base }: { chip: BoardChip; liveRun: number | null; base: string }) {
+function BoardLine({ chip, liveRun, project }: { chip: BoardChip; liveRun: number | null; project: string }) {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2.5">
       <span className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">Board</span>
@@ -53,9 +53,9 @@ function BoardLine({ chip, liveRun, base }: { chip: BoardChip; liveRun: number |
         </Chip>
       </span>
       {liveRun != null && (
-        <a href={classicHref(`#run=${liveRun}&daemon=${encodeURIComponent(base)}`)} className="font-mono text-[12px] leading-[1.3] text-ink-2 underline underline-offset-2">
+        <Link {...runPage(project, liveRun)} className="font-mono text-[12px] leading-[1.3] text-ink-2 underline underline-offset-2">
           open run {liveRun}
-        </a>
+        </Link>
       )}
     </div>
   );
@@ -121,7 +121,7 @@ export function TicketPage() {
             />
           </div>
         </div>
-        {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} base={page.host.base} />}
+        {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} project={project} />}
       </div>
       {steering && actionsOn && !SETTLED.has(ticket.status) && (
         <SteerBox key={`${project}/${key}`} ticketKey={key} base={page.host.base} liveRun={page.liveRun} onClose={() => setSteeringKey(null)} />
@@ -158,7 +158,7 @@ export function TicketPage() {
               </pre>
             </details>
           </TicketBody>
-          <TicketRuns ticketKey={key} runs={ticket.runs} liveRuns={page.liveRuns} staleMs={page.staleMs} base={page.host.base} now={now} />
+          <TicketRuns project={project} ticketKey={key} runs={ticket.runs} liveRuns={page.liveRuns} staleMs={page.staleMs} now={now} />
           <SteerNotes steers={ticket.steers} now={now} />
         </div>
         <aside aria-label="Ticket facts and story" className="min-w-0 px-6 pb-7 pt-[22px] max-[720px]:px-5">

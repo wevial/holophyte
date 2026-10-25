@@ -1,15 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useContext, useRef, useState, type KeyboardEvent } from "react";
-import { NO_PR_URL } from "../../components/RowActions";
-import { ReasonAction } from "../../components/ReasonAction";
+import { NO_PR_URL } from "./RowActions";
+import { ReasonAction } from "./ReasonAction";
 import { actionBody, NOT_WIRED, ROOT_LABELS, ROUTES } from "../../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME, RUN_SWEEP, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
 import { UNREACHABLE, type HostRecord } from "../../lib/hosts";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
-import { classicHref } from "../../lib/view";
 import { useAction } from "../actions";
 import type { ContractBodies } from "../fleet";
 import { readinessQuery } from "../queries";
@@ -232,15 +231,11 @@ export function CardActions({
             )}
           </div>
         )}
-        {only == null && run != null && (runTarget ? (
+        {only == null && runTarget != null && (
           <Link {...runTarget} className={linkBtn} data-variant="quiet">
             Open run
           </Link>
-        ) : (
-          <a className={linkBtn} data-variant="quiet" href={classicHref(`#run=${run}&daemon=${encodeURIComponent(host.base)}`)}>
-            Open run
-          </a>
-        ))}
+        )}
         {only == null && ticketUrl != null && (
           <a className={linkBtn} data-variant="quiet" href={ticketUrl} target="_blank" rel="noreferrer">
             Open ticket

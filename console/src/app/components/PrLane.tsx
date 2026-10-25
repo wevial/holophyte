@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { PrFacts } from "../../components/PrFacts";
+import { PrFacts } from "./PrFacts";
 import { describe, entryKey, orderByAge, prTitle, type Fact, type ReadinessMap } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";

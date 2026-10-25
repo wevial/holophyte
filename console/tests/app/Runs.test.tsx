@@ -124,7 +124,7 @@ test("a Runs row opens its run's Run page on its own project", async () => {
   expect(window.location.hash).toBe("#/runs/writer/7");
 });
 
-test("a Runs row whose host has not answered /status keeps the classic run link", async () => {
+test("a Runs row whose host has not answered /status reads its run as text, with no link", async () => {
   const silent: HostRecord<ContractBodies> = {
     key: "writer-host:7711", address: "writer-host:7711", base: WRITER, label: "writer-host:7711", project: null,
     status: null, attention: null, polled_ms: NOW, seen_ms: null, error: "connection refused", needs_token: false,
@@ -145,7 +145,13 @@ test("a Runs row whose host has not answered /status keeps the classic run link"
   window.location.hash = "#/";
   render(<RouterProvider router={createRouter({ routeTree: root.addChildren([page]), history: createHashHistory() })} />);
   await act(settle);
-  expect(runLink(rows()[0]!).getAttribute("href")).toBe(`/classic.html#run=7&daemon=${encodeURIComponent(WRITER)}`);
+  const [row7] = rows();
+  const runCell = row7!.children[0]!;
+  expect(runCell.textContent).toBe("7");
+  expect(runCell.closest("a")).toBeNull();
+  expect(runCell.querySelector("a")).toBeNull();
+  expect(within(row7!).queryByRole("link", { name: /^Run 7,/ })).toBeNull();
+  expect(Array.from(row7!.querySelectorAll("[href]"), (link) => link.getAttribute("href")).filter((href) => href!.includes("classic"))).toEqual([]);
 });
 
 test("a scoped Runs lists only that project's runs, with a dash for no rounds or pull request", async () => {

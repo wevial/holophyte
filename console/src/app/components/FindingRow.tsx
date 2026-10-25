@@ -1,8 +1,10 @@
 import { useContext, useId, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { fileTicket } from "../../lib/boardWrites";
 import type { Severity } from "../../lib/findings";
 import { useAction } from "../actions";
 import { filedFate, type FindingRowView, type RowAction, type RowFate } from "../findings";
+import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { ScoutThis } from "./ScoutThis";
@@ -132,10 +134,10 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              {row.href != null && (
-                <a href={row.href} className="border-b border-rule pb-0.5 font-mono text-[12px] font-medium leading-[1.3] text-ink-2 no-underline hover:text-ink">
+              {row.run != null && (
+                <Link {...runPage(row.project, row.run)} className="border-b border-rule pb-0.5 font-mono text-[12px] font-medium leading-[1.3] text-ink-2 no-underline hover:text-ink">
                   Open run
-                </a>
+                </Link>
               )}
               {row.action != null && done == null && <RowActionButton action={row.action} busy={busy} press={press} />}
               {row.scout != null && <ScoutThis target={row.scout} />}
