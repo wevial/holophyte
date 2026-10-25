@@ -189,6 +189,9 @@ READS = (
     Command(("scout", "thread"), "GET /scouts/ID",
             "a scout's thread: its asks and answers, oldest first",
             takes=("ID",), flags=(JSON,)),
+    Command(("scout", "page"), "GET /scouts/ID",
+            "a done scout's report as a Lotuspod page, its unfiled items"
+            " decisions", takes=("ID",)),
 )
 
 COMPLETION = Command(("completion",), None,
@@ -213,6 +216,7 @@ SCOUT_STOP = ("scout", "stop")
 SCOUT_ASK = ("scout", "ask")
 SCOUT_STEER = ("scout", "steer")
 SCOUT_THREAD = ("scout", "thread")
+SCOUT_PAGE = ("scout", "page")
 SCOUT_KINDS = {("bug",): "bug", ("idea",): "research"}
 SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
 
