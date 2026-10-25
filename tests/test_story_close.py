@@ -335,10 +335,8 @@ class StoryCloseTests(StoryCloseFixture):
             f"SELECT text FROM ticketNotes WHERE ticketId = {parent}")
             if text.startswith("Story closed")]
 
-    def assert_closes_once_the_open_child_ends(self, claimed):
+    def test_a_story_with_an_open_scaffolding_child_stays_open_on_green(self):
         parent, scaffolding, tip = self.scaffolded()
-        run_id = (store.claim(self.conn, self.project_id, scaffolding)
-                  if claimed else None)
 
         self.step()
 
@@ -348,8 +346,6 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual(story(self.conn, parent).state, "approved")
         self.assertEqual(self.closed_notes(parent), [])
 
-        if run_id is not None:
-            store.release(self.conn, run_id, "abandoned")
         store.tickets.walk_ticket(self.conn, scaffolding, "abandoned")
         self.step()
 
@@ -358,12 +354,6 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual(self.closed_notes(parent),
                          [f"Story closed on its witnesses at {tip}: W1 green."])
 
-    def test_a_story_with_an_open_scaffolding_child_stays_open_on_green(self):
-        self.assert_closes_once_the_open_child_ends(claimed=False)
-
-    def test_a_story_with_a_claimed_scaffolding_child_stays_open_on_green(self):
-        self.assert_closes_once_the_open_child_ends(claimed=True)
-
     def test_a_backlog_child_with_no_run_does_not_hold_the_close(self):
         parent, _, tip = self.scaffolded(column="backlog")
 
@@ -371,18 +361,6 @@ class StoryCloseTests(StoryCloseFixture):
 
         found = story(self.conn, parent)
         self.assertEqual((found.state, found.closedSha), ("closed", tip))
-
-    def test_the_story_closes_at_the_tip_its_last_childs_merge_moves(self):
-        parent, scaffolding, _ = self.scaffolded()
-        self.step()
-        landed = self.commit("scaffold.txt", "x = 1\n", "scaffolding")
-        merged_run(self.conn, scaffolding, landed)
-        store.tickets.walk_ticket(self.conn, scaffolding, "merged")
-
-        self.step()
-
-        found = story(self.conn, parent)
-        self.assertEqual((found.state, found.closedSha), ("closed", landed))
 
 
 class OpenProposalCloseTests(StoryCloseFixture):

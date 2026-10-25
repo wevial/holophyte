@@ -780,13 +780,8 @@ class StoryChildStuckWaitTests(StuckWaitCase):
         child = strand_story_child(self.conn, self.project_id, abandon)
 
         self.assertEqual(self.refusal(child), "its story NAT-1 is abandoned")
-        self.start()
-        _, _, body = self.request("GET", "/attention")
-        self.assertEqual(
-            [(item["ticket"], item["dependency"], item["dependency_state"],
-              item["reason"], item["level"]) for item in body["items"]
-             if item["kind"] == "stuck_wait"],
-            [("NAT-2", "NAT-1", "abandoned", None, "attention")])
+        self.assertEqual(self.stuck_waits(), {
+            "NAT-2": ("NAT-1", "abandoned", None, "attention")})
 
     def test_a_ready_child_of_a_closed_story_names_the_close_note(self):
         sha = "c" * 40
