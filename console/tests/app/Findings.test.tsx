@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status, TicketDefect } from "../../src/lib/contract.gen";
 import { formatStamp } from "../../src/lib/format";
@@ -182,6 +182,15 @@ const rowsUnder = (label: string) =>
 
 const alpha = { runs: [runOf(1, "ALPHA-1", [round(1, [finding("a.py", "p1")])]), runOf(2, "ALPHA-2", [round(1, [finding("b.py", "p2")])])] };
 const beta = { runs: [runOf(3, "BETA-3", [round(1, [finding("c.py", "p1")])])] };
+
+test("an open finding of run 7, unfolded, links to run 7's Run page", async () => {
+  await mount("#/findings", fleet(demoDaemon([demo7]), {}).fetch);
+  const row = group("Open").querySelector<HTMLElement>("[data-finding-row]")!;
+  const toggle = row.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  fireEvent.click(toggle);
+  const body = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+  expect(within(body).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/7");
+});
 
 test("with every project shown, Open lists its rows under a sub-heading per project, the one with most rows first", async () => {
   await mount("#/findings", fleet(beta, alpha, ["beta", "alpha"]).fetch);
