@@ -82,8 +82,8 @@ function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: Ro
     <li data-helper={task.phase} className="border-b border-rule-2 last:border-b-0">
       <div className="flex items-start">
         <button type="button" aria-expanded={open} aria-controls={promptId} onClick={() => setOpen(!open)}
-          className="group grid min-w-0 flex-1 cursor-pointer grid-cols-[16px_minmax(0,1fr)_14px] items-start gap-x-2 border-0 bg-transparent px-4 py-2 text-left">
-          <span className="pt-[3px]"><StateDot state={dot.state} label={dot.label} hideWord /></span>
+          className="group grid min-w-0 flex-1 cursor-pointer grid-cols-[16px_minmax(0,1fr)_14px] items-center gap-x-2 border-0 bg-transparent px-4 py-2 text-left">
+          <span className="flex"><StateDot state={dot.state} label={dot.label} hideWord /></span>
           <span className="flex min-w-0 flex-col gap-1">
             <span data-task-title className={`font-read text-[15px] font-medium leading-[1.4] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
               {task.title}
@@ -101,7 +101,7 @@ function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: Ro
               <span data-tokens className={`tabular-nums ${stopped || stopping ? "text-wait" : ""}`}>{last}</span>
             </span>
           </span>
-          <span className="pt-1"><FoldChevron open={open} /></span>
+          <span className="self-start pt-1"><FoldChevron open={open} /></span>
         </button>
         {stop && stoppable && !stopping && <span className="pr-4 pt-2"><StopBranch task={task} stop={stop} /></span>}
       </div>

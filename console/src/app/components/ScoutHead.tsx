@@ -51,7 +51,7 @@ export function ScoutHead({ detail, project, state, now, pass, level, headingRef
             <p data-scout-cost className={FACTS}><ScoutCost detail={detail} now={now} pass={pass} /></p>
           )}
         </div>
-        <AskFold ask={scout.ask} />
+        <AskFold key={`${project}/${scout.id}`} ask={scout.ask} />
       </div>
     </div>
   );

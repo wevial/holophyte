@@ -156,10 +156,12 @@ const swarming: ScoutDetail = {
 const listRow: ScoutRow = { ...servedScouts.scouts[0]!, id: 31, title: TITLE, ask: ASK };
 
 /** DEMO answering `/scouts/31` with `scout` and `/scouts` with scout 31's row; every POST is kept. */
-function scoutFetch(scout: ScoutDetail): Fetch {
+function scoutFetch(scout: ScoutDetail, others: Record<number, ScoutDetail> = {}): Fetch {
   const polls = fleet({ items: [] }, { items: [] });
   return async (url) => {
     if (url === `${DEMO}/scouts/31`) return Response.json(scout);
+    const other = others[Number(new RegExp(`^${DEMO}/scouts/(\\d+)$`).exec(url)?.[1])];
+    if (other != null) return Response.json(other);
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: [listRow] });
     const answer = await polls(url);
     if (!url.endsWith("/status")) return answer;
@@ -220,6 +222,26 @@ test("a done scout's header reads its title, a what line and a cost line, keeps 
   await click(ask);
   expect(ask.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText(ASK)).toBeTruthy();
+});
+
+test("an Ask opened on one scout's page stays closed on another scout's page", async () => {
+  const scout29: ScoutDetail = { ...scout31, scout: { ...scout31.scout, id: 29, title: "Which writer holds the lock?", ask: "Which writer holds the loop database's lock?" } };
+  await mount("#/scouts/demo/29", scoutFetch(scout31, { 29: scout29 }));
+  const go = async (hash: string) => {
+    await act(async () => {
+      window.location.hash = hash;
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    for (let round = 0; round < 6; round += 1) await act(settle);
+  };
+  const ask = () => within(document.querySelector("header")!).getByRole("button", { name: "Ask" });
+  await go("#/scouts/demo/31");
+  await click(ask());
+  expect(screen.getByText(ASK)).toBeTruthy();
+  await go("#/scouts/demo/29");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Which writer holds the lock?");
+  expect(ask().getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText(scout29.scout.ask)).toBeNull();
 });
 
 test("the Verdict reads the newest report's headline over its bullets, or its summary with no list when it has no headline", async () => {
