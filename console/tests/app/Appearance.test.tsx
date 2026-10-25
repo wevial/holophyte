@@ -24,6 +24,10 @@ function radio(group: string, name: string) {
   return within(screen.getByRole("radiogroup", { name: group })).getByRole("radio", { name: new RegExp(`^${name}\\b`, "i") }) as HTMLInputElement;
 }
 
+const sidebarTheme = (name: string) => within(screen.getByRole("group", { name: "Theme" })).getByRole("button", { name });
+const sidebarPressed = () =>
+  within(screen.getByRole("group", { name: "Theme" })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("aria-label"));
+
 beforeAll(() => happyDOM.setURL(`${ORIGIN}/`));
 afterAll(() => happyDOM.setURL("about:blank"));
 beforeEach(() => {
@@ -56,12 +60,12 @@ test("Appearance and the sidebar share theme choices and System resumes followin
     fireEvent.click(radio("Theme", "Dawn"));
     expect(root.getAttribute("data-theme")).toBe("light");
     expect(localStorage.getItem("holophyte.theme")).toBe("light");
-    const toggle = screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" });
-    expect(toggle.textContent).toBe("Dawn");
-    fireEvent.click(toggle);
+    expect(sidebarPressed()).toEqual(["Dawn"]);
+    fireEvent.click(sidebarTheme("Night"));
     expect(radio("Theme", "Night").checked).toBe(true);
     expect(root.getAttribute("data-theme")).toBe("dark");
-    fireEvent.click(radio("Theme", "System"));
+    fireEvent.click(sidebarTheme("System"));
+    expect(radio("Theme", "System").checked).toBe(true);
     expect(root.hasAttribute("data-theme")).toBe(false);
     expect(localStorage.getItem("holophyte.theme")).toBeNull();
     act(() => {
@@ -70,7 +74,7 @@ test("Appearance and the sidebar share theme choices and System resumes followin
     });
     expect(radio("Theme", "System").checked).toBe(true);
     expect(screen.getByText("now Dawn, from your computer")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" }).textContent).toBe("Dawn");
+    expect(sidebarPressed()).toEqual(["System"]);
   } finally {
     cleanup();
     media.mockRestore();
@@ -111,7 +115,7 @@ test("blocked browser storage still applies reading font and shared theme choice
     expect(radio("Reading font", "Plex Sans").checked).toBe(true);
     fireEvent.click(radio("Theme", "Dawn"));
     expect(root.getAttribute("data-theme")).toBe("light");
-    fireEvent.click(screen.getByRole("button", { name: "Colour theme: dawn. Switch to night" }));
+    fireEvent.click(sidebarTheme("Night"));
     expect(radio("Theme", "Night").checked).toBe(true);
   } finally {
     cleanup();

@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTheme } from "../appearance";
+import type { Theme } from "../../lib/theme";
 import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
@@ -21,6 +22,8 @@ import {
   ScoutsIcon,
   SignalIcon,
   SettingsIcon,
+  SunIcon,
+  SystemIcon,
   TicketsIcon,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -58,28 +61,39 @@ function writeFolded(folded: boolean, key = RAIL_KEY): void {
   }
 }
 
-type Shown = "light" | "dark";
-
 const FOOTER_BUTTON =
-  "flex min-h-11 min-w-11 items-center justify-center gap-2 self-start border border-rule bg-paper px-3 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink";
+  "flex min-h-11 min-w-11 items-center justify-center gap-1.5 border border-rule bg-paper px-2 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink";
 
-const THEME_NAMES: Record<Shown, string> = { light: "Dawn", dark: "Night" };
+const THEME_CHOICES: { theme: Theme; name: string; icon: ReactNode }[] = [
+  { theme: "light", name: "Dawn", icon: <SunIcon /> },
+  { theme: "dark", name: "Night", icon: <MoonIcon /> },
+  { theme: "system", name: "System", icon: <SystemIcon /> },
+];
 
-function ThemeToggle({ folded }: { folded: boolean }) {
-  const { resolvedTheme: theme, setTheme } = useTheme();
-  const other: Shown = theme === "dark" ? "light" : "dark";
-  const name = THEME_NAMES[theme];
+function ThemeGroup({ folded }: { folded: boolean }) {
+  const { theme, setTheme } = useTheme();
   return (
-    <button
-      type="button"
-      aria-label={`Colour theme: ${name.toLowerCase()}. Switch to ${THEME_NAMES[other].toLowerCase()}`}
-      title={folded ? name : undefined}
-      onClick={() => setTheme(other)}
-      className={FOOTER_BUTTON}
+    <div
+      role="group"
+      aria-label="Theme"
+      className={`flex shrink-0 border border-rule bg-paper ${folded ? "flex-col [&>*+*]:border-t" : "[&>*+*]:border-l"} [&>*+*]:border-rule`}
     >
-      <MoonIcon />
-      {!folded && <span>{name}</span>}
-    </button>
+      {THEME_CHOICES.map((choice) => (
+        <button
+          key={choice.theme}
+          type="button"
+          aria-label={choice.name}
+          title={choice.name}
+          aria-pressed={choice.theme === theme}
+          onClick={() => setTheme(choice.theme)}
+          className={`flex items-center justify-center hover:text-ink ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
+            choice.theme === theme ? "bg-act-wash text-act" : "text-ink-3"
+          }`}
+        >
+          {choice.icon}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -229,6 +243,25 @@ export function Sidebar() {
   const footer = footerLine(hosts, now);
   const polled = footer == null ? "polling…" : footer.tail == null ? footer.lead : `${footer.lead} · ${footer.tail.text}`;
 
+  const settings = (
+    <Link
+      to="/settings/$tab"
+      params={{ tab: "general" }}
+      search={keepScope}
+      aria-current={onSettings ? "page" : undefined}
+      aria-label={hostNeeds > 0 ? `Settings, ${hostNeeds} ${hostNeeds === 1 ? "host needs" : "hosts need"} attention` : "Settings"}
+      title={folded ? "Settings" : undefined}
+      className={FOOTER_BUTTON}
+    >
+      <span className="relative">
+        <SettingsIcon />
+        {folded && <LinkBadge badge={hostNeeds} folded />}
+      </span>
+      {!folded && <span>Settings</span>}
+      {!folded && <LinkBadge badge={hostNeeds} folded={false} />}
+    </Link>
+  );
+
   const fold = () => {
     setFolded(!folded);
     writeFolded(!folded);
@@ -310,23 +343,17 @@ export function Sidebar() {
             </span>
           )}
         </p>
-        <Link
-          to="/settings/$tab"
-          params={{ tab: "general" }}
-          search={keepScope}
-          aria-current={onSettings ? "page" : undefined}
-          aria-label={hostNeeds > 0 ? `Settings, ${hostNeeds} ${hostNeeds === 1 ? "host needs" : "hosts need"} attention` : "Settings"}
-          title={folded ? "Settings" : undefined}
-          className={FOOTER_BUTTON}
-        >
-          <span className="relative">
-            <SettingsIcon />
-            {folded && <LinkBadge badge={hostNeeds} folded />}
-          </span>
-          {!folded && <span>Settings</span>}
-          {!folded && <LinkBadge badge={hostNeeds} folded={false} />}
-        </Link>
-        <ThemeToggle folded={folded} />
+        {folded ? (
+          <>
+            {settings}
+            <ThemeGroup folded />
+          </>
+        ) : (
+          <div className="flex items-center justify-between">
+            {settings}
+            <ThemeGroup folded={false} />
+          </div>
+        )}
       </footer>
     </aside>
   );
