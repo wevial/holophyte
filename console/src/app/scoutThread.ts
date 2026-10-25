@@ -158,9 +158,3 @@ export function composeBlock(detail: ScoutDetail, actions: boolean): string | nu
   return waiting == null ? null : `Message ${waiting.id} waits for ${waitingFor(detail)}.`;
 }
 
-/** What the composer's line says a message in `mode` does: on a live scout an
- *  ask waits for its end and a steer for its next wave, or starts the pass after the running one. */
-export function composeLine(detail: ScoutDetail, mode: ThreadMessage["mode"]): string {
-  if (!isLive(detail.scout.phase)) return mode === "ask" ? "Answers from the report." : `Starts pass ${highestPass(detail) + 1}.`;
-  return mode === "ask" ? "Answered when the scout is done." : `Taken at the next wave, or as pass ${(livePass(detail)?.pass ?? 1) + 1}.`;
-}

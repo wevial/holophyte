@@ -103,11 +103,15 @@ async function mount(id: number, shown = scouts) {
   await screen.findByRole("region", { name: "Progress" });
 }
 
-const report = () => screen.getByRole("region", { name: "Report" });
-const meta = () => report().querySelector("[data-report-meta]")!.textContent;
+const report = () => screen.getByRole("region", { name: "Findings" });
+const count = () => report().querySelector("[data-report-count]")!.textContent;
+const reproduction = () => report().querySelector("[data-reproduction]");
 const findingRows = () => within(screen.getByRole("list", { name: "Findings" })).getAllByRole("listitem");
 const rowId = (row: HTMLElement) => row.querySelector("[data-finding-id]")!.textContent;
 const chip = (row: HTMLElement) => row.querySelector("[data-finding-status]")!.textContent;
+const openCitations = async (row: HTMLElement) => {
+  await act(async () => void fireEvent.click(within(row).getByRole("button", { name: /^\d+ citations?$/ })));
+};
 
 beforeAll(() => {
   process.env.TZ = "America/Los_Angeles";
@@ -120,10 +124,10 @@ afterAll(() => {
   process.env.TZ = zone;
 });
 
-test("a done bug scout's Report counts its findings, reads its reproduction and base, and chips each finding's own status", async () => {
+test("a done bug scout's Findings counts its findings, reads its reproduction with its hypotheses tally, and chips each finding's own status", async () => {
   await mount(31);
-  expect(within(report()).getByRole("heading", { level: 2 }).textContent).toContain("4 findings");
-  expect(meta()).toBe("reproduced in a test · at base a41c9e2");
+  expect(count()).toBe("4");
+  expect(reproduction()!.textContent).toBe("reproduced in a test · 3 hypotheses · 1 supported · 1 ruled out · 1 open");
   const rows = findingRows();
   expect(rows.map(rowId)).toEqual(["F1", "F2", "F3", "F4"]);
   expect(rows.map(chip)).toEqual(["confirmed", "confirmed", "partial", "unconfirmed"]);
@@ -132,6 +136,7 @@ test("a done bug scout's Report counts its findings, reads its reproduction and 
 test("a verified citation is titled with its base and an unverified one reads its reason as its description", async () => {
   await mount(31);
   const f3 = findingRows()[2]!;
+  await openCitations(f3);
   const verified = within(f3).getByText("lotuspod/digest.py:57");
   expect(verified.getAttribute("title")).toBe("at base a41c9e2");
   const unverified = within(f3).getByText("? lotuspod/digest.py:301 unverified");
@@ -141,6 +146,7 @@ test("a verified citation is titled with its base and an unverified one reads it
 test("a command chip opens its command and output under the finding and closes again", async () => {
   await mount(31);
   const f1 = findingRows()[0]!;
+  await openCitations(f1);
   const chipButton = within(f1).getByRole("button", { name: `${COMMAND} ▸` });
   expect(chipButton.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText(OUTPUT, { exact: false })).toBeNull();
@@ -165,23 +171,26 @@ test("an opened command closes when the page moves to another scout", async () =
     });
     for (let round = 0; round < 6; round += 1) await act(settle);
   };
-  const count = () => within(report()).getByRole("heading", { level: 2 }).textContent;
   const commandChip = () => within(findingRows()[0]!).getByRole("button", { name: new RegExp(`^${COMMAND}`) });
   await mount(33);
   await visit(31);
-  expect(count()).toContain("4 findings");
+  expect(count()).toBe("4");
+  await openCitations(findingRows()[0]!);
   await act(async () => void fireEvent.click(commandChip()));
   expect(commandChip().getAttribute("aria-expanded")).toBe("true");
 
   await visit(33);
-  expect(count()).toContain("5 findings");
+  expect(count()).toBe("5");
+  expect(within(findingRows()[0]!).queryByRole("button", { name: new RegExp(`^${COMMAND}`) })).toBeNull();
+  await openCitations(findingRows()[0]!);
   expect(commandChip().getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText(OUTPUT, { exact: false })).toBeNull();
 });
 
-test("a research scout's Report links its url evidence without the scheme and has no Hypotheses", async () => {
+test("a research scout's Findings links its url evidence without the scheme and has no reproduction or Hypotheses", async () => {
   await mount(32);
-  expect(meta()).toBe("at base a41c9e2");
+  expect(reproduction()).toBeNull();
+  await openCitations(findingRows()[0]!);
   const link = within(findingRows()[0]!).getByRole("link", { name: "example.com/notes/streams" });
   expect(link.getAttribute("href")).toBe("https://example.com/notes/streams");
   expect(screen.queryByRole("list", { name: "Hypotheses" })).toBeNull();
@@ -189,6 +198,8 @@ test("a research scout's Report links its url evidence without the scheme and ha
 
 test("a bug scout's hypotheses read in order with what separates each and their verdicts", async () => {
   await mount(31);
+  expect(screen.queryByRole("list", { name: "Hypotheses" })).toBeNull();
+  await act(async () => void fireEvent.click(reproduction()!));
   const rows = within(screen.getByRole("list", { name: "Hypotheses" })).getAllByRole("listitem");
   expect(rows.map((row) => row.querySelector("[data-hypothesis-id]")!.textContent)).toEqual(["H1", "H2", "H3"]);
   expect(rows[0]!.textContent).toContain("The listener holds the lock across publish");
@@ -196,22 +207,22 @@ test("a bug scout's hypotheses read in order with what separates each and their 
   expect(rows.map((row) => row.querySelector("[data-verdict]")!.textContent)).toEqual(["supported", "ruled out", "open"]);
 });
 
-test("a second pass's findings continue the numbering, carry a pass tag, and the meta line counts the passes", async () => {
+test("a second pass's findings continue the numbering, carry a pass tag, and the count takes in every pass", async () => {
   await mount(33);
   const rows = findingRows();
   expect(rows).toHaveLength(5);
   expect(rowId(rows[4]!)).toBe("F5");
   expect(rows[4]!.textContent).toContain("pass 2");
   expect(rows[0]!.textContent).not.toContain("pass ");
-  expect(meta()!.endsWith("2 passes")).toBe(true);
+  expect(count()).toBe("5");
 });
 
-test("a swarming or failed scout with no report has no Report region", async () => {
+test("a swarming or failed scout with no report has no Findings region", async () => {
   await mount(35);
-  expect(screen.queryByRole("region", { name: "Report" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
   cleanup();
   await mount(36);
-  expect(screen.queryByRole("region", { name: "Report" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
 });
 
 test("a finding title reads as plain text, never markdown", async () => {
@@ -232,6 +243,8 @@ test("a text evidence item reads as plain text with no link or button, beside fi
   };
   await mount(31, { 31: mixed });
   const [f1, f2] = findingRows();
+  await openCitations(f1!);
+  await openCitations(f2!);
   const evidence = f1!.querySelector("[data-evidence]") as HTMLElement;
   expect(evidence.textContent).toBe(text);
   expect(within(evidence).queryByRole("link")).toBeNull();

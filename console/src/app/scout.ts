@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { scoutDetailSchema, type ScoutDetail, type ScoutFinding, type ScoutReportPass, type ScoutTask } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { AnswerError, POLL_INTERVAL_MS, type Fetch } from "../lib/poll";
-import type { ActivityStep, ActivityTone } from "./activity";
+import type { ActivityTone } from "./activity";
 import { firstLine } from "./history";
 import { fetchRoute, routeKey } from "./queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
@@ -28,17 +28,16 @@ export type ScoutPage =
       live: boolean;
       stoppable: boolean;
       sentence: string;
-      stage: { label: string; sub: string | null };
       activity: ScoutGroup[];
       /** The newest follow-up pass, its span counted to now while it runs. */
       pass: { pass: number; ms: number | null; live: boolean } | null;
     };
 
-/** What the Scout page says in place of scout `shown` while it cannot draw it: a status while it loads, else a notice. */
+/** What the Scout page says in place of scout `shown` while it cannot draw it: no words while it loads, else a notice. */
 export function scoutNotice(page: Exclude<ScoutPage, { kind: "scout" }>, project: string, shown: string): { loading: boolean; text: string } {
   switch (page.kind) {
     case "loading":
-      return { loading: true, text: `Asking ${project} for scout ${shown}…` };
+      return { loading: true, text: "" };
     case "unknown_project":
       return { loading: false, text: `No project named ${project} answers this console.` };
     case "not_found":
@@ -70,8 +69,9 @@ export interface ScoutGroup {
   ms: number | null;
   tone: ActivityTone;
   running: boolean;
-  steps: ActivityStep[];
   tasks: ScoutTask[];
+  /** How many of its tasks failed. */
+  failed: number;
 }
 
 export interface NumberedFinding {
@@ -92,6 +92,7 @@ const BACK = new Set<ScoutTask["phase"]>(["done", "failed"]);
 
 export const backCount = (tasks: ScoutTask[]) => tasks.filter((task) => BACK.has(task.phase)).length;
 export const stoppedCount = (tasks: ScoutTask[]) => tasks.filter((task) => task.phase === "stopped").length;
+const failedCount = (tasks: ScoutTask[]) => tasks.filter((task) => task.phase === "failed").length;
 
 /** A token count in thousands: "38k tok". */
 export const tokenWords = (tokens: number) => `${Math.round(tokens / 1000)}k tok`;
@@ -136,8 +137,8 @@ function wavesOf(tasks: ScoutTask[], endedMs: number | null = null, synthesizing
 
 function waveTone(tasks: ScoutTask[], running: boolean): ActivityTone {
   if (running) return "live";
-  if (tasks.some((task) => !ENDED.has(task.phase) || task.phase === "stopped")) return "wait";
   if (tasks.some((task) => task.phase === "failed")) return "bad";
+  if (tasks.some((task) => !ENDED.has(task.phase) || task.phase === "stopped")) return "wait";
   return "ok";
 }
 
@@ -156,8 +157,8 @@ function waveGroup(wave: Wave, helper: string | null, swarm: number | null, runn
     ms: running || !wave.launched || wave.start == null || wave.end == null ? null : wave.end - wave.start,
     tone: waveTone(tasks, running),
     running,
-    steps: [],
     tasks,
+    failed: failedCount(tasks),
   };
 }
 
@@ -190,7 +191,7 @@ function scoutActivity(detail: ScoutDetail, now: number): ScoutGroup[] {
   if (detail.scout.started_ms == null) return [];
   const later = followUps(detail);
   const first = later.length ? { ...detail, scout: { ...detail.scout, phase: "done" as const } } : detail;
-  return [...firstRun(first, now), ...later.map((each) => followUpGroup(detail, each, now))];
+  return [...firstRun(first, now), ...later.map((each) => followUpGroup(detail, each))];
 }
 
 function firstRun(detail: ScoutDetail, now: number): ScoutGroup[] {
@@ -240,16 +241,13 @@ function firstRun(detail: ScoutDetail, now: number): ScoutGroup[] {
     return {
       key: span.key, kind: span.kind, at: span.start, title: span.title, sub: span.sub,
       ms: running || span.end == null ? null : span.end - span.start,
-      tone: running ? "live" : span.tone, running, tasks: [],
-      steps: events
-        .filter((event) => (span.kind === "plan" ? event.at >= span.start : event.at > span.start) && event.at <= (span.end ?? now))
-        .map((event) => ({ at: event.at, text: event.summary, ms: null, quiet: true })),
+      tone: running ? "live" : span.tone, running, tasks: [], failed: 0,
     };
   });
   if (live && last != null && groups.at(-1)?.kind === "wave") {
     groups.push({
       key: "next", kind: "next", at: null, title: wavesLeft ? "Synthesis" : "Report", sub: lead,
-      ms: null, tone: "neutral", running: false, steps: [], tasks: [],
+      ms: null, tone: "neutral", running: false, tasks: [], failed: 0,
     });
   }
   return groups;
@@ -283,18 +281,16 @@ function passTasks(detail: ScoutDetail, run: FollowUp, running: boolean): ScoutT
   return own.filter((task) => (task.started_ms == null ? task.id > floor : started.includes(task)));
 }
 
-function followUpGroup(detail: ScoutDetail, run: FollowUp, now: number): ScoutGroup {
+function followUpGroup(detail: ScoutDetail, run: FollowUp): ScoutGroup {
   const { scout } = detail;
   const at = run.started.at;
   const ms = run.end == null ? null : run.end.at - at;
   const lead = scout.lead == null ? [] : [scout.lead];
   if (run.kind === "answer") {
     const running = run.end == null && run.until == null && scout.phase === "answering";
-    const end = run.end?.at ?? (running ? now : at);
     return {
       key: `answer:${at}`, kind: "answer", at, title: "Answer", sub: lead, ms,
-      tone: running ? "live" : (ANSWER_TONE[run.end?.kind ?? ""] ?? "wait"), running, tasks: [],
-      steps: detail.events.filter((event) => event.at > at && event.at <= end).map((event) => ({ at: event.at, text: event.summary, ms: null, quiet: true })),
+      tone: running ? "live" : (ANSWER_TONE[run.end?.kind ?? ""] ?? "wait"), running, tasks: [], failed: 0,
     };
   }
   const running = livePass(detail)?.started === run.started;
@@ -313,7 +309,7 @@ function followUpGroup(detail: ScoutDetail, run: FollowUp, now: number): ScoutGr
     ],
     ms,
     tone: run.end?.kind === "scout_pass_failed" ? "bad" : waveTone(tasks, tasks.some((task) => task.phase === "running")),
-    running, steps: [], tasks,
+    running, tasks, failed: failedCount(tasks),
   };
 }
 
@@ -378,20 +374,6 @@ function passSentence(detail: ScoutDetail, run: FollowUp): string {
   return clauses === "" ? `${head} the lead is handing out sub-tasks.` : `${head} ${clauses}.`;
 }
 
-/** The Stage chip: the phase, with the live pass, or its wave while swarming
- *  or synthesizing, or a done scout's highest report pass past the first. */
-function scoutStage(detail: ScoutDetail): { label: string; sub: string | null } {
-  const { scout } = detail;
-  const pass = livePass(detail);
-  if (pass != null) return { label: scout.phase, sub: `pass ${pass.pass}` };
-  const highest = Math.max(0, ...detail.reports.map((report) => report.pass));
-  if (scout.phase === "done" && highest > 1) return { label: scout.phase, sub: `pass ${highest}` };
-  const wave = wavesOf(detail.tasks).at(-1);
-  if ((scout.phase !== "swarming" && scout.phase !== "synthesizing") || wave == null) return { label: scout.phase, sub: null };
-  const of = scout.budget.waves == null ? "" : ` of ${scout.budget.waves}`;
-  return { label: scout.phase, sub: `wave ${wave.wave}${of}` };
-}
-
 /** `/scouts/N` at `base`, read again every `POLL_INTERVAL_MS` while mounted; idle with no scout. */
 function useScout(base: string | null, id: number | null, deps: { fetch: Fetch }) {
   const path = `/scouts/${String(id)}`;
@@ -431,7 +413,6 @@ export function useScoutPage(project: string, id: number | null): ScoutPage {
     live: isLive(phase),
     stoppable: !["done", "failed", "stopped"].includes(phase),
     sentence: scoutSentence(detail),
-    stage: scoutStage(detail),
     activity: scoutActivity(detail, now),
     pass: newestPass(detail, now),
   };

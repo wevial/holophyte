@@ -31,3 +31,8 @@ export function Notice({ label, text, back, backLabel }: { label: string; text: 
     </Page>
   );
 }
+
+/** A quiet placeholder while a page waits for its first answer. */
+export function Loading() {
+  return <div role="status" aria-busy="true" aria-label="Loading" className="min-h-24" />;
+}

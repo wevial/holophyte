@@ -21,7 +21,7 @@ const at = (hour: number, minute: number, second = 0) => new Date(2026, 9, 15, h
 
 const event = (id: number, kind: string, when: number): ScoutEvent => ({ id, at: when, kind, summary: kind.replaceAll("_", " ") });
 const task = (question: string, pass: number, phase: ScoutTask["phase"], started: number | null, ended: number | null = null): ScoutTask => ({
-  ...servedTask!, question, pass, wave: 1, phase, route: "luna", mode: "read", tokens: null,
+  ...servedTask!, question, title: `Title: ${question}`, pass, wave: 1, phase, route: "luna", mode: "read", tokens: null,
   started_ms: started, ended_ms: ended, duration_ms: started != null && ended != null ? ended - started : null,
 });
 const report = (pass: number, when: number, findings: number, actions: number) => ({
@@ -102,9 +102,9 @@ const click = async (element: Element) => {
   await settled();
 };
 
-const status = () => document.querySelector("header [role='status']")!.textContent;
-const facts = () => document.querySelector("[data-scout-facts]")!.textContent!;
-const stage = () => screen.getByRole("group", { name: "Stage" }).textContent;
+const status = () => within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent;
+const cost = () => document.querySelector("[data-scout-facts] [data-scout-cost]")!.textContent!;
+const noStage = () => screen.queryByRole("group", { name: "Stage" });
 const groups = () => Array.from(screen.getByRole("list", { name: "Scout activity" }).children) as HTMLElement[];
 const row = (group: HTMLElement) => [group.querySelector("[data-group-title]")!.textContent, group.querySelector("[data-group-span]")!.textContent];
 const titled = (title: string) => groups().filter((group) => group.querySelector("[data-group-title] b")!.textContent === title);
@@ -112,7 +112,7 @@ const fold = (group: HTMLElement) => group.querySelector(":scope > div > button[
 const opened = (group: HTMLElement) => fold(group).getAttribute("aria-expanded") === "true";
 const tone = (group: HTMLElement) => group.querySelector("[data-badge]")!.getAttribute("data-badge");
 const helpers = (group: HTMLElement) =>
-  within(within(group).getByRole("list", { name: "Helpers" })).getAllByRole("listitem").map((li) => li.querySelector("[data-question]")!.textContent);
+  within(within(group).getByRole("list", { name: "Helpers" })).getAllByRole("listitem").map((li) => li.querySelector("[data-task-title]")!.textContent);
 
 const FIRST_RUN = [
   ["Plan · opus · 1 sub-task", "1m 00s"],
@@ -135,27 +135,28 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a done scout's Progress ends on its Answer, then its Pass 2 open on its helpers, with Answer closed", async () => {
+test("a done scout's Progress ends on its Answer, with nothing to fold, then its Pass 2, closed until the reader opens it on its helpers", async () => {
   await mount(done, at(15, 0));
   expect(groups().map(row)).toEqual([...FIRST_RUN, ANSWERED, PASS_TWO]);
   const [answer] = titled("Answer");
   const [pass] = titled("Pass 2");
-  expect([opened(answer!), opened(pass!)]).toEqual([false, true]);
+  expect([answer!.querySelector(":scope > div > button[aria-expanded]"), opened(pass!)]).toEqual([null, false]);
   expect([tone(answer!), tone(pass!)]).toEqual(["ok", "ok"]);
-  expect(helpers(pass!)).toEqual([DIGEST.question, JOBS.question]);
+  await click(fold(pass!));
+  expect(helpers(pass!)).toEqual([DIGEST.title, JOBS.title]);
 });
 
-test("a done scout's facts end on its newest pass and its minutes after the first run's helpers, and its stage names the pass", async () => {
+test("a done scout's cost line ends on its newest pass and its minutes after the first run's helpers, with no stage", async () => {
   await mount(done, at(15, 0));
-  expect(facts().endsWith(" · lead opus · helpers luna ×4 · 1 of 1 back · pass 2 7m")).toBe(true);
-  expect(stage()).toBe("done · pass 2");
+  expect(cost().endsWith(" · lead opus · helpers luna ×4 · 1 of 1 back · pass 2 7m")).toBe(true);
+  expect(noStage()).toBeNull();
 });
 
-test("a scout swarming in pass 3 reads the pass in its status, stage, facts and a live last group, with Stop", async () => {
+test("a scout swarming in pass 3 reads the pass in its verdict status, cost line and a live last group, with Stop", async () => {
   await mount(swarming, PASS_THREE + 3 * 60_000);
   expect(status()).toBe("Pass 3: 1 of 2 helpers are back, and 1 is running.");
-  expect(stage()).toBe("swarming · pass 3");
-  expect(facts().endsWith(" · pass 3 3m")).toBe(true);
+  expect(noStage()).toBeNull();
+  expect(cost().endsWith(" · pass 3 3m")).toBe(true);
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "Progress" }).querySelector("[data-live]")).toBeTruthy();
   const last = groups().at(-1)!;
@@ -171,12 +172,12 @@ test("during pass 3 the first run's groups read as ended, with no running or pen
   expect(rows.filter(([title, span]) => (title === "Synthesis · opus" || title === "Report · opus") && span === "")).toEqual([]);
 });
 
-test("a pass 3 planning and then synthesizing says so in its status and stage", async () => {
+test("a pass 3 planning and then synthesizing says so in its verdict status", async () => {
   await mount(passThree("planning", []), PASS_THREE + 60_000);
-  expect([status(), stage()]).toEqual(["Pass 3: the lead is planning.", "planning · pass 3"]);
+  expect([status(), noStage()]).toEqual(["Pass 3: the lead is planning.", null]);
   cleanup();
   await mount(passThree("synthesizing", [task("Does the nightly export hold the lock too?", 3, "done", at(15, 0, 30), at(15, 2))]), PASS_THREE + 4 * 60_000);
-  expect([status(), stage()]).toEqual(["Pass 3: the lead is writing its report.", "synthesizing · pass 3"]);
+  expect([status(), noStage()]).toEqual(["Pass 3: the lead is writing its report.", null]);
 });
 
 test("a pass synthesizing after its helpers reads now, with the tone of a stopped, failed or finished helper", async () => {
@@ -207,9 +208,10 @@ test("a failed try at pass 2 and its retry read as two Pass 2 groups, each holdi
   const [first, second] = titled("Pass 2");
   expect([tone(first!), tone(second!)]).toEqual(["bad", "ok"]);
   await click(fold(first!));
-  expect(helpers(first!)).toEqual([failed.question]);
-  expect(helpers(second!)).toEqual([retried.question]);
-  const thread = within(screen.getByRole("complementary", { name: "Thread" })).getByRole("list", { name: "Thread" });
+  await click(fold(second!));
+  expect(helpers(first!)).toEqual([failed.title]);
+  expect(helpers(second!)).toEqual([retried.title]);
+  const thread = within(screen.getByRole("region", { name: "Thread" })).getByRole("list", { name: "Thread" });
   const starts = Array.from(thread.querySelectorAll("[data-thread-line]"), (line) => line.textContent!).filter((text) => !text.includes("done") && text.startsWith("pass"));
   expect(starts).toEqual(["pass 2 · luna ×1 · 14:44", "pass 2 · luna ×1 · 14:50"]);
 });
@@ -229,7 +231,7 @@ test("a live retry of pass 3 holds its own unstarted helpers, not those its stop
   await mount(retry, at(15, 7));
   const live = groups().at(-1)!;
   expect(row(live)[0]).toBe("Pass 3 · luna ×2 · 0 of 2 back");
-  expect(helpers(live)).toEqual([running.question, waiting.question]);
+  expect(helpers(live)).toEqual([running.title, waiting.title]);
   expect(status()).toBe("Pass 3: 1 of 2 helpers are running, and 1 waits for a slot.");
 });
 
@@ -248,8 +250,9 @@ test("a live retry of pass 3 holds every queued helper before its first starts, 
   const { queries, bodies } = await mount(retry([first, second]), at(15, 7));
   const [failedTry, live] = titled("Pass 3");
   expect(row(live!)[0]).toBe("Pass 3 · luna ×3 · 0 of 3 back");
-  expect(helpers(live!)).toEqual([left.question, first.question, second.question]);
-  expect(helpers(failedTry!)).toEqual([ran.question]);
+  expect(helpers(live!)).toEqual([left.title, first.title, second.title]);
+  await click(fold(failedTry!));
+  expect(helpers(failedTry!)).toEqual([ran.title]);
   expect(status()).toBe("Pass 3: 3 of 3 helpers wait for a slot.");
   bodies.scout = retry([{ ...first, phase: "running", started_ms: at(15, 6) }, second]);
   await act(async () => {
@@ -257,7 +260,7 @@ test("a live retry of pass 3 holds every queued helper before its first starts, 
   });
   await settled();
   expect(row(groups().at(-1)!)[0]).toBe("Pass 3 · luna ×2 · 0 of 2 back");
-  expect(helpers(groups().at(-1)!)).toEqual([first.question, second.question]);
+  expect(helpers(groups().at(-1)!)).toEqual([first.title, second.title]);
 });
 
 test("an answer turn still running reads now, and one stopped takes the wait tone", async () => {

@@ -21,6 +21,7 @@ const servedAction = served.actions[0]!;
 
 const at = (hour: number, minute: number, second = 0) => new Date(2026, 9, 15, hour, minute, second).getTime();
 const ASK = "Why do loop runs crash with database is locked?";
+const TITLE = "Loop runs crash with database is locked";
 const QUESTION = "Does F1 also explain the crashes?";
 
 const message = (id: number, fields: Partial<ThreadMessage>): ThreadMessage => ({
@@ -44,7 +45,7 @@ const steerMessage = message(3, {
 const done: ScoutDetail = {
   ...served,
   scout: {
-    ...served.scout, id: 31, ask: ASK, kind: "bug", phase: "done", reason: null, lead: "opus", helper: "luna", swarm: 4,
+    ...served.scout, id: 31, ask: ASK, title: TITLE, kind: "bug", phase: "done", reason: null, lead: "opus", helper: "luna", swarm: 4,
     created_ms: at(14, 1), started_ms: at(14, 2), ended_ms: at(14, 51, 15),
   },
   tasks: [
@@ -109,7 +110,7 @@ const type = async (box: HTMLElement, text: string) => {
   await act(async () => void fireEvent.change(box, { target: { value: text } }));
 };
 
-const region = () => screen.getByRole("complementary", { name: "Thread" });
+const region = () => screen.getByRole("region", { name: "Thread" });
 const list = () => within(region()).getByRole("list", { name: "Thread" });
 const items = () => Array.from(list().children) as HTMLElement[];
 /** Each row as it reads: a message's head, or a line's text. */
@@ -133,9 +134,8 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a done scout's Thread reads its lead and its messages in order, each headed by its author, mode and time", async () => {
+test("a done scout's Thread reads its messages in order, each headed by its author, mode and time", async () => {
   await mount(scoutFetch({ scout: done }).fetch);
-  expect(region().querySelector("[data-thread-lead]")!.textContent).toBe("lead · opus");
   const messages = items().filter((li) => !li.hasAttribute("data-thread-line"));
   expect(messages.map((li) => li.firstElementChild!.textContent)).toEqual(["You · ask · 14:40", "Scout · 14:41", "test seat via MCP · steer · 14:44"]);
   expect(messages[0]!.textContent).toContain(QUESTION);
@@ -160,7 +160,7 @@ test("an answer turn and a pass read as lines where their time falls, and a fail
   expect(last.hasAttribute("data-thread-line")).toBe(true);
 });
 
-test("an answering scout's newest line runs now, its header says the lead is answering, and Send waits", async () => {
+test("an answering scout's newest line runs now, its Verdict says the lead is answering, and Send waits", async () => {
   const ask = message(4, { author: "maintainer", mode: "ask", text: "And the recurring tasks?", at: at(14, 55), consumed_by: 9, consumed_ms: at(14, 55, 5) });
   const answering: ScoutDetail = {
     ...done, scout: { ...done.scout, phase: "answering" },
@@ -168,8 +168,7 @@ test("an answering scout's newest line runs now, its header says the lead is ans
   };
   await mount(scoutFetch({ scout: answering }).fetch);
   expect(rows().at(-1)).toBe("answer turn · opus · now");
-  expect(document.querySelector("header [role='status']")!.textContent).toBe("The lead is answering.");
-  expect(screen.getByRole("group", { name: "Stage" }).textContent).toBe("answering");
+  expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent).toBe("The lead is answering.");
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: "Ask or steer" })).toBeNull();
   expect(send().disabled).toBe(true);
@@ -198,14 +197,13 @@ test("Send posts the trimmed ask, says so, clears the box and reads the scout ag
   expect(reads(daemon.seen)).toBeGreaterThan(before);
 });
 
-test("Steer renames the box, names the next pass and posts a steer", async () => {
+test("Steer renames the box and posts a steer", async () => {
   const daemon = scoutFetch({ scout: done, post: () => Response.json({ ok: true, queued: false, detail: "steered scout 31" }) });
   await mount(daemon.fetch);
   const steer = within(region()).getByRole("button", { name: "Steer" });
   await click(steer);
   expect(steer.getAttribute("aria-pressed")).toBe("true");
   const box = within(region()).getByRole("textbox", { name: "Note to the scout" });
-  expect(region().querySelector("[data-compose-line]")!.textContent).toBe("Starts pass 3.");
   await type(box, "Go check the digest email as well");
   await click(send());
   expect(posts(daemon.seen).map((each) => each.body)).toEqual([{ scout: 31, mode: "steer", text: "Go check the digest email as well" }]);
@@ -225,7 +223,7 @@ test("a refused or rejected message reads under the composer and keeps its text"
   expect(within(region()).getByRole("alert").textContent).toBe("scout 31 is swarming");
   await click(send());
   expect(within(region()).getByRole("alert").textContent).toContain("text must be a non-blank string");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
   expect(box.value).toBe("Does this hit recurring tasks too?");
 });
 
@@ -237,8 +235,8 @@ test("with actions off the composer is disabled, and a failed scout with no thre
   expect(send().title).toBe(ACTIONS_OFF);
   cleanup();
   await mount(scoutFetch({ scout: { ...done, scout: { ...done.scout, phase: "failed" }, thread: [] } }).fetch);
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
-  expect(screen.queryByRole("complementary", { name: "Thread" })).toBeNull();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
+  expect(screen.queryByRole("region", { name: "Thread" })).toBeNull();
 });
 
 test("Ask or steer moves focus to the composer's box", async () => {

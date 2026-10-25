@@ -5,8 +5,10 @@ import { formatSpan } from "../../lib/format";
 import { useAction } from "../actions";
 import { tokenWords, type ScoutGroup } from "../scout";
 import type { State } from "../state";
+import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
-import { Badge, Connector, GroupHead, lineOf, Steps } from "./Timeline";
+import { Badge, GroupHead } from "./Timeline";
+import { TitleText } from "./TitleText";
 import { useToast } from "./Toast";
 
 const DASH = "–";
@@ -30,8 +32,6 @@ function spent(task: ScoutTask): string {
   if (task.phase === "running") return "…";
   return task.phase === "queued" || task.tokens == null ? "" : tokenWords(task.tokens);
 }
-
-const FACT = "whitespace-nowrap max-[719px]:before:mx-1.5 max-[719px]:before:content-['·'] max-[719px]:first:before:content-none";
 
 /** Where a swarming scout's helpers are stopped one at a time. */
 export interface HelperStop {
@@ -70,91 +70,100 @@ function StopBranch({ task, stop }: { task: ScoutTask; stop: RowStop }) {
 }
 
 function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: RowStop | null }) {
+  const [open, setOpen] = useState(false);
+  const promptId = useId();
   const dot = TASK_DOTS[task.phase];
   const stopped = task.phase === "stopped";
   const stoppable = task.phase === "queued" || task.phase === "running";
   const stopping = stoppable && stop != null && stop.sent.has(task.id);
   const last = stopping ? "stopping" : spent(task);
+  const reason = task.phase === "failed" ? task.reason : null;
   return (
-    <li
-      data-helper={task.phase}
-      className={`grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 border-b border-rule-2 px-4 py-2 last:border-b-0 ${stop ? "min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px_24px]" : "min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px]"}`}
-    >
-      <span className="self-start pt-[3px]"><StateDot state={dot.state} label={dot.label} hideWord /></span>
-      <span data-question className={`min-w-0 font-sans text-[14px] leading-[1.45] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
-        {task.question}
-      </span>
-      <span className="col-start-2 flex flex-wrap font-mono text-[12px] leading-[1.4] text-ink-2 min-[720px]:contents">
-        <span className={FACT}>
-          <span data-mode={task.mode} className={`inline-block px-1 text-[11px] font-semibold leading-[15px] ${task.mode === "run" ? "border border-transparent bg-[color-mix(in_oklab,var(--wait)_22%,transparent)] text-wait" : "border border-rule text-ink-2"}`}>
-            {task.mode}
+    <li data-helper={task.phase} className="border-b border-rule-2 last:border-b-0">
+      <div className="flex items-start">
+        <button type="button" aria-expanded={open} aria-controls={promptId} onClick={() => setOpen(!open)}
+          className="group grid min-w-0 flex-1 cursor-pointer grid-cols-[16px_minmax(0,1fr)_14px] items-start gap-x-2 border-0 bg-transparent px-4 py-2 text-left">
+          <span className="pt-[3px]"><StateDot state={dot.state} label={dot.label} hideWord /></span>
+          <span className="flex min-w-0 flex-col gap-1">
+            <span data-task-title className={`font-read text-[15px] font-medium leading-[1.4] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
+              {task.title}
+            </span>
+            {reason != null && <span data-task-reason className="font-mono text-[12px] leading-[1.4] text-bad-text [overflow-wrap:anywhere]">{reason}</span>}
+            <span data-task-meta className="font-mono text-[12px] leading-[1.4] text-ink-3">
+              <span data-mode={task.mode} className={`inline-block px-1 text-[11px] font-semibold leading-[15px] ${task.mode === "run" ? "border border-transparent bg-[color-mix(in_oklab,var(--wait)_22%,transparent)] text-wait" : "border border-rule text-ink-2"}`}>
+                {task.mode}
+              </span>
+              {" · "}
+              <span data-route>{task.route ?? DASH}</span>
+              {" · "}
+              <span data-took className="tabular-nums">{took(task, now)}</span>
+              {last !== "" && " · "}
+              <span data-tokens className={`tabular-nums ${stopped || stopping ? "text-wait" : ""}`}>{last}</span>
+            </span>
           </span>
-        </span>
-        <span data-route className={FACT}>{task.route ?? DASH}</span>
-        <span data-took className={`${FACT} tabular-nums min-[720px]:text-right`}>{took(task, now)}</span>
-        <span data-tokens className={`${FACT} tabular-nums min-[720px]:text-right ${stopped || stopping ? "text-wait" : ""} ${last === "" ? "max-[719px]:hidden" : ""}`}>{last}</span>
-        {stop && (stoppable && !stopping ? <StopBranch task={task} stop={stop} /> : <span aria-hidden="true" className="max-[719px]:hidden" />)}
-      </span>
+          <span className="pt-1"><FoldChevron open={open} /></span>
+        </button>
+        {stop && stoppable && !stopping && <span className="pr-4 pt-2"><StopBranch task={task} stop={stop} /></span>}
+      </div>
+      {open && (
+        <p id={promptId} data-question className="m-0 max-w-[70ch] px-4 pb-4 pl-10 font-read text-[14px] leading-[1.55] text-ink-2 [overflow-wrap:anywhere]">
+          <TitleText>{task.question}</TitleText>
+        </p>
+      )}
     </li>
   );
 }
 
 function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: RowStop | null }) {
   return (
-    <ol aria-label="Helpers" className="relative z-[1] m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:ml-0">
+    <ol aria-label="Helpers" className="m-0 mb-4 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:mx-0">
       {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} stop={stop} />)}
     </ol>
   );
 }
 
-function Group({ group, open, onToggle, line, now, stop }: {
-  group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number; stop: RowStop | null;
+function Group({ group, open, onToggle, now, stop }: {
+  group: ScoutGroup; open: boolean; onToggle: () => void; now: number; stop: RowStop | null;
 }) {
   const bodyId = useId();
-  const helpers = group.kind === "wave" || group.kind === "pass";
-  const folds = helpers ? group.tasks.length > 0 : !group.running && group.steps.length > 0;
-  const shown = folds ? open : group.running && group.steps.length > 0;
+  const folds = (group.kind === "wave" || group.kind === "pass") && group.tasks.length > 0;
   return (
-    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="relative border-b border-rule-2">
-      <Connector line={line} />
+    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="border-b border-rule-2 px-4 last:border-b-0 max-[720px]:px-2">
       <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} />} folds={folds} open={open} controls={bodyId} onToggle={onToggle}>
         <span data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
           <b className="font-semibold text-ink">{group.title}</b>
           {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
+          {group.failed > 0 && <>{" · "}<span data-failed className="font-medium text-bad-text">{group.failed} failed</span></>}
         </span>
         <span data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
           {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
         </span>
       </GroupHead>
-      {shown && (
+      {folds && open && (
         <div id={bodyId}>
-          {helpers ? <Helpers tasks={group.tasks} now={now} stop={stop} /> : <Steps steps={group.steps} />}
+          <Helpers tasks={group.tasks} now={now} stop={stop} />
         </div>
       )}
     </li>
   );
 }
 
-const troubled = (group: ScoutGroup) => group.tasks.some((task) => task.phase === "stopped" || task.phase === "failed");
-
-/** The scout's timeline, one row per group. A group the reader has not
- *  toggled is open while it runs, holds a stopped or failed helper, or is the newest pass. With `stop`
- *  each queued or running helper ends in Stop this branch. */
+/** The scout's Progress, one row per group. Only a wave or pass holding tasks folds, closed until the reader opens it
+ *  unless it runs. With `stop` each queued or running helper ends in Stop this branch. */
 export function ScoutActivity({ groups, now, stop }: { groups: ScoutGroup[]; now: number; stop: HelperStop | null }) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const [sent, setSent] = useState<ReadonlySet<number>>(new Set());
   const rowStop = stop == null ? null : { ...stop, sent, onSent: (task: number) => setSent((was) => new Set(was).add(task)) };
-  const newestPass = groups.findLast((group) => group.kind === "pass")?.key;
+  if (groups.length === 0) return null;
   return (
-    <ol aria-label="Scout activity" className="m-0 mt-4 list-none border-t border-rule-2 p-0">
-      {groups.map((group, index) => {
-        const open = chosen[group.key] ?? (group.running || troubled(group) || group.key === newestPass);
+    <ol aria-label="Scout activity" className="m-0 mt-2 list-none border border-rule bg-paper p-0">
+      {groups.map((group) => {
+        const open = chosen[group.key] ?? group.running;
         return (
           <Group
             key={group.key}
             group={group}
             open={open}
-            line={lineOf(index, groups.length)}
             now={now}
             stop={rowStop}
             onToggle={() => setChosen((was) => ({ ...was, [group.key]: !open }))}

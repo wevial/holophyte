@@ -1,16 +1,18 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { CommandEvidence, FileEvidence, Hypothesis, Reproduction, ScoutFinding, ScoutReportPass, TextEvidence } from "../../lib/contract.gen";
 import { shortSha } from "../../lib/shipped";
 import { numberFindings, type NumberedFinding } from "../scout";
 import { SECTION_LABEL } from "./Criteria";
+import { FoldChevron } from "./icons";
 
 type Evidence = ScoutFinding["evidence"][number];
 
 const CHIP = "inline-block rounded px-2 py-0.5 font-sans text-[13px] font-medium leading-[1.4]";
 const MONO = "font-mono text-[13px] leading-[1.5] [overflow-wrap:anywhere]";
 const ID = "pt-[5px] font-mono text-[11px] font-semibold leading-none text-ink-3";
-const ROW = "grid grid-cols-[2.375rem_5.25rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 py-3 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]";
-const TEXT = "m-0 font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]";
+const ROW = "grid grid-cols-[2.375rem_6.75rem_minmax(0,1fr)] gap-x-2 border-b border-rule-2 py-4 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]";
+const TEXT = "m-0 max-w-[70ch] font-sans text-[15px] leading-[1.45] text-ink [overflow-wrap:anywhere]";
+const TOGGLE = "group inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-mono text-[12px] leading-[1.5] text-ink-3 hover:text-ink";
 
 const FINDING_TONES: Record<ScoutFinding["status"], string> = {
   confirmed: "bg-live-wash text-ok-ink",
@@ -55,8 +57,7 @@ function UrlItem({ url }: { url: string }) {
   );
 }
 
-function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: string }) {
-  const { id, pass, finding } = numbered;
+function EvidenceItems({ evidence, base }: { evidence: Evidence[]; base: string }) {
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const outputId = useId();
   const toggle = (index: number) => {
@@ -64,6 +65,46 @@ function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: stri
     if (!next.delete(index)) next.add(index);
     setOpen(next);
   };
+  return (
+    <ul data-evidence className="m-0 mt-2 flex list-none flex-col items-start gap-1 p-0">
+      {evidence.map((item, index) => {
+        let shown: ReactNode;
+        if (isFile(item)) shown = <FileItem item={item} base={base} />;
+        else if (isCommand(item)) {
+          shown = (
+            <>
+              <button
+                type="button"
+                aria-expanded={open.has(index)}
+                aria-controls={`${outputId}-${index}`}
+                onClick={() => toggle(index)}
+                className={`${MONO} cursor-pointer rounded border-0 bg-act-wash px-2 py-px text-left text-act hover:underline`}
+              >
+                {item.command} {open.has(index) ? "▾" : "▸"}
+              </button>
+              {open.has(index) && (
+                <pre id={`${outputId}-${index}`} data-command-output className="m-0 mt-2 max-h-80 overflow-auto whitespace-pre-wrap border border-rule-2 bg-paper px-3 py-2 font-mono text-[12px] leading-[1.5] text-ink-2 [overflow-wrap:anywhere]">
+                  <span className="text-ink">$ {item.command}</span>
+                  {"\n"}
+                  {item.output}
+                </pre>
+              )}
+            </>
+          );
+        } else if (isText(item)) shown = <span data-text className={`${MONO} text-ink-2`}>{item.text}</span>;
+        else shown = <UrlItem url={item.url} />;
+        return <li key={index} className="max-w-full">{shown}</li>;
+      })}
+    </ul>
+  );
+}
+
+const citations = (n: number) => `${n} ${n === 1 ? "citation" : "citations"}`;
+
+function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: string }) {
+  const { id, pass, finding } = numbered;
+  const [open, setOpen] = useState(false);
+  const evidenceId = useId();
   return (
     <li data-scout-finding className={`${ROW} px-4 last:border-b-0`}>
       <span data-finding-id className={ID}>{id}</span>
@@ -74,37 +115,13 @@ function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: stri
           {pass > 1 && <span data-finding-pass className="ml-2 rounded border border-rule px-1.5 py-px font-mono text-[11px] text-ink-3">pass {pass}</span>}
         </p>
         {finding.evidence.length > 0 && (
-          <div data-evidence className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {finding.evidence.map((item, index) => {
-              if (isFile(item)) return <FileItem key={index} item={item} base={base} />;
-              if (isCommand(item)) {
-                const shown = open.has(index);
-                return (
-                  <button
-                    key={index}
-                    type="button"
-                    aria-expanded={shown}
-                    aria-controls={`${outputId}-${index}`}
-                    onClick={() => toggle(index)}
-                    className={`${MONO} cursor-pointer rounded border-0 bg-act-wash px-2 py-px text-left text-act hover:underline`}
-                  >
-                    {item.command} {shown ? "▾" : "▸"}
-                  </button>
-                );
-              }
-              if (isText(item)) return <span key={index} data-text className={`${MONO} text-ink-2`}>{item.text}</span>;
-              return <UrlItem key={index} url={item.url} />;
-            })}
-          </div>
-        )}
-        {finding.evidence.map((item, index) =>
-          isCommand(item) && open.has(index) ? (
-            <pre key={index} id={`${outputId}-${index}`} data-command-output className="m-0 mt-2 max-h-80 overflow-auto whitespace-pre-wrap border border-rule-2 bg-paper px-3 py-2 font-mono text-[12px] leading-[1.5] text-ink-2 [overflow-wrap:anywhere]">
-              <span className="text-ink">$ {item.command}</span>
-              {"\n"}
-              {item.output}
-            </pre>
-          ) : null,
+          <>
+            <button type="button" aria-expanded={open} aria-controls={evidenceId} onClick={() => setOpen(!open)} className={`mt-2 ${TOGGLE}`}>
+              <FoldChevron open={open} />
+              {citations(finding.evidence.length)}
+            </button>
+            {open && <div id={evidenceId}><EvidenceItems evidence={finding.evidence} base={base} /></div>}
+          </>
         )}
       </div>
     </li>
@@ -114,7 +131,6 @@ function FindingItem({ numbered, base }: { numbered: NumberedFinding; base: stri
 function Hypotheses({ hypotheses }: { hypotheses: Hypothesis[] }) {
   return (
     <>
-      <h3 className="m-0 mt-5 font-sans text-[13px] font-semibold leading-none text-ink-2">Hypotheses</h3>
       <ol aria-label="Hypotheses" className="m-0 mt-2 list-none p-0">
         {hypotheses.map((each, index) => {
           const verdict = VERDICTS[each.verdict];
@@ -134,33 +150,54 @@ function Hypotheses({ hypotheses }: { hypotheses: Hypothesis[] }) {
   );
 }
 
-/** A done scout's report: every pass's findings numbered F1… with their evidence, and the newest pass's hypotheses
- *  unless `hypotheses` is false. */
-export function ScoutReport({ reports, baseSha, hypotheses: showHypotheses = true }: { reports: ScoutReportPass[]; baseSha: string | null; hypotheses?: boolean }) {
+const VERDICT_ORDER: Hypothesis["verdict"][] = ["supported", "ruled_out", "open"];
+
+/** "not reproduced · 5 hypotheses · 2 ruled out · 3 open", leaving out a count of 0; with hypotheses it opens their
+ *  list, without it reads its level alone. */
+function ReproductionLine({ reproduction }: { reproduction: Reproduction }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const { hypotheses } = reproduction;
+  const words = [
+    LEVELS[reproduction.level],
+    ...(hypotheses.length ? [`${hypotheses.length} ${hypotheses.length === 1 ? "hypothesis" : "hypotheses"}`] : []),
+    ...VERDICT_ORDER.flatMap((verdict) => {
+      const n = hypotheses.filter((each) => each.verdict === verdict).length;
+      return n ? [`${n} ${VERDICTS[verdict].word}`] : [];
+    }),
+  ].join(" · ");
+  if (hypotheses.length === 0) return <p data-reproduction className="m-0 mt-4 font-mono text-[12px] leading-[1.5] text-ink-3">{words}</p>;
+  return (
+    <div className="mt-4">
+      <button type="button" data-reproduction aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} className={TOGGLE}>
+        <FoldChevron open={open} />
+        {words}
+      </button>
+      {open && <div id={id}><Hypotheses hypotheses={hypotheses} /></div>}
+    </div>
+  );
+}
+
+/** A done scout's Findings: every pass's findings numbered F1… with their citations folded, then the newest report's
+ *  reproduction line. */
+export function ScoutReport({ reports, baseSha }: { reports: ScoutReportPass[]; baseSha: string | null }) {
   if (reports.length === 0) return null;
   const passes = [...reports].sort((a, b) => a.pass - b.pass);
   const newest = passes.at(-1)!.report;
   const findings = numberFindings(passes);
   const base = shortSha(baseSha);
-  const meta = [
-    newest.reproduction == null ? null : LEVELS[newest.reproduction.level],
-    base === "" ? null : `at base ${base}`,
-    passes.length > 1 ? `${passes.length} passes` : null,
-  ].filter((part) => part != null);
-  const hypotheses = newest.reproduction?.hypotheses ?? [];
   return (
-    <section aria-label="Report" className="mt-6">
+    <section aria-label="Findings" className="mt-10">
       <h2 className={`m-0 ${SECTION_LABEL}`}>
-        Report
-        <span data-report-count className="text-ink">{findings.length} {findings.length === 1 ? "finding" : "findings"}</span>
+        Findings
+        <span data-report-count className="text-ink">{findings.length}</span>
       </h2>
-      {meta.length > 0 && <p data-report-meta className="m-0 mt-2.5 font-mono text-[13px] leading-[1.5] text-ink-2">{meta.join(" · ")}</p>}
       {findings.length > 0 && (
-        <ol aria-label="Findings" className="m-0 mt-3 list-none border border-rule bg-paper-2 p-0">
+        <ol aria-label="Findings" className="m-0 mt-2 list-none border border-rule bg-findings-bg p-0">
           {findings.map((each) => <FindingItem key={each.id} numbered={each} base={base} />)}
         </ol>
       )}
-      {showHypotheses && hypotheses.length > 0 && <Hypotheses hypotheses={hypotheses} />}
+      {newest.reproduction != null && <ReproductionLine reproduction={newest.reproduction} />}
     </section>
   );
 }

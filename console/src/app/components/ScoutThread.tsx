@@ -1,8 +1,8 @@
 import { useIsMutating } from "@tanstack/react-query";
-import { useCallback, useRef, useState, type Ref } from "react";
+import { useCallback, useId, useRef, useState, type Ref } from "react";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { useAction } from "../actions";
-import { composeBlock, composeLine, threadRows, type CardRow, type LineTone } from "../scoutThread";
+import { composeBlock, threadRows, type CardRow, type LineTone } from "../scoutThread";
 import { Btn } from "./Btn";
 import { SECTION_LABEL } from "./Criteria";
 import { ScoutCard } from "./ScoutCard";
@@ -74,10 +74,7 @@ function ScoutCompose({ base, detail, actions, sending, answering, onStopAnsweri
         placeholder={asking ? "Ask about this report…" : "Tell the scout what to check next…"}
         value={text} disabled={disabled} title={blocked ?? undefined} onChange={(event) => setText(event.target.value)}
         className="mt-2.5 block min-h-[88px] w-full resize-y border border-ink-3 bg-paper-2 p-2.5 font-read text-[14px] leading-[1.45] text-ink disabled:cursor-not-allowed" />
-      <div className="mt-2.5 flex items-center justify-between gap-2.5 [&>.btn]:shrink-0 [&>.btn]:whitespace-nowrap">
-        <span data-compose-line className="font-mono text-[12px] leading-[1.4] text-ink-2">
-          {composeLine(detail, mode)}
-        </span>
+      <div className="mt-2 flex justify-end [&>.btn]:shrink-0 [&>.btn]:whitespace-nowrap">
         <Btn variant="primary" busy={action.isPending} disabled={disabled || !text.trim()} title={blocked ?? undefined} onClick={() => { void send(); }}>
           Send
         </Btn>
@@ -87,13 +84,14 @@ function ScoutCompose({ base, detail, actions, sending, answering, onStopAnsweri
   );
 }
 
-/** A scout's Thread: its messages and proposal cards, a line for each answer turn and pass between them, and the Ask and
- *  Steer composer, which Type an answer points at a card. */
+/** A scout's Thread at the end of its body: its messages and proposal cards, a line for each answer turn and pass
+ *  between them, and the Ask and Steer composer, which Type an answer points at a card. */
 export function ScoutThread({ base, detail, actions, ref }: { base: string; detail: ScoutDetail; actions: boolean; ref?: Ref<HTMLTextAreaElement> }) {
   const rows = threadRows(detail);
   const blocked = composeBlock(detail, actions);
   const sending = useSending(base);
   const [answeringId, setAnsweringId] = useState<number | null>(null);
+  const headingId = useId();
   const answering = rows.find((row): row is CardRow => row.kind === "card" && row.id === answeringId && !row.answered) ?? null;
   const box = useRef<HTMLTextAreaElement | null>(null);
   const boxRef = useCallback((node: HTMLTextAreaElement | null) => {
@@ -106,11 +104,10 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
     box.current?.focus();
   };
   return (
-    <aside id="thread" aria-labelledby="thread-heading" className="@container/agent min-w-0 flex-[1_1_440px] border-t border-rule px-[22px] pb-6 pt-[22px] @[1000px]:min-w-[380px] @[1000px]:border-t-0 max-[720px]:px-4">
-      <div id="thread-heading" className={SECTION_LABEL}>Thread</div>
-      <div data-thread-lead className="mt-2 font-mono text-[12px] font-semibold leading-[1.5] text-ink">lead · {detail.scout.lead ?? "—"}</div>
+    <section id="thread" aria-labelledby={headingId} className="@container/agent mt-10 min-w-0">
+      <h2 id={headingId} className={`m-0 ${SECTION_LABEL}`}>Thread</h2>
       {rows.length > 0 && (
-        <ol aria-label="Thread" className="m-0 mt-4 flex list-none flex-col gap-3 p-0">
+        <ol aria-label="Thread" className="m-0 mt-2 flex list-none flex-col gap-3 p-0">
           {rows.map((row) => row.kind === "message"
             ? <ThreadMessage key={row.key} head={row.head} at={row.at} text={row.text} agent={row.agent} indent="ml-6" />
             : row.kind === "card"
@@ -123,6 +120,6 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
         </ol>
       )}
       <ScoutCompose base={base} detail={detail} actions={actions} sending={sending} answering={answering} onStopAnswering={() => setAnsweringId(null)} ref={boxRef} />
-    </aside>
+    </section>
   );
 }

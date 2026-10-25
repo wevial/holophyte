@@ -1185,7 +1185,8 @@ the maintainer notes that drove it and the pull request comments it acted on.
 The Turn page (`console/src/app/pages/Turn.tsx`) shows one recorded turn’s
 figures and links to its neighbours. `console/src/app/turn.ts` selects its
 host and run and shares turn titles with the Details fold. Run and Turn
-share page framing in `console/src/app/pages/runShared.tsx`.
+share page framing and the quiet loading placeholder, which the Scout page also shows, in
+`console/src/app/pages/runShared.tsx`.
 The Turn page’s `console/src/app/components/TurnEntries.tsx` lists transcript
 entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/app/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
@@ -1193,28 +1194,33 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/app/pages/Scouts.tsx` lists the scouts newest first, and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
-beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `scout` search selects, condensed
-to its header, Action items, Report and Thread, or the New scout form; it and the Scout page share the facts
-line of `console/src/app/components/ScoutFacts.tsx`.
+beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `scout` search selects with the
+same header and body as its page, or the New scout form, each list row reading the scout's title.
+`console/src/app/components/ScoutHead.tsx` is the header the Scout page and the pane share: the state dot, the
+scout's title, the what and cost lines of `console/src/app/components/ScoutFacts.tsx` and the ask behind Ask.
+`console/src/app/components/ScoutBody.tsx` is the body they share: the Verdict, the newest report's headline over
+its bullets or else its summary, or a scout's state sentence while it has no report; then Action items, Findings,
+Progress and Thread, with Progress second while the scout is live.
 A failed run's page, open findings, follow-ups and ticket defect rows on Findings, and a ticket's actions each carry a
 Scout button (`console/src/app/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
 and `ask`, which the Scouts page reads into a filled New scout form whose launch sends `about` as `subject`.
 The Scout page (`console/src/app/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
 `console/src/app/scout.ts`, which also groups it into Plan, waves, Synthesis and Report, then an Answer
 or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
-`console/src/app/components/ScoutActivity.tsx` draws them with their helper rows on the row grid,
-badges and steps of `console/src/app/components/Timeline.tsx`, which `RunActivity.tsx` shares, and
+`console/src/app/components/ScoutActivity.tsx` draws them as Progress on the row grid and badges of
+`console/src/app/components/Timeline.tsx`, which `RunActivity.tsx` shares, a wave or pass folding on its task
+rows, each opening its question, and
 `console/src/app/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm; a
 swarming scout's queued or running helper row posts it with its `task`, no confirm, from Stop this branch.
-`console/src/app/components/ScoutReport.tsx` draws a scout's Report under Progress: every pass's
-findings with their status and evidence, and the newest bug report's hypotheses.
-`console/src/app/components/ScoutActions.tsx` draws its Action items under the Report, each filed
+`console/src/app/components/ScoutReport.tsx` draws a scout's Findings: every pass's findings with their
+status and citations folded, and the newest report's reproduction as one line opening its hypotheses.
+`console/src/app/components/ScoutActions.tsx` draws its Action items, each filed
 with `POST /actions/scout-file`; a checker refusal opens New ticket with the item's draft. A revise
 item's Revise opens its ticket's edit page with the item's draft handed in the navigation's history state,
 which `console/src/app/pages/EditTicket.tsx` loads over the current revision for the maintainer to save.
 `console/src/app/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
-composer cannot send; `console/src/app/components/ScoutThread.tsx` draws them as the Scout page's Thread
-with its Ask and Steer composer, posting `POST /actions/scout-message`, and
+composer cannot send; `console/src/app/components/ScoutThread.tsx` draws them as the Thread at the end of
+the scout's body, with its Ask and Steer composer, posting `POST /actions/scout-message`, and
 `console/src/app/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
 `console/src/app/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
 choice posts it as the card's answer, and Type an answer points the composer at the card.

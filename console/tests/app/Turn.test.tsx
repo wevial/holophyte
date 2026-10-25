@@ -117,5 +117,7 @@ test.each([
 
 test("a host still being asked exposes a loading status", async () => {
   await mount("#/runs/demo/12/turns/42", () => new Promise<Response>(() => {}));
-  expect(within(screen.getByRole("main")).getByRole("status").textContent).toBe("Asking demo for run 12…");
+  const loading = within(screen.getByRole("main")).getByRole("status", { name: "Loading" });
+  expect(loading.getAttribute("aria-busy")).toBe("true");
+  expect(loading.textContent).toBe("");
 });
