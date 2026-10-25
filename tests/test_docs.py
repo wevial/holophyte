@@ -1,11 +1,11 @@
 """README is the front door; the manual lives in `docs/` by topic.
 
-KO-227 moved the README's sections into five topic docs. The checks here
-hold the split to its contract: every heading the README used to carry is
-in exactly one doc, `docs/development.md` names the tree that exists and no
-other, every relative link in the README and the docs resolves to a file and
-an anchor that exist, and the README's usage block names every mode
-`holophyte/cli/arguments.py` registers.
+Every heading the README used to carry is in exactly one topic doc,
+`docs/development.md` names the tree that exists and no other, and every
+relative link in the README and the docs resolves to a file and an anchor
+that exist. The README links each topic doc and, from its usage section,
+the CLI reference; `docs/reference/cli.md` names every `holo` command word,
+every MCP signed write and every mode `holophyte/cli/arguments.py` registers.
 
 Run: python3 -m unittest discover -s tests -p 'test_docs*' -v
 """
@@ -45,7 +45,6 @@ MOVED_HEADINGS = (
 HEADING = re.compile(r"^(#{1,6}) +(.+?)\s*$", re.MULTILINE)
 # Markdown links, `[text](target)`; images and bare URLs are not links here.
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
-USAGE = re.compile(r"## Usage\n+```\n(.*?)```", re.DOTALL)
 
 
 def headings(text, level=None):
@@ -181,17 +180,15 @@ class SingleMachineTests(unittest.TestCase):
                 self.assertNotIn(role, text, f"{name} names the {role}")
 
 
+CLI_PAGE = DOCS / "reference" / "cli.md"
+
+
 class UsageTests(unittest.TestCase):
-    def test_readme_usage_names_every_mode_the_parser_registers(self):
+    def test_readme_links_the_topic_docs_and_usage_links_the_cli_page(self):
         text = README.read_text()
-        block = USAGE.search(text)
-        self.assertIsNotNone(block, "README has no usage block")
-        missing = [opt for opt in parser_option_strings()
-                   if opt not in block.group(1)]
-        self.assertEqual(missing, [])
-        self.assertIn("factory.py project", block.group(1))
         for name in TOPIC_DOCS:
             self.assertIn(f"docs/{name}.md", text)
+        self.assertIn("](docs/reference/cli.md)", section(text, "Usage"))
 
 
 def holo_command_words():
@@ -200,24 +197,28 @@ def holo_command_words():
     return sorted(commands.choices)
 
 
-class HoloUsageTests(unittest.TestCase):
-    def test_readme_usage_names_every_holo_command_word(self):
-        block = USAGE.search(README.read_text()).group(1)
-        missing = [word for word in holo_command_words()
-                   if not re.search(rf"\bholo {re.escape(word)}(?![\w-])",
-                                    block)]
-        self.assertEqual(missing, [])
+def unnamed_holo_words(text, words):
+    """The words `text` never names as `holo WORD`."""
+    return [word for word in words
+            if not re.search(rf"\bholo {re.escape(word)}(?![\w-])", text)]
 
-    def test_readme_holo_mcp_line_names_the_eleven_signed_writes(self):
+
+class HoloUsageTests(unittest.TestCase):
+    def test_cli_page_names_every_holo_command_word(self):
+        self.assertEqual(
+            unnamed_holo_words(CLI_PAGE.read_text(), holo_command_words()), [])
+
+    def test_a_word_the_cli_page_never_names_is_the_only_one_reported(self):
+        words = [*holo_command_words(), "frobnicate"]
+        self.assertEqual(unnamed_holo_words(CLI_PAGE.read_text(), words),
+                         ["frobnicate"])
+
+    def test_cli_page_mcp_write_table_names_every_signed_write(self):
         from holophyte.holo.mcp_tools import WRITES
-        block = USAGE.search(README.read_text()).group(1)
-        [line] = [ln for ln in block.splitlines()
-                  if ln.startswith("holo mcp ") and "signed writes" in ln]
-        self.assertIn("eleven signed writes", line)
-        names = {tool.name for tool in WRITES}
-        self.assertEqual(len(names), 11)
-        for name in names:
-            self.assertRegex(line, rf"\b{name}\b")
+        table = CLI_PAGE.read_text().split(
+            "| Tool | Arguments | Runs | Records |\n", 1)[1].split("\n\n")[0]
+        listed = set(re.findall(r"^\| `(\w+)` \|", table, re.MULTILINE))
+        self.assertEqual(sorted({tool.name for tool in WRITES} - listed), [])
 
 
 def section(text, title):

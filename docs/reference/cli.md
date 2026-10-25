@@ -45,6 +45,33 @@ command family, [below](#project-commands).
 | `--move KEY-n ready\|backlog --revision N [--note TEXT] PROJECT` | on a native board: moves the ticket to Ready or Backlog at revision `N`, recording the note, and prints `moved KEY-n to COLUMN (revision M)`; a live run continues and its ticket is not claimed again; a ticket at another revision exits 1 printing `KEY-n is at revision M, not N; nothing changed`, and a refused move (a draft to Ready, a canceled or closed ticket) exits 1 printing the problem; a move to Ready of a ticket parked `needs_spec` for stale landmarks or by the critic, in Ready or Backlog, first re-checks it against `main` fetched from origin, without asking the critic again: with reasons remaining it exits 1 listing them and changes nothing, and with none it re-derives the ticket to `ready` (or `blocked_on_deps`) and records a project `requeue` intervention, printing `re-checked KEY-n against main: STATUS (revision M)` when the ticket was already in Ready; any other move to the column a ticket is in exits 1 printing `KEY-n is already in COLUMN at status STATUS; nothing changed`; on a Linear board a usage error (exit 2) that asks Linear nothing | store |
 | `--cancel KEY-n --revision N --note TEXT PROJECT` | on a native board: cancels the ticket at revision `N`, recording the note, and prints `canceled KEY-n (revision M)`; a live run gets an `abort` intervention carrying the note and ends `abandoned` at its next safe point, and the line adds `; run R ends abandoned at its next safe point`; a last run parked awaiting merge approval gets a `close_out` intervention and ends `abandoned` at once, its pull request left open, and the line adds `; run R ended abandoned` and `, URL left open`; a last run parked `blocked_on_operator` after its merge landed cannot end abandoned, so the cancel exits 1 naming it and nothing changes; a stale revision or a refusal exits 1 as `--move`'s does; in the same transaction each open dependent of the ticket, by id, has the canceled ticket replaced in its `Depends on:` by the canceled ticket's own dependencies (or `none`), records a `rewire` note, moves to `ready` when its new dependencies are all merged or none, and a story child's approved edge follows, and the line adds `; rewired KEY-m to DEPS` per dependent, after the run clauses; on a Linear board a usage error (exit 2) | store |
 
+`--file-ticket` validates the file against the project, creates the issue,
+reads the stored body back and validates that again, so a transfer that
+rewrites the body is caught. With `--update KO-n` it replaces that issue's
+title, description and estimate from the file instead of creating one, with
+the same validation on both sides. It adds the blockers the file names and
+the board does not yet hold, and leaves in place one the board holds and the
+file no longer names; state and priority stay as they are, so `--state` and
+`--priority` are refused beside it. On a native board `--update KEY-n`
+requires `--revision N`, the revision the ticket was read at, and takes
+`--priority` and `--labels`; a ticket that moved past `N` is left unchanged
+and its current revision printed. It prints `[holo2] updated KO-n: TITLE`,
+naming any blocker it added with a `+`, or exits 1 with the problem and nothing
+changed when the file is invalid and 2 with the identifier and the problem
+when the stored body is.
+
+A native board's column is a person's: `--move KEY-n ready|backlog` and
+`--cancel KEY-n --note TEXT` act at `--revision N` as `--update` does, and
+a live run continues through a move but is aborted by a cancel, ending
+`abandoned` at its next safe point. Both are usage errors on a Linear
+project, whose tickets are moved in Linear.
+
+`--report`, `--status`, `--sweep` and `--import-store --dry-run` read the
+store and call nobody; `--serve` reads it too, and writes only through its
+two opt-ins, `[serve] actions` and `config_edit`
+([The daemon's actions](daemon.md)); the loop and
+`--supervise` need a `[board]` table.
+
 ## Project commands
 
 `python3 factory.py project VERB [--store PATH]` registers projects in the
@@ -147,6 +174,8 @@ and by a fresh claim's implement stage, as `--scout` is by the host sweep.
 | `holo story approve KEY --revision N NOTE [--baseline-green W] [--baseline-red-kind KIND W]` | | `--approve-story KEY --revision N --note NOTE [--baseline-green W] [--baseline-red-kind KIND W] PROJECT` |
 | `holo story witness KEY` | | `--witness-pass KEY PROJECT` |
 | `holo story decide KEY ID [OPTION] NOTE` | | `--decide KEY ID [OPTION] --note NOTE PROJECT` |
+| `holo bug ASK [--lead NAME] [--helper NAME] [--swarm N] [--minutes M] [--about KIND:REF] [--author NAME]` | | none: `holo scout launch ASK --kind bug` with the same flags, a bug scout on the ask |
+| `holo idea ASK [--lead NAME] [--helper NAME] [--swarm N] [--minutes M] [--about KIND:REF] [--author NAME]` | | none: `holo scout launch ASK --kind research` with the same flags, a research scout on the ask |
 | `holo supervise [--once]` | | `--supervise [--once] [PROJECT]` |
 | `holo serve [ADDR]` | | `--serve [ADDR] [PROJECT]` |
 
@@ -342,8 +371,9 @@ true`.
 | `board_diff` | | `holo board diff` |
 | `sweep_preview` | | `holo sweep`, which acts on nothing and writes only sightings |
 
-The six write tools are marked `readOnlyHint: false` and
-`destructiveHint: false`. Each requires a non-blank `note` and `author`; a
+The write tools are marked `readOnlyHint: false` and
+`destructiveHint: false`. Each requires a non-blank `note` and `author`, but
+`scout_stop` takes `task` in place of the note; a
 missing or blank one is a result with `isError: true` naming it, and no
 command runs. The verb records actor `operator` on its interventions
 row, and the author rides in what the verb records as `AUTHOR via MCP`,
@@ -363,6 +393,11 @@ on the host.
 | `steer` | `ticket`, required; `hint` and `now`, booleans | `holo steer KEY [--hint] [--now] --note NOTE --author "AUTHOR via MCP" --json` | the steer note `NOTE`, an amendment or with `hint` a hint, its author `AUTHOR via MCP`; the verb's line is the result's `detail` |
 | `requeue` | `ticket`, required | `holo requeue KEY --note "AUTHOR via MCP: NOTE" --json` | a `requeue` interventions row with that text |
 | `hold` | | `holo hold --note "AUTHOR via MCP: NOTE" --json` | a `hold` interventions row with that text |
+| `scout` | `kind`, required; `lead`, `helper`, `swarm`, `minutes` and `subject` | `holo scout launch --kind KIND [--lead NAME] [--helper NAME] [--swarm N] [--minutes M] [--about SUBJECT] --note NOTE --author "AUTHOR via MCP" --json` | a scout on the ask `NOTE`, its author `AUTHOR via MCP`, queued while the host's `[scout] max_parallel` slots are full |
+| `scout_file` | `scout` and `item`, required | `holo scout file ID N --note NOTE --author "AUTHOR via MCP" --json` | the done scout's action item `N` in Backlog through the ticket checker, a draft when the checker reports problems, its first board note `NOTE` by `AUTHOR via MCP` |
+| `scout_stop` | `project` and `scout`, required; `task` | `holo scout stop ID [--task N] [--note NOTE] --author "AUTHOR via MCP" --json` | the scout's stop, or with `task` that one helper task's, its author `AUTHOR via MCP` |
+| `scout_ask` | `project` and `scout`, required; `answers` | `holo scout ask ID [--answers MSG] --note NOTE --author "AUTHOR via MCP" --json` | the ask `NOTE` in the scout's thread, its author `AUTHOR via MCP`; its lead answers once the scout is done |
+| `scout_steer` | `project` and `scout`, required; `answers` | `holo scout steer ID [--answers MSG] --note NOTE --author "AUTHOR via MCP" --json` | the steer `NOTE` in the scout's thread, its author `AUTHOR via MCP`; the scout takes it at its lead's next synthesis turn, or runs one more pass once done |
 
 A tool whose command prints a JSON object returns it as `structuredContent`
 and as text; `board_diff` and `sweep_preview` return the command's text,
