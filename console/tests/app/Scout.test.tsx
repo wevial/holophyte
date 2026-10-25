@@ -465,5 +465,5 @@ test("a row of the Scouts list links to its scout's page", async () => {
   await mount("#/scouts", scoutFetch({ list: [listed] }).fetch);
   const link = within(screen.getByRole("list", { name: "Scouts, newest first" })).getByRole("link");
   expect(link.getAttribute("href")).toBe("/#/scouts/demo/31");
-  expect(link.textContent).toContain(ASK);
+  expect(link.textContent).toContain(listed.title);
 });
