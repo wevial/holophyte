@@ -70,10 +70,10 @@ the same commit. Each test's docstring holds its full rules:
 * `tests/test_store_surface.py`: a public `store` function added or removed
   edits the allow-list with the ticket that needs it. No raw
   `UPDATE runs|tickets|projects` under `holophyte/`: use a named store writer.
-* `tests/test_docs*.py`: a new `factory.py` mode or `holo` command goes in
-  the README usage block and a `factory.py` option in
-  `docs/reference/cli.md`, a new module in `docs/development.md`, a config
-  key in `docs/config.md`, a daemon key in `docs/reference/http.md`.
+* `tests/test_docs*.py`: a new `factory.py` mode or option, or a new `holo`
+  command, goes in `docs/reference/cli.md`, a new module in
+  `docs/development.md`, a config key in `docs/config.md`, a daemon key in
+  `docs/reference/http.md`.
 * Complexity above 12 fails ruff `C901`; an exemption is a per-function
   `noqa: C901` naming its reason in a few words, with its `COMPLEXITY_EXEMPT`
   entry in `tests/test_comment_budget.py`.
