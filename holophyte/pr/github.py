@@ -310,8 +310,10 @@ def push_branch(target, branch, notes=()):
     from holophyte.environment_git import refuse_environment_history
     from holophyte.leak_guard import refuse_private_history
     from holophyte.note_privacy import withhold_history
+    from holophyte.pr.capture_files import untrack_capture_files
 
     strip_attribution(target, target.path, branch)
+    untrack_capture_files(target, branch)
     withhold_history(target.path, branch, notes)
     checked = refuse_environment_history(target, branch, action="push")
     refuse_private_history(target, branch)

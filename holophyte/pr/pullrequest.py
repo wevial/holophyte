@@ -18,6 +18,7 @@ from holophyte.loop.runs import heartbeat_while, set_phase
 from holophyte.loop.stop import resume_babysit_fix, stop_if_requested
 from holophyte.loop.task_worktree import retire_merged_worktree
 from holophyte.pr import (
+    capture_files,
     github,
     image_fetch,
     merge_queue,
@@ -426,6 +427,12 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
             conn, run_id, "merging", f"merging {pull.url} through the"
             " pull request API")):
         return None
+    captured = capture_files.added_capture_files(project, wt, sha)
+    if captured:
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    f"the candidate at {sha[:12]} still adds capture files"
+                    f" ([merge] ui_capture_local = true): {', '.join(captured)}",
+                    (), reviewed=reviewed)
     behind = None
     if merge_config(project).require_up_to_date:
         with heartbeat_while(conn, run_id, beat_s):
