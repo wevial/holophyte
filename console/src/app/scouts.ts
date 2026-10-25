@@ -35,7 +35,6 @@ function scoutRows(answers: { host: HostRecord<ContractBodies>; scouts: Scouts }
     .sort((a, b) => b.created_ms - a.created_ms || b.id - a.id);
 }
 
-/** One project's scouts, newest first. */
 export interface ScoutGroup {
   base: string;
   project: string;

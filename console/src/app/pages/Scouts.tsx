@@ -86,7 +86,6 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
   );
 }
 
-/** One group per project, each under its lane head over its rows. */
 function ScoutGroups({ groups, row }: { groups: ScoutGroup[]; row: (row: ScoutListRow) => ReactNode }) {
   return (
     <ol aria-label="Scouts, newest first" className="m-0 flex list-none flex-col gap-[22px] p-0">
