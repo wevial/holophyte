@@ -109,13 +109,20 @@ def launch(argv, cwd):
     try:
         stdout, _ = process.communicate(timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
-        process.stdout.close()
-        process.stderr.close()
+        killed(process)
         return None, ""
+    except BaseException:
+        killed(process)
+        raise
     return process.returncode, stdout.decode(errors="replace")
+
+
+def killed(process):
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+    process.stdout.close()
+    process.stderr.close()
 
 
 def answer(route, question, state, config):

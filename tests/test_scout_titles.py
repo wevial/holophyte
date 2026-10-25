@@ -4,9 +4,12 @@
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -17,6 +20,8 @@ from holophyte import question_cli, questions, redact
 from holophyte.config.checks import check_config_keys
 from holophyte.config.project import Project
 from holophyte.scout import titler
+from holophyte.scout.scout_process import stop_on_sigterm
+from holophyte.scout.swarm import ScoutStopped, Stopping
 from store.scouts import create_scout, move_scout, scout
 from tests.test_question_backends import (
     FAKE,
@@ -223,6 +228,31 @@ class ScoutTitleTests(unittest.TestCase):
         modes = [c["mode"] for name in ("codex", "claude")
                  for c in self.calls(name)]
         self.assertEqual(modes, ["probe", "probe"])
+
+
+class StoppedTitleCallTests(unittest.TestCase):
+    def test_a_scout_stopped_mid_question_kills_the_question_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "pid"
+            argv = ["sh", "-c", f'echo $$ > "{pid_file}"; exec sleep 30']
+
+            def stop_once_started():
+                deadline = time.monotonic() + 10
+                while not pid_file.exists() or not pid_file.read_text():
+                    if time.monotonic() > deadline:
+                        return
+                    time.sleep(0.02)
+                os.kill(os.getpid(), signal.SIGTERM)
+
+            threading.Thread(target=stop_once_started, daemon=True).start()
+            started = time.monotonic()
+            with self.assertRaises(ScoutStopped), \
+                    stop_on_sigterm(Stopping()):
+                question_cli.launch(argv, directory)
+            self.assertLess(time.monotonic() - started, 10)
+            child = int(pid_file.read_text())
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child, 0)
 
 
 class ScoutTitleColumnTests(unittest.TestCase):
