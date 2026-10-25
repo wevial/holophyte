@@ -40,10 +40,16 @@ export interface HelperStop {
   actions: boolean;
 }
 
+/** A helper stop with the tasks whose stop the daemon took, kept above the rows a fold unmounts. */
+interface RowStop extends HelperStop {
+  sent: ReadonlySet<number>;
+  onSent: (task: number) => void;
+}
+
 const STOP_BRANCH = "Stop this branch";
 
 /** ✕ for one queued or running helper: `POST /actions/scout-stop` with its task, no confirm; a refusal says its detail in the toast. */
-function StopBranch({ task, stop, onSent }: { task: ScoutTask; stop: HelperStop; onSent: () => void }) {
+function StopBranch({ task, stop }: { task: ScoutTask; stop: RowStop }) {
   const action = useAction();
   const toast = useToast();
   const press = async () => {
@@ -51,7 +57,7 @@ function StopBranch({ task, stop, onSent }: { task: ScoutTask; stop: HelperStop;
       label: STOP_BRANCH, base: stop.base, route: "/actions/scout-stop", body: { scout: stop.scout, task: task.id },
       said: `Stop sent to task ${task.id} of scout ${stop.scout}.`,
     });
-    if (result.ok) onSent();
+    if (result.ok) stop.onSent(task.id);
     else toast(result.detail);
   };
   return (
@@ -63,12 +69,11 @@ function StopBranch({ task, stop, onSent }: { task: ScoutTask; stop: HelperStop;
   );
 }
 
-function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: HelperStop | null }) {
-  const [sent, setSent] = useState(false);
+function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: RowStop | null }) {
   const dot = TASK_DOTS[task.phase];
   const stopped = task.phase === "stopped";
   const stoppable = task.phase === "queued" || task.phase === "running";
-  const stopping = sent && stoppable;
+  const stopping = stoppable && stop != null && stop.sent.has(task.id);
   const last = stopping ? "stopping" : spent(task);
   return (
     <li
@@ -88,13 +93,13 @@ function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: He
         <span data-route className={FACT}>{task.route ?? DASH}</span>
         <span data-took className={`${FACT} tabular-nums min-[720px]:text-right`}>{took(task, now)}</span>
         <span data-tokens className={`${FACT} tabular-nums min-[720px]:text-right ${stopped || stopping ? "text-wait" : ""} ${last === "" ? "max-[719px]:hidden" : ""}`}>{last}</span>
-        {stop && (stoppable && !stopping ? <StopBranch task={task} stop={stop} onSent={() => setSent(true)} /> : <span aria-hidden="true" className="max-[719px]:hidden" />)}
+        {stop && (stoppable && !stopping ? <StopBranch task={task} stop={stop} /> : <span aria-hidden="true" className="max-[719px]:hidden" />)}
       </span>
     </li>
   );
 }
 
-function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: HelperStop | null }) {
+function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: RowStop | null }) {
   return (
     <ol aria-label="Helpers" className="relative z-[1] m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:ml-0">
       {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} stop={stop} />)}
@@ -103,7 +108,7 @@ function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: 
 }
 
 function Group({ group, open, onToggle, line, now, stop }: {
-  group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number; stop: HelperStop | null;
+  group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number; stop: RowStop | null;
 }) {
   const bodyId = useId();
   const helpers = group.kind === "wave" || group.kind === "pass";
@@ -137,6 +142,8 @@ const troubled = (group: ScoutGroup) => group.tasks.some((task) => task.phase ==
  *  each queued or running helper ends in Stop this branch. */
 export function ScoutActivity({ groups, now, stop }: { groups: ScoutGroup[]; now: number; stop: HelperStop | null }) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
+  const [sent, setSent] = useState<ReadonlySet<number>>(new Set());
+  const rowStop = stop == null ? null : { ...stop, sent, onSent: (task: number) => setSent((was) => new Set(was).add(task)) };
   const newestPass = groups.findLast((group) => group.kind === "pass")?.key;
   return (
     <ol aria-label="Scout activity" className="m-0 mt-4 list-none border-t border-rule-2 p-0">
@@ -149,7 +156,7 @@ export function ScoutActivity({ groups, now, stop }: { groups: ScoutGroup[]; now
             open={open}
             line={lineOf(index, groups.length)}
             now={now}
-            stop={stop}
+            stop={rowStop}
             onToggle={() => setChosen((was) => ({ ...was, [group.key]: !open }))}
           />
         );

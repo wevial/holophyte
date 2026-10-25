@@ -174,7 +174,7 @@ test("a failed scout's composer is disabled with its phase and its untaken ask w
   expect(rows()).toEqual(["You · ask · 11:50", "waiting for a scout slot"]);
 });
 
-test("Stop this branch on a running helper posts its task, reads stopping, then stopped once the daemon says so", async () => {
+test("Stop this branch on a running helper posts its task, reads stopping through a fold, then stopped once the daemon says so", async () => {
   const daemon: Daemon = { scout: swarming, stop: () => Response.json({ ok: true, detail: "stopping task 7 of scout 31" }) };
   const { fetch, seen } = scoutFetch(daemon);
   const queries = await mount(fetch);
@@ -182,6 +182,11 @@ test("Stop this branch on a running helper posts its task, reads stopping, then 
   await click(stopButton(rowOf(RUNNING.question))!);
   expect(posts(seen, "/actions/scout-stop").map((each) => each.body)).toEqual([{ scout: 31, task: RUNNING.id }]);
   expect(lastFact(rowOf(RUNNING.question))).toBe("stopping");
+  const wave = document.querySelector("[data-group='wave'] [aria-expanded]")!;
+  await click(wave);
+  await click(wave);
+  expect(lastFact(rowOf(RUNNING.question))).toBe("stopping");
+  expect(stopButton(rowOf(RUNNING.question))).toBeNull();
   daemon.scout = { ...swarming, tasks: [{ ...RUNNING, phase: "stopped", ended_ms: at(11, 53) }, QUEUED, BACK] };
   await reread(queries);
   const stopped = rowOf(RUNNING.question);
