@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useContext, useState } from "react";
-import type { Round, RunDetail, RunTurn } from "../../lib/contract.gen";
+import type { Round, RunDetail, RunEvent, RunTurn } from "../../lib/contract.gen";
 import { isFinalCheck } from "../../lib/log";
 import { formatClock, formatDuration } from "../../lib/format";
 import { AnswerError } from "../../lib/poll";
@@ -9,10 +9,11 @@ import { PollDepsContext } from "../scope";
 import { CRUMB_LINK } from "../pages/runShared";
 import { turnPage, turnTitles } from "../turn";
 import { SECTION_LABEL } from "./Criteria";
+import { RoundInstructions } from "./RoundInstructions";
 
 const ROW = "flex justify-between gap-3 border-b border-dashed border-rule-2 py-1 font-mono text-[12.5px] leading-[1.8]";
 
-function ReviewRound({ round, max, final }: { round: Round; max: number; final: boolean }) {
+function ReviewRound({ round, max, final, events }: { round: Round; max: number; final: boolean; events: RunEvent[] }) {
   const live = round.ended_ms == null;
   return <li className="border-b border-dashed border-rule-2 py-2.5 text-[14px]">
     <div>
@@ -26,6 +27,7 @@ function ReviewRound({ round, max, final }: { round: Round; max: number; final: 
     {round.findings.map((finding, index) => <p key={index} className="m-0 mt-1">
       <span className="font-mono text-[11px] font-semibold text-need">{finding.severity.toUpperCase()}</span>{" "}{finding.message}
     </p>)}
+    <RoundInstructions round={round} events={events} />
   </li>;
 }
 
@@ -70,7 +72,7 @@ export function RunDetails({ project, base, detail, live }: { project: string; b
       <section aria-label="Review rounds">
         <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Review rounds</h3>
         <ol className="m-0 list-none p-0">
-          {detail.rounds.map((round) => <ReviewRound key={round.round} round={round} max={detail.run.max_rounds} final={isFinalCheck(round, detail.events)} />)}
+          {detail.rounds.map((round) => <ReviewRound key={round.round} round={round} max={detail.run.max_rounds} final={isFinalCheck(round, detail.events)} events={detail.events} />)}
         </ol>
       </section>
       <section aria-label="Transcript">
