@@ -39,6 +39,7 @@ import store.board  # noqa: E402 - after the sys.path insert above
 from holophyte.loop.contradiction import (  # noqa: E402
     brief,
     declared,
+    held,
     proposed,
 )
 
@@ -195,14 +196,15 @@ AMENDED = ("Given one bot thread, when the page renders, then it says"
            " 'parked · 1 thread open'")
 
 
-def scoped_two_criteria():
-    criteria = two_criteria()["criteria"]
-    body = VALID_BODY.replace("* The thing.", "* `page.py`: the parked word.")
+def scoped_two_criteria(scope="## In scope\n\n* `page.py`: the parked word.\n\n",
+                        criteria=None):
+    criteria = criteria or two_criteria()["criteria"]
+    body = VALID_BODY.replace("## In scope\n\n* The thing.\n\n", scope)
     body = body.replace(
         "- [ ] Given the thing, when it runs, then it works (a test witnesses"
         " this)", "\n".join(f"- [ ] {c} (a test witnesses this)"
                             for c in criteria))
-    return dict(two_criteria(), body=body)
+    return dict(two_criteria(), criteria=criteria, body=body)
 
 
 APPROVE_BOTH = Reply("Reviewed the diff; no blockers.\n"
@@ -271,9 +273,10 @@ class ProposedAmendmentTests(LoopFixture):
         return outcome["held"]
 
     def held_after(self, reply, first=f"implementer: criterion C2 cannot be"
-                   f" met as written: {REASON}"):
+                   f" met as written: {REASON}", task=None):
         self.loop(Propose("render the parked word", path="page.py", reply=reply),
-                  REQUEST_CHANGES, provider=StubProvider(scoped_two_criteria()))
+                  REQUEST_CHANGES,
+                  provider=StubProvider(task or scoped_two_criteria()))
         return self.assert_held(first)
 
     def test_a_drop_waits_for_the_operator(self):
@@ -284,6 +287,27 @@ class ProposedAmendmentTests(LoopFixture):
         self.assertIn("other/module.py", self.held_after(
             f"{DECLARED}\nPROPOSED_AMENDMENT: REPLACE C2: Given one bot thread,"
             " when `other/module.py` renders, then it says '1 thread open'"))
+
+    def test_a_path_climbing_out_of_an_in_scope_directory_waits(self):
+        self.assertIn("other/module.py", self.held_after(
+            f"{DECLARED}\nPROPOSED_AMENDMENT: REPLACE C2: Given one bot thread,"
+            " when `src/../other/module.py` renders, then it says"
+            " '1 thread open'",
+            task=scoped_two_criteria("## In scope\n\n* `src/`: the pages.\n\n")))
+
+    def test_a_ticket_without_in_scope_holds_a_path_naming_proposal(self):
+        criteria = ["Given a parked run, when the page renders, then it says"
+                    " parked", "Given one bot thread, when `page.py` renders,"
+                    " then it says 'parked · 1 bot thread'"]
+        self.loop(Declare("render the parked word"), REQUEST_CHANGES,
+                  provider=StubProvider(scoped_two_criteria(criteria=criteria)))
+        conn = store.open(str(self.db))
+        self.addCleanup(conn.close)
+        unscoped = scoped_two_criteria("", criteria)["body"]
+
+        self.assertIn("page.py", held(conn, 1, {2}, [(
+            "REPLACE", 2, "Given one bot thread, when `page.py` renders, then"
+            " it says 'parked · 1 thread open'")], unscoped))
 
     def test_a_declared_criterion_without_a_proposal_waits(self):
         self.assertIn("C1", self.held_after(

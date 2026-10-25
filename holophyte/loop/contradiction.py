@@ -1,5 +1,6 @@
 """An acceptance criterion the implementer declares unmeetable as written."""
 import json
+import posixpath
 import re
 
 import store
@@ -89,13 +90,14 @@ def _unmatched(numbers, edits):
 
 
 def _outside(path, scope, replaced):
+    if path.startswith(("../", "/")) or path == "..":
+        return True
     return path not in replaced and not any(
-        path == root or path.startswith(root.rstrip("/") + "/")
-        for root in scope)
+        path == root or path.startswith(root + "/") for root in scope)
 
 
 def _paths(texts):
-    return {path for text in texts
+    return {posixpath.normpath(path) for text in texts
             for _, path in ticket_template._prose_paths(text)}
 
 
@@ -104,11 +106,12 @@ def held(conn, ticket_id, numbers, edits, ticket):
         return unmatched
     if verb := next((verb for verb, _, _ in edits if verb != "REPLACE"), None):
         return f"{'an' if verb == 'ADD' else 'a'} {verb} waits for the operator"
-    scope = _paths(ticket_template.parse(ticket).in_scope)
+    entries = ticket_template.parse(ticket).in_scope
+    scope = _paths(entries)
     texts = {row["criterion"]: row["text"]
              for row in store.criteria.current(conn, ticket_id)}
     for _, number, text in edits:
-        replaced = _paths([texts.get(number, "")])
+        replaced = _paths([texts.get(number, "")]) if entries else set()
         path = next((path for path in sorted(_paths([text]))
                      if _outside(path, scope, replaced)), None)
         if path:
