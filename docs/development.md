@@ -575,8 +575,17 @@ Each module, one line:
   first recorded; `map_landmarks()` follows each missing path, and each
   missing `-m unittest` module's file, through those rows, refusing a
   deletion, a path with two destinations in one commit, or a final path not
-  on main; `rewrite()` replaces exact backticked spans (or `path::`) and
-  whole verify tokens, leaving the TOML header alone.
+  on main. A directory whose files one commit renamed under one new
+  directory, keeping their relative paths, is mapped with every span and
+  verify token under it (a commit deleting its last file, read with `git
+  ls-tree`, or two destination directories keeps the park); `rewrite()`
+  replaces exact backticked spans
+  (or `path::`) and whole verify tokens, and any span or whole verify token
+  naming a mapped directory or a path under it, leaving the TOML header
+  alone.
+  `renamed_brief()` gives a refreshed ticket's implementer brief the
+  renamed paths (old path, new path and renaming commit) unless a revision
+  authored other than `factory` followed the refresh.
 - `holophyte/review/landmarks.py` — what counts as a lost landmark:
   `MainTree` caches main's file list, blobs and `git grep` holders for one
   check; `path_findings()` and `symbol_findings()` split a ticket's misses
