@@ -464,6 +464,22 @@ class PoolTests(PoolRestartCases, LoopFixture):
         self.assertEqual(len(pool.spawned), 3)
         self.assertEqual(self.rc, 0)
 
+    def test_a_handed_off_worker_keeps_the_pool_spawning_and_exits_zero(self):
+        """`workers = 2`, `stop_on_failure = true`: a worker that hands its
+        run to the next build is no failure, so a third worker is spawned."""
+        provider = StubProvider(*(a_task(n) for n in range(1, 4)))
+
+        pool = self.run_scheduler(2, provider, [
+            (holophyte.loop.pool.WORKER_HANDOFF, None),
+            (holophyte.loop.pool.WORKER_MERGED, provider.queue.clear),
+            (holophyte.loop.pool.WORKER_MERGED, None),
+        ])
+
+        self.assertEqual(len(pool.spawned), 3)
+        self.assertIn("[holo2] worker 1 handed its run to the next build",
+                      self.out)
+        self.assertEqual(self.rc, 0)
+
     def test_a_failed_ticket_then_idle_drain_exits_zero(self):
         provider = StubProvider(a_task(1))
         self.run_scheduler(2, provider, [
