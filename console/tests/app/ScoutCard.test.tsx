@@ -21,6 +21,7 @@ const servedAction = served.actions[0]!;
 
 const at = (hour: number, minute: number, second = 0) => new Date(2026, 9, 15, hour, minute, second).getTime();
 const ASK = "Why do loop runs crash with database is locked?";
+const TITLE = "Loop runs crash with database is locked";
 const QUESTION = "Does F1 also explain the crashes?";
 
 const message = (id: number, fields: Partial<ThreadMessage>): ThreadMessage => ({
@@ -44,7 +45,7 @@ const steerMessage = message(3, {
 const done: ScoutDetail = {
   ...served,
   scout: {
-    ...served.scout, id: 31, ask: ASK, kind: "bug", phase: "done", reason: null, lead: "opus", helper: "luna", swarm: 4,
+    ...served.scout, id: 31, ask: ASK, title: TITLE, kind: "bug", phase: "done", reason: null, lead: "opus", helper: "luna", swarm: 4,
     created_ms: at(14, 1), started_ms: at(14, 2), ended_ms: at(14, 51, 15),
   },
   tasks: [
@@ -117,7 +118,7 @@ const type = async (box: HTMLElement, text: string) => {
   await act(async () => void fireEvent.change(box, { target: { value: text } }));
 };
 
-const region = () => screen.getByRole("complementary", { name: "Thread" });
+const region = () => screen.getByRole("region", { name: "Thread" });
 const list = () => within(region()).getByRole("list", { name: "Thread" });
 const items = () => Array.from(list().children) as HTMLElement[];
 const send = () => within(region()).getByRole("button", { name: "Send" }) as HTMLButtonElement;
@@ -204,7 +205,7 @@ test("a refused choice reads its detail under the card and enables the buttons a
   await mount(scoutFetch({ scout: carded, post: () => Response.json({ ok: false, detail: refusal }) }).fetch);
   await click(choice("Fold into A1"));
   expect(within(card()).getByRole("alert").textContent).toBe(refusal);
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
   expect(cardButtons().map((button) => button.disabled)).toEqual([false, false, false]);
 });
 

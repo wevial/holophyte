@@ -202,7 +202,7 @@ test("a run past its heartbeat threshold says how long it has been silent and co
   expect(stage()).toBe("Stale · no beat 15m");
 });
 
-test("an unknown project, a run the daemon lacks and a host yet to answer each say so", async () => {
+test("an unknown project and a run the daemon lacks each say so, and a host yet to answer shows a loading status", async () => {
   await mount("#/runs/nowhere/12");
   expect(screen.getByText("No project named nowhere answers this console.")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Back to Runs" }).getAttribute("href")).toEndWith("#/runs");
@@ -211,7 +211,9 @@ test("an unknown project, a run the daemon lacks and a host yet to answer each s
   expect(screen.getByText("demo has no run 999.")).toBeTruthy();
   cleanup();
   await mount("#/runs/demo/12", () => new Promise<Response>(() => {}));
-  expect(verdict()).toBe("Asking demo for run 12…");
+  const loading = within(screen.getByRole("main")).getByRole("status", { name: "Loading" });
+  expect(loading.getAttribute("aria-busy")).toBe("true");
+  expect(loading.textContent).toBe("");
 });
 
 test("a run page under another project's scope shows its own project's run and keeps the scope", async () => {

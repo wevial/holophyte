@@ -94,14 +94,14 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   );
 }
 
-/** A scout's action items under its Report: each with File, or its Filed stamp once filed, and a
+/** A scout's action items: each with File, or its Filed stamp once filed, and a
  *  revise item with Revise, which opens its ticket's edit page with the item's draft. */
 export function ScoutActions({ items, ...scope }: { items: ScoutAction[] } & Scope) {
   if (items.length === 0) return null;
   const rows = [...items].sort((a, b) => a.position - b.position);
   const open = rows.filter((item) => item.kind !== "revise" && item.ticket == null).length;
   return (
-    <section aria-label="Action items" className="mt-6">
+    <section aria-label="Action items" className="mt-10">
       <h2 className={`m-0 ${SECTION_LABEL}`}>
         Action items
         {open > 0 && <span data-to-file className="text-need">{open} to file</span>}

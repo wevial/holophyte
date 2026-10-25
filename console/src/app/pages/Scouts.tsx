@@ -3,9 +3,10 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
 import { useAction } from "../actions";
-import { formatClock, formatSettled } from "../../lib/format";
+import { formatSettled } from "../../lib/format";
 import { Btn } from "../components/Btn";
 import { EMPTY_DRAFT, prefilledDraft, ScoutLaunch, type LaunchProject } from "../components/ScoutLaunch";
+import { dayClock } from "../components/ScoutFacts";
 import { ScoutPane } from "../components/ScoutPane";
 import { StateDot } from "../components/StateDot";
 import { firstLine } from "../history";
@@ -13,7 +14,6 @@ import { keepScope, scopedHosts, useConsolePeers, type ScopeSearch } from "../sc
 import { SCOUT_DOTS, scoutPage } from "../scout";
 import { countScouts, scoutKey, scoutOutcome, scoutState, useScouts, type ScoutListRow, type ScoutOutcome, type ScoutsSearch } from "../scouts";
 import { useWide } from "../viewport";
-import { zoneName } from "./runShared";
 
 const GRID = "min-[720px]:grid min-[720px]:grid-cols-[16px_40px_minmax(0,1fr)_76px_92px_52px_88px_56px] min-[720px]:items-start min-[720px]:gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
@@ -85,12 +85,6 @@ function ScoutTable({ rows, empty }: { rows: ScoutListRow[]; empty: string }) {
   );
 }
 
-/** "Sat 02:28 PDT": when the scout started, or was queued, in the browser's zone. */
-function startWords(row: ScoutListRow): string {
-  const at = row.started_ms ?? row.created_ms;
-  return `${new Date(at).toLocaleDateString("en-US", { weekday: "short" })} ${formatClock(at)} ${zoneName(at)}`;
-}
-
 function Outcome({ outcome }: { outcome: ScoutOutcome }) {
   if (outcome.kind === "failed") return <span className="font-semibold text-bad">{outcome.text}</span>;
   if (outcome.kind === "back") return <>{outcome.text}</>;
@@ -119,11 +113,11 @@ function ScoutListItem({ row, scoped, current }: { row: ScoutListRow; scoped: bo
         <span className="mt-[15px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span data-cell="id" className={`${MONO} pt-0.5 text-ink-2`}>{row.id}</span>
         <span className="flex min-w-0 flex-col gap-1.5">
-          <span data-cell="ask" className="line-clamp-2 font-read text-[15px] font-medium leading-[1.35] text-ink [overflow-wrap:anywhere]">{row.ask}</span>
+          <span data-cell="title" className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink">{row.title}</span>
           <span data-scout-row-facts className={`${MONO} [overflow-wrap:anywhere]`}>
             <span className="inline-block border border-rule px-1 align-top text-[11px] font-semibold leading-[15px] text-ink-2">{row.kind}</span>
             {!scoped && <> {row.project}</>}
-            {" · "}{took}{" · "}{startWords(row)}
+            {" · "}{took}{" · "}{dayClock(row.started_ms ?? row.created_ms)}
           </span>
           {!empty && <span data-scout-outcome className={`${MONO} text-ink-2 [overflow-wrap:anywhere]`}><Outcome outcome={outcome} /></span>}
         </span>

@@ -7,7 +7,7 @@ import { TurnEntries } from "../components/TurnEntries";
 import { TurnArrow } from "../components/icons";
 import { runPage } from "../run";
 import { turnPage, turnTitles, useTurnPage } from "../turn";
-import { CRUMB_LINK, Notice, Page, zoneName } from "./runShared";
+import { CRUMB_LINK, Loading, Notice, Page, zoneName } from "./runShared";
 
 function count(value: number): string {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
@@ -45,7 +45,7 @@ export function TurnPage() {
   if (page.kind === "unknown_project") return <Notice label={label} text={`No project named ${project} answers this console.`} />;
   if (page.kind === "not_found") return <Notice label={label} text={`${project} has no run ${shownRun}.`} />;
   if (page.kind === "turn_not_found") return <Notice label={label} text={`Run ${shownRun} has no turn ${shownTurn}.`} back={runId == null ? undefined : runPage(project, runId)} />;
-  if (page.kind === "loading") return <Page label={label}><p role="status" className="m-0 font-mono text-[13px] text-ink-3">Asking {project} for run {shownRun}…</p></Page>;
+  if (page.kind === "loading") return <Page label={label}><Loading /></Page>;
   const { run } = page.detail;
   const { turn } = page;
   const titles = turnTitles(page.turns);
