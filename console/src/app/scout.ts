@@ -70,7 +70,6 @@ export interface ScoutGroup {
   tone: ActivityTone;
   running: boolean;
   tasks: ScoutTask[];
-  /** How many of its tasks failed. */
   failed: number;
 }
 
