@@ -637,6 +637,15 @@ class StuckWaitAttentionTests(ServeTestCase):
              "behind": 2, "level": "attention"})
 
 
+def mirror(conn, project_id, name, depends_on=None):
+    return store.tickets.mirror_ticket(
+        conn, project_id, linear_issue_id=f"issue-{name}",
+        linear_identifier=name, title=f"ticket {name}",
+        acceptance_criteria=["Given it, then it works"],
+        verification_commands=["echo ok"],
+        depends_on=[f"issue-{depends_on}"] if depends_on else [])
+
+
 class StuckWaitCase(ServeTestCase):
     def setUp(self):
         super().setUp()
@@ -648,12 +657,7 @@ class StuckWaitCase(ServeTestCase):
             self.conn, "team-1", self.target)
 
     def file(self, name, depends_on=None, status="ready"):
-        ticket = store.tickets.mirror_ticket(
-            self.conn, self.project_id, linear_issue_id=f"issue-{name}",
-            linear_identifier=name, title=f"ticket {name}",
-            acceptance_criteria=["Given it, then it works"],
-            verification_commands=["echo ok"],
-            depends_on=[f"issue-{depends_on}"] if depends_on else [])
+        ticket = mirror(self.conn, self.project_id, name, depends_on)
         for step in {"ready": (), "blocked_on_deps": ("blocked_on_deps",),
                      "in_flight": ("in_flight",),
                      "abandoned": ("in_flight", "abandoned"),
@@ -740,14 +744,8 @@ CLOSE_NOTE = "Story closed on its witnesses at {sha}: W1 green."
 
 def file_story_of(conn, project_id, parent, children):
     """`parent` approved as a story of W1 whose first child completes it."""
-    def mirror(name):
-        return store.tickets.mirror_ticket(
-            conn, project_id, linear_issue_id=f"issue-{name}",
-            linear_identifier=name, title=f"ticket {name}",
-            acceptance_criteria=["Given it, then it works"],
-            verification_commands=["echo ok"])
-
-    parent_id, child_ids = mirror(parent), [mirror(name) for name in children]
+    parent_id = mirror(conn, project_id, parent)
+    child_ids = [mirror(conn, project_id, name) for name in children]
     store.stories.file_story(
         conn, parent_id, WITNESSES[:1],
         [(child, "completes" if n == 0 else "scaffolding",

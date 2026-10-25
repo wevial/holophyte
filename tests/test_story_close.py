@@ -100,9 +100,10 @@ class StoryCloseFixture(LoopFixture):
             self.conn, self.project_id, "NAT", VALID_BODY, column=column))
             for column in ("backlog", "ready")]
 
-    def approve(self, parent, child, witnesses):
+    def approve(self, parent, child, witnesses, *scaffolding):
         file_story(self.conn, parent, witnesses,
-                   [(child, "completes", [w["key"] for w in witnesses])])
+                   [(child, "completes", [w["key"] for w in witnesses])]
+                   + [(other, "scaffolding", []) for other in scaffolding])
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
         approve_story(self.conn, parent, revision, "operator", "go")
@@ -323,12 +324,7 @@ class StoryCloseTests(StoryCloseFixture):
         parent, completes = self.tickets()
         scaffolding = self.ticket_id(store.board.file_ticket(
             self.conn, self.project_id, "NAT", VALID_BODY, column=column))
-        file_story(self.conn, parent, [witness("W1", W1_FILE)],
-                   [(completes, "completes", ["W1"]),
-                    (scaffolding, "scaffolding", [])])
-        (revision,) = self.conn.execute(
-            "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
-        approve_story(self.conn, parent, revision, "operator", "go")
+        self.approve(parent, completes, [witness("W1", W1_FILE)], scaffolding)
         tip = self.commit(W1_FILE, PASSES, "w1 lands")
         merged_run(self.conn, completes, tip)
         store.tickets.walk_ticket(self.conn, completes, "merged")
