@@ -725,7 +725,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     blast_radius.record_declared(conn, run_id, out)
     escalation.record_choice(conn, run_id, out)
     contradiction.park(conn, run_id, provider, task_id, wt, "implement", out,
-                       timed_out)
+                       timed_out, ticket)
     boundary(conn, run_id, "verifying", unreproduced=reproduce.declared(out))
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     added = head != start_sha and not _failed_wip_only(wt, out, timed_out,

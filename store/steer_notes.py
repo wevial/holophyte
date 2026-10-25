@@ -67,7 +67,7 @@ class ChainNote(NamedTuple):
 
 
 def steer(conn, ticket_id, note, author, hint=False, now=None,
-          interrupt=False):
+          interrupt=False, source="human"):
     for name, text in (("note", note), ("author", author)):
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"{name} must be non-blank text")
@@ -112,10 +112,11 @@ def steer(conn, ticket_id, note, author, hint=False, now=None,
         text = f"{kind} for {key}: {note}"
         if last is None:
             intervention_id = record_project_intervention(
-                conn, "steer", text, project_id=project_id, now=now)
+                conn, "steer", text, source=source, project_id=project_id,
+                now=now)
         else:
             intervention_id = record_intervention(conn, last, "steer", text,
-                                                  now=now)
+                                                  source=source, now=now)
         return _insert(conn, ticket_id, last, kind, note, author, now,
                        intervention_id, None)
 

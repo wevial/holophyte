@@ -76,7 +76,11 @@ TODAYS_BRIEF = (
     " Do the rest of the ticket, commit it, and end the reply with one line "
     "per such criterion, using its id above, with a one-line reason naming "
     "what is missing or what contradicts it:\n"
-    "CONTRADICTION: criterion C<id> — <one-line reason>")
+    "CONTRADICTION: criterion C<id> — <one-line reason>\n"
+    "When the criterion can be met by a reworded criterion inside the "
+    "ticket's In scope, add on the next line the criterion's full text as "
+    "the next run should read it:\n"
+    "PROPOSED_AMENDMENT: REPLACE C<id>: <the criterion as it would read>")
 
 CODEX = '[agents.implementer]\nharness = "codex"\n'
 CLAUDE = '[agents.implementer]\nharness = "claude"\n'
