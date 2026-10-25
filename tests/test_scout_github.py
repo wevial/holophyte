@@ -58,7 +58,14 @@ answer = answers.get(sys.argv[-1])
 if answer is None or answer.get("fail"):
     sys.stderr.write((answer or {{}}).get("fail", "gh: Not Found (HTTP 404)"))
     sys.exit(1)
-sys.stdout.buffer.write((here / answer["file"]).read_bytes())
+data = (here / answer["file"]).read_bytes()
+text = data.decode("utf-8", "replace")
+if "\\x1b" in text and "\\ufffd" not in text \\
+        and "--allow-escape-sequences" not in sys.argv:
+    sys.stderr.write("the response contains terminal escape sequences;"
+                     " pass --allow-escape-sequences to output it anyway")
+    sys.exit(1)
+sys.stdout.buffer.write(data)
 """
 RUNS_ANSWER = {
     "total_count": 1, "node_id": "WR_top", "url": "https://api/top",
@@ -110,7 +117,8 @@ def zipped(members):
 
 class FakeGh:
     """A `gh` first on `PATH` that logs each argv and answers its last
-    argument, a REST path, from a fixture file, or fails as told."""
+    argument, a REST path, from a fixture file, or fails as told. Like `gh`,
+    it refuses text holding an escape without `--allow-escape-sequences`."""
 
     def __init__(self, directory):
         self.directory = Path(directory)
@@ -285,6 +293,16 @@ class GetTests(GithubCase):
                 self.assertEqual(github_get(self.target(self.path), self.repo,
                                             path).text, short_log)
         self.assertEqual({call[-1] for call in self.gh.calls()}, {full})
+
+    def test_a_coloured_job_log_answers_its_text_without_escapes(self):
+        full = "repos/example/repo/actions/jobs/41/logs"
+        self.gh.answer(full, "\x1b[36;1mpip install\x1b[0m\n"
+                       "\x1b]8;;https://x\x07ok\x1b]8;;\x1b\\\n"
+                       "\x1b]0;unterminated\nTotal: 3s\n")
+        answer = github_get(self.target(self.path), self.repo,
+                            "actions/jobs/41/logs")
+        self.assertFalse(answer.error, answer.text)
+        self.assertEqual(answer.text, "pip install\nok\n\nTotal: 3s\n")
 
     def test_a_job_log_query_is_fetched_and_recorded_with_the_path(self):
         conn, scout_id = self.live_scout(self.path)
