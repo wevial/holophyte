@@ -2,22 +2,15 @@
 from holophyte.scout.report import REVISE
 
 FENCE = "```"
-DECISIONS = "## Decisions for the maintainer"
-DECISION_HEADER = ("#", "Question", "Context", "Options")
-OPTIONS = "File / Look further / Drop"
-REPRODUCTION_HEADER = ("Hypothesis", "Separates", "Verdict")
 
 
 def one_line(text):
     return " ".join(str(text).splitlines())
 
 
-def unfenced(line):
-    return f" {line}" if line.startswith(FENCE) else line
-
-
 def prose(text):
-    return [unfenced(line) for line in str(text).splitlines()]
+    return [f" {line}" if line.startswith(FENCE) else line
+            for line in str(text).splitlines()]
 
 
 def fenced(text, info=""):
@@ -87,7 +80,7 @@ def reproduction_lines(report):
     rows = [[hypothesis[key] for key in ("hypothesis", "separates", "verdict")]
             for hypothesis in reproduction["hypotheses"]]
     return [f"Level: {reproduction['level']}", "",
-            *table(REPRODUCTION_HEADER, rows), ""]
+            *table(("Hypothesis", "Separates", "Verdict"), rows), ""]
 
 
 def action_lines(item):
@@ -101,17 +94,15 @@ def action_lines(item):
     return lines + [*fenced(item["body"], "markdown"), ""]
 
 
-def undecided(actions):
-    return [item for item in actions
-            if item["ticket"] is None and item["kind"] != REVISE]
-
-
 def decision_lines(actions):
-    rows = [[f"A{item['position']}", item["title"], item["why"], OPTIONS]
-            for item in undecided(actions)]
+    rows = [[f"A{item['position']}", item["title"], item["why"],
+             "File / Look further / Drop"]
+            for item in actions
+            if item["ticket"] is None and item["kind"] != REVISE]
     if not rows:
         return []
-    return [DECISIONS, "", *table(DECISION_HEADER, rows), ""]
+    return ["## Decisions for the maintainer", "",
+            *table(("#", "Question", "Context", "Options"), rows), ""]
 
 
 def section(title, lines):
