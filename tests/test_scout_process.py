@@ -167,7 +167,7 @@ class ScoutProcessTests(ScoutFixture):
         (titled,) = [json.loads(payload) for kind, payload in events
                      if kind == "scout_title"]
         self.assertIsNone(titled["title"])
-        self.assertTrue(titled["why"])
+        self.assertEqual(titled["why"], "route_down")
         self.assertLess(kinds.index("scout_started"), kinds.index("scout_title"))
         self.assertLess(kinds.index("scout_title"), kinds.index("agent_turn"))
 
