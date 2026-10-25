@@ -408,6 +408,23 @@ class MediaTests(unittest.TestCase):
         self.assertIn("01: Dialog open\n02: Name saved", local)
         self.assertIn("NN-slug.png", local)
 
+    def test_local_capture_brief_makes_the_spec_the_only_uncommitted_copy(self):
+        ticket = "# Edit name\n\n## Evidence\n\nDialog open\n"
+        only_copy = ("It is the only copy: no capture spec or capture output is"
+                     " committed, and no copy of the spec is kept anywhere else"
+                     " in the tree.")
+        self.config["merge"]["ui_capture_local"] = True
+        local = pr_media.implementer_brief(self.target, ticket, "KO-7")
+        self.config["merge"]["ui_capture_local"] = False
+        tracked = pr_media.implementer_brief(self.target, ticket, "KO-7")
+
+        self.assertIn("Write the capture spec `e2e/capture/KO-7.capture.ts`", local)
+        self.assertIn(only_copy, local)
+        self.assertTrue(tracked.startswith(
+            "\n\nAdd or update a capture script under `e2e/capture` for this"
+            " ticket, runnable by `python3 capture.py`. Produce one image"))
+        self.assertNotIn("copy", tracked)
+
     def test_bucket_precedes_git_publishers_and_keeps_credentials_out_of_ledger(self):
         self.config["merge"]["media_repo"] = "example/media"
         self.candidate(script="import sys\nfrom pathlib import Path\n"
