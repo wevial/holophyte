@@ -316,6 +316,28 @@ class StoryCloseTests(StoryCloseFixture):
                           self.decisions(parent)], [("regressed", "W1")])
 
 
+    def test_a_story_with_an_open_scaffolding_child_stays_open_on_green(self):
+        parent, completes = self.tickets()
+        scaffolding = self.ticket_id(store.board.file_ticket(
+            self.conn, self.project_id, "NAT", VALID_BODY, column="ready"))
+        file_story(self.conn, parent, [witness("W1", W1_FILE)],
+                   [(completes, "completes", ["W1"]),
+                    (scaffolding, "scaffolding", [])])
+        (revision,) = self.conn.execute(
+            "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
+        approve_story(self.conn, parent, revision, "operator", "go")
+        tip = self.commit(W1_FILE, PASSES, "w1 lands")
+        merged_run(self.conn, completes, tip)
+        store.tickets.walk_ticket(self.conn, completes, "merged")
+
+        self.step()
+
+        self.assertEqual(self.read(
+            "SELECT witnessKey, verdict, mainSha FROM witnessResults"),
+            [("W1", "green", tip)])
+        self.assertEqual(story(self.conn, parent).state, "approved")
+
+
 class OpenProposalCloseTests(StoryCloseFixture):
     def test_closing_names_and_supersedes_an_open_proposal(self):
         parent, child = self.tickets()
