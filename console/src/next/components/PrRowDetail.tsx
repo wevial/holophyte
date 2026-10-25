@@ -116,7 +116,7 @@ function MediaTile({ item, ref, onOpen }: { item: MediaItem; ref: (node: HTMLBut
   );
 }
 
-export function PrRowDetail({ host, run, item, ready }: { host: HostRecord<ContractBodies>; run: number; item: AttentionItem; ready: boolean }) {
+export function PrRowDetail({ host, run, item, ready, bypass }: { host: HostRecord<ContractBodies>; run: number; item: AttentionItem; ready: boolean; bypass: boolean }) {
   const { base } = host;
   const project = host.status?.project ?? "";
   const actions = host.status?.actions === true;
@@ -140,6 +140,7 @@ export function PrRowDetail({ host, run, item, ready }: { host: HostRecord<Contr
     setShowing(null);
     runLink.current?.focus();
   }, [emptied]);
+  const merge = actions && (ready || bypass);
   const preview = typeof pr.preview_url === "string" ? pr.preview_url : null;
   return (
     <div data-pr-detail className="flex flex-col gap-3 font-read text-[14px] leading-[1.5] text-ink-2">
@@ -162,9 +163,9 @@ export function PrRowDetail({ host, run, item, ready }: { host: HostRecord<Contr
         />
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {actions && ready && <CardActions entry={{ item, readyToMerge: true }} host={host} actions={[]} title={prTitle(item)} only="primary" />}
+        {merge && <CardActions entry={{ item, readyToMerge: true }} host={host} actions={[]} title={prTitle(item)} only="primary" bypassReview={!ready} />}
         {prUrl != null && (
-          <a href={prUrl} target="_blank" rel="noreferrer" className="btn" data-variant={actions && ready ? "quiet" : "primary"}>
+          <a href={prUrl} target="_blank" rel="noreferrer" className="btn" data-variant={merge ? "quiet" : "primary"}>
             Open PR to review
           </a>
         )}
