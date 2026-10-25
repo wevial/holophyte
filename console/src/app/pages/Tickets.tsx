@@ -5,9 +5,9 @@ import { Btn } from "../components/Btn";
 import { cardElementId } from "../components/BoardCard";
 import { BoardLane, GRID, LaneGrid } from "../components/BoardLane";
 import { GroupBy, readGroup, writeGroup } from "../components/GroupBy";
+import { FilterSelect, SearchField } from "../components/ListFilters";
 import { StateDot } from "../components/StateDot";
 import { TicketPeek } from "../components/TicketPeek";
-import { StatePicker, TicketSearchField } from "../components/TicketSearch";
 import { TicketTable } from "../components/TicketTable";
 import { readView, ViewToggle, writeView, type TicketView } from "../components/ViewToggle";
 import { storeScope, switcherRows } from "../projects";
@@ -18,6 +18,8 @@ import {
   COLUMN_HEADS,
   COLUMN_IDS,
   cardMatches,
+  FILTER_LABELS,
+  STATE_FILTERS,
   ticketView,
   useTicketBoard,
   type ColumnId,
@@ -25,6 +27,8 @@ import {
   type TicketCard,
   type TicketsSearch,
 } from "../tickets";
+
+const STATE_OPTIONS = STATE_FILTERS.map((state) => ({ value: state, label: FILTER_LABELS[state] }));
 
 function Slash() {
   return <span className="text-ink-3"> / </span>;
@@ -135,8 +139,8 @@ export function Tickets() {
         </div>
         {view.answered && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <TicketSearchField />
-            <StatePicker />
+            <SearchField label="Search tickets" />
+            <FilterSelect label="State" param="filter" allLabel="All states" options={STATE_OPTIONS} />
             {filter == null && <ViewToggle view={layout} onPick={pickView} />}
             <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
             {mode !== "none" && (

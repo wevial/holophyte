@@ -1201,7 +1201,9 @@ The Turn page’s `console/src/app/components/TurnEntries.tsx` lists transcript
 entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/app/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
 `console/src/app/scouts.ts` reads every scoped host's scouts and a project's scout routes;
-`console/src/app/pages/Scouts.tsx` lists the scouts newest first, and
+`console/src/app/pages/Scouts.tsx` lists the scouts newest first in one group per project, searchable by title or
+ask and filtered by state and kind; `console/src/app/components/ListFilters.tsx` is the Search field and select the
+Tickets and Scouts pages share, and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
 beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `scout` search selects with the
