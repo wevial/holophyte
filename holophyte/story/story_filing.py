@@ -11,12 +11,11 @@ import store
 import store.board
 import store.stories
 import store.tickets
-import story_template
-import ticket_template
 from holophyte.board.projection import mirror_task
 from holophyte.config.config_tables import board_config
+from holophyte.tickets import story_template, ticket_template
+from holophyte.tickets.ticket_depends import rewrite_depends
 from provider import FiledWithoutBlockers
-from ticket_depends import rewrite_depends
 
 STORY_HEADER_RE = re.compile(r"^Story:[ \t]*(\S+)")
 TICKET_HEADER_RE = re.compile(r"^Ticket:[ \t]*(\S+)")

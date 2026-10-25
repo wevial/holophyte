@@ -69,7 +69,7 @@ def route_for(project):
 
 
 def container_docker_problems(project, ticket):
-    from ticket_template import _shell_commands
+    from holophyte.tickets.ticket_template import _shell_commands
 
     lines = [line for line in ticket.verify_commands
              if any(_needs_docker(tokens) for tokens in _shell_commands(line))]

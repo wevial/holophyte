@@ -4,7 +4,7 @@ from pathlib import Path
 
 import store
 import store.read
-import ticket_template
+from holophyte.tickets import ticket_template
 
 
 class FenceConformanceMixin:

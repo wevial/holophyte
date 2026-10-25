@@ -5,9 +5,8 @@ import subprocess
 from pathlib import Path
 
 import store
-import ticket_header
-import ticket_template
 from holophyte.review.landmarks import SPAN_RE, declared_new
+from holophyte.tickets import ticket_header, ticket_template
 
 VERIFY_HEADING = "## Verify command(s)"
 TOKEN_RE = re.compile(

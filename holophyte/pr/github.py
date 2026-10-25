@@ -9,11 +9,11 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
-import ticket_template
 from holophyte import deadline
 from holophyte.config import config_tables
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import known_secrets, outbound
+from holophyte.tickets import ticket_template
 
 REMOTE = "origin"
 BASE = "main"

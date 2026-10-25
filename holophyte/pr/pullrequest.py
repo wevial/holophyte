@@ -6,7 +6,6 @@ from time import monotonic
 
 import store
 import store.read
-import ticket_template
 from holophyte import leak_guard, note_privacy
 from holophyte.babysit import babysitter, maintainer_notes
 from holophyte.board.projection import block_ticket, ledger
@@ -30,6 +29,7 @@ from holophyte.pr import (
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from holophyte.review.briefs import main_ref
+from holophyte.tickets import ticket_template
 from store import operator_notes
 
 

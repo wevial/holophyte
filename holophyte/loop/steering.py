@@ -3,10 +3,10 @@ import re
 
 from holophyte.babysit.maintainer_notes import render_amendments, steer_text
 from holophyte.review.criterion_ids import adopted, adopted_body, claimed_body
+from holophyte.tickets.ticket_criteria import amendment_edits
 from provider import parse_body
 from store import operator_notes, steer_notes
 from store.read import run_snapshot
-from ticket_criteria import amendment_edits
 
 
 def pending(conn, run_id):

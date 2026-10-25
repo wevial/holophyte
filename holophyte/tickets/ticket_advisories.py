@@ -9,9 +9,9 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-import ticket_template as tt
 from holophyte.review import main_baseline
 from holophyte.review.witness_precheck import named_files
+from holophyte.tickets import ticket_template as tt
 
 COUNT_RE = re.compile(
     r"\bRan \d+ tests?\b"

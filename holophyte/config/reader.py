@@ -3,7 +3,6 @@ import tomllib
 from pathlib import Path
 
 import review_runner
-import ticket_template
 from holophyte.agents import harness
 from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
@@ -20,6 +19,7 @@ from holophyte.config.config_tables import (
 )
 from holophyte.config.review_settings import REVIEW_KEYS
 from holophyte.redact import register_values
+from holophyte.tickets import ticket_template
 
 
 def load_config(path):

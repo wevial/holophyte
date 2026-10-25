@@ -204,6 +204,7 @@ FOLLOW = Command(("follow",), None, "one line per run event as it is written",
 DRAFT = Command(("draft",), None,
                 "print a ticket skeleton, or KEY's body with its fields in a"
                 " header", takes=("[KEY]",))
+TICKET_CHECK = ("ticket", "check")
 MCP_HTTP = Flag("--http", "HOST:PORT", const="127.0.0.1:7711")
 MCP = Command(("mcp",), None,
               "serve the factory's tools to an agent over MCP: on stdio, or"
@@ -237,7 +238,8 @@ GROUPS = {
     "run": "holo run N: one run's detail",
     "store": "the store's modes",
     "story": "a story's modes",
-    "ticket": "holo ticket KEY: one ticket's detail; ticket VERB is holo VERB",
+    "ticket": "holo ticket KEY: one ticket's detail; holo ticket check FILE:"
+              " check a draft; ticket VERB is holo VERB",
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
     "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
              " show ID: one scout's detail; holo scout ask ID TEXT: ask a"
@@ -318,6 +320,7 @@ def add_commands(parser):
             groups[words[0]] = group.add_subparsers(dest="verb", metavar="VERB",
                                                     required=True)
         _add_leaf(groups[words[0]], words[1], command, help_text)
+    groups["ticket"].add_parser(TICKET_CHECK[1], add_help=False)
     top.add_parser("project", help=PROJECT_HELP, add_help=False)
     shell = top.add_parser("completion", help=COMPLETION.does,
                            description=COMPLETION.does)

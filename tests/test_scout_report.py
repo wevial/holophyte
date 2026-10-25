@@ -12,7 +12,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-import ticket_template
 from holophyte.scout.follow_up import pass_plan_goal
 from holophyte.scout.lead import (
     fenced_json,
@@ -28,6 +27,7 @@ from holophyte.scout.report import (
     report_problems,
     resolve_evidence,
 )
+from holophyte.tickets import ticket_template
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
 from tests.scout_stubs import BRIEF, fenced

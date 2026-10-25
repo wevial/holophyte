@@ -22,8 +22,8 @@ import holophyte.pr.pr_media  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pullrequest  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
-import ticket_template  # noqa: E402 - after the sys.path insert above
 from holophyte.loop import implement  # noqa: E402
+from holophyte.tickets import ticket_template  # noqa: E402
 
 
 class PullRequestRefreshTests(MergeModeFixture):
