@@ -16,16 +16,26 @@ const detail: RunDetail = {
   run: { ...served.run, id: 12, ticket: "WRITER-12", phase: "reviewing", max_rounds: 3 },
   rounds: [
     {
-      ...served.rounds[0]!, round: 1, reviewer_model: "codex gpt-6-sol",
+      ...served.rounds[0]!, round: 1, reviewer_model: "codex gpt-6-sol", instructions: [], operator_notes: [],
       ended_ms: new Date(2026, 9, 15, 16, 45).getTime(),
       findings: [{ ...served.rounds[0]!.findings[0]!, severity: "p1", message: "Validate the diff base before reading files." }],
     },
     {
-      ...served.rounds[0]!, round: 2, started_ms: new Date(2026, 9, 15, 16, 50).getTime(),
+      ...served.rounds[0]!, round: 2, started_ms: new Date(2026, 9, 15, 16, 50).getTime(), instructions: [], operator_notes: [],
       ended_ms: null, verdict: "", findings: [],
     },
   ],
 };
+const note = {
+  kind: "operator_note", event_id: 7, author: "maintainer", note: "Keep the prompt on the page.\n\n- Reuse the `useUpload` hook",
+  consumed: true, run_id: 12, round: 1,
+} as const;
+const noted = (events: RunDetail["events"]): RunDetail => ({
+  ...detail,
+  events,
+  rounds: [{ ...detail.rounds[0]!, started_ms: new Date(2026, 9, 15, 17, 40).getTime(), operator_notes: [note] }, detail.rounds[1]!],
+});
+const instruction = { kind: "instruction", author: "maintainer", request: "Use the shared `useUpload` hook" } as const;
 const files: RunFiles = {
   run: 12, base: "main", head: "task", truncated: false, total_added: 70, total_deleted: 10,
   files: [
@@ -235,4 +245,50 @@ test.each([false, true])("Details refreshes final files and durations after comp
   expect(urls.filter((url) => url.endsWith("/files"))).toHaveLength(2);
   expect(urls.filter((url) => url.endsWith("/turns"))).toHaveLength(2);
   client.clear();
+});
+
+test.each([
+  ["its consumption event", [{ at: new Date(2026, 9, 15, 18, 3).getTime(), kind: "operator_note_consumed", summary: "operator_note event 7 drove round 1" }], "18:03"],
+  ["the round's start without a consumption event", [{ at: new Date(2026, 9, 15, 18, 3).getTime(), kind: "operator_note_consumed", summary: "operator_note event 8 drove round 1" }], "17:40"],
+] as const)("Details draws a round's maintainer note as Markdown, timed by %s", async (_, events, clock) => {
+  await mount(files, noted([...events]));
+  await openDetails();
+  const rounds = within(screen.getByRole("region", { name: "Review rounds" })).getAllByRole("listitem")
+    .filter((item) => item.parentElement!.closest("li") === null);
+  const head = within(rounds[0]!).getByText(/^Note · /);
+  expect(head.textContent).toBe(`Note · @maintainer · ${clock}`);
+  const item = within(rounds[0]!).getByText(/^Reuse the/).closest("li")!;
+  expect(item.textContent).toBe("Reuse the useUpload hook");
+  expect(item.querySelector("code")!.textContent).toBe("useUpload");
+  expect(within(rounds[1]!).queryByText(/^Note · /)).toBeNull();
+});
+
+test("Details lists a round's PR comments with state, location link, and triage", async () => {
+  await mount(files, { ...detail, rounds: [{ ...detail.rounds[0]!, instructions: [
+    { ...instruction, outcome: "changed", path: "src/contracts/upload.tsx", line: 30, url: "https://github.example/o/r/pull/9#discussion_r1" },
+    { ...instruction, path: "src/contracts/prompt.tsx", line: null, url: "" },
+    { ...instruction, outcome: "asked", path: "src/contracts/asked.tsx", line: 4, url: "", triage: { decision: "question", confidence: null, route: "answer", reason: "asks why" } },
+  ] }] });
+  await openDetails();
+  const round = within(screen.getByRole("region", { name: "Review rounds" })).getAllByRole("listitem")[0]!;
+  expect(within(round).getByText("PR comments · 3")).toBeTruthy();
+  const [changed, awaiting, asked] = round.querySelectorAll("li");
+  const chip = (entry: Element) => entry.querySelector("[data-outcome]")!;
+  expect([chip(changed!).textContent, chip(changed!).getAttribute("data-outcome")]).toEqual(["changed", "changed"]);
+  expect(within(changed as HTMLElement).getByRole("link", { name: "src/contracts/upload.tsx:30" }).getAttribute("href"))
+    .toBe("https://github.example/o/r/pull/9#discussion_r1");
+  expect(chip(awaiting!).textContent).toBe("awaiting fix");
+  expect(within(awaiting as HTMLElement).getByText("src/contracts/prompt.tsx").closest("a")).toBeNull();
+  expect(chip(asked!).textContent).toBe("asked");
+  expect(within(asked as HTMLElement).getByText(/^Triage:/).textContent).toBe("Triage: question · confidence unavailable · answer · asks why");
+  for (const entry of [changed!, awaiting!]) expect(within(entry as HTMLElement).queryByText(/^Triage:/)).toBeNull();
+  for (const entry of [changed!, awaiting!, asked!]) expect(entry.querySelector("code")!.textContent).toBe("useUpload");
+});
+
+test("Details draws no note or PR comments block for a round with neither", async () => {
+  await mount();
+  await openDetails();
+  const region = within(screen.getByRole("region", { name: "Review rounds" }));
+  expect(region.queryByText(/^Note · /)).toBeNull();
+  expect(region.queryByText(/^PR comments/)).toBeNull();
 });

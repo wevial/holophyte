@@ -1166,6 +1166,8 @@ Progress is wide enough; an open group lists its findings as
 The Run page’s `console/src/next/components/RunDetails.tsx` folds files,
 review rounds and timed agent turns below Progress. Its files and turns
 queries in `next/queries.ts` fetch only while the fold is open.
+Under each round, `console/src/next/components/RoundInstructions.tsx` draws
+the maintainer notes that drove it and the pull request comments it acted on.
 
 The Turn page (`console/src/next/pages/Turn.tsx`) shows one recorded turn’s
 figures and links to its neighbours. `console/src/next/turn.ts` selects its
