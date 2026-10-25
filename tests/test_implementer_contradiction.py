@@ -11,6 +11,7 @@ import io
 import json
 import sys
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -21,6 +22,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     Commit,
     Idle,
+    Reply,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
@@ -34,7 +36,11 @@ import holophyte.board.projection  # noqa: E402 - after the sys.path insert abov
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.board  # noqa: E402 - after the sys.path insert above
-from holophyte.loop.contradiction import brief, declared  # noqa: E402
+from holophyte.loop.contradiction import (  # noqa: E402
+    brief,
+    declared,
+    proposed,
+)
 
 # Spelled out rather than imported: the loop's parse is what is under test.
 REASON = "the pr_open facts carry only open_threads"
@@ -97,6 +103,11 @@ class DeclaredTests(unittest.TestCase):
         self.assertEqual(declared(self.codex_echo(
             "CONTRADICTION: criterion C3 — the route has no state field")),
             [(3, "the route has no state field")])
+
+    def test_the_echoed_prompt_brief_proposes_nothing(self):
+        echo = self.codex_echo("Done; all criteria hold.")
+        self.assertIn("PROPOSED_AMENDMENT: REPLACE C<id>", echo)
+        self.assertEqual(proposed(echo), [])
 
     def test_an_unfilled_reason_declares_nothing(self):
         for line in ("CONTRADICTION: criterion C8 — reason",
@@ -194,13 +205,21 @@ def scoped_two_criteria():
     return dict(two_criteria(), body=body)
 
 
+APPROVE_BOTH = Reply("Reviewed the diff; no blockers.\n"
+                     "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+                     "CRITERION 2: met \u2014 tests/test_thing.py::test_it_works\n"
+                     "VERDICT: APPROVE")
+
+
+@dataclass
 class Propose(Commit):
     """An implement turn that declares criterion 2 and proposes its
     replacement on the next line."""
 
+    reply: str = f"{DECLARED}\nPROPOSED_AMENDMENT: REPLACE C2: {AMENDED}"
+
     def play(self, cwd, turn):
-        return (f"{super().play(cwd, turn)}\n{DECLARED}\n"
-                f"PROPOSED_AMENDMENT: REPLACE C2: {AMENDED}")
+        return f"{super().play(cwd, turn)}\n{self.reply}"
 
 
 class ProposedAmendmentTests(LoopFixture):
@@ -214,6 +233,90 @@ class ProposedAmendmentTests(LoopFixture):
             "SELECT status, blockedQuestion FROM tickets"), [("ready", None)])
         self.assertEqual(self.read("SELECT author, note FROM steerNotes"),
                          [("factory", f"REPLACE C2: {AMENDED}")])
+        self.assertEqual(self.read(
+            "SELECT action, source FROM interventions WHERE runId = 1"
+            " AND action IN ('requeue', 'steer') ORDER BY action"),
+            [("requeue", "factory"), ("steer", "factory")])
+        outcome = self.proposal()
+        self.assertEqual((outcome["applied"], outcome["held"]), (True, None))
+
+        fake, _ = self.loop(Commit("render the amended word", path="page.py"),
+                            APPROVE_BOTH,
+                            provider=StubProvider(scoped_two_criteria()))
+
+        self.assertIn("Amended acceptance criteria:", fake.turns[0].goal)
+        self.assertIn(f"- **C2** {AMENDED}", fake.turns[0].goal)
+        self.assertEqual(self.read("SELECT status FROM tickets"), [("merged",)])
+
+    def proposal(self, run_id=1):
+        ((payload,),) = self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'amendment_proposed'"
+            f" AND runId = {run_id}")
+        return json.loads(payload)
+
+    def assert_held(self, first, run_id=1, notes=0):
+        ((question,),) = self.read("SELECT blockedQuestion FROM tickets")
+        self.assertEqual(self.read(
+            f"SELECT phase, parkKind FROM runs WHERE id = {run_id}"),
+            [("blocked_on_operator", "contradiction")])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("blocked_on_operator",)])
+        self.assertEqual(question.splitlines()[0], first)
+        self.assertIn("holo requeue KO-131", question)
+        self.assertEqual(self.read("SELECT COUNT(*) FROM steerNotes"),
+                         [(notes,)])
+        outcome = self.proposal(run_id)
+        self.assertFalse(outcome["applied"])
+        self.assertTrue(outcome["held"])
+        return outcome["held"]
+
+    def held_after(self, reply, first=f"implementer: criterion C2 cannot be"
+                   f" met as written: {REASON}"):
+        self.loop(Propose("render the parked word", path="page.py", reply=reply),
+                  REQUEST_CHANGES, provider=StubProvider(scoped_two_criteria()))
+        return self.assert_held(first)
+
+    def test_a_drop_waits_for_the_operator(self):
+        self.assertIn("DROP", self.held_after(
+            f"{DECLARED}\nPROPOSED_AMENDMENT: DROP C2: no thread count"))
+
+    def test_a_replacement_naming_a_path_outside_in_scope_waits(self):
+        self.assertIn("other/module.py", self.held_after(
+            f"{DECLARED}\nPROPOSED_AMENDMENT: REPLACE C2: Given one bot thread,"
+            " when `other/module.py` renders, then it says '1 thread open'"))
+
+    def test_a_declared_criterion_without_a_proposal_waits(self):
+        self.assertIn("C1", self.held_after(
+            f"CONTRADICTION: criterion 1 — the page has no park state\n"
+            f"{DECLARED}\nPROPOSED_AMENDMENT: REPLACE C2: {AMENDED}",
+            "implementer: criterion C1 cannot be met as written: the page has"
+            " no park state; criterion C2 cannot be met as written: "
+            f"{REASON}"))
+
+    def test_a_second_contradiction_after_a_factory_amendment_waits(self):
+        provider = StubProvider(scoped_two_criteria())
+        self.loop(Propose("render the parked word", path="page.py"),
+                  REQUEST_CHANGES, provider=provider)
+        self.loop(Propose(
+            "render the parked word again", path="page.py", reply=(
+                "CONTRADICTION: criterion 1 — the page has no park state\n"
+                "PROPOSED_AMENDMENT: REPLACE C1: Given a parked run, when"
+                " `page.py` renders, then it says parked")),
+            REQUEST_CHANGES, provider=StubProvider(scoped_two_criteria()))
+
+        self.assertIn("factory amendment", self.assert_held(
+            "implementer: criterion C1 cannot be met as written: the page has"
+            " no park state", 2, notes=1))
+
+    def test_a_declaration_without_a_proposal_parks_as_before(self):
+        self.loop(Declare("render the parked word"), REQUEST_CHANGES,
+                  provider=StubProvider(scoped_two_criteria()))
+
+        self.assertEqual(self.read("SELECT phase, parkKind FROM runs"),
+                         [("blocked_on_operator", "contradiction")])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
+                                   " WHERE kind = 'amendment_proposed'"),
+                         [(0,)])
 
 
 class CancelAfterContradictionTests(LoopFixture):
