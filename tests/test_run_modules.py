@@ -211,7 +211,7 @@ class RunModulesTests(unittest.TestCase):
         env.update(git_config or {})
         return subprocess.run(
             [sys.executable, str(RUNNER), "--dir", str(self.tests), *args],
-            env=dict(env, HOLOPHYTE_HOME=str(shared)),
+            cwd=self.root, env=dict(env, HOLOPHYTE_HOME=str(shared)),
             capture_output=True, text=True, timeout=120)
 
     def test_module_commits_do_not_start_automatic_repacking(self):
@@ -418,6 +418,34 @@ class RunModulesTests(unittest.TestCase):
             with self.subTest(module=row["title"]):
                 self.assertAlmostEqual(row["duration_ms"],
                                        walls[row["title"]] * 1000, delta=51)
+
+    def test_without_junit_no_file_is_written_and_output_is_the_same(self):
+        modules = {"test_good.py": PASSING, "test_bad.py": FAILING}
+        plain = self.run_over(modules, "--jobs", "1")
+        written = {path for path in self.root.rglob("*")
+                   if "__pycache__" not in path.parts}
+        self.assertEqual(written, {self.tests, self.root / "shared-home",
+                                   *(self.tests / name for name in modules)})
+        with_junit = self.run_over(modules, "--jobs", "1",
+                                   "--junit", str(self.root / "report.xml"))
+
+        def masked(done):
+            return sorted(re.sub(r"\d+\.\d+", "N", done.stdout).splitlines())
+
+        self.assertEqual(masked(plain), masked(with_junit))
+        self.assertEqual(plain.returncode, with_junit.returncode)
+        lines = plain.stdout.splitlines()
+        report = lines.index("===== test_bad.py: FAILED (exit 1) =====")
+        slowest = lines.index(f"{len(modules)} slowest modules:")
+        outside = lines[:report] + lines[slowest:]
+        shapes = [LINE, re.compile(r"\s+test_\S+\.py\s+[0-9.]+s"),
+                  re.compile(r"\d+ slowest modules:|$"),
+                  re.compile(r"\d+ modules, \d+ tests, \d+ failed, [0-9.]+s"
+                             r"(; failed: .*)?")]
+        for line in outside:
+            with self.subTest(line=line):
+                self.assertTrue(any(shape.match(line) for shape in shapes))
+        self.assertEqual(len(outside), 2 * len(modules) + 4, plain.stdout)
 
     def listed(self, *args):
         done = self.run_over({}, "--list", *args)
