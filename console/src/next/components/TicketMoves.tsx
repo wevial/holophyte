@@ -29,9 +29,9 @@ function Refusal({ lines, className }: { lines: string[] | null; className: stri
  *  page read: the ticket's current one, else its board card's. Edit is a
  *  link to the Edit page, or, given `onEditRaw`, a button that opens the
  *  raw editor at that revision, disabled while `editOpen`. */
-export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditRaw, editOpen = false }: {
+export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditRaw, editOpen }: {
   project: string; ticketKey: string; ticket: TicketDetail; host: HostRecord<ContractBodies>; liveRun: number | null;
-  onEditRaw?: (revision: number) => void; editOpen?: boolean;
+  onEditRaw?: (revision: number) => void; editOpen: boolean;
 }) {
   const deps = useContext(PollDepsContext);
   const board = useBoards([host], deps)[0]?.board;
