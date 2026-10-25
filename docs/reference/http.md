@@ -1192,7 +1192,12 @@ parked and its last run's outcome reason when failed: the first `* `
 bullet without the marker, else the first non-empty line, null when there
 is none. `behind` counts the project's `blocked_on_deps` tickets waiting
 on the ticket directly or through other waits, each once; a ticket that
-waits only through another wait gets no item of its own. It carries no age. `project` is the project path, as on
+waits only through another wait gets no item of its own. A `stuck_wait`
+item is also a `ready` child, with no active run, of a `closed` or
+`abandoned` story, which the claim refuses on every pass: the story is its
+`dependency` and the story's state its `dependency_state`, and `reason` is
+one line of the story's newest `verdict` note when closed (its close note)
+or its `cancel` note when abandoned. It carries no age. `project` is the project path, as on
 `/status`.
 
 `level` is `none`, `working`, `attention` or `critical`; with no items it

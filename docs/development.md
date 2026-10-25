@@ -790,8 +790,11 @@ Each module, one line:
   paths exist is reused, until an earlier table step runs or a setup fails.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
-  witness is green with its approved file, queueing the parent's Done,
-  and otherwise parks it on one `unmet` or `regressed` decision per
+  witness is green with its approved file and no child is in Ready or
+  has an active run, queueing the parent's Done; a story with a child in
+  Ready or with an active run does not close, and closes on the first
+  pass after that child merges, is canceled or moves to Backlog. It
+  otherwise parks it on one `unmet` or `regressed` decision per
   witness; `settle_owed()` keeps a story the lock kept from settling
   pending for the next pass at the same tip, and `rerun_owed()` keeps a
   red whose rerun did not run from parking `regressed` until the next

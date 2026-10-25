@@ -272,7 +272,7 @@ export const stuckWaitItemSchema = z.looseObject({
   ticket_url: z.string().nullable(),
   title: z.string(),
   dependency: z.string(),
-  dependency_state: z.enum(["needs_spec", "abandoned", "parked", "failed"]),
+  dependency_state: z.enum(["needs_spec", "abandoned", "parked", "failed", "closed"]),
   reason: z.string().nullable(),
   behind: z.int(),
   level: z.literal("attention"),

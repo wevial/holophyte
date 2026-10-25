@@ -36,6 +36,8 @@ from holophyte.serve.views import attention, board, ticket_detail
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.host_fixture import HostFixture
 from tests.phase_fixture import finish_run, park_run
+from tests.test_serve_attention import file_stranded_child
+from tests.test_status import file_stuck_wait
 from tests.test_store_board import body as ticket_body
 
 NOW = 1_750_000_000_000
@@ -273,6 +275,31 @@ class AttentionReadTests(StoreReadsCase):
         (line,) = [line for line in out.splitlines() if line.startswith("failed")]
         self.assertIn(f"KO-2 run {run}", line)
         self.assertTrue(line.endswith("[infra 0.6]"), line)
+
+    def stuck_wait_line(self, file_wait, *args):
+        conn = store.open(str(self.project.store_path))
+        try:
+            file_wait(conn, store.tickets.ensure_project(
+                conn, "team-1", self.target), *args)
+        finally:
+            conn.close()
+        with frozen_now():
+            out = self.read("attention")
+        (line,) = [line for line in out.splitlines()
+                   if line.startswith("stuck_wait")]
+        return line
+
+    def test_a_stuck_wait_line_names_the_story_its_child_waits_on(self):
+        line = self.stuck_wait_line(file_stranded_child, "abandoned")
+        self.assertIn(" NAT-2 ", line)
+        self.assertTrue(line.endswith("waits on NAT-1 (abandoned)"), line)
+
+    def test_a_stuck_wait_line_names_its_dependency_state_and_reason(self):
+        line = self.stuck_wait_line(file_stuck_wait, "NAT")
+        self.assertIn(" NAT-3 ", line)
+        self.assertTrue(line.endswith(
+            "waits on NAT-2 (needs_spec): critic: stale — already shipped by"
+            " NAT-1"), line)
 
     def test_runs_against_a_project_with_no_store_exits_one_naming_it(self):
         bare = self.root / "bare"
