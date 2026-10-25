@@ -13,7 +13,7 @@ import time
 import store
 from holophyte.config.project import Project
 from holophyte.scout.lead import REPORT_OPENING
-from holophyte.scout.stop import stop
+from holophyte.scout.stop import VIA_DAEMON, stop, task_requested
 from store.scouts import (
     claim_scout,
     create_scout,
@@ -130,17 +130,46 @@ class RunningTaskStopTests(TaskStopCase):
         self.assertNotIn(questions[2], [call["question"] for call
                                         in self.stubs.turns("helper")])
 
-    def test_a_task_stopped_during_its_route_probe_is_never_launched(self):
+    def probing(self, probe="ready"):
+        """A one-task scout whose helper route probe answers `probe` after
+        1.2 s, returned once that probe runs."""
         probing = self.root / "probing"
         probing.mkdir()
         scout_id, proc = self.swarming([SLOW], {}, swarm=1, binaries={
-            "codex": {"probe_sleep": 1.2, "probe_shared": str(probing)}})
+            "codex": {"probe": probe, "probe_sleep": 1.2,
+                      "probe_shared": str(probing)}})
         self.assertTrue(wait_for(lambda: any(probing.iterdir())))
-        status, answer = self.ask(scout_id, self.tasks(scout_id)[SLOW][0])
-        self.assertEqual((status, answer["ok"]), (200, True), answer)
-        self.assertEqual(proc.wait(timeout=WAIT_S), 0)
+        return scout_id, proc, self.tasks(scout_id)[SLOW][0]
+
+    def assert_stopped_unlaunched(self, scout_id, proc):
+        proc.wait(timeout=WAIT_S)
         self.assertEqual(self.tasks(scout_id)[SLOW][1:], ("stopped", ""))
         self.assertEqual(self.stubs.turns("helper"), [])
+
+    def test_a_task_stopped_during_its_route_probe_is_never_launched(self):
+        scout_id, proc, task_id = self.probing()
+        status, answer = self.ask(scout_id, task_id)
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        self.assertEqual(proc.wait(timeout=WAIT_S), 0)
+        self.assert_stopped_unlaunched(scout_id, proc)
+
+    def test_a_task_stopped_during_a_failing_route_probe_ends_stopped(self):
+        scout_id, proc, task_id = self.probing(probe="not today")
+        status, answer = self.ask(scout_id, task_id)
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        self.assert_stopped_unlaunched(scout_id, proc)
+
+    def test_a_stop_held_open_across_the_claim_keeps_the_task_unlaunched(self):
+        scout_id, proc, task_id = self.probing()
+        conn = store.open(str(self.target().store_path))
+        self.addCleanup(conn.close)
+        with store.transaction(conn):
+            code, answer = task_requested(conn, self.target(), scout_id,
+                                          task_id, "maintainer", None,
+                                          VIA_DAEMON)
+            self.assertEqual((code, answer["ok"]), (200, True), answer)
+            time.sleep(3)
+        self.assert_stopped_unlaunched(scout_id, proc)
 
     def test_a_stopped_run_helper_turn_is_killed_and_ends_stopped(self):
         pid_file = self.child("run-helper")

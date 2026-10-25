@@ -18,7 +18,7 @@ from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
 from holophyte.isolation import launcher
-from holophyte.loop.gates import reap_group, run_capped, sh
+from holophyte.loop.gates import run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.scout.run_helpers import (
     HELPER_OPENING,
@@ -344,45 +344,53 @@ class Swarm:
                                        self.secrets)), checkout
 
     def helper(self, task, previous, mine):
-        conn, started = None, []
-
-        def start(proc):
-            try:
-                start_scout_task(conn, task.id)
-            except BaseException:
-                reap_group(proc, subprocess.TimeoutExpired(proc.args, 0))
-                raise
-            started.append(monotonic())
-            mine.set()
-
+        conn = None
         try:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
-            if self.halted_now(conn, task):
-                self.end_unrun(conn, task, mine, STOPPED, "")
-                return
-            if runs(task):
-                self.run_helper(conn, task, mine)
-                return
-            if self.route_down(conn, "host", self.host_probe) is not None:
-                return
-            prepared, cap = self.prepared(task), self.remaining_s()
-            if prepared is None or cap <= 0:
-                return
-            argv, checkout = prepared
-            if self.halted_now(conn, task):
-                self.end_unrun(conn, task, mine, STOPPED, "")
-                return
-            turn = capped_turn(lambda: self.task_tracked(
-                task, partial(run_capped, argv, checkout, cap), start),
-                partial(self.cut_short, task))
-            if started:
-                self.record(conn, task, argv, turn, monotonic() - started[0])
+            self.attempt(conn, task, mine)
+            self.settle(conn, task, mine)
         finally:
             mine.set()
             if conn is not None:
                 conn.close()
+
+    def attempt(self, conn, task, mine):
+        if self.halted_now(conn, task):
+            return
+        if runs(task):
+            self.run_helper(conn, task, mine)
+            return
+        if self.route_down(conn, "host", self.host_probe) is not None:
+            return
+        prepared, cap = self.prepared(task), self.remaining_s()
+        if prepared is None or cap <= 0 or not self.claimed(conn, task):
+            return
+        started = monotonic()
+        mine.set()
+        argv, checkout = prepared
+        turn = capped_turn(lambda: self.task_tracked(
+            task, partial(run_capped, argv, checkout, cap)),
+            partial(self.cut_short, task))
+        self.record(conn, task, argv, turn, monotonic() - started)
+
+    def claimed(self, conn, task):
+        with store.transaction(conn):
+            if self.halted_now(conn, task):
+                return False
+            start_scout_task(conn, task.id)
+        return True
+
+    def settle(self, conn, task, mine):
+        if self.stopping.stopped:
+            return
+        with store.transaction(conn):
+            (phase,) = conn.execute(
+                "SELECT phase FROM scoutTasks WHERE id = ?",
+                (task.id,)).fetchone()
+            if phase == QUEUED and self.halted_now(conn, task):
+                self.end_unrun(conn, task, mine, STOPPED, "")
 
     def run_helper(self, conn, task, mine):
         if self.remaining_s() <= 0 or self.stopping.stopped:
@@ -395,15 +403,13 @@ class Swarm:
                 str(error), self.secrets)[:EXCERPT_CHARS])
             return
         try:
-            if self.halted_now(conn, task):
-                self.end_unrun(conn, task, mine, STOPPED, "")
-                return
             self.run_in(conn, task, mine, checkout)
         finally:
             shutil.rmtree(checkout, ignore_errors=True)
 
     def run_in(self, conn, task, mine, checkout):
-        start_scout_task(conn, task.id)
+        if not self.claimed(conn, task):
+            return
         started = monotonic()
         mine.set()
         seat = run_seat(self.project, self.seat)
