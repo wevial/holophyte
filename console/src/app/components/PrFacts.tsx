@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import type { Fact, Tone } from "../lib/attention";
+import type { Fact, Tone } from "../../lib/attention";
 
 /** A fact chip's classes by tone: the theme's ok, warn and bad washes;
  *  a neutral chip is outlined and faint. */

@@ -1029,12 +1029,11 @@ it; it never builds — there is no install lifecycle script, and
 own), which
 registers `happy-dom` so component tests render with
 `@testing-library/react` and no browser; `console/src/lib/` tests stay free
-of the DOM. `build` runs `console/build.ts`, which hands both pages,
-`console/index.html` (the new console) and `console/classic.html` (the
-classic console), to one `Bun.build` call with `bun-plugin-tailwind` and
-writes the static bundle to `console/dist/` — each page keeps its name
-there, next to its own hashed script, and `index.html` is the stable entry
-the daemon serves at `/`. `console/dist/` and
+of the DOM. `build` runs `console/build.ts`, which hands the one page,
+`console/index.html`, to a `Bun.build` call with `bun-plugin-tailwind` and
+writes the static bundle to `console/dist/` — `index.html` keeps its name
+there, next to its hashed script, and is the stable entry the daemon
+serves at `/`. `console/dist/` and
 `console/node_modules/` are git-ignored.
 
 The daemon owns the types of the routes the console polls.
@@ -1065,9 +1064,9 @@ since the fixture boots the daemon. A ticket's spec is
 resolves the console's `@playwright/test`), is never committed (the push
 untracks it), and saves `NN-slug.png` files
 into `CAPTURE_OUT`; `console/e2e/CAPTURE-0.capture.ts` is the smoke spec,
-which writes the new console's Tickets board at `/#/tickets` as
-`01-board.png`. `console/e2e/console-routes.spec.ts` checks which console
-each address opens, run as
+which writes the console's Tickets board at `/#/tickets` as
+`01-board.png`. `console/e2e/console-routes.spec.ts` checks that each
+address opens the console, run as
 `python3 -m tests.console_fixture --build 'bun --cwd=console run build' bun --cwd=console run capture console-routes`.
 Neither `bun test` nor the
 typecheck reaches `console/e2e/`, and Playwright's `console/test-results/`
@@ -1083,18 +1082,13 @@ writer host: install it with the upstream installer
 loop's login shell sees `bun` on PATH. The factory's verify step inherits
 that PATH, so nothing in the loop changes. The writer host runs Bun 1.4.2.
 
-### The new console
+### The console
 
-The new console lives in `console/src/app/`, with its tests under
-`console/tests/app/`, and is served at `/`; the classic console, kept until
-it is removed, is `console/classic.html`, served at `/classic.html`. The
-daemon answers the new console's old address, `/next.html`, with a 301 to
-`/`. The classic rail's "New view" links to `/` and the new sidebar's
-"Classic console" to `/classic.html`; neither is remembered, and
-`classicHref()` in `console/src/lib/view.ts` builds a link into the classic
-console. The classic console opens on the view a
-`#view=` link names (`now`, `board`, `hosts` or `shipped`), so a new
-console page can link to the classic view behind it.
+There is one console. It lives in `console/src/app/`, with its tests under
+`console/tests/app/`, and is served at `/`; the shared modules it reads
+stay in `console/src/lib/` and `console/src/hooks/`. The daemon answers the
+console's old addresses, `/next.html` and `/classic.html`, with a 301 to
+`/`. Every run link opens the Run page at `#/runs/PROJECT/N`.
 
 `console/src/app/focus.ts` derives blocked-card headlines and extracts asks.
 `console/src/app/components/LimitedMarkdown.tsx` renders asks and latest events
@@ -1104,7 +1098,7 @@ Browser appearance choices live in `console/src/app/appearance.ts`;
 `console/src/app/components/AppearanceTab.tsx` renders theme and reading-font
 radio cards, sharing theme state with the sidebar.
 Its own `console/src/app/theme.css` supplies the Night and Dawn tokens and
-Archivo and IBM Plex Mono faces, keeping the classic palette and fonts separate.
+Archivo and IBM Plex Mono faces.
 
 `console/src/app/router.tsx` routes it with TanStack Router over hash
 history, since the static route has no single-page fallback: `#/` is
@@ -1132,7 +1126,7 @@ scoped view; every route inherits it, the sidebar's links carry it, and
 it. The root reads the fleet once with `useFleet()` and shares the result
 with the sidebar and the pages through a React context.
 
-The new console reads its data through one TanStack Query client,
+The console reads its data through one TanStack Query client,
 `consoleQueryClient()` in `console/src/app/fleet.ts`, which its entry
 mounts; a failed read is not retried, since the next poll is the retry.
 `useFleet()` is one query keyed by the origin: `pollPeers()` fans out to
@@ -1257,7 +1251,7 @@ directory (beside `console.json`; source paths only, never query strings),
 truncated once it passes 1 MB, so a blank view can be diagnosed afterwards.
 On macOS closing the window leaves the tray in place and the dock or tray
 reopens it; elsewhere closing the window quits. On macOS the window also
-hides its title bar and draws the traffic lights in the new console's 52px
+hides its title bar and draws the traffic lights in the console's 52px
 title row, followed by a panel-left sidebar toggle and the lotus mark without
 the wordmark (options in `console/electron/window.ts`); ⌘\ (Ctrl+\
 elsewhere) toggles the sidebar. The seed script writes

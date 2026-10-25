@@ -65,7 +65,7 @@ export function consoleQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-/** Every daemon `/peers` names, as `usePeers()` polls it, but as one query
+/** Every daemon `/peers` names, as `pollPeers()` polls it, but as one query
  *  per origin: every view that reads it shares one poll every
  *  `POLL_INTERVAL_MS`, and each body is parsed with the generated contract. */
 export function useFleet(origin: string, deps: PollDeps): PeersState<ContractBodies> {

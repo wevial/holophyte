@@ -1,19 +1,20 @@
 import { expect, test } from "bun:test";
-import { hostItems, mergeHosts, peerAddresses, visibleHosts, type PollResult } from "../src/lib/hosts";
+import { hostItems, mergeHosts, peerAddresses, type PollResult } from "../src/lib/hosts";
+import type { PollBodies } from "../src/lib/poll";
 import type { Status } from "../src/lib/types";
-import { NO_ATTENTION, fixture, hostOf } from "./harness";
+import { NO_ATTENTION, fixture } from "./harness";
 
 const working = await fixture<Status>("working.json");
 const second = await fixture<Status>("idle_second_host.json");
 
-const ok = (address: string, status: Status): PollResult => ({
+const ok = (address: string, status: Status): PollResult<PollBodies & { status: Status }> => ({
   address,
   base: `http://${address}`,
   ok: true,
   status,
   attention: NO_ATTENTION,
 });
-const down = (address: string, error: string): PollResult => ({ address, base: `http://${address}`, ok: false, error });
+const down = (address: string, error: string): PollResult<PollBodies & { status: Status }> => ({ address, base: `http://${address}`, ok: false, error });
 
 test("/peers lists the origin first and each peer once; the origin's own address is never repeated", () => {
   const hosts = peerAddresses("http://writer:7710", { self: "writer:7710", peers: ["writer-2:7710", "writer:7710"] });
@@ -56,9 +57,3 @@ test("a timed-out peer keeps its last good status beside the error, and the next
   expect(never[1]).toMatchObject({ address: "writer-3:7710", status: null, project: null, seen_ms: null, error: "connection refused" });
 });
 
-test("visibleHosts narrows to the selected project's daemon and All projects restores the rest", () => {
-  const hosts = [hostOf(working, NO_ATTENTION, "http://writer:7710"), hostOf(second, NO_ATTENTION, "http://writer-2:7710")];
-  expect(visibleHosts(hosts, "/srv/dev/writer-2").map((host) => host.address)).toEqual(["writer-2:7710"]);
-  expect(visibleHosts(hosts, "/srv/dev/elsewhere")).toEqual([]);
-  expect(visibleHosts(hosts, "all")).toEqual(hosts);
-});

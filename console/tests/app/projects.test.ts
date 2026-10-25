@@ -1,15 +1,14 @@
 import { expect, test } from "bun:test";
-import type { HostRecord } from "../../src/lib/hosts";
 import type { Attention, AttentionItem, Status } from "../../src/lib/types";
 import { matchRows, switcherRows } from "../../src/app/projects";
-import { fixture, hostOf } from "../harness";
+import { fixture, hostOf, type FixtureHost } from "../harness";
 import { ciPark, prPark } from "./needsFleet";
 
 const working = await fixture<Status>("working.json");
 const allKinds = await fixture<{ status: Status; attention: Attention }>("attention_all_kinds.json");
 const [one, two] = allKinds.attention.items as [AttentionItem, AttentionItem];
 
-function host(base: string, project: string, runs: number, items: AttentionItem[], admission = "enabled"): HostRecord {
+function host(base: string, project: string, runs: number, items: AttentionItem[], admission = "enabled"): FixtureHost {
   const run = working.runs[0]!;
   const status: Status = {
     ...working,
@@ -22,7 +21,7 @@ function host(base: string, project: string, runs: number, items: AttentionItem[
 
 const NO_READINESS = new Map<string, { ready: boolean }>();
 
-const failed = (record: HostRecord): HostRecord => ({ ...record, error: "connection refused" });
+const failed = (record: FixtureHost): FixtureHost => ({ ...record, error: "connection refused" });
 
 const demo = host("http://a:7710", "demo", 1, [one, two], "held");
 const writer = host("http://a:7711", "writer", 2, []);

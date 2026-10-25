@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -156,7 +156,7 @@ test("each severity pill and a filled tag pair their fill with that fill's own i
   expect(tag.classList.contains("text-tag-ink")).toBe(true);
 });
 
-test("a row folds open from its tag, title and path to its place and a link to its run", async () => {
+test("a row folds open from its tag, title and path to its place", async () => {
   await mount("#/findings", fleet({ runs: [demo7], live: reviewing7 }));
   const [row] = rowsOf("Open");
   expect(row!.querySelector("[data-tag]")!.textContent).toBe("AC4");
@@ -171,7 +171,6 @@ test("a row folds open from its tag, title and path to its place and a link to i
   expect(button.getAttribute("aria-expanded")).toBe("true");
   expect(body.hidden).toBe(false);
   expect(body.querySelector("[data-place]")!.textContent).toBe("holophyte/serve/server.py:142 · DEMO-7 · round 1");
-  expect(within(body).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(`/classic.html#run=7&daemon=${encodeURIComponent(DEMO)}`);
 });
 
 test("an open row's fate says who is fixing it, or why nobody is", async () => {

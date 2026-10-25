@@ -7,7 +7,7 @@ from tests.serve_fixture import ServeTestCase
 
 
 class MovedPageTest(ServeTestCase):
-    """`GET /next.html` answers 301 to the console's root, keeping the query."""
+    """`GET /next.html` and `/classic.html` answer 301 to `/`, keeping the query."""
 
     def built_console(self):
         dist = self.root / "dist"
@@ -20,15 +20,18 @@ class MovedPageTest(ServeTestCase):
         self.assertEqual(code, 301)
         self.assertEqual(answered["Location"], location)
 
-    def test_next_html_redirects_to_the_root_with_its_query(self):
-        self.start(console_dir=self.built_console())
-        self.assert_moved("/next.html", "/")
-        self.assert_moved("/next.html?project=demo", "/?project=demo")
+    def test_moved_pages_redirect_to_the_root_with_their_query(self):
+        dist = self.built_console()
+        (dist / "classic.html").write_text("<!doctype html><title>old</title>")
+        self.start(console_dir=dist)
+        for page in ("/next.html", "/classic.html"):
+            self.assert_moved(page, "/")
+            self.assert_moved(f"{page}?project=demo", "/?project=demo")
         code, _, raw = self.fetch("GET", "/")
         self.assertEqual(code, 200)
         self.assertIn(b"<title>console</title>", raw)
 
-    def test_next_html_redirects_without_a_token(self):
+    def test_moved_pages_redirect_without_a_token(self):
         token = self.root / "serve.token"
         token.write_text("static-test-token\n")
         token.chmod(0o600)
@@ -36,11 +39,13 @@ class MovedPageTest(ServeTestCase):
                    console_dir=self.built_console(), host="0.0.0.0")
         self.assertEqual(self.fetch("GET", "/status")[0], 401)
         self.assert_moved("/next.html", "/")
+        self.assert_moved("/classic.html", "/")
 
-    def test_next_html_redirects_with_no_built_console(self):
+    def test_moved_pages_redirect_with_no_built_console(self):
         self.start()
         self.assertEqual(self.fetch("GET", "/index.html")[0], 404)
         self.assert_moved("/next.html", "/")
+        self.assert_moved("/classic.html", "/")
 
 
 if __name__ == "__main__":

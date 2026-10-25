@@ -7,11 +7,6 @@ import { buildConsole } from "../build";
 const publicDir = new URL("../public/", import.meta.url);
 const bytes = async (name: string) => new Uint8Array(await Bun.file(new URL(name, publicDir)).arrayBuffer());
 
-/** The paper colour as `theme.css` declares it on `:root`, so the icons'
- *  ground is checked against the live token rather than a copied literal. */
-const css = await Bun.file(new URL("../src/theme.css", import.meta.url)).text();
-const paper = /:root\s*\{[^}]*--paper:\s*(#[0-9a-f]{6})/i.exec(css)![1]!;
-
 /** IHDR fields of a PNG plus its first scanline after unfiltering, read
  *  without an image library: width, height, colour type (2 = RGB without
  *  alpha, 6 = RGBA) and, for RGBA, the alpha of every pixel in that row. */
@@ -58,15 +53,13 @@ test.each([
   }
 });
 
-test("the manifest names both PNGs with sizes, standalone display and the paper colours", async () => {
+test("the manifest names both PNGs with sizes and standalone display", async () => {
   const manifest = JSON.parse(await Bun.file(new URL("manifest.webmanifest", publicDir)).text());
   expect(manifest.icons.map((icon: { src: string; sizes: string }) => [icon.src, icon.sizes])).toEqual([
     ["/icon-192.png", "192x192"],
     ["/icon-512.png", "512x512"],
   ]);
   expect(manifest.display).toBe("standalone");
-  expect(manifest.background_color).toBe(paper);
-  expect(manifest.theme_color).toBe(paper);
 });
 
 test("the favicon is the mark: a 100-unit square whose rounded tile is filled by a gradient", async () => {

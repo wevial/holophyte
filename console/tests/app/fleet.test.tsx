@@ -4,7 +4,7 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { PeersState } from "../../src/hooks/usePeers";
 import type { Attention, Status } from "../../src/lib/contract.gen";
-import { pollDaemon, tokenedFetch, type Fetch } from "../../src/lib/poll";
+import { tokenedFetch, type Fetch } from "../../src/lib/poll";
 import { tokenKey } from "../../src/lib/token";
 import { consoleQueryClient, useFleet, type ContractBodies } from "../../src/app/fleet";
 import { weekSince } from "../../src/app/queries";
@@ -115,7 +115,7 @@ test("a view that mounts after the fleet has polled reads the cache without poll
   expect(seen.switcher!.hosts).toBe(seen.sidebar!.hosts);
 });
 
-test("a body off the generated contract marks its record with the endpoint and path; the classic schemas still read the status", async () => {
+test("a body off the generated contract marks its record with the endpoint and path", async () => {
   const { queued: _queued, ...unqueued } = status;
   const laterKind = { ...attention, items: [{ ...attention.items[0], kind: "later_kind" }] };
   const fetch = peersFetch(ORIGIN, {
@@ -129,10 +129,6 @@ test("a body off the generated contract marks its record with the endpoint and p
   expect(origin!.error).toBe(`Response contract mismatch: ${ORIGIN}/status at queued`);
   expect(peer).toMatchObject({ contract_error: true, status: null });
   expect(peer!.error).toBe(`Response contract mismatch: ${PEER}/attention at items.0.kind`);
-
-  const classic = await pollDaemon(ORIGIN, fetch);
-  expect(classic.kind).toBe("project");
-  expect(classic.kind === "project" && classic.status.project).toBe(status.project);
 });
 
 test("a daemon that fails the next poll keeps its last good status beside the new error", async () => {

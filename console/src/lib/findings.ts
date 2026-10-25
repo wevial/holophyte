@@ -1,5 +1,3 @@
-import type { z } from "zod";
-import type { instructionSchema, threadFindingFieldsSchema } from "./schemas";
 import type { LedgerRow } from "./ledger";
 import type { Finding, Round } from "./types";
 
@@ -82,15 +80,6 @@ export function findingParts(message: string): FindingParts {
   return { title, body: body.trim(), criterion: null };
 }
 
-/** The newest round's findings, most severe first; none once the newest
- *  round passed, and none before any round is recorded. */
-export function openFindings(rounds: Round[]): Finding[] {
-  if (rounds.length === 0) return [];
-  const newest = rounds.reduce((best, round) => (round.round > best.round ? round : best));
-  if (newest.verdict === "pass") return [];
-  return [...newest.findings].sort((a, b) => RANK[severityOf(a)] - RANK[severityOf(b)]);
-}
-
 export function severityCounts(findings: Finding[]): Record<Severity, number> {
   const counts: Record<Severity, number> = { must: 0, should: 0, nit: 0 };
   for (const finding of findings) counts[severityOf(finding)] += 1;
@@ -103,14 +92,6 @@ export function severityCounts(findings: Finding[]): Record<Severity, number> {
  *  round closed it — including every finding still standing in the run's
  *  last round. */
 export type Fate = "fixed" | "declined" | "follow_up" | "open";
-
-/** The chip's label for each fate. */
-export const FATE_LABEL: Record<Fate, string> = {
-  fixed: "fixed",
-  declined: "declined",
-  follow_up: "follow-up",
-  open: "open",
-};
 
 export interface HistoryFinding {
   finding: Finding;
@@ -242,7 +223,3 @@ export function findingsHistory(rounds: Round[], ledger: LedgerRow[]): RoundHist
     })
     .reverse();
 }
-
-
-export type Instruction = z.infer<typeof instructionSchema>;
-export type ThreadFindingFields = z.infer<typeof threadFindingFieldsSchema>;

@@ -1,7 +1,7 @@
 import { useContext, useRef, type MouseEvent } from "react";
 import { Link, useParams } from "@tanstack/react-router";
-import { Markdown } from "../../components/Markdown";
-import { TicketLink } from "../../components/TicketLink";
+import { Markdown } from "../components/Markdown";
+import { TicketLink } from "../components/TicketLink";
 import { formatClock, formatSettled } from "../../lib/format";
 import { RunActions } from "../components/RunActions";
 import { leadParagraph } from "../../lib/ticket";

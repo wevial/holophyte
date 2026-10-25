@@ -10,22 +10,6 @@ import type { AttentionItem, Run, Status } from "./types";
  *  is a ticket a pause parked (holophyte/serve/serve_levers.py `paused_item()`),
  *  waiting on a Resume; `stuck_wait`, one waiting on a dependency that will not land. */
 export type Kind = "blocked" | "pr_open" | "paused" | "stale_run" | "failed" | "stuck_wait" | "supervisor" | "unreachable";
-export const KINDS: Kind[] = ["blocked", "pr_open", "paused", "stale_run", "failed", "stuck_wait", "supervisor", "unreachable"];
-
-/** A chip: every kind, or one of them. */
-export type KindFilter = "all" | Kind;
-
-export const CHIP_LABELS: Record<KindFilter, string> = {
-  all: "All",
-  blocked: "Questions",
-  pr_open: "PRs",
-  paused: "Paused",
-  stale_run: "Stale runs",
-  failed: "Failed",
-  stuck_wait: "Stuck waits",
-  supervisor: "Supervisor",
-  unreachable: "Unreachable",
-};
 
 export const PILL_TEXT: Record<Kind, string> = {
   blocked: "question",
@@ -39,16 +23,16 @@ export const PILL_TEXT: Record<Kind, string> = {
 };
 
 /** The `pr_open` row's one action: the PR's URL in a new tab, no daemon
- *  route behind it (components/AttentionRow.tsx). */
+ *  route behind it (app/components/CardActions.tsx). */
 export const OPEN_PR = "Open PR";
 
 /** The `paused` row's one action: a reason box posting to `/actions/resume`
- *  (components/RowActions.tsx). */
+ *  (app/components/CardActions.tsx). */
 export const RESUME = "Resume";
 
 /** The `stale_run` row's two aborts: reason boxes posting to
  *  `/actions/abort` with `close` false, or true to close the run's pull
- *  request too (components/RowActions.tsx); the second only on a run with
+ *  request too (app/components/CardActions.tsx); the second only on a run with
  *  a pull request. */
 export const ABORT = "Abort";
 export const ABORT_CLOSE = "Abort and close";
@@ -68,17 +52,6 @@ const ACTIONS: Record<Kind, string[]> = {
   supervisor: ["Restart supervisor"],
   unreachable: [],
 };
-
-/** `"all"`, or a project path as the rail selects it. An item belongs to
- *  the project its `project` field names; the band stamps the serving
- *  daemon's project on items that carry none before filtering. */
-export type ProjectChoice = "all" | string;
-
-export function filterItems(items: AttentionItem[], kind: KindFilter, project: ProjectChoice): AttentionItem[] {
-  return items.filter(
-    (item) => (kind === "all" || item.kind === kind) && (project === "all" || item.project === project),
-  );
-}
 
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
@@ -152,17 +125,6 @@ export function entryKey({ item, attempts }: BandEntry, index: number): string {
   const tail = attempts ? item.ticket : (item.run ?? item.ticket);
   return `${String(item.daemon ?? "")}-${item.kind}-${String(tail ?? index)}`;
 }
-
-export type Counts = Record<KindFilter, number>;
-
-export function countsByKind(items: AttentionItem[]): Counts {
-  const counts: Counts = { all: items.length, blocked: 0, pr_open: 0, paused: 0, stale_run: 0, failed: 0, stuck_wait: 0, supervisor: 0, unreachable: 0 };
-  for (const item of items) {
-    if ((KINDS as string[]).includes(item.kind)) counts[item.kind as Kind] += 1;
-  }
-  return counts;
-}
-
 
 /** How long an item has waited: `asked_ms`/`ended_ms` against `now`, or
  *  the heartbeat age the item carries; null when it says none of them. */
@@ -491,14 +453,6 @@ export function describe(
     default:
       return { ...base, body: str(item.question) ?? str(item.reason) ?? "" };
   }
-}
-
-/** Separate parked pull requests without changing either group's order. */
-export function splitPullRequests(items: AttentionItem[]): { needsYou: AttentionItem[]; pullRequests: AttentionItem[] } {
-  return {
-    needsYou: items.filter(item => item.kind !== "pr_open"),
-    pullRequests: items.filter(item => item.kind === "pr_open"),
-  };
 }
 
 /** Whether a pull request park waits only on the maintainer's merge, by

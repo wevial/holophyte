@@ -14,7 +14,3 @@ export function inMacApp(): boolean {
   }
 }
 
-/** A link into the classic console at `hash`. */
-export function classicHref(hash = ""): string {
-  return `/classic.html${hash}`;
-}

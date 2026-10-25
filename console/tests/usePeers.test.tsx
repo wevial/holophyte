@@ -1,44 +1,20 @@
-import { afterEach, expect, test } from "bun:test";
-import { act, cleanup, render } from "@testing-library/react";
-import { pollPeers, usePeers, type PeersState } from "../src/hooks/usePeers";
+import { expect, test } from "bun:test";
+import { z } from "zod";
+import { pollPeers } from "../src/hooks/usePeers";
 import { mergeHosts } from "../src/lib/hosts";
-import { POLL_INTERVAL_MS } from "../src/lib/poll";
-import type { Fetch } from "../src/lib/poll";
-import type { Status } from "../src/lib/types";
-import { NO_ATTENTION, fakeDeps, fixture, peersFetch, settle } from "./harness";
+import type { Fetch, PollSchemas } from "../src/lib/poll";
+import type { Attention, HostStatus, Status } from "../src/lib/types";
+import { NO_ATTENTION, fixture, peersFetch } from "./harness";
 
 const ORIGIN = "http://writer:7710";
 const working = await fixture<Status>("working.json");
 
-afterEach(cleanup);
-
-function Probe({ deps, onState }: { deps: ReturnType<typeof fakeDeps>["deps"]; onState: (s: PeersState) => void }) {
-  onState(usePeers(ORIGIN, deps));
-  return null;
-}
-
-test("the next poll is scheduled from the tick's start, so a slow daemon does not stretch the ten-second cadence", async () => {
-  const good = peersFetch(ORIGIN, { [ORIGIN]: { status: working, attention: NO_ATTENTION } });
-  let release: (() => void) | undefined;
-  const slow: Fetch = (url, init) =>
-    url.endsWith("/status")
-      ? new Promise<Response>((resolve) => {
-          release = () => resolve(good(url, init));
-        })
-      : good(url, init);
-  const { deps, scheduled } = fakeDeps(slow);
-  let latest: PeersState | undefined;
-  render(<Probe deps={deps} onState={(s) => (latest = s)} />);
-  await act(settle);
-  // The status answer is still pending, yet the next tick is already on the clock.
-  expect(latest?.polls).toBe(0);
-  expect(scheduled.filter((entry) => entry.ms === POLL_INTERVAL_MS)).toHaveLength(1);
-  release!();
-  await act(settle);
-  expect(latest?.polls).toBe(1);
-  // Completion does not add a second schedule for the same tick.
-  expect(scheduled.filter((entry) => entry.ms === POLL_INTERVAL_MS)).toHaveLength(1);
-});
+const unchecked: PollSchemas<{ status: Status; attention: Attention; host: HostStatus; hostAttention: Attention }> = {
+  status: z.custom<Status>(),
+  attention: z.custom<Attention>(),
+  host: z.custom<HostStatus>(),
+  hostAttention: z.custom<Attention>(),
+};
 
 test("a /peers that hangs to the deadline does not mark a known, healthy peer unreachable", async () => {
   const PEER = "http://second:7710";
@@ -65,7 +41,7 @@ test("a /peers that hangs to the deadline does not mark a known, healthy peer un
     ],
     0,
   );
-  const results = await pollPeers(ORIGIN, known, { fetch: abortAware }, 30);
+  const results = await pollPeers(ORIGIN, known, { fetch: abortAware }, 30, unchecked);
   expect(results.map((result) => [result.address, result.ok])).toEqual([
     ["writer:7710", true],
     ["second:7710", true],

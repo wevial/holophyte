@@ -1,4 +1,4 @@
-import type { Status, Supervisor } from "./types";
+import type { Supervisor } from "./types";
 
 /** A run is stale strictly past the threshold (the daemon's rule). */
 export function isStale(ageMs: number | null | undefined, thresholdMs: number): boolean {
@@ -16,9 +16,4 @@ export function isSupervisorStale(supervisor: Supervisor, thresholdMs: number): 
 export function projectName(path: string): string {
   const segments = path.split("/").filter((segment) => segment.length > 0);
   return segments.length > 0 ? segments[segments.length - 1]! : path;
-}
-
-/** The project row's sub-line: `writer · supervisor live`. */
-export function supervisorLabel(status: Status): string {
-  return `${status.host} · supervisor ${status.supervisor.state}`;
 }

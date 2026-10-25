@@ -1,4 +1,4 @@
-import { PrFacts } from "../../components/PrFacts";
+import { PrFacts } from "./PrFacts";
 import type { Fact } from "../../lib/attention";
 import type { RunDetail } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";

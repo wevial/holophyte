@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, medianRounds, minutesLabel, tagRows, todayMerges, withinDays } from "../src/lib/shipped";
-import type { ShippedBody } from "../src/lib/types";
+import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, minutesLabel, tagRows, todayMerges, withinDays } from "../src/lib/shipped";
+import type { ShippedWireRow } from "../src/lib/types";
 import { fixture } from "./harness";
 
-const threeDays = await fixture<{ now: number; shipped: ShippedBody }>("shipped_three_days.json");
+const threeDays = await fixture<{ now: number; shipped: { rows: ShippedWireRow[] } }>("shipped_three_days.json");
 const ROWS = tagRows({ base: "http://writer:7710", project: "/srv/dev/writer" }, threeDays.shipped.rows);
 
 test("rows spanning three days group newest-first under Today, Yesterday and the bare date, in the daemon's day", () => {
@@ -55,13 +55,6 @@ test("no box: the bar is empty, the minutes read Nm / — and there is no delta"
   expect(minutesLabel(15.4, null)).toBe("15m / —");
   expect(minutesLabel(17.6, 30)).toBe("18m / 30m");
   expect(deltaLabel(15, null)).toBe("");
-});
-
-test("medianRounds is the middle value, the mean of the middle two when even, null with nothing", () => {
-  expect(medianRounds(threeDays.shipped.rows)).toBe(2);
-  expect(medianRounds([{ rounds: 1 }, { rounds: 3 }])).toBe(2);
-  expect(medianRounds([{ rounds: 1 }, { rounds: 1 }, { rounds: 3 }, { rounds: 5 }])).toBe(2);
-  expect(medianRounds([])).toBeNull();
 });
 
 test("rows from two daemons each carry the name of that daemon's /status project", () => {

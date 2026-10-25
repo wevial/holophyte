@@ -104,26 +104,15 @@ test("the sidebar sits on its own ground with a rule beside the main area, which
   expect(screen.getByRole("main").classList.contains("bg-side")).toBe(false);
 });
 
-test("Classic console is a bordered button-sized link to /classic.html, labelled unfolded and named folded", async () => {
+test("the sidebar footer, folded or not, holds Settings and the theme toggle and no Classic console link", async () => {
   await mount("#/");
   for (const fold of [false, true]) {
     if (fold) fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-    const link = screen.getByRole("link", { name: "Classic console" });
-    expect(link.classList.contains("border")).toBe(true);
-    expect(link.classList.contains("min-h-11")).toBe(true);
-    expect(link.getAttribute("href")).toBe("/classic.html");
-    expect(link.textContent).toBe(fold ? "" : "Classic console");
-  }
-});
-
-test("following Classic console stores no remembered view", async () => {
-  location.href = "http://console.test/#/runs";
-  try {
-    await mount("#/runs");
-    fireEvent.click(screen.getByRole("link", { name: "Classic console" }));
-    expect(localStorage.getItem("holophyte.view")).toBeNull();
-  } finally {
-    location.href = "about:blank";
+    const footer = screen.getByRole("complementary", { name: "Console" }).querySelector("footer")!;
+    expect(within(footer).getByRole("link", { name: "Settings" })).toBeTruthy();
+    expect(within(footer).getByRole("button", { name: /^Colour theme:/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /classic/i })).toBeNull();
+    expect(document.querySelector('a[href*="classic"]')).toBeNull();
   }
 });
 
@@ -134,9 +123,6 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   expect(expand.getAttribute("aria-expanded")).toBe("false");
   expect(pages().map((link) => link.textContent)).toEqual(["", "", "", "", ""]);
   expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
-  const classic = screen.getByRole("link", { name: "Classic console" });
-  expect(classic.textContent).toBe("");
-  expect(classic.getAttribute("title")).toBe("Classic console");
   cleanup();
 
   await mount("#/");

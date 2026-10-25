@@ -9,7 +9,6 @@ import type { LedgerRow } from "../lib/ledger";
 import { phaseLabel } from "../lib/runs";
 import { prLabel } from "../lib/shipped";
 import type { Finding, Round } from "../lib/types";
-import { classicHref } from "../lib/view";
 import { reviewRound } from "./components/StageChip";
 import type { ContractBodies } from "./fleet";
 import { useFindings, weekSince } from "./queries";
@@ -54,8 +53,8 @@ export interface FindingRowView {
   path: string | null;
   place: string;
   fate: RowFate;
-  /** The classic run view, on finding rows only. */
-  href: string | null;
+  /** The run that raised it, on finding rows only. */
+  run: number | null;
   action: RowAction | null;
   /** On open findings and follow-ups only. */
   scout: ScoutTarget | null;
@@ -238,7 +237,7 @@ function findingRow(project: string, base: string, run: FindingsRun, found: Entr
     path,
     place: `${placeOf(path, finding.line)} · ${run.ticket} · round ${found.round}`,
     fate,
-    href: classicHref(`#run=${run.run}&daemon=${encodeURIComponent(base)}`),
+    run: run.run,
     action: null,
     scout: null,
   };
@@ -279,7 +278,7 @@ function followUpRow(project: string, base: string, row: FollowUpRow, run: Findi
     path: row.path,
     place: row.path == null ? row.ticket : `${placeOf(row.path, row.line)} · ${row.ticket}`,
     fate: followUpFate(row, run),
-    href: null,
+    run: null,
     action: null,
     scout: findingScout(project, row.ticket, row.run, { title, path: row.path, line: row.line }, actions),
   };
@@ -307,7 +306,7 @@ function advisoryRow(project: string, base: string, run: FindingsRun, advisory: 
     path: null,
     place: `${pr}${run.ticket} · advisory`,
     fate: { state: "queued", word: "advisory", line: "noted, not acted on", tone: "wait" },
-    href: null,
+    run: null,
     action: { kind: "file", base, body: threadTicket(run, advisory.message), off },
     scout: null,
   };

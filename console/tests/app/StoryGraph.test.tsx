@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { createHashHistory, createRootRoute, createRouter, RouterContextProvider } from "@tanstack/react-router";
 import type { Status, StoryDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { StoryGraph } from "../../src/app/components/StoryGraph";
@@ -38,7 +39,6 @@ test("an arrow runs from its dependency's bottom centre to the waiting card's to
   expect(armB![0]).toBeGreaterThan(694);
 });
 
-const SEEDED_BASE = "http://127.0.0.1:8765";
 const MERGED = { state: "merged" as State, word: "merged 08:47", kind: "done" as const };
 const demo12 = (overrides: Record<string, Partial<StoryNode>> = {}): StoryNode[] => [
   node("DEMO-5", [], MERGED),
@@ -52,6 +52,11 @@ const demo12 = (overrides: Record<string, Partial<StoryNode>> = {}): StoryNode[]
 const edgesIn = (group: "dim" | "open") =>
   Array.from(document.querySelectorAll(`[data-edges="${group}"] path`), (path) => path.getAttribute("data-edge"));
 const GRAPH = "[data-graph]";
+const graphOf = (nodes: StoryNode[]) => (
+  <RouterContextProvider router={createRouter({ routeTree: createRootRoute(), history: createHashHistory() })}>
+    <StoryGraph nodes={nodes} project="demo" />
+  </RouterContextProvider>
+);
 const cardOf = (ticket: string) => document.querySelector(`${GRAPH} [data-node="${ticket}"]`)!;
 
 afterEach(() => {
@@ -60,7 +65,7 @@ afterEach(() => {
 });
 
 test("DEMO-12's graph holds a labelled row per step, its 340 px cards on a wrapping line in board order", () => {
-  render(<StoryGraph nodes={demo12()} base={SEEDED_BASE} />);
+  render(graphOf(demo12()));
   const rows = Array.from(document.querySelectorAll<HTMLElement>(`${GRAPH} [data-graph-step]`));
   expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["Step 1", "Step 2", "Step 3"]);
   expect(rows.map((row) => Array.from(row.querySelectorAll("[data-node]"), (card) => card.getAttribute("data-node")))).toEqual([
@@ -79,7 +84,7 @@ test("DEMO-12's graph holds a labelled row per step, its 340 px cards on a wrapp
 });
 
 test("a story that starts with one ticket says so beside Step 1", () => {
-  render(<StoryGraph nodes={[node("A"), node("B", ["A"])]} base={SEEDED_BASE} />);
+  render(graphOf([node("A"), node("B", ["A"])]));
   const notes = Array.from(document.querySelectorAll(`${GRAPH} [data-graph-step]`), (row) => row.querySelector("[data-step-note]")?.textContent ?? null);
   expect(notes).toEqual(["starts the story", null]);
 });
@@ -87,7 +92,7 @@ test("a story that starts with one ticket says so beside Step 1", () => {
 test("graph and narrow cards show whole reading titles while Step labels keep Archivo", () => {
   const title = "Requeue a run whose lease went silent, page the operator once, and keep the run's worktree, branch and review rounds intact for the retry";
   expect(title.length).toBeGreaterThan(120);
-  render(<StoryGraph nodes={[node("A", [], { title })]} base={SEEDED_BASE} />);
+  render(graphOf([node("A", [], { title })]));
   const cards = Array.from(document.querySelectorAll('[data-node="A"]'));
   expect(cards.map((card) => (card.closest("[data-graph]") != null ? "graph" : card.closest("[data-step]") != null ? "steps" : "other"))).toEqual(["graph", "steps"]);
   const narrowStep = document.querySelector('[data-step="1"]')!;
@@ -102,7 +107,7 @@ test("graph and narrow cards show whole reading titles while Step labels keep Ar
 });
 
 test("DEMO-12's graph draws four open arrows, faint only where both ends merged, and nothing in it scrolls sideways", () => {
-  const { unmount } = render(<StoryGraph nodes={demo12()} base={SEEDED_BASE} />);
+  const { unmount } = render(graphOf(demo12()));
   expect(edgesIn("open")).toEqual(["DEMO-5 DEMO-7", "DEMO-10 DEMO-11", "DEMO-7 DEMO-1", "DEMO-11 DEMO-1"]);
   expect(edgesIn("dim")).toEqual([]);
   const graph = screen.getByRole("region", { name: "Dependency graph" });
@@ -113,20 +118,20 @@ test("DEMO-12's graph draws four open arrows, faint only where both ends merged,
   expect(graph.querySelectorAll("[tabindex]").length).toBe(0);
   unmount();
 
-  render(<StoryGraph nodes={demo12({ "DEMO-7": MERGED })} base={SEEDED_BASE} />);
+  render(graphOf(demo12({ "DEMO-7": MERGED })));
   expect(edgesIn("dim")).toEqual(["DEMO-5 DEMO-7"]);
   expect(edgesIn("open").length).toBe(3);
 });
 
 test("each card takes its state's look and mark, links its run when it has one and shows its time box", () => {
-  render(<StoryGraph nodes={demo12()} base={SEEDED_BASE} />);
+  render(graphOf(demo12()));
   const looks = ["DEMO-5", "DEMO-7", "DEMO-11", "DEMO-2", "DEMO-1"].map((ticket) => cardOf(ticket).querySelector("[data-card]")!.getAttribute("data-card"));
   expect(looks).toEqual(["merged", "live", "todo", "todo", "backlog"]);
   expect(cardOf("DEMO-11").querySelector("[data-card]")!.getAttribute("data-mark")).toBe("fail");
   expect(cardOf("DEMO-2").querySelector("[data-card]")!.getAttribute("data-mark")).toBe("wait");
   const running = cardOf("DEMO-7");
   expect(running.tagName).toBe("A");
-  expect(running.getAttribute("href")).toEndWith(`#run=7&daemon=${encodeURIComponent(SEEDED_BASE)}`);
+  expect(running.getAttribute("href")).toEndWith("#/runs/demo/7");
   expect(running.querySelector("[data-time-box]")?.textContent).toBe("25m");
   expect(cardOf("DEMO-1").tagName).not.toBe("A");
   expect(screen.queryByRole("link", { name: /^DEMO-1 / })).toBeNull();

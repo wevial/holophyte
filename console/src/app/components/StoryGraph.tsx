@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
-import { classicHref } from "../../lib/view";
+import { runPage } from "../run";
 import { cardOf, STATES, type CardLook, type State } from "../state";
 import { arrowPath, layoutGraph, type Box, type StoryNode } from "../story";
 import { Card, cardSurface, type CardMark } from "./Card";
@@ -50,7 +51,7 @@ function Legend() {
   );
 }
 
-function NodeCard({ node, base, className, after }: { node: StoryNode; base: string; className: string; after?: string }) {
+function NodeCard({ node, project, className, after }: { node: StoryNode; project: string; className: string; after?: string }) {
   const look = cardOf(node.state);
   const waits = after ?? (node.depends_on.length > 0 ? `Waits on ${node.depends_on.join(", ")}` : "Starts the story");
   const label = `${node.ticket} ${plainTitle(node.title)}, ${node.word}. ${waits}`;
@@ -80,18 +81,18 @@ function NodeCard({ node, base, className, after }: { node: StoryNode; base: str
     );
   }
   return (
-    <a
-      href={classicHref(`#run=${node.run}&daemon=${encodeURIComponent(base)}`)}
+    <Link
+      {...runPage(project, node.run)}
       aria-label={label}
       data-node={node.ticket}
       className={`${className} no-underline transition-colors duration-(--motion-colour) hover:[&>article]:border-ink-3`}
     >
       {body}
-    </a>
+    </Link>
   );
 }
 
-function Steps({ steps, base }: { steps: StoryNode[][]; base: string }) {
+function Steps({ steps, project }: { steps: StoryNode[][]; project: string }) {
   return (
     <div className="story-steps flex flex-col gap-4">
       {steps.map((column, index) => (
@@ -103,7 +104,7 @@ function Steps({ steps, base }: { steps: StoryNode[][]; base: string }) {
           <ul className="mt-2 flex flex-wrap gap-2.5">
             {column.map((node) => (
               <li key={node.ticket} className="min-w-0 flex-[1_1_200px]">
-                <NodeCard node={node} base={base} className="block [&>article]:h-full" after={node.depends_on.length > 0 ? `after ${node.depends_on.join(", ")}` : "starts the story"} />
+                <NodeCard node={node} project={project} className="block [&>article]:h-full" after={node.depends_on.length > 0 ? `after ${node.depends_on.join(", ")}` : "starts the story"} />
               </li>
             ))}
           </ul>
@@ -130,7 +131,7 @@ function stepNote(step: StoryNode[], index: number): string | null {
 
 /** The story's children in rows by what they wait on, an arrow down from
  *  each dependency to the ticket that waits on it. */
-export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }) {
+export function StoryGraph({ nodes, project }: { nodes: StoryNode[]; project: string }) {
   const graph = layoutGraph(nodes);
   const edges = (dim: boolean) => graph.edges.filter((edge) => edge.dim === dim);
   const wide = useRef<HTMLDivElement>(null);
@@ -182,7 +183,7 @@ export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }
                 </div>
                 <div data-step-cards className="flex min-w-0 flex-1 flex-wrap gap-x-14 gap-y-4">
                   {step.map((node) => (
-                    <NodeCard key={node.ticket} node={node} base={base} className="relative z-[2] block min-h-[112px] w-[340px] [&>article]:h-full" />
+                    <NodeCard key={node.ticket} node={node} project={project} className="relative z-[2] block min-h-[112px] w-[340px] [&>article]:h-full" />
                   ))}
                 </div>
               </div>
@@ -190,7 +191,7 @@ export function StoryGraph({ nodes, base }: { nodes: StoryNode[]; base: string }
           );
         })}
       </div>
-      <Steps steps={graph.steps} base={base} />
+      <Steps steps={graph.steps} project={project} />
       <p data-graph-key className="story-wide mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-2 font-mono text-[12px] leading-[1.4] text-ink-3">
         <span className="inline-flex items-center gap-2">
           <svg width={34} height={10} viewBox="0 0 34 10" aria-hidden="true" fill="none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="stroke-edge">

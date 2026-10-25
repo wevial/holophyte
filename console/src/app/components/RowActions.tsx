@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { ACTIONS_OFF, NOT_WIRED, ROUTES, actionBase, actionBody, postAction } from "../lib/actions";
-import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME } from "../lib/attention";
-import type { Fetch } from "../lib/poll";
+import { ACTIONS_OFF, NOT_WIRED, ROUTES, actionBase, actionBody, postAction } from "../../lib/actions";
+import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME } from "../../lib/attention";
+import type { Fetch } from "../../lib/poll";
 import { ActionButton } from "./ActionButton";
 import { ReasonAction } from "./ReasonAction";
 import { SteerNote } from "./SteerNote";

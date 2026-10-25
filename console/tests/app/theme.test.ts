@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { declarations, resolveToken, tokensUnder } from "../cssTokens";
 
 const css = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
-const classicCss = await Bun.file(new URL("../../src/theme.css", import.meta.url)).text();
 const decls = declarations(css);
 const dawnSelector = ":root";
 const nightSelector = ':root[data-theme="dark"]';
@@ -20,21 +19,13 @@ test("Dawn, Night and system-dark declare identical names and both dark blocks a
   expect(values(systemSelector)).toEqual(values(nightSelector));
 });
 
-test("Tailwind exposes every raw colour and every classic colour through a declared raw token", () => {
+test("Tailwind exposes every raw colour through a declared raw token", () => {
   const raw = tokensUnder(decls, dawnSelector);
   const theme = new Map(decls.filter((d) => d.path.length === 1 && d.path[0] === "@theme inline")
     .map((d) => [d.name, d.value]));
   const unexposed = /^--(?:neutral|pink|red|orange|gold|yellow|green|violet|slate)-(?:1[0-2]|[1-9])$/;
   for (const name of raw.filter((name) => name !== "--card-shadow" && !unexposed.test(name))) {
     expect(theme.get(`--color-${name.slice(2)}`)).toBe(`var(${name})`);
-  }
-  const classicNames = tokensUnder(declarations(classicCss), "@theme inline")
-    .filter((name) => name.startsWith("--color-"));
-  expect(classicNames.length).toBeGreaterThan(20);
-  for (const name of classicNames) {
-    const reference = /^var\((--[a-z0-9-]+)\)$/.exec(theme.get(name) ?? "");
-    expect(reference).not.toBeNull();
-    expect(raw).toContain(reference![1]!);
   }
   expect(theme.get("--shadow-card")).toBe("var(--card-shadow)");
 });
