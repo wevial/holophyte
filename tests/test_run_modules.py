@@ -11,6 +11,8 @@ import time
 import unittest
 from pathlib import Path
 
+from holophyte.scout.github_reads import member_rows
+
 ROOT = Path(__file__).resolve().parent.parent
 RUNNER = ROOT / "tests" / "run_modules.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "unit.yml"
@@ -401,6 +403,38 @@ class RunModulesTests(unittest.TestCase):
         self.assertEqual(self.listed(),
                          sorted(times, key=times.get, reverse=True))
 
+    def test_junit_report_reads_back_through_the_scout_parser(self):
+        report = self.root / "module-times.xml"
+        statuses = {"test_good.py": "passed", "test_bad.py": "failed"}
+        done = self.run_over({"test_good.py": PASSING, "test_bad.py": FAILING},
+                             "--jobs", "2", "--junit", str(report))
+        self.assertNotEqual(done.returncode, 0, done.stdout)
+        rows = member_rows(report.name, report.read_bytes())
+        self.assertEqual({row["title"]: row["status"] for row in rows},
+                         statuses)
+        self.assertEqual(len(rows), len(statuses))
+        walls = {name: wall for name, (wall, _) in self.timed_lines(done).items()}
+        for row in rows:
+            with self.subTest(module=row["title"]):
+                self.assertAlmostEqual(row["duration_ms"],
+                                       walls[row["title"]] * 1000, delta=50)
+
+    def test_without_junit_no_report_is_written_and_output_is_the_same(self):
+        report = self.root / "module-times.xml"
+        modules = {"test_good.py": PASSING, "test_bad.py": FAILING}
+        plain = self.run_over(modules, "--jobs", "1")
+        files = sorted(self.root.rglob("*"))
+        with_junit = self.run_over(modules, "--jobs", "1",
+                                   "--junit", str(report))
+        self.assertEqual([p for p in files if p.suffix == ".xml"], [])
+        self.assertTrue(report.exists())
+
+        def masked(done):
+            return sorted(re.sub(r"\d+\.\d+", "N", done.stdout).splitlines())
+
+        self.assertEqual(masked(plain), masked(with_junit))
+        self.assertEqual(plain.returncode, with_junit.returncode)
+
     def listed(self, *args):
         done = self.run_over({}, "--list", *args)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
@@ -577,6 +611,29 @@ class UnitWorkflowTests(unittest.TestCase):
                                       done.stdout)
                     else:
                         self.assertNotIn(job, done.stdout)
+
+    def test_python_job_uploads_its_junit_module_times_every_shard(self):
+        text = WORKFLOW.read_text()
+        steps = []
+        for line in job_blocks(text)["python"]:
+            if line.startswith("      - "):
+                steps.append([])
+            if steps:
+                steps[-1].append(line)
+        runner = next(i for i, step in enumerate(steps)
+                      if "tests/run_modules.py" in step[0])
+        report = re.search(r"--junit (\S+)", steps[runner][0])
+        self.assertIsNotNone(report, steps[runner][0])
+        upload = next(step for step in steps[runner + 1:]
+                      if "actions/upload-artifact@v4" in "\n".join(step))
+        step = "\n".join(["step:", *("  " + line[8:] for line in upload)])
+        fields = block_scalars(step, "step")
+        self.assertEqual(fields["uses"], "actions/upload-artifact@v4")
+        self.assertEqual(fields["if"], "always()")
+        options = block_scalars(step, "step", "with")
+        self.assertEqual(options["path"], report[1])
+        self.assertIn("matrix.shard", options["name"])
+        self.assertEqual(options["retention-days"], "7")
 
 if __name__ == "__main__":
     unittest.main()
