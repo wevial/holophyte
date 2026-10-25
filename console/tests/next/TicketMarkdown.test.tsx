@@ -114,6 +114,14 @@ async function openEditor(edited = "") {
   if (edited) await act(async () => void fireEvent.change(editor()!, { target: { value: edited } }));
 }
 
+async function visit(key: string) {
+  await act(async () => {
+    window.location.hash = `#/tickets/demo/${key}`;
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  for (let round = 0; round < 4; round += 1) await act(settle);
+}
+
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/next.html`));
@@ -212,4 +220,27 @@ test("Discard closes the editor without sending anything and shows the served te
   expect(write.seen).toEqual([]);
   expect(editor()).toBeNull();
   expect(headings()).toEqual(["Summary", "Out of scope", "Implementation notes", "Open questions"]);
+});
+
+test("the text cannot change while a Save is in flight, so what the editor closes on is what was saved", async () => {
+  let answer = () => {};
+  const write = fakeFetch({ ticket: "DEMO-2", revision: 4 }, new Promise<void>((resolve) => (answer = resolve)));
+  await mount({ write: write.fetchImpl });
+  await openEditor(`${HEADED}\nFirst edit.\n`);
+  await click(saveButton());
+  expect(write.seen).toHaveLength(1);
+  expect(editor()!.readOnly).toBe(true);
+  await act(async () => answer());
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(editor()).toBeNull();
+});
+
+test("another ticket's page opens on Fields, and so does a return to the ticket Markdown was pressed on", async () => {
+  await mount();
+  await click(within(viewGroup()).getByRole("button", { name: "Markdown" }));
+  expect(pressed()).toEqual(["Markdown"]);
+  await visit("DEMO-3");
+  expect(screen.getByRole("region", { name: "DEMO-3" })).toBeTruthy();
+  await visit("DEMO-2");
+  expect(pressed()).toEqual(["Fields"]);
 });

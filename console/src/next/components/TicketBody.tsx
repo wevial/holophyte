@@ -131,6 +131,7 @@ function RawEditor({ ticketKey, base, revision, served, onClose }: { ticketKey: 
         id={id}
         value={text}
         onChange={(event) => setText(event.target.value)}
+        readOnly={busy}
         spellCheck={false}
         rows={16}
         className="mt-2 block w-full resize-y [field-sizing:content] min-h-[16lh] border border-rule bg-paper-2 px-3.5 py-3 font-mono text-[12.5px] leading-[1.6] text-ink"

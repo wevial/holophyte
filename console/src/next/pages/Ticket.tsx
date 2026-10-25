@@ -72,6 +72,7 @@ export function TicketPage() {
   const page = useTicketPage(project, key);
   const [steeringKey, setSteeringKey] = useState<string | null>(null);
   const [body, setBody] = useState<{ at: string; view: BodyView; editing: number | null } | null>(null);
+  if (body != null && body.at !== `${project}/${key}`) setBody(null);
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "loading") return <Page project={project} ticketKey={key} />;
   if (page.kind === "not_mirrored") {
