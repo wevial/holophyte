@@ -109,8 +109,7 @@ test("the narrow list draws one group per project, newest group first, under a l
   expect(rowsOf(within(writerGroup!).getByRole("list", { name: "writer scouts" }))).toEqual(["30"]);
   expect(document.querySelector('[data-cell="id"], [data-cell="project"]')).toBeNull();
   const heads = [...document.querySelectorAll("[data-scout-table] > [aria-hidden] > span")].map((head) => head.textContent);
-  expect(heads).not.toContain("#");
-  expect(heads).not.toContain("Project");
+  expect(heads).toEqual(["", "Title", "Kind", "Lead", "Helpers", "Took"]);
   cleanup();
   await mount("#/scouts?project=demo", scoutFetch(demo, writer));
   expect(groupNames()).toEqual(["demo"]);
