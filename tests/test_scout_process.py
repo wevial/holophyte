@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tests.scout_stubs import LeadStubs, fenced
+from tests.scout_stubs import BRIEF, LeadStubs, fenced
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from host_fixture import HostFixture, git  # noqa: E402
@@ -51,7 +51,8 @@ class ScoutFixture(HostFixture):
         os.environ.pop("INVOCATION_ID", None)
         self.stubs = LeadStubs(self.root / "lead-stubs",
                                plan=fenced({"tasks": []}),
-                               report=fenced({"summary": "nothing found",
+                               report=fenced({**BRIEF,
+                                              "summary": "nothing found",
                                               "findings": [], "actions": []}))
         self.stubs.on_path()
 

@@ -160,6 +160,9 @@ Each module, one line:
   ask, its report labelled `F1`, `F2` and `A1` on, the lead's session
   resumed in the lead worktree, and the answer posted to the thread, or the
   failure recorded, as the scout returns to `done`.
+- `holophyte/scout/brief.py` — the short texts served for a scout whose
+  lead wrote none: a scout title cut from its ask, a task title cut from its
+  question, and a failed task's one-line reason read from its excerpt.
 - `holophyte/scout/context.py` — a scout's context pack: its subject's
   run, ledger, verify tail, findings, files and ticket, cut to a cap, for
   the lead's plan goal.

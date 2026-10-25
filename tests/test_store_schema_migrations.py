@@ -11,6 +11,7 @@ import store
 import store.schema
 import store.stories
 import store.tickets
+from store.scouts import create_scout, record_scout_tasks
 from tests.schema_fixture import DOCUMENTED_COLUMNS, VERSION_4_INTERVENTIONS_TABLE
 from tests.ticket_url_fixture import assert_schema_url
 
@@ -948,9 +949,43 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 60)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 61)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (60,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (61,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)
+
+
+class ScoutTaskTitleMigrationTests(unittest.TestCase):
+    def test_a_version_60_store_keeps_its_scout_tasks_with_null_titles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "store.db"
+            conn = store.open(path)
+            project = store.tickets.ensure_project(conn, "team-1", "/repos/h")
+            scout_id = create_scout(conn, project, "Why does it spin?", "bug",
+                                    20)
+            record_scout_tasks(conn, scout_id, 1, 1, [
+                {"question": f"Question {n}", "mode": "read"}
+                for n in (1, 2)])
+            conn.close()
+            raw = sqlite3.connect(path)
+            raw.executescript("ALTER TABLE scoutTasks DROP COLUMN title;\n"
+                              "PRAGMA user_version = 60;\n")
+            before = raw.execute("SELECT * FROM scoutTasks ORDER BY id").fetchall()
+            raw.close()
+
+            conn = store.open(path)
+            self.addCleanup(conn.close)
+
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
+                             (61,))
+            self.assertEqual(store.schema.READABLE_FROM, 50)
+            columns = [row[1] for row in conn.execute(
+                "PRAGMA table_info(scoutTasks)") if row[1] != "title"]
+            self.assertEqual(conn.execute(
+                f"SELECT {', '.join(columns)} FROM scoutTasks ORDER BY id"
+            ).fetchall(), before)
+            self.assertEqual(conn.execute(
+                "SELECT title FROM scoutTasks ORDER BY id").fetchall(),
+                [(None,), (None,)])

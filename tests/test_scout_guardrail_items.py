@@ -16,7 +16,7 @@ from holophyte.scout.report import report_problems
 from store.scout_thread import post_message, take_message
 from store.scouts import scout
 from tests.host_fixture import REPO
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced
 from tests.test_scout_guardrails_digest import DAY, DigestCase, finding
 from tests.test_serve_board import ServeBoardCase
 from tests.test_serve_ticket_check import body
@@ -28,11 +28,11 @@ GUARD = {"title": "Write saves through a temporary file",
          "layer": "static", "covers": ["F812.2.1", "U41"]}
 FIX = {"title": "Fix the save", "why": "it tears", "kind": "fix",
        "body": body("Fix the save")}
-NOTHING = {"summary": "nothing found", "findings": [], "actions": []}
+NOTHING = {**BRIEF, "summary": "nothing found", "findings": [], "actions": []}
 
 
 def checked(action, kind="guardrails", digest=OFFERED):
-    return report_problems({"summary": "found", "findings": [],
+    return report_problems({**BRIEF, "summary": "found", "findings": [],
                             "actions": [action]}, kind, digest=digest)
 
 

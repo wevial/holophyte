@@ -26,7 +26,7 @@ from store.follow_ups import record_follow_up
 from store.scouts import create_scout, move_scout, scout
 from store.tickets import mirror_ticket, transition
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import fenced, titled
 from tests.test_scout_lead import CODEX_LEAD, REPORT
 from tests.test_scout_process import ScoutFixture
 
@@ -66,7 +66,8 @@ sys.exit(1 if sys.argv[1:2] == ["inspect"] else 0)
 
 
 def plan(*tasks):
-    return fenced({"tasks": [{"question": question, "paths": [], "mode": mode}
+    return fenced({"tasks": [titled({"question": question, "paths": [],
+                                      "mode": mode})
                              for question, mode in tasks]})
 
 

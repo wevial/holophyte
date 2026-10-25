@@ -434,6 +434,130 @@ class CountTests(ScoutCase):
                          (5, 5, 1, 3))
 
 
+OLD_QUESTIONS = (
+    "Where does the loop open SQLite connections? List each call site.",
+    "Profile the whole module with cProfile (`python3 -m cProfile -m unittest"
+    " tests.test_retry`), then report the top 40 functions",
+    "Run the module under the real harness and alone:"
+    " `time python3 tests/run_modules.py --jobs 1`")
+FAILED_EXCERPTS = (
+    "[holo2] worktree setup could not launch: implementer credential variable"
+    " CLAUDE_CODE_OAUTH_TOKEN is not set",
+    "checking out\nRuntimeError: clone refused", "")
+QUEUED_ASK = ("tests/test_babysit_threads.py takes about 74 s in CI and 113 s"
+              " on a slow runner, against the 90 s per-module ceiling of"
+              " tests/run_modules.py. Measure it.")
+BRIEF = {"title": "Measure test_babysit_threads.py against the 90 s ceiling",
+         "headline": "Not reproduced: run alone, the module takes 38 s, not 74 s",
+         "bullets": ["Run alone, the module takes 38 s.",
+                     "Under the harness with 8 jobs it takes 71 s.",
+                     "No test spawns a real subprocess."]}
+
+
+class BriefTests(ScoutCase):
+    def ended(self, conn, project, ask, tasks, report):
+        scout_id = create_scout(conn, project, ask, "recon", 20,
+                                lead_route="A", helper_route="C", swarm=2,
+                                helper_turns=6, waves=1, now=NOW - 9_000)
+        move_scout(conn, scout_id, "planning", base_sha="9" * 40,
+                   host="writer", now=NOW - 8_000)
+        move_scout(conn, scout_id, "swarming")
+        ids = record_scout_tasks(conn, scout_id, 1, 1, [
+            {key: value for key, value in task.items() if key != "end"}
+            for task in tasks])
+        for task_id, task in zip(ids, tasks):
+            start_scout_task(conn, task_id, now=NOW - 7_500)
+            end_scout_task(conn, task_id, task["end"][0],
+                           excerpt=task["end"][1], now=NOW - 7_400)
+        move_scout(conn, scout_id, "synthesizing")
+        record_scout_report(conn, scout_id, 1, {
+            **report, "findings": [], "actions": [], "cut": []},
+            now=NOW - 7_000)
+        end_scout(conn, scout_id, "done", "the lead wrote its report",
+                  now=NOW - 6_000)
+        return scout_id
+
+    def seed_briefs(self):
+        conn = store.open(str(self.store_path))
+        try:
+            project = store.tickets.ensure_project(conn, "native:ALPHA",
+                                                   self.alpha)
+            old = self.ended(
+                conn, project, "Why do loop runs crash with database is"
+                " locked? Look at the listener.",
+                [{"question": question, "mode": "run",
+                  "end": ("failed", excerpt)}
+                 for question, excerpt in zip(OLD_QUESTIONS, FAILED_EXCERPTS)]
+                + [{"question": "Who holds the lock?", "mode": "read",
+                    "end": ("done", "the listener holds it")}],
+                {"summary": "The listener holds a write lock."})
+            new = self.ended(
+                conn, project, QUEUED_ASK,
+                [{"question": "How long does each test take?", "mode": "run",
+                  "title": "Time the module and every test",
+                  "end": ("done", "38 s")},
+                 {"question": "How many subprocesses start?", "mode": "run",
+                  "title": "Count the real subprocesses",
+                  "end": ("done", "none")}],
+                {**BRIEF, "summary": "The module runs in 38 s alone."})
+            queued = create_scout(conn, project, QUEUED_ASK, "bug", 10,
+                                  lead_route="A", helper_route="C", swarm=1,
+                                  helper_turns=6, waves=1, now=NOW - 4_000)
+        finally:
+            conn.close()
+        return old, new, queued
+
+    def served(self):
+        old, new, queued = self.seed_briefs()
+        port = self.serve(self.project)
+        code, listed = self.get(port, "/scouts")
+        self.assertEqual(code, 200, listed)
+        walk(listed, Scouts, "scouts")
+        details = {}
+        for scout_id in (old, new, queued):
+            code, body = self.get(port, f"/scouts/{scout_id}")
+            self.assertEqual(code, 200, body)
+            walk(body, ScoutDetail, "scout")
+            details[scout_id] = body
+        rows = {row["id"]: row for row in listed["scouts"]}
+        return (old, new, queued), rows, details
+
+    def test_an_old_scout_serves_titles_cut_from_its_ask_and_questions(self):
+        (old, _, queued), rows, details = self.served()
+        title = "Why do loop runs crash with database is locked?"
+        self.assertEqual((rows[old]["title"], details[old]["scout"]["title"]),
+                         (title, title))
+        self.assertEqual([task["title"] for task in details[old]["tasks"][:3]],
+                         ["Where does the loop open SQLite connections?",
+                          "Profile the whole module with cProfile",
+                          "Run the module under the real harness and…"])
+        (report,) = details[old]["reports"]
+        self.assertEqual((report["report"]["headline"],
+                          report["report"]["bullets"]), (None, None))
+        cut = "tests/test_babysit_threads.py takes about 74 s in CI and 113 s on a…"
+        self.assertEqual((rows[queued]["title"],
+                          details[queued]["scout"]["title"]), (cut, cut))
+
+    def test_each_failed_task_serves_a_one_line_reason_from_its_excerpt(self):
+        (old, _, _), _, details = self.served()
+        self.assertEqual([task["reason"] for task in details[old]["tasks"]],
+                         ["could not start: implementer credential not set",
+                          "RuntimeError: clone refused", "no output", None])
+
+    def test_a_new_scout_serves_the_titles_headline_and_bullets_its_lead_wrote(self):
+        (_, new, _), rows, details = self.served()
+        self.assertEqual((rows[new]["title"], details[new]["scout"]["title"]),
+                         (BRIEF["title"], BRIEF["title"]))
+        self.assertEqual([task["title"] for task in details[new]["tasks"]],
+                         ["Time the module and every test",
+                          "Count the real subprocesses"])
+        (report,) = details[new]["reports"]
+        self.assertEqual((report["report"]["headline"],
+                          report["report"]["bullets"]),
+                         (BRIEF["headline"], BRIEF["bullets"]))
+        self.assertNotIn("title", report["report"])
+
+
 class RoutesTests(ScoutCase):
     def test_a_project_with_no_store_still_answers_its_routes(self):
         project = self.bare("beta")

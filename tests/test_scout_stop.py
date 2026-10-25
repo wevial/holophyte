@@ -29,7 +29,7 @@ from holophyte.scout.lead import REPORT_OPENING
 from holophyte.serve.serve_host import HostServer, host_tokens
 from store.scouts import claim_scout, create_scout, end_scout, move_scout, scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced, titled
 from tests.test_holo_mcp import McpCase
 from tests.test_scout_lead import running
 from tests.test_scout_process import ScoutFixture
@@ -37,7 +37,7 @@ from tests.test_scout_process import ScoutFixture
 ROOT = Path(__file__).resolve().parent.parent
 MACHINE = "machine-token-value"
 STOP = "/projects/alpha/actions/scout-stop"
-REPORT = {"summary": "nothing found", "findings": [], "actions": []}
+REPORT = {**BRIEF, "summary": "nothing found", "findings": [], "actions": []}
 QUESTIONS = ["Where is the retry loop?", "Who calls the retry loop?"]
 WAIT_S = 30
 
@@ -225,8 +225,8 @@ class RunningScoutStopTests(StopCase):
     def stops_both_helpers(self, kind, mode):
         pid_files = [self.child(f"helper-{n}") for n in (1, 2)]
         self.stubs.answer(
-            plan=fenced({"tasks": [{"question": question, "paths": [],
-                                    "mode": mode}
+            plan=fenced({"tasks": [titled({"question": question, "paths": [],
+                                            "mode": mode})
                                    for question in QUESTIONS]}),
             report=fenced(REPORT),
             helpers={question: {"helper_sleep": 600,
@@ -273,7 +273,7 @@ class RunningScoutStopTests(StopCase):
         answers = json.loads((self.stubs.directory / "answers.json")
                              .read_text())
         self.stubs.answer(**dict(answers, plan=fenced({"tasks": [
-            {"question": QUESTIONS[0], "paths": [], "mode": "run"}]}),
+            titled({"question": QUESTIONS[0], "paths": [], "mode": "run"})]}),
             report=fenced(REPORT)))
         self.start_host()
         self.scout_id = self.planning(kind="bug", swarm=1, helper_turns=1,

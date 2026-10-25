@@ -1,6 +1,7 @@
 {
   "scout": {
     "id": 1,
+    "title": "Why does the retry spin?",
     "ask": "Why does the retry spin?",
     "kind": "bug",
     "phase": "done",
@@ -37,6 +38,7 @@
       "id": 1,
       "pass": 1,
       "wave": 1,
+      "title": "Where does the loop sleep?",
       "question": "Where does the loop sleep?",
       "paths": [
         "app/retry.py"
@@ -49,12 +51,14 @@
       "duration_ms": 100000,
       "tokens": 1000,
       "cost_usd": 0.01,
-      "excerpt": "answer 0"
+      "excerpt": "answer 0",
+      "reason": null
     },
     {
       "id": 1,
       "pass": 1,
       "wave": 1,
+      "title": "Does the test fail?",
       "question": "Does the test fail?",
       "paths": [],
       "mode": "run",
@@ -65,12 +69,14 @@
       "duration_ms": 101000,
       "tokens": 2000,
       "cost_usd": 0.01,
-      "excerpt": "answer 1"
+      "excerpt": "answer 1",
+      "reason": null
     },
     {
       "id": 1,
       "pass": 1,
       "wave": 2,
+      "title": "Is the cap read?",
       "question": "Is the cap read?",
       "paths": [
         "app/cap.py"
@@ -83,7 +89,8 @@
       "duration_ms": 102000,
       "tokens": 3000,
       "cost_usd": 0.01,
-      "excerpt": "answer 2"
+      "excerpt": "answer 2",
+      "reason": null
     }
   ],
   "reports": [
@@ -91,7 +98,9 @@
       "pass": 1,
       "at": 1750000000000,
       "report": {
+        "headline": null,
         "summary": "The retry loop never backs off.",
+        "bullets": null,
         "findings": [
           {
             "title": "Retry spins without a delay",

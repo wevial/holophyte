@@ -31,6 +31,9 @@
         "id": {
           "type": "integer"
         },
+        "title": {
+          "type": "string"
+        },
         "ask": {
           "type": "string"
         },
@@ -168,6 +171,7 @@
       },
       "required": [
         "id",
+        "title",
         "ask",
         "kind",
         "phase",

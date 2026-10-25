@@ -17,6 +17,7 @@ class ScoutSubject(TypedDict):
 
 class ScoutRow(TypedDict):
     id: int
+    title: str
     ask: str
     kind: Literal["bug", "research", "recon", "guardrails"]
     phase: ScoutPhase
@@ -58,11 +59,11 @@ class ScoutFull(ScoutRow):
 
 
 ScoutTask = TypedDict("ScoutTask", {
-    "id": int, "pass": int, "wave": int, "question": str,
+    "id": int, "pass": int, "wave": int, "title": str, "question": str,
     "paths": list[str], "mode": Literal["read", "run"], "route": str | None,
     "phase": TaskPhase, "started_ms": int | None, "ended_ms": int | None,
     "duration_ms": int | None, "tokens": int | None,
-    "cost_usd": float | None, "excerpt": str | None})
+    "cost_usd": float | None, "excerpt": str | None, "reason": str | None})
 
 
 class FileEvidence(TypedDict):
@@ -128,7 +129,9 @@ class PriorJudgement(TypedDict):
 
 
 class ScoutReport(TypedDict):
+    headline: str | None
     summary: str
+    bullets: list[str] | None
     findings: list[ScoutFinding]
     actions: list[ScoutReportAction]
     reproduction: Reproduction | None

@@ -239,6 +239,7 @@ PINNED = {
 
     "holophyte/scout/__init__.py": 0,
     "holophyte/scout/answer.py": 2,
+    "holophyte/scout/brief.py": 1,
     "holophyte/scout/context.py": 0,
     "holophyte/scout/filing.py": 0,
     "holophyte/scout/follow_up.py": 0,

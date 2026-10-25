@@ -54,7 +54,7 @@ from store.scouts import (
     start_scout_task,
 )
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced, titled
 from tests.test_scout_answer import reaped
 from tests.test_scout_config import ScoutFixture as ConfigFixture
 from tests.test_scout_lead import CLAUDE_LEAD, running
@@ -70,13 +70,13 @@ ACTIONS = [{"title": "add a backoff", "why": "it spins", "kind": "fix",
             "body": "Add a backoff."},
            {"title": "test the timeout", "why": "read twice", "kind": "test",
             "body": "Test the timeout."}]
-REPORT = {"summary": "the retry loop spins", "findings": FINDINGS,
+REPORT = {**BRIEF, "summary": "the retry loop spins", "findings": FINDINGS,
           "actions": ACTIONS, "cut": []}
 STEER = "Go check the digest email as well."
 QUESTIONS = ["Where is the digest sent?", "Who builds the digest?",
              "What does the digest test assert?", "Where is the digest set?",
              "Which commit added the digest?"]
-SECOND = {"summary": "the digest retries too",
+SECOND = {**BRIEF, "summary": "the digest retries too",
           "findings": [{"title": "the digest shares the retry loop",
                         "status": "confirmed",
                         "evidence": [{"url": "https://example.test/digest"}]}],
@@ -105,8 +105,9 @@ take_message(conn, post_message(conn, {scout}, "maintainer", "steer",
 
 
 def plan(*questions):
-    return fenced({"tasks": [{"question": question, "paths": ["notes.txt"],
-                              "mode": "read"} for question in questions]})
+    return fenced({"tasks": [titled({"question": question,
+                                      "paths": ["notes.txt"], "mode": "read"})
+                             for question in questions]})
 
 
 class PassCase(StopCase):
