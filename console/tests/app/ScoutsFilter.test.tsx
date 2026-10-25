@@ -109,6 +109,11 @@ test("the narrow list draws one group per project, newest group first, under a l
   expect(rowsOf(within(writerGroup!).getByRole("list", { name: "writer scouts" }))).toEqual(["30"]);
   const heads = [...document.querySelectorAll("[data-scout-table] > [aria-hidden] > span")].map((head) => head.textContent);
   expect(heads).toEqual(["", "Title", "Kind", "Lead", "Helpers", "Took"]);
+  expect(document.querySelector('[data-cell="id"], [data-cell="project"]')).toBeNull();
+  cleanup();
+  await mount("#/scouts?project=demo", scoutFetch(demo, writer));
+  expect(groupNames()).toEqual(["demo"]);
+  expect(groups().map(rowsOf)).toEqual([["31", "29", "27"]]);
 });
 
 test("the wide list draws the same groups with no id cell and the first group's first scout in the pane", async () => {
