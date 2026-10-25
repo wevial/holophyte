@@ -24,7 +24,8 @@ ALLOWED = re.compile(
     r"|actions/jobs/\d+(/logs)?|actions/workflows(/[^/]+/runs)?"
     r"|pulls(/\d+(/files)?)?|commits|commits/.+/(check-runs|status)"
     r"|issues/\d+(/comments)?|contents/.+)")
-JOB_LOG = re.compile(r"repos/[^/]+/[^/]+/actions/jobs/(\d+)/logs/?")
+JOB_LOG = re.compile(r"repos/[^/]+/[^/]+/actions/jobs/(\d+)/logs/?",
+                     re.IGNORECASE)
 COMMIT_REF = re.compile(r"((?:^|/)commits/)(.+)(/(check-runs|status)/?)$")
 SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 UNPRINTABLE = re.compile(r"[\x00-\x20\x7f]")
@@ -114,8 +115,7 @@ def tail_capped(text):
             f"characters shown\n{text[-GITHUB_ANSWER_CHARS:]}")
 
 
-def fetched(project, repo, path):
-    job = JOB_LOG.fullmatch(path.partition("?")[0])
+def fetched(project, repo, path, job):
     if job:
         return tail_capped(github.job_log(project, repo, job[1]))
     answer = github._call(project, repo.host, "GET", path, None)
@@ -127,8 +127,11 @@ def github_get(project, repo, path, method="GET"):
         path = guarded(repo, path, method)
     except Refused as refused:
         return Answer(f"[holo2] github_get refused: {refused}", REFUSED)
+    job = JOB_LOG.fullmatch(path.partition("?")[0])
+    if job:
+        path = job[0]
     try:
-        return Answer(fetched(project, repo, path), path=path)
+        return Answer(fetched(project, repo, path, job), path=path)
     except (InfraFailure, OSError) as failure:
         return Answer(f"[holo2] github_get failed: {failure}", FAILED, path)
 

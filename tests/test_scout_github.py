@@ -280,8 +280,10 @@ class GetTests(GithubCase):
                                  + log[-40000:])
         short_log = "build\nTotal: 12m 3s\n"
         self.gh.answer(full, short_log)
-        self.assertEqual(github_get(self.target(self.path), self.repo,
-                                    "actions/jobs/41/logs").text, short_log)
+        for path in (full, "actions/jobs/41/logs"):
+            with self.subTest(path=path, log="short"):
+                self.assertEqual(github_get(self.target(self.path), self.repo,
+                                            path).text, short_log)
         self.assertEqual({call[-1] for call in self.gh.calls()}, {full})
 
     def test_the_commit_listing_is_read_less_api_links_at_every_depth(self):
@@ -290,7 +292,7 @@ class GetTests(GithubCase):
             "sha": f"{number}" * 40, "node_id": f"C_{number}",
             "url": f"https://api/commits/{number}",
             "html_url": f"https://github.com/commit/{number}",
-            "commit": {"message": f"change {number}",
+            "commit": {"message": f"change {number}", "node_id": f"G_{number}",
                        "url": f"https://api/git/{number}",
                        "author": {"name": "Ada", "date": "2026-10-24T00:00:00Z"}}}
             for number in (1, 2)]))
