@@ -26,6 +26,7 @@ WORKER_PARKED = 2
 WORKER_IDLE = 3
 WORKER_STOP = 4
 WORKER_BOARD_DOWN = 5
+WORKER_HANDOFF = 6
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
 SPAWN = subprocess.Popen
@@ -106,7 +107,7 @@ def witness_child(target, provider):
 def _worker(target, provider):
     from holophyte.loop.claim import _claim_next
     from holophyte.loop.claim_store import BOARD_DOWN
-    from holophyte.loop.dispatch import PARKED, _dispatch
+    from holophyte.loop.dispatch import HANDED_OFF, PARKED, _dispatch
 
     knobs = loop_config(target)
     conn = open_store(target)
@@ -128,6 +129,8 @@ def _worker(target, provider):
         if merged is PARKED:
             print(f"[holo2] {task['id']} parked awaiting merge approval")
             return WORKER_PARKED
+        if merged is HANDED_OFF:
+            return WORKER_HANDOFF
         if not merged:
             _render_findings_locked(target, conn, run_id, task)
             return WORKER_FAILED
@@ -476,6 +479,8 @@ class _PoolState:
         elif code == WORKER_STOP:
             print(f"[holo2] worker {slot} stopped for a human")
             self.broken = self.stopped = True
+        elif code == WORKER_HANDOFF:
+            print(f"[holo2] worker {slot} handed its run to the next build")
         elif code == WORKER_BOARD_DOWN:
             print(f"[holo2] worker {slot} could not read its ticket back"
                   " from the board; spawning stops")
