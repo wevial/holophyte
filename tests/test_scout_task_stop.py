@@ -53,13 +53,14 @@ class TaskStopCase(StopCase):
         return self.tasks(scout_id).get(question, (None, None, None))[1]
 
     def swarming(self, questions, helpers, kind="research", mode="read",
-                 swarm=2, **answers):
+                 swarm=2, helper_turns=None, **answers):
         self.stubs.answer(
             plan=fenced({"tasks": [{"question": question, "paths": [],
                                     "mode": mode} for question in questions]}),
             report=fenced(REPORT), helpers=helpers, **answers)
         scout_id = self.planning(kind=kind, swarm=swarm,
-                                 helper_turns=len(questions), waves=1)
+                                 helper_turns=helper_turns or len(questions),
+                                 waves=1)
         return scout_id, self.spawn_scout(scout_id)
 
     def slow_and_fast(self):
@@ -112,11 +113,11 @@ class RunningTaskStopTests(TaskStopCase):
                          (slow, None, "POST /actions/scout-stop"))
         self.assertEqual(proc.wait(timeout=WAIT_S), 0)
 
-    def test_a_queued_task_asked_to_stop_is_never_launched(self):
+    def stop_the_third_of_three(self, helper_turns=None):
         questions = ["first question", "second question", "third question"]
         scout_id, proc = self.swarming(
             questions, {questions[0]: {"helper": "first", "helper_sleep": 1}},
-            swarm=1)
+            swarm=1, helper_turns=helper_turns)
         self.assertTrue(wait_for(
             lambda: self.phase_of(scout_id, questions[0]) == "running"),
             self.tasks(scout_id))
@@ -129,6 +130,12 @@ class RunningTaskStopTests(TaskStopCase):
         self.assertEqual(tasks[questions[1]][1], "done")
         self.assertNotIn(questions[2], [call["question"] for call
                                         in self.stubs.turns("helper")])
+
+    def test_a_queued_task_asked_to_stop_is_never_launched(self):
+        self.stop_the_third_of_three()
+
+    def test_a_task_beyond_the_helper_turns_asked_to_stop_ends_stopped(self):
+        self.stop_the_third_of_three(helper_turns=2)
 
     def probing(self, probe="ready"):
         """A one-task scout whose helper route probe answers `probe` after
@@ -263,6 +270,14 @@ class HoloTaskStopTests(TaskStopCase):
 
 
 class McpTaskStopTests(McpCase):
+    def test_the_scout_stop_tool_takes_an_integer_task(self):
+        async def use(client, _):
+            return (await client.list_tools()).tools
+        (tool,) = [tool for tool in self.session(use)
+                   if tool.name == "scout_stop"]
+        self.assertEqual(tool.input_schema["properties"]["task"]["type"],
+                         "integer")
+
     def test_the_scout_stop_tool_needs_a_note_only_without_a_task(self):
         sleeper = subprocess.Popen(["sleep", "600"])
         self.addCleanup(sleeper.wait)

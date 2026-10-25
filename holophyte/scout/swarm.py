@@ -281,6 +281,8 @@ class Swarm:
         finally:
             done.set()
             watcher.join()
+        for task in tasks[len(launch):]:
+            self.settle(self.conn, task, threading.Event())
 
     def watch(self, done, ready, failed):
         try:
