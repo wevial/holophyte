@@ -137,7 +137,7 @@ const cost = () => document.querySelector("[data-scout-facts] [data-scout-cost]"
 const activity = () => screen.getByRole("list", { name: "Scout activity" });
 const groups = () => Array.from(activity().children) as HTMLElement[];
 const row = (group: HTMLElement) => ({
-  time: group.querySelector(":scope > div > time")?.textContent ?? null,
+  time: group.querySelector("time")?.textContent ?? null,
   title: group.querySelector("[data-group-title]")!.textContent,
   span: group.querySelector("[data-group-span]")!.textContent,
 });

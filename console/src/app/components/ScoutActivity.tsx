@@ -1,13 +1,13 @@
 import { useId, useState } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
 import type { ScoutTask } from "../../lib/contract.gen";
-import { formatSpan } from "../../lib/format";
+import { formatClock, formatSpan } from "../../lib/format";
 import { useAction } from "../actions";
 import { tokenWords, type ScoutGroup } from "../scout";
+import type { ActivityTone } from "../activity";
 import type { State } from "../state";
 import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
-import { Badge, GroupHead } from "./Timeline";
 import { TitleText } from "./TitleText";
 import { useToast } from "./Toast";
 
@@ -116,29 +116,72 @@ function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: Ro
 
 function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: RowStop | null }) {
   return (
-    <ol aria-label="Helpers" className="m-0 mb-4 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:mx-0">
+    <ol aria-label="Helpers" className="m-0 mb-4 ml-[98px] mr-4 list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:mx-4">
       {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} stop={stop} />)}
     </ol>
   );
 }
+
+const MARK_TONES: Record<ActivityTone, string> = {
+  ok: "text-live", warn: "text-warn-ink", bad: "text-bad", wait: "text-wait", act: "text-act", live: "text-live", neutral: "text-ink-3",
+};
+
+const MARK_PATHS: Partial<Record<ActivityTone, string>> = {
+  ok: "M5.4 8.2 7.2 10l3.4-3.6",
+  bad: "M8 4.8v3.8M8 11v.1",
+  warn: "M8 4.8v3.8M8 11v.1",
+  wait: "M8 4.8V8l2.3 1.6",
+  act: "M8 4.8v6.4M4.8 8h6.4",
+};
+
+/** A group's tone as a small ring with its icon, or the live dot while it runs and nothing failed. */
+function Mark({ tone, running }: { tone: ActivityTone; running: boolean }) {
+  const path = MARK_PATHS[tone];
+  return (
+    <span data-badge={tone} className={`flex size-4 items-center justify-center ${MARK_TONES[tone]}`}>
+      {running && tone === "live" ? <StateDot state="running" hideWord tone="live" /> : (
+        <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.5" />
+          {path != null && <path d={path} />}
+        </svg>
+      )}
+    </span>
+  );
+}
+
+const GROUP_ROW = "grid w-full grid-cols-[14px_44px_16px_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-4 text-left max-[720px]:gap-x-2 max-[720px]:px-2";
 
 function Group({ group, open, onToggle, now, stop }: {
   group: ScoutGroup; open: boolean; onToggle: () => void; now: number; stop: RowStop | null;
 }) {
   const bodyId = useId();
   const folds = (group.kind === "wave" || group.kind === "pass") && group.tasks.length > 0;
+  const cells = (
+    <>
+      {folds ? <FoldChevron open={open} /> : <span />}
+      {group.at == null ? <span /> : (
+        <time dateTime={new Date(group.at).toISOString()} className="font-mono text-[13px] text-ink-3">{formatClock(group.at)}</time>
+      )}
+      <Mark tone={group.tone} running={group.running} />
+      <span data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
+        <b className="font-semibold text-ink">{group.title}</b>
+        {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
+        {group.failed > 0 && <>{" · "}<span data-failed className="font-medium text-bad-text">{group.failed} failed</span></>}
+      </span>
+      <span data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
+        {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
+      </span>
+    </>
+  );
   return (
-    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="border-b border-rule-2 px-4 last:border-b-0 max-[720px]:px-2">
-      <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} />} folds={folds} open={open} controls={bodyId} onToggle={onToggle}>
-        <span data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
-          <b className="font-semibold text-ink">{group.title}</b>
-          {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
-          {group.failed > 0 && <>{" · "}<span data-failed className="font-medium text-bad-text">{group.failed} failed</span></>}
-        </span>
-        <span data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
-          {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
-        </span>
-      </GroupHead>
+    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="border-b border-rule-2 last:border-b-0">
+      <div>
+        {folds ? (
+          <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={onToggle} className={`group cursor-pointer border-0 bg-transparent ${GROUP_ROW}`}>
+            {cells}
+          </button>
+        ) : <div className={GROUP_ROW}>{cells}</div>}
+      </div>
       {folds && open && (
         <div id={bodyId}>
           <Helpers tasks={group.tasks} now={now} stop={stop} />

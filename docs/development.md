@@ -1207,9 +1207,8 @@ and `ask`, which the Scouts page reads into a filled New scout form whose launch
 The Scout page (`console/src/app/pages/Scout.tsx`) reads one scout's `GET /scouts/N` through
 `console/src/app/scout.ts`, which also groups it into Plan, waves, Synthesis and Report, then an Answer
 or Pass group for each answer turn and follow-up pass, whose spans and numbers `scoutThread.ts` gives;
-`console/src/app/components/ScoutActivity.tsx` draws them as Progress on the row grid and badges of
-`console/src/app/components/Timeline.tsx`, which `RunActivity.tsx` shares, a wave or pass folding on its task
-rows, each opening its question, and
+`console/src/app/components/ScoutActivity.tsx` draws them as Progress rows, each with its time and tone mark,
+a wave or pass folding on its task rows, each opening its question, and
 `console/src/app/components/ScoutStop.tsx` posts `POST /actions/scout-stop` after a confirm; a
 swarming scout's queued or running helper row posts it with its `task`, no confirm, from Stop this branch.
 `console/src/app/components/ScoutReport.tsx` draws a scout's Findings: every pass's findings with their

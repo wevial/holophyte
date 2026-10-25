@@ -266,7 +266,7 @@ test("the reproduction folds its hypotheses into one counted line, and a report 
   expect(region("Findings").querySelector("[data-reproduction]")).toBeNull();
 });
 
-test("Progress lists one closed row per group with only the waves folding and no steps, and a wave counts its failed helpers in the bad tone", async () => {
+test("Progress lists one closed row per group with only the waves folding and no steps, and a wave counts its failed helpers in the bad tone, running or not", async () => {
   await mount("#/scouts/demo/31", scoutFetch(twoWaves));
   expect(groups().map((group) => group.querySelector("[data-group-title] b")!.textContent)).toEqual(["Plan", "Wave 1", "Synthesis", "Wave 2", "Report"]);
   expect(groups().map((group) => fold(group)?.getAttribute("aria-expanded") ?? null)).toEqual([null, "false", null, "false", null]);
@@ -281,6 +281,17 @@ test("Progress lists one closed row per group with only the waves folding and no
   const stoppedToo = { ...scout31, tasks: scout31.tasks.map((each, index) => (index === 4 ? { ...each, phase: "stopped" as const } : each)) };
   await mount("#/scouts/demo/31", scoutFetch(stoppedToo));
   expect(groupNamed("Wave 1").querySelector("[data-badge]")!.getAttribute("data-badge")).toBe("bad");
+  cleanup();
+  const swarmingWithFailures: ScoutDetail = {
+    ...stoppedToo,
+    scout: { ...scout31.scout, phase: "swarming", ended_ms: null },
+    tasks: scout31.tasks.map((each, index) => (index === 4 ? { ...each, phase: "running" as const, ended_ms: null, duration_ms: null, tokens: null } : each)),
+    reports: [],
+  };
+  await mount("#/scouts/demo/31", scoutFetch(swarmingWithFailures), WAVE + 60_000);
+  const running = groupNamed("Wave 1");
+  expect([running.hasAttribute("data-running"), running.querySelector("[data-badge]")!.getAttribute("data-badge")]).toEqual([true, "bad"]);
+  expect(within(running.querySelector("[data-badge]") as HTMLElement).queryByRole("img")).toBeNull();
 });
 
 test("an opened wave's task rows read title, a failed one's reason and a meta line, and a pressed row shows its question", async () => {

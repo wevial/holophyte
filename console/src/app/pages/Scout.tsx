@@ -30,7 +30,7 @@ export function ScoutPage() {
   const { scout } = page.detail;
   return (
     <Page label={label}>
-      <header className="max-w-[1000px]">
+      <header className="max-w-[900px]">
         <nav aria-label="Breadcrumb" className="mb-2 font-mono text-[12px] leading-none text-ink-3">
           <Link to="/scouts" search={{}} className={CRUMB_LINK}>Scouts</Link>
           {" / "}
@@ -49,7 +49,7 @@ export function ScoutPage() {
           </>
         } />
       </header>
-      <div data-scout-body className="mt-6 max-w-[1000px] border border-rule bg-paper p-10 max-[720px]:p-4">
+      <div data-scout-body className="mt-6 max-w-[900px] border border-rule bg-paper p-10 max-[720px]:p-4">
         <ScoutBody page={page} project={project} composeRef={composeRef} />
       </div>
     </Page>

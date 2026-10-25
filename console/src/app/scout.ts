@@ -135,8 +135,8 @@ function wavesOf(tasks: ScoutTask[], endedMs: number | null = null, synthesizing
 }
 
 function waveTone(tasks: ScoutTask[], running: boolean): ActivityTone {
-  if (running) return "live";
   if (tasks.some((task) => task.phase === "failed")) return "bad";
+  if (running) return "live";
   if (tasks.some((task) => !ENDED.has(task.phase) || task.phase === "stopped")) return "wait";
   return "ok";
 }
