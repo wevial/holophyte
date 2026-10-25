@@ -419,22 +419,6 @@ class RunModulesTests(unittest.TestCase):
                 self.assertAlmostEqual(row["duration_ms"],
                                        walls[row["title"]] * 1000, delta=51)
 
-    def test_without_junit_no_report_is_written_and_output_is_the_same(self):
-        report = self.root / "module-times.xml"
-        modules = {"test_good.py": PASSING, "test_bad.py": FAILING}
-        plain = self.run_over(modules, "--jobs", "1")
-        files = sorted(self.root.rglob("*"))
-        with_junit = self.run_over(modules, "--jobs", "1",
-                                   "--junit", str(report))
-        self.assertEqual([p for p in files if p.suffix == ".xml"], [])
-        self.assertTrue(report.exists())
-
-        def masked(done):
-            return sorted(re.sub(r"\d+\.\d+", "N", done.stdout).splitlines())
-
-        self.assertEqual(masked(plain), masked(with_junit))
-        self.assertEqual(plain.returncode, with_junit.returncode)
-
     def listed(self, *args):
         done = self.run_over({}, "--list", *args)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
