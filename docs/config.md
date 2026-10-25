@@ -967,7 +967,7 @@ the text. Removing a matching line is never refused.
 | `pr_style` | Default: `""` | String; set instructions for the title and description writer to follow repository conventions. |
 | `ui_paths` | Default: `[]` | List of non-empty repository-relative globs without `..`; set with ui_capture to identify changes needing visual evidence. |
 | `ui_capture_dir` | Default: `"e2e/capture"` | Directory named in the implementer brief for ticket capture scripts; the capture command receives it as `HOLOPHYTE_CAPTURE_DIR`. |
-| `ui_capture_local` | Default: `false` | Boolean; `true` keeps capture specs out of the project's repository. `ui_capture_dir` must then be a repository-relative directory without `..`. |
+| `ui_capture_local` | Default: `false` | Boolean; `true` keeps capture specs out of the project's repository. `ui_capture_dir` must then be a repository-relative directory without `..`. Capture files are untracked before each push of a candidate, and the merge refuses a head that still adds one. |
 | `ui_capture_video` | Default: `false` | Boolean; `true` sets `HOLOPHYTE_CAPTURE_VIDEO=1` for the capture command, so the bundled Playwright runner publishes the videos a capture saves as `video-01.webm`, `video-02.webm` and so on; `false` removes an inherited `HOLOPHYTE_CAPTURE_VIDEO`. Turning it on or off captures again at the same commit. |
 | `ui_capture` | Default: `""` | Command string with shell-style quoting but no shell evaluation; set with ui_paths to capture evidence non-interactively. |
 | `capture_env_source` | Default: absent | Source dotenv path for the capture command only, with `~` expanded; relative paths resolve beside config.toml. Requires `capture_env_allow`. |
@@ -1201,7 +1201,15 @@ selects and runs that ticket's script. With `ui_capture_local = true`, every
 worktree setup writes a `.gitignore` holding `*` into `ui_capture_dir`, so the
 directory ignores itself (in the worktree and in a container turn's clone),
 and the brief names the spec `<ui_capture_dir>/<ticket key>.capture.ts`, which
-stays in the worktree and is never committed. A change to the local spec the
+stays in the worktree and is never committed. A capture file is a path the
+candidate adds that is a `<ticket key>.capture.ts` anywhere in the tree other
+than the spec `ui_capture` names with `--default`, a file under
+`ui_capture_dir`, or a file under `.holophyte-capture/` or a root
+`.holophyte-capture-*` directory. Under `ui_capture_local = true`, capture
+files are untracked before each push of a candidate, in one factory commit
+listing them, with the working copies kept and added to the repository's
+`info/exclude`; the merge refuses a head that still adds one and parks the
+run on its pull request, naming the paths. A change to the local spec the
 capture would run reruns the capture at the same commit and counts as
 fix-round progress. A state that names image files in backticks
 (`` `03-panel.png` ``) captions each published one it names; a state naming
