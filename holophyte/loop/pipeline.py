@@ -160,7 +160,7 @@ def _run_stages(run, task):
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)
-    before_gate(project, conn, run_id, provider, sha)
+    before_gate(conn, run_id, sha)
     merge = merge_config(project)
     # Under `mode = "pr"` the merge lock covers the push-and-open alone.
     if merge.mode == "pr":

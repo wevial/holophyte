@@ -22,7 +22,7 @@ def _commit(checkout, rev):
     return r.stdout.strip()
 
 
-def moved_build(target, conn=None, run_id=None):
+def moved_build(conn, run_id):
     if startup.BUILD is None:
         return None
     checkout = pool_handoff.factory_checkout()
@@ -37,12 +37,12 @@ def moved_build(target, conn=None, run_id=None):
     return None if loaded == head else (loaded, head)
 
 
-def before_gate(project, conn, run_id, provider, sha):
+def before_gate(conn, run_id, sha):
     from holophyte.loop.pool import WORKER_SLOT_ENV
 
     if conn is None or not os.environ.get(WORKER_SLOT_ENV):
         return
-    moved = moved_build(project, conn, run_id)
+    moved = moved_build(conn, run_id)
     if moved is None:
         return
     loaded, head = moved
