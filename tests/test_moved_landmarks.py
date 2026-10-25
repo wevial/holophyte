@@ -13,7 +13,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
+from fake_agent import (  # noqa: E402
+    APPROVE,
+    Commit,
+    FakeAgent,
+    Reply,
+    no_agent_processes,
+)
 from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
@@ -46,6 +52,14 @@ WITH_MODULE = NAMING_OLD.replace(
     "(python3 -m unittest lotus.agents)&& echo ok\n"
     "python3 -m unittest \"lotus.agents\" && echo 'lotus.agents helper'\n"
     "python3 -m unittest lotus'.agents' && echo prefix\\ lotus.agents\n```")
+TOOLS = "lotus/tools"
+KIT = "lotus/kit"
+NAMING_TOOLS = (VALID_BODY
+                .replace("when it runs", "when `lotus/tools/stop.py` runs")
+                .replace("## Implementation notes\n\n* None.\n",
+                         "## Implementation notes\n\n* Extend `lotus/tools`"
+                         " (`lotus/tools/`) through `lotus/tools/run.py`.\n"
+                         "* Add `lotus/tools/fresh.py` (new).\n"))
 
 
 def no_linear(*args, **kwargs):
@@ -352,3 +366,109 @@ class MovedLandmarkTests(LoopFixture):
         (note,) = self.notes()
         for part in ("`lotus/tools`", "`lotus/kit`", sha):
             self.assertIn(part, note)
+
+    def add_tools(self):
+        (self.target / TOOLS).mkdir()
+        for name in ("run.py", "stop.py"):
+            (self.target / TOOLS / name).write_text(f"NAME = {name!r}\n")
+        self.git("add", TOOLS)
+        self.commit("add the tools")
+
+    def claim(self, criterion):
+        fake = FakeAgent(Commit("the work"), Reply(APPROVE.text.replace(
+            "CRITERION 1:", f"CRITERION {criterion}:")))
+        out = io.StringIO()
+        with no_agent_processes(), patch.object(sys, "stdout", out), \
+                patch.object(holophyte.loop.implement, "agent", fake), \
+                patch.object(holophyte.loop.review_round, "agent", fake), \
+                patch.object(holophyte.loop.adjudicate, "agent", fake):
+            holophyte.cli.operator.main(self.project, self.board)
+        goals = [turn.goal for turn in fake.turns if turn.role == "implement"]
+        self.assertTrue(goals, out.getvalue())
+        return goals[0]
+
+    def refreshed_tools(self):
+        self.add_tools()
+        self.file(NAMING_TOOLS)
+        sha = self.move(TOOLS, KIT)
+        self.park(TOOLS)
+        self.sweep()
+        self.assertEqual(self.status(), "ready")
+        return sha
+
+    def test_a_renamed_directory_rewrites_every_span_under_it(self):
+        sha = self.refreshed_tools()
+
+        body = self.ticket()[0]
+        self.assertEqual(self.authors()[-1], "factory")
+        self.assertIn("when `lotus/kit/stop.py` runs", body)
+        self.assertIn("* Extend `lotus/kit` (`lotus/kit/`) through"
+                      " `lotus/kit/run.py`.", body)
+        self.assertIn("* Add `lotus/kit/fresh.py` (new).", body)
+        self.assertNotIn(f"`{TOOLS}", body)
+        (note,) = self.notes()
+        for part in (f"`{TOOLS}`", f"`{KIT}`", sha):
+            self.assertIn(part, note)
+
+    def test_a_directory_split_or_deleted_keeps_the_park_with_one_note(self):
+        naming_dir = VALID_BODY.replace(
+            "## Implementation notes\n\n* None.\n",
+            f"## Implementation notes\n\n* Extend `{TOOLS}`.\n")
+        for moved in ("split", "deleted"):
+            with self.subTest(moved):
+                self.setUp()
+                self.add_tools()
+                self.file(naming_dir)
+                if moved == "split":
+                    for name, place in (("run.py", "lotus/a"),
+                                        ("stop.py", "lotus/b")):
+                        (self.target / place).mkdir()
+                        self.git("mv", f"{TOOLS}/{name}", f"{place}/{name}")
+                else:
+                    self.git("rm", "-q", "-r", TOOLS)
+                sha = self.commit(f"{moved} the tools", self.filed + 60)
+                self.park(TOOLS)
+                before = self.ticket()
+
+                self.sweep()
+                self.sweep()
+
+                self.assertEqual(self.ticket(), before)
+                self.assertEqual(self.status(), "needs_spec")
+                (note,) = self.notes()
+                self.assertIn(
+                    f"`{TOOLS}` went to more than one place in {sha}:"
+                    " `lotus/a`, `lotus/b`" if moved == "split"
+                    else f"`{TOOLS}` was deleted in {sha}", note)
+
+    def test_the_implementer_of_a_refreshed_ticket_is_told_the_new_paths(self):
+        sha = self.refreshed_tools()
+
+        goal = self.claim("C2")
+
+        self.assertIn(f"\n{holophyte.review.moved_landmarks.RENAMED_BRIEF}\n",
+                      goal)
+        (bullet,) = [line for line in goal.splitlines()
+                     if line.startswith(f"* `{TOOLS}`")]
+        for part in (f"`{KIT}`", sha):
+            self.assertIn(part, bullet)
+
+    def test_a_ticket_edited_after_its_refresh_or_never_refreshed_has_no_brief(self):
+        for refreshed in (True, False):
+            with self.subTest(refreshed=refreshed):
+                self.setUp()
+                if refreshed:
+                    self.refreshed_tools()
+                    body, revision = self.ticket()
+                    store.board.edit_ticket(
+                        self.conn, self.project_id, "NAT-1",
+                        body.replace("The thing, added.", "The thing, edited."),
+                        revision, author="cli")
+                    self.assertEqual(self.status(), "ready")
+                else:
+                    self.add_tools()
+                    self.file(NAMING_TOOLS)
+
+                goal = self.claim("C2" if refreshed else "C1")
+
+                self.assertNotIn("Main renamed paths", goal)
