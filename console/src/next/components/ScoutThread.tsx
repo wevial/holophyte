@@ -2,7 +2,7 @@ import { useIsMutating } from "@tanstack/react-query";
 import { useCallback, useRef, useState, type Ref } from "react";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { useAction } from "../actions";
-import { composeBlock, nextPass, threadRows, type CardRow, type LineTone } from "../scoutThread";
+import { composeBlock, composeLine, threadRows, type CardRow, type LineTone } from "../scoutThread";
 import { Btn } from "./Btn";
 import { SECTION_LABEL } from "./Criteria";
 import { ScoutCard } from "./ScoutCard";
@@ -76,7 +76,7 @@ function ScoutCompose({ base, detail, actions, sending, answering, onStopAnsweri
         className="mt-2.5 block min-h-[88px] w-full resize-y border border-ink-3 bg-paper-2 p-2.5 font-read text-[14px] leading-[1.45] text-ink disabled:cursor-not-allowed" />
       <div className="mt-2.5 flex items-center justify-between gap-2.5 [&>.btn]:shrink-0 [&>.btn]:whitespace-nowrap">
         <span data-compose-line className="font-mono text-[12px] leading-[1.4] text-ink-2">
-          {asking ? "Answers from the report." : `Starts pass ${nextPass(detail)}.`}
+          {composeLine(detail, mode)}
         </span>
         <Btn variant="primary" busy={action.isPending} disabled={disabled || !text.trim()} title={blocked ?? undefined} onClick={() => { void send(); }}>
           Send

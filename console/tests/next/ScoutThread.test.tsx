@@ -229,19 +229,16 @@ test("a refused or rejected message reads under the composer and keeps its text"
   expect(box.value).toBe("Does this hit recurring tasks too?");
 });
 
-test("with actions off the composer is disabled, and a swarming or failed scout with no thread has no Thread", async () => {
+test("with actions off the composer is disabled, and a failed scout with no thread has no Thread", async () => {
   await mount(scoutFetch({ scout: done, actions: false }).fetch);
   const panel = within(region());
   for (const name of ["Send", "Ask", "Steer"]) expect((panel.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
   expect((panel.getByRole("textbox", { name: "Question for the scout" }) as HTMLTextAreaElement).disabled).toBe(true);
   expect(send().title).toBe(ACTIONS_OFF);
   cleanup();
-  for (const phase of ["swarming", "failed"] as const) {
-    await mount(scoutFetch({ scout: { ...done, scout: { ...done.scout, phase }, thread: [] } }).fetch);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
-    expect(screen.queryByRole("complementary", { name: "Thread" })).toBeNull();
-    cleanup();
-  }
+  await mount(scoutFetch({ scout: { ...done, scout: { ...done.scout, phase: "failed" }, thread: [] } }).fetch);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(ASK);
+  expect(screen.queryByRole("complementary", { name: "Thread" })).toBeNull();
 });
 
 test("Ask or steer moves focus to the composer's box", async () => {

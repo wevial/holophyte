@@ -1,10 +1,13 @@
 import { useId, useState } from "react";
+import { ACTIONS_OFF } from "../../lib/actions";
 import type { ScoutTask } from "../../lib/contract.gen";
 import { formatSpan } from "../../lib/format";
+import { useAction } from "../actions";
 import { tokenWords, type ScoutGroup } from "../scout";
 import type { State } from "../state";
 import { StateDot } from "./StateDot";
 import { Badge, Connector, GroupHead, lineOf, Steps } from "./Timeline";
+import { useToast } from "./Toast";
 
 const DASH = "–";
 
@@ -30,13 +33,47 @@ function spent(task: ScoutTask): string {
 
 const FACT = "whitespace-nowrap max-[719px]:before:mx-1.5 max-[719px]:before:content-['·'] max-[719px]:first:before:content-none";
 
-function HelperRow({ task, now }: { task: ScoutTask; now: number }) {
+/** Where a swarming scout's helpers are stopped one at a time. */
+export interface HelperStop {
+  base: string;
+  scout: number;
+  actions: boolean;
+}
+
+const STOP_BRANCH = "Stop this branch";
+
+/** ✕ for one queued or running helper: `POST /actions/scout-stop` with its task, no confirm; a refusal says its detail in the toast. */
+function StopBranch({ task, stop, onSent }: { task: ScoutTask; stop: HelperStop; onSent: () => void }) {
+  const action = useAction();
+  const toast = useToast();
+  const press = async () => {
+    const result = await action.mutateAsync({
+      label: STOP_BRANCH, base: stop.base, route: "/actions/scout-stop", body: { scout: stop.scout, task: task.id },
+      said: `Stop sent to task ${task.id} of scout ${stop.scout}.`,
+    });
+    if (result.ok) onSent();
+    else toast(result.detail);
+  };
+  return (
+    <button type="button" aria-label={STOP_BRANCH} title={stop.actions ? STOP_BRANCH : ACTIONS_OFF} disabled={!stop.actions || action.isPending}
+      onClick={() => void press()}
+      className="self-center px-1 font-mono text-[12px] leading-none text-ink-3 hover:text-bad disabled:cursor-not-allowed disabled:opacity-40 max-[719px]:ml-auto max-[719px]:pl-2 min-[720px]:justify-self-end">
+      ✕
+    </button>
+  );
+}
+
+function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: HelperStop | null }) {
+  const [sent, setSent] = useState(false);
   const dot = TASK_DOTS[task.phase];
   const stopped = task.phase === "stopped";
+  const stoppable = task.phase === "queued" || task.phase === "running";
+  const stopping = sent && stoppable;
+  const last = stopping ? "stopping" : spent(task);
   return (
     <li
       data-helper={task.phase}
-      className="grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 border-b border-rule-2 px-4 py-2 last:border-b-0 min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px]"
+      className={`grid grid-cols-[16px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 border-b border-rule-2 px-4 py-2 last:border-b-0 ${stop ? "min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px_24px]" : "min-[720px]:grid-cols-[16px_minmax(0,1fr)_44px_56px_64px_64px]"}`}
     >
       <span className="self-start pt-[3px]"><StateDot state={dot.state} label={dot.label} hideWord /></span>
       <span data-question className={`min-w-0 font-sans text-[14px] leading-[1.45] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
@@ -50,21 +87,24 @@ function HelperRow({ task, now }: { task: ScoutTask; now: number }) {
         </span>
         <span data-route className={FACT}>{task.route ?? DASH}</span>
         <span data-took className={`${FACT} tabular-nums min-[720px]:text-right`}>{took(task, now)}</span>
-        <span data-tokens className={`${FACT} tabular-nums min-[720px]:text-right ${stopped ? "text-wait" : ""} ${spent(task) === "" ? "max-[719px]:hidden" : ""}`}>{spent(task)}</span>
+        <span data-tokens className={`${FACT} tabular-nums min-[720px]:text-right ${stopped || stopping ? "text-wait" : ""} ${last === "" ? "max-[719px]:hidden" : ""}`}>{last}</span>
+        {stop && (stoppable && !stopping ? <StopBranch task={task} stop={stop} onSent={() => setSent(true)} /> : <span aria-hidden="true" className="max-[719px]:hidden" />)}
       </span>
     </li>
   );
 }
 
-function Helpers({ tasks, now }: { tasks: ScoutTask[]; now: number }) {
+function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: HelperStop | null }) {
   return (
     <ol aria-label="Helpers" className="relative z-[1] m-0 mb-3 ml-[106px] list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:ml-0">
-      {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} />)}
+      {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} stop={stop} />)}
     </ol>
   );
 }
 
-function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number }) {
+function Group({ group, open, onToggle, line, now, stop }: {
+  group: ScoutGroup; open: boolean; onToggle: () => void; line: ReturnType<typeof lineOf>; now: number; stop: HelperStop | null;
+}) {
   const bodyId = useId();
   const helpers = group.kind === "wave" || group.kind === "pass";
   const folds = helpers ? group.tasks.length > 0 : !group.running && group.steps.length > 0;
@@ -83,7 +123,7 @@ function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: 
       </GroupHead>
       {shown && (
         <div id={bodyId}>
-          {helpers ? <Helpers tasks={group.tasks} now={now} /> : <Steps steps={group.steps} />}
+          {helpers ? <Helpers tasks={group.tasks} now={now} stop={stop} /> : <Steps steps={group.steps} />}
         </div>
       )}
     </li>
@@ -93,8 +133,9 @@ function Group({ group, open, onToggle, line, now }: { group: ScoutGroup; open: 
 const troubled = (group: ScoutGroup) => group.tasks.some((task) => task.phase === "stopped" || task.phase === "failed");
 
 /** The scout's timeline, one row per group. A group the reader has not
- *  toggled is open while it runs, holds a stopped or failed helper, or is the newest pass. */
-export function ScoutActivity({ groups, now }: { groups: ScoutGroup[]; now: number }) {
+ *  toggled is open while it runs, holds a stopped or failed helper, or is the newest pass. With `stop`
+ *  each queued or running helper ends in Stop this branch. */
+export function ScoutActivity({ groups, now, stop = null }: { groups: ScoutGroup[]; now: number; stop?: HelperStop | null }) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const newestPass = groups.findLast((group) => group.kind === "pass")?.key;
   return (
@@ -108,6 +149,7 @@ export function ScoutActivity({ groups, now }: { groups: ScoutGroup[]; now: numb
             open={open}
             line={lineOf(index, groups.length)}
             now={now}
+            stop={stop}
             onToggle={() => setChosen((was) => ({ ...was, [group.key]: !open }))}
           />
         );
