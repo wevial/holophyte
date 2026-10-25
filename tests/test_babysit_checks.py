@@ -288,6 +288,15 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(state.checks, "failure")
         self.assertEqual([c.name for c in state.failed_checks], ["lint"])
 
+    def test_a_red_check_main_does_not_require_does_not_fail_the_fold(self):
+        docs = "Workers Builds: holophyte-docs"
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("unit", self.AFTER_READY),
+            self.check_run(docs, self.AFTER_READY, conclusion="failure"),
+            required=("unit",)), ready_at=self.READY_AT, rollup="FAILURE")
+        self.assertEqual((state.checks, state.failed_checks), ("success", ()))
+        self.assertEqual([c.name for c in state.optional_failures], [docs])
+
     def test_a_green_run_superseded_by_a_running_rerun_is_pending(self):
         state = self._state_with_rest(self.e2e_required(
             self.check_run("e2e-ok", self.BEFORE_READY),
