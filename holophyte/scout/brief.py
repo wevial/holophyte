@@ -18,9 +18,7 @@ def trimmed(text, limit):
     if len(text) <= limit:
         return text
     cut = text[:limit - 1]
-    if text[limit - 1] != " ":
-        cut = cut.rpartition(" ")[0] or cut
-    return cut.rstrip() + "…"
+    return (cut.rpartition(" ")[0] or cut).rstrip() + "…"
 
 
 def scout_title(ask):
