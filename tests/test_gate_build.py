@@ -16,9 +16,11 @@ from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.host.startup  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gate_build  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+import store.schema  # noqa: E402 - after the sys.path insert above
 
 BRANCH = "task/ko-131-add-a-thing"
 
@@ -86,6 +88,33 @@ class GateBuildTests(LoopFixture):
                          [("paused",), ("merged",)])
         self.assertIn(f"Merge {BRANCH}: add a thing", self.subjects())
         self.git("merge-base", "--is-ancestor", candidate, "main")
+
+    def test_a_moved_checkout_under_an_unchanged_schema_reexecutes_in_place(self):
+        (self.target / "store").mkdir(exist_ok=True)
+        (self.target / "store" / "schema.py").write_text(
+            f"SCHEMA_VERSION = {store.schema.SCHEMA_VERSION}\n")
+        self.git("add", "store/schema.py")
+        self.git("commit", "-q", "-m", "the schema stays put")
+        calls = []
+
+        def record(*args):
+            calls.append(
+                (args, os.environ.get("HOLOPHYTE_GATE_RUN"),
+                 self.read("SELECT id, endedAt FROM runs")))
+
+        with patch.object(holophyte.loop.gate_build, "EXEC", record,
+                          create=True):
+            rc, _ = self.worker(Commit("the scripted work"), APPROVE,
+                                provider=StubProvider(a_task(1)),
+                                build=self.base)
+
+        self.assertEqual(self.read(
+            "SELECT 1 FROM runEvents WHERE kind = 'gate_handoff'"), [])
+        self.assertNotEqual(rc, holophyte.loop.pool.WORKER_HANDOFF)
+        self.assertEqual(len(calls), 1, calls)
+        (run_id, ended), = calls[0][2]
+        self.assertEqual(calls[0][1], str(run_id))
+        self.assertIsNone(ended)
 
     def assert_gated_in_place(self, build):
         rc, _ = self.worker(Commit("the scripted work"), APPROVE,
