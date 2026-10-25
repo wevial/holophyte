@@ -196,6 +196,9 @@ class GetTests(GithubCase):
             ("POST", "repos/example/repo/actions/runs", "only GET"),
             ("GET", "repos/other/repo/actions/runs",
              "must be under repos/example/repo/"),
+            ("GET", "repos/example/other/commits",
+             "must be under repos/example/repo/"),
+            ("GET", "actions/runs/1/rerun", "not on the allow-list"),
             ("GET", "repos/example/repo/actions/runs/1/rerun",
              "not on the allow-list"),
             ("GET", "graphql", "graphql is not allowed"),
@@ -246,6 +249,78 @@ class GetTests(GithubCase):
         self.assertGreater(len(text), 40000)
         self.assertEqual(answer.text, text[:40000] + "\n[holo2] truncated: "
                          f"40000 of {len(text)} characters shown")
+
+
+    def test_a_path_without_the_repos_prefix_is_read_and_recorded_in_full(self):
+        conn, scout_id = self.live_scout(self.path)
+        self.gh.answer(RUNS, json.dumps(RUNS_ANSWER))
+        short = RUNS.removeprefix("repos/example/repo/")
+        answers = [called(self.target(self.path), scout_id, "github_get",
+                          {"path": each}) for each in (RUNS, short)]
+        self.assertEqual(answers[1].text, answers[0].text)
+        self.assertEqual(json.loads(answers[1].text), RUNS_TRIMMED)
+        self.assertEqual([call[-1] for call in self.gh.calls()], [RUNS, RUNS])
+        payloads = conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_github' ORDER BY seq", (scout_id,)).fetchall()
+        self.assertEqual([json.loads(each)["path"] for (each,) in payloads],
+                         [RUNS, RUNS])
+
+    def test_a_job_log_answers_plain_text_cut_from_its_head(self):
+        full = "repos/example/repo/actions/jobs/41/logs"
+        log = "".join(f"step {number} took 1s\n" for number in range(4000))
+        self.assertGreater(len(log), 40000)
+        self.gh.answer(full, log)
+        for path in (full, "actions/jobs/41/logs"):
+            with self.subTest(path=path):
+                answer = github_get(self.target(self.path), self.repo, path)
+                self.assertFalse(answer.error, answer.text)
+                self.assertEqual(answer.text, "[holo2] truncated: last 40000 "
+                                 f"of {len(log)} characters shown\n"
+                                 + log[-40000:])
+        short_log = "build\nTotal: 12m 3s\n"
+        self.gh.answer(full, short_log)
+        for path in (full, "actions/jobs/41/logs"):
+            with self.subTest(path=path, log="short"):
+                self.assertEqual(github_get(self.target(self.path), self.repo,
+                                            path).text, short_log)
+        self.assertEqual({call[-1] for call in self.gh.calls()}, {full})
+
+    def test_a_job_log_query_is_fetched_and_recorded_with_the_path(self):
+        conn, scout_id = self.live_scout(self.path)
+        full = "repos/example/repo/actions/jobs/41/logs?probe=1"
+        self.gh.answer("repos/example/repo/actions/jobs/41/logs", "plain")
+        self.gh.answer(full, "queried")
+        answer = called(self.target(self.path), scout_id, "github_get",
+                        {"path": "actions/jobs/41/logs?probe=1"})
+        self.assertEqual(answer.text, "queried")
+        self.assertEqual([call[-1] for call in self.gh.calls()], [full])
+        (payload,) = conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_github'", (scout_id,)).fetchone()
+        self.assertEqual(json.loads(payload)["path"], full)
+
+    def test_the_commit_listing_is_read_less_api_links_at_every_depth(self):
+        listing = "repos/example/repo/commits?per_page=2"
+        self.gh.answer(listing, json.dumps([{
+            "sha": f"{number}" * 40, "node_id": f"C_{number}",
+            "url": f"https://api/commits/{number}",
+            "html_url": f"https://github.com/commit/{number}",
+            "commit": {"message": f"change {number}", "node_id": f"G_{number}",
+                       "url": f"https://api/git/{number}",
+                       "author": {"name": "Ada", "date": "2026-10-24T00:00:00Z"}}}
+            for number in (1, 2)]))
+        answer = github_get(self.target(self.path), self.repo,
+                            "commits?per_page=2")
+        self.assertFalse(answer.error, answer.text)
+        self.assertEqual(json.loads(answer.text), [{
+            "sha": f"{number}" * 40,
+            "html_url": f"https://github.com/commit/{number}",
+            "commit": {"message": f"change {number}",
+                       "author": {"name": "Ada",
+                                  "date": "2026-10-24T00:00:00Z"}}}
+            for number in (1, 2)])
+        self.assertEqual([call[-1] for call in self.gh.calls()], [listing])
 
 
 class TestsTests(GithubCase):

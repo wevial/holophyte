@@ -23,17 +23,20 @@ ROOT = Path(__file__).resolve().parents[2]
 NO_ORIGIN = "no GitHub origin; the GitHub tools are off"
 TOOLS_SENTENCE = (
     "Two MCP tools read this project's own GitHub repository: github_get "
-    "answers a GET of an allowed REST path under repos/OWNER/NAME/ (CI runs, "
-    "jobs and timings, run artifacts, pull requests, issues, commit statuses "
-    "and file contents), and github_tests answers a workflow run's per-test "
-    "results, slowest first, from its JUnit and Playwright report "
-    "artifacts. ")
+    "answers a GET of an allowed REST path of the repository, given in full "
+    "as repos/OWNER/NAME/... or as the part after it (CI runs, jobs, job logs "
+    "and timings, run artifacts, pull requests, issues, the commit listing, "
+    "commit statuses and file contents), and github_tests answers a workflow "
+    "run's per-test results, slowest first, from its JUnit and Playwright "
+    "report artifacts. ")
 GET_SCHEMA = {
     "type": "object", "required": ["path"], "additionalProperties": False,
     "properties": {
         "path": {"type": "string", "description":
-                 "A REST path under repos/OWNER/NAME/, with an optional "
-                 "query string."},
+                 "A REST path of this repository, as repos/OWNER/NAME/... "
+                 "or the part after it (actions/runs, commits, "
+                 "actions/jobs/ID/logs, ...), with an optional query "
+                 "string."},
         "method": {"type": "string", "description": "GET, the only method."}}}
 TESTS_SCHEMA = {
     "type": "object", "required": ["run"], "additionalProperties": False,
@@ -94,7 +97,7 @@ def called(project, scout_id, name, arguments):
         answer = answered(project, repo, name, arguments)
     except Exception as failure:
         answer = Answer(f"[holo2] {name} failed: {failure}", FAILED)
-    record_call(project, scout_id, name, path, answer)
+    record_call(project, scout_id, name, answer.path or path, answer)
     return answer
 
 
