@@ -503,7 +503,7 @@ export function splitPullRequests(items: AttentionItem[]): { needsYou: Attention
 
 /** Whether a pull request park waits only on the maintainer's merge, by
  *  `runKey` of the item's `daemon` and `run`. */
-export type ReadinessMap = ReadonlyMap<string, { ready: boolean }>;
+export type ReadinessMap = ReadonlyMap<string, { ready: boolean; reason?: string }>;
 
 /** One Needs you entry: a band entry, and whether it is a pull request
  *  ready to merge. */
