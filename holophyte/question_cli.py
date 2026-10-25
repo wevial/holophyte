@@ -128,8 +128,7 @@ def asked(route, answer_schema, text, check, system=SYSTEM_PROMPT):
         work = Path(root, "work")
         work.mkdir()
         if route.backend == "claude":
-            argv = claude_argv(route, answer_schema, text, system)
-            parse = parse_claude
+            argv, parse = claude_argv(route, answer_schema, text, system), parse_claude
         else:
             schema_file = Path(root, "schema.json")
             schema_file.write_text(json.dumps(answer_schema))
