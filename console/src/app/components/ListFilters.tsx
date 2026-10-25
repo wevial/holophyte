@@ -61,7 +61,7 @@ export function SearchField({ label }: { label: string }) {
   );
 }
 
-export interface FilterOption {
+interface FilterOption {
   value: string;
   label: string;
 }

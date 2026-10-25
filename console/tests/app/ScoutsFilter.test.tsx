@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { ScoutRow, Scouts } from "../../src/lib/contract.gen";
+import type { ScoutDetail, ScoutRow, Scouts } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -10,15 +10,18 @@ import { DEMO, fleet, MINUTE, NOW, SERVE, WRITER } from "./needsFleet";
 
 const servedScouts = (await Bun.file(new URL("scouts.json", SERVE)).json()) as Scouts;
 const swarming = servedScouts.scouts[1]!;
+const served = (await Bun.file(new URL("scout.json", SERVE)).json()) as ScoutDetail;
 
 const scout = (id: number, phase: ScoutRow["phase"], minutesAgo: number, row: Partial<ScoutRow> = {}): ScoutRow => ({
   ...swarming, id, phase, created_ms: NOW - minutesAgo * MINUTE, ...row,
 });
 
-/** DEMO and WRITER answering `/scouts` with their rows; WRITER without rows answers 404. */
+/** DEMO and WRITER answering `/scouts` with their rows, and DEMO `/scouts/31` with scout 31;
+ *  WRITER without rows answers 404. */
 function scoutFetch(demo: ScoutRow[], writer?: ScoutRow[]): Fetch {
   const polls = fleet({ items: [] }, { items: [] });
   return async (url) => {
+    if (url === `${DEMO}/scouts/31`) return Response.json({ ...served, scout: { ...served.scout, id: 31 } });
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: demo });
     if (url === `${WRITER}/scouts` && writer) return Response.json({ ...servedScouts, scouts: writer });
     const answer = await polls(url);
@@ -124,6 +127,8 @@ test("the wide list draws the same groups with no id or project in its rows and 
     const facts = [...document.querySelectorAll("[data-scout-row-facts]")].map((line) => line.textContent);
     expect(facts.filter((line) => /demo|writer/.test(line ?? ""))).toEqual([]);
     expect(document.querySelector("[data-scout-list] li[aria-current]")!.getAttribute("data-scout")).toBe("31");
+    const pane = document.querySelector("[data-scout-pane]") as HTMLElement;
+    expect(pane.contains(screen.getByRole("region", { name: "scout 31" }))).toBe(true);
   } finally {
     media.mockRestore();
   }
@@ -150,7 +155,9 @@ test("Search keeps scouts whose title or ask holds the text in any case, as q, a
 test("/ on the page focuses Search without typing a slash", async () => {
   await mount("#/scouts", scoutFetch(demo));
   document.body.focus();
-  await act(async () => void fireEvent.keyDown(document.body, { key: "/" }));
+  let typed = true;
+  await act(async () => void (typed = fireEvent.keyDown(document.body, { key: "/" })));
+  expect(typed).toBe(false);
   expect(document.activeElement).toBe(field());
   expect(field().value).toBe("");
 });
