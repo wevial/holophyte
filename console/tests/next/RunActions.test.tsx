@@ -117,6 +117,49 @@ test("Abort asks for a reason in a confirm that Esc closes unposted, then posts 
   expect(toast()).toBe("Aborted run 12.");
 });
 
+test("ticking Close PR in Abort rewrites the sentence and confirm, posts close: true and toasts the closed PR", async () => {
+  const post = fakeFetch({ ok: true, detail: "aborted run 12" });
+  await mount(12, { post: post.fetchImpl });
+  await press("Abort");
+  const box = within(dialog()).getByRole("checkbox", { name: "Close PR #524" }) as HTMLInputElement;
+  expect(box.checked).toBe(false);
+  await act(async () => void fireEvent.click(box));
+  expect(box.checked).toBe(true);
+  expect(dialog().textContent).toContain(
+    "Review round 2 stops now. The branch task/demo-12-x is kept, PR #524 is closed, and DEMO-12 waits for you to requeue it.",
+  );
+  await act(async () => void fireEvent.change(within(dialog()).getByRole("textbox", { name: "Reason · saved with the run" }), { target: { value: "superseded" } }));
+  await press("Abort run and close PR #524", dialog());
+  expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 12, close: true, note: "superseded" } }]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(toast()).toBe("Aborted run 12 and closed PR #524.");
+});
+
+test("Close PR is unticked again when Abort reopens after Esc, with the sentence and confirm keeping the PR", async () => {
+  await mount(12);
+  await press("Abort");
+  await act(async () => void fireEvent.click(within(dialog()).getByRole("checkbox", { name: "Close PR #524" })));
+  await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await press("Abort");
+  expect((within(dialog()).getByRole("checkbox", { name: "Close PR #524" }) as HTMLInputElement).checked).toBe(false);
+  expect(dialog().textContent).toContain(
+    "Review round 2 stops now. The branch task/demo-12-x and PR #524 are kept, and DEMO-12 waits for you to requeue it.",
+  );
+  expect(within(dialog()).getByRole("button", { name: "Abort run" })).toBeTruthy();
+});
+
+test("a run without a pull request gets no Close PR checkbox in Abort and posts close: false", async () => {
+  const post = fakeFetch({ ok: true, detail: "aborted run 13" });
+  await mount(13, { post: post.fetchImpl });
+  await press("Abort");
+  const abortDialog = screen.getByRole("dialog", { name: "Abort run 13?" });
+  expect(within(abortDialog).queryByRole("checkbox")).toBeNull();
+  await act(async () => void fireEvent.change(within(abortDialog).getByRole("textbox"), { target: { value: "superseded" } }));
+  await press("Abort run", abortDialog);
+  expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 13, close: false, note: "superseded" } }]);
+});
+
 test("navigating to a cached run closes Abort and requires a fresh reason for that run", async () => {
   const post = fakeFetch({ ok: true, detail: "aborted run 13" });
   await mount(13, { post: post.fetchImpl });
