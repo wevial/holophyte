@@ -215,6 +215,42 @@ class RunningTaskStopTests(TaskStopCase):
         proc.wait(timeout=WAIT_S)
         self.assertEqual(self.tasks(scout_id)[SLOW][1:], ("stopped", ""))
 
+    def test_a_task_stopped_as_its_turn_ends_on_its_own_ends_stopped(self):
+        scout_id, proc = self.swarming([FAST], {
+            FAST: {"helper": "fast answer", "helper_sleep": 0.5}}, swarm=1)
+        self.assertTrue(wait_for(
+            lambda: self.phase_of(scout_id, FAST) == "running"),
+            self.tasks(scout_id))
+        conn = store.open(str(self.target().store_path))
+        self.addCleanup(conn.close)
+        with store.transaction(conn):
+            code, answer = task_requested(
+                conn, self.target(), scout_id, self.tasks(scout_id)[FAST][0],
+                "maintainer", None, VIA_DAEMON)
+            self.assertEqual((code, answer["ok"]), (200, True), answer)
+            time.sleep(2)
+        proc.wait(timeout=WAIT_S)
+        phase, excerpt = self.tasks(scout_id)[FAST][1:]
+        self.assertEqual(phase, "stopped")
+        self.assertIn("fast answer", excerpt)
+
+    def test_a_run_task_stopped_in_its_setup_keeps_what_setup_printed(self):
+        pid_file = self.child("setup-step")
+        config = self.target().config_path
+        config.write_text(
+            config.read_text() + '[worktree]\nsetup = ["echo setup marker;'
+            f' sleep 60 & echo $! > {pid_file}; wait"]\n')
+        scout_id, proc = self.swarming([SLOW], {}, kind="bug", mode="run",
+                                       swarm=1)
+        child = self.pid_of(pid_file)
+        status, answer = self.ask(scout_id, self.tasks(scout_id)[SLOW][0])
+        self.assertEqual((status, answer["ok"]), (200, True), answer)
+        self.assertTrue(wait_for(lambda: not running(child), STOP_WITHIN_S))
+        proc.wait(timeout=WAIT_S)
+        phase, excerpt = self.tasks(scout_id)[SLOW][1:]
+        self.assertEqual(phase, "stopped")
+        self.assertIn("setup marker", excerpt)
+
 
 class RefusedTaskStopTests(TaskStopCase):
     def with_task(self, scout_id):

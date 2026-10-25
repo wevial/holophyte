@@ -421,9 +421,13 @@ class Swarm:
         started = monotonic()
         mine.set()
         seat = run_seat(self.project, self.seat)
-        problem = (setup_failure(self.project, checkout, self.deadline,
-                                 partial(self.task_tracked, task))
-                   or self.isolated_down(conn, seat, checkout))
+        setup = setup_failure(self.project, checkout, self.deadline,
+                              partial(self.task_tracked, task))
+        if setup is not None and self.cut_short(task):
+            self.end(conn, task, STOPPED, "" if self.stopping.stopped else
+                     redact_prose(setup, self.secrets)[-EXCERPT_CHARS:])
+            return
+        problem = setup or self.isolated_down(conn, seat, checkout)
         if problem is not None and self.cut_short(task):
             self.end(conn, task, STOPPED, "")
             return
@@ -464,7 +468,9 @@ class Swarm:
     def record(self, conn, task, argv, turn, seconds):
         answer, usage = turn_answer(self.seat, turn.output, self.price)
         excerpt = redact_prose(answer, self.secrets)[-EXCERPT_CHARS:]
-        self.end(conn, task, turn.phase, excerpt, usage)
+        with store.transaction(conn):
+            phase = STOPPED if self.halted_now(conn, task) else turn.phase
+            self.end(conn, task, phase, excerpt, usage)
         payload = dict(role=SCOUT_HELPER,
                        label=outbound(argv_label(argv), self.secrets),
                        route=self.route, exit_status=turn.exit_status,

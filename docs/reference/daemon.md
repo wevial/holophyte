@@ -503,8 +503,10 @@ nothing, and answers `ok: true` with `task`, `pid` null and `detail`
 most two seconds apart while a wave runs: a running task has its turn's
 process group killed (a read helper's turn, or a run helper's setup step
 or turn), a queued one is never launched, and either way the task ends
-`stopped`, its excerpt what its turn printed before it was killed (empty
-for one never launched or killed in its setup step). The
+`stopped`, its excerpt what its turn or setup step printed before it was
+killed (empty for one never launched). A task asked to stop whose turn
+ends on its own before it is killed ends `stopped` too, its excerpt its
+answer. The
 other helpers run on, and the lead reads the stopped task as any other.
 Refusals write nothing: a task that is not the scout's is 404 `no such
 task`; a task already ended is `ok: false` naming its phase; a scout not
