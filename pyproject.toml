@@ -11,7 +11,5 @@ dependencies = ["tomlkit==0.15.1", "mcp==2.3.0"]
 [project.scripts]
 holo = "holophyte.holo.cli:main"
 
-[tool.setuptools]
-
 [tool.setuptools.packages.find]
 include = ["holophyte*", "store*"]
