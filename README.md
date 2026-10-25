@@ -47,6 +47,7 @@ holo file TICKET.md [--backlog] -p NAME|PATH     # file a ticket after checking 
 holo steer KEY "note" -p NAME|PATH               # amend a ticket, or steer its live run
 holo requeue KEY "note" -p NAME|PATH             # put a failed run's ticket back in the queue
 holo scout "ASK" --kind bug|research|recon|guardrails -p NAME|PATH # launch a scout on an ask
+holo scout page ID -p NAME|PATH                  # a done scout's report as a Lotuspod page, with its decisions
 holo serve [ADDR] [-p NAME|PATH]                 # the JSON daemon and the console
 ```
 

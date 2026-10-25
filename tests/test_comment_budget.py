@@ -253,6 +253,7 @@ PINNED = {
     "holophyte/scout/run_helpers.py": 1,
     "holophyte/scout/scout_config.py": 0,
     "holophyte/scout/scout_contract.py": 1,
+    "holophyte/scout/scout_page.py": 1,
     "holophyte/scout/scout_probes.py": 0,
     "holophyte/scout/scout_process.py": 3,
     "holophyte/scout/scout_sweep.py": 3,

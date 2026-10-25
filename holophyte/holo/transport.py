@@ -23,6 +23,7 @@ from holophyte.holo.grammar import (
     SCOUT_ASK,
     SCOUT_FILE,
     SCOUT_KINDS,
+    SCOUT_PAGE,
     SCOUT_STEER,
     SCOUT_STOP,
     SCOUT_THREAD,
@@ -354,6 +355,7 @@ HTTP_ROUTES = {
     ("scouts",): Route("GET", "/scouts"),
     ("scout", SHOW): Route("GET", "/scouts/{N}"),
     SCOUT_THREAD: Route("GET", "/scouts/{N}"),
+    SCOUT_PAGE: Route("GET", "/scouts/{N}"),
     ("requeue",): Route("POST", "/actions/requeue", ("ticket", "note", "force")),
     ("send-back",): Route("POST", "/actions/send-back",
                           ("run", "note", "author")),
@@ -513,11 +515,11 @@ def said(path, code, body):
 
 
 def read_over(args, daemon, prefix, route, timezone):
-    from holophyte.holo.reads import RUN_PARTS, exit_code, show
+    from holophyte.holo.reads import RUN_PARTS, exit_code, page_refusal, show
     parts = [part for part in RUN_PARTS if getattr(args, part, False)]
     if len(parts) > 1:
         args.leaf.error("give at most one of --files, --ledger and --turns")
-    if args.command.words in (("scout", SHOW), SCOUT_THREAD):
+    if args.command.words in (("scout", SHOW), SCOUT_THREAD, SCOUT_PAGE):
         from holophyte.scout.views import parse_scout_id
         try:
             parse_scout_id(args.arg0)
@@ -533,13 +535,16 @@ def read_over(args, daemon, prefix, route, timezone):
     if code == 200 and args.command.words == SCOUT_THREAD:
         from holophyte.holo.reads import thread_body
         body = thread_body(body)
+    if refusal := page_refusal(args, code, body):
+        print(refusal, file=sys.stderr)
+        return 1
     if code == 200:
         body.update(route.local)
     if code == 200 and run_page(args):
         from holophyte.holo.run_page import show_page
         show_page(body, daemon.call("GET", f"{prefix}{path}/files")[1],
                   timezone)
-    elif args.json:
+    elif getattr(args, "json", False):
         print(json.dumps({**body, "transport": HTTP}))
     elif code == 200 and args.command.mode == "--report":
         from holophyte.holo.report_page import show_body
