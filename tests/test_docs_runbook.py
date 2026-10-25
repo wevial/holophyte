@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNBOOK = ROOT / "docs" / "operating" / "runbook.md"
 SECTION = "### Move a project off Linear to the native board"
 LOTUSPOD = "### A maintainer steers a run from a Lotuspod page comment"
+SCOUT_PAGE = "### A maintainer answers a scout's Lotuspod page"
 STORE_ARG = re.compile(r"^~/\.holophyte/[^/]+/(store\.db(?:\.pre-native)?)$")
 
 
@@ -90,6 +91,23 @@ class LotuspodRelayTest(unittest.TestCase):
         self.assertEqual(args.command.words, ("steer",))
         self.assertTrue((args.note or args.note_option or "").strip())
         self.assertTrue(args.author[-1].endswith("via Lotuspod"), args.author)
+
+
+
+class ScoutPageRelayTest(unittest.TestCase):
+
+    def test_each_relay_line_parses_as_its_scout_verb_signed_via_lotuspod(self):
+        block = section_block(SCOUT_PAGE)
+        for verb in ("file", "steer", "ask"):
+            with self.subTest(verb=verb):
+                lines = [ln for ln in block
+                         if ln.startswith(f"holo scout {verb} ")]
+                self.assertEqual(len(lines), 1, block)
+                args = build_parser().parse_args(shlex.split(lines[0])[1:])
+                self.assertEqual(args.command.words, ("scout", verb))
+                self.assertTrue((args.note or args.note_option or "").strip())
+                self.assertTrue(args.author[-1].endswith("via Lotuspod"),
+                                args.author)
 
 
 if __name__ == "__main__":

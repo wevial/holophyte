@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from holophyte.config.project import Project
+from holophyte.holo.grammar import SCOUT_PAGE
+from store.enums import ScoutPhase
 
 EXIT = {200: 0, 400: 2, 404: 1, 503: 1}
 RUN_PARTS = ("files", "ledger", "turns")
@@ -85,6 +87,21 @@ def thread_body(body):
 def thread_answer(args, project):
     route, (code, body) = scout_answer(args, project)
     return route, (code, thread_body(body) if code == 200 else body)
+
+
+def page_refusal(args, code, body):
+    if code != 200 or args.command.words != SCOUT_PAGE:
+        return None
+    scout = body["scout"]
+    if scout["phase"] == ScoutPhase.DONE.value:
+        return None
+    return (f"[holo2] scout {scout['id']} is {scout['phase']}; only a done"
+            " scout's report makes a page")
+
+
+def page_lines(body):
+    from holophyte.scout.scout_page import page_lines as lines
+    return lines(body)
 
 
 def runs_lines(body):
@@ -203,7 +220,8 @@ READS = {("runs",): (runs_answer, runs_lines),
          ("ticket",): (ticket_answer, ticket_lines),
          ("scouts",): (scouts_answer, scouts_lines),
          ("scout", "show"): (scout_answer, scout_lines),
-         ("scout", "thread"): (thread_answer, thread_lines)}
+         ("scout", "thread"): (thread_answer, thread_lines),
+         SCOUT_PAGE: (scout_answer, page_lines)}
 RUN_LISTINGS = {"files": files_lines, "ledger": ledger_lines,
                 "turns": turns_lines}
 
@@ -224,7 +242,10 @@ def read(args, target, zone_name=None):
     else:
         project = Project.locate(Path(target), adopt=False)
         route, (code, body) = READS[args.command.words][0](args, project)
-    if (code == 200 and not args.json and args.command.words == ("run",)
+    if refusal := page_refusal(args, code, body):
+        print(refusal, file=sys.stderr)
+        return 1
+    if (code == 200 and args.command.words == ("run",) and not args.json
             and not run_part(args)):
         from holophyte.holo.run_page import show as show_page
         show_page(project, body, zone_name)
@@ -234,7 +255,7 @@ def read(args, target, zone_name=None):
 
 
 def show(args, route, ok, body):
-    if args.json:
+    if getattr(args, "json", False):
         print(json.dumps(body))
     elif ok:
         for line in listing(args, body):
