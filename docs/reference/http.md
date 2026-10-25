@@ -1995,7 +1995,9 @@ the `key`, `scout_show` the `scout` id, and the writes their own `ticket`, `run`
 required `kind` (`bug`, `research`, `recon` or `guardrails`) and its optional `lead`, `helper`, `swarm`, `minutes` and
 `subject` (`KIND:REF`, what the scout is about), the note its ask, and `scout_file` its required `scout` id and `item`
 position, the note and author the filed ticket's first board note, and
-`scout_stop` its required `project` and `scout` id, the note its reason,
+`scout_stop` its required `project` and `scout` id, its optional `task`,
+one helper task's id to stop alone, and the note its reason, required
+without `task` and checked when the tool is called,
 `scout_ask` its required `project` and `scout` id, the note its ask, and
 `scout_steer` its required `project` and `scout` id, the note its steer,
 each of the two an optional `answers`, the id of the scout's card it

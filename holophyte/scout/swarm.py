@@ -18,7 +18,7 @@ from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
 from holophyte.isolation import launcher
-from holophyte.loop.gates import reap_group, run_capped, sh
+from holophyte.loop.gates import run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.scout.github_mcp import TOOLS_SENTENCE
 from holophyte.scout.run_helpers import (
@@ -49,6 +49,8 @@ EXCERPT_CHARS = 4000
 QUEUED, DONE = ScoutTaskPhase.QUEUED.value, ScoutTaskPhase.DONE.value
 FAILED, STOPPED = ScoutTaskPhase.FAILED.value, ScoutTaskPhase.STOPPED.value
 TOKENS_USED = re.compile(r"tokens used\D{0,4}(\d[\d,]*)", re.IGNORECASE)
+TASK_STOP_REQUESTED = "scout_task_stop_requested"
+TASK_STOP_POLL_S = 2.0
 
 
 class Planned(NamedTuple):
@@ -155,14 +157,14 @@ class Stopping:
             raise ScoutStopped()
 
 
-def capped_turn(turn, stopping, failures=(OSError,)):
+def capped_turn(turn, stopped, failures=(OSError,)):
     try:
         code, output = turn()
     except subprocess.TimeoutExpired as expired:
         return HelperTurn(STOPPED, None, expired.output or "")
     except failures as failed:
         return HelperTurn(FAILED, None, str(failed))
-    if code != 0 and stopping.stopped:
+    if code != 0 and stopped():
         return HelperTurn(STOPPED, code, output or "")
     return HelperTurn(DONE if code == 0 else FAILED, code, output or "")
 
@@ -189,6 +191,7 @@ class Swarm:
         self.launched, self.tasks, self.answers = 0, [], {}
         self.scratch = None
         self.probing, self.downs = threading.Lock(), {}
+        self.halting, self.halted, self.procs = threading.Lock(), set(), {}
         self.stack = ExitStack()
 
     def __enter__(self):
@@ -264,8 +267,69 @@ class Swarm:
             self.scratch = self.stack.enter_context(
                 review_scratch(self.project.path))
         starts = [threading.Event() for _ in launch]
-        with ThreadPoolExecutor(max_workers=self.size) as pool:
-            list(pool.map(self.helper, launch, [None] + starts[:-1], starts))
+        done, ready, failed = threading.Event(), threading.Event(), []
+        watcher = threading.Thread(target=self.watch,
+                                   args=(done, ready, failed), daemon=True)
+        watcher.start()
+        ready.wait()
+        if failed:
+            raise failed[0]
+        try:
+            with ThreadPoolExecutor(max_workers=self.size) as pool:
+                list(pool.map(self.helper, launch, [None] + starts[:-1],
+                              starts))
+        finally:
+            done.set()
+            watcher.join()
+        for task in tasks[len(launch):]:
+            self.settle(self.conn, task, threading.Event())
+
+    def watch(self, done, ready, failed):
+        try:
+            conn = store.open(self.store_path)
+        except Exception as error:
+            failed.append(error)
+            return
+        finally:
+            ready.set()
+        try:
+            while True:
+                self.halt(conn)
+                if done.wait(TASK_STOP_POLL_S):
+                    return
+        finally:
+            conn.close()
+
+    def halt(self, conn):
+        asked = {json.loads(payload)["task"] for (payload,) in conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ? AND kind = ?",
+            (self.row.id, TASK_STOP_REQUESTED))}
+        with self.halting:
+            for task_id in asked - self.halted:
+                for proc in self.procs.get(task_id, ()):
+                    kill_group(proc)
+            self.halted |= asked
+
+    def task_tracked(self, task, run):
+        def start(proc):
+            with self.halting:
+                self.procs.setdefault(task.id, []).append(proc)
+                if task.id in self.halted:
+                    kill_group(proc)
+
+        return self.stopping.tracked(run, start)
+
+    def halted_now(self, conn, task):
+        self.halt(conn)
+        return task.id in self.halted
+
+    def cut_short(self, task):
+        return self.stopping.stopped or task.id in self.halted
+
+    def end_unrun(self, conn, task, mine, phase, excerpt):
+        start_scout_task(conn, task.id)
+        mine.set()
+        self.end(conn, task, phase, excerpt)
 
     def checkout(self, task):
         path = self.scratch / f"helper-{task.id}"
@@ -284,38 +348,53 @@ class Swarm:
                               self.server), checkout
 
     def helper(self, task, previous, mine):
-        conn, started = None, []
-
-        def start(proc):
-            try:
-                start_scout_task(conn, task.id)
-            except BaseException:
-                reap_group(proc, subprocess.TimeoutExpired(proc.args, 0))
-                raise
-            started.append(monotonic())
-            mine.set()
-
+        conn = None
         try:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
-            if runs(task):
-                self.run_helper(conn, task, mine)
-                return
-            if self.route_down(conn, "host", self.host_probe) is not None:
-                return
-            prepared, cap = self.prepared(task), self.remaining_s()
-            if prepared is None or cap <= 0:
-                return
-            argv, checkout = prepared
-            turn = capped_turn(lambda: self.stopping.run_capped(
-                argv, checkout, cap, start), self.stopping)
-            if started:
-                self.record(conn, task, argv, turn, monotonic() - started[0])
+            self.attempt(conn, task, mine)
+            self.settle(conn, task, mine)
         finally:
             mine.set()
             if conn is not None:
                 conn.close()
+
+    def attempt(self, conn, task, mine):
+        if self.halted_now(conn, task):
+            return
+        if runs(task):
+            self.run_helper(conn, task, mine)
+            return
+        if self.route_down(conn, "host", self.host_probe) is not None:
+            return
+        prepared, cap = self.prepared(task), self.remaining_s()
+        if prepared is None or cap <= 0 or not self.claimed(conn, task):
+            return
+        started = monotonic()
+        mine.set()
+        argv, checkout = prepared
+        turn = capped_turn(lambda: self.task_tracked(
+            task, partial(run_capped, argv, checkout, cap)),
+            partial(self.cut_short, task))
+        self.record(conn, task, argv, turn, monotonic() - started)
+
+    def claimed(self, conn, task):
+        with store.transaction(conn):
+            if self.halted_now(conn, task):
+                return False
+            start_scout_task(conn, task.id)
+        return True
+
+    def settle(self, conn, task, mine):
+        if self.stopping.stopped:
+            return
+        with store.transaction(conn):
+            (phase,) = conn.execute(
+                "SELECT phase FROM scoutTasks WHERE id = ?",
+                (task.id,)).fetchone()
+            if phase == QUEUED and self.halted_now(conn, task):
+                self.end_unrun(conn, task, mine, STOPPED, "")
 
     def run_helper(self, conn, task, mine):
         if self.remaining_s() <= 0 or self.stopping.stopped:
@@ -324,10 +403,12 @@ class Swarm:
             checkout = run_clone(self.project, self.row.id, task.id,
                                  self.row.base_sha)
         except (RuntimeError, OSError) as error:
-            start_scout_task(conn, task.id)
-            mine.set()
-            self.end(conn, task, FAILED,
-                     redact_prose(str(error), self.secrets)[:EXCERPT_CHARS])
+            with store.transaction(conn):
+                if self.halted_now(conn, task):
+                    self.end_unrun(conn, task, mine, STOPPED, "")
+                    return
+                self.end_unrun(conn, task, mine, FAILED, redact_prose(
+                    str(error), self.secrets)[:EXCERPT_CHARS])
             return
         try:
             self.run_in(conn, task, mine, checkout)
@@ -335,26 +416,34 @@ class Swarm:
             shutil.rmtree(checkout, ignore_errors=True)
 
     def run_in(self, conn, task, mine, checkout):
-        start_scout_task(conn, task.id)
+        if not self.claimed(conn, task):
+            return
         started = monotonic()
         mine.set()
         seat = run_seat(self.project, self.seat)
-        problem = (setup_failure(self.project, checkout, self.deadline,
-                                 self.stopping.tracked)
-                   or self.isolated_down(conn, seat, checkout))
-        if problem is not None and self.stopping.stopped:
+        setup = setup_failure(self.project, checkout, self.deadline,
+                              partial(self.task_tracked, task))
+        if setup is not None and self.cut_short(task):
+            self.end(conn, task, STOPPED, "" if self.stopping.stopped else
+                     redact_prose(setup, self.secrets)[-EXCERPT_CHARS:])
+            return
+        problem = setup or self.isolated_down(conn, seat, checkout)
+        if problem is not None and self.cut_short(task):
             self.end(conn, task, STOPPED, "")
             return
         if problem is not None:
             self.end(conn, task, FAILED,
                      redact_prose(problem, self.secrets)[:EXCERPT_CHARS])
             return
+        if self.halted_now(conn, task):
+            self.end(conn, task, STOPPED, "")
+            return
         argv = seat.turn(outbound(run_goal(self.row, task), self.secrets))
         cap = self.remaining_s()
         around = partial(audited, conn, self.row.id)
         launch = partial(launch_turn, self.project, argv, checkout, cap, around)
-        turn = (capped_turn(lambda: self.stopping.tracked(launch),
-                            self.stopping, LAUNCH_FAILURES)
+        turn = (capped_turn(lambda: self.task_tracked(task, launch),
+                            partial(self.cut_short, task), LAUNCH_FAILURES)
                 if cap > 0 else HelperTurn(STOPPED, None, ""))
         self.record(conn, task, argv, turn, monotonic() - started)
 
@@ -379,7 +468,9 @@ class Swarm:
     def record(self, conn, task, argv, turn, seconds):
         answer, usage = turn_answer(self.seat, turn.output, self.price)
         excerpt = redact_prose(answer, self.secrets)[-EXCERPT_CHARS:]
-        self.end(conn, task, turn.phase, excerpt, usage)
+        with store.transaction(conn):
+            phase = STOPPED if self.halted_now(conn, task) else turn.phase
+            self.end(conn, task, phase, excerpt, usage)
         payload = dict(role=SCOUT_HELPER,
                        label=outbound(argv_label(argv), self.secrets),
                        route=self.route, exit_status=turn.exit_status,

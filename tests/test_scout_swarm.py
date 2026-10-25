@@ -137,7 +137,7 @@ class ScoutSwarmTests(ScoutFixture):
 
         def open_once_failing(store_path):
             opened.append(store_path)
-            if len(opened) == 1:
+            if len(opened) == 2:
                 time.sleep(1)
                 raise OSError("store is locked")
             return store.open(store_path)

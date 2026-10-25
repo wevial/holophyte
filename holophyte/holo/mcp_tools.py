@@ -30,6 +30,7 @@ class Tool(NamedTuple):
     json: bool = True
     answered: str | None = None
     signs: Callable | None = None
+    note_unless: str | None = None
     stdin: str | None = None
 
 
@@ -64,6 +65,10 @@ ANSWERS = Field("answers", {
     "type": "integer", "minimum": 1,
     "description": "the id of the scout's card this message answers"},
     option("--answers"))
+TASK = Field("task", {
+    "type": "integer", "minimum": 1,
+    "description": "one helper task's id: stop that helper alone"},
+    option("--task"))
 ITEM = Field("item", {"type": "integer", "minimum": 1,
                       "description": "the action item's position"}, None)
 VIEW = Field("view", {
@@ -129,7 +134,7 @@ def in_note(note, author):
 
 
 def by_author(note, author):
-    return [f"--note={note}", f"--author={signed(author)}"]
+    return [f"--note={note}"] * bool(note) + [f"--author={signed(author)}"]
 
 
 READS = (
@@ -194,9 +199,9 @@ WRITES = (
          signs=by_author),
     Tool("scout_stop", "stop a scout, the note its reason: a queued one ends"
          " now, a running one's process is signalled (holo scout stop ID"
-         " --json)", ("scout", "stop"), (PROJECT, SCOUT),
+         " --json)", ("scout", "stop"), (PROJECT, SCOUT, TASK),
          required=("project", "scout"),
-         tier=WRITE, signs=by_author),
+         tier=WRITE, signs=by_author, note_unless="task"),
     Tool("scout_ask", "ask a done scout about its report, the note the ask;"
          " its lead answers in the thread scout_show serves, waiting while"
          " the host's scout slots are full (holo scout ask ID --json)",
@@ -243,8 +248,15 @@ def input_schema(tool):
     return {"type": "object",
             "properties": {field.name: field.schema for field in fields},
             "required": [*tool.required,
-                         *(field.name for field in signature(tool))],
+                         *(field.name for field in signature(tool)
+                           if field.name != "note" or not tool.note_unless)],
             "additionalProperties": False}
+
+
+def unexcused(tool, arguments):
+    if tool.note_unless and not {"note", tool.note_unless} & set(arguments):
+        return "'note' is a required property"
+    return None
 
 
 def argv(tool, arguments):
@@ -263,7 +275,7 @@ def argv(tool, arguments):
         else:
             words += field.words(value)
     if tool.signs is not None:
-        words += tool.signs(arguments["note"].strip(),
+        words += tool.signs((arguments.get("note") or "").strip(),
                             arguments["author"].strip())
     words += ["--json"] * tool.json
     return [sys.executable, "-m", "holophyte.holo", *words,

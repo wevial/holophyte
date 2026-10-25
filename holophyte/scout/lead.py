@@ -262,7 +262,8 @@ def report_goal(row, swarm, problem, fresh, scope="", context="",
            else "") + scope
         + "The plan's sub-tasks, each labelled T and its id, with its phase "
         "and the end of its helper's output (a queued one never ran, a "
-        f"stopped one was cut at the time budget):\n\n{answers}\n\n"
+        "stopped one was cut at the time budget or stopped by a person):"
+        f"\n\n{answers}\n\n"
         "Write the scout's report from what you have read: what you found, "
         "which part was cut and why, and the actions you would take.\n\n"
         + report_ending(row, offered, digest, parked))
