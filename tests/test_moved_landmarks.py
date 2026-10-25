@@ -418,6 +418,26 @@ class MovedLandmarkTests(LoopFixture):
                     " `lotus/a`, `lotus/b`" if moved == "split"
                     else f"`{TOOLS}` was deleted in {sha}", note)
 
+    def test_a_move_out_beside_a_move_inside_the_directory_is_a_split(self):
+        self.add_tools()
+        self.file(NAMING_DIR)
+        (self.target / KIT).mkdir()
+        self.git("mv", f"{TOOLS}/run.py", f"{KIT}/run.py")
+        self.git("mv", f"{TOOLS}/stop.py", f"{TOOLS}/halt.py")
+        sha = self.commit("split the tools", self.filed + 30)
+        self.git("rm", "-q", f"{TOOLS}/halt.py")
+        self.commit("drop halt", self.filed + 60)
+        self.park(TOOLS)
+        before = self.ticket()
+
+        self.sweep()
+
+        self.assertEqual(self.ticket(), before)
+        self.assertEqual(self.status(), "needs_spec")
+        (note,) = self.notes()
+        self.assertIn(f"`{TOOLS}` went to more than one place in {sha}:"
+                      f" `{KIT}`, `{TOOLS}/halt.py`", note)
+
     def test_a_delete_or_move_inside_the_directory_does_not_end_its_chain(self):
         self.add_tools()
         self.file(NAMING_DIR)
@@ -440,8 +460,9 @@ class MovedLandmarkTests(LoopFixture):
 
         goal = self.claim("C2")
 
-        self.assertIn(f"\n{holophyte.review.moved_landmarks.RENAMED_BRIEF}\n",
-                      goal)
+        self.assertIn("\nMain renamed paths this ticket named when it was"
+                      " written; the ticket above names them where main"
+                      " holds them now:\n", goal)
         (bullet,) = [line for line in goal.splitlines()
                      if line.startswith(f"* `{TOOLS}`")]
         for part in (f"`{KIT}`", sha):

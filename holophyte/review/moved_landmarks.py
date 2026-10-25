@@ -50,8 +50,9 @@ class Chain:
     def _follow_directory(self, commit, rows):
         prefix = self.path + "/"
         under = [row for row in rows if row[1].startswith(prefix)]
-        moves = [row for row in under if row[0][0] in "RC"
-                 and not row[2].startswith(prefix)]
+        moves = [row for row in under if row[0][0] in "RC"]
+        if all(row[2].startswith(prefix) for row in moves):
+            moves = []
         places = {row[2]: _moved_under(row[1].removeprefix(prefix), row[2])
                   for row in moves}
         if None in places.values() or len(set(places.values())) > 1:
