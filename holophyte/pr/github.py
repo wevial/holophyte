@@ -26,7 +26,7 @@ GH_RETRY_S = (5, 15)
 API = "https://api.github.com"
 JSON = "application/vnd.github+json"
 HTML_JSON = "application/vnd.github.html+json"
-TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?"
+TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b\n]*(?:\x07|\x1b\\)?"
                              r"|\[[0-?]*[ -/]*[@-~]|[ -/]*[0-~]?)")
 # A call unanswered this long is a route down: fail rather than hold a lease.
 PR_TIMEOUT = 120

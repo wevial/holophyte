@@ -297,11 +297,12 @@ class GetTests(GithubCase):
     def test_a_coloured_job_log_answers_its_text_without_escapes(self):
         full = "repos/example/repo/actions/jobs/41/logs"
         self.gh.answer(full, "\x1b[36;1mpip install\x1b[0m\n"
-                       "\x1b]8;;https://x\x07ok\x1b]8;;\x1b\\\n")
+                       "\x1b]8;;https://x\x07ok\x1b]8;;\x1b\\\n"
+                       "\x1b]0;unterminated\nTotal: 3s\n")
         answer = github_get(self.target(self.path), self.repo,
                             "actions/jobs/41/logs")
         self.assertFalse(answer.error, answer.text)
-        self.assertEqual(answer.text, "pip install\nok\n")
+        self.assertEqual(answer.text, "pip install\nok\n\nTotal: 3s\n")
 
     def test_a_job_log_query_is_fetched_and_recorded_with_the_path(self):
         conn, scout_id = self.live_scout(self.path)
