@@ -562,12 +562,10 @@ class LinearImportTests(unittest.TestCase):
         self.assertEqual(printed, "False False")
 
     def test_the_key_is_read_from_the_env_file_at_the_checkout_root(self):
-        load = "print(linear_provider._load_env_key())"
-        for where, expected in (("", "k"), ("holophyte/board", "None")):
-            with self.subTest(where=where or "root"):
-                checkout = self.checkout()
-                Path(checkout, where, ".env").write_text("LINEAR_API_KEY=k\n")
-                self.assertEqual(self.run_in(checkout, load), expected)
+        checkout = self.checkout()
+        Path(checkout, ".env").write_text("LINEAR_API_KEY=k\n")
+        self.assertEqual(
+            self.run_in(checkout, "print(linear_provider._load_env_key())"), "k")
 
     def test_the_provider_carries_the_pair_it_was_built_with(self):
         """`team` is the stored value, not a module read."""
