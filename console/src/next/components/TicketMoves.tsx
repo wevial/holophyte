@@ -26,8 +26,13 @@ function Refusal({ lines, className }: { lines: string[] | null; className: stri
 
 /** Edit, Move to backlog, Requeue and Cancel ticket for `ticketKey`, drawn only
  *  while `host`'s `/board` takes writes, each posted at the revision the
- *  page read: the ticket's current one, else its board card's. */
-export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { project: string; ticketKey: string; ticket: TicketDetail; host: HostRecord<ContractBodies>; liveRun: number | null }) {
+ *  page read: the ticket's current one, else its board card's. Edit is a
+ *  link to the Edit page, or, given `onEditRaw`, a button that opens the
+ *  raw editor at that revision, disabled while `editOpen`. */
+export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditRaw, editOpen = false }: {
+  project: string; ticketKey: string; ticket: TicketDetail; host: HostRecord<ContractBodies>; liveRun: number | null;
+  onEditRaw?: (revision: number) => void; editOpen?: boolean;
+}) {
   const deps = useContext(PollDepsContext);
   const board = useBoards([host], deps)[0]?.board;
   const write = useBoardWrite();
@@ -65,7 +70,11 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun }: { pro
 
   return (
     <>
-      <Link to="/tickets/$project/$key/edit" params={{ project, key: ticketKey }} search={{}} className="btn" data-variant="quiet">Edit</Link>
+      {onEditRaw != null ? (
+        <Btn disabled={editOpen} onClick={() => onEditRaw(revision)}>Edit</Btn>
+      ) : (
+        <Link to="/tickets/$project/$key/edit" params={{ project, key: ticketKey }} search={{}} className="btn" data-variant="quiet">Edit</Link>
+      )}
       {ticket.run == null && column !== "backlog" && (
         <Btn busy={write.isPending && last === "backlog"} busyLabel="Moving…" disabled={write.isPending && last !== "backlog"} onClick={() => move("backlog")}>
           Move to backlog
