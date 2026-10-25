@@ -13,7 +13,7 @@ from holophyte.scout.telemetry import turn_cost
 from holophyte.scout.views import scout_detail
 from store.scouts import create_scout, move_scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import BRIEF, fenced, titled
 from tests.test_scout_config import ScoutFixture as ConfigFixture
 from tests.test_scout_process import ScoutFixture as ProcessFixture
 
@@ -24,10 +24,10 @@ HAIKU = ('[scout.helpers.haiku]\nharness = "claude"\nmodel = "haiku"\n'
 SOL = ('[scout]\nlead = "sol"\n[scout.leads.sol]\nharness = "codex"\n'
        'model = "gpt-6.1-sol"\neffort = "high"\nusd_per_mtok = 2.0\n')
 QUESTION = "Where is the retry loop?"
-PLAN = fenced({"tasks": [{"question": QUESTION, "paths": ["notes.txt"],
-                          "mode": "read"}]})
-REPORT = fenced({"summary": "the retry loop never backs off", "findings": [],
-                 "actions": []})
+PLAN = fenced({"tasks": [titled({"question": QUESTION, "paths": ["notes.txt"],
+                                  "mode": "read"})]})
+REPORT = fenced({**BRIEF, "summary": "the retry loop never backs off",
+                 "findings": [], "actions": []})
 
 
 def priced(table, price):

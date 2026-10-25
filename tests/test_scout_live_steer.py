@@ -27,7 +27,7 @@ from store.scout_thread import (
 )
 from store.scouts import create_scout, end_scout, move_scout, scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import fenced, titled
 from tests.test_scout_lead import CLAUDE_LEAD
 from tests.test_scout_process import ScoutFixture
 from tests.test_store_scout_thread import open_store
@@ -44,8 +44,8 @@ POST = ("import store\nfrom store.scout_thread import post_message\n"
 
 
 def plan(question):
-    return fenced({"tasks": [{"question": question, "paths": ["notes.txt"],
-                              "mode": "read"}]})
+    return fenced({"tasks": [titled({"question": question,
+                                      "paths": ["notes.txt"], "mode": "read"})]})
 
 
 def post_command(store_path, scout_id, mode, text):

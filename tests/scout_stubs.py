@@ -116,3 +116,13 @@ class LeadStubs:
 def fenced(document):
     return f"Here it is.\n\n```json\n{json.dumps(document)}\n```\n"
 
+
+
+BRIEF = {"title": "What the scout found",
+         "headline": "The scout found what it was asked for.",
+         "bullets": ["The first point.", "The second point.",
+                     "The third point."]}
+
+
+def titled(task):
+    return {"title": " ".join(task["question"].split()[:8])[:60], **task}

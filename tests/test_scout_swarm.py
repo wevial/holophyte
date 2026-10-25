@@ -16,7 +16,7 @@ import holophyte.scout.swarm as swarm
 import store
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
-from tests.scout_stubs import fenced
+from tests.scout_stubs import fenced, titled
 from tests.test_scout_lead import running
 from tests.test_scout_process import ScoutFixture
 
@@ -28,8 +28,9 @@ QUESTIONS = ["Where is the retry loop?", "Who calls the retry loop?",
 
 
 def plan(*questions):
-    return fenced({"tasks": [{"question": question, "paths": ["notes.txt"],
-                              "mode": "read"} for question in questions]})
+    return fenced({"tasks": [titled({"question": question,
+                                      "paths": ["notes.txt"], "mode": "read"})
+                             for question in questions]})
 
 
 class ScoutSwarmTests(ScoutFixture):

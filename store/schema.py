@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 60
+SCHEMA_VERSION = 61
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -299,6 +299,7 @@ ADDED_COLUMNS = (
     ("scouts", "subjectKind", "subjectKind TEXT "
      + _enums.check_clause("subjectKind", _enums.ScoutSubject)),
     ("scouts", "subjectRef", "subjectRef TEXT"),
+    ("scoutTasks", "title", "title TEXT"),
 )
 
 
