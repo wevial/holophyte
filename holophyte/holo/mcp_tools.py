@@ -30,6 +30,7 @@ class Tool(NamedTuple):
     json: bool = True
     answered: str | None = None
     signs: Callable | None = None
+    note_unless: str | None = None
     stdin: str | None = None
 
 
@@ -133,7 +134,7 @@ def in_note(note, author):
 
 
 def by_author(note, author):
-    return [f"--note={note}", f"--author={signed(author)}"]
+    return [f"--note={note}"] * bool(note) + [f"--author={signed(author)}"]
 
 
 READS = (
@@ -200,7 +201,7 @@ WRITES = (
          " now, a running one's process is signalled (holo scout stop ID"
          " --json)", ("scout", "stop"), (PROJECT, SCOUT, TASK),
          required=("project", "scout"),
-         tier=WRITE, signs=by_author),
+         tier=WRITE, signs=by_author, note_unless="task"),
     Tool("scout_ask", "ask a done scout about its report, the note the ask;"
          " its lead answers in the thread scout_show serves, waiting while"
          " the host's scout slots are full (holo scout ask ID --json)",
@@ -244,11 +245,17 @@ def unsigned_road(tool):
 
 def input_schema(tool):
     fields = tool.fields + signature(tool)
-    return {"type": "object",
-            "properties": {field.name: field.schema for field in fields},
-            "required": [*tool.required,
-                         *(field.name for field in signature(tool))],
-            "additionalProperties": False}
+    unless = tool.note_unless
+    schema = {"type": "object",
+              "properties": {field.name: field.schema for field in fields},
+              "required": [*tool.required,
+                           *(field.name for field in signature(tool)
+                             if unless is None or field.name != "note")],
+              "additionalProperties": False}
+    if unless is not None:
+        schema.update({"if": {"not": {"required": [unless]}},
+                       "then": {"required": ["note"]}})
+    return schema
 
 
 def argv(tool, arguments):
@@ -267,7 +274,7 @@ def argv(tool, arguments):
         else:
             words += field.words(value)
     if tool.signs is not None:
-        words += tool.signs(arguments["note"].strip(),
+        words += tool.signs((arguments.get("note") or "").strip(),
                             arguments["author"].strip())
     words += ["--json"] * tool.json
     return [sys.executable, "-m", "holophyte.holo", *words,

@@ -355,6 +355,7 @@ class Swarm:
             conn = store.open(self.store_path)
             if previous is not None:
                 previous.wait()
+            self.halt(conn)
             if task.id in self.halted:
                 self.end_unrun(conn, task, mine, STOPPED, "")
                 return

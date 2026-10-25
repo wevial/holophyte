@@ -172,8 +172,10 @@ class ListingTests(WriteCase):
             if tool.name not in WRITES:
                 continue
             with self.subTest(tool=tool.name):
-                self.assertLessEqual({"note", "author"},
-                                     set(tool.input_schema["required"]))
+                required = set(tool.input_schema["required"])
+                self.assertIn("author", required)
+                self.assertTrue("note" in required or {"required": ["note"]}
+                                == tool.input_schema.get("then"))
                 self.assertIs(tool.annotations.read_only_hint, False)
                 self.assertIs(tool.annotations.destructive_hint, False)
 

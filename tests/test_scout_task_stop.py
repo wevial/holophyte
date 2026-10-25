@@ -10,11 +10,13 @@ import subprocess
 import sys
 import time
 
+import store
 from holophyte.config.project import Project
 from holophyte.scout.lead import REPORT_OPENING
 from holophyte.scout.stop import stop
 from store.scouts import (
     claim_scout,
+    create_scout,
     end_scout,
     end_scout_task,
     move_scout,
@@ -113,7 +115,7 @@ class RunningTaskStopTests(TaskStopCase):
     def test_a_queued_task_asked_to_stop_is_never_launched(self):
         questions = ["first question", "second question", "third question"]
         scout_id, proc = self.swarming(
-            questions, {questions[0]: {"helper": "first", "helper_sleep": 8}},
+            questions, {questions[0]: {"helper": "first", "helper_sleep": 1}},
             swarm=1)
         self.assertTrue(wait_for(
             lambda: self.phase_of(scout_id, questions[0]) == "running"),
@@ -227,3 +229,31 @@ class McpTaskStopTests(McpCase):
                    if tool.name == "scout_stop"]
         self.assertEqual(tool.input_schema["properties"]["task"]["type"],
                          "integer")
+
+    def test_the_scout_stop_tool_stops_a_task_without_a_note(self):
+        sleeper = subprocess.Popen(["sleep", "600"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        conn = store.open(str(self.store_path))
+        try:
+            (project,) = conn.execute("SELECT id FROM projects").fetchone()
+            scout_id = create_scout(conn, project, "where is the bug?",
+                                    "research", 30)
+            move_scout(conn, scout_id, "planning", base_sha="0" * 40)
+            claim_scout(conn, scout_id, sleeper.pid)
+            move_scout(conn, scout_id, "swarming")
+            (task_id,) = record_scout_tasks(conn, scout_id, 1, 1, [
+                {"question": SLOW, "mode": "read"}])
+        finally:
+            conn.close()
+
+        result = self.call("scout_stop", {
+            "project": "alpha", "scout": scout_id, "task": task_id,
+            "author": "test seat"})
+        self.assertIn(f"scout {scout_id} has no running process to stop"
+                      f" task {task_id}", str(result.content))
+        unexplained = self.call("scout_stop", {
+            "project": "alpha", "scout": scout_id, "author": "test seat"})
+        self.assertIs(unexplained.is_error, True)
+        self.assertIn("'note' is a required property",
+                      str(unexplained.content))
