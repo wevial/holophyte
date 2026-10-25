@@ -38,6 +38,7 @@ from holophyte.scout.run_helpers import reproduced
 from holophyte.scout.scout_config import scout_config
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
 from holophyte.scout.swarm import Swarm, turn_answer
+from holophyte.tickets.ticket_template import MAX_ESTIMATE_MIN
 from store.enums import ScoutKind, ScoutTaskMode
 from store.scout_thread import messages, take_steer
 from store.scouts import (
@@ -49,7 +50,6 @@ from store.scouts import (
     record_scout_report,
     set_scout_session,
 )
-from ticket_template import MAX_ESTIMATE_MIN
 
 REPORT_TURN_S = 600
 PLAN_OPENING = "Scout plan turn"

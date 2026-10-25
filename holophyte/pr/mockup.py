@@ -24,9 +24,8 @@ from urllib.request import (
 )
 
 import store
-import ticket_header
-import ticket_template
 from holophyte.config.config_tables import merge_config
+from holophyte.tickets import ticket_header, ticket_template
 
 DIRECTORY = ".holophyte/mockup"
 CAPTURED = ".holophyte/captured"

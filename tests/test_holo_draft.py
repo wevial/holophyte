@@ -13,9 +13,8 @@ from pathlib import Path
 import store
 import store.board
 import store.tickets
-import ticket_header
-import ticket_template
 from holophyte.holo.cli import main
+from holophyte.tickets import ticket_header, ticket_template
 from tests.config_fixture import ConfigTestCase
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -126,7 +125,7 @@ class DraftCase(ConfigTestCase):
 
 
 class SkeletonTests(DraftCase):
-    TEMPLATE = (ROOT / "ticketTemplate.md").read_text()
+    TEMPLATE = (ROOT / "holophyte/tickets/templates/ticketTemplate.md").read_text()
 
     def test_the_skeleton_names_the_profiles_as_the_headers_last_line(self):
         self.project_with(PROFILES)

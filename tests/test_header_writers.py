@@ -16,9 +16,8 @@ import provider
 import store
 import store.board
 import store.tickets
-import ticket_depends
-import ticket_template
 from holophyte.pr import pr_media
+from holophyte.tickets import ticket_depends, ticket_template
 from tests import test_cli_file_ticket
 from tests.test_cli_file_ticket import FakeLinear
 from tests.test_ticket_header import BODY, HEADER, header_body

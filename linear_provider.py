@@ -11,8 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from time import localtime, sleep, strftime, time
 
-import ticket_header
-import ticket_template
+from holophyte.tickets import ticket_header, ticket_template
 
 HERE = Path(__file__).parent
 GRAPHQL = "https://api.linear.app/graphql"

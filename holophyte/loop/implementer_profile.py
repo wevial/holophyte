@@ -3,7 +3,6 @@ import json
 import time
 
 import store
-import ticket_template
 from holophyte.agents.agent_routes import ProfileRoutes, routes
 from holophyte.agents.agent_turns import turn_label
 from holophyte.agents.harness import PROFILES_KEY, implementer_profiles
@@ -21,6 +20,7 @@ from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import resumes
 from holophyte.redact import safe_print as print
+from holophyte.tickets import ticket_template
 
 EVENT = "implementer_profile"
 ESCALATION_NOTE = "escalation:"

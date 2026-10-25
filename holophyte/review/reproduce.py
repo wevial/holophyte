@@ -7,7 +7,6 @@ from time import time
 import review_runner
 import store
 import store.read
-import ticket_template
 from holophyte import failure_reason
 from holophyte.agents.review_workspace import review_refs
 from holophyte.board.projection import block_ticket, ledger
@@ -28,6 +27,7 @@ from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids, skipped_tests
 from holophyte.review.reply_parsing import raw_finding
+from holophyte.tickets import ticket_template
 from store.working import working
 
 DECLARATION = "OUTCOME: NOT_REPRODUCED"

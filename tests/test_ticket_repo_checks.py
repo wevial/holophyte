@@ -6,9 +6,11 @@ import unittest
 from pathlib import Path
 
 import holophyte.board.projection
-import ticket_template as tt
 from holophyte.config.project import Project
+from holophyte.tickets import ticket_template as tt
 from tests.test_ticket_template import FILLED
+
+SHIM = Path(__file__).resolve().parent.parent / 'ticket_template.py'
 
 
 class RepositoryChecksTests(unittest.TestCase):
@@ -140,7 +142,7 @@ class RepositoryChecksTests(unittest.TestCase):
         self.assertEqual(tt.validate(tt.parse(body)), tt.validate(tt.parse(self.body)))
         ticket = self.repo / 'ticket.md'
         ticket.write_text(body)
-        result = subprocess.run([sys.executable, str(Path(tt.__file__)), str(ticket)],
+        result = subprocess.run([sys.executable, str(SHIM), str(ticket)],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count('check skipped'), 1)
@@ -151,7 +153,7 @@ class RepositoryChecksTests(unittest.TestCase):
         ticket.write_text(self.body.replace(
             'Depends on: none\n', f'Depends on: none\nImplementer: {implementer}\n'))
         return subprocess.run(
-            [sys.executable, str(Path(tt.__file__).resolve()), '--repo',
+            [sys.executable, str(SHIM), '--repo',
              repo or str(self.repo), str(ticket)],
             capture_output=True, text=True, cwd=self.repo)
 

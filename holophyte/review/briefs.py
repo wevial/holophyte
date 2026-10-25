@@ -4,9 +4,9 @@ import re
 import subprocess
 from pathlib import Path, PurePosixPath
 
-import ticket_template
 from holophyte.loop.trim_brief import pass_name
 from holophyte.review.criterion_ids import numbered
+from holophyte.tickets import ticket_template
 
 
 def _changed_files(root, approved, sha):

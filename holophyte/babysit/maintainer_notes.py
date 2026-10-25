@@ -4,9 +4,9 @@ from dataclasses import replace
 from holophyte.pr.github import Thread
 from holophyte.review.criterion_ids import adopted, numbered
 from holophyte.review.findings import decode_findings
+from holophyte.tickets.ticket_criteria import amendment_edits
 from store import console_asks, criteria, operator_notes, steer_notes
 from store.read import run_snapshot
-from ticket_criteria import amendment_edits
 
 PREFIX = "Maintainer's instruction (amends the ticket where they conflict):"
 HINT_PREFIX = "Maintainer's hint for this turn (advice, not part of the contract):"

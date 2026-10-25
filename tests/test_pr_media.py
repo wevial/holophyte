@@ -16,9 +16,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import review_runner
-import ticket_template
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import pr_media, pullrequest
+from holophyte.tickets import ticket_template
 from tests.test_media_store import CREDS, receiver
 
 PNG = base64.b64decode(

@@ -5,7 +5,6 @@ from time import time
 
 import store
 import store.read
-import ticket_template
 from holophyte import failure_reason, leak_guard
 from holophyte.agents.fix_session import steer_turn
 from holophyte.agents.review_workspace import review_base, review_refs
@@ -56,6 +55,7 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
+from holophyte.tickets import ticket_template
 
 
 def _verify_brief(verify_cmd, ok, out):

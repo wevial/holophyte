@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import ticket_advisories
-import ticket_template as tt
+from holophyte.tickets import ticket_advisories
+from holophyte.tickets import ticket_template as tt
 from tests.test_ticket_template import FILLED
 
 ROOT = Path(__file__).resolve().parent.parent

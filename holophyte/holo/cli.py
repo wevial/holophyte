@@ -10,6 +10,7 @@ from holophyte.holo.grammar import (
     HELPER,
     MCP,
     READS,
+    TICKET_CHECK,
     add_commands,
     factory_argv,
     parse,
@@ -119,12 +120,13 @@ def status(args, target, zone_name):
 
 def skeleton(target):
     from holophyte.agents.harness import implementer_profiles
-    template = (factory_checkout() / "ticketTemplate.md").read_text()
+    template = (factory_checkout() / "holophyte" / "tickets" / "templates"
+                / "ticketTemplate.md").read_text()
     names = implementer_profiles(target)
     if not names:
         return template
     lines = template.splitlines(keepends=True)
-    from ticket_header import FENCE
+    from holophyte.tickets.ticket_header import FENCE
     closing = [index for index, line in enumerate(lines)
                if line.rstrip("\r\n") == FENCE][1]
     lines.insert(closing, "# this project's implementer profiles: "
@@ -146,7 +148,7 @@ def draft(args, default):
         print(f"[holo2] {route}: {body.get('error') or 'no such ticket'}",
               file=sys.stderr)
         return 1
-    from ticket_header import Unconvertible, converted
+    from holophyte.tickets.ticket_header import Unconvertible, converted
     try:
         text = converted(body["body"])
     except Unconvertible as line:
@@ -185,6 +187,9 @@ def main(argv=None):
     if argv[:1] == [HELPER]:
         from holophyte.holo.completion import complete
         return complete(argv[1:])
+    if argv[:2] == list(TICKET_CHECK):
+        from holophyte.tickets.ticket_template import main as check
+        return check(argv[2:])
     from holophyte.holo.resolve import DEFAULT, TIMEZONE
     config, host = client(argv)
     default = config.get(DEFAULT)

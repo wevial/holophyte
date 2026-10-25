@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import story_template
+from holophyte.tickets import story_template
 from tests.story_fixture import witness_path, write_story
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -1,9 +1,9 @@
 import re
 
 from holophyte.commit_hygiene import rewrite_unpublished
+from holophyte.tickets.ticket_criteria import amendment_edits
 from store import steer_notes
 from store.read import run_snapshot
-from ticket_criteria import amendment_edits
 
 WITHHELD = "[maintainer note withheld]"
 WINDOW = 8
