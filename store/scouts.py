@@ -64,7 +64,7 @@ class Scout(NamedTuple):
     totals: dict | None
     subject_kind: str | None
     subject_ref: str | None
-    title: str | None = None
+    title: str | None
 
 
 def _now(now):

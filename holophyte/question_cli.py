@@ -80,7 +80,7 @@ def command(route):
     return route.backend
 
 
-def claude_argv(route, answer_schema, text, system=SYSTEM_PROMPT):
+def claude_argv(route, answer_schema, text, system):
     return [
         "claude", "-p", "--model", route.model, "--effort", route.effort,
         "--output-format", "json", "--tools", "", "--no-session-persistence",
@@ -90,7 +90,7 @@ def claude_argv(route, answer_schema, text, system=SYSTEM_PROMPT):
     ]
 
 
-def codex_argv(route, schema_file, text, system=SYSTEM_PROMPT):
+def codex_argv(route, schema_file, text, system):
     return [
         "codex", "exec", "--json", "-s", "read-only", "--skip-git-repo-check",
         "--ephemeral", "--disable", "shell_tool", "-m", route.model,
@@ -210,8 +210,7 @@ def active_route(options, config, conn, run_id, seat="questions",
     return ROUTES[key]
 
 
-def probed(primary, fallback, config, options, conn, run_id, seat,
-           project_id=None):
+def probed(primary, fallback, config, options, conn, run_id, seat, project_id):
     reason = probe(primary, config, options)
     if reason is None:
         return primary
