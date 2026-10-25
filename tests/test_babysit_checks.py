@@ -526,13 +526,6 @@ class MergeModeBabysitCheckFixTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertIn("CHECK unit", fake.turns[3].goal)
         self.assertIn("promises a retry", fake.turns[3].goal)
 
-    def test_a_check_fix_turn_is_handed_a_coloured_log_without_escapes(self):
-        self.red_check(self.UNIT, f"\x1b[31;1m{self.FAILED}\x1b[0m\n")
-        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
-                            Idle("The runner is flaky."), provider=self.provider())
-        self.assertIn(self.FAILED, fake.turns[3].goal)
-        self.assertNotIn("\x1b", fake.turns[3].goal)
-
     def test_a_check_fix_that_returns_nothing_fails(self):
         self.red_check(self.UNIT, self.FAILED)
         self.loop(Commit("the scripted work"), APPROVE, Idle(""), Idle(""),

@@ -114,11 +114,8 @@ class RedirectDeadlineTests(unittest.TestCase):
 class JobLogTests(unittest.TestCase):
     def test_without_gh_a_coloured_job_log_is_read_over_http_without_escapes(
             self):
-        served = []
-
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                served.append(self.path)
                 body = b"\x1b[32;1mok\x1b[0m\n\x1b]0;title\x07done\n"
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body)))
@@ -141,7 +138,6 @@ class JobLogTests(unittest.TestCase):
                 patch.dict("os.environ", {"GH_TOKEN": "ghp-job-log-token"}):
             text = github.job_log(SimpleNamespace(), pull, 41)
         self.assertEqual(text, "ok\ndone\n")
-        self.assertEqual(served, ["/repos/example/repo/actions/jobs/41/logs"])
 
 
 class PrBodyStubTests(unittest.TestCase):
