@@ -574,8 +574,9 @@ Each module, one line:
   deletion, a path with two destinations in one commit, or a final path not
   on main. A directory whose files one commit renamed under one new
   directory, keeping their relative paths, is mapped with every span and
-  verify token under it (a deletion-only commit or two destination
-  directories keeps the park); `rewrite()` replaces exact backticked spans
+  verify token under it (a commit deleting its last file, read with `git
+  ls-tree`, or two destination directories keeps the park); `rewrite()`
+  replaces exact backticked spans
   (or `path::`) and whole verify tokens, and any span or whole verify token
   naming a mapped directory or a path under it, leaving the TOML header
   alone.

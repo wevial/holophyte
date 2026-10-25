@@ -18,20 +18,18 @@ RENAMED_BRIEF = ("Main renamed paths this ticket named when it was written;"
 
 
 class Chain:
-    def __init__(self, path):
+    def __init__(self, path, holds=None):
         self.path = path
+        self.holds = holds
         self.hops = []
         self.deleted = None
         self.split = None
         self.copied = False
         self.directory = False
-        self.emptied = None
-        self.refilled = set()
 
     @property
     def touched(self):
-        return (bool(self.hops or self.copied) or self.deleted or self.split
-                or self.emptied)
+        return bool(self.hops or self.copied) or self.deleted or self.split
 
     def follow(self, commit, rows):
         sources = [row for row in rows if row[1] == self.path]
@@ -60,18 +58,13 @@ class Chain:
         if None in landed or len(landed) > 1:
             self.split = (commit, sorted({place or destination for
                                           destination, place in places.items()}))
-        elif any(row[1] in self.refilled for row in moves):
-            self.deleted = self.emptied
         elif any(row[0][0] == "R" for row in moves):
             (new,) = landed
             self.hops.append((commit, self.path, new))
-            self.path, self.directory, self.emptied = new, True, None
-            self.refilled = set()
-        elif under and all(row[0] == "D" for row in under):
-            self.emptied, self.refilled = commit, set()
-        elif self.emptied:
-            self.refilled.update(row[-1] for row in rows
-                                 if row[-1].startswith(prefix))
+            self.path, self.directory = new, True
+        elif (any(row[0] == "D" for row in under)
+              and not self.holds(commit, self.path)):
+            self.deleted = commit
         self.copied = self.copied or bool(moves)
         return self.deleted is None and self.split is None
 
@@ -119,18 +112,23 @@ def renames_since(repo, written_ms):
     return commits
 
 
-def _chain(path, commits):
-    chain = Chain(path)
+def _holder(repo):
+    return lambda commit, path: bool(
+        _read(repo, "ls-tree", "--name-only", commit, "--", path).strip())
+
+
+def _chain(path, commits, holds):
+    chain = Chain(path, holds)
     for sha, rows in commits:
         if not chain.follow(sha, rows):
             break
     return chain
 
 
-def _module_file(module, commits):
+def _module_file(module, commits, holds):
     parts = module.split(".")
     for end in range(len(parts), 0, -1):
-        chain = _chain("/".join(parts[:end]) + ".py", commits)
+        chain = _chain("/".join(parts[:end]) + ".py", commits, holds)
         if chain.touched:
             return chain, parts[end:]
     return Chain(module.replace(".", "/") + ".py"), []
@@ -162,12 +160,9 @@ def _why_unmapped(written, chain, tree):
         sha, places = chain.split
         return (f"`{written}` went to more than one place in {sha}: "
                 + ", ".join(f"`{place}`" for place in places))
-    deleted = chain.deleted
-    if deleted is None and chain.emptied and not tree.has(chain.path):
-        deleted = chain.emptied
-    if deleted is not None:
+    if chain.deleted is not None:
         via = "".join(f" (as `{old}`)" for _, old, _ in chain.hops[-1:])
-        return f"`{written}` was deleted in {deleted}{via}"
+        return f"`{written}` was deleted in {chain.deleted}{via}"
     if not chain.hops:
         return f"`{written}` has no rename since the body was written"
     if chain.path not in (tree.trees if chain.directory else tree.files):
@@ -187,8 +182,9 @@ def _dotted(path):
 
 def map_landmarks(tree, paths, modules, commits):
     spans, tokens, folders, mapped, unmapped, touched = {}, {}, {}, [], [], False
+    holds = _holder(tree.repo)
     for written in paths:
-        chain = _chain(str(Path(written)), commits)
+        chain = _chain(str(Path(written)), commits, holds)
         touched = touched or bool(chain.touched)
         why = _why_unmapped(written, chain, tree)
         if not why and written.endswith("/") and not chain.directory:
@@ -202,7 +198,7 @@ def map_landmarks(tree, paths, modules, commits):
             folders[str(Path(written))] = chain.path
         mapped.append(f"`{written}` → `{new}` (renamed {_hops(chain)})")
     for module in modules:
-        chain, rest = _module_file(module, commits)
+        chain, rest = _module_file(module, commits, holds)
         touched = touched or bool(chain.touched)
         why = _why_unmapped(module, chain, tree)
         new = None if why else _dotted(chain.path)
@@ -216,11 +212,11 @@ def map_landmarks(tree, paths, modules, commits):
     return spans, tokens, folders, mapped, unmapped, touched
 
 
-def _under(path, folders):
+def _under(path, folders, quote=str):
     bare = re.sub(r"^(?:\./)+", "", path)
     for old in sorted(folders, key=len, reverse=True):
         if bare == old or bare.startswith(old + "/"):
-            return folders[old] + bare[len(old):]
+            return quote(folders[old]) + bare[len(old):]
     return None
 
 
@@ -238,10 +234,12 @@ def _token(word, tokens, folders):
         value = shlex.split(word)
     except ValueError:
         return word
-    new = (tokens.get(value[0]) or _under(value[0], folders)
-           if len(value) == 1 else None)
-    if new is None:
+    if len(value) != 1:
         return word
+    raw = None if value[0] in tokens else _under(word, folders, shlex.quote)
+    new = tokens.get(value[0]) or _under(value[0], folders)
+    if raw is not None or new is None:
+        return raw or word
     if word == f"'{value[0]}'" and "'" not in new:
         return f"'{new}'"
     if word == f'"{value[0]}"' and not set(new) & set('$`"\\!'):

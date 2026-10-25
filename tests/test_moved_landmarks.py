@@ -442,8 +442,13 @@ class MovedLandmarkTests(LoopFixture):
         self.add_tools()
         self.file(NAMING_DIR)
         self.git("rm", "-q", f"{TOOLS}/stop.py")
+        self.commit("drop stop", self.filed + 10)
+        with open(self.target / TOOLS / "run.py", "a") as run:
+            run.write("RUNS = True\n")
+        self.git("add", TOOLS)
+        self.commit("edit run", self.filed + 20)
         self.git("mv", f"{TOOLS}/run.py", f"{TOOLS}/runner.py")
-        self.commit("trim the tools", self.filed + 30)
+        self.commit("rename run", self.filed + 30)
         sha = self.move(TOOLS, KIT)
         self.park(TOOLS)
 
@@ -454,6 +459,24 @@ class MovedLandmarkTests(LoopFixture):
         (note,) = self.notes()
         self.assertIn(f"`{TOOLS}` → `{KIT}` (renamed to `{KIT}` in {sha})",
                       note)
+
+    def test_a_verify_glob_under_the_directory_still_expands(self):
+        self.add_tools()
+        self.file(NAMING_DIR.replace("```\necho ok\n```",
+                                     f"```\nwc -l {TOOLS}/*.py\n```"))
+        self.move(TOOLS, KIT)
+        self.park(TOOLS)
+
+        self.sweep()
+
+        self.assertEqual(self.status(), "ready")
+        (line,) = [line for line in self.ticket()[0].splitlines()
+                   if line.startswith("wc -l ")]
+        listed = subprocess.run(
+            ["sh", "-c", "printf '%s\\n' " + line.removeprefix("wc -l ")],
+            cwd=str(self.target), capture_output=True, text=True, check=True,
+            env={}).stdout.split()
+        self.assertEqual(listed, [f"{KIT}/run.py", f"{KIT}/stop.py"])
 
     def test_a_directory_moved_via_its_subdirectory_or_spelled_dotted_maps(self):
         cases = {"through a subdirectory": (NAMING_TOOLS, f"{TOOLS}/sub"),
@@ -485,7 +508,7 @@ class MovedLandmarkTests(LoopFixture):
                 self.assertNotIn("lotus/tools", body)
 
     def test_a_refilled_directory_or_a_file_at_its_new_name_keeps_the_park(self):
-        for case in ("refilled", "file"):
+        for case in ("refilled", "emptied after its rename", "file"):
             with self.subTest(case):
                 self.setUp()
                 self.add_tools()
@@ -498,6 +521,15 @@ class MovedLandmarkTests(LoopFixture):
                     self.git("add", TOOLS)
                     self.commit("add other tools", self.filed + 45)
                     self.move(TOOLS, KIT)
+                    reason = f"`{TOOLS}` was deleted in {gone}"
+                elif case == "emptied after its rename":
+                    self.move(TOOLS, KIT, 30)
+                    self.git("rm", "-q", "-r", KIT)
+                    gone = self.commit("drop the kit", self.filed + 45)
+                    (self.target / KIT).mkdir()
+                    (self.target / KIT / "other.py").write_text("OTHER = 1\n")
+                    self.git("add", KIT)
+                    self.commit("add other kit", self.filed + 60)
                     reason = f"`{TOOLS}` was deleted in {gone}"
                 else:
                     sha = self.move(TOOLS, KIT, 30)
