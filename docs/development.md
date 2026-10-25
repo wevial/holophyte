@@ -572,8 +572,17 @@ Each module, one line:
   first recorded; `map_landmarks()` follows each missing path, and each
   missing `-m unittest` module's file, through those rows, refusing a
   deletion, a path with two destinations in one commit, or a final path not
-  on main; `rewrite()` replaces exact backticked spans (or `path::`) and
-  whole verify tokens, leaving the TOML header alone.
+  on main. A directory whose files one commit renamed under one new
+  directory, keeping their relative paths, is mapped with every span and
+  verify token under it (a commit deleting its last file, read with `git
+  ls-tree`, or two destination directories keeps the park); `rewrite()`
+  replaces exact backticked spans
+  (or `path::`) and whole verify tokens, and any span or whole verify token
+  naming a mapped directory or a path under it, leaving the TOML header
+  alone.
+  `renamed_brief()` gives a refreshed ticket's implementer brief the
+  renamed paths (old path, new path and renaming commit) unless a revision
+  authored other than `factory` followed the refresh.
 - `holophyte/review/landmarks.py` — what counts as a lost landmark:
   `MainTree` caches main's file list, blobs and `git grep` holders for one
   check; `path_findings()` and `symbol_findings()` split a ticket's misses
@@ -622,6 +631,8 @@ Each module, one line:
 - `holophyte/pr/pr_status.py` — reading a pull request's state (KO-426), out
   of `holophyte/pr/github.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
+  When `main`'s rules name any required check the fold blocks only on the
+  required checks; a red optional check lands in `optional_failures`.
 - `holophyte/media_store.py` — standard-library SigV4 PUTs for evidence in an
   S3-compatible bucket. Operator setup lives in the
   [bucket configuration reference](config.md#mergemedia_bucket).

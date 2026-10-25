@@ -43,7 +43,7 @@ from holophyte.loop.trim import trim
 from holophyte.pr import mockup
 from holophyte.pr.pullrequest import _opens_draft, _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
-from holophyte.review import reproduce
+from holophyte.review import moved_landmarks, reproduce
 from holophyte.review.criterion_ids import numbered
 from holophyte.story.story_claim import story_brief
 
@@ -106,8 +106,9 @@ def _run_stages(run, task):
 
     ticket = f"{task}\n\n{body}" if body else task
     if conn is not None:
-        ticket += story_brief(project, conn, store.read.run_snapshot(
-            conn, run_id).ticketId)
+        ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+        ticket += story_brief(project, conn, ticket_id)
+        ticket += moved_landmarks.renamed_brief(conn, ticket_id)
         ticket = maintainer_notes.carry_amendments(conn, run_id, ticket)
     conflicts = merge_conflicts(wt)
     resume = continuation(conn, run_id)
