@@ -22,18 +22,20 @@ const detail = (id: number, ticket: string, facts: Partial<RunDetail["run"]>): R
 const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { phase: "reviewing", pr_url: "https://github.com/acme/demo/pull/524" }),
   13: detail(13, "DEMO-13", { phase: "implementing" }),
+  14: detail(14, "DEMO-14", { phase: "awaiting_merge_approval", park_kind: "pull_request", pr_url: "https://github.com/acme/demo/pull/530" }),
   39: detail(39, "DEMO-40", { phase: "failed", outcome: "failed", ended_ms: NOW - 20 * MINUTE }),
   40: detail(40, "DEMO-40", { phase: "failed", outcome: "failed", failure_kind: "verify", ended_ms: NOW - 10 * MINUTE }),
   9: detail(9, "DEMO-9", { phase: "done", outcome: "merged", merge_sha: "5acc1384b2e0", ended_ms: NOW - 20 * MINUTE }),
 };
 
 const liveRow = { ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 };
+const parkedRow = { ...run(14, "DEMO-14"), phase: "awaiting_merge_approval" };
 
 /** `demo` live in run 12 with `actions` as given; `/runs/N` answers `runs`
  *  and every `POST /actions/...` goes to `post`. */
 async function mount(id: number, { actions = true, post }: { actions?: boolean; post?: Fetch } = {}) {
   window.location.hash = `#/runs/demo/${id}`;
-  const polls = fleet({ items: [], runs: [liveRow, run(13, "DEMO-13")] }, { items: [] });
+  const polls = fleet({ items: [], runs: [liveRow, run(13, "DEMO-13"), parkedRow] }, { items: [] });
   const fake = fakeDeps(async (url, init) => {
     if (init?.method === "POST" && post != null) return post(url, init);
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions });
@@ -158,6 +160,21 @@ test("a run without a pull request gets no Close PR checkbox in Abort and posts 
   await act(async () => void fireEvent.change(within(abortDialog).getByRole("textbox"), { target: { value: "superseded" } }));
   await press("Abort run", abortDialog);
   expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 13, close: false, note: "superseded" } }]);
+});
+
+test("a run parked on its pull request offers Abort alone, whose ticked Close PR posts close: true", async () => {
+  const post = fakeFetch({ ok: true, detail: "run 14 had no live worker; ended abandoned and parked" });
+  await mount(14, { post: post.fetchImpl });
+  expect(labels()).toEqual(["Abort"]);
+  await press("Abort");
+  const abortDialog = screen.getByRole("dialog", { name: "Abort run 14?" });
+  const box = within(abortDialog).getByRole("checkbox", { name: "Close PR #530" }) as HTMLInputElement;
+  expect(box.checked).toBe(false);
+  await act(async () => void fireEvent.click(box));
+  await act(async () => void fireEvent.change(within(abortDialog).getByRole("textbox"), { target: { value: "superseded" } }));
+  await press("Abort run and close PR #530", abortDialog);
+  expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 14, close: true, note: "superseded" } }]);
+  expect(toast()).toBe("Aborted run 14 and closed PR #530.");
 });
 
 test("navigating to a cached run closes Abort and requires a fresh reason for that run", async () => {
