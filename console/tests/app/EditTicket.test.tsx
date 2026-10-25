@@ -1,0 +1,438 @@
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import type { Board, BoardTicket, Status, TicketCheck, TicketDetail } from "../../src/lib/contract.gen";
+import { addressOf } from "../../src/lib/hosts";
+import type { Fetch, PollDeps } from "../../src/lib/poll";
+import { storeToken } from "../../src/lib/token";
+import { consoleQueryClient } from "../../src/app/fleet";
+import { ConsoleApp } from "../../src/app/router";
+import { fakeFetch } from "../actionFakes";
+import { fakeDeps, settle } from "../harness";
+import { DEMO, fleet, MINUTE, NOW, SERVE } from "./needsFleet";
+
+const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
+const template = pinned.columns.flatMap((column) => column.tickets)[0]!;
+const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
+
+const AC2 = "A note's author shows beside it.";
+const BODY = `# Steer notes show on the run page
+
+## Summary
+
+The run page lists each steer note the operator left.
+
+## What / Why / How
+
+**What:** List the notes under the run.
+
+**Why:** Operators lose track of what they asked.
+
+**How:** Read the stored steers.
+
+1. Fetch them with the run.
+2. Render each under its turn.
+
+**Blast radius:** medium
+
+## In scope
+
+- The run page
+
+## Out of scope
+
+- Notifications
+
+## Acceptance criteria
+
+- [ ] Each note shows on the run page.
+  Its author and time show beside it.
+- [ ] ${AC2}
+- [ ] A withdrawn note shows struck through.
+
+## Verify command(s)
+
+\`\`\`
+bun --cwd=console test
+\`\`\`
+
+## Evidence
+
+- 01-notes.png: the run page with two notes.
+
+## Estimate & dependencies
+
+Estimate: 30 min · Depends on: none
+
+## Open questions
+
+- None
+`;
+
+const demo2 = (facts: Partial<TicketDetail> = {}): TicketDetail => ({
+  ...servedTicket,
+  ticket: "DEMO-2",
+  title: "Steer notes show on the run page",
+  status: "ready",
+  run: null,
+  runs: [],
+  steers: [],
+  body: BODY,
+  current: { ...servedTicket.current!, revision: 3, at: NOW - 120 * MINUTE, author: "console", body: BODY, priority: 2, column: "ready" },
+  ...facts,
+});
+const board = (editable: boolean): Board => ({
+  ...pinned,
+  editable,
+  stories: [],
+  columns: [{ state: "ready", tickets: [{ ...template, ticket: "DEMO-2", title: "Steer notes show on the run page", column: "ready", revision: 3, run: null } as BoardTicket]}],
+});
+
+let puts: { ifMatch: string | null; body: unknown }[] = [];
+let checks: unknown[] = [];
+
+/** Fires each captured timer that has fallen due on a clock moved by `ms`. */
+let advance: (ms: number) => Promise<void>;
+
+async function flush() {
+  for (let round = 0; round < 6; round += 1) await act(settle);
+}
+
+/** DEMO serving DEMO-2 as `ticket` behind a `/board` that is `editable`;
+ *  `/tickets/check` is answered by `check`, `PUT /tickets/DEMO-2` by `save`. */
+async function mount(hash: string, { editable = true, ticket = demo2(), check = { problems: [], advisories: [], blocks: false }, save }: { editable?: boolean; ticket?: TicketDetail; check?: TicketCheck | (() => TicketCheck); save?: Fetch } = {}) {
+  window.location.hash = hash;
+  const polls = fleet({ items: [] }, { items: [] });
+  puts = [];
+  checks = [];
+  const fake = fakeDeps(async (url, init) => {
+    if (url === `${DEMO}/tickets/check`) {
+      checks.push(JSON.parse(String(init?.body)));
+      return Response.json(typeof check === "function" ? check() : check);
+    }
+    if (init?.method === "PUT") {
+      puts.push({ ifMatch: new Headers(init.headers).get("if-match"), body: JSON.parse(String(init.body)) });
+      return save!(url, init);
+    }
+    if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions: true });
+    if (url === `${DEMO}/board`) return Response.json(board(editable));
+    if (url === `${DEMO}/tickets/DEMO-2`) return Response.json(ticket);
+    if (url.endsWith("/board")) return new Response("not found", { status: 404 });
+    return polls(url);
+  });
+  let now = 0;
+  const timers: { at: number; fn: () => void }[] = [];
+  const deps: PollDeps = {
+    ...fake.deps,
+    now: () => NOW,
+    timer: (fn, ms) => {
+      const entry = { at: now + ms, fn };
+      timers.push(entry);
+      return () => {
+        const at = timers.indexOf(entry);
+        if (at >= 0) timers.splice(at, 1);
+      };
+    },
+  };
+  advance = async (ms) => {
+    now += ms;
+    for (const entry of timers.filter((timer) => timer.at <= now)) {
+      const at = timers.indexOf(entry);
+      if (at < 0) continue;
+      timers.splice(at, 1);
+      await act(async () => entry.fn());
+    }
+    await flush();
+  };
+  render(
+    <QueryClientProvider client={consoleQueryClient()}>
+      <ConsoleApp base={DEMO} pollDeps={deps} />
+    </QueryClientProvider>,
+  );
+  await flush();
+}
+
+const box = (name: string) => screen.getByRole("textbox", { name }) as HTMLInputElement;
+const saveButton = () => screen.getByRole("button", { name: /^Save revision|^Saving/ }) as HTMLButtonElement;
+const savePanel = () => screen.getByRole("complementary", { name: "Save revision" });
+const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
+const SERVED = { Title: "Steer notes show on the run page", AC1: "Each note shows on the run page.", AC2, AC3: "A withdrawn note shows struck through.", Summary: "The run page lists each steer note the operator left." };
+
+async function type(name: string, value: string) {
+  await act(async () => void fireEvent.change(box(name), { target: { value } }));
+}
+
+const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+beforeAll(() => happyDOM.setURL(`${DEMO}/`));
+beforeEach(() => storeToken(addressOf(DEMO), "tok-410"));
+afterAll(() => happyDOM.setURL("about:blank"));
+afterEach(() => {
+  cleanup();
+  window.location.hash = "";
+});
+
+test("the Ticket page links Edit to the edit page only while its board is editable and the ticket is not merged", async () => {
+  await mount("#/tickets/demo/DEMO-2");
+  const actions = document.querySelector<HTMLElement>("[data-ticket-actions]")!;
+  expect(within(actions).getByRole<HTMLAnchorElement>("link", { name: "Edit" }).hash).toBe("#/tickets/demo/DEMO-2/edit");
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2", { editable: false });
+  expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2", { ticket: demo2({ status: "merged" }) });
+  expect(screen.queryByRole("link", { name: "Edit" })).toBeNull();
+});
+
+test("the edit page refuses a merged or abandoned ticket opened by its address", async () => {
+  for (const status of ["merged", "abandoned"] as const) {
+    await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ status }) });
+    expect(screen.getByText(`DEMO-2 is ${status} and can no longer be edited.`)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save revision 4" })).toBeNull();
+    cleanup();
+  }
+});
+
+test("the edit page loads the current revision with its header line and holds Save until a field changes", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit");
+  expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe("Tickets / demo / DEMO-2 / edit");
+  expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole<HTMLAnchorElement>("link", { name: "DEMO-2" }).hash).toBe("#/tickets/demo/DEMO-2");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Edit DEMO-2");
+  expect(screen.getByText("revision 3 · saved 2h ago by console · Ready")).toBeTruthy();
+  for (const [name, value] of Object.entries(SERVED)) expect(box(name).value).toBe(value);
+  expect(saveButton().textContent).toBe("Save revision 4");
+  expect(saveButton().disabled).toBe(true);
+  expect(within(savePanel()).getByText("No changes yet.")).toBeTruthy();
+});
+
+test("Save sends the served body with only the rewritten criterion at the loaded revision, toasts and opens the Ticket page", async () => {
+  const save = fakeFetch({ ticket: "DEMO-2", revision: 4 });
+  await mount("#/tickets/demo/DEMO-2/edit", { save: save.fetchImpl });
+  const rewritten = "A note the agent skipped shows skipped and why.";
+  await type("AC2", rewritten);
+  expect(box("AC2").closest("[data-changed]")).not.toBeNull();
+  expect(box("AC1").closest("[data-changed]")).toBeNull();
+  expect(within(savePanel()).getByText("1 change · Acceptance criteria · the next run of DEMO-2 reads the new text")).toBeTruthy();
+  await act(async () => void fireEvent.click(saveButton()));
+  await flush();
+  expect(puts).toEqual([{ ifMatch: "3", body: { body: BODY.replace(`- [ ] ${AC2}`, `- [ ] ${rewritten}`), priority: 2 } }]);
+  expect(save.seen[0]!.url).toBe(`${DEMO}/tickets/DEMO-2`);
+  expect(toast()).toBe("Saved DEMO-2 as revision 4.");
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-2");
+});
+
+test("Discard puts every field back to the served text and sends nothing", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit");
+  await type("Title", "Another title");
+  await type("AC2", "Another criterion");
+  await type("Evidence", "- nothing");
+  expect(saveButton().disabled).toBe(false);
+  await act(async () => void fireEvent.click(within(savePanel()).getByRole("button", { name: "Discard" })));
+  for (const [name, value] of Object.entries(SERVED)) expect(box(name).value).toBe(value);
+  expect(box("Evidence").value).toBe("- 01-notes.png: the run page with two notes.");
+  expect(document.querySelector("[data-changed]")).toBeNull();
+  expect(saveButton().disabled).toBe(true);
+  expect(puts).toEqual([]);
+});
+
+test("a blocking check holds Save, a draft's problems do not, and a 409 keeps the edit", async () => {
+  let blocks = true;
+  const save = fakeFetch(() => Response.json({ error: "revision mismatch", current: 4 }, { status: 409 }));
+  await mount("#/tickets/demo/DEMO-2/edit", { check: () => ({ problems: ["'Summary' is empty"], advisories: [], blocks }), save: save.fetchImpl });
+  await type("Summary", "");
+  await advance(600);
+  expect(checks.at(-1)).toMatchObject({ ticket: "DEMO-2" });
+  expect(saveButton().disabled).toBe(true);
+  expect(within(savePanel()).getByText("Fix 1 error to save.")).toBeTruthy();
+  blocks = false;
+  await type("AC2", "Another criterion");
+  await advance(600);
+  expect(saveButton().disabled).toBe(false);
+  expect(within(savePanel()).getByText("1 error · it saves as a draft and stays in Backlog.")).toBeTruthy();
+  await act(async () => void fireEvent.click(saveButton()));
+  await flush();
+  expect(within(savePanel()).getByRole("alert").textContent).toBe("DEMO-2 changed since this page read it. Your edit is kept.");
+  expect(box("Summary").value).toBe("");
+  expect(box("AC2").value).toBe("Another criterion");
+  expect(box("Title").value).toBe(SERVED.Title);
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-2/edit");
+});
+
+async function pressSave() {
+  await act(async () => void fireEvent.click(saveButton()));
+  await flush();
+}
+
+test("moving or removing a criterion carries its indented detail with it", async () => {
+  const AC1 = "- [ ] Each note shows on the run page.\n  Its author and time show beside it.\n";
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Move AC1 down" })));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(`${AC1}- [ ] ${AC2}\n`, `- [ ] ${AC2}\n${AC1}`)]);
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Remove AC1" })));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(AC1, "")]);
+  cleanup();
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Remove AC3" })));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("- [ ] A withdrawn note shows struck through.\n", "")]);
+});
+
+test("a criterion's indented detail is its own field and saves under that criterion", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(box("AC1 detail").value).toBe("  Its author and time show beside it.");
+  expect(screen.queryByRole("textbox", { name: "AC2 detail" })).toBeNull();
+  await type("AC1 detail", "  Its author shows beside it.");
+  expect(box("AC1 detail").closest("[data-changed]")).not.toBeNull();
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("  Its author and time show beside it.", "  Its author shows beside it.")]);
+});
+
+test("an unindented detail line saves indented under its criterion", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await type("AC1 detail", "  Its author shows.\nIts time shows too.");
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace("  Its author and time show beside it.", "  Its author shows.\n  Its time shows too.")]);
+});
+
+test("How holds every paragraph up to the next label, and section text under no field is reachable under Other sections", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(box("How").value).toBe("Read the stored steers.\n\n1. Fetch them with the run.\n2. Render each under its turn.");
+  expect(box("What / Why / How").value).toBe("**Blast radius:** medium");
+  await type("How", "Read the steers once.");
+  await pressSave();
+  const served = "Read the stored steers.\n\n1. Fetch them with the run.\n2. Render each under its turn.";
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(served, "Read the steers once.")]);
+});
+
+test("a section its fields cannot hold whole is edited as its own text, comments and all", async () => {
+  const commented = "<!--\n**What:** guidance\n-->\n\n**What:** List the notes under the run.";
+  const scope = "These stay in scope:\n\n- Alpha\n  with its detail";
+  const verify = "Run it from the repository root.\n\n```\nbun --cwd=console test\n```";
+  const body = BODY.replace("**What:** List the notes under the run.", commented).replace("- The run page", scope).replace("```\nbun --cwd=console test\n```", verify);
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }), save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(screen.queryByRole("textbox", { name: "What" })).toBeNull();
+  expect(box("What / Why / How").value).toStartWith(commented);
+  expect(box("In scope").value).toBe(scope);
+  expect(box("Verify command(s)").value).toBe(verify);
+  await type("What / Why / How", box("What / Why / How").value.replace("List the notes", "List every note"));
+  await type("In scope", scope.replace("Alpha", "Beta"));
+  await pressSave();
+  expect(puts.map(put => (put.body as { body: string }).body)).toEqual([body.replace("List the notes", "List every note").replace("- Alpha", "- Beta")]);
+});
+
+const HEADER = `+++
+# owner: console
+ui_change = "minor"
+estimate = 45
+depends_on = []
+implementer = "fast"
++++
+`;
+const HEADER_BODY = HEADER + BODY.replace("**Blast radius:** medium\n\n", "").replace("## Estimate & dependencies\n\nEstimate: 30 min · Depends on: none\n\n", "");
+
+async function saveHeaderEdit(edit: () => Promise<void>, body = HEADER_BODY) {
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }), save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  expect(box("Title").value).toBe(SERVED.Title);
+  await edit();
+  await pressSave();
+  cleanup();
+  return (puts[0]!.body as { body: string }).body;
+}
+
+test("an edit to a header ticket rewrites only the header line of the field it changes, keeping its comment and other keys", async () => {
+  const estimate = await saveHeaderEdit(async () => {
+    await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "50" } }));
+  });
+  expect(estimate).toBe(HEADER_BODY.replace("estimate = 45", "estimate = 50"));
+  const depends = await saveHeaderEdit(async () => {
+    await type("Depends on", "HOLO-9");
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Add" })));
+  });
+  expect(depends).toBe(HEADER_BODY.replace("depends_on = []", 'depends_on = ["HOLO-9"]'));
+});
+
+test("adding a dependency to an indented multi-line array adds one row in its indentation and keeps its comment rows", async () => {
+  const body = HEADER_BODY.replace("depends_on = []", '\tdepends_on = [\n\t\t"HOLO-1",\n\t\t# comment\n\t]');
+  const saved = await saveHeaderEdit(async () => {
+    await type("Depends on", "HOLO-9");
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Add" })));
+  }, body);
+  expect(saved).toBe(body.replace("\t\t# comment\n", '\t\t# comment\n\t\t"HOLO-9",\n'));
+});
+
+test("an edit to a magic-line ticket keeps its estimate line and adds no header", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "50" } }));
+  await pressSave();
+  const saved = (puts[0]!.body as { body: string }).body;
+  expect(saved).toContain("Estimate: 50 min · Depends on: none");
+  expect(saved).not.toMatch(/^\+\+\+$/m);
+});
+
+const EVIDENCE_BODY = HEADER_BODY
+  .replace('ui_change = "minor"\n', 'ui_change = "minor"\nblast_radius = "medium"\n')
+  .replace('implementer = "fast"\n', 'implementer = "fast"\n\n[[evidence]]\nfile = "01-notes.png"\nstate = "the run page with two notes"\n\n[[evidence]]\nfile = "02-author.png"\nstate = "a note\'s author beside it"\n')
+  .replace("## Evidence\n\n- 01-notes.png: the run page with two notes.\n\n", "");
+
+test("a header ticket draws its blast radius and Evidence rows, and a state edit rewrites only that entry's state line", async () => {
+  const saved = await saveHeaderEdit(async () => {
+    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
+    expect(radius.selectedOptions[0]!.textContent).toBe("Medium");
+    expect(["E1 File", "E1 State", "E2 File", "E2 State"].map(name => box(name).value)).toEqual(["01-notes.png", "the run page with two notes", "02-author.png", "a note's author beside it"]);
+    await type("E2 State", "the author beside each note");
+  }, EVIDENCE_BODY);
+  expect(saved).toBe(EVIDENCE_BODY.replace('state = "a note\'s author beside it"', 'state = "the author beside each note"'));
+});
+
+test("a magic-line ticket draws no Blast radius select and no Evidence list", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit");
+  expect(box("Title").value).toBe(SERVED.Title);
+  expect(screen.getByRole("combobox", { name: "UI change" })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Blast radius" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "+ Add a state" })).toBeNull();
+});
+
+test("a magic-line ticket's UI change select writes its **UI change:** line", async () => {
+  await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
+  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "UI change" }), { target: { value: "minor" } }));
+  await pressSave();
+  const saved = (puts[0]!.body as { body: string }).body;
+  expect(saved.match(/^\*\*UI change:\*\*.*$/gm)).toEqual(["**UI change:** minor"]);
+  expect(saved.replace("\n\n**UI change:** minor", "")).toBe(BODY);
+});
+
+test("a header blast radius outside the choices shows as itself and Diff decides removes its line", async () => {
+  const body = EVIDENCE_BODY.replace('blast_radius = "medium"', 'blast_radius = "low"');
+  const saved = await saveHeaderEdit(async () => {
+    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
+    expect(radius.selectedOptions[0]!.textContent).toBe("low · not a choice");
+    await act(async () => void fireEvent.change(radius, { target: { value: "" } }));
+    expect(radius.selectedOptions[0]!.textContent).toBe("Diff decides");
+  }, body);
+  expect(saved).toBe(body.replace('blast_radius = "low"\n', ""));
+});
+
+test("a header UI change outside the choices shows as itself and None replaces it", async () => {
+  const body = HEADER_BODY.replace('ui_change = "minor"', 'ui_change = "big"');
+  const saved = await saveHeaderEdit(async () => {
+    const change = screen.getByRole("combobox", { name: "UI change" }) as HTMLSelectElement;
+    expect(change.selectedOptions[0]!.textContent).toBe("big · not a choice");
+    await act(async () => void fireEvent.change(change, { target: { value: "" } }));
+    expect(change.selectedOptions[0]!.textContent).toBe("None");
+  }, body);
+  expect(saved).toBe(body.replace('ui_change = "big"', 'ui_change = "none"'));
+});
+
+test("adding a state to a header whose evidence is not entries replaces that key with the row", async () => {
+  const body = HEADER_BODY.replace('implementer = "fast"\n', 'implementer = "fast"\nevidence = "bad"\n');
+  const saved = await saveHeaderEdit(async () => {
+    expect(screen.queryByRole("textbox", { name: "E1 File" })).toBeNull();
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
+    await type("E1 State", "the run page");
+  }, body);
+  expect(saved).not.toContain('evidence = "bad"');
+  expect(saved.match(/^\[\[evidence\]\]\r?\nfile = "01-"\r?\nstate = "the run page"$/m)).toBeTruthy();
+});

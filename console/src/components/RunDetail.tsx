@@ -24,7 +24,7 @@ import { RunLog } from "./RunLog";
 import { ReasonAction } from "./ReasonAction";
 import { SteerNote } from "./SteerNote";
 import type { RowDaemon } from "./RowActions";
-import { PrLink, Sha } from "../next/components/MergeFacts";
+import { PrLink, Sha } from "../app/components/MergeFacts";
 
 const NOT_A_REVIEWER = /^(github|mechanical):/;
 

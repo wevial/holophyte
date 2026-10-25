@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { declarations, resolveToken } from "../../tests/cssTokens.ts";
 import { windowOptions } from "../window.ts";
 
-const themeCss = await Bun.file(new URL("../../src/next/theme.css", import.meta.url)).text();
+const themeCss = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
 const darkCanvas = resolveToken(declarations(themeCss), [':root[data-theme="dark"]'], "--canvas");
 
 const shared = {

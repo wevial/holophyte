@@ -5,7 +5,7 @@ import type { ProjectChoice } from "../lib/attention";
 import { groupByHost, hostItems, hostTone, type HostRecord, type HostTone } from "../lib/hosts";
 import type { PeersState } from "../hooks/usePeers";
 import type { Theme } from "../lib/theme";
-import { APP_DRAG, inMacApp, switchView } from "../lib/view";
+import { APP_DRAG, inMacApp } from "../lib/view";
 import { HostCard } from "./HostCard";
 import { ProjectRow } from "./ProjectRow";
 import { RailGroup } from "./RailGroup";
@@ -141,13 +141,9 @@ export function Rail({
             poll failed: {error}
           </p>
         ))}
-        <button
-          type="button"
-          onClick={() => switchView("next", location.hash)}
-          className="self-start px-2 font-mono text-[11px] text-rail-faint hover:text-rail-fg"
-        >
+        <a href="/" className="self-start px-2 font-mono text-[11px] text-rail-faint hover:text-rail-fg">
           New view
-        </button>
+        </a>
         <ThemeToggle theme={theme} onChange={onTheme} />
       </div>
     </nav>

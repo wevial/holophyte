@@ -3,7 +3,7 @@
  * hands `windowOptions(process.platform)` to `new BrowserWindow`. On macOS
  * the title bar is hidden and the traffic lights sit in the sidebar
  * header; the background is the dark `--canvas` from
- * `console/src/next/theme.css`, so no light frame shows before the paint.
+ * `console/src/app/theme.css`, so no light frame shows before the paint.
  */
 import type { BrowserWindowConstructorOptions } from "electron";
 
