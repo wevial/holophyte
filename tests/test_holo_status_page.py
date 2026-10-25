@@ -153,7 +153,7 @@ class PageOrderTests(StatusPageTests):
                             for line in needs), needs)
         running = lines[at[1] + 1:at[2]]
         self.assertIn("ALPHA-20", running[0])
-        self.assertTrue(running[0].endswith("working · heartbeat 20 s ago"),
+        self.assertTrue(running[0].endswith("working"),
                         running[0])
         self.assertEqual(lines[at[2] + 1], "  ✓  beta   nothing ready")
 
@@ -170,8 +170,8 @@ class PageOrderTests(StatusPageTests):
         (twenty,) = [line for line in running if "ALPHA-20" in line]
         (twenty_one,) = [line for line in running if "ALPHA-21" in line]
         self.assertTrue(twenty.endswith(
-            "working · heartbeat 20 s ago · steer 2 pending"), twenty)
-        self.assertTrue(twenty_one.endswith("working · heartbeat 30 s ago"),
+            "working · steer 2 pending"), twenty)
+        self.assertTrue(twenty_one.endswith("working"),
                         twenty_one)
 
     def live_run(self, key, phases=("working",)):
@@ -193,10 +193,10 @@ class PageOrderTests(StatusPageTests):
         store.abort(self.conn, self.live_run("ALPHA-21"), "wrong spec")
 
         self.assertTrue(self.running_line("ALPHA-20").endswith(
-            "working · heartbeat 20 s ago · pausing after this turn"),
+            "working · pausing after this turn"),
             self.running_line("ALPHA-20"))
         self.assertTrue(self.running_line("ALPHA-21").endswith(
-            "working · heartbeat 20 s ago · aborting"),
+            "working · aborting"),
             self.running_line("ALPHA-21"))
 
     def test_a_check_fix_turn_names_its_round_and_a_thread_fix_names_none(self):
@@ -212,10 +212,10 @@ class PageOrderTests(StatusPageTests):
         record_step(self.conn, threads, "fix")
 
         self.assertTrue(self.running_line("ALPHA-20").endswith(
-            "merge_gate · heartbeat 20 s ago · fixing checks (round 1 of 2)"),
+            "merge_gate · fixing checks (round 1 of 2)"),
             self.running_line("ALPHA-20"))
         self.assertTrue(self.running_line("ALPHA-21").endswith(
-            "merge_gate · heartbeat 20 s ago"), self.running_line("ALPHA-21"))
+            "merge_gate"), self.running_line("ALPHA-21"))
 
     def running_line_at(self, key, now):
         lines = page(host_snapshot(Host.locate(), now=now), now, ZoneInfo("UTC"))
@@ -248,6 +248,32 @@ class PageOrderTests(StatusPageTests):
                         line)
         self.assertEqual((live.get("silent"), live["heartbeat_age_s"]),
                          (True, 360))
+
+    def test_a_live_run_is_silent_only_past_the_configured_stale_age(self):
+        config = Project.locate(self.alpha).config_path
+        config.write_text(config.read_text()
+                          + "[supervisor]\nheartbeat_stale_min = 1\n")
+        self.go_live("ALPHA-20", NOW - 61_000)
+        self.go_live("ALPHA-21", NOW - 60_000)
+
+        (alpha,) = [row for row in self.snapshot()["projects"]
+                    if row["name"] == "alpha"]
+        silent = {row["ticket"]: row["silent"] for row in alpha["store"]["live"]}
+        self.assertEqual(silent, {"ALPHA-20": True, "ALPHA-21": False})
+        self.assertTrue(self.running_line("ALPHA-20").endswith(
+            "working · silent, heartbeat 1 min ago"),
+            self.running_line("ALPHA-20"))
+        self.assertTrue(self.running_line("ALPHA-21").endswith("working"),
+                        self.running_line("ALPHA-21"))
+
+    def test_a_silent_row_keeps_its_steer_count_after_the_heartbeat(self):
+        steered = self.go_live("ALPHA-20", NOW - 6 * MINUTE)
+        for note in ("also log the port", "the port is in config.toml"):
+            store.steer_notes.steer(self.conn, steered, note, "maintainer")
+
+        self.assertTrue(self.running_line("ALPHA-20").endswith(
+            "working · silent, heartbeat 6 min ago · steer 2 pending"),
+            self.running_line("ALPHA-20"))
 
     def test_the_client_zone_shows_clock_time_and_the_stranded_wait(self):
         (self.home / "client.toml").write_text('timezone = "America/Los_Angeles"\n')
