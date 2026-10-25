@@ -181,8 +181,8 @@ class PageOrderTests(StatusPageTests):
             store.set_phase(self.conn, run, phase, now=NOW - 20_000)
         return run
 
-    def running_line(self, key):
-        lines = self.page()
+    def running_line(self, key, now=NOW):
+        lines = page(host_snapshot(Host.locate(), now=now), now, ZoneInfo("UTC"))
         heading = next(line for line in lines if line.startswith("Running ("))
         running = lines[lines.index(heading) + 1:lines.index("Quiet")]
         (line,) = [line for line in running if key in line]
@@ -217,20 +217,14 @@ class PageOrderTests(StatusPageTests):
         self.assertTrue(self.running_line("ALPHA-21").endswith(
             "merge_gate"), self.running_line("ALPHA-21"))
 
-    def running_line_at(self, key, now):
-        lines = page(host_snapshot(Host.locate(), now=now), now, ZoneInfo("UTC"))
-        running = lines[lines.index("Running (1)") + 1:lines.index("Quiet")]
-        (line,) = [line for line in running if key in line]
-        return line
-
     def test_a_healthy_live_row_shows_no_heartbeat_age_between_beats(self):
         run = store.claim(self.conn, self.project_id, self.ticket("ALPHA-20"),
                           now=NOW - 53_000)
         store.set_phase(self.conn, run, "working", now=NOW - 53_000)
-        first = self.running_line_at("ALPHA-20", NOW)
+        first = self.running_line("ALPHA-20")
         store.heartbeat(self.conn, run, now=NOW + 97_000)
         store.heartbeat(self.conn, run, now=NOW + 247_000)
-        later = self.running_line_at("ALPHA-20", NOW + 300_000)
+        later = self.running_line("ALPHA-20", NOW + 300_000)
 
         self.assertTrue(first.endswith("working"), first)
         self.assertNotIn("heartbeat", first)
@@ -239,7 +233,7 @@ class PageOrderTests(StatusPageTests):
     def test_a_silent_live_row_says_so_and_its_json_row_is_silent(self):
         self.go_live("ALPHA-20", NOW - 6 * MINUTE)
 
-        line = self.running_line_at("ALPHA-20", NOW)
+        line = self.running_line("ALPHA-20")
         (alpha,) = [row for row in self.snapshot()["projects"]
                     if row["name"] == "alpha"]
         (live,) = alpha["store"]["live"]
