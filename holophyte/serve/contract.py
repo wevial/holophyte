@@ -821,6 +821,11 @@ class TicketDetail(TypedDict):
     steers: list[TicketSteer]
 
 
+class TicketSearch(TypedDict):
+    q: str
+    tickets: list[str]
+
+
 class TicketCheck(TypedDict):
     problems: list[str]
     advisories: list[str]
@@ -892,6 +897,7 @@ ROUTES = {
     "board": (Board, "GET /board"),
     "ticket": (TicketDetail, "GET /tickets/KEY"),
     "ticket-check": (TicketCheck, "POST /tickets/check"),
+    "ticket-search": (TicketSearch, "GET /tickets?q=TEXT"),
     "story": (StoryDetail, "GET /stories/KEY"),
     "scouts": (Scouts, "GET /scouts"),
     "scout": (ScoutDetail, "GET /scouts/ID"),

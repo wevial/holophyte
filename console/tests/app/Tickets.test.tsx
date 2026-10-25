@@ -270,17 +270,18 @@ test("the sidebar's Views list Ready, Needs spec and Backlog with the project's 
   for (const count of counts) expect(count.classList).toContain("font-mono");
 });
 
-test("a view link shows only its tickets and marks itself current, and Show all tickets drops the filter but keeps the scope", async () => {
+test("a view link shows only its tickets and marks itself current, and All drops the filter but keeps the scope", async () => {
   await mount("#/?project=demo", viewsFleet());
   fireEvent.click(screen.getByRole("link", { name: "Needs spec" }));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(window.location.hash).toBe("#/tickets?project=demo&filter=needs_spec");
-  expect(shownKeys()).toEqual(["DEMO-6", "DEMO-7"]);
+  const rowKeys = Array.from(document.querySelectorAll("[data-row] [data-cell=key]"), (cell) => cell.textContent).sort();
+  expect(rowKeys).toEqual(["DEMO-6", "DEMO-7"]);
   expect(countLine()).toBe("demo · 2 tickets / 0 in flight / 0 need you / 0 ready");
-  expect(screen.getAllByText(/^Showing/).map((line) => line.textContent)).toEqual(["Showing demo only", "Showing Needs spec tickets only"]);
+  expect(screen.getAllByText(/^Showing/).map((line) => line.textContent)).toEqual(["Showing demo only"]);
   expect(viewLinks().map((link) => link.getAttribute("aria-current"))).toEqual([null, "page", null]);
 
-  fireEvent.click(screen.getByRole("button", { name: "Show all tickets" }));
+  fireEvent.click(within(screen.getByRole("group", { name: "State" })).getByRole("button", { name: "All" }));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(window.location.hash).toBe("#/tickets?project=demo");
   expect(shownKeys()).toEqual(["DEMO-1", "DEMO-2", "DEMO-5", "DEMO-6", "DEMO-7"]);
