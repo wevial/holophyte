@@ -226,6 +226,24 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual(self.read(
             "SELECT mainSha, verdict FROM witnessResults"), [(tip, "green")])
 
+    def test_a_green_story_with_a_ready_child_stays_open(self):
+        parent, done = self.tickets()
+        ready = self.ticket_id(store.board.file_ticket(
+            self.conn, self.project_id, "NAT", VALID_BODY, column="ready"))
+        file_story(self.conn, parent, [witness("W1", W1_FILE)],
+                   [(done, "completes", ["W1"]), (ready, "scaffolding", [])])
+        (revision,) = self.conn.execute(
+            "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
+        approve_story(self.conn, parent, revision, "operator", "go")
+        tip = self.commit(W1_FILE, PASSES, "w1 lands")
+        store.tickets.walk_ticket(self.conn, done, "merged")
+
+        self.step()
+
+        self.assertEqual(story(self.conn, parent).state, "approved")
+        self.assertEqual(self.read(
+            "SELECT mainSha, verdict FROM witnessResults"), [(tip, "green")])
+
     def test_a_baseline_green_at_the_tip_is_no_pass_and_closes_nothing(self):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
