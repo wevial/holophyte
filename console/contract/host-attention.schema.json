@@ -860,7 +860,8 @@
             "needs_spec",
             "abandoned",
             "parked",
-            "failed"
+            "failed",
+            "closed"
           ]
         },
         "reason": {

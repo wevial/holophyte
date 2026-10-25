@@ -205,7 +205,8 @@ class StuckWaitItem(TypedDict):
     ticket_url: str | None
     title: str
     dependency: str
-    dependency_state: Literal["needs_spec", "abandoned", "parked", "failed"]
+    dependency_state: Literal["needs_spec", "abandoned", "parked", "failed",
+                              "closed"]
     reason: str | None
     behind: int
     level: Literal["attention"]

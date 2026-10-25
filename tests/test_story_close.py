@@ -185,6 +185,7 @@ class StoryCloseTests(StoryCloseFixture):
     def test_a_commit_landing_before_the_lock_defers_the_close(self):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
+        store.tickets.walk_ticket(self.conn, child, "merged")
         green_at = self.commit(W1_FILE, PASSES, "w1 lands")
         real_lock = holophyte.story.story_close.merge_lock
         landed = []
@@ -212,6 +213,7 @@ class StoryCloseTests(StoryCloseFixture):
     def test_a_lock_held_through_the_pass_closes_on_a_later_step(self):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
+        store.tickets.walk_ticket(self.conn, child, "merged")
         tip = self.commit(W1_FILE, PASSES, "w1 lands")
 
         with merge_lock(self.project, None), \
@@ -315,8 +317,8 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual([(kind, key) for kind, key, *_ in
                           self.decisions(parent)], [("regressed", "W1")])
 
-
-    def test_a_story_with_an_open_scaffolding_child_stays_open_on_green(self):
+    def scaffolded(self):
+        """A story of W1 with A (completes, merged at W1's tip) and B open."""
         parent, completes = self.tickets()
         scaffolding = self.ticket_id(store.board.file_ticket(
             self.conn, self.project_id, "NAT", VALID_BODY, column="ready"))
@@ -329,6 +331,17 @@ class StoryCloseTests(StoryCloseFixture):
         tip = self.commit(W1_FILE, PASSES, "w1 lands")
         merged_run(self.conn, completes, tip)
         store.tickets.walk_ticket(self.conn, completes, "merged")
+        return parent, scaffolding, tip
+
+    def closed_notes(self, parent):
+        return [text for (text,) in self.read(
+            f"SELECT text FROM ticketNotes WHERE ticketId = {parent}")
+            if text.startswith("Story closed")]
+
+    def assert_closes_once_the_open_child_ends(self, claimed):
+        parent, scaffolding, tip = self.scaffolded()
+        run_id = (store.claim(self.conn, self.project_id, scaffolding)
+                  if claimed else None)
 
         self.step()
 
@@ -336,6 +349,35 @@ class StoryCloseTests(StoryCloseFixture):
             "SELECT witnessKey, verdict, mainSha FROM witnessResults"),
             [("W1", "green", tip)])
         self.assertEqual(story(self.conn, parent).state, "approved")
+        self.assertEqual(self.closed_notes(parent), [])
+
+        if run_id is not None:
+            store.release(self.conn, run_id, "abandoned")
+        store.tickets.walk_ticket(self.conn, scaffolding, "abandoned")
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", tip))
+        self.assertEqual(self.closed_notes(parent),
+                         [f"Story closed on its witnesses at {tip}: W1 green."])
+
+    def test_a_story_with_an_open_scaffolding_child_stays_open_on_green(self):
+        self.assert_closes_once_the_open_child_ends(claimed=False)
+
+    def test_a_story_with_a_claimed_scaffolding_child_stays_open_on_green(self):
+        self.assert_closes_once_the_open_child_ends(claimed=True)
+
+    def test_the_story_closes_at_the_tip_its_last_childs_merge_moves(self):
+        parent, scaffolding, _ = self.scaffolded()
+        self.step()
+        landed = self.commit("scaffold.txt", "x = 1\n", "scaffolding")
+        merged_run(self.conn, scaffolding, landed)
+        store.tickets.walk_ticket(self.conn, scaffolding, "merged")
+
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", landed))
 
 
 class OpenProposalCloseTests(StoryCloseFixture):
@@ -420,6 +462,7 @@ class StoreModeCloseTests(StoryCloseFixture):
         self.knobs, self.memory = sweep_config(self.project), fresh_memory()
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
+        store.tickets.walk_ticket(self.conn, child, "merged")
         self.commit(W1_FILE, PASSES, "w1 lands")
 
         self.step()

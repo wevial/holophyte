@@ -12,15 +12,19 @@ import holophyte.serve.serve_actions
 import store
 import store.board
 import store.read
+import store.stories
 import store.tickets
 from holophyte.board import linear_provider
 from holophyte.board.provider import LinearBoard
+from holophyte.config.project import Project
 from holophyte.loop.failure_triage import triage_failure
+from holophyte.story import story_claim
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 from tests.test_provider import ticket_body
 from tests.test_status import file_stuck_wait
+from tests.test_story_claim_gate import WITNESSES
 
 
 class FailedAttentionTests(ServeTestCase):
@@ -633,9 +637,7 @@ class StuckWaitAttentionTests(ServeTestCase):
              "behind": 2, "level": "attention"})
 
 
-class StuckWaitStatesTests(ServeTestCase):
-    URL = "https://github.com/example/repo/pull/41"
-
+class StuckWaitCase(ServeTestCase):
     def setUp(self):
         super().setUp()
         self.now = int(time() * 1000)
@@ -670,6 +672,10 @@ class StuckWaitStatesTests(ServeTestCase):
         return {item["ticket"]: (item["dependency"], item["dependency_state"],
                                  item["reason"], item["level"])
                 for item in body["items"] if item["kind"] == "stuck_wait"}
+
+
+class StuckWaitStatesTests(StuckWaitCase):
+    URL = "https://github.com/example/repo/pull/41"
 
     def test_canceled_parked_and_failed_dependencies_are_stuck_waits(self):
         canceled = self.file("NAT-1", status="abandoned")
@@ -726,6 +732,88 @@ class StuckWaitStatesTests(ServeTestCase):
                                           text, column="backlog")
         self.assertEqual(store.read.ticket_by_identifier(
             self.conn, shelved).status, "blocked_on_deps")
+        self.assertEqual(self.stuck_waits(), {})
+
+
+CLOSE_NOTE = "Story closed on its witnesses at {sha}: W1 green."
+
+
+def file_story_of(conn, project_id, parent, children):
+    """`parent` approved as a story of W1 whose first child completes it."""
+    def mirror(name):
+        return store.tickets.mirror_ticket(
+            conn, project_id, linear_issue_id=f"issue-{name}",
+            linear_identifier=name, title=f"ticket {name}",
+            acceptance_criteria=["Given it, then it works"],
+            verification_commands=["echo ok"])
+
+    parent_id, child_ids = mirror(parent), [mirror(name) for name in children]
+    store.stories.file_story(
+        conn, parent_id, WITNESSES[:1],
+        [(child, "completes" if n == 0 else "scaffolding",
+          ["W1"] if n == 0 else []) for n, child in enumerate(child_ids)])
+    (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                               (parent_id,)).fetchone()
+    store.stories.approve_story(conn, parent_id, revision, "operator", "go")
+    return parent_id, child_ids
+
+
+def strand_story_child(conn, project_id, end_story):
+    """NAT-1's story ended by `end_story` while its child NAT-2's run was in
+    flight; the run then ends and NAT-2 is requeued to Ready."""
+    parent, (child,) = file_story_of(conn, project_id, "NAT-1", ["NAT-2"])
+    run = store.claim(conn, project_id, child)
+    end_story(conn, parent)
+    store.release(conn, run, "abandoned")
+    store.tickets.walk_ticket(conn, child, "ready")
+    return child
+
+
+def abandon(conn, parent):
+    store.stories.abandon_story(conn, parent, "dropped", "operator")
+
+
+class StoryChildStuckWaitTests(StuckWaitCase):
+    def refusal(self, ticket_id):
+        project = Project.locate(self.target, adopt=False)
+        return story_claim.refusal(project, self.conn, ticket_id)
+
+    def test_a_ready_child_of_an_abandoned_story_is_a_stuck_wait(self):
+        child = strand_story_child(self.conn, self.project_id, abandon)
+
+        self.assertEqual(self.refusal(child), "its story NAT-1 is abandoned")
+        self.start()
+        _, _, body = self.request("GET", "/attention")
+        self.assertEqual(
+            [(item["ticket"], item["dependency"], item["dependency_state"],
+              item["reason"], item["level"]) for item in body["items"]
+             if item["kind"] == "stuck_wait"],
+            [("NAT-2", "NAT-1", "abandoned", None, "attention")])
+
+    def test_a_ready_child_of_a_closed_story_names_the_close_note(self):
+        sha = "c" * 40
+        note = CLOSE_NOTE.format(sha=sha)
+        child = strand_story_child(
+            self.conn, self.project_id,
+            lambda conn, parent: store.stories.close_story(
+                conn, parent, sha, note))
+
+        self.assertEqual(self.refusal(child), "its story NAT-1 is closed")
+        self.assertEqual(self.stuck_waits(), {
+            "NAT-2": ("NAT-1", "closed", note, "attention")})
+
+    def test_settled_shelved_and_open_story_children_are_no_stuck_wait(self):
+        parent, (merged, abandoned, shelved) = file_story_of(
+            self.conn, self.project_id, "NAT-1", ["NAT-2", "NAT-3", "NAT-4"])
+        store.tickets.walk_ticket(self.conn, merged, "merged")
+        store.tickets.walk_ticket(self.conn, abandoned, "abandoned")
+        store.stories.close_story(self.conn, parent, "c" * 40,
+                                  CLOSE_NOTE.format(sha="c" * 40))
+        file_story_of(self.conn, self.project_id, "NAT-5", ["NAT-6"])
+
+        self.assertEqual(self.conn.execute(
+            "SELECT boardColumn FROM tickets WHERE id = ?",
+            (shelved,)).fetchone(), ("backlog",))
         self.assertEqual(self.stuck_waits(), {})
 
 

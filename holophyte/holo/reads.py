@@ -135,10 +135,17 @@ def item_line(item):
     subject = " ".join(f"{label}{item[key]}" for key, label in (
         ("project", ""), ("ticket", ""), ("run", "run "))
         if item.get(key) is not None)
-    said = next((item[key] for key in ("question", "reason", "note", "phase",
-                                       "state", "error", "detail")
-                 if item.get(key)), "")
+    said = _waits_on(item) if item["kind"] == "stuck_wait" else next(
+        (item[key] for key in ("question", "reason", "note", "phase",
+                               "state", "error", "detail")
+         if item.get(key)), "")
     return f"{item['kind']}  {subject}  {said}{triage_text(item)}".rstrip()
+
+
+def _waits_on(item):
+    reason = f": {item['reason']}" if item.get("reason") else ""
+    return (f"waits on {item['dependency']} ({item['dependency_state']})"
+            f"{reason}")
 
 
 def triage_text(item):

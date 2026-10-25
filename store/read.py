@@ -768,7 +768,7 @@ def parked_on_pull_request(outcome, pr_url, park_kind):
             and park_kind in ("pull_request", "ci", "route"))
 
 _STUCK_NOTE_KINDS = {"needs_spec": ("critic", "stale", "validation"),
-                     "abandoned": ("cancel",)}
+                     "abandoned": ("cancel",), "closed": ("verdict",)}
 
 
 @dataclass(frozen=True)
@@ -870,19 +870,34 @@ def related_tickets(conn, run_id):
     return depends_on, followed_by
 
 
+def _ended_story_children(conn):
+    return {child: (parent, state) for child, parent, state in conn.execute(
+        "SELECT c.ticketId, s.ticketId, s.state FROM storyChildren c"
+        " JOIN stories s ON s.ticketId = c.storyId"
+        " WHERE s.state IN ('closed', 'abandoned')")}
+
+
 def stuck_waits(conn):
     rows = _wait_rows(conn)
     by_issue = {(row.projectId, row.issueId): row for row in rows}
+    by_id = {row.id: row for row in rows}
+    ended = _ended_story_children(conn)
     waits = []
     for ticket in rows:
-        if ticket.status != "blocked_on_deps":
+        if ticket.id in ended and ticket.status == "ready" \
+                and ticket.activeRunId is None:
+            parent, state = ended[ticket.id]
+            dep = by_id[parent]
+        elif ticket.status == "blocked_on_deps":
+            deps = [by_issue.get((ticket.projectId, issue))
+                    for issue in ticket.dependsOn]
+            dep = next((dep for dep in deps if dep and _stuck_state(dep)),
+                       None)
+            if dep is None:
+                continue
+            state = _stuck_state(dep)
+        else:
             continue
-        deps = [by_issue.get((ticket.projectId, issue))
-                for issue in ticket.dependsOn]
-        dep = next((dep for dep in deps if dep and _stuck_state(dep)), None)
-        if dep is None:
-            continue
-        state = _stuck_state(dep)
         waiting = [row for row in rows if row.projectId == ticket.projectId
                    and row.status == "blocked_on_deps"]
         waits.append(StuckWait(
