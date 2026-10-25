@@ -192,6 +192,16 @@ count, and a pass in which any store's live scouts cannot be counted starts
 none. Each start and each end prints one line; one project's failure there
 is a line and never stops the step.
 
+A scout reads its project's GitHub (CI runs, jobs and timings, per-test
+results from report artifacts, pull requests, issues, statuses and file
+contents) only with `[scout] github = true` in the project's config and a
+GitHub `origin`; the factory's own `gh` login or `GH_TOKEN` is the route,
+and no token reaches the agent. Each call shows as a `scout_github` event
+in the scout's events (`holo scout show ID`, `GET /scouts/ID` and the
+console's scout pane); a scout whose project has no GitHub `origin` shows one
+`scout_github` event saying the tools are off. See
+[`[scout]`](config.md#scout).
+
 What a run must remember between runs and no store column holds lives in
 `HOLOPHYTE_HOME/sweep.json`, rewritten whole after every project: when the
 run started and ended, its pid, revision and exit, each project's outcome

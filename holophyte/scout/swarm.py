@@ -20,6 +20,7 @@ from holophyte.agents.review_workspace import review_scratch, scratch_git_enviro
 from holophyte.isolation import launcher
 from holophyte.loop.gates import run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
+from holophyte.scout.github_mcp import TOOLS_SENTENCE
 from holophyte.scout.run_helpers import (
     HELPER_OPENING,
     LAUNCH_FAILURES,
@@ -87,9 +88,10 @@ def reported_answer(seat, output):
     return output, usage
 
 
-def helper_goal(row, task):
+def helper_goal(row, task, github):
     return (
         f"{HELPER_OPENING}\n\n{READ_ONLY}\n\n{task_fields(row, task)}"
+        f"{TOOLS_SENTENCE if github else ''}"
         "Answer the question with evidence: path:line at the base commit, "
         "commands you ran with excerpts of their output, or links.\n")
 
@@ -171,11 +173,12 @@ class Swarm:
     """Runs a scout's helper turns, one wave at a time, until it is closed."""
 
     def __init__(self, conn, project, row, config, deadline, stopping,
-                 pass_number=1, total=None):
+                 pass_number=1, total=None, server=None):
         self.conn, self.project, self.row = conn, project, row
         self.deadline = deadline
         self.stopping = stopping
         self.pass_number = pass_number
+        self.server = server
         self.route = row.helper_route or config.helper
         self.seat = config.helpers.get(self.route)
         self.price = config.helper_prices.get(self.route)
@@ -340,8 +343,9 @@ class Swarm:
         if self.remaining_s() <= 0 or self.stopping.stopped:
             return None
         checkout = self.checkout(task)
-        return self.seat.turn(outbound(helper_goal(self.row, task),
-                                       self.secrets)), checkout
+        goal = helper_goal(self.row, task, self.server is not None)
+        return self.seat.turn(outbound(goal, self.secrets),
+                              self.server), checkout
 
     def helper(self, task, previous, mine):
         conn = None

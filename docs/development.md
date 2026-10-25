@@ -173,6 +173,17 @@ Each module, one line:
   the pass's own small budget, and the pass's report and action items
   appended after the earlier passes', or the failure or stop recorded, as
   the scout returns to `done`.
+- `holophyte/scout/github_mcp.py` — `python3 -m holophyte.scout.github_mcp
+  --project PATH --scout ID`: the scout's `github_get` and `github_tests`
+  tools served over stdio on the MCP SDK's low-level server, and the server
+  entry a lead or read helper turn carries under `[scout] github = true`.
+- `holophyte/scout/github_reads.py` — the scout's GitHub reads: the guard
+  holding a call to an allow-listed GET of its own repository (a path
+  without `repos/OWNER/NAME/` resolved under it; `actions/jobs/ID/logs` and
+  the `commits` listing among the reads), the fetch through
+  `holophyte.pr.github`, the trimmed and capped answer, a job log cut to its
+  tail, a run's
+  JUnit and Playwright report rows, and the `scout_github` event per call.
 - `holophyte/scout/guardrails.py` — a guardrails scout's findings digest:
   the last 30 days of review findings, guardrail follow-ups and ticket
   defects from the findings view, each with an id, clustered by path and

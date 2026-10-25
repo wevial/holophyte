@@ -537,12 +537,32 @@ def pull_body_html(target, pull):
     return answer.get("body_html") or ""
 
 
-def job_log(target, pull, job_id):
+def job_log(target, pull, job_id, query=""):
     """The endpoint redirects to plain text, not JSON."""
     path = f"repos/{pull.owner}/{pull.name}/actions/jobs/{job_id}/logs"
+    path += f"?{query}" if query else ""
     if shutil.which(GH) is not None:
         return _gh_output(target, pull.host, "GET", path, None)
     return _api_output(pull.host, "GET", path, None, _route_token())
+
+
+def artifact_zip(target, pull, artifact_id):
+    path = (f"repos/{pull.owner}/{pull.name}/actions/artifacts/"
+            f"{artifact_id}/zip")
+    if shutil.which(GH) is None:
+        return _api_bytes(pull.host, "GET", path, None, _route_token(), JSON)
+    deadline.admit(f"GitHub's GET {path} request")
+    try:
+        r = subprocess.run([GH, "api", "--hostname", pull.host, "--method",
+                            "GET", path], cwd=target.path, input=b"",
+                           capture_output=True, timeout=PR_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise InfraFailure(f"{GH} api {path} did not answer in"
+                           f" {PR_TIMEOUT}s") from None
+    if r.returncode:
+        detail = " ".join(r.stderr.decode("utf-8", "replace").split())[-500:]
+        raise InfraFailure(f"{GH} api {path} failed: {detail or 'no output'}")
+    return r.stdout
 
 
 def _call(target, host, method, path, payload, accept=JSON):
@@ -630,6 +650,11 @@ class _TokenStaysHome(urllib.request.HTTPRedirectHandler):
 
 
 def _api_output(host, method, path, payload, token, accept=JSON):
+    return _api_bytes(host, method, path, payload, token,
+                      accept).decode("utf-8", "replace")
+
+
+def _api_bytes(host, method, path, payload, token, accept):
     deadline.admit(f"GitHub's {method} {path} request")
     base = API if host == "github.com" else f"https://{host}/api/v3"
     if path == "graphql":
@@ -647,7 +672,7 @@ def _api_output(host, method, path, payload, token, accept=JSON):
     try:
         opener = urllib.request.build_opener(_TokenStaysHome)
         with opener.open(request, timeout=PR_TIMEOUT) as response:
-            return response.read().decode("utf-8", "replace")
+            return response.read()
     except urllib.error.HTTPError as e:
         detail = " ".join(e.read().decode("utf-8", "replace").split())[-500:]
         raise InfraFailure(f"GitHub refused {method} {path} ({e.code}):"

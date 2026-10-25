@@ -1023,9 +1023,11 @@ after = ["bun --cwd=console run build"]
 ```
 
 With a non-empty `mention_accounts` list, unlisted mentions receive one reply per
-thread: "Only listed maintainers may instruct the factory here", with the standard
-comment header. Review threads retain normal bot or human routing; conversation
-comments yield no instruction. Set `mention_accounts = ["maintainer-login"]`
+thread: "Only listed maintainers may instruct the factory here", opening
+`---- Comment by holophyte ----`. Review threads retain normal bot or human
+routing; conversation comments yield no instruction. The latest comment of a bot
+(GitHub type `Bot`, a `[bot]` login, or a login in `bot_authors` or `bot_logins`)
+is never an instruction and never refused, with or without `mention_accounts`. Set `mention_accounts = ["maintainer-login"]`
 to restrict instructions in both places. A bare string or a non-string list entry
 is rejected at startup.
 
@@ -1876,6 +1878,7 @@ With no `[scout]` table the defaults below apply.
 | `waves` | Default: `2` | `1` or `2`. |
 | `steer_budget_min` | Default: `10` minutes | Integer of at least 1; a steered follow-up pass's time budget, counted from its plan turn. |
 | `steer_helpers` | Default: `4` | Integer of at least 1, at most `helper_turns`; the helpers a steered follow-up pass starts in all, in one wave. |
+| `github` | Default: `false` | `true` or `false`; `true` hands every lead turn and read helper turn the read-only GitHub tools below. |
 
 ```toml
 [scout]
@@ -1897,3 +1900,42 @@ integer of at least 1, a `swarm` or `steer_helpers` above `helper_turns`, a
 0 is a startup error naming the table and the key.
 `factory.py --scout-probe PROJECT` probes each route; see
 [the CLI reference](reference/cli.md).
+
+With `github = true` and a GitHub `origin`, every lead turn (plan,
+synthesis, report, repair, answer and a steered pass's) and every read
+helper turn carries one MCP server, `holo_github`, started by the agent CLI
+over stdio as `python3 -m holophyte.scout.github_mcp --project PATH --scout
+ID` (`--mcp-config` and `--allowedTools mcp__holo_github` for Claude,
+`-c mcp_servers.holo_github.*` for Codex); run helpers and probes never do.
+Its two tools read the project's own repository through the factory's own
+GitHub route (`gh api`, or the token route when `gh` is absent), so no token
+enters a turn's argv or config. `github_get` takes a `path` and answers a
+GET of it only when it lies on the allow-list of the repository's own
+reads, given either in full under `repos/OWNER/NAME/` or as the part after
+it, which is read and recorded at the full `repos/OWNER/NAME/` path:
+`actions/runs`, `actions/runs/ID`, `actions/runs/ID/jobs`,
+`actions/runs/ID/attempts/N/jobs`, `actions/runs/ID/timing`,
+`actions/runs/ID/artifacts`, `actions/jobs/ID`, `actions/jobs/ID/logs`,
+`actions/workflows`, `actions/workflows/ID/runs`, `pulls`, `pulls/N`,
+`pulls/N/files`, `commits` (the commit listing), `commits/REF/check-runs`,
+`commits/REF/status`, `issues/N`, `issues/N/comments` and `contents/PATH`,
+with an optional query string. Any other method, a `repos/` path naming
+another repository, any other path, `graphql`, `..`, a `#` fragment, a
+scheme or a host is refused naming its rule. The answer drops `node_id`,
+`url` and every `*_url` key but `html_url` at every depth and is cut at
+40000 characters with a `[holo2] truncated: 40000 of N characters shown`
+line. A job's log (`actions/jobs/ID/logs`) answers as plain text, untrimmed,
+and is cut from its head instead, keeping its tail where the timing summary
+sits: a `[holo2] truncated: last 40000 of N characters shown` line, then the
+log's last 40000 characters. `github_tests` takes
+a workflow `run` and an optional `artifact` name and reads the run's
+unexpired artifacts of at most 50 MB, each JUnit XML and Playwright JSON
+report in them, answering `artifacts`, `total`, `failed`, `flaky` and the
+300 slowest test rows (`title`, `file`, `duration_ms`, `status`,
+`retries`) under the same cap, plus `refused`, the names of any artifacts
+over 50 MB it left unread. Every call, refused or not, records one
+detail-level `scout_github` event on the scout with its `tool`, `path`,
+`status` (`ok`, `failed` or `refused`) and `bytes`. With no GitHub `origin`
+the scout records one `scout_github` event, `no GitHub origin; the GitHub
+tools are off`, and its turns carry no server. A `github` that is not a
+boolean is a startup error naming `[scout] github`.

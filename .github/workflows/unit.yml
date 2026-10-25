@@ -37,7 +37,14 @@ jobs:
       - run: |
           git config --global user.name "unit check"
           git config --global user.email "unit-check@example.com"
-      - run: python3 tests/run_modules.py --jobs 4 --shard ${{ matrix.shard }}/2 --max-module-sec 90
+      - run: python3 tests/run_modules.py --jobs 4 --shard ${{ matrix.shard }}/2 --max-module-sec 90 --junit module-times.xml
+      - name: Upload module times
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-timings-${{ matrix.shard }}
+          path: module-times.xml
+          retention-days: 7
 
   console:
     runs-on: ubuntu-latest
