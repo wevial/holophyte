@@ -8,9 +8,9 @@ import store.steer_notes
 import store.tickets
 from holophyte.babysit.maintainer_notes import PREFIX, PRIVATE, carry_amendments
 from holophyte.board.projection import mirror_task
+from holophyte.board.provider import parse_body
 from holophyte.loop import steering
 from holophyte.review.criterion_ids import numbered
-from provider import parse_body
 from tests.test_ticket_criteria_rows import ticket_body
 
 FILED = ["the list shows every entry", "the list is sorted by name",

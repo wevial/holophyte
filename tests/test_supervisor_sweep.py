@@ -34,8 +34,8 @@ import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above
-import review_runner  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+from holophyte.review import review_runner  # noqa: E402 - after sys.path setup
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # the runner's shim
 from sweep_fixture import (  # noqa: E402 - after the insert

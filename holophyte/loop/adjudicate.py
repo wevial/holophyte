@@ -2,7 +2,6 @@
 import json
 from time import time
 
-import review_runner
 import store
 import store.read
 from holophyte import failure_reason
@@ -23,6 +22,7 @@ from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.redact import safe_print as print
+from holophyte.review import review_runner
 from holophyte.review.briefs import criteria_brief, left_open_brief, tests_brief
 from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (

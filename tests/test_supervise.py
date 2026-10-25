@@ -73,7 +73,8 @@ class SuperviseTests(SweepTestCase):
         """The mode with an injected sleep, and the provider as a tripwire."""
         out = io.StringIO()
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}):
             with no_network():
                 code = holophyte.host.supervisor.supervise(
                     self.project, wait=wait, out=out
@@ -177,7 +178,8 @@ class SuperviseTests(SweepTestCase):
         pid = os.getpid()
 
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", io.StringIO()):
                 holophyte.host.supervisor.supervise_pass(self.project, pid, T0,
                                                     now=T0 + 6 * MINUTE)
@@ -283,7 +285,8 @@ class LoopRestartTests(SweepTestCase):
         out = io.StringIO()
 
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}):
             with no_network():
                 holophyte.host.supervisor.supervise_pass(self.project, os.getpid(), T0,
                                        now=T0 + 200 * self.SECOND, out=out)
@@ -445,7 +448,8 @@ class SupervisorConfigTests(SweepTestCase):
 
         out = io.StringIO()
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}):
             with no_network():
                 code = holophyte.host.supervisor.supervise(
                     self.project, wait=stop_after_one, out=out
@@ -554,7 +558,8 @@ class HostLabelTests(SweepTestCase):
     def test_the_startup_and_refusal_lines_show_the_label_over_a_real_lock(self):
         out = io.StringIO()
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}):
             with no_network(), \
                     patch.object(holophyte.host.supervisor, "supervise_pass"):
                 holophyte.host.supervisor.supervise(
@@ -921,7 +926,7 @@ class ParkedPullRequestTests(SweepTestCase):
             verification_commands=["echo ok"])
 
     def test_low_budget_holds_a_loop_start_for_mirrored_ready_work(self):
-        import linear_provider
+        from holophyte.board import linear_provider
         self.ready_ticket()
         calls = self.fake_systemctl()
         budget = linear_provider.LinearBudget()
@@ -1021,7 +1026,7 @@ class ParkedPullRequestTests(SweepTestCase):
     def test_a_low_complexity_budget_asks_nothing_and_says_the_reset_once(
             self):
         """Low budget suppresses board asks and announces each reset only once."""
-        import linear_provider
+        from holophyte.board import linear_provider
         budget = linear_provider.LinearBudget()
         budget.remember({
             "x-ratelimit-complexity-limit": "3000000",

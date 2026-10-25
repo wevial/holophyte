@@ -529,7 +529,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         never asked -- rather than claiming to be refused. `loop()` stands
         the provider in for `sys.modules["linear_provider"]`, so the budget
         the guards read is the provider's own attribute."""
-        import linear_provider
+        from holophyte.board import linear_provider
         budget = linear_provider.LinearBudget()
         budget.remember({
             "x-ratelimit-complexity-limit": "3000000",
@@ -562,7 +562,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         `_gql()` does on the real board; `loop()` stands the provider in
         for `sys.modules["linear_provider"]`, so the budget the guards
         read is the provider's own attribute."""
-        import linear_provider
+        from holophyte.board import linear_provider
         provider = StubProvider(a_task())
         provider.LINEAR_BUDGET = linear_provider.LinearBudget()
         asked = []
@@ -596,7 +596,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         turns the raise into a skipped listing, and the claim's
         `claim_next()` must still not spend the listing to be refused
         a second time."""
-        import linear_provider
+        from holophyte.board import linear_provider
         provider = StubProvider(a_task())
         provider.LINEAR_BUDGET = linear_provider.LinearBudget()
         asked = []
@@ -1320,7 +1320,7 @@ class NoCommitOutputTests(LoopFixture):
         self.configure(f'[agents]\nimplementer = "{path}"\n')
         provider = StubProvider(a_task())
         with no_agent_processes():
-            with patch.dict(sys.modules, {"linear_provider": provider}):
+            with patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}):
                 holophyte.cli.operator.main(self.project, provider)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])

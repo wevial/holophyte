@@ -21,7 +21,7 @@ from test_provider import FakeLinear  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
 import holophyte.cli.entry  # noqa: E402
-import linear_provider  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,

@@ -33,8 +33,8 @@ import holophyte.loop.gates
 import holophyte.loop.pipeline
 import holophyte.loop.runs
 import holophyte.redact
-import review_runner
 import store
+from holophyte.review import review_runner
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent

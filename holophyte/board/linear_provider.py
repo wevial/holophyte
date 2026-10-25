@@ -13,7 +13,7 @@ from time import localtime, sleep, strftime, time
 
 from holophyte.tickets import ticket_header, ticket_template
 
-HERE = Path(__file__).parent
+CHECKOUT = Path(__file__).resolve().parents[2]
 GRAPHQL = "https://api.linear.app/graphql"
 _UNNAMED_RESET_RETRY_MS = 3_600_000
 
@@ -21,7 +21,7 @@ _UNNAMED_RESET_RETRY_MS = 3_600_000
 def _load_env_var(name):
     if os.environ.get(name):
         return os.environ[name]
-    env_file = HERE / ".env"
+    env_file = CHECKOUT / ".env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             if line.startswith(name + "="):
@@ -594,7 +594,7 @@ def _issues_named(identifiers):
 
 def states(identifiers, label=None):
     # Imported here: this module imports standalone, without the seam.
-    from provider import GONE
+    from holophyte.board.provider import GONE
     answer ={i: {"state": GONE, "name": None, "column": None}
               for i in identifiers if IDENTIFIER_RE.match(i)}
     for node in _issues_named(identifiers):

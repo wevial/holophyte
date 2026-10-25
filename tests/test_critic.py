@@ -40,13 +40,13 @@ import store.board  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.agents.agent_routes import reset, routes  # noqa: E402
 from holophyte.board.board_sync import owed  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.review.freshness import (  # noqa: E402
     critic_brief,
     park_stale,
     parse_freshness,
 )
-from provider import board_for  # noqa: E402
 from tests.phase_fixture import finish_run  # noqa: E402
 
 # The fake codex: records its cwd, the HEAD there and whether HEAD is

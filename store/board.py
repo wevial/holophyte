@@ -363,7 +363,7 @@ def _dependencies(conn, project_id, text, self_id=None):
 def _write(conn, project_id, issue_id, identifier, text, specced, author,
            now, **fields):
     from holophyte.board.projection import task_contract
-    from provider import parse_body
+    from holophyte.board.provider import parse_body
     task = parse_body(identifier, text)
     title, criteria, commands, _states = task_contract(task)
     if not specced:

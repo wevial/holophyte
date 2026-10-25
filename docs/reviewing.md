@@ -6,7 +6,8 @@ The boundary the local reviewer runs inside. Back to the
 ## Local reviewer boundary
 
 The factory never gives a reviewer the implementation worktree directly.
-`review_runner.py` stages the frozen base and candidate commits into a fresh,
+`holophyte/review/review_runner.py` stages the frozen base and candidate
+commits into a fresh,
 detached, zero-remote Git repository and verifies its identity before and after
 the review. Docker mounts that repository at `/workspace` read-only. The
 container also has a read-only root filesystem, no Linux capabilities, no

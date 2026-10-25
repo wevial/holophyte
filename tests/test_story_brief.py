@@ -20,11 +20,12 @@ import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.adjudicate  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.stories  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.story_claim import (  # noqa: E402
     STANDING_ORDERS,
@@ -32,7 +33,6 @@ from holophyte.story.story_claim import (  # noqa: E402
     WITNESS,
     story_brief,
 )
-from provider import board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
 W2_SOURCE = ("import unittest\n\n\nclass W2(unittest.TestCase):\n"

@@ -748,7 +748,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
 
     def container(self, down):
         """The review runner, with the models in `down` unable to start."""
-        import review_runner
+        from holophyte.review import review_runner
 
         self.reviews = []
         def run_review(*, candidate_sha, prompt, model, effort, **_):
@@ -877,7 +877,7 @@ class ContainerReviewFallbackTests(SweepTestCase):
     def test_startup_probe_stages_without_the_worktree_carry(self):
         import tempfile
 
-        import review_runner
+        from holophyte.review import review_runner
 
         (self.target / '.gitignore').write_text('.venv/\n')
         (self.target / '.venv').mkdir()
@@ -946,7 +946,7 @@ class ReviewerFallbackListTests(SweepTestCase):
 
     def start(self):
         """Startup with the container reviewer unable to start."""
-        import review_runner
+        from holophyte.review import review_runner
 
         down = review_runner.ReviewBoundaryError('container produced no events')
         with patch.object(roles.review_runner, 'run_review', side_effect=down), \
@@ -1036,7 +1036,8 @@ class FailedRouteLoopTests(LoopFixture):
                        '[loop]\nstop_on_failure = false\n')
         provider = StubProvider(a_task(1), a_task(2))
         with no_agent_processes(), patch.dict(sys.modules,
-                                              {'linear_provider': provider}):
+                                              {'holophyte.board.linear_provider':
+                                               provider}):
             code = operator.main(self.project, provider)
         self.assertEqual(code, 1)
         self.assertEqual(self.read('SELECT count(*) FROM runs'), [(1,)])

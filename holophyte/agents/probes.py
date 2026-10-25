@@ -6,7 +6,6 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-import review_runner
 from holophyte.agents.agent_output import claude_result, streamed
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.harness import critic_seat
@@ -37,6 +36,7 @@ from holophyte.config.reader import (
 from holophyte.isolation import launcher
 from holophyte.loop.gates import run_capped, sh
 from holophyte.redact import safe_print as print
+from holophyte.review import review_runner
 
 # A prompt any healthy harness answers well inside `PROBE_TIMEOUT` seconds.
 PROBE_GOAL = "Reply with the single word: ready"

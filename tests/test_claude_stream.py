@@ -64,7 +64,8 @@ class StalledTurnTests(LoopFixture):
         reviewer = FakeAgent(APPROVE)
         started = time.monotonic()
         with no_agent_processes(), \
-                patch.dict(sys.modules, {"linear_provider": provider}), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
                 patch.object(holophyte.loop.review_round, "agent", reviewer), \
                 patch.object(holophyte.loop.adjudicate, "agent", reviewer):
             holophyte.cli.operator.main(self.project, provider)
@@ -104,7 +105,7 @@ class StalledTurnTests(LoopFixture):
                                   "Depends on: none\nImplementer: sonnet\n")
         provider = StubProvider(dict(a_task(), body=body))
         with no_agent_processes(), \
-                patch.dict(sys.modules, {"linear_provider": provider}):
+                patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}):
             holophyte.cli.operator.main(self.project, provider)
         [(payload,)] = self.read("SELECT payload FROM runEvents"
                                  " WHERE kind = 'implementer_profile'")

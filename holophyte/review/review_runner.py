@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "holophyte-reviewer:ubuntu24.04-v13"
 PIDS_LIMIT = 4096
 MODEL = "gpt-6-astra"
@@ -39,7 +39,7 @@ REMOVAL_SIGNALS = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
 CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 DOCKERFILE_PATH = "docker/reviewer.Dockerfile"
-RUNNER_PATH = "review_runner.py"
+RUNNER_PATH = "holophyte/review/review_runner.py"
 IMAGE_LINE = re.compile(r'^IMAGE = "([^"\s]+)"$', re.MULTILINE)
 CODEX_FILES = ("codex", "codex-code-mode-host")
 CREDENTIAL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

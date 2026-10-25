@@ -16,10 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 import holophyte.cli.entry  # noqa: E402
-import linear_provider  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.board.projection import file_ticket  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 from holophyte.review.freshness import stale_reasons  # noqa: E402
-from provider import FileProvider  # noqa: E402
 from tests.test_cli_native_update import NATIVE, body, no_linear  # noqa: E402
 
 TEMPLATE = Path(__file__).resolve().parents[1] / "ticket_template.py"

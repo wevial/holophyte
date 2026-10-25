@@ -12,9 +12,9 @@ from fake_agent import FakeAgent, SpawnGuard, no_agent_processes  # noqa: E402
 
 import holophyte.cli.operator
 import holophyte.loop.implement
-import review_runner
 from holophyte.agents import probes, roles
 from holophyte.agents.agent_routes import reset
+from holophyte.review import review_runner
 
 # A probe is answered with the staged commit; a review takes the next numbered
 # turn, and a turn reading SLEEP outlasts any review time limit.
@@ -114,7 +114,8 @@ class ReviewTimeoutLoopTests(LoopFixture):
         provider = StubProvider(a_task())
         guard = SpawnGuard(blocked=("claude", "codex", "podman"))
         with no_agent_processes(guard), \
-                patch.dict(sys.modules, {"linear_provider": provider}), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
                 patch.object(holophyte.loop.implement, "agent",
                              FakeAgent(Commit())), \
                 contextlib.redirect_stdout(io.StringIO()):

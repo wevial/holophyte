@@ -20,13 +20,13 @@ from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.board.projection import mirror_status  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
     reconcile_parked_pull_requests,
 )
 from holophyte.loop.claim_store import NOT_ASKED, SYNCED, sync_board  # noqa: E402
-from provider import FileProvider  # noqa: E402
 
 BOARD = ('[board]\nproject_id = "project-1"\nteam = "team-1"\n'
          '[supervisor]\nboard_ask_sec = 600\n')

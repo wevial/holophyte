@@ -8,13 +8,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import review_runner
 from holophyte.agents import review_workspace, roles
 from holophyte.loop import adjudicate, dispatch, pipeline, review_round
 from holophyte.loop.dispatch import MergeParked
 from holophyte.loop.gates import InfraFailure, RunFailure
 from holophyte.pr import github
 from holophyte.pr.github import Thread
+from holophyte.review import review_runner
 
 
 class ReviewRefsTests(unittest.TestCase):

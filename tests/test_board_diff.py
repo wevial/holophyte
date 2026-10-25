@@ -19,8 +19,8 @@ import holophyte.cli.host_modes
 import holophyte.config.project
 import store.tickets
 from holophyte.board.board_diff import board_diff
+from holophyte.board.provider import FileProvider
 from holophyte.loop.runs import open_store
-from provider import FileProvider
 
 TICKET = """\
 # {title}

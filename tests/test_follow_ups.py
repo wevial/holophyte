@@ -36,10 +36,10 @@ import store.tickets  # noqa: E402
 from holophyte.agents.fix_session import fix_turn  # noqa: E402
 from holophyte.board.native_board import NativeBoard  # noqa: E402
 from holophyte.board.projection import release_run  # noqa: E402
+from holophyte.board.provider import LinearBoard, board_for  # noqa: E402
 from holophyte.loop.follow_ups import capture, settle  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.tickets import ticket_template  # noqa: E402
-from provider import LinearBoard, board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
 FEATURE = "FOLLOW_UP(feature): Cache the board read @ provider.py:185"
@@ -455,7 +455,7 @@ class NativeSettleTests(NativeProject):
                 settle(self.project, conn, run_id)
 
         gated = Gated(self.project, "NAT", self.board.team)
-        with patch("provider.board_for", return_value=gated):
+        with patch("holophyte.board.provider.board_for", return_value=gated):
             workers = [threading.Thread(target=worker, args=(run_id,))
                        for run_id in (second, first)]
             workers[0].start()
@@ -560,7 +560,7 @@ class LinearMergeTests(LoopRuns):
     """The default Linear-mode project, its board a recording stand-in."""
 
     def merge(self, board, *script):
-        with patch("provider.board_for", return_value=board):
+        with patch("holophyte.board.provider.board_for", return_value=board):
             return self.main_output(*script)
 
     def test_a_feature_is_filed_once_into_backlog_with_estimate_30(self):

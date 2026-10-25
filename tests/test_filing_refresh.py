@@ -18,7 +18,7 @@ from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path ins
 from story_fixture import write_story  # noqa: E402
 
 import holophyte.cli.entry  # noqa: E402
-import linear_provider  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from tests.test_cli_native_update import NATIVE, body, no_linear  # noqa: E402
 
 PR_MODE = NATIVE + '[merge]\nmode = "pr"\n'

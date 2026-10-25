@@ -17,10 +17,10 @@ import holophyte.agents.agent_routes
 import holophyte.agents.harness
 import holophyte.config.checks
 import holophyte.config.project
-import review_runner
 import store
 from holophyte.agents.probes import PROBE_GOAL
 from holophyte.loop.shadow import ShadowBrief, run_shadow
+from holophyte.review import review_runner
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 IDENTITY = ["-c", "user.name=Shadow", "-c", "user.email=shadow@example.invalid"]

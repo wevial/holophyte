@@ -13,9 +13,9 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 
-import review_runner
 from holophyte.loop.gates import run_capped
 from holophyte.redact import register_values
+from holophyte.review import review_runner
 
 
 @dataclass(frozen=True)

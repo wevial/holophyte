@@ -25,9 +25,9 @@ from loop_fixture import (  # noqa: E402
 
 import holophyte.cli.entry  # noqa: E402
 import holophyte.redact  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.leak_guard import PrivateMatch  # noqa: E402
 from holophyte.loop.gates import InfraFailure  # noqa: E402

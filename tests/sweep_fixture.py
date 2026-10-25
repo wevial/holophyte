@@ -139,7 +139,8 @@ class SweepTestCase(unittest.TestCase):
         no_docker = self.root / "no-docker-bin"
         no_docker.mkdir(exist_ok=True)
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}), \
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}), \
                 patch.dict(os.environ, {"PATH": str(no_docker)}):
             with (
                 no_network(),

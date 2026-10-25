@@ -23,12 +23,12 @@ from fake_agent import APPROVE, Commit  # noqa: E402
 from loop_fixture import INVALID_BODY, VALID_BODY, LoopFixture  # noqa: E402
 
 from holophyte.board.projection import mirror_task  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 from holophyte.loop.claim import _admit_ticket  # noqa: E402
 from holophyte.loop.claim_store import task_of  # noqa: E402
 from holophyte.loop.pool import NOTHING_SEEN  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.review.freshness import park_stale  # noqa: E402
-from provider import FileProvider  # noqa: E402
 from store.read import claimable  # noqa: E402
 from store.tickets import ensure_project  # noqa: E402
 

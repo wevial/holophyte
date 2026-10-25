@@ -315,7 +315,7 @@ def resume_in_this_process(target, body):
                return_value=Path(target)), \
             profile_routes(project.store_path,
                            (REQUEST_CHANGES, APPROVE)) as dispatch, \
-            patch.dict(sys.modules, {"linear_provider": provider}), \
+            patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}), \
             patch.object(holophyte.loop.implement, "agent", dispatch), \
             patch.object(holophyte.loop.review_round, "agent", dispatch), \
             patch.object(holophyte.loop.adjudicate, "agent", dispatch):

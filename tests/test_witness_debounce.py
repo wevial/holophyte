@@ -22,16 +22,16 @@ import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.pool  # noqa: E402
 import holophyte.story.witness  # noqa: E402
 import holophyte.story.witness_trigger  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.host.supervisor_lock import pid_alive  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.witness import witness_step  # noqa: E402
 from holophyte.story.witness_running import add_restart, restarts  # noqa: E402
-from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
 from tests.test_witness_runner import PASSES, PYTHON  # noqa: E402

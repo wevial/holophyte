@@ -295,7 +295,7 @@ class CloseOutRegenerationTests(unittest.TestCase):
             {"id": "KO-131", "issue_id": "iss-131", "title": "add a thing",
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given the thing, when it runs, then it works"]})
-        with patch.dict(sys.modules, {"linear_provider": provider}):
+        with patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}):
             with patch.object(holophyte.loop.implement, "agent", fake_agent), \
                     patch.object(holophyte.loop.review_round, "agent", fake_agent), \
                     patch.object(holophyte.loop.adjudicate, "agent", fake_agent):

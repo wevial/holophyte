@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_fixture import T0, SweepTestCase  # noqa: E402
 from test_provider import FakeLinear, ticket_body  # noqa: E402
 
-import linear_provider  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.host.supervisor import board_ready  # noqa: E402
 
 

@@ -20,8 +20,8 @@ sys.path.insert(0, str(HERE))
 from loop_fixture import VALID_BODY  # noqa: E402
 from test_provider import FakeLinear  # noqa: E402
 
-import linear_provider  # noqa: E402
-import provider as board_seam  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board import provider as board_seam  # noqa: E402
 
 
 class OpenIssuesTests(unittest.TestCase):

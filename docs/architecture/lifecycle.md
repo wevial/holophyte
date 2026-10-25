@@ -76,7 +76,8 @@ Trace: nothing in the store yet; the issue in Linear, in Todo.
 
 ### 1. Claim
 
-`linear_provider.claim_next()` lists the board's non-terminal, unblocked
+`holophyte.board.linear_provider.claim_next()` lists the board's
+non-terminal, unblocked
 issues (Linear `blocks` relations are the only machine-checked
 dependencies), orders them by `[loop] order` (identifier or priority), and
 returns the first the store will accept. `projection.mirror_task()` upserts the
@@ -140,7 +141,8 @@ Trace: the report text travels into the review prompt and the round row.
 
 ### 5. Review
 
-`review_runner.stage_candidate()` exports the base and candidate commits
+`holophyte.review.review_runner.stage_candidate()` exports the base and
+candidate commits
 into a fresh, detached, zero-remote repository, fingerprints it, and
 `docker run`s the reviewer image with that repository mounted read-only.
 Inside, Codex is asked to account for every acceptance criterion with one

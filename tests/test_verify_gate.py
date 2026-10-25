@@ -333,7 +333,7 @@ class TaskExtractionTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import linear_provider
+        from holophyte.board import linear_provider
         cls.provider = linear_provider
 
     def issue(self, description):

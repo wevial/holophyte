@@ -16,13 +16,13 @@ from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
-import review_runner
 from holophyte import media_store, redact
 from holophyte.config.config_tables import merge_config
 from holophyte.config.worktree_settings import capture_environment, carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import InfraFailure, sh
 from holophyte.pr import capture_files, github, mockup
+from holophyte.review import review_runner
 from holophyte.tickets import ticket_template
 
 CAPTURE_TIMEOUT = 300

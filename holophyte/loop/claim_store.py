@@ -78,7 +78,7 @@ def superseded(conn, ticket_id, task):
 
 
 def task_of(row):
-    from provider import parse_body
+    from holophyte.board.provider import parse_body
     task = parse_body(row.linearIdentifier, row.body)
     commands = row.verificationCommands
     task.update(

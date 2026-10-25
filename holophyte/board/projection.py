@@ -15,6 +15,7 @@ import store.read
 import store.tickets
 from holophyte import deadline
 from holophyte.agents.review_workspace import cleanup_review_refs
+from holophyte.board.provider import parse_body
 from holophyte.cli.report import host_label
 from holophyte.loop.runs import warn_on_run
 from holophyte.redact import outbound, redact_values
@@ -22,7 +23,6 @@ from holophyte.redact import safe_print as print
 from holophyte.review.criterion_ids import adopted_ticket_revision
 from holophyte.review.findings import refresh_findings
 from holophyte.tickets import ticket_template
-from provider import parse_body
 
 LEASE_LABEL_PREFIX = "holo:"
 

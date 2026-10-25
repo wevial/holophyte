@@ -13,9 +13,9 @@ from sweep_fixture import SweepTestCase  # noqa: E402
 
 import holophyte.cli.operator
 import holophyte.loop.implement
-import review_runner
 from holophyte.agents import probes, roles
 from holophyte.agents.agent_routes import reset
+from holophyte.review import review_runner
 
 # `run` prints the next numbered turn's output and the preflight marker the
 # runner requires; `inspect` reports the removed container gone.
@@ -78,7 +78,8 @@ class StandInReviewerLoopTests(LoopFixture):
         provider = StubProvider(a_task())
         guard = SpawnGuard(blocked=("claude", "codex", "podman"))
         with no_agent_processes(guard), \
-                patch.dict(sys.modules, {"linear_provider": provider}), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
                 patch.object(holophyte.loop.implement, "agent",
                              FakeAgent(Commit())), \
                 contextlib.redirect_stdout(io.StringIO()):

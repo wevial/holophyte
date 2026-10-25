@@ -4,7 +4,6 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from time import time
 
-import review_runner
 import store
 import store.read
 from holophyte import failure_reason
@@ -25,7 +24,7 @@ from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.steering import close as close_steering
 from holophyte.loop.stop import boundary, keep_route
 from holophyte.redact import safe_print as print
-from holophyte.review import criterion_ids, skipped_tests
+from holophyte.review import criterion_ids, review_runner, skipped_tests
 from holophyte.review.reply_parsing import raw_finding
 from holophyte.tickets import ticket_template
 from store.working import working

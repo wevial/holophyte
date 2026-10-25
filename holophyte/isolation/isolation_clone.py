@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import review_runner
 from holophyte.config.project import state_dir
 from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.isolation.isolation_git import (
@@ -18,6 +17,7 @@ from holophyte.isolation.isolation_git import (
 )
 from holophyte.isolation.isolation_return import locked_return
 from holophyte.loop.gates import InfraFailure
+from holophyte.review import review_runner
 
 
 def stage_files(source, destination, excluded, skip=frozenset()):

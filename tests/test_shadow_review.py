@@ -6,8 +6,8 @@ Run: python3 -m unittest discover -s tests -p 'test_shadow_review.py' -v
 import unittest
 from unittest.mock import patch
 
-import review_runner
 from holophyte.loop import review_round
+from holophyte.review import review_runner
 from tests.test_shadow import ShadowRun, commits
 
 TICKET = """# Write the done marker

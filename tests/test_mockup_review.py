@@ -12,11 +12,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_fixture import SweepTestCase  # noqa: E402
 
-import review_runner  # noqa: E402
 from holophyte.agents import review_workspace, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.loop.review_round import round_prompt  # noqa: E402
 from holophyte.pr import mockup, pr_media  # noqa: E402
+from holophyte.review import review_runner  # noqa: E402
 from tests import test_pr_media  # noqa: E402
 
 PNG = test_pr_media.PNG

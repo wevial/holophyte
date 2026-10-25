@@ -27,7 +27,7 @@ import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.redact  # noqa: E402 - after the sys.path insert above
 import holophyte.review.reply_parsing  # noqa: E402 - after the sys.path insert above
-import review_runner  # noqa: E402 - after the sys.path insert above
+from holophyte.review import review_runner  # noqa: E402 - after sys.path setup
 from tests.fake_agent import answer_scope  # noqa: E402 - after sys.path setup
 
 
@@ -584,7 +584,8 @@ class ReviewLoopTests(unittest.TestCase):
             path=self.target, holo_dir=root, store_path=root / "store.db",
             config_path=root / "config.toml", worktrees=self.worktrees)
         self.linear = FakeLinear()
-        patcher = patch.dict(sys.modules, {"linear_provider": self.linear})
+        patcher = patch.dict(sys.modules,
+                             {"holophyte.board.linear_provider": self.linear})
         patcher.start()
         self.addCleanup(patcher.stop)
 

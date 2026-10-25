@@ -2,7 +2,6 @@ import sys
 from pathlib import Path
 from time import time
 
-import review_runner
 import store.read
 from holophyte.cli.report import REPORT_GAP, failure_lines, host_label
 from holophyte.loop.gates import (
@@ -10,6 +9,7 @@ from holophyte.loop.gates import (
     read_merge_lock,
     remove_dead_merge_lock,
 )
+from holophyte.review import review_runner
 
 
 def merge_lock_lines(target, conn, act=False):

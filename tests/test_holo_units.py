@@ -14,9 +14,9 @@ from unittest.mock import patch
 import store
 import store.read
 import store.tickets
+from holophyte.board.provider import board_for
 from holophyte.config.project import Project
 from holophyte.host.supervisor import reconcile_parked_pull_requests
-from provider import board_for
 from tests.test_holo_grammar import T0, Home, factory, holo
 
 FAKE = """#!{python}

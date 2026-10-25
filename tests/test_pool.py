@@ -50,9 +50,9 @@ import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.runs  # noqa: E402 - after the sys.path insert above
 import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
-import linear_provider  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets as tickets  # noqa: E402 - after the sys.path insert above
+from holophyte.board import linear_provider  # noqa: E402 - after sys.path setup
 from tests.phase_fixture import (  # noqa: E402 - after sys.path setup
     park_run,
 )
@@ -548,7 +548,8 @@ class WorkerTests(LoopFixture):
         fake = FakeAgent(*script)
         out = io.StringIO()
         with no_agent_processes(), \
-                patch.dict(sys.modules, {"linear_provider": provider}), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
                 patch.object(holophyte.loop.implement, "agent", fake), \
                 patch.object(holophyte.loop.review_round, "agent", fake), \
                 patch.object(holophyte.loop.adjudicate, "agent", fake), \

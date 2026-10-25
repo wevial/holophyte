@@ -290,7 +290,7 @@ class LoopFixture(unittest.TestCase):
         self.last_provider = provider
         self.last_fake = fake
         with no_agent_processes(guard) as guard:
-            with patch.dict(sys.modules, {"linear_provider": provider}):
+            with patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}):
                 with patch.object(holophyte.loop.implement, "agent", fake), \
                         patch.object(holophyte.loop.review_round, "agent", fake), \
                         patch.object(holophyte.loop.adjudicate, "agent", fake):

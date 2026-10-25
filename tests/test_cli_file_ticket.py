@@ -27,10 +27,10 @@ from unittest.mock import patch
 import holophyte.cli.entry
 import holophyte.config.checks
 import holophyte.config.project
-import linear_provider
+from holophyte.board import linear_provider
 from holophyte.board.projection import file_ticket
+from holophyte.board.provider import FileProvider
 from holophyte.tickets import ticket_template
-from provider import FileProvider
 
 TICKET = """\
 # Add export endpoint

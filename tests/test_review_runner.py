@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import review_runner
+from holophyte.review import review_runner
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -360,7 +360,7 @@ REVIEW_UNDER_TEST = """
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
-import review_runner
+from holophyte.review import review_runner
 scratch = Path(sys.argv[2])
 review_runner.SCRATCH_ROOT = scratch / "reviews"
 review_runner.CODEX_AUTH = scratch / "auth.json"
@@ -656,7 +656,8 @@ class CandidateImageTests(unittest.TestCase):
         repo = self.root / "repo"
         (repo / "docker").mkdir(exist_ok=True)
         (repo / "docker" / "reviewer.Dockerfile").write_text(dockerfile)
-        (repo / "review_runner.py").write_text(
+        (repo / "holophyte" / "review").mkdir(parents=True, exist_ok=True)
+        (repo / "holophyte" / "review" / "review_runner.py").write_text(
             f'ROOT = None\nIMAGE = "{tag}"\nMODEL = "gpt-5.6-sol"\n')
         git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
         subprocess.run([*git, "add", "-A"], cwd=repo, check=True)
@@ -738,7 +739,8 @@ class ReviewerImageTests(unittest.TestCase):
             if (ROOT / path).is_file()
             for tag in re.findall(rb"ubuntu24\.04-v\d+", (ROOT / path).read_bytes())
         }
-        self.assertIn(("review_runner.py", "ubuntu24.04-v13"), references)
+        self.assertIn(("holophyte/review/review_runner.py", "ubuntu24.04-v13"),
+                      references)
         self.assertIn(("docs/reviewing.md", "ubuntu24.04-v13"), references)
         self.assertEqual(
             {ref for ref in references if ref[1] != "ubuntu24.04-v13"}, set())

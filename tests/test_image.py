@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import review_runner
 from holophyte.isolation import launcher
+from holophyte.review import review_runner
 
 
 @unittest.skipUnless(

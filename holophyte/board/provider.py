@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -85,8 +86,8 @@ class LinearBoard:
 
     def _linear(self):
         if self._module is None:
-            import linear_provider
-            self._module = linear_provider
+            self._module = importlib.import_module(
+                "holophyte.board.linear_provider")
         return self._module
 
     @property

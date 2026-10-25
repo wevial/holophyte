@@ -9,13 +9,13 @@ import holophyte.board.projection
 import holophyte.host.reconcile
 import holophyte.host.supervisor
 import holophyte.serve.serve_actions
-import linear_provider
 import store
 import store.board
 import store.read
 import store.tickets
+from holophyte.board import linear_provider
+from holophyte.board.provider import LinearBoard
 from holophyte.loop.failure_triage import triage_failure
-from provider import LinearBoard
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase

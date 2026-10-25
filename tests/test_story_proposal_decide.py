@@ -26,10 +26,12 @@ from test_story_close import (  # noqa: E402
 )
 from test_story_linear_filing import RecordingBoard  # noqa: E402
 
-import linear_provider  # noqa: E402
-import provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import (
+    linear_provider,  # noqa: E402
+    provider,  # noqa: E402
+)
 from holophyte.board.native_board import NativeBoard  # noqa: E402
 from holophyte.loop.follow_ups import draft_title  # noqa: E402
 from holophyte.story import story_claim  # noqa: E402

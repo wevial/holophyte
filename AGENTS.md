@@ -81,8 +81,8 @@ the same commit. Each test's docstring holds its full rules:
   ticket, which incident, what the code used to do) belongs in the commit
   message and the store; a name that needs a comment is renamed or a block
   extracted instead. No ticket id appears in a comment or docstring.
-* Boards are reached only through `provider.Board`, built by
-  `board_for()`; never call `linear_provider` directly.
+* Boards are reached only through `holophyte.board.provider.Board`, built
+  by `board_for()`; never call `holophyte.board.linear_provider` directly.
 * Schema changes bump `SCHEMA_VERSION` and stay additive where they can
   (`store/schema.py` says when `READABLE_FROM` must rise).
 * Agent routes are live-probed before dispatch; the only substitutions are a

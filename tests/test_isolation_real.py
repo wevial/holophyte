@@ -199,8 +199,8 @@ class IsolationRealTests(IsolationCase):
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
     def test_real_implementer_turn_has_no_capture_runner(self):
-        import review_runner
         from holophyte.isolation import launcher
+        from holophyte.review import review_runner
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")
@@ -222,9 +222,9 @@ class IsolationRealTests(IsolationCase):
     def test_real_capture_modules_pass_with_the_checkout_at_the_workspace(self):
         import uuid
 
-        import review_runner
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
+        from holophyte.review import review_runner
 
         if not shutil.which("docker"):
             self.skipTest("Docker absent")

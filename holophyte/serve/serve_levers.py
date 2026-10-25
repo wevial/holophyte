@@ -115,7 +115,7 @@ def abort_action(target, body):
         return 400, {"error": "pr_comment is posted only with close: true"}
 
     def act(conn, reason):
-        from provider import board_for
+        from holophyte.board.provider import board_for
         board = board_for(target)
         if board is None:
             return False, (f"{target.config_path}: [board] project_id is not"

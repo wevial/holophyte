@@ -139,7 +139,7 @@ class ReviewRoundRowTests(unittest.TestCase):
             {"id": "KO-130", "issue_id": "iss-130", "title": "add a thing",
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": list(criteria)})
-        with patch.dict(sys.modules, {"linear_provider": provider}):
+        with patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}):
             with patch.object(holophyte.loop.implement, "agent", fake_agent), \
                     patch.object(holophyte.loop.review_round, "agent", fake_agent), \
                     patch.object(holophyte.loop.adjudicate, "agent", fake_agent):

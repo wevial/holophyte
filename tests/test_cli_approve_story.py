@@ -21,8 +21,10 @@ from story_fixture import witness_path, write_children, write_story  # noqa: E40
 
 import holophyte.cli.entry  # noqa: E402
 import holophyte.story.witness  # noqa: E402
-import linear_provider  # noqa: E402
-import provider  # noqa: E402
+from holophyte.board import (
+    linear_provider,  # noqa: E402
+    provider,  # noqa: E402
+)
 from tests.test_cli_native_update import NATIVE, no_linear  # noqa: E402
 from tests.test_story_linear_filing import STORE_LINEAR, RecordingBoard  # noqa: E402
 

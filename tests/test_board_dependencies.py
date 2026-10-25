@@ -26,9 +26,9 @@ from test_provider import FakeLinear  # noqa: E402
 
 import holophyte.loop.dispatch  # noqa: E402
 import holophyte.loop.runs  # noqa: E402
-import linear_provider  # noqa: E402
-import provider as board_seam  # noqa: E402
 import store.tickets as tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board import provider as board_seam  # noqa: E402
 
 
 def blocks(linear, blocker, blocked):

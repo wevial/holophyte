@@ -11,8 +11,8 @@ from loop_fixture import VALID_BODY  # noqa: E402
 from sweep_fixture import T0, SweepTestCase  # noqa: E402
 
 from holophyte.agents.probes import ProbeResult  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 from holophyte.host.supervisor import start_loop_for  # noqa: E402
-from provider import FileProvider  # noqa: E402
 
 
 class LaunchBackoffTests(SweepTestCase):
