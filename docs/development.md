@@ -1128,8 +1128,6 @@ at Overview in that scope; a hash that names a route is shown as written.
 
 `console/src/next/pages/NewTicket.tsx` presents the ticket template as text
 fields and files to an editable project’s Backlog from the Tickets page.
-`console/e2e/HOLO-406.capture.ts` captures its themes, Tickets entry, filing
-refusal and narrow layout, and checks the commands’ rendered monospace font.
 `console/src/next/pages/EditTicket.tsx` loads a native ticket's current
 revision into the same fields (`console/src/next/components/TicketFields.tsx`),
 marks each changed one and saves it as the next revision with `If-Match`;
