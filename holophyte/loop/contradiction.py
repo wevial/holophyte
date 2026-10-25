@@ -106,7 +106,7 @@ def held(conn, ticket_id, numbers, edits, ticket):
     verb = next((verb for verb, _, _ in edits if verb != "REPLACE"), None)
     if verb:
         return f"{'an' if verb == 'ADD' else 'a'} {verb} waits for the operator"
-    scope = _paths(ticket_template.parse(ticket or "").in_scope)
+    scope = _paths(ticket_template.parse(ticket).in_scope)
     texts = {row["criterion"]: row["text"]
              for row in store.criteria.current(conn, ticket_id)}
     for _, number, text in edits:
