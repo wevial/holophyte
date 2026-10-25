@@ -23,7 +23,7 @@ host daemon](docs/operating.md#serving) serve it and the [host sweep](docs/opera
 Python 3.11+ and Git on the host, and Docker for the reviewer container and,
 under `[agents] implementer_isolation = "container"`, the implementer's turns.
 A Linear board, and only a Linear board, needs `LINEAR_API_KEY` in the
-environment or a `.env` beside `linear_provider.py`.
+environment or a `.env` at the checkout root (beside `factory.py`).
 `ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` and `mcp` are the runtime dependencies, pinned in
 `requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
 the daemon needs `tomlkit` to edit a config in place and exits naming it

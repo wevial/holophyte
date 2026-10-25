@@ -3,7 +3,6 @@ import shutil
 import subprocess
 import sys
 
-import review_runner
 from holophyte.agents import harness
 from holophyte.config.agent_settings import (
     agent_command,
@@ -44,6 +43,7 @@ from holophyte.config.worktree_settings import (
     setup_timeout,
     worktree_environment,
 )
+from holophyte.review import review_runner
 
 
 def check_config_keys(project):

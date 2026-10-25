@@ -4,8 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-import review_runner
-from holophyte.review import citations
+from holophyte.review import citations, review_runner
 from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN, _changed_files
 from holophyte.review.criterion_ids import numbered, parse
 from store import CRITERIA_PATH

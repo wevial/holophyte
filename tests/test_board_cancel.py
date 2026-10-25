@@ -17,7 +17,7 @@ from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
 
 import store  # noqa: E402
 from holophyte.board.board_sync import observe_board  # noqa: E402
-from provider import FileProvider  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 
 STORE_MODE = ('[board]\nmode = "store"\nproject_id = "project-1"\n'
               'team = "team-1"\n')

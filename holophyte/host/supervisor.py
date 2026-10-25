@@ -283,9 +283,9 @@ def loop_is_live(conn, project, now, stale_ms):
 
 
 def _linear_budget():
-    module = sys.modules.get("linear_provider")
+    module = sys.modules.get("holophyte.board.linear_provider")
     if module is None:
-        import linear_provider as module
+        from holophyte.board import linear_provider as module
     return getattr(module, "__dict__", {}).get("LINEAR_BUDGET")
 
 

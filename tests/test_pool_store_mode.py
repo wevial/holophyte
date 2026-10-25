@@ -24,8 +24,8 @@ import holophyte.cli.operator  # noqa: E402
 import holophyte.loop.pool  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
-from provider import FileProvider  # noqa: E402
 
 TICK_SEC = 60
 CONFIG = ('[board]\nmode = "store"\nproject_id = "project-1"\n'

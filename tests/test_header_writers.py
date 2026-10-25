@@ -11,11 +11,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import linear_provider
-import provider
 import store
 import store.board
 import store.tickets
+from holophyte.board import linear_provider, provider
 from holophyte.pr import pr_media
 from holophyte.tickets import ticket_depends, ticket_template
 from tests import test_cli_file_ticket

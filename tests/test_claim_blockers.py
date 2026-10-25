@@ -25,7 +25,7 @@ from loop_fixture import VALID_BODY, LoopFixture  # noqa: E402
 from test_provider import FakeLinear  # noqa: E402
 from test_store_claim_loop import STORE_MODE, StoreFiles  # noqa: E402
 
-import linear_provider  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 
 
 def blocked_by(linear, blocker, blocked):

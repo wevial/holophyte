@@ -5,7 +5,6 @@ from collections import Counter
 from dataclasses import dataclass
 from time import monotonic
 
-import review_runner
 import store
 from holophyte.agents.agent_output import claude_result
 from holophyte.agents.agent_routes import route_prose
@@ -27,6 +26,7 @@ from holophyte.loop.review_round import round_prompt
 from holophyte.loop.task_worktree import run_worktree_setup
 from holophyte.redact import known_secrets, outbound, redact_values
 from holophyte.redact import safe_print as print
+from holophyte.review import review_runner
 from holophyte.review.reply_parsing import criteria_findings, parse_findings
 
 

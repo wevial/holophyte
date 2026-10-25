@@ -27,10 +27,12 @@ from test_story_linear_filing import (  # noqa: E402
 )
 
 import holophyte.cli.entry  # noqa: E402
-import linear_provider  # noqa: E402
-import provider  # noqa: E402
 import store  # noqa: E402
 import store.stories  # noqa: E402
+from holophyte.board import (
+    linear_provider,  # noqa: E402
+    provider,  # noqa: E402
+)
 from holophyte.loop.runs import open_store  # noqa: E402
 
 SLUG = "orders-csv"

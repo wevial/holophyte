@@ -23,9 +23,9 @@ import holophyte.config.agent_settings
 import holophyte.config.checks
 import holophyte.host.supervisor_lock
 import holophyte.pr.github
-import review_runner
+from holophyte.board.provider import LinearBoard
 from holophyte.config.config_tables import board_config
-from provider import LinearBoard
+from holophyte.review import review_runner
 
 # `config_fixture` is a helper, not a test module: discovery never imports it,
 # and how this file is imported decides whether `tests/` is on the path at all.
@@ -400,7 +400,7 @@ class BoardConfigTests(StartupCheckTests):
     def queries_from(self, board):
         """Drive one claim and one state change through `board` with the
         transport captured; the (query, variables) pairs it sent."""
-        import linear_provider
+        from holophyte.board import linear_provider
         calls = []
 
         def fake(query, variables=None):

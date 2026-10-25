@@ -10,11 +10,11 @@ import re
 import subprocess
 from dataclasses import dataclass
 
-import provider
 import store
 import store.follow_ups
 import store.stories
 import store.story_proposals
+from holophyte.board import provider
 from holophyte.redact import safe_print as print
 from holophyte.story import story_scope
 

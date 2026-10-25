@@ -214,7 +214,7 @@ def sweep_project(entry, state, now, out):
 
 
 def _provider(target):
-    from provider import board_for
+    from holophyte.board.provider import board_for
     return board_for(target)
 
 

@@ -15,9 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 from holophyte.board.native_board import NativeBoard  # noqa: E402
+from holophyte.board.provider import LinearBoard, board_for  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.config.config_tables import board_config, board_mode  # noqa: E402
-from provider import LinearBoard, board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nprefix = "HOLO"\n'
 ALIAS = '[board]\nkind = "native"\nkey = "HOLO"\n'

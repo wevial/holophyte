@@ -5,10 +5,10 @@ import re
 import subprocess
 
 from holophyte.board.projection import mirror_push
+from holophyte.board.provider import board_for
 from holophyte.loop.gates import MergeLockHeld, merge_lock
 from holophyte.redact import safe_print as print
 from holophyte.story.story_claim import DRIFT_OPTIONS
-from provider import board_for
 from store.schema import transaction
 from store.stories import (
     CLOSED_STATUSES,

@@ -2,6 +2,7 @@
 import sys
 
 from holophyte.board.projection import file_ticket
+from holophyte.board.provider import board_for
 from holophyte.cli.arguments import (
     FILE_TICKET_STATES,
     _author_checks,
@@ -38,7 +39,6 @@ from holophyte.loop.shadow_spawn import shadow_mode
 from holophyte.scout.scout_probes import scout_probe_mode
 from holophyte.scout.scout_process import scout_mode
 from holophyte.serve.server import ADDRESS_SHAPE
-from provider import board_for
 
 
 def cli(argv=None):

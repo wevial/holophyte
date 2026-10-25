@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from review_runner import PIDS_LIMIT
+from holophyte.review.review_runner import PIDS_LIMIT
 
 ROOT = Path(__file__).resolve().parent.parent
 

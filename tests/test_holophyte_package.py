@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))  # the package and its `review_runner` import
+sys.path.insert(0, str(ROOT))
 
 
 def _module(name):

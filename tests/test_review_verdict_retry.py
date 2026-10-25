@@ -10,8 +10,8 @@ from fake_agent import APPROVE, REQUEST_CHANGES, Reply  # noqa: E402
 import holophyte.host.supervisor
 import holophyte.loop.review_round
 import holophyte.loop.runs
-import review_runner
 import store
+from holophyte.review import review_runner
 
 
 class ReviewVerdictRetryTests(LoopFixture):

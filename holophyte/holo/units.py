@@ -140,8 +140,8 @@ def stop(args, target):
     note = given_note(args, "stop")
     if note is None:
         args.leaf.error("stop holds the project: give a note saying why")
+    from holophyte.board.provider import board_for
     from holophyte.cli.board_verbs import require_board
-    from provider import board_for
     project = checked(Project.locate(target[0]))
     board = require_board(project, board_for(project)) if args.now else None
     conn = open_store(project)

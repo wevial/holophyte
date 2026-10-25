@@ -22,9 +22,9 @@ from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path ins
 
 import holophyte.cli.entry  # noqa: E402
 import holophyte.loop.claim  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.loop.runs import heartbeat_while, open_store  # noqa: E402
 from holophyte.loop.stop import stop_if_requested  # noqa: E402
 from tests.test_cli_native_update import NATIVE, body, no_linear  # noqa: E402

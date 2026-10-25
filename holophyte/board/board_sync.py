@@ -7,11 +7,11 @@ import store.read
 import store.tickets
 from holophyte import deadline
 from holophyte.board.projection import MIRROR_STATES
+from holophyte.board.provider import GONE
 from holophyte.config.config_tables import board_mode
 from holophyte.loop.claim_store import store_mode, sync_board
 from holophyte.loop.stop import abort_requested, abort_run
 from holophyte.review.freshness import BACKLOG_STATE
-from provider import GONE
 
 CLOSED_ANSWERS = ("canceled", "completed")
 

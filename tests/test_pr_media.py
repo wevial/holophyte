@@ -15,9 +15,9 @@ from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import review_runner
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import pr_media, pullrequest
+from holophyte.review import review_runner
 from holophyte.tickets import ticket_template
 from tests.test_media_store import CREDS, receiver
 

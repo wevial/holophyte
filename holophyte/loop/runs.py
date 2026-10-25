@@ -5,12 +5,12 @@ from functools import partial
 from pathlib import Path
 from time import time
 
-import review_runner
 import store
 import store.read
 import store.steer_notes
 from holophyte.agents.roles import agent_route
 from holophyte.redact import safe_print as print
+from holophyte.review import review_runner
 from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     criteria_findings,

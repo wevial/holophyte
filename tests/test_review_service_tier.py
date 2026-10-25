@@ -17,9 +17,9 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
-import review_runner  # noqa: E402 - after the sys.path insert above
 from holophyte.agents import roles  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
+from holophyte.review import review_runner  # noqa: E402 - after sys.path setup
 
 # `run` stands in for the container: it runs the script's own Codex statement
 # under /bin/sh with the positional arguments `docker run` was handed, the

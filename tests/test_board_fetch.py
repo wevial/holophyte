@@ -20,8 +20,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import linear_provider  # noqa: E402
-import provider as board_seam  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board import provider as board_seam  # noqa: E402
 from tests.test_provider import FakeLinear, ticket_body  # noqa: E402
 
 FILED = "2026-09-20T10:00:00.000Z"

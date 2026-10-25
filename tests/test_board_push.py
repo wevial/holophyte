@@ -16,8 +16,8 @@ import store  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.board.board_sync import observe_board  # noqa: E402
 from holophyte.board.projection import mirror_status  # noqa: E402
+from holophyte.board.provider import FileProvider, board_for  # noqa: E402
 from holophyte.review.freshness import park_stale  # noqa: E402
-from provider import FileProvider, board_for  # noqa: E402
 
 ASK = 10 * MINUTE
 STORE_MODE = ('[board]\nmode = "store"\nproject_id = "project-1"\n'

@@ -532,6 +532,6 @@ after the store.
 | `HOLO_PROJECT` | `holo` | the project, a `[serve] name` or a repository path, when no `-p` is given |
 | `HOLO_TRANSPORT` | `holo` | `local` runs the command here whatever `client.toml`'s `host` says; the one value |
 | `NO_COLOR` | `holo` | set and not empty, `holo` prints its symbols without colour on a terminal too |
-| `LINEAR_API_KEY` | `linear_provider` | the board's API key; env or `.env` beside the module |
+| `LINEAR_API_KEY` | `holophyte.board.linear_provider` | the board's API key; env or `.env` at the checkout root (beside `factory.py`) |
 | `HOLOPHYTE_TARGET`, `HOLOPHYTE_SERVE_ADDRESS`, `HOLOPHYTE_SERVE_PORT` | the project units (`holophyte-serve@`, `holophyte-supervise@`), and `HOLOPHYTE_TARGET` alone the loop unit | one instance's project, bind address, port |
 | `LISTEN_FDS`, `LISTEN_PID` | `--serve` | set by the service manager's socket unit: with `LISTEN_FDS=1` and `LISTEN_PID` this process's pid, the daemon serves on fd 3 instead of binding, and exits 0 on a factory `HEAD` move for the socket to start the new code |

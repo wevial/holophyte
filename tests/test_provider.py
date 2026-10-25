@@ -23,8 +23,8 @@ from loop_fixture import LoopFixture, no_agent_processes  # noqa: E402
 from provider_fence_fixture import FenceConformanceMixin  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402
-import linear_provider  # noqa: E402
-import provider as board_seam  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board import provider as board_seam  # noqa: E402
 from holophyte.tickets import ticket_template  # noqa: E402
 from tests.ticket_url_fixture import assert_provider_url  # noqa: E402
 
@@ -530,27 +530,44 @@ class LabelGatePassTests(LoopFixture):
 class LinearImportTests(unittest.TestCase):
     """Importing Linear does not require credentials or make network requests."""
 
-    def test_the_module_imports_with_no_configuration_at_all(self):
+    def checkout(self):
+        """A temporary checkout holding the Linear client and what it imports."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        package = Path(tmp.name, "holophyte", "tickets")
-        package.mkdir(parents=True)
-        for name in ("linear_provider.py", "holophyte/__init__.py",
+        for package in ("board", "tickets"):
+            Path(tmp.name, "holophyte", package).mkdir(parents=True)
+        for name in ("holophyte/board/linear_provider.py", "holophyte/__init__.py",
+                     "holophyte/board/__init__.py",
                      "holophyte/tickets/__init__.py",
                      "holophyte/tickets/ticket_template.py",
                      "holophyte/tickets/ticket_header.py"):
             shutil.copy(ROOT / name, Path(tmp.name, name))
+        return Path(tmp.name)
+
+    def run_in(self, checkout, code):
         env = {k: v for k, v in os.environ.items()
-               if k not in ("HOLO2_PROJECT_ID", "HOLO2_TEAM")}
+               if k not in ("HOLO2_PROJECT_ID", "HOLO2_TEAM", "LINEAR_API_KEY")}
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         done = subprocess.run(
-            [sys.executable, "-c", "import linear_provider; print("
-             "hasattr(linear_provider, 'PROJECT_ID'), "
-             "hasattr(linear_provider, 'TEAM'))"],
-            cwd=tmp.name, env=env, capture_output=True, text=True)
-
+            [sys.executable, "-c",
+             "from holophyte.board import linear_provider; " + code],
+            cwd=checkout, env=env, capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(done.stdout.strip(), "False False")
+        return done.stdout.strip()
+
+    def test_the_module_imports_with_no_configuration_at_all(self):
+        printed = self.run_in(self.checkout(),
+                              "print(hasattr(linear_provider, 'PROJECT_ID'), "
+                              "hasattr(linear_provider, 'TEAM'))")
+        self.assertEqual(printed, "False False")
+
+    def test_the_key_is_read_from_the_env_file_at_the_checkout_root(self):
+        load = "print(linear_provider._load_env_key())"
+        for where, expected in (("", "k"), ("holophyte/board", "None")):
+            with self.subTest(where=where or "root"):
+                checkout = self.checkout()
+                Path(checkout, where, ".env").write_text("LINEAR_API_KEY=k\n")
+                self.assertEqual(self.run_in(checkout, load), expected)
 
     def test_the_provider_carries_the_pair_it_was_built_with(self):
         """`team` is the stored value, not a module read."""
@@ -573,7 +590,7 @@ class LinearBudgetTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import linear_provider
+        from holophyte.board import linear_provider
         cls.linear = linear_provider
 
     def setUp(self):
@@ -616,13 +633,13 @@ class LinearBudgetTests(unittest.TestCase):
                 if reset is not None:
                     headers["x-ratelimit-complexity-reset"] = str(reset)
                 writer = f"""
-import linear_provider as lp
+from holophyte.board import linear_provider as lp
 lp.time = lambda: 1000
 lp.LINEAR_BUDGET.remember({headers!r})
 """
                 subprocess.run([sys.executable, "-c", writer], check=True)
                 reader = f"""
-import linear_provider as lp
+from holophyte.board import linear_provider as lp
 assert lp.LINEAR_BUDGET.low(now={deadline - 1})
 assert not lp.LINEAR_BUDGET.low(now={deadline})
 """

@@ -368,7 +368,8 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
                          Reply("THREAD 1: ADDRESS -- a real crash"),
                          Commit("fix: default load()"))
         with no_agent_processes(), \
-                patch.dict(sys.modules, {"linear_provider": self.provider()}), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": self.provider()}), \
                 patch.object(holophyte.loop.implement, "agent", fake), \
                 patch.object(holophyte.loop.review_round, "agent", fake), \
                 patch.object(holophyte.loop.adjudicate, "agent", fake), \

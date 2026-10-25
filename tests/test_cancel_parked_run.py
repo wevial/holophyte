@@ -19,9 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 
 import holophyte.cli.entry  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from tests.test_cli_native_update import NATIVE, body, no_linear  # noqa: E402
 

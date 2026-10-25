@@ -26,10 +26,10 @@ import holophyte.cli.entry
 import holophyte.config.project
 import holophyte.loop.merge_gate
 import holophyte.loop.stop
-import linear_provider
 import store
 import store.read
 import store.tickets
+from holophyte.board import linear_provider
 from holophyte.config.config_tables import board_config
 from holophyte.holo import cli as holo_cli
 from holophyte.loop.runs import open_store

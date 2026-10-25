@@ -7,7 +7,7 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 
-import review_runner
+from holophyte.review import review_runner
 from holophyte.tickets.ticket_template import ORCHESTRATION_MODES
 
 TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",

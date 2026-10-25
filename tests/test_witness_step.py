@@ -28,10 +28,11 @@ import holophyte.loop.adjudicate  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.pool  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
@@ -40,7 +41,6 @@ from holophyte.host.supervisor import (  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.witness import witness_lock_path, witness_step  # noqa: E402
 from holophyte.story.witness_running import mark_running  # noqa: E402
-from provider import board_for  # noqa: E402
 from store.stories import approve_story, file_story  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
 from tests.test_witness_runner import PASSES, PYTHON  # noqa: E402

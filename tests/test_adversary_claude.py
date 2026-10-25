@@ -29,11 +29,11 @@ from fake_agent import (  # noqa: E402
 from loop_fixture import StubProvider, a_task  # noqa: E402
 from test_review_runner import docker_shim, two_commit_repo  # noqa: E402
 
-import review_runner  # noqa: E402
 from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.agents.fallback import outage_reason  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
+from holophyte.review import review_runner  # noqa: E402
 
 Change, attack, finding = (test_adversary.Change, test_adversary.attack,
                            test_adversary.finding)

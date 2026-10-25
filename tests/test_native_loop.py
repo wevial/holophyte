@@ -33,15 +33,15 @@ import holophyte.loop.adjudicate  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.review.freshness  # noqa: E402
-import linear_provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.board.board_sync import owed  # noqa: E402
 from holophyte.board.native_board import NativeBoard  # noqa: E402
+from holophyte.board.provider import FileProvider, board_for  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.review.freshness import park_stale, stale_reasons  # noqa: E402
-from provider import FileProvider, board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
 DEPENDENT = VALID_BODY.replace("Depends on: none", "Depends on: NAT-1")

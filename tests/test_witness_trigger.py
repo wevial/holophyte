@@ -22,8 +22,8 @@ from config_fixture import ConfigTestCase  # noqa: E402
 from story_fixture import write_story  # noqa: E402
 
 import holophyte.cli.entry  # noqa: E402
-import linear_provider  # noqa: E402
 import store.stories  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.config import config_tables  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.story.story_close import rerun_owed  # noqa: E402

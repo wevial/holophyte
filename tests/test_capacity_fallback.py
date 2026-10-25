@@ -9,11 +9,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_fixture import SweepTestCase  # noqa: E402
 
-import review_runner  # noqa: E402
 import store  # noqa: E402
 from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.loop.gates import InfraFailure, sh  # noqa: E402
+from holophyte.review import review_runner  # noqa: E402
 
 CAPACITY = ('{"type":"error","message":"Selected model is at capacity.'
             ' Please try a different model."}')

@@ -5,7 +5,6 @@ from concurrent.futures import ThreadPoolExecutor
 from time import time
 from unittest.mock import patch
 
-import review_runner
 from holophyte.agents.probe_log import last_probes, record_probe
 from holophyte.agents.probes import (
     ProbeResult,
@@ -14,6 +13,7 @@ from holophyte.agents.probes import (
     probe_seat,
 )
 from holophyte.config.project import Project
+from holophyte.review import review_runner
 from tests.serve_fixture import ServeTestCase
 
 
@@ -46,7 +46,7 @@ class ProbeLogTests(ServeTestCase):
         (self.db.parent / "config.toml").write_text(
             '[agents]\nreviewer_fallback = "backup-reviewer"\n')
         project = Project.locate(self.target)
-        with patch("review_runner.shutil.which", return_value=None):
+        with patch("holophyte.review.review_runner.shutil.which", return_value=None):
             probe = probe_seat(project, "review")
         self.assertFalse(probe.ok)
         reason = "could not start: Codex CLI is not installed"

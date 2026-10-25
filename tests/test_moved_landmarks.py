@@ -21,14 +21,14 @@ import holophyte.loop.adjudicate  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.review.moved_landmarks  # noqa: E402
-import linear_provider  # noqa: E402
 import store.board  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.board.board_sync import owed  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.review.freshness import park_stale  # noqa: E402
-from provider import board_for  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nkey = "NAT"\n'
 OLD = "lotus/agents.py"

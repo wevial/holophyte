@@ -20,7 +20,7 @@ class EagerImportTests(unittest.TestCase):
             for module in root.glob('*.py'):
                 shutil.copy2(module, checkout / module.name)
             babysitter = checkout / 'holophyte' / 'babysit' / 'babysitter.py'
-            linear = checkout / 'linear_provider.py'
+            linear = checkout / 'holophyte' / 'board' / 'linear_provider.py'
             for module in (babysitter, linear):
                 with module.open('a') as stream:
                     stream.write('\ndef build_witness():\n    return "original"\n')
@@ -38,7 +38,7 @@ def worker(*args):
     print(json.dumps(sorted(sys.modules)), flush=True)
     sys.stdin.readline()
     from holophyte.babysit import babysitter
-    import linear_provider
+    from holophyte.board import linear_provider
     print(babysitter.build_witness(), flush=True)
     print(linear_provider.build_witness(), flush=True)
 

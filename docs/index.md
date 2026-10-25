@@ -79,8 +79,8 @@ tickets run against, and it re-executes itself after merging its own code.
 ## Install and run
 
 Python 3.11+ and Git on the host, Docker for the reviewer container,
-`LINEAR_API_KEY` in the environment or a `.env` beside
-`linear_provider.py`, and `ruff` as the one developer tool. Per-project
+`LINEAR_API_KEY` in the environment or a `.env` at the checkout root
+(beside `factory.py`), and `ruff` as the one developer tool. Per-project
 settings go in `~/.holophyte/<slug>/config.toml`.
 
 ```

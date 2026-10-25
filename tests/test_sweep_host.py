@@ -35,12 +35,12 @@ import store.launch_backoff  # noqa: E402
 import store.schema  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte import deadline  # noqa: E402
+from holophyte.board.provider import LinearBoard  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
 from holophyte.host.reconcile import GITHUB_BUDGET  # noqa: E402
 from holophyte.host.registry import Host  # noqa: E402
 from holophyte.host.supervisor import supervisor_liveness_line  # noqa: E402
 from holophyte.pr.pr_status import PullStatus  # noqa: E402
-from provider import LinearBoard  # noqa: E402
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000

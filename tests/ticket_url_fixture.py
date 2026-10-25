@@ -3,10 +3,10 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-import linear_provider
 import store
 import store.schema
 import store.tickets
+from holophyte.board import linear_provider
 from holophyte.board.projection import mirror_task
 from tests.phase_fixture import finish_run
 

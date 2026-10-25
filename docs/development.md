@@ -289,6 +289,8 @@ Each module, one line:
   review again at that head still cites one.
 - `holophyte/review/findings.py` — `FINDINGS.md` as a bounded window over the
   store's rows.
+- `holophyte/review/review_runner.py` — exact-SHA staging and the model-neutral local
+  reviewer boundary (see [Reviewing](reviewing.md)).
 - `holophyte/cli/report.py` — `--report`: estimate vs actual per finished run
   (actual, estimate, ratio, rounds, outcome) with mean and median ratio, a
   read-only query over the store that claims no ticket, cuts no worktree and
@@ -343,6 +345,9 @@ Each module, one line:
   `board_import()` upserts the Linear board's `open_issues()` into the
   store by board id in one transaction, one line per issue and a summary
   counting the pushes and notes pending for Linear; a dry run rolls back.
+- `holophyte/board/provider.py` — the `Provider` protocol the loop talks to a board through.
+- `holophyte/board/linear_provider.py` — the Linear GraphQL client: claim/fetch_task/
+  set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `holophyte/cli/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.
@@ -923,11 +928,6 @@ At the root:
 
 - `factory.py` — the entry point: imports `cli` from the package and calls
   it. Holds no `def` or `class` of its own.
-- `provider.py` — the `Provider` protocol the loop talks to a board through.
-- `linear_provider.py` — the Linear GraphQL client: claim/fetch_task/
-  set_state/comment, ready-ticket and blocker resolution, issue creation.
-- `review_runner.py` — exact-SHA staging and the model-neutral local
-  reviewer boundary (see [Reviewing](reviewing.md)).
 - `ticket_template.py` — runs `holophyte/tickets/ticket_template.py`'s
   `main()`, so `python3 ticket_template.py` checks tickets as before.
 - `story_template.py` — runs `holophyte/tickets/story_template.py`'s `main()`.

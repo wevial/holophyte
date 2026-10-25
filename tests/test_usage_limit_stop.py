@@ -49,7 +49,8 @@ class UsageLimitStopTests(LoopFixture):
         provider = StubProvider(a_task())
         reviewer = FakeAgent(*reviews)
         with no_agent_processes(), \
-                patch.dict(sys.modules, {"linear_provider": provider}), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
                 patch.object(holophyte.loop.review_round, "agent", reviewer), \
                 patch.object(holophyte.loop.adjudicate, "agent", reviewer):
             holophyte.cli.operator.main(self.project, provider)

@@ -61,7 +61,8 @@ class StoryStatusTests(SweepTestCase):
         holophyte.cli.entry.eager_import()
         out = io.StringIO()
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}), \
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}), \
                 no_network(), patch.object(sys, "stdout", out), \
                 patch.object(holophyte.cli.status, "time", lambda: at / 1000):
             code = holophyte.cli.entry.cli([str(self.target), "--status", *flags])

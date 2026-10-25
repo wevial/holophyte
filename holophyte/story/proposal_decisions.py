@@ -2,11 +2,11 @@
 import re
 
 from holophyte.board.projection import mirror_task
+from holophyte.board.provider import FiledWithoutBlockers, board_for
 from holophyte.config.config_tables import board_config
 from holophyte.story.story_close import DecisionRefused
 from holophyte.story.story_filing import _ticket_id
 from holophyte.tickets import ticket_template
-from provider import FiledWithoutBlockers, board_for
 from store.schema import transaction
 from store.stories import story
 from store.story_proposals import (

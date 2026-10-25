@@ -7,14 +7,14 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loop_fixture import LoopFixture  # noqa: E402
 
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.steer_notes  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.board.projection import merge_drift  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
-from provider import board_for  # noqa: E402
 from tests.test_native_loop import NATIVE, no_linear  # noqa: E402
 from tests.test_steer_revision import CLAIMED, REVISED  # noqa: E402
 from tests.test_ticket_criteria_rows import ticket_body  # noqa: E402

@@ -9,7 +9,7 @@ from pathlib import Path
 import store
 import store.board
 import store.tickets
-from provider import GONE, parse_body, refuse_parent
+from holophyte.board.provider import GONE, parse_body, refuse_parent
 from store.read import claimable, open_readonly
 
 STATE_COLUMNS = {"Todo": "ready", "Backlog": "backlog"}

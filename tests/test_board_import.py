@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.board.board_import import board_import  # noqa: E402
 from holophyte.board.projection import mirror_task  # noqa: E402
 

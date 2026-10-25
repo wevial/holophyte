@@ -4,7 +4,6 @@ import shlex
 import subprocess
 from pathlib import Path
 
-import review_runner
 from holophyte.agents.agent_output import (
     AgentOutput,
     ImplementerOutput,
@@ -53,6 +52,7 @@ from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.pr.mockup import review_carry
 from holophyte.redact import known_secrets, outbound
+from holophyte.review import review_runner
 
 REVIEW_TIMEOUT = 1800
 WRITING_ROLES = ("implement", "trim")

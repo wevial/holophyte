@@ -162,7 +162,7 @@ class CloseOutTelemetryTests(unittest.TestCase):
              "verify": "echo ok", "budget_min": 5, "contracts": [],
              "criteria": ["Given a merged ticket, when close-out completes, "
                           "then the run row carries its timing"]})
-        with patch.dict(sys.modules, {"linear_provider": provider}):
+        with patch.dict(sys.modules, {"holophyte.board.linear_provider": provider}):
             with patch.object(holophyte.loop.implement, "agent", fake_agent), \
                     patch.object(holophyte.loop.review_round, "agent", fake_agent), \
                     patch.object(holophyte.loop.adjudicate, "agent", fake_agent):
@@ -359,7 +359,8 @@ class ReportTests(ReportStoreCase):
         out = io.StringIO()
 
         with patch.dict(sys.modules,
-                        {"linear_provider": Tripwire("linear_provider")}):
+                        {"holophyte.board.linear_provider":
+                         Tripwire("linear_provider")}):
             with no_network(), patch.object(sys, "stdout", out):
                 holophyte.cli.entry.cli(["--report", str(self.target)])
 

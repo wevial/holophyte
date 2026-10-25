@@ -25,12 +25,13 @@ import holophyte.loop.gates  # noqa: E402
 import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.story.story_close  # noqa: E402
-import linear_provider  # noqa: E402
 import store  # noqa: E402
 import store.board  # noqa: E402
 import store.follow_ups  # noqa: E402
 import store.tickets  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.board.projection import release_run  # noqa: E402
+from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.config.config_tables import sweep_config  # noqa: E402
 from holophyte.host.supervisor import (  # noqa: E402
     fresh_memory,
@@ -49,7 +50,6 @@ from holophyte.story.witness import (  # noqa: E402
     witness_pass,
     witness_step,
 )
-from provider import board_for  # noqa: E402
 from store.stories import (  # noqa: E402
     abandon_story,
     approve_story,
@@ -374,7 +374,8 @@ class StoreModeCloseTests(StoryCloseFixture):
     def setUp(self):
         super().setUp()
         self.linear = LinearStub()
-        patcher = patch.dict(sys.modules, {"linear_provider": self.linear})
+        patcher = patch.dict(sys.modules,
+                             {"holophyte.board.linear_provider": self.linear})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.board = board_for(self.project)

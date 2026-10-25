@@ -15,8 +15,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from story_fixture import WITNESS_FILE, witness_path  # noqa: E402
 
-import linear_provider  # noqa: E402
 import store  # noqa: E402
+from holophyte.board import linear_provider  # noqa: E402
 from holophyte.story.witness import main_tip, witness_pass  # noqa: E402
 from store.stories import witness_ledger  # noqa: E402
 from tests.test_cli_approve_story import (  # noqa: E402

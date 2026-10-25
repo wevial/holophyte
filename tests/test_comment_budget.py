@@ -82,8 +82,10 @@ PINNED = {
     "holophyte/board/board_diff.py": 2,
     "holophyte/board/board_import.py": 2,
     "holophyte/board/board_sync.py": 10,
+    "holophyte/board/linear_provider.py": 20,
     "holophyte/board/native_board.py": 4,
     "holophyte/board/projection.py": 15,
+    "holophyte/board/provider.py": 12,
 
     "holophyte/capture_playwright.py": 16,
 
@@ -232,6 +234,7 @@ PINNED = {
     "holophyte/review/moved_landmarks.py": 0,
     "holophyte/review/reply_parsing.py": 11,
     "holophyte/review/reproduce.py": 1,
+    "holophyte/review/review_runner.py": 13,
     "holophyte/review/skipped_tests.py": 0,
     "holophyte/review/review_session.py": 2,
     "holophyte/review/stale_approval.py": 0,
@@ -307,10 +310,6 @@ PINNED = {
     "holophyte/tickets/ticket_depends.py": 3,
     "holophyte/tickets/ticket_header.py": 4,
     "holophyte/tickets/ticket_template.py": 24,
-
-    "linear_provider.py": 20,
-    "provider.py": 12,
-    "review_runner.py": 13,
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,

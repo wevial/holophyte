@@ -9,7 +9,6 @@ import threading
 import time
 from pathlib import Path
 
-import review_runner
 from holophyte.agents.agent_output import (
     AgentOutput,
     claude_json_turn,
@@ -20,6 +19,7 @@ from holophyte.files import RangeError, main_base
 from holophyte.loop.gates import InfraFailure, run_capped, sh
 from holophyte.pr.mockup import release_review_carry, review_carry
 from holophyte.redact import safe_print as print
+from holophyte.review import review_runner
 
 PUBLISHING = threading.Lock()
 
