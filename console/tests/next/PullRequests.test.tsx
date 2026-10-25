@@ -6,6 +6,7 @@ import { addressOf } from "../../src/lib/hosts";
 import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/next/fleet";
 import { NextConsole } from "../../src/next/router";
+import bypassable from "../../../tests/fixtures/serve/run-merge-bypassable.json";
 import ready from "../../../tests/fixtures/serve/run-merge-ready.json";
 import ticketDetail from "../../../tests/fixtures/serve/ticket.json";
 import { fakeFetch } from "../actionFakes";
@@ -38,6 +39,8 @@ interface Daemon {
   runs?: StatusRun[];
   actions?: boolean;
   readyRuns?: number[];
+  /** A run's `/runs/N/merge` answer, or the status it fails with, over `readyRuns`. */
+  answers?: Record<number, object | number>;
   projects?: [string, string];
   ticketBody?: string;
   sendBack?: { ok: boolean; detail: string };
@@ -51,7 +54,7 @@ let client: QueryClient | null = null;
 /** `demo`'s `/attention` requests made after the mark-ready post. */
 let readsAfterPost = 0;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
@@ -70,7 +73,11 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], proje
     }
     if (posted && woken && url === `${DEMO}/status`) return Response.json({ ...statusOf(first, runs), queued: woken.queued });
     const readiness = url.match(/\/runs\/(\d+)\/merge$/);
-    if (readiness) return Response.json({ ...ready, run: Number(readiness[1]), ready: readyRuns.includes(Number(readiness[1])) });
+    if (readiness) {
+      const answer = answers[Number(readiness[1])];
+      if (typeof answer === "number") return new Response("readiness failed", { status: answer });
+      return Response.json(answer ?? { ...ready, run: Number(readiness[1]), ready: readyRuns.includes(Number(readiness[1])) });
+    }
     const ticket = url.match(/\/tickets\/([^/?]+)$/);
     if (ticket) {
       await fetchImpl(url, init);
@@ -354,6 +361,91 @@ test("an opened row whose readiness answers not ready draws no Merge and keeps O
   await openRow(42);
   expect(detailButton("Merge")).toBeNull();
   expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
+});
+
+const notReady = (run: number, reason: string) => ({ ...bypassable, run, reason });
+const bypassAnswer = { 9: notReady(9, "review_bypassable") };
+
+test("a not-ready row reads its readiness reason in its status word, keeping its age and Your review for a reason without copy", async () => {
+  const failing = park(10, "pull_request", 90 * MINUTE, { checks: "failure", review: "approved", threads: 0, open_threads: 0 });
+  const conflict = park(11, "pull_request", 45 * MINUTE, { checks: "success", review: "approved", threads: 0, open_threads: 0 });
+  const unapproved = park(13, "pull_request", 30 * MINUTE, { checks: "success", review: "review_required", threads: 0, open_threads: 0 });
+  await mount({ items: [readyPark, failing, conflict, unapproved], answers: {
+    ...bypassAnswer, 10: notReady(10, "checks_failing"), 11: notReady(11, "conflicting"), 13: notReady(13, "review_not_approved"),
+  } });
+  expect(waits()).toEqual([["Review required", "2h"], ["Checks failing", "1h"], ["Merge conflict with main", "45m"], ["Your review", "30m"]]);
+  for (const [pr, word] of [[42, "Review required"], [43, "Checks failing"], [44, "Merge conflict with main"], [46, "Your review"]] as const) {
+    expect(rowButton(pr).getAttribute("aria-label")).toContain(word);
+  }
+});
+
+test("a row whose readiness read fails reads Your review and opens with no Merge of either kind", async () => {
+  await mount({ items: [readyPark], actions: true, answers: { 9: 500 } });
+  await openRow(42);
+  expect(waits()).toEqual([["Your review", "2h"]]);
+  expect(detailButton("Merge without review")).toBeNull();
+  expect(detailButton("Merge")).toBeNull();
+});
+
+test("an opened bypassable row leads with Merge without review with actions on, and draws none with actions off", async () => {
+  await mount({ items: [readyPark], actions: true, answers: bypassAnswer });
+  await openRow(42);
+  const detail = rows()[0]!.querySelector<HTMLElement>("[data-pr-detail]")!;
+  const first = within(detail).getAllByRole("button")[0]!;
+  expect([first.textContent, first.dataset.variant]).toEqual(["Merge without review", "primary"]);
+  expect(within(detail).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("quiet");
+  expect(detailButton("Merge")).toBeNull();
+  unmount();
+
+  await mount({ items: [readyPark], actions: false, answers: bypassAnswer });
+  await openRow(42);
+  expect(detailButton("Merge without review")).toBeNull();
+  expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
+});
+
+const pressBypass = async () => {
+  await act(async () => {
+    fireEvent.click(detailButton("Merge without review")!);
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+};
+
+test("Merge without review confirms over the readiness facts with the review fact flagged, and posts the bypass with the bearer", async () => {
+  storeToken(addressOf(DEMO), TOKEN);
+  const seen = await mount({ items: [readyPark], actions: true, answers: bypassAnswer });
+  await openRow(42);
+  await pressBypass();
+  const dialog = screen.getByRole("dialog", { name: "Merge PR #42 without its review?" });
+  const safe = [...within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li")];
+  expect(safe.map((fact) => fact.textContent)).toEqual(bypassable.facts.map((fact) => fact.detail));
+  const icons = safe.map((fact) => fact.querySelector("svg")!.getAttribute("class") ?? "");
+  bypassable.facts.forEach((fact, index) => expect(icons[index]).toContain(fact.name === "review_approved" ? "text-ask-ink" : "text-live"));
+  expect(dialog.textContent).toContain("The console cannot undo a merge");
+  expect(within(dialog).getByRole("button", { name: "Merge PR #42" }).dataset.variant).toBe("danger-fill");
+  fireEvent.keyDown(within(dialog).getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(seen.filter((request) => request.method === "POST")).toEqual([]);
+  await pressBypass();
+  await pressMerge("Merge PR #42");
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
+    { url: `${DEMO}/actions/merge`, body: { run: 9, bypass_review: true }, authorization: `Bearer ${TOKEN}` },
+  ]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.querySelector("[data-toast]")?.textContent).toBe("Approved PR #42 without its review. The loop merges it on its next claim.");
+});
+
+test("a refused bypass merge keeps its dialog open with the daemon's detail and its confirm pressable", async () => {
+  const detail = "the pull request's merge readiness is now checks_failing, not review_bypassable";
+  await mount({ items: [readyPark], actions: true, answers: bypassAnswer, merge: { ok: false, detail } });
+  await openRow(42);
+  await pressBypass();
+  await pressMerge("Merge PR #42");
+  const dialog = screen.getByRole("dialog", { name: "Merge PR #42 without its review?" });
+  expect(within(dialog).getByRole("alert").textContent).toBe(detail);
+  expect(within(dialog).getByRole("button", { name: "Merge PR #42" }).hasAttribute("disabled")).toBe(false);
+  expect(document.querySelector("[data-toast]")?.textContent ?? "").toBe("");
 });
 
 test("the PR number links to GitHub without toggling or fetching the row detail", async () => {
