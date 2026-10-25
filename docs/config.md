@@ -1621,6 +1621,7 @@ or Codex CLI.
 | `fallback_effort` | Default: the fallback backend's own `effort` default | Effort of a CLI fallback. |
 | `failures` | Default: Absent (failed runs are not classified) | Table described under [questions.failures](#questionsfailures) below; set to classify each failed run. |
 | `complexity` | Default: Absent (claimed tickets are not classified) | Table described under [questions.complexity](#questionscomplexity) below; set to record each claimed run's complexity. |
+| `titles` | Default: Absent (scouts are not titled by a model) | Table described under [questions.titles](#questionstitles) below; set to name each scout from its ask as it starts. |
 
 ```toml
 [questions]
@@ -1763,6 +1764,45 @@ With `route = true`, a run with no escalation and no `Implementer:` line runs
 on the profile mapped to a verdict at or above `route_confidence`. The profile
 is probed as a ticket's would be, and its `implementer_profile` event has
 `source` `classifier`; a failed probe runs on `[agents.implementer]`.
+
+## `[questions.titles]`
+
+The title question a scout's own process asks as the scout's first run
+starts: a short name for the scout, written from its ask by a cheap model.
+With the table absent, nothing is asked.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `backend` | Default: `codex` | `claude` or `codex`; not inherited from `[questions]`. `jev` is refused: it answers only choices. |
+| `model` | Default: `gpt-6-luna` for `codex`, `haiku` for `claude` | Model of the backend. |
+| `effort` | Default: `low` for both | Effort of the backend. |
+| `backend_fallback` | Default: none | `claude` or `codex`, used when the backend fails its probe, as in `[questions]`. |
+| `fallback_model` | Default: the fallback backend's own `model` default | Model of the fallback. |
+| `fallback_effort` | Default: `low` for both | Effort of the fallback. |
+
+```toml
+[questions.titles]
+backend = "codex"
+model = "gpt-6-luna"
+effort = "low"
+backend_fallback = "claude"
+fallback_model = "haiku"
+fallback_effort = "low"
+```
+
+A scout with no stored title asks once, before its lead's first turn; an
+answer or a steered pass does not ask, and a queued scout waits for a slot.
+The route is probed and its fallback recorded as in `[questions]`, for seat
+`questions.titles`, as a `route_fallback` intervention with no run. The
+question sees the scout's redacted ask and its kind as a JSON record framed
+as data, and answers a `title` of at most 60 characters; surrounding quotes,
+extra whitespace and closing punctuation are trimmed, and an empty or longer
+answer is refused. The scout records one detail `scout_title` event whose
+payload holds `title` (null when none was stored), `backend`, `model`,
+`effort`, `why` (the failure, else null), `latency_ms`, `input_tokens` and
+`output_tokens`. A failure stores nothing and the scout goes on: it serves
+its lead's report title once there is one, else the first sentence of its
+ask.
 
 ## `[story]`
 

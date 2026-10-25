@@ -32,6 +32,8 @@ FAILURE_KEYS = ("backend", "model", "effort", *FALLBACK_KEYS, *FAILURE_DEFAULTS)
 COMPLEXITY_DEFAULTS = dict(route=False, route_confidence=0.8, profiles={})
 COMPLEXITY_KEYS = ("backend", "model", "effort", *FALLBACK_KEYS,
                    *COMPLEXITY_DEFAULTS)
+TITLE_CLI_DEFAULTS = CLI_DEFAULTS | {"claude": ("haiku", "low")}
+TITLE_KEYS = ("backend", "model", "effort", *FALLBACK_KEYS)
 
 
 @dataclass(frozen=True)
@@ -93,7 +95,8 @@ def settings(config):
     values |= routes(table, "[questions]", "jev", CLI_DEFAULTS)
     return values | dict(
         failures=failure_settings(table.get("failures"), values),
-        complexity=complexity_settings(table.get("complexity"), values, config))
+        complexity=complexity_settings(table.get("complexity"), values, config),
+        titles=title_settings(table.get("titles"), values))
 
 
 def failure_settings(table, values):
@@ -135,6 +138,17 @@ def complexity_settings(table, values, config):
             | dict(route=options["route"],
                    route_confidence=float(options["route_confidence"]),
                    profiles=dict(profiles)))
+
+
+def title_settings(table, values):
+    label = "[questions.titles]"
+    if table is None:
+        return None
+    seat_table(table, label, TITLE_KEYS)
+    for key in ("backend", "backend_fallback"):
+        if table.get(key) == "jev":
+            raise ValueError(f"{label} {key} must be claude or codex")
+    return values | routes(table, label, "codex", TITLE_CLI_DEFAULTS)
 
 
 def seat_table(table, label, keys):

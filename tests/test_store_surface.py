@@ -401,6 +401,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-525: `holding_scout`, a pass process's
                                  # writes refused once it no longer holds the
                                  # scout's pid.
+                                 # HOLO-585: `record_scout_title`, the
+                                 # title a cheap model gave a scout at start.
                                  (store.scouts, ["beat_scout", "claim_scout",
                                                  "create_scout",
                                                  "end_scout", "end_scout_task",
@@ -411,6 +413,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "record_scout_event",
                                                  "record_scout_report",
                                                  "record_scout_tasks",
+                                                 "record_scout_title",
                                                  "scout", "scouts",
                                                  "set_scout_session",
                                                  "start_scout_task"]),

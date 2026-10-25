@@ -44,7 +44,7 @@ ROWS = (f"SELECT {', '.join(f's.{column}' for column in ROW_COLUMNS)},"
         " AND a.ticketKey IS NULL"
         " AND json_extract(a.item, '$.kind') IS NOT 'revise'),"
         " (SELECT json_extract(r.report, '$.title') FROM scoutReports r"
-        " WHERE r.scoutId = s.id AND r.pass = 1)"
+        " WHERE r.scoutId = s.id AND r.pass = 1), s.title"
         " FROM scouts s")
 TASK_COLUMNS = ("id", "pass", "wave", "title", "question", "paths", "mode",
                 "route", "phase", "startedAt", "endedAt", "durationMs",
@@ -66,9 +66,11 @@ def now_ms(now):
 def scout_row(row, now):
     (scout_id, ask, kind, phase, reason, lead, helper, swarm, created,
      started, ended, beat, subject_kind, subject_ref, done, total, findings,
-     actions, filed, to_file, title) = row
+     actions, filed, to_file, reported, stored) = row
     live = phase != QUEUED and phase not in ENDED and beat is not None
-    if not isinstance(title, str) or not title.strip():
+    title = next((text for text in (stored, reported)
+                  if isinstance(text, str) and text.strip()), None)
+    if title is None:
         title = scout_title(ask)
     return {"id": scout_id, "title": title, "ask": ask, "kind": kind,
             "phase": phase,

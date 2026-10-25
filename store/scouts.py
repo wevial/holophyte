@@ -28,7 +28,7 @@ COLUMNS = ("id", "projectId", "ask", "kind", "links", "leadRoute",
            "leadSession", "helperRoute", "swarm", "helperTurns", "waves",
            "budgetMin", "phase", "reason", "baseSha", "host", "pid",
            "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals",
-           "subjectKind", "subjectRef")
+           "subjectKind", "subjectRef", "title")
 SELECT = f"SELECT {', '.join(COLUMNS)} FROM scouts"
 _HOLDS, _HOLDING = {}, threading.Lock()
 
@@ -64,6 +64,7 @@ class Scout(NamedTuple):
     totals: dict | None
     subject_kind: str | None
     subject_ref: str | None
+    title: str | None = None
 
 
 def _now(now):
@@ -222,6 +223,13 @@ def set_scout_session(conn, scout_id, session_id):
         _live(conn, scout_id)
         conn.execute("UPDATE scouts SET leadSession = ? WHERE id = ?",
                      (session_id, scout_id))
+
+
+def record_scout_title(conn, scout_id, title):
+    with _transaction(conn):
+        _live(conn, scout_id)
+        conn.execute("UPDATE scouts SET title = ? WHERE id = ? AND title IS NULL",
+                     (title, scout_id))
 
 
 def record_scout_report(conn, scout_id, pass_number, report, now=None):
