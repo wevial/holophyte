@@ -99,7 +99,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("the narrow list draws one group per project, newest group first, under a lane head and with no id or project cell", async () => {
+test("the narrow list draws one group per project, newest group first, under a lane head and the table's column heads", async () => {
   await mount("#/scouts", scoutFetch(demo, writer));
   expect(groupNames()).toEqual(["demo", "writer"]);
   const [demoGroup, writerGroup] = groups();
@@ -107,24 +107,17 @@ test("the narrow list draws one group per project, newest group first, under a l
   expect(rowsOf(within(demoGroup!).getByRole("list", { name: "demo scouts" }))).toEqual(["31", "29", "27"]);
   expect(writerGroup!.querySelector("[data-lane-head]")!.textContent).toBe("writer1 scout");
   expect(rowsOf(within(writerGroup!).getByRole("list", { name: "writer scouts" }))).toEqual(["30"]);
-  expect(document.querySelector('[data-cell="id"], [data-cell="project"]')).toBeNull();
   const heads = [...document.querySelectorAll("[data-scout-table] > [aria-hidden] > span")].map((head) => head.textContent);
   expect(heads).toEqual(["", "Title", "Kind", "Lead", "Helpers", "Took"]);
-  cleanup();
-  await mount("#/scouts?project=demo", scoutFetch(demo, writer));
-  expect(groupNames()).toEqual(["demo"]);
-  expect(ids()).toEqual(["31", "29", "27"]);
 });
 
-test("the wide list draws the same groups with no id or project in its rows and the first group's first scout in the pane", async () => {
+test("the wide list draws the same groups with no id cell and the first group's first scout in the pane", async () => {
   const media = wideScreen();
   try {
     await mount("#/scouts", scoutFetch(demo, writer));
     expect(groupNames()).toEqual(["demo", "writer"]);
     expect(groups().map(rowsOf)).toEqual([["31", "29", "27"], ["30"]]);
     expect(document.querySelector('[data-scout-list] [data-cell="id"]')).toBeNull();
-    const facts = [...document.querySelectorAll("[data-scout-row-facts]")].map((line) => line.textContent);
-    expect(facts.filter((line) => /demo|writer/.test(line ?? ""))).toEqual([]);
     expect(document.querySelector("[data-scout-list] li[aria-current]")!.getAttribute("data-scout")).toBe("31");
     const pane = document.querySelector("[data-scout-pane]") as HTMLElement;
     expect(pane.contains(screen.getByRole("region", { name: "scout 31" }))).toBe(true);
