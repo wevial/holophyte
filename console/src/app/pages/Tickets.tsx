@@ -95,58 +95,62 @@ export function Tickets() {
   );
   const noMatch = (filter != null || q != null) && view.total === 0;
   return (
-    <section aria-labelledby="page-title" className="flex flex-col px-8 pt-3.5 pb-7 min-[720px]:h-full">
-      <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
-        <div className="flex items-center justify-between gap-3">
+    <section aria-labelledby="page-title" className="flex flex-col px-8 pt-3.5 pb-7 max-[720px]:px-4 min-[720px]:h-full">
+      <header className="flex flex-col gap-2.5 border-b border-rule pb-3">
+        <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-2">
           <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Tickets</h1>
-          {newProject != null && <Btn variant="primary" onClick={() => void navigate({ to: "/tickets/$project/new", params: { project: newProject }, search: {} })}>New ticket</Btn>}
-        </div>
-        {view.answered && (
-          <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
-            {view.project ?? "all projects"} · {view.total} {view.total === 1 ? "ticket" : "tickets"}
-            <Slash />
-            <b className="font-semibold text-ink">{columns.in_flight.length}</b> in flight
-            <Slash />
-            <b className="font-semibold text-need">{columns.needs_you.length}</b> need you
-            <Slash />
-            <b className="font-semibold text-ink">{columns.ready.length}</b> ready
-          </p>
-        )}
-        {view.project != null && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
-            <span>
-              Showing <b className="font-medium [overflow-wrap:anywhere] text-act">{view.project}</b> only
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                storeScope(null);
-                void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
-              }}
-              className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
-            >
-              Show all projects
-            </button>
-          </div>
-        )}
-        <StatePicker />
-      </header>
-      {view.answered && (
-        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2.5">
-          <TicketSearchField />
-          {filter == null && <ViewToggle view={layout} onPick={pickView} />}
-          <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
-          {mode !== "none" && (
-            <button
-              type="button"
-              onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}
-              className="inline-flex min-h-8 cursor-pointer items-center font-mono text-[12.5px] font-medium text-act underline underline-offset-2"
-            >
-              {anyOpen ? "Collapse all lanes" : "Expand all lanes"}
-            </button>
+          {view.answered && (
+            <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
+              {view.project ?? "all projects"} · {view.total} {view.total === 1 ? "ticket" : "tickets"}
+              <Slash />
+              <b className="font-semibold text-ink">{columns.in_flight.length}</b> in flight
+              <Slash />
+              <b className="font-semibold text-need">{columns.needs_you.length}</b> need you
+              <Slash />
+              <b className="font-semibold text-ink">{columns.ready.length}</b> ready
+            </p>
+          )}
+          {view.project != null && (
+            <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
+              <span>
+                Showing <b className="font-medium [overflow-wrap:anywhere] text-act">{view.project}</b> only
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  storeScope(null);
+                  void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
+                }}
+                className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
+              >
+                Show all projects
+              </button>
+            </div>
+          )}
+          {newProject != null && (
+            <Btn variant="primary" className="ml-auto self-center" onClick={() => void navigate({ to: "/tickets/$project/new", params: { project: newProject }, search: {} })}>
+              New ticket
+            </Btn>
           )}
         </div>
-      )}
+        {view.answered && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <TicketSearchField />
+            <StatePicker />
+            {filter == null && <ViewToggle view={layout} onPick={pickView} />}
+            <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
+            {mode !== "none" && (
+              <button
+                type="button"
+                onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}
+                className="ml-auto inline-flex min-h-8 cursor-pointer items-center font-mono text-[12.5px] font-medium text-act underline underline-offset-2"
+              >
+                {anyOpen ? "Collapse all lanes" : "Expand all lanes"}
+              </button>
+            )}
+          </div>
+        )}
+      </header>
       {view.answered && noMatch && <p className="mt-4 font-mono text-[13px] text-ink-3">No tickets match</p>}
       {view.answered && !noMatch && layout === "table" && (
         <div data-table-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
@@ -184,11 +188,6 @@ export function Tickets() {
             )}
           </div>
         </div>
-      )}
-      {view.answered && (
-        <p className="mt-3 font-mono text-[12px] text-ink-3">
-          Cards move as the factory and you act. Click a card to preview it; Expand opens the full ticket.
-        </p>
       )}
       {peek != null && <TicketPeek card={peek.card} column={peek.column} now={view.now} onClose={closePeek} />}
     </section>
