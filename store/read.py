@@ -768,7 +768,7 @@ def parked_on_pull_request(outcome, pr_url, park_kind):
             and park_kind in ("pull_request", "ci", "route"))
 
 _STUCK_NOTE_KINDS = {"needs_spec": ("critic", "stale", "validation"),
-                     "abandoned": ("cancel",)}
+                     "abandoned": ("cancel",), "closed": ("verdict",)}
 
 
 @dataclass(frozen=True)
@@ -870,19 +870,39 @@ def related_tickets(conn, run_id):
     return depends_on, followed_by
 
 
+def _ended_stories(conn):
+    return {child: (story, state) for child, story, state in conn.execute(
+        "SELECT c.ticketId, s.ticketId, s.state FROM storyChildren c"
+        " JOIN stories s ON s.ticketId = c.storyId"
+        " JOIN tickets t ON t.id = c.ticketId"
+        " WHERE s.state IN ('closed', 'abandoned') AND t.status = 'ready'"
+        " AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.ticketId = t.id"
+        " AND r.endedAt IS NULL)")}
+
+
+def _waited_on(ticket, by_issue, by_id, ended):
+    if ticket.id in ended:
+        story_id, state = ended[ticket.id]
+        return by_id[story_id], state
+    if ticket.status != "blocked_on_deps":
+        return None
+    deps = [by_issue.get((ticket.projectId, issue))
+            for issue in ticket.dependsOn]
+    dep = next((dep for dep in deps if dep and _stuck_state(dep)), None)
+    return None if dep is None else (dep, _stuck_state(dep))
+
+
 def stuck_waits(conn):
     rows = _wait_rows(conn)
     by_issue = {(row.projectId, row.issueId): row for row in rows}
+    by_id = {row.id: row for row in rows}
+    ended = _ended_stories(conn)
     waits = []
     for ticket in rows:
-        if ticket.status != "blocked_on_deps":
+        found = _waited_on(ticket, by_issue, by_id, ended)
+        if found is None:
             continue
-        deps = [by_issue.get((ticket.projectId, issue))
-                for issue in ticket.dependsOn]
-        dep = next((dep for dep in deps if dep and _stuck_state(dep)), None)
-        if dep is None:
-            continue
-        state = _stuck_state(dep)
+        dep, state = found
         waiting = [row for row in rows if row.projectId == ticket.projectId
                    and row.status == "blocked_on_deps"]
         waits.append(StuckWait(

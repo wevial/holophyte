@@ -23,6 +23,7 @@ from story_fixture import write_story  # noqa: E402
 
 import holophyte.cli.entry  # noqa: E402
 import store.stories  # noqa: E402
+import store.tickets  # noqa: E402
 from holophyte.board import linear_provider  # noqa: E402
 from holophyte.config import config_tables  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
@@ -367,6 +368,7 @@ class WitnessSetPassTests(WitnessRunnerFixture, unittest.TestCase):
                          "approved")
         for key in ("W1", "W2"):
             accept_witness(self.conn, self.story_id, key, LANDED)
+        store.tickets.walk_ticket(self.conn, self.child_id(), "merged")
 
         b = commit_file(self.repo, "README.md", "more\n", "docs")
         self.loop()

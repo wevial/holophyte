@@ -138,6 +138,9 @@ def item_line(item):
     said = next((item[key] for key in ("question", "reason", "note", "phase",
                                        "state", "error", "detail")
                  if item.get(key)), "")
+    if item["kind"] == "stuck_wait":
+        said = (f"waits on {item['dependency']} ({item['dependency_state']})"
+                + (f": {item['reason']}" if item.get("reason") else ""))
     return f"{item['kind']}  {subject}  {said}{triage_text(item)}".rstrip()
 
 

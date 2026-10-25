@@ -186,6 +186,7 @@ class StoryCloseTests(StoryCloseFixture):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
         green_at = self.commit(W1_FILE, PASSES, "w1 lands")
+        store.tickets.walk_ticket(self.conn, child, "merged")
         real_lock = holophyte.story.story_close.merge_lock
         landed = []
 
@@ -213,6 +214,7 @@ class StoryCloseTests(StoryCloseFixture):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
         tip = self.commit(W1_FILE, PASSES, "w1 lands")
+        store.tickets.walk_ticket(self.conn, child, "merged")
 
         with merge_lock(self.project, None), \
                 patch.object(holophyte.loop.gates, "MERGE_LOCK_WAIT_SEC", 0):
@@ -226,23 +228,69 @@ class StoryCloseTests(StoryCloseFixture):
         self.assertEqual(self.read(
             "SELECT mainSha, verdict FROM witnessResults"), [(tip, "green")])
 
-    def test_a_green_story_with_a_ready_child_stays_open(self):
+    def approve_with_scaffolding(self, column):
+        """Parent, the W1 child walked to merged, and a scaffolding child
+        in `column`, with W1's file committed to main at the returned tip."""
         parent, done = self.tickets()
-        ready = self.ticket_id(store.board.file_ticket(
-            self.conn, self.project_id, "NAT", VALID_BODY, column="ready"))
+        other = self.ticket_id(store.board.file_ticket(
+            self.conn, self.project_id, "NAT", VALID_BODY, column=column))
         file_story(self.conn, parent, [witness("W1", W1_FILE)],
-                   [(done, "completes", ["W1"]), (ready, "scaffolding", [])])
+                   [(done, "completes", ["W1"]), (other, "scaffolding", [])])
         (revision,) = self.conn.execute(
             "SELECT revision FROM tickets WHERE id = ?", (parent,)).fetchone()
         approve_story(self.conn, parent, revision, "operator", "go")
         tip = self.commit(W1_FILE, PASSES, "w1 lands")
         store.tickets.walk_ticket(self.conn, done, "merged")
+        return parent, other, tip
 
+    def close_notes(self, parent):
+        return [text for (text,) in self.read(
+            f"SELECT text FROM ticketNotes WHERE ticketId = {parent}")
+            if text.startswith("Story closed")]
+
+    def assert_held_until_abandoned(self, parent, other, tip):
         self.step()
 
         self.assertEqual(story(self.conn, parent).state, "approved")
         self.assertEqual(self.read(
             "SELECT mainSha, verdict FROM witnessResults"), [(tip, "green")])
+        self.assertEqual(self.close_notes(parent), [])
+
+        store.tickets.walk_ticket(self.conn, other, "abandoned")
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", tip))
+        self.assertEqual(self.close_notes(parent),
+                         [f"Story closed on its witnesses at {tip}: W1 green."])
+
+    def test_a_ready_child_holds_a_green_story_open(self):
+        self.assert_held_until_abandoned(
+            *self.approve_with_scaffolding("ready"))
+
+    def test_a_child_with_a_run_in_flight_holds_a_green_story_open(self):
+        parent, other, tip = self.approve_with_scaffolding("ready")
+        store.claim(self.conn, self.project_id, other)
+        self.assert_held_until_abandoned(parent, other, tip)
+
+    def test_a_backlog_child_without_a_run_does_not_hold_the_close(self):
+        parent, _, tip = self.approve_with_scaffolding("backlog")
+
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", tip))
+
+    def test_the_held_story_closes_at_the_tip_its_last_child_merges(self):
+        parent, other, _ = self.approve_with_scaffolding("ready")
+        self.step()
+        landed = self.commit(W2_FILE, PASSES, "scaffolding lands")
+        store.tickets.walk_ticket(self.conn, other, "merged")
+
+        self.step()
+
+        found = story(self.conn, parent)
+        self.assertEqual((found.state, found.closedSha), ("closed", landed))
 
     def test_a_baseline_green_at_the_tip_is_no_pass_and_closes_nothing(self):
         parent, child = self.tickets()
@@ -417,6 +465,7 @@ class StoreModeCloseTests(StoryCloseFixture):
         parent, child = self.tickets()
         self.approve(parent, child, [witness("W1", W1_FILE)])
         self.commit(W1_FILE, PASSES, "w1 lands")
+        store.tickets.walk_ticket(self.conn, child, "merged")
 
         self.step()
 

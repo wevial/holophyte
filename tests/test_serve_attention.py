@@ -15,12 +15,59 @@ import store.read
 import store.tickets
 from holophyte.board import linear_provider
 from holophyte.board.provider import LinearBoard
+from holophyte.config.project import Project
 from holophyte.loop.failure_triage import triage_failure
+from holophyte.story.story_claim import refusal
+from store.stories import abandon_story, approve_story, close_story, file_story
 from tests.failure_triage_fixture import REQUEUE, FakeClaude
 from tests.phase_fixture import advance_phase, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 from tests.test_provider import ticket_body
 from tests.test_status import file_stuck_wait
+
+W1 = {"key": "W1", "criterion": "outcome W1", "file": "tests/test_W1.py",
+      "command": "python3 -m unittest tests.test_W1",
+      "source": "assert 'W1'\n"}
+CLOSED_AT = "a" * 40
+CLOSE_NOTE = f"Story closed on its witnesses at {CLOSED_AT}: W1 green."
+
+
+def story_ticket(conn, project_id, name):
+    return store.tickets.mirror_ticket(
+        conn, project_id, linear_issue_id=f"issue-{name}",
+        linear_identifier=name, title=f"ticket {name}",
+        acceptance_criteria=["Given it, then it works"],
+        verification_commands=["echo ok"])
+
+
+def approved_story(conn, project_id, parent, children):
+    """The approved one-witness story `parent` over `children`, the first
+    completing W1; their ticket ids, parent first."""
+    ids = [story_ticket(conn, project_id, name)
+           for name in (parent, *children)]
+    file_story(conn, ids[0], [W1],
+               [(child, "completes" if n == 0 else "scaffolding",
+                 ["W1"] if n == 0 else [])
+                for n, child in enumerate(ids[1:])])
+    (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                               (ids[0],)).fetchone()
+    approve_story(conn, ids[0], revision, "operator", "go")
+    return ids
+
+
+def file_stranded_child(conn, project_id, end):
+    """NAT-1 an approved story whose child NAT-2 was claimed, NAT-1 then
+    `end`ed ("closed" or "abandoned") with that run in flight, and the run
+    released abandoned with NAT-2 walked back to ready; their ids."""
+    parent, child = approved_story(conn, project_id, "NAT-1", ["NAT-2"])
+    run = store.claim(conn, project_id, child)
+    if end == "closed":
+        close_story(conn, parent, CLOSED_AT, CLOSE_NOTE)
+    else:
+        abandon_story(conn, parent, "story abandoned", "operator")
+    store.release(conn, run, "abandoned")
+    store.tickets.walk_ticket(conn, child, "ready")
+    return parent, child
 
 
 class FailedAttentionTests(ServeTestCase):
@@ -726,6 +773,32 @@ class StuckWaitStatesTests(ServeTestCase):
                                           text, column="backlog")
         self.assertEqual(store.read.ticket_by_identifier(
             self.conn, shelved).status, "blocked_on_deps")
+        self.assertEqual(self.stuck_waits(), {})
+
+    def refusal(self, ticket_id):
+        return refusal(Project.locate(self.target, adopt=False), self.conn,
+                       ticket_id)
+
+    def test_a_ready_child_of_an_abandoned_story_is_a_stuck_wait(self):
+        _, child = file_stranded_child(self.conn, self.project_id,
+                                       "abandoned")
+        self.assertEqual(self.refusal(child), "its story NAT-1 is abandoned")
+        self.assertEqual(self.stuck_waits(), {
+            "NAT-2": ("NAT-1", "abandoned", None, "attention")})
+
+    def test_a_ready_child_of_a_closed_story_waits_on_its_close_note(self):
+        _, child = file_stranded_child(self.conn, self.project_id, "closed")
+        self.assertEqual(self.refusal(child), "its story NAT-1 is closed")
+        self.assertEqual(self.stuck_waits(), {
+            "NAT-2": ("NAT-1", "closed", CLOSE_NOTE, "attention")})
+
+    def test_ended_open_and_shelved_story_children_are_no_stuck_waits(self):
+        parent, merged, abandoned, _ = approved_story(
+            self.conn, self.project_id, "NAT-1", ["NAT-2", "NAT-3", "NAT-4"])
+        store.tickets.walk_ticket(self.conn, merged, "merged")
+        store.tickets.walk_ticket(self.conn, abandoned, "abandoned")
+        close_story(self.conn, parent, CLOSED_AT, CLOSE_NOTE)
+        approved_story(self.conn, self.project_id, "NAT-5", ["NAT-6"])
         self.assertEqual(self.stuck_waits(), {})
 
 
