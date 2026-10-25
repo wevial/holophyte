@@ -104,6 +104,18 @@ class PushTests(Repository):
         self.git("add", "-A", cwd=self.wt)
         self.assertEqual(self.git("status", "--porcelain", cwd=self.wt), "")
 
+    def test_a_tracked_negation_does_not_stage_an_untracked_spec_again(self):
+        self.configure("true")
+        (self.wt / ".gitignore").write_text("!console/e2e/*.capture.ts\n")
+        self.git("add", ".gitignore", cwd=self.wt)
+        self.git("commit", "-qm", "negation", cwd=self.wt)
+        github.push_branch(self.project, "task")
+
+        self.git("add", "-A", cwd=self.wt)
+
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.wt), "")
+        self.assertTrue((self.wt / "console/e2e/KO-7.capture.ts").is_file())
+
     def test_pushed_head_still_captures_from_the_worktree_spec(self):
         self.configure("true")
         github.push_branch(self.project, "task")

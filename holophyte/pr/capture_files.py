@@ -111,11 +111,33 @@ def untrack_capture_files(project, branch):
 
 def _exclude(wt, paths):
     exclude = Path(wt) / sh(["git", "rev-parse", "--git-path", "info/exclude"], wt)
-    exclude.parent.mkdir(parents=True, exist_ok=True)
-    present = (set(exclude.read_text(encoding="utf-8").splitlines())
-               if exclude.exists() else set())
-    lines = [line for line in ("/" + re.sub(r"([\\*?\[!#])", r"\\\1", p)
-                               for p in paths) if line not in present]
+    _append(exclude, ["/" + _pattern(p) for p in paths])
+    for path in paths:
+        if not _ignored(wt, path):
+            _ignore_beside(wt, PurePosixPath(path))
+
+
+def _ignore_beside(wt, path):
+    ignore = PurePosixPath(path.parent, ".gitignore")
+    if sh(["git", "ls-files", "--", str(ignore)], wt):
+        return
+    _append(Path(wt, ignore), ["/.gitignore", "/" + _pattern(path.name)])
+
+
+def _ignored(wt, path):
+    return subprocess.run(["git", "check-ignore", "-q", "--", path], cwd=wt,
+                          capture_output=True).returncode == 0
+
+
+def _pattern(path):
+    return re.sub(r"([\\*?\[!#])", r"\\\1", str(path))
+
+
+def _append(file, lines):
+    file.parent.mkdir(parents=True, exist_ok=True)
+    present = (set(file.read_text(encoding="utf-8").splitlines())
+               if file.exists() else set())
+    lines = [line for line in lines if line not in present]
     if lines:
-        with exclude.open("a", encoding="utf-8") as stream:
+        with file.open("a", encoding="utf-8") as stream:
             stream.write("\n" + "\n".join(lines) + "\n")

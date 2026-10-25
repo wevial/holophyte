@@ -1208,8 +1208,10 @@ than the spec `ui_capture` names with `--default`, a file under
 `.holophyte-capture-*` directory. Under `ui_capture_local = true`, capture
 files are untracked before each push of a candidate, in one factory commit
 listing them, with the working copies kept and added to the repository's
-`info/exclude`; the merge refuses a head that still adds one and parks the
-run on its pull request, naming the paths. A change to the local spec the
+`info/exclude` (and, where a tracked ignore rule re-includes one, to a
+self-ignoring `.gitignore` beside it unless that directory tracks one);
+the merge refuses a head that still adds one and parks the run on its pull
+request, naming the paths. A change to the local spec the
 capture would run reruns the capture at the same commit and counts as
 fix-round progress. A state that names image files in backticks
 (`` `03-panel.png` ``) captions each published one it names; a state naming
