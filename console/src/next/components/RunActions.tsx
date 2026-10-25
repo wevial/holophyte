@@ -21,10 +21,8 @@ type Page = Extract<RunPage, { kind: "run" }>;
 function labelsOf(page: Page, newest: boolean): string[] {
   const { run } = page.detail;
   if (page.state === "paused") return [RESUME];
-  if (page.liveRun != null) {
-    if (page.liveRun.stop_requested != null) return [];
-    return PARKED.has(page.state) ? [ABORT] : [PAUSE, ABORT];
-  }
+  if (PARKED.has(page.state)) return run.ended_ms == null ? [ABORT] : [];
+  if (page.liveRun != null) return page.liveRun.stop_requested == null ? [PAUSE, ABORT] : [];
   return ENDED.has(run.outcome ?? "") && newest && !page.liveTicket ? [REQUEUE] : [];
 }
 

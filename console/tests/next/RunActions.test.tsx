@@ -29,13 +29,12 @@ const runs: Record<number, RunDetail> = {
 };
 
 const liveRow = { ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 };
-const parkedRow = { ...run(14, "DEMO-14"), phase: "awaiting_merge_approval" };
 
 /** `demo` live in run 12 with `actions` as given; `/runs/N` answers `runs`
  *  and every `POST /actions/...` goes to `post`. */
 async function mount(id: number, { actions = true, post }: { actions?: boolean; post?: Fetch } = {}) {
   window.location.hash = `#/runs/demo/${id}`;
-  const polls = fleet({ items: [], runs: [liveRow, run(13, "DEMO-13"), parkedRow] }, { items: [] });
+  const polls = fleet({ items: [], runs: [liveRow, run(13, "DEMO-13")] }, { items: [] });
   const fake = fakeDeps(async (url, init) => {
     if (init?.method === "POST" && post != null) return post(url, init);
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions });
