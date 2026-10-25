@@ -21,6 +21,18 @@ class CheckFix:
     reran: bool = False
     awaited: tuple = ()
     handed: list = field(default_factory=list)
+    noted: set = field(default_factory=set)
+
+    def note_optional(self, conn, run_id, state):
+        if not state.optional_failures or state.head_sha in self.noted:
+            return
+        self.noted.add(state.head_sha)
+        if conn is not None and run_id is not None:
+            store.record_event(
+                conn, run_id, "optional_checks_failed",
+                f"optional checks failed on {state.head_sha[:12]}, not"
+                " blocking the merge: " + ", ".join(
+                    check.name for check in state.optional_failures))
 
 
 def rerun_failed_jobs(target, pull, workflow_run_id):

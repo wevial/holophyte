@@ -153,6 +153,36 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
                       " vercel", self.question())
 
 
+    def test_a_red_optional_check_merges_and_records_the_optional_failures(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "auto"\n'
+                       'pr_quiet_sec = 0\n')
+        self.fake_route(states=[self.pr_state(checks="FAILURE")])
+        docs = "Workers Builds: holophyte-docs"
+
+        def rest(target, pull, method, path, payload=None):
+            if "rules/branches/" in path:
+                return [{"type": "required_status_checks", "parameters": {
+                    "required_status_checks": [{"context": "unit"}]}}]
+            if path.endswith("/branches/main"):
+                return {"name": "main", "protected": False}
+            return {"total_count": 2, "check_runs": [
+                {"name": "unit", "status": "completed",
+                 "conclusion": "success"},
+                {"name": docs, "status": "completed",
+                 "conclusion": "failure"}]}
+        with patch.object(holophyte.pr.pr_status, "rest", rest):
+            self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                      provider=self.provider())
+        head = self.pushed()[-1][1]
+        self.assertEqual([v["sha"] for kind, v in self.api_calls()
+                          if kind == "merge"], [head])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read(
+            "SELECT summary FROM runEvents"
+            " WHERE kind = 'optional_checks_failed'"),
+            [(f"optional checks failed on {head[:12]}, not blocking"
+              f" the merge: {docs}",)])
+
     def test_a_check_runs_read_the_babysitter_cannot_make_is_pending(self):
         def raising_rest(target, pull, method, path, payload=None):
             raise holophyte.pr.github.InfraFailure(f"GitHub refused GET {path}")
@@ -283,10 +313,62 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
     def test_a_red_run_from_before_the_ready_event_without_a_rerun_fails(self):
         state = self._state_with_rest(self.e2e_required(
             self.check_run("e2e-ok", self.AFTER_READY),
-            self.check_run("lint", self.BEFORE_READY, conclusion="failure")),
-            ready_at=self.READY_AT)
+            self.check_run("lint", self.BEFORE_READY, conclusion="failure"),
+            required=("e2e-ok", "lint")), ready_at=self.READY_AT)
         self.assertEqual(state.checks, "failure")
         self.assertEqual([c.name for c in state.failed_checks], ["lint"])
+
+    def test_a_red_check_main_does_not_require_does_not_fail_the_fold(self):
+        docs = "Workers Builds: holophyte-docs"
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("unit", self.AFTER_READY),
+            self.check_run(docs, self.AFTER_READY, conclusion="failure"),
+            required=("unit",)), ready_at=self.READY_AT, rollup="FAILURE")
+        self.assertEqual((state.checks, state.failed_checks), ("success", ()))
+        self.assertEqual([c.name for c in state.optional_failures], [docs])
+
+    def test_an_optional_red_check_waits_on_a_running_required_one(self):
+        docs = "Workers Builds: holophyte-docs"
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("unit", self.AFTER_READY, status="in_progress"),
+            self.check_run(docs, self.AFTER_READY, conclusion="failure"),
+            required=("unit",)), ready_at=self.READY_AT, rollup="FAILURE")
+        self.assertEqual(state.checks, "pending")
+
+    def test_a_red_required_check_fails_the_fold_listing_every_red_check(self):
+        docs = "Workers Builds: holophyte-docs"
+        state = self._state_with_rest(self.e2e_required(
+            self.check_run("unit", self.AFTER_READY, conclusion="failure"),
+            self.check_run(docs, self.AFTER_READY, conclusion="failure"),
+            required=("unit",)), ready_at=self.READY_AT, rollup="FAILURE")
+        self.assertEqual(state.checks, "failure")
+        self.assertEqual([c.name for c in state.failed_checks], ["unit", docs])
+        self.assertEqual(state.optional_failures, ())
+
+    def test_a_pending_fold_lists_no_failed_check(self):
+        runs = [self.check_run("lint", self.AFTER_READY, conclusion="failure")]
+        def rest(target, pull, method, path, payload=None):
+            if "check-runs" in path:
+                return {"total_count": len(runs), "check_runs": runs}
+            raise holophyte.pr.github.InfraFailure(f"GitHub refused GET {path}")
+        state = self._state_with_rest(rest, ready_at=self.READY_AT,
+                                      rollup="PENDING")
+        self.assertEqual((state.checks, state.failed_checks), ("pending", ()))
+
+    def test_every_red_check_fails_the_fold_when_main_requires_none(self):
+        docs = "Workers Builds: holophyte-docs"
+        runs = [self.check_run("unit", self.AFTER_READY),
+                self.check_run(docs, self.AFTER_READY, conclusion="failure")]
+        def rest(target, pull, method, path, payload=None):
+            if "check-runs" in path:
+                return {"total_count": len(runs), "check_runs": runs}
+            if path.endswith("/rules/branches/main"):
+                return []
+            return {"name": "main", "protected": False}
+        state = self._state_with_rest(rest, ready_at=self.READY_AT,
+                                      rollup="FAILURE")
+        self.assertEqual(state.checks, "failure")
+        self.assertEqual([c.name for c in state.failed_checks], [docs])
 
     def test_a_green_run_superseded_by_a_running_rerun_is_pending(self):
         state = self._state_with_rest(self.e2e_required(

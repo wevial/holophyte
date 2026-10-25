@@ -131,6 +131,7 @@ class PrState:
     review: str | None = None
     pending_contexts: tuple = ()
     failed_checks: tuple = ()
+    optional_failures: tuple = ()
     missing_checks: tuple = ()
     awaiting: tuple = ()
     draft: bool = False
