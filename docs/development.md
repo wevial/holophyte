@@ -631,6 +631,8 @@ Each module, one line:
 - `holophyte/pr/pr_status.py` — reading a pull request's state (KO-426), out
   of `holophyte/pr/github.py`: `pull_status()` for the parked-run reconcile,
   `pr_state()` and `fold_checks()` for the babysitter, `parse_pr_url()`.
+  When `main`'s rules name any required check the fold blocks only on the
+  required checks; a red optional check lands in `optional_failures`.
 - `holophyte/media_store.py` — standard-library SigV4 PUTs for evidence in an
   S3-compatible bucket. Operator setup lives in the
   [bucket configuration reference](config.md#mergemedia_bucket).

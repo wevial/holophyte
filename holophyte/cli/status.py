@@ -6,6 +6,7 @@ from time import time
 import store.read
 from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.stale_paths import stale_paths
+from holophyte.config.config_tables import sweep_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES, factory_revision
 from holophyte.host.supervisor_lock import (
     pid_alive,
@@ -25,6 +26,7 @@ from store.steer_notes import steers
 
 def snapshot(target, conn, now=None):
     now = int(time() * 1000) if now is None else now
+    stale_ms = sweep_config(target).heartbeat_stale_ms
     pending = Counter(note.ticket for note in steers(conn)
                       if note.event_id is None and note.consumed_by is None
                       and note.withdrawn_by is None)
@@ -40,6 +42,7 @@ def snapshot(target, conn, now=None):
         "live": [{"run": run.id, "ticket": run.linearIdentifier,
                   "phase": run.phase, "worker": json_host(target, run.host),
                   "heartbeat_age_s": (now - run.lastHeartbeat) // 1000,
+                  "silent": (now - run.lastHeartbeat) > stale_ms,
                   "steer_pending": pending.get(run.linearIdentifier, 0),
                   "stop_action": stops.get(run.id, (None, None))[0],
                   "step": (running_step(conn, run.id)

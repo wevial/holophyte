@@ -421,10 +421,11 @@ def _required_contexts(rules):
     return contexts
 
 
-def fold_checks(rollup, runs, required):
+def fold_checks(rollup, runs, required, blocking=None):
     state = CHECK_STATES.get(rollup, "failure")
-    if state == "failure":
+    if state == "failure" and not _only_optional_red(runs, blocking):
         return state
+    state = "success" if state == "failure" else state
     if runs is None or required is None:
         return "pending"
     if not isinstance(runs, list):
@@ -437,12 +438,25 @@ def fold_checks(rollup, runs, required):
         if run.get("status") != "completed":
             state = "pending"
             continue
-        if run.get("conclusion") in RED_CONCLUSIONS:
+        if _blocks(run, blocking):
             return "failure"
         completed.add(run.get("name"))
     if any(context not in completed for context in required):
         return "pending"
     return state
+
+
+def _blocks(run, blocking):
+    return run.get("conclusion") in RED_CONCLUSIONS and (
+        blocking is None or run.get("name") in blocking)
+
+
+def _only_optional_red(runs, blocking):
+    if blocking is None or not isinstance(runs, list):
+        return False
+    red = [run for run in runs if isinstance(run, dict)
+           and run.get("conclusion") in RED_CONCLUSIONS]
+    return bool(red) and not any(_blocks(run, blocking) for run in red)
 
 
 def _comments_of(target, pull, node):
@@ -549,8 +563,13 @@ def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
     if commits and isinstance(commits[-1], dict) and not rollup_stale:
         rollup = ((commits[-1].get("commit") or {})
                   .get("statusCheckRollup") or {}).get("state")
+    blocking = {*required, *awaited} if required else None
     checks = fold_checks(rollup, runs, None if required is None
-                         else required + list(awaited))
+                         else required + list(awaited), blocking)
+    failed = _failed_checks(runs)
+    optional = () if checks == "failure" or blocking is None else tuple(
+        check for check in failed if check.name not in blocking)
+    failed = failed if checks == "failure" else ()
     merge = node.get("mergeCommit") or {}
     mergeable = node.get("mergeable")
     decision = node.get("reviewDecision")
@@ -571,7 +590,8 @@ def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
                                           if isinstance(r, dict)
                                           and r.get("name")
                                           and r.get("status") != "completed"),
-                   failed_checks=_failed_checks(runs),
+                   failed_checks=failed,
+                   optional_failures=optional,
                    missing_checks=_missing_checks(runs, required),
                    awaiting=_awaiting(runs, awaited),
                    draft=node.get("isDraft") is True,
