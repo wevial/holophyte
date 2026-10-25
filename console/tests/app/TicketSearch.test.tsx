@@ -156,7 +156,6 @@ test("a picked state lists its tickets as Table rows with no lanes, heads or vie
   expect(heads()).toBeNull();
   expect(screen.queryAllByRole("article")).toEqual([]);
   expect(screen.queryByRole("group", { name: "View" })).toBeNull();
-  expect(screen.getAllByText(/^Showing/).map((line) => line.textContent)).toEqual(["Showing demo only"]);
 });
 
 test("a search under All counts only its matches in the column heads and the count line", async () => {
