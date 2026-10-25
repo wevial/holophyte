@@ -205,7 +205,9 @@ def running_rows(who, status):
     merging = merge["run"] if merge and merge["stale"] is False else None
     rows = []
     for run in status["live"]:
-        text = f"{run['phase']} · heartbeat {age(run['heartbeat_age_s'])} ago"
+        text = run["phase"]
+        if run.get("silent"):
+            text += f" · silent, heartbeat {age(run['heartbeat_age_s'])} ago"
         if run.get("steer_pending"):
             text += f" · steer {run['steer_pending']} pending"
         if run["run"] == merging:
