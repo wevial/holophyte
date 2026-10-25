@@ -201,7 +201,7 @@ export function useTicketSearch(hosts: HostRecord<PollBodies>[], text: string, d
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
       queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, ticketSearchSchema),
-      staleTime: Number.POSITIVE_INFINITY,
+      staleTime: POLL_INTERVAL_MS,
     })),
   });
   const hits = new Map<string, Set<string>>();

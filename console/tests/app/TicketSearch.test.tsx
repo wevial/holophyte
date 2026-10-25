@@ -129,14 +129,15 @@ test("the debounced search is the address's q, and a fresh mount on it searches 
 test("slash focuses Search from the page, and Escape in it empties it and drops q", async () => {
   await mount("#/tickets", fleet(demoBoard).fetch);
   document.body.focus();
-  fireEvent.keyDown(document.body, { key: "/" });
+  const typed = fireEvent.keyDown(document.body, { key: "/" });
+  expect(typed).toBe(false);
   expect(document.activeElement).toBe(field());
   expect(field().value).toBe("");
 
   await search("demo");
   expect(query().get("q")).toBe("demo");
   fireEvent.keyDown(field(), { key: "Escape" });
-  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  for (let round = 0; round < 2; round += 1) await act(settle);
   expect(field().value).toBe("");
   expect(query().has("q")).toBe(false);
 });
