@@ -227,6 +227,17 @@ def open_tickets(conn, project_id=None):
             for row in rows]
 
 
+def search_tickets(conn, query):
+    needle = query.lower()
+    rows = conn.execute(
+        "SELECT linearIdentifier, title, labels, body FROM tickets"
+        " ORDER BY linearIdentifier").fetchall()
+    return [row[0] for row in rows
+            if any(needle in text.lower() for text in
+                   (row[0], row[1] or "", row[3] or "",
+                    *json.loads(row[2] or "[]")))]
+
+
 @dataclass(frozen=True)
 class StoryMember:
     linearIdentifier: str

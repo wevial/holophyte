@@ -1,11 +1,11 @@
 import json
 
 import store
-import ticket_template
 from holophyte import question_cli, questions, redact
 from holophyte.loop.failure_triage import asked_route
 from holophyte.loop.stop import resumes
 from holophyte.redact import safe_print as print
+from holophyte.tickets import ticket_template
 
 EVENT = "complexity"
 BODY_CHARS = 24000

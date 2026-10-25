@@ -4,6 +4,7 @@ import json
 import os
 import socket
 from time import time
+from urllib.parse import parse_qs
 
 import store.criteria
 import store.read
@@ -306,6 +307,19 @@ def board(project, now=None, editable=False):
                              for state in states],
                  "stories": [story_json(story) for story in stories],
                  "editable": editable and native, "now": now}
+
+
+def ticket_search(project, query):
+    text = parse_qs(query).get("q", [""])[-1].strip()
+    if not text:
+        return 400, {"error": "q is required"}
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        return 200, {"q": text, "tickets": store.read.search_tickets(conn, text)}
+    finally:
+        conn.close()
 
 
 def story_json(story):

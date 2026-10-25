@@ -2,7 +2,6 @@ import json
 import shlex
 
 import store
-import ticket_template
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.harness import seat as harness_seat
 from holophyte.agents.roles import effective_role
@@ -16,6 +15,7 @@ from holophyte.loop.follow_ups import pending_prompt
 from holophyte.loop.gates import RunFailure, sh
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids
+from holophyte.tickets import ticket_template
 
 
 def resume_template(target):

@@ -1058,6 +1058,12 @@ export const ticketCheckSchema = z.looseObject({
 });
 export type TicketCheck = z.infer<typeof ticketCheckSchema>;
 
+export const ticketSearchSchema = z.looseObject({
+  q: z.string(),
+  tickets: z.array(z.string()),
+});
+export type TicketSearch = z.infer<typeof ticketSearchSchema>;
+
 export const storyChildRowSchema = z.looseObject({
   ticket: z.string(),
   title: z.string(),

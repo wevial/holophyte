@@ -21,10 +21,10 @@ import holophyte.cli.entry
 import store
 import store.board
 import store.tickets
-import ticket_template
 from holophyte.board.native_board import NativeBoard
 from holophyte.config.project import Project
 from holophyte.holo.cli import main as holo_main
+from holophyte.tickets import ticket_template
 from provider import FiledWithoutBlockers
 from store.scouts import create_scout, end_scout, move_scout, record_scout_actions
 from tests.host_fixture import HostFixture

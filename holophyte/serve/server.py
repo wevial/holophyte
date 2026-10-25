@@ -99,6 +99,7 @@ from holophyte.serve.views import (  # noqa: F401
     status,
     supervisor_view,
     ticket_detail,
+    ticket_search,
 )
 from store.operate import acting_as, author_actor
 
@@ -126,7 +127,7 @@ OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
                         "/attention", "/board", "/report", "/findings",
-                        SCOUTS_PATH})
+                        "/tickets", SCOUTS_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
     "Scope", ("project", "token", "action_token", "actions", "config_edit",
@@ -276,7 +277,8 @@ def window_report(project, query):
 
 QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/history": history, "/holds": holds, "/report": window_report,
-                "/findings": findings, SCOUTS_PATH: scouts}
+                "/findings": findings, "/tickets": ticket_search,
+                SCOUTS_PATH: scouts}
 
 
 def shaped_route(path):

@@ -163,7 +163,7 @@ def with_findings(verdict, findings):
 def ticket_problems(repo, text, problems):
     """Every problem comes back redacted of the patterns and what they matched."""
     from holophyte.config.project import Project
-    from ticket_template import H1_RE, H2_RE
+    from holophyte.tickets.ticket_template import H1_RE, H2_RE
     try:
         compiled = patterns(Project.locate(Path(repo).resolve(), adopt=False))
     except SystemExit as refused:

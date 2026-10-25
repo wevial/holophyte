@@ -3,10 +3,9 @@ import subprocess
 from pathlib import PurePosixPath
 from typing import NamedTuple, get_args
 
-import ticket_header
-import ticket_template
 from holophyte.loop.gates import sh
 from holophyte.scout.scout_contract import FindingStatus, Layer
+from holophyte.tickets import ticket_header, ticket_template
 from store.enums import ScoutKind
 
 

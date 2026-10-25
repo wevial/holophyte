@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TicketSearch",
+  "description": "GET /tickets?q=TEXT",
+  "$ref": "#/$defs/TicketSearch",
+  "$defs": {
+    "TicketSearch": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string"
+        },
+        "tickets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "q",
+        "tickets"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

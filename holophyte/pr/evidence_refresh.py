@@ -1,9 +1,9 @@
-import ticket_template
 from holophyte import note_privacy
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import github, image_fetch, pr_media
+from holophyte.tickets import ticket_template
 
 
 def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat_s):

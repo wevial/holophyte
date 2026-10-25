@@ -18,7 +18,7 @@ import holophyte.loop.claim  # noqa: E402
 import store
 import store.read
 import store.tickets
-import ticket_template as tt  # noqa: E402 - after the sys.path insert above
+from holophyte.tickets import ticket_template as tt  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -365,7 +365,7 @@ class TemplateFileTests(unittest.TestCase):
     """The real ticketTemplate.md must parse; unfilled, it must NOT validate."""
 
     def setUp(self):
-        self.text = (ROOT / "ticketTemplate.md").read_text()
+        self.text = (ROOT / "holophyte/tickets/templates/ticketTemplate.md").read_text()
         self.t = tt.parse(self.text)
 
     def test_all_sections_recognized_in_order(self):
@@ -436,7 +436,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("missing section", r.stdout)
 
     def test_real_template_file_exits_nonzero(self):
-        r = self.run_cli(str(ROOT / "ticketTemplate.md"))
+        r = self.run_cli(str(ROOT / "holophyte/tickets/templates/ticketTemplate.md"))
         self.assertNotEqual(r.returncode, 0)
 
     def test_no_args_usage_exit_two(self):

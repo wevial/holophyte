@@ -1,8 +1,8 @@
 import store.criteria
 import store.read
 import store.steer_notes
+from holophyte.tickets.ticket_criteria import split_id
 from provider import parse_body
-from ticket_criteria import split_id
 
 
 def parse(token):

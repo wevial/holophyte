@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCES = sorted((ROOT / "holophyte").rglob("*.py")) + [
     ROOT / "factory.py", ROOT / "ticket_template.py"]
 WORD = re.compile(r"\btargets?\b", re.IGNORECASE)
-# The alias JSON key and the argparse destination.
-ALLOWED = "target"
+# The alias JSON key, the argparse destination and ruff's own option.
+ALLOWED = {"target", "--target-version"}
 STARTS = {token.FSTRING_START, getattr(token, "TSTRING_START", token.FSTRING_START)}
 MIDDLES = {token.FSTRING_MIDDLE, getattr(token, "TSTRING_MIDDLE", token.FSTRING_MIDDLE)}
 
@@ -60,7 +60,7 @@ def literal_text(path):
             if before in (token.NEWLINE, token.ENCODING) and after == token.NEWLINE:
                 continue
             text = decoded(tok.string)
-            if text != ALLOWED:
+            if text not in ALLOWED:
                 yield tok.start[0], text
         elif tok.type in STARTS:
             raw.append("r" in tok.string.lower())

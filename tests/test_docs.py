@@ -288,7 +288,7 @@ class PullRequestTemplateTests(unittest.TestCase):
 
 
 class StoryTemplateTests(unittest.TestCase):
-    TEMPLATE = ROOT / "storyTemplate.md"
+    TEMPLATE = ROOT / "holophyte/tickets/templates/storyTemplate.md"
 
     def section(self, text, title):
         return text.split(f"## {title}\n", 1)[1].split("\n## ", 1)[0]

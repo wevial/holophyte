@@ -1,6 +1,6 @@
 import re
 
-import ticket_template
+from holophyte.tickets import ticket_template
 
 _ID = re.compile(r"^\s*\*\*C([1-9][0-9]*)\*\*\s*")
 _SPAN = re.compile(r"`([^`\n]+)`")

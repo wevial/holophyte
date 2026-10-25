@@ -7,9 +7,9 @@ import os
 import socket
 import time
 
-import ticket_template as _ticket_template
 from holophyte.redact import redact_document as _redact_document
 from holophyte.redact import redact_values as _redact_values
+from holophyte.tickets import ticket_template as _ticket_template
 
 from . import enums as _enums
 from .run_reads import PR_SEEN_MEDIA as _PR_SEEN_COLUMNS

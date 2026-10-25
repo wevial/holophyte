@@ -12,7 +12,6 @@ from time import sleep, time
 
 import store
 import store.read
-import ticket_template
 from holophyte.agents.agent_output import (
     AgentOutput,
     killed_by_signal,
@@ -46,6 +45,7 @@ from holophyte.pr.pr_media import implementer_brief as _capture_brief
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review import blast_radius, criterion_ids, reproduce
+from holophyte.tickets import ticket_template
 from store.working import agent_work
 
 

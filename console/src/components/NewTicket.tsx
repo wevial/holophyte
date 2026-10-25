@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import TEMPLATE from "../../../ticketTemplate.md" with { type: "text" };
+import TEMPLATE from "../../../holophyte/tickets/templates/ticketTemplate.md" with { type: "text" };
 import { fileTicket } from "../lib/boardWrites";
 import { projectName } from "../lib/derive";
 import type { HostRecord } from "../lib/hosts";

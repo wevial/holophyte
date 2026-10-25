@@ -25,7 +25,7 @@ from provider_fence_fixture import FenceConformanceMixin  # noqa: E402
 import holophyte.cli.operator  # noqa: E402
 import linear_provider  # noqa: E402
 import provider as board_seam  # noqa: E402
-import ticket_template  # noqa: E402
+from holophyte.tickets import ticket_template  # noqa: E402
 from tests.ticket_url_fixture import assert_provider_url  # noqa: E402
 
 TITLE = "do the thing"
@@ -533,9 +533,13 @@ class LinearImportTests(unittest.TestCase):
     def test_the_module_imports_with_no_configuration_at_all(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        for name in ("linear_provider.py", "ticket_template.py",
-                     "ticket_header.py"):
-            shutil.copy(ROOT / name, tmp.name)
+        package = Path(tmp.name, "holophyte", "tickets")
+        package.mkdir(parents=True)
+        for name in ("linear_provider.py", "holophyte/__init__.py",
+                     "holophyte/tickets/__init__.py",
+                     "holophyte/tickets/ticket_template.py",
+                     "holophyte/tickets/ticket_header.py"):
+            shutil.copy(ROOT / name, Path(tmp.name, name))
         env = {k: v for k, v in os.environ.items()
                if k not in ("HOLO2_PROJECT_ID", "HOLO2_TEAM")}
         env["PYTHONDONTWRITEBYTECODE"] = "1"

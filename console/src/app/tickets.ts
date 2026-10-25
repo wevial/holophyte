@@ -33,6 +33,7 @@ export interface TicketCard {
   base: string;
   key: string;
   title: string;
+  labels: string[];
   project: string;
   state: BoardColumn["state"] | "merged";
   need: NeedsYouEntry | null;
@@ -64,26 +65,44 @@ export function boardColumn(card: Pick<TicketCard, "state" | "need">): ColumnId 
   return card.need != null && card.state !== "merged" ? "needs_you" : BY_STATE[card.state];
 }
 
+/** The sidebar's Views. */
 export const TICKET_FILTERS = ["ready", "needs_spec", "backlog"] as const;
 
-export type TicketFilter = (typeof TICKET_FILTERS)[number];
+/** The State picker's states, in its order. */
+export const STATE_FILTERS = ["ready", "in_flight", "needs_you", "backlog", "needs_spec", "done"] as const;
 
-export const FILTER_LABELS: Record<TicketFilter, string> = { ready: "Ready", needs_spec: "Needs spec", backlog: "Backlog" };
+export type TicketFilter = (typeof STATE_FILTERS)[number];
+
+export const FILTER_LABELS: Record<TicketFilter, string> = {
+  ready: "Ready", in_flight: "In flight", needs_you: "Needs you", backlog: "Backlog", needs_spec: "Needs spec", done: "Done",
+};
 
 export interface TicketsSearch {
   filter?: TicketFilter;
+  q?: string;
 }
 
-export function validateTicketsSearch({ filter }: Record<string, unknown>): TicketsSearch {
-  return { filter: TICKET_FILTERS.includes(filter as TicketFilter) ? (filter as TicketFilter) : undefined };
+export function validateTicketsSearch({ filter, q }: Record<string, unknown>): TicketsSearch {
+  return {
+    filter: STATE_FILTERS.includes(filter as TicketFilter) ? (filter as TicketFilter) : undefined,
+    q: typeof q === "string" && q.trim() !== "" ? q : undefined,
+  };
 }
 
-/** The saved view a card is listed under, if any. */
-export function ticketView(card: Pick<TicketCard, "state" | "need">): TicketFilter | null {
+/** The state a card is listed under: its column, with Backlog split into
+ *  Needs spec and the rest. */
+export function ticketView(card: Pick<TicketCard, "state" | "need">): TicketFilter {
   const column = boardColumn(card);
-  if (column === "ready") return "ready";
-  if (column !== "backlog") return null;
+  if (column !== "backlog") return column;
   return card.state === "needs_spec" ? "needs_spec" : "backlog";
+}
+
+/** Whether `card`'s key, title or a label holds `text`, ignoring case, or
+ *  its host's search named it. */
+export function cardMatches(card: TicketCard, text: string, hits: ReadonlyMap<string, ReadonlySet<string>>): boolean {
+  const needle = text.trim().toLowerCase();
+  if ([card.key, card.title, ...card.labels].some((field) => field.toLowerCase().includes(needle))) return true;
+  return hits.get(card.base)?.has(card.key) === true;
 }
 
 /** The Needs you entry's item, else a park, else the live run, else the board. */
@@ -235,6 +254,7 @@ export function hostCards(host: HostRecord<ContractBodies>, board: Board, readin
       base: host.base,
       key: ticket.ticket,
       title: ticket.title,
+      labels: ticket.labels,
       project: name,
       state: column.state,
       need: needs.get(ticket.ticket) ?? null,
@@ -272,7 +292,7 @@ export function useTicketBoard(): TicketBoard {
   }
   for (const row of merged) {
     const card: TicketCard = {
-      id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", project: row.project, state: "merged", need: null,
+      id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
       park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);

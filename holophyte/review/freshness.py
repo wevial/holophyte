@@ -8,7 +8,6 @@ from pathlib import Path
 import store
 import store.board
 import store.read
-import ticket_template
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.harness import critic_seat
 from holophyte.board.projection import (
@@ -32,6 +31,7 @@ from holophyte.review.landmarks import (
     placeholder,
     symbol_findings,
 )
+from holophyte.tickets import ticket_template
 
 STALE_HEADING = "Not claimed: this ticket is out of date with main"
 BACKLOG_STATE = "Backlog"

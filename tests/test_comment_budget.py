@@ -300,6 +300,14 @@ PINNED = {
     "holophyte/story/witness_tree.py": 1,
     "holophyte/story/witness_trigger.py": 1,
 
+    "holophyte/tickets/__init__.py": 0,
+    "holophyte/tickets/story_template.py": 1,
+    "holophyte/tickets/ticket_advisories.py": 2,
+    "holophyte/tickets/ticket_criteria.py": 0,
+    "holophyte/tickets/ticket_depends.py": 3,
+    "holophyte/tickets/ticket_header.py": 4,
+    "holophyte/tickets/ticket_template.py": 24,
+
     "linear_provider.py": 20,
     "provider.py": 12,
     "review_runner.py": 13,
@@ -334,12 +342,8 @@ PINNED = {
     "store/working.py": 3,
     "store/writes.py": 2,
 
-    "story_template.py": 1,
-    "ticket_advisories.py": 2,
-    "ticket_depends.py": 3,
-    "ticket_header.py": 4,
-    "ticket_template.py": 24,
-    "ticket_criteria.py": 0,
+    "story_template.py": 0,
+    "ticket_template.py": 0,
 }
 
 CITED = {
@@ -348,7 +352,7 @@ CITED = {
 # "path::function" to the ticket that retires its `noqa: C901`, or None.
 COMPLEXITY_EXEMPT = {
     "holophyte/loop/gates.py::split_and_clauses": None,
-    "ticket_template.py::validate": None,
+    "holophyte/tickets/ticket_template.py::validate": None,
 }
 
 BODIED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
@@ -718,7 +722,7 @@ class ComplexitySelfTests(unittest.TestCase):
     def test_the_two_standing_exemptions_are_listed(self):
         found = complexity_exempt()
         for key in ("holophyte/loop/gates.py::split_and_clauses",
-                    "ticket_template.py::validate"):
+                    "holophyte/tickets/ticket_template.py::validate"):
             self.assertIn(key, found)
             self.assertIn(key, COMPLEXITY_EXEMPT)
 

@@ -24,12 +24,12 @@ import store.follow_ups  # noqa: E402
 import store.read  # noqa: E402
 import store.story_proposals  # noqa: E402
 import store.tickets  # noqa: E402
-import ticket_template  # noqa: E402
 from holophyte.agents import probes  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.board.projection import release_run  # noqa: E402
 from holophyte.loop.follow_ups import capture, fingerprint, settle  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
+from holophyte.tickets import ticket_template  # noqa: E402
 from provider import board_for  # noqa: E402
 from store.read import claimable  # noqa: E402
 from store.stories import (  # noqa: E402

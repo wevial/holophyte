@@ -7,9 +7,9 @@ import subprocess
 from dataclasses import dataclass
 
 import store
-import ticket_template
 from holophyte.config.review_settings import review_config
 from holophyte.review.briefs import _changed_files
+from holophyte.tickets import ticket_template
 
 BASE_HIGH_PATHS = (
     ".github/workflows/*", ".github/actions/*", ".gitlab-ci.yml", ".circleci/*",

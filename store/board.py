@@ -4,9 +4,8 @@ from __future__ import annotations
 import json
 import time
 
-import ticket_criteria
-import ticket_template
-from ticket_depends import rewrite_depends
+from holophyte.tickets import ticket_criteria, ticket_template
+from holophyte.tickets.ticket_depends import rewrite_depends
 
 from . import RevisionMoved
 from .notes import record_note
