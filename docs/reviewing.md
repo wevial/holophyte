@@ -423,7 +423,12 @@ One pass:
    still running, or a required check not yet reported, is pending even
    when the rollup already says success -- seconds after a PR opens only
    the instant checks have reported -- and so is a read of the runs or
-   the rules the babysitter could not make. Red Actions checks are rerun
+   the rules the babysitter could not make. When `main`'s rules require
+   any check, only a red required check (or one a rerun awaits) holds the
+   merge: a red check the rules do not require does not, and the run
+   records it once per head as an `optional_checks_failed` event when the
+   pass reaches "ready to merge". With no required check every red check
+   holds the merge. Red Actions checks are rerun
    once a pass; still red, they get a check fix round, an implementer turn
    handed the failure lines of each job log and its tail. A red read on
    the fix's commit gets another round only when its failure is new and

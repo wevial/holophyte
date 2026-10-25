@@ -323,6 +323,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 approval=approved_sha if approved else None)
             pull = replace(pull, awaited=check_fix.awaited)
             continue
+        check_fix.note_optional(conn, run_id, state)
         print(f"[holo2] {pull.url} is ready to merge: checks green, no"
               " unresolved threads")
         pr_ready.hold_for_frontend(replace(run, sha=sha), pull, state,
