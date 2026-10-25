@@ -148,7 +148,7 @@ DOCUMENTED_COLUMNS = {
                "leadSession", "helperRoute", "swarm", "helperTurns", "waves",
                "budgetMin", "phase", "reason", "baseSha", "host", "pid",
                "createdAt", "startedAt", "heartbeatAt", "endedAt", "totals",
-               "subjectKind", "subjectRef"},
+               "subjectKind", "subjectRef", "title"},
     "scoutReports": {"id", "scoutId", "pass", "report", "at"},
     "scoutTasks": {"id", "scoutId", "pass", "wave", "question", "title",
                    "paths", "mode", "route", "phase", "startedAt", "endedAt",

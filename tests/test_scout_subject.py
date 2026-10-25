@@ -37,14 +37,15 @@ from tests.test_scout_launch import (  # noqa: E402
 
 ASK = "Why did it fail?"
 PR = "https://github.com/acme/demo/pull/7"
-SUBJECT_LINES = ("    subjectKind TEXT\n", "    subjectRef  TEXT\n")
+DROPPED_SPAN = ("    subjectKind TEXT\n", "    title       TEXT\n")
 
 
 def previous_schema():
-    """`SCHEMA` without the subject columns, `totals` the last again."""
+    """`SCHEMA` without the subject and title columns, `totals` the last
+    again."""
     lines = store.schema.SCHEMA.splitlines(keepends=True)
-    start = lines.index(SUBJECT_LINES[0])
-    end = lines.index(SUBJECT_LINES[1])
+    start = lines.index(DROPPED_SPAN[0])
+    end = lines.index(DROPPED_SPAN[1])
     lines[start - 1] = lines[start - 1].replace("TEXT,  -- JSON",
                                                 "TEXT  -- JSON")
     return "".join(lines[:start] + lines[end + 1:])

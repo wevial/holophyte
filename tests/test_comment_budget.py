@@ -265,6 +265,7 @@ PINNED = {
     "holophyte/scout/swarm.py": 1,
     "holophyte/scout/telemetry.py": 0,
     "holophyte/scout/thread_action.py": 0,
+    "holophyte/scout/titler.py": 3,
     "holophyte/scout/views.py": 1,
 
     "holophyte/serve/__init__.py": 0,

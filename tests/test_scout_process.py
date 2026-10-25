@@ -5,6 +5,7 @@ host registry.
 Run: python3 -m unittest discover -s tests -p 'test_scout_process.py' -v
 """
 import io
+import json
 import os
 import subprocess
 import sys
@@ -146,6 +147,41 @@ class ScoutProcessTests(ScoutFixture):
         self.assertEqual(git(lead, "rev-parse", "--abbrev-ref", "HEAD"),
                          "HEAD")
         self.assertEqual(len(self.listed(path, lead)), 1)
+
+    def test_a_titles_route_down_leaves_the_scout_untitled_and_running(self):
+        path = self.project("alpha", "\n[questions.titles]\n")
+        scout_id = self.a_scout(path)
+        self.sweep_pass()
+        deadline = time.monotonic() + 60
+        conn = self.conn(path)
+        while scout(conn, scout_id).phase not in ("done", "failed") \
+                and time.monotonic() < deadline:
+            time.sleep(0.2)
+        row = scout(conn, scout_id)
+        self.assertEqual(row.phase, "done", row.reason)
+        self.assertIsNone(row.title)
+        events = conn.execute("SELECT kind, payload FROM runEvents"
+                              " WHERE scoutId = ? ORDER BY seq",
+                              (scout_id,)).fetchall()
+        kinds = [kind for kind, _ in events]
+        (titled,) = [json.loads(payload) for kind, payload in events
+                     if kind == "scout_title"]
+        self.assertIsNone(titled["title"])
+        self.assertEqual(titled["why"], "route_down")
+        self.assertLess(kinds.index("scout_started"), kinds.index("scout_title"))
+        self.assertLess(kinds.index("scout_title"), kinds.index("agent_turn"))
+
+        def questions_asked():
+            return [call for call in self.stubs.calls()
+                    if {"--output-schema", "--json-schema"} & set(call["argv"])]
+
+        self.assertEqual(len(questions_asked()), 1)
+        plain = self.project("beta")
+        untitled = self.a_scout(plain, "planning")
+        code, printed = self.cli("--scout", str(untitled), str(plain))
+        self.assertEqual(code, 0, printed)
+        self.assertNotIn("scout_title", self.events(plain, untitled))
+        self.assertEqual(len(questions_asked()), 1)
 
     def test_the_lead_path_is_replaced_whether_a_worktree_or_a_directory(self):
         path = self.project("alpha")
