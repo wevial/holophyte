@@ -90,11 +90,10 @@ export function Tickets() {
     setOpenId(null);
     if (opener != null) document.getElementById(opener)?.focus();
   };
-  const narrowed = filter != null || q != null;
   const empty = (
     <p className="mt-4 font-mono text-[13px] text-ink-3">{view.project == null ? "No open tickets." : `No open tickets in ${view.project}.`}</p>
   );
-  const noMatch = narrowed && view.total === 0;
+  const noMatch = (filter != null || q != null) && view.total === 0;
   return (
     <section aria-labelledby="page-title" className="flex flex-col px-8 pt-3.5 pb-7 min-[720px]:h-full">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
