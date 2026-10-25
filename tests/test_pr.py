@@ -111,6 +111,39 @@ class RedirectDeadlineTests(unittest.TestCase):
         self.assertEqual(served, ["/log"])
 
 
+class JobLogTests(unittest.TestCase):
+    def test_without_gh_a_coloured_job_log_is_read_over_http_without_escapes(
+            self):
+        served = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                served.append(self.path)
+                body = b"\x1b[32;1mok\x1b[0m\n\x1b]0;title\x07done\n"
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever,
+                         kwargs={"poll_interval": 0.01}, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        pull = github.PullRequest("github.com", "example", "repo", 7,
+                                  "https://github.com/example/repo/pull/7")
+        with patch.object(github.shutil, "which", return_value=None), \
+                patch.object(github, "API",
+                             f"http://127.0.0.1:{server.server_address[1]}"), \
+                patch.dict("os.environ", {"GH_TOKEN": "ghp-job-log-token"}):
+            text = github.job_log(SimpleNamespace(), pull, 41)
+        self.assertEqual(text, "ok\ndone\n")
+        self.assertEqual(served, ["/repos/example/repo/actions/jobs/41/logs"])
+
+
 class PrBodyStubTests(unittest.TestCase):
     def test_stub_uses_only_the_first_summary_paragraph(self):
         body = github.pr_body_stub(

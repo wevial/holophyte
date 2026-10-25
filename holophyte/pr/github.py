@@ -26,6 +26,8 @@ GH_RETRY_S = (5, 15)
 API = "https://api.github.com"
 JSON = "application/vnd.github+json"
 HTML_JSON = "application/vnd.github.html+json"
+TERMINAL_ESCAPE = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)?"
+                             r"|\[[0-?]*[ -/]*[@-~]|[ -/]*[0-~]?)")
 # A call unanswered this long is a route down: fail rather than hold a lease.
 PR_TIMEOUT = 120
 CHECK_POLL_S = 30
@@ -542,8 +544,11 @@ def job_log(target, pull, job_id, query=""):
     path = f"repos/{pull.owner}/{pull.name}/actions/jobs/{job_id}/logs"
     path += f"?{query}" if query else ""
     if shutil.which(GH) is not None:
-        return _gh_output(target, pull.host, "GET", path, None)
-    return _api_output(pull.host, "GET", path, None, _route_token())
+        text = _gh_output(target, pull.host, "GET", path, None,
+                          flags=["--allow-escape-sequences"])
+    else:
+        text = _api_output(pull.host, "GET", path, None, _route_token())
+    return TERMINAL_ESCAPE.sub("", text)
 
 
 def artifact_zip(target, pull, artifact_id):
@@ -588,9 +593,9 @@ def _call_with_gh(target, host, method, path, payload, accept):
                            f" JSON: {_short(stdout)}") from None
 
 
-def _gh_output(target, host, method, path, payload, accept=JSON):
+def _gh_output(target, host, method, path, payload, accept=JSON, flags=()):
     deadline.admit(f"GitHub's {method} {path} request")
-    argv = [GH, "api", "--hostname", host, "--method", method, path]
+    argv = [GH, "api", *flags, "--hostname", host, "--method", method, path]
     if accept != JSON:
         argv[2:2] = ["-H", f"Accept: {accept}"]
     body = None
