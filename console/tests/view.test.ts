@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { act } from "@testing-library/react";
 import type { Root } from "react-dom/client";
 import { startClassic } from "../src/entry";
-import { VIEW_KEY } from "../src/lib/view";
+import { classicHref } from "../src/lib/view";
 
 const realFetch = globalThis.fetch;
 const started: Root[] = [];
@@ -23,48 +23,22 @@ function startAt(href: string) {
   const root = document.createElement("div");
   root.id = "root";
   document.body.append(root);
-  let app: Root | null = null;
   act(() => {
-    app = startClassic(root);
+    started.push(startClassic(root));
   });
-  if (app) started.push(app);
-  return { root, started: app != null };
+  return { root };
 }
 
 const rendersClassic = (root: HTMLElement) => root.querySelector('nav[aria-label="Console"]') != null;
 
-test("with the new view remembered, the classic entry replaces /#/runs with /next.html#/runs and renders nothing", () => {
-  localStorage.setItem(VIEW_KEY, "next");
-  const { root, started } = startAt("http://console.test/#/runs");
-  expect(started).toBe(false);
-  expect(root.childNodes.length).toBe(0);
-  expect(location.pathname).toBe("/next.html");
-  expect(location.hash).toBe("#/runs");
+test("with the new view stored as remembered, the classic entry renders the classic console where it was opened", () => {
+  localStorage.setItem("holophyte.view", "next");
+  const { root } = startAt("http://console.test/classic.html#view=board");
+  expect(rendersClassic(root)).toBe(true);
+  expect(location.pathname).toBe("/classic.html");
+  expect(location.hash).toBe("#view=board");
 });
 
-test("?classic, nothing stored, or failing storage renders the classic view where it was opened", () => {
-  localStorage.setItem(VIEW_KEY, "next");
-  const kept = startAt("http://console.test/?classic#view=shipped");
-  expect(rendersClassic(kept.root)).toBe(true);
-  expect(location.pathname).toBe("/");
-  expect(location.hash).toBe("#view=shipped");
-
-  localStorage.clear();
-  expect(rendersClassic(startAt("http://console.test/#/runs").root)).toBe(true);
-  expect(location.pathname).toBe("/");
-
-  localStorage.setItem(VIEW_KEY, "next");
-  const real = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    get: () => {
-      throw new Error("storage disabled");
-    },
-  });
-  try {
-    expect(rendersClassic(startAt("http://console.test/#/runs").root)).toBe(true);
-    expect(location.pathname).toBe("/");
-  } finally {
-    Object.defineProperty(globalThis, "localStorage", real);
-  }
+test("classicHref reaches the classic page at the given hash", () => {
+  expect(classicHref("#run=4&daemon=x")).toBe("/classic.html#run=4&daemon=x");
 });

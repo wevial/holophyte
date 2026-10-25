@@ -8,6 +8,6 @@ applyTheme(readTheme());
 
 const root = document.getElementById("root");
 if (!root) {
-  throw new Error("console: #root mount point is missing from index.html");
+  throw new Error("console: #root mount point is missing from classic.html");
 }
 startClassic(root);

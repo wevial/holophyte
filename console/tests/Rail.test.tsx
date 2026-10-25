@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { Rail } from "../src/components/Rail";
 import type { HostRecord } from "../src/lib/hosts";
 import type { Status } from "../src/lib/types";
-import { APP_SHELL_KEY, VIEW_KEY } from "../src/lib/view";
+import { APP_SHELL_KEY } from "../src/lib/view";
 import { NO_ATTENTION, fixture, hostOf } from "./harness";
 
 const working = await fixture<Status>("working.json");
@@ -89,19 +89,9 @@ test("the brand mark is the cosmic lotus logo, drawn without inverting it", () =
   expect(brand.classList.contains("invert")).toBe(false);
 });
 
-test("New view remembers the new view and loads its page with the same hash", () => {
-  localStorage.clear();
-  location.href = "http://console.test/#view=board";
-  try {
-    mountRail([]);
-    fireEvent.click(screen.getByRole("button", { name: "New view" }));
-    expect(localStorage.getItem(VIEW_KEY)).toBe("next");
-    expect(location.pathname).toBe("/next.html");
-    expect(location.hash).toBe("#view=board");
-  } finally {
-    localStorage.clear();
-    location.href = "about:blank";
-  }
+test("New view is a link to the new console at the root", () => {
+  mountRail([]);
+  expect(screen.getByRole("link", { name: "New view" }).getAttribute("href")).toBe("/");
 });
 
 test("in the macOS app the logo row drags the window and starts clear of the traffic lights; in a browser it does neither", () => {
