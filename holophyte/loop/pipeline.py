@@ -18,7 +18,8 @@ from holophyte.loop.claim import (
     claimed_run,
     merge_conflicts,
 )
-from holophyte.loop.dispatch import SWEPT
+from holophyte.loop.dispatch import HANDED_OFF, SWEPT
+from holophyte.loop.gate_build import GateHandoff, before_gate
 from holophyte.loop.gates import InfraFailure, sh
 from holophyte.loop.gates import (
     MergeParked as MergeParked,
@@ -64,7 +65,7 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
             projection.mirror_push(run.conn, ticket_id, run.provider)
             projection.release_lease_label(run.project, run.conn, ticket_id,
                                       run.provider, run.run_id)
-            return SWEPT
+            return HANDED_OFF if isinstance(ended, GateHandoff) else SWEPT
         print(f"[holo2] run {ended.run_id} was ended by the supervisor"
               f" ({ended.outcome}: {ended.reason}); stopping")
         return ended.outcome == "merged"
@@ -160,6 +161,7 @@ def _run_stages(run, task):
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)
+    before_gate(conn, run_id, sha)
     merge = merge_config(project)
     # Under `mode = "pr"` the merge lock covers the push-and-open alone.
     if merge.mode == "pr":
