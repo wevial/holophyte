@@ -104,3 +104,4 @@ def title_scout(conn, config, scout):
         raise
     except Exception as bad:  # noqa: BLE001 - a title never holds up the scout
         print(f"[holo2] scout {scout.id} title event failed: {bad}", flush=True)
+    return title
