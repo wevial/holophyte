@@ -135,7 +135,7 @@ const troubled = (group: ScoutGroup) => group.tasks.some((task) => task.phase ==
 /** The scout's timeline, one row per group. A group the reader has not
  *  toggled is open while it runs, holds a stopped or failed helper, or is the newest pass. With `stop`
  *  each queued or running helper ends in Stop this branch. */
-export function ScoutActivity({ groups, now, stop = null }: { groups: ScoutGroup[]; now: number; stop?: HelperStop | null }) {
+export function ScoutActivity({ groups, now, stop }: { groups: ScoutGroup[]; now: number; stop: HelperStop | null }) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const newestPass = groups.findLast((group) => group.kind === "pass")?.key;
   return (
