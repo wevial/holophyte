@@ -639,6 +639,11 @@
               "minimum": 1,
               "description": "the scout's id"
             },
+            "task": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "one helper task's id: stop that helper alone"
+            },
             "note": {
               "type": "string",
               "minLength": 1,
@@ -653,10 +658,21 @@
           "required": [
             "project",
             "scout",
-            "note",
             "author"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "if": {
+            "not": {
+              "required": [
+                "task"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "note"
+            ]
+          }
         },
         "name": "scout_stop"
       },
