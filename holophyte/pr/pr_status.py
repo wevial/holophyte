@@ -569,6 +569,7 @@ def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
     failed = _failed_checks(runs)
     optional = () if checks == "failure" or blocking is None else tuple(
         check for check in failed if check.name not in blocking)
+    failed = failed if checks == "failure" else ()
     merge = node.get("mergeCommit") or {}
     mergeable = node.get("mergeable")
     decision = node.get("reviewDecision")
@@ -589,8 +590,7 @@ def _state_of(node, threads, runs, required, awaited=(), rollup_stale=False):
                                           if isinstance(r, dict)
                                           and r.get("name")
                                           and r.get("status") != "completed"),
-                   failed_checks=tuple(c for c in failed
-                                       if c not in optional),
+                   failed_checks=failed,
                    optional_failures=optional,
                    missing_checks=_missing_checks(runs, required),
                    awaiting=_awaiting(runs, awaited),

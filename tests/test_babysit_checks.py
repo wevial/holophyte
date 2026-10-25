@@ -345,6 +345,16 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual([c.name for c in state.failed_checks], ["unit", docs])
         self.assertEqual(state.optional_failures, ())
 
+    def test_a_pending_fold_lists_no_failed_check(self):
+        runs = [self.check_run("lint", self.AFTER_READY, conclusion="failure")]
+        def rest(target, pull, method, path, payload=None):
+            if "check-runs" in path:
+                return {"total_count": len(runs), "check_runs": runs}
+            raise holophyte.pr.github.InfraFailure(f"GitHub refused GET {path}")
+        state = self._state_with_rest(rest, ready_at=self.READY_AT,
+                                      rollup="PENDING")
+        self.assertEqual((state.checks, state.failed_checks), ("pending", ()))
+
     def test_every_red_check_fails_the_fold_when_main_requires_none(self):
         docs = "Workers Builds: holophyte-docs"
         runs = [self.check_run("unit", self.AFTER_READY),
