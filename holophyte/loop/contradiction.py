@@ -100,11 +100,9 @@ def _paths(texts):
 
 
 def held(conn, ticket_id, numbers, edits, ticket):
-    unmatched = _unmatched(numbers, edits)
-    if unmatched:
+    if unmatched := _unmatched(numbers, edits):
         return unmatched
-    verb = next((verb for verb, _, _ in edits if verb != "REPLACE"), None)
-    if verb:
+    if verb := next((verb for verb, _, _ in edits if verb != "REPLACE"), None):
         return f"{'an' if verb == 'ADD' else 'a'} {verb} waits for the operator"
     scope = _paths(ticket_template.parse(ticket).in_scope)
     texts = {row["criterion"]: row["text"]
