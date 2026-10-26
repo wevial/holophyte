@@ -1173,9 +1173,11 @@ and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `console/src/app/checker.ts` places each `/tickets/check` message on the New ticket field it names and words the Checker panel's summary.
 
 `console/src/app/settings.ts` defines the grouped tabs and host attention
-count; `console/src/app/pages/Settings.tsx` frames the project picker and
-placeholder panels. The sidebar footer links to Settings. Any other path
-is a not-found page.
+count; `console/src/app/pages/Settings.tsx` frames the selected section's
+panel, and on a Settings page the sidebar draws
+`console/src/app/components/SettingsNav.tsx`: a Back row, the grouped
+sections and the project picker. The sidebar footer links to Settings. Any
+other path is a not-found page.
 The root route's search holds one optional `project`, the project's name
 as the sidebar shows it, so `/#/runs?project=demo` reproduces a
 scoped view; every route inherits it, the sidebar's links carry it, and

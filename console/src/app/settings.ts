@@ -33,15 +33,15 @@ export function patchLines(values: ConfigValues | null, edits: Record<string, Se
 }
 
 export const SETTINGS_TABS = [
+  { id: "appearance", label: "Appearance", group: "You" },
+  { id: "log", label: "Today's log", group: "You" },
+  { id: "hosts", label: "Hosts", group: "Factory" },
   { id: "general", label: "General", group: "Project" },
   { id: "review", label: "Review", group: "Project" },
   { id: "agents", label: "Agents", group: "Project" },
   { id: "capture", label: "Capture", group: "Project" },
   { id: "hold", label: "Hold / release", group: "Project" },
   { id: "toml", label: "Raw TOML", group: "Project" },
-  { id: "hosts", label: "Hosts", group: "Factory" },
-  { id: "appearance", label: "Appearance", group: "You" },
-  { id: "log", label: "Today's log", group: "You" },
 ] as const;
 
 type SettingsHost = HostRecord<ContractBodies>;
@@ -63,7 +63,7 @@ export type SettingsField = {
   label: string;
   help: string;
 } & (
-  | { kind: "select"; default: string; options: readonly { value: string; label: string }[] }
+  | { kind: "select"; default: string; options: readonly { value: string; label: string; swatch?: string }[] }
   | { kind: "number"; default: number; numeric: "integer"; min: number }
   | { kind: "boolean"; default: boolean }
   | { kind: "text"; default: string; seat?: boolean }
@@ -87,6 +87,17 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
     tab: "general", table: "loop", key: "workers", label: "Workers",
     help: "Tickets this project runs at once on {host}.",
     default: 1, kind: "number", numeric: "integer", min: 1,
+  },
+  {
+    tab: "general", table: "console", key: "colour", label: "Colour", help: "",
+    default: "auto", kind: "select",
+    options: [
+      { value: "auto", label: "Automatic" },
+      { value: "violet", label: "Violet", swatch: "--p-violet" },
+      { value: "teal", label: "Teal", swatch: "--p-teal" },
+      { value: "green", label: "Green", swatch: "--p-green" },
+      { value: "blue", label: "Blue", swatch: "--p-blue" },
+    ],
   },
   {
     tab: "review", table: "loop", key: "review_rounds", label: "Review rounds",

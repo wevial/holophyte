@@ -176,6 +176,14 @@ export function StoryIcon({ className }: { className?: string }) {
   );
 }
 
+export function BackIcon() {
+  return (
+    <Stroke>
+      <path d="M13 8H3m4-4L3 8l4 4" />
+    </Stroke>
+  );
+}
+
 export function DropIcon() {
   return (
     <Stroke>

@@ -143,7 +143,6 @@ const hashOf = (href: string) => (href.includes("#/") ? href.slice(href.indexOf(
 const tones = () => Array.from(log().querySelectorAll("[data-tone]"), (mark) => mark.getAttribute("data-tone"));
 const toggle = () => within(log()).queryByRole("button", { name: /^(Show all|Highlights only)/ });
 const box = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
-const settingsLink = (name: string) => within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name });
 
 beforeEach(() => localStorage.clear());
 afterEach(() => {
@@ -263,7 +262,7 @@ test("a refused PUT /prefs says so in a toast with the reason and the choice sta
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Today's log filter not saved: day_log.items: more than 64 entries");
   expect(box("Verdicts").checked).toBe(true);
 
-  await act(async () => settingsLink("Overview").click());
+  await act(async () => screen.getByRole("link", { name: "Back" }).click());
   await act(settle);
   expect(logLines()).toContain("10:50 DEMO-10 review round 2: approve");
 });
@@ -277,7 +276,7 @@ test("a tick made while GET /prefs is still answering outlives that answer", asy
     answer(Response.json({ day_log: null, updated_ms: null }));
     await settle();
   });
-  await act(async () => settingsLink("Overview").click());
+  await act(async () => screen.getByRole("link", { name: "Back" }).click());
   await act(settle);
   expect(logLines()).toContain("10:50 DEMO-10 review round 2: approve");
 });

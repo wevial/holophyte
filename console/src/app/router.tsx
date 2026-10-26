@@ -13,6 +13,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
+import { SettingsMarksProvider } from "./settingsDraft";
 import { Findings } from "./pages/Findings";
 import { validateRunsSearch } from "./history";
 import { NotFound } from "./pages/Placeholder";
@@ -38,6 +39,7 @@ function Shell() {
   const [macApp] = useState(inMacApp);
   return (
     <ToastProvider>
+      <SettingsMarksProvider>
       <div data-app-shell={macApp ? "macos" : undefined} className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
         <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
@@ -50,6 +52,7 @@ function Shell() {
           <Outlet />
         </main>
       </div>
+      </SettingsMarksProvider>
     </ToastProvider>
   );
 }

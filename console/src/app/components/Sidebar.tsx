@@ -1,11 +1,11 @@
-import { useContext, useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
 import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
-import { hostsNeedingAttention } from "../settings";
+import { hostsNeedingAttention, SETTINGS_TABS } from "../settings";
 import { switcherRows } from "../projects";
 import { countScouts, useScouts } from "../scouts";
 import { useBoardStories, useReadiness, type ListedStory } from "../queries";
@@ -27,6 +27,7 @@ import {
   TicketsIcon,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { SettingsNav } from "./SettingsNav";
 import { plainTitle, TitleText } from "./TitleText";
 
 const RAIL_KEY = "holophyte.next.rail";
@@ -39,6 +40,8 @@ const PAGES = [
   { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
   { to: "/scouts", label: "Scouts", icon: <ScoutsIcon />, noun: "running" },
 ] as const;
+
+const SETTINGS_PATH = new RegExp(`^/settings(/(${SETTINGS_TABS.map((tab) => tab.id).join("|")}))?/?$`);
 
 type PageTo = (typeof PAGES)[number]["to"];
 
@@ -226,13 +229,18 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
 export function Sidebar() {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
-  const [folded, setFolded] = useState(readFolded);
+  const [storedFold, setFolded] = useState(readFolded);
   const [macApp] = useState(inMacApp);
   const deps = useContext(PollDepsContext);
   const readiness = useReadiness(hosts, deps);
   const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
   const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
   const onSettings = useRouterState({ select: (state) => /^\/settings(\/|$)/.test(state.location.pathname) });
+  const settingsMenu = useRouterState({ select: (state) => SETTINGS_PATH.test(state.location.pathname) });
+  const href = useRouterState({ select: (state) => state.location.href });
+  const lastPage = useRef<string | null>(null);
+  if (!settingsMenu) lastPage.current = href;
+  const folded = storedFold && !settingsMenu;
   const hostNeeds = hostsNeedingAttention(hosts);
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
@@ -263,6 +271,7 @@ export function Sidebar() {
   );
 
   const fold = () => {
+    if (settingsMenu) return;
     setFolded(!folded);
     writeFolded(!folded);
   };
@@ -290,15 +299,17 @@ export function Sidebar() {
           macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pl-3"
         }`}
       >
-        <button
-          type="button"
-          aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!folded}
-          onClick={fold}
-          className={`flex size-7 items-center justify-center text-ink-3 hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
-        >
-          <PanelLeftIcon />
-        </button>
+        {!settingsMenu && (
+          <button
+            type="button"
+            aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!folded}
+            onClick={fold}
+            className={`flex size-7 items-center justify-center text-ink-3 hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+          >
+            <PanelLeftIcon />
+          </button>
+        )}
         {!folded && (
           <Link
             to="/"
@@ -312,6 +323,7 @@ export function Sidebar() {
         )}
       </div>
 
+      {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
       <ProjectSwitcher rows={rows} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
@@ -327,6 +339,7 @@ export function Sidebar() {
           ),
         )}
       </nav>
+      </>}
 
       <footer className={`mt-auto flex flex-col gap-2 border-t border-rule-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
         <p className="flex min-w-0 items-start gap-1 font-mono text-[11px] leading-[1.4] tracking-[-0.02em] text-ink-3" title={folded ? polled : undefined}>
