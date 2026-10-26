@@ -74,7 +74,6 @@ def parse_body(raw):
 
 
 def stored(home):
-    """The document on disk; an absent file is the empty document."""
     path = Path(home) / PREFS_FILE
     try:
         raw = path.read_bytes()
@@ -119,7 +118,7 @@ def write_prefs(home, body, now):
                 document[key] = value
         document["updated_ms"] = now
         replace(Path(home) / PREFS_FILE, json.dumps(document, indent=2) + "\n")
-    return read_prefs(home)
+        return read_prefs(home)
 
 
 def replace(path, text):
