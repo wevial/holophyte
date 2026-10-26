@@ -106,7 +106,7 @@ def read_prefs(home):
             "updated_ms": document.get("updated_ms")}
 
 
-def write_prefs(home, body, now):
+def write_prefs(home, body, now_ms):
     with WRITING:
         try:
             document = stored(home)
@@ -117,7 +117,7 @@ def write_prefs(home, body, now):
                 document.pop(key, None)
             else:
                 document[key] = value
-        document["updated_ms"] = now
+        document["updated_ms"] = now_ms()
         replace(home / PREFS_FILE, json.dumps(document, indent=2) + "\n")
         return read_prefs(home)
 
@@ -163,7 +163,8 @@ def put_prefs(handler):
     except ValueError as bad:
         return handler.answer(400, {"error": str(bad)})
     try:
-        answer = write_prefs(server.host.home, body, int(time() * 1000))
+        answer = write_prefs(server.host.home, body,
+                             lambda: int(time() * 1000))
     except OSError as bad:
         return handler.answer(500, {
             "error": f"{server.host.home / PREFS_FILE}: {bad}"})

@@ -9,11 +9,13 @@ import json
 import os
 import stat
 import threading
+import time
 import unittest
 from pathlib import Path
 
 import holophyte.serve.server
 from holophyte.config.project import Project
+from holophyte.serve import serve_prefs
 from tests.test_serve_host import ALPHA_TOKEN, MACHINE, HostServeCase, bearer
 
 FIXTURE = Path(__file__).parent / "fixtures" / "serve" / "prefs.json"
@@ -81,6 +83,21 @@ class PrefsReadWriteTests(PrefsCase):
         self.assertNotIn("error", body)
         self.assertEqual(json.loads(self.prefs_file().read_text())["day_log"],
                          DAY_LOG)
+
+    def test_a_put_waiting_on_another_write_is_stamped_when_it_writes(self):
+        self.start_writable()
+        answers = []
+        with serve_prefs.WRITING:
+            waiting = threading.Thread(target=lambda: answers.append(
+                self.request("PUT", "/prefs", bearer(MACHINE),
+                             {"day_log": DAY_LOG})))
+            waiting.start()
+            waiting.join(0.2)
+            released_ms = int(time.time() * 1000)
+        waiting.join(10)
+        code, body = answers[0]
+        self.assertEqual(code, 200, body)
+        self.assertGreaterEqual(body["updated_ms"], released_ms)
 
 
 class PrefsRefusalTests(PrefsCase):
