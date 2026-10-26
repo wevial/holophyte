@@ -116,7 +116,7 @@ test("each route outage and today's migration in a host's ledger is one line of 
     project: 1, run: null, ticket: null, kind: "route_down", source: "loop", at: at(14, 2), reason: "probe exited 1", text: "implementer route down since 21:02 UTC",
   };
   const migrate: LedgerEntry = {
-    at: at(13, 10), run: null, ticket: null, kind: "intervention", source: "operator", text: "migrated the store",
+    at: at(13, 10), run: null, ticket: null, pr_url: null, kind: "intervention", source: "operator", text: "migrated the store",
     action: "migrate", schema_from: 41, schema_to: 42, project: "demo",
   };
   const daemons = peersFetch(DEMO, { [DEMO]: projectDaemon("/srv/dev/demo", NOW) });

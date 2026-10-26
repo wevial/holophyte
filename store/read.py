@@ -611,6 +611,7 @@ class LedgerWindowEntry:
     source: str
     cleared: str | None = None
     waitedMs: int | None = None
+    prUrl: str | None = None
 
 
 _LAUNCH_BACKOFF_SHOWN = (
@@ -638,10 +639,11 @@ def ledger_since(conn, since, kind=None, ticket=None, limit=200,
     rows = conn.execute(
         "SELECT ledger.id, ledger.runId, tickets.linearIdentifier, ledger.at,"
         " ledger.kind, ledger.text, ledger.source," + _LEDGER_MARKS +
+        ", (SELECT r.prUrl FROM runs r WHERE r.id = ledger.runId)"
         " FROM ledger JOIN tickets ON tickets.id = ledger.ticketId"
         f" WHERE {' AND '.join(where)} ORDER BY ledger.at DESC, ledger.id DESC"
         " LIMIT ?", args).fetchall()
-    return [_ledger_entry(LedgerWindowEntry, row, ticket=row[2])
+    return [_ledger_entry(LedgerWindowEntry, row, ticket=row[2], prUrl=row[9])
             for row in rows]
 
 

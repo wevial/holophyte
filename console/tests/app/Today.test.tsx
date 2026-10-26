@@ -33,7 +33,7 @@ const writer4 = merged({
 });
 
 const entry = (time: number, kind: string, source: string, ticket: string | null, text: string): LedgerEntry => ({
-  at: time, run: null, ticket, kind, source, text,
+  at: time, run: null, ticket, pr_url: null, kind, source, text,
 });
 
 type Answer = () => Response;

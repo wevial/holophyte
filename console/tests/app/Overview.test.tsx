@@ -349,7 +349,7 @@ test("the wide log fills its pinned grid wrapper with a thin hover scrollbar and
 test("Waiting on you row titles use medium reading text and the day log uses 13 px mono while headings keep Archivo", async () => {
   const hosts = fleet({ items: [blocked, ...failed.map((item) => ({ ...item, title: "Recover the silent lease" }))] }, { items: [prPark] });
   const fetch: Fetch = async (url) => url.includes("/ledger?")
-    ? Response.json({ active_outages: [], since: 0, limit: 200, entries: [{ at: NOW - MINUTE, run: 1, ticket: "DEMO-1", kind: "round", source: "loop", text: "Review complete" }] })
+    ? Response.json({ active_outages: [], since: 0, limit: 200, entries: [{ at: NOW - MINUTE, run: 1, ticket: "DEMO-1", pr_url: null, kind: "round", source: "loop", text: "Review complete" }] })
     : hosts(url);
   await mount("#/", fetch);
   const title = within(screen.getByRole("list", { name: "Waiting on you" })).getByText("Recover the silent lease");

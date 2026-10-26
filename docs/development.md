@@ -397,6 +397,9 @@ Each module, one line:
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
+  does not hold: a `park` row for each park waiting on the maintainer and a
+  `failure` row for each failed run with no `failure` ledger row.
 - `holophyte/serve/serve_history.py` — the daemon's `GET /history`: every
   open run and every run started since a time, one row per run.
 - `holophyte/serve/serve_findings.py` — the daemon's `GET /findings`: the
