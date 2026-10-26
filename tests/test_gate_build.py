@@ -17,12 +17,15 @@ sys.path.insert(0, str(HERE))
 from fake_agent import APPROVE, Commit, FakeAgent, no_agent_processes  # noqa: E402
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
 
+import holophyte.board.projection  # noqa: E402 - after the sys.path insert above
 import holophyte.host.startup  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.adjudicate  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gate_build  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+import holophyte.review.findings  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 
@@ -191,6 +194,35 @@ class GateBuildTests(LoopFixture):
         self.assertEqual(rc, holophyte.loop.pool.WORKER_MERGED)
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("failed",), ("merged",)])
+
+    def test_a_board_error_after_the_reexec_renders_findings_under_the_merge_lock(self):
+        self.configure('[report]\nfindings = "repo"\n')
+        provider = StubProvider(a_task(1))
+        head, env = self.reexecuted(provider)
+        lock = holophyte.loop.gates.merge_lock_path(self.project)
+        held = []
+        real = holophyte.review.findings.refresh_findings
+
+        def render_under_lock(target, conn):
+            held.append(lock.exists())
+            return real(target, conn)
+
+        def down(issue_id):
+            raise RuntimeError("the board timed out")
+
+        with patch.object(provider, "fetch_task", down), \
+                patch.object(holophyte.loop.gate_build, "BOARD_WAIT_S", 0), \
+                patch.object(holophyte.loop.pool, "refresh_findings",
+                             render_under_lock), \
+                patch.object(holophyte.board.projection, "refresh_findings",
+                             render_under_lock):
+            rc, _ = self.worker(provider=provider, build=head, env=env)
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_BOARD_DOWN)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(held, [True])
+        self.assertIn("KO-131", (self.project.path / "FINDINGS.md").read_text())
+        self.assertFalse(lock.exists())
 
     def test_a_dirty_candidate_after_the_reexec_is_handed_off_not_gated(self):
         provider = StubProvider(a_task(1))

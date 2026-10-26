@@ -130,6 +130,8 @@ def _worker(target, provider):
                 return WORKER_IDLE
             (task, ticket_id), run_id = resumed, int(gate_run)
             if task is BOARD_DOWN:
+                _render_findings_locked(target, conn, run_id,
+                                        {"id": f"run {run_id}"})
                 return WORKER_BOARD_DOWN
         elif linear_budget_low():
             return WORKER_IDLE

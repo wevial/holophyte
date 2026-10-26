@@ -122,7 +122,7 @@ def _board_down(target, conn, provider, run_id, ticket_id, error):
                            " was not gated")
     print(f"[holo2] run failed: {refused.reason}")
     fail_run(target, conn, run_id, ticket_id, provider, refused.reason,
-             outcome_class_of(refused), refused.failure_kind)
+             outcome_class_of(refused), refused.failure_kind, refresh=False)
     return BOARD_DOWN, ticket_id
 
 
