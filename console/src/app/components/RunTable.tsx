@@ -9,7 +9,7 @@ import { STATES, type State } from "../state";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
-const GRID = "grid grid-cols-[84px_100px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_96px_80px] items-start gap-3";
+const GRID = "grid grid-cols-[52px_88px_minmax(0,1.6fr)_84px_minmax(0,1fr)_60px_52px_100px_100px_64px] items-start gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 const NEEDS_YOU = new Set<State>(["stale", "question", "paused", "ready_to_merge"]);
@@ -136,7 +136,7 @@ export function RunTableHeads({ sort, order, onSort }: { sort: RunSort; order: R
 
 /** The runs as one table that scrolls sideways inside its own box while it
  *  is narrower than the table; `dock` sits above the rows inside that box. */
-export function RunTable({ rows, now, empty, label, dock }: { rows: RunRow[]; now: number; empty: string; label: string; dock?: ReactNode }) {
+export function RunTable({ rows, now, empty, label = "Runs, newest first", dock }: { rows: RunRow[]; now: number; empty: string; label?: string; dock?: ReactNode }) {
   return (
     <div data-run-table className="overflow-x-auto @min-[1100px]:overflow-x-visible">
       <div className="min-w-[1100px]">

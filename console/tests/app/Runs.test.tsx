@@ -159,7 +159,7 @@ test("a Runs row whose host has not answered /status reads its run as text, with
   const root = createRootRoute({
     component: () => (
       <PeersContext.Provider value={peers}>
-        <RunTable rows={[row]} now={NOW} empty="" label="Runs, newest first" />
+        <RunTable rows={[row]} now={NOW} empty="" />
       </PeersContext.Provider>
     ),
   });
