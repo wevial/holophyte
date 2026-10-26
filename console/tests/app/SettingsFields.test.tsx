@@ -14,13 +14,18 @@ const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.jso
 const VALUES: ConfigValues = { merge: { mode: "pr", approve: "auto" }, loop: { workers: 2 } };
 
 async function mount(values: ConfigValues | null = VALUES, hash = "#/settings/general?project=demo") {
-  const status = (project: string): Status => ({ ...working, runs: [], project: `/srv/${project}`, host: "writer-host" });
+  const status = (project: string): Status => ({ ...working, runs: [], project: `/srv/${project}`, host: "writer-host", config_edit: true });
   const poll = peersFetch(ORIGIN, {
     [ORIGIN]: { status: status("demo"), attention: { ...NO_ATTENTION, project: "/srv/demo" } },
     [OTHER]: { status: status("other"), attention: { ...NO_ATTENTION, project: "/srv/other" } },
   });
+  const writes: unknown[] = [];
   const fetch: Fetch = (url, init) => {
     if (!url.endsWith("/config")) return poll(url, init);
+    if (init?.method === "PUT") {
+      writes.push(JSON.parse(String(init.body)));
+      return Promise.resolve(Response.json({ revision: "e".repeat(64), applies: "next loop start" }));
+    }
     const config: ConfigBody = {
       text: values === null ? '[merge\n' : '[merge]\nmode = "pr"\napprove = "auto"\n[loop]\nworkers = 2\n',
       values: url.startsWith(OTHER) ? { merge: { mode: "local", approve: "human" }, loop: { workers: 4 } } : values,
@@ -36,6 +41,7 @@ async function mount(values: ConfigValues | null = VALUES, hash = "#/settings/ge
   render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={ORIGIN} pollDeps={fakeDeps(fetch).deps} /></QueryClientProvider>);
   await act(settle);
   await act(settle);
+  return writes;
 }
 
 const row = (name: string) => screen.getByRole("group", { name });
@@ -172,4 +178,30 @@ test("workers outside the positive integer shape are read-only with Raw TOML nav
     expect((field.getByRole("link", { name: "edit this one in Raw TOML" }) as HTMLAnchorElement).hash).toBe("#/settings/toml?project=demo");
     cleanup();
   }
+});
+
+test("General's Colour row offers Automatic and four swatched colours, and picking Teal is an edit that saves console.colour", async () => {
+  const writes = await mount();
+  const colour = row("Colour");
+  const buttons = within(colour).getAllByRole("button");
+  expect(buttons.map((button) => button.textContent)).toEqual(["Automatic", "Violet", "Teal", "Green", "Blue"]);
+  expect(buttons.filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent)).toEqual(["Automatic"]);
+  expect(buttons.map((button) => button.querySelector("[data-swatch]")?.getAttribute("style") ?? null)).toEqual([
+    null,
+    expect.stringContaining("var(--p-violet)"),
+    expect.stringContaining("var(--p-teal)"),
+    expect.stringContaining("var(--p-green)"),
+    expect.stringContaining("var(--p-blue)"),
+  ]);
+  expect(Array.from(colour.querySelectorAll("p"), (paragraph) => paragraph.textContent)).toEqual(["console.colour"]);
+
+  fireEvent.click(within(colour).getByRole("button", { name: "Teal" }));
+  expect(within(row("Colour")).getByText("was auto")).toBeTruthy();
+  expect(row("Colour").className).toContain("border-l-act");
+  expect(unsaved()?.textContent).toContain("1 unsaved change · colour auto → teal");
+  fireEvent.click(screen.getByRole("button", { name: "Review and save" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
+  await act(settle);
+  await act(settle);
+  expect(writes).toEqual([{ patch: { "console.colour": "teal" } }]);
 });
