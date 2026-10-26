@@ -77,6 +77,7 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
   "actions": false,
   "config_edit": false,
+  "colour": "auto",
   "runs": [
     {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
      "title": "The sweep frees a silent lease", "phase": "working",
@@ -177,7 +178,10 @@ is none.
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
 and `PUT /config`; the console's settings sheet is read-only, naming the
-key, while it is `false`. `route_labels` names what each seat is configured
+key, while it is `false`. `colour` is the project's `[console] colour`
+(`auto`, `violet`, `teal`, `green` or `blue`), `auto` when unset, read
+from the file on each request so a saved colour shows on the next poll;
+an older daemon leaves it out. `route_labels` names what each seat is configured
 to run, labelled as a recorded turn is: the command's first word plus its
 `-m`/`--model` value. A seat left unset shows the default the loop
 dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset

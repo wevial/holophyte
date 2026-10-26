@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import socket
@@ -12,7 +13,7 @@ from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import board_mode, loop_config, sweep_config
-from holophyte.config.serve_settings import serve_config
+from holophyte.config.serve_settings import console_config, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.review.criterion_ids import with_numbers
@@ -25,6 +26,13 @@ from store.working import agent_work, chain_work, effective_work, verify_work
 # A failure that strands its ticket in flight stays past it: only the
 # operator will move that ticket.
 FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
+
+
+def saved_colour(project):
+    try:
+        return console_config(dataclasses.replace(project, _config=None)).colour
+    except SystemExit:
+        return console_config(project).colour
 
 
 def status(project, now=None, started_ms=None, beat_stale_ms=None):
@@ -80,6 +88,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                        "strikes": knobs.stale_strikes, "run_cap": knobs.run_cap},
         "actions": serve_config(project).actions,
         "config_edit": serve_config(project).config_edit,
+        "colour": saved_colour(project),
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
                   "ticket_url": run.ticketUrl,
                   "title": run.title,

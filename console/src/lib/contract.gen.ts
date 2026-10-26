@@ -167,6 +167,7 @@ export const statusSchema = z.looseObject({
   thresholds: thresholdsSchema,
   actions: z.boolean().optional(),
   config_edit: z.boolean(),
+  colour: z.enum(["auto", "violet", "teal", "green", "blue"]).optional(),
   runs: z.array(statusRunSchema),
   queued: z.array(queuedTicketSchema),
   witnesses: witnessSetSchema.nullable().optional(),

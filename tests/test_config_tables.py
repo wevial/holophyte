@@ -383,6 +383,26 @@ class ConsoleConfigTests(ConfigTestCase):
                 self.assertIn("[console] daemons", message)
                 self.assertIn(entry, message)
 
+    def test_an_absent_colour_is_auto(self):
+        self.locate()
+
+        self.assertEqual(
+            holophyte.config.serve_settings.console_config(self.project).colour, "auto")
+
+    def test_a_palette_colour_is_read_as_written(self):
+        self.locate('[console]\ncolour = "teal"\n')
+
+        self.assertEqual(
+            holophyte.config.serve_settings.console_config(self.project).colour, "teal")
+
+    def test_a_colour_outside_the_palette_is_a_startup_error_naming_the_names(self):
+        for line, value in (('colour = "pink"', "'pink'"), ("colour = 3", "3")):
+            with self.subTest(line=line):
+                message = refused(self, f"[console]\n{line}\n")
+                self.assertIn("[console] colour", message)
+                self.assertIn(value, message)
+                self.assertIn("auto, violet, teal, green, blue", message)
+
     def test_an_unknown_key_is_a_startup_error(self):
         message = refused(self, "[console]\nother = 1\n")
 

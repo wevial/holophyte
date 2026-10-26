@@ -1,10 +1,10 @@
 import collections
 from pathlib import Path
 
-from holophyte.config.config_tables import CONSOLE_KEYS, split_address
+from holophyte.config.config_tables import CONSOLE_COLOURS, CONSOLE_KEYS, split_address
 from holophyte.config.reader import KNOWN_KEYS
 
-ConsoleConfig = collections.namedtuple("ConsoleConfig", ("daemons",))
+ConsoleConfig = collections.namedtuple("ConsoleConfig", ("daemons", "colour"))
 
 
 def console_config(project):
@@ -33,7 +33,12 @@ def console_config(project):
                 f"[holo2] {project.config_path}: [console] daemons: {entry!r} "
                 f"is listed twice")
         seen.add(entry)
-    return ConsoleConfig(daemons=tuple(daemons))
+    colour = table.get("colour", CONSOLE_KEYS["colour"])
+    if not isinstance(colour, str) or colour not in CONSOLE_COLOURS:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [console] colour must be one of "
+            f"{', '.join(CONSOLE_COLOURS)}, got {colour!r}")
+    return ConsoleConfig(daemons=tuple(daemons), colour=colour)
 
 
 SERVE_KEYS = {

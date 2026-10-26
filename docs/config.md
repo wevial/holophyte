@@ -1532,12 +1532,16 @@ ignored.
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
 | `daemons` | Default: `[]` | List of unique `HOST:PORT` strings with non-empty host and decimal port; set to show other daemons' projects in the console. |
+| `colour` | Default: `"auto"` | `"auto"`, `"violet"`, `"teal"`, `"green"` or `"blue"`; set to pick the colour the console draws this project's ticket keys in. |
 
 ```toml
 [console]
 # The other daemons the console fans out to, as HOST:PORT strings. Optional;
 # absent, the page shows this daemon's project alone.
 daemons = ["writer-2:7710", "writer-3:7710"]
+# The colour of this project's ticket keys in the console. Optional; "auto"
+# leaves it to the console, which deals the palette out in project order.
+colour = "teal"
 ```
 
 One daemon serves one project; the console shows every project on every
@@ -1552,6 +1556,11 @@ is behind its own `[serve] token_file`; the page presents the token the
 operator gives it. A host daemon serves every registered project, so its
 peers are other hosts' daemons, listed in `host.toml`'s `[console]
 daemons`; a project's own list is not read there.
+
+`colour` is one of the console's project palette names; the daemon knows
+only the names and serves the project's as `colour` on `GET /status`. Any
+other value is a startup error, and a `PUT /config` refusal, naming
+`[console] colour`, the value and the allowed names.
 
 ## `[report]`
 
