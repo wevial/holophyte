@@ -109,6 +109,11 @@ def _process(pid, uptime):
             "args": " ".join(argv)[:ARGS_WIDTH], "argv": argv}
 
 
+def _argument_paths(argv):
+    return [arg.partition(":")[0].removesuffix(DELETED) for arg in argv
+            if os.path.isabs(arg)]
+
+
 def leftovers(host_projects):
     if not PROC.is_dir():
         return {"readable": False, "detail": "skipped (no /proc)",
@@ -125,9 +130,8 @@ def leftovers(host_projects):
         if process is None:
             continue
         argv = process.pop("argv")
-        paths = [os.path.realpath(path) for path in (
-            process["cwd"], *(arg.removesuffix(DELETED) for arg in argv
-                              if os.path.isabs(arg)))]
+        paths = [os.path.realpath(path)
+                 for path in (process["cwd"], *_argument_paths(argv))]
         if any(trees.holds(path) for path in paths):
             found.append(process)
     found.sort(key=lambda process: process["pid"])

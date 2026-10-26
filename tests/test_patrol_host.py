@@ -381,6 +381,34 @@ class LeftoverTests(HostFixtureParts):
             Host.locate().projects())["processes"]}
         self.assertEqual(pids & {through_link, outside}, {through_link})
 
+    def test_a_volume_value_under_a_live_worktree_is_not_a_leftover(self):
+        self.project("p")
+        root = Project.locate(self.conns["p"][2]).worktrees
+        (root / "live" / "carried").mkdir(parents=True)
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        live = self.sleeper(
+            elsewhere, "--volume", f"{root}/live:/workspace:rw",
+            "-v", f"{root}/live/carried:/workspace/carried:rw")
+        pids = {process["pid"] for process in host_health.leftovers(
+            Host.locate().projects())["processes"]}
+        self.assertNotIn(live, pids)
+
+    def test_a_volume_value_under_a_removed_or_finished_worktree_is_listed(self):
+        self.project("p")
+        root = Project.locate(self.conns["p"][2]).worktrees
+        (root / "gone" / "carried").mkdir(parents=True)
+        shutil.rmtree(root / "gone")
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        removed = self.sleeper(
+            elsewhere, "--volume", f"{root}/gone/carried:/workspace/carried:rw")
+        finished = self.sleeper(
+            elsewhere, "--volume", f"{self.merged_worktree('p')}:/workspace:rw")
+        pids = {process["pid"] for process in host_health.leftovers(
+            Host.locate().projects())["processes"]}
+        self.assertEqual(pids & {removed, finished}, {removed, finished})
+
     def test_a_host_without_proc_skips_the_part(self):
         with patch.object(host_health, "PROC", self.root / "no-proc"):
             self.assertEqual(host_health.leftovers([]),
