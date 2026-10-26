@@ -112,33 +112,57 @@ def _fetch_task(provider, issue_id):
     return None, error
 
 
-def _board_down(target, conn, provider, run_id, ticket_id, error):
-    from holophyte.loop.claim_store import BOARD_DOWN
+def _fail_gate_run(target, conn, provider, run_id, ticket_id, refused):
     from holophyte.loop.dispatch import fail_run
-    from holophyte.loop.gates import InfraFailure, outcome_class_of
+    from holophyte.loop.gates import outcome_class_of
 
-    refused = InfraFailure(f"the board did not answer after the re-exec into"
-                           f" the merge gate ({error}); the approved candidate"
-                           " was not gated")
     print(f"[holo2] run failed: {refused.reason}")
     fail_run(target, conn, run_id, ticket_id, provider, refused.reason,
              outcome_class_of(refused), refused.failure_kind, refresh=False)
-    return BOARD_DOWN, ticket_id
 
 
-def gate_task(target, conn, provider, run_id):
-    from holophyte.loop.claim import claimed_run
-
+def _gate_event(conn, run_id):
     row = store.read.run_snapshot(conn, run_id)
     event = row and row.endedAt is None and conn.execute(
         "SELECT payload FROM runEvents WHERE runId = ? AND kind = 'gate_reexec'"
         " ORDER BY id DESC LIMIT 1", (run_id,)).fetchone()
-    if not event:
+    return (row, json.loads(event[0])) if event else (None, None)
+
+
+def gate_task(target, conn, provider, run_id):
+    from holophyte.loop.claim import claimed_run
+    from holophyte.loop.claim_store import BOARD_DOWN
+    from holophyte.loop.gates import InfraFailure, RunFailure
+
+    row, gate = _gate_event(conn, run_id)
+    if row is None:
         return None
     ticket = store.read.ticket_by_id(conn, row.ticketId)
     live, error = _fetch_task(provider, ticket.linearIssueId)
     if error is not None:
-        return _board_down(target, conn, provider, run_id, ticket.id, error)
+        _fail_gate_run(target, conn, provider, run_id, ticket.id, InfraFailure(
+            f"the board did not answer after the re-exec into the merge gate"
+            f" ({error}); the approved candidate was not gated"))
+        return BOARD_DOWN, ticket.id
+    if live is None:
+        _fail_gate_run(target, conn, provider, run_id, ticket.id, RunFailure(
+            f"{ticket.linearIssueId} is gone from the board after the re-exec"
+            " into the merge gate; the approved candidate was not gated"))
+        return None, ticket.id
     run = claimed_run(target, live, conn, run_id, provider)
     run = replace(run, started=run.clock() - (time() * 1000 - row.startedAt) / 1000)
-    return dict(live, _run=run, _gate=json.loads(event[0])), ticket.id
+    return dict(live, _run=run, _gate=gate), ticket.id
+
+
+def hand_off_gate_run(target, run_id, why):
+    from holophyte.loop.runs import open_store
+
+    conn = open_store(target)
+    try:
+        _, gate = _gate_event(conn, run_id)
+        if gate is not None:
+            hand_off(conn, run_id, gate["sha"], why)
+    except GateHandoff:
+        pass
+    finally:
+        conn.close()

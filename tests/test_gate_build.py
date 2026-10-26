@@ -224,6 +224,40 @@ class GateBuildTests(LoopFixture):
         self.assertIn("KO-131", (self.project.path / "FINDINGS.md").read_text())
         self.assertFalse(lock.exists())
 
+    def test_a_ticket_gone_from_the_board_after_the_reexec_fails_the_run(self):
+        provider = StubProvider(a_task(1))
+        head, env = self.reexecuted(provider)
+
+        with patch.object(provider, "fetch_task", lambda issue_id: None):
+            rc, _ = self.worker(provider=provider, build=head, env=env)
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_FAILED)
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE endedAt"
+                                   " IS NOT NULL"), [("failed",)])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(provider.labels["iss-131"], [])
+        self.assertNotIn(f"Merge {BRANCH}: add a thing", self.subjects())
+
+    def test_a_failed_route_probe_after_the_reexec_hands_the_run_off(self):
+        provider = StubProvider(a_task(1))
+        head, env = self.reexecuted(provider)
+        candidate = self.git("rev-parse", BRANCH).strip()
+        down = self.db.parent / "writer.sh"
+        down.write_text("#!/bin/sh\nexit 1\n")
+        down.chmod(0o755)
+        self.configure(f'[agents]\nimplementer = "{down}"\nwriter = "{down}"\n')
+
+        rc, _ = self.worker(provider=provider, build=head, env=env)
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_STOP)
+        self.assertEqual(
+            self.read("SELECT outcome, resumePhase, candidateSha FROM runs"),
+            [("paused", "merge_gate", candidate)])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertEqual(len(self.read(
+            "SELECT 1 FROM runEvents WHERE kind = 'gate_handoff'")), 1)
+        self.assertNotIn(f"Merge {BRANCH}: add a thing", self.subjects())
+
     def test_a_dirty_candidate_after_the_reexec_is_handed_off_not_gated(self):
         provider = StubProvider(a_task(1))
         head, env = self.reexecuted(provider)

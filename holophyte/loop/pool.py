@@ -86,6 +86,7 @@ def worker(target, provider):
         if any(k in configured for k in ("writer", "trimmer", *AGENT_FALLBACK_KEYS,
                                          *REVIEW_FALLBACK_KEYS)):
             if not startup_routes(target, provider, critic=False):
+                _hand_off_gate_run(target)
                 return WORKER_STOP
         result = _worker(target, provider)
         if not isinstance(result, Reexec):
@@ -93,6 +94,14 @@ def worker(target, provider):
     finally:
         reset(target)
     return gate_build.replace_into_gate(result.run_id)
+
+
+def _hand_off_gate_run(target):
+    gate_run = os.environ.pop(gate_build.GATE_RUN_ENV, None)
+    if gate_run:
+        gate_build.hand_off_gate_run(
+            target, int(gate_run), "a route probe failed after the re-exec"
+            " into the merge gate")
 
 
 def witness_child(target, provider):
@@ -129,10 +138,10 @@ def _worker(target, provider):
                       " nothing to resume")
                 return WORKER_IDLE
             (task, ticket_id), run_id = resumed, int(gate_run)
-            if task is BOARD_DOWN:
+            if not task:
                 _render_findings_locked(target, conn, run_id,
                                         {"id": f"run {run_id}"})
-                return WORKER_BOARD_DOWN
+                return WORKER_BOARD_DOWN if task is BOARD_DOWN else WORKER_FAILED
         elif linear_budget_low():
             return WORKER_IDLE
         else:
