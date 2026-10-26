@@ -102,8 +102,7 @@ def pull_candidates(runs, blocked):
              for run in runs]
     found += [(ticket.prUrl, ticket.linearIdentifier, ticket.runId,
                ticket.prSeenOpenThreads) for ticket in blocked
-              if store.read.parked_on_pull_request(
-                  ticket.outcome, ticket.prUrl, ticket.parkKind)]
+              if ticket.prUrl and ticket.outcome != "paused"]
     first = {}
     for found_pull in found:
         if found_pull[0]:
@@ -339,6 +338,8 @@ def finding_lines(health):
                  for process in health["leftovers"]["processes"])
     lines.extend(f"unit {unit['unit']} {unit['state']}"
                  for unit in health["units"]["findings"])
+    lines.extend(f"unit {unit['unit']} not readable ({unit['detail']})"
+                 for unit in health["units"]["unreadable"])
     if kernel["errors"]:
         lines.append(f"kernel {len(kernel['errors'])} I/O errors in the last"
                      f" hour: {kernel['errors'][-1]}")

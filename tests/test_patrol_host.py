@@ -87,12 +87,12 @@ class GithubFixture(PatrolFixture):
         return (None, open_threads, open_threads, 0, "failure", None, None,
                 None)
 
-    def parked(self, name, key, number, open_threads):
+    def parked(self, name, key, number, open_threads, park_kind="ci"):
         conn = self.conns[name][0]
         ticket = self.ticket(name, key)
         store.tickets.transition(conn, ticket, "in_flight")
         run = self.claim(name, ticket, NOW - 9 * MIN)
-        park_run(conn, run, "awaiting_merge_approval", park_kind="ci",
+        park_run(conn, run, "awaiting_merge_approval", park_kind=park_kind,
                  pr_url=PULL.format(number), pr_seen=self.seen(open_threads),
                  now=NOW - 9 * MIN)
         store.tickets.transition(conn, ticket, "blocked_on_operator")
@@ -190,6 +190,17 @@ class HeldPullTests(GithubFixture):
         self.assertEqual([pull["ticket"] for pull in row["pull_requests"]],
                          ["K2"])
         self.assertEqual(row["ignored"], ["K1"])
+
+    def test_a_ticket_parked_on_threads_or_a_declined_fix_is_held(self):
+        self.held_project()
+        self.parked("q", "K4", 10, 1, park_kind="fix_declined")
+        self.parked("q", "K5", 11, 3, park_kind="thread")
+        self.pulls.update({10: ("open", "S10"), 11: ("open", "S11")})
+        self.check_runs.update(S10=runs(unit="failure"),
+                               S11=runs(unit="failure"))
+        held = {pull["ticket"]: pull["number"]
+                for pull in self.patrol("q")["pull_requests"]}
+        self.assertEqual((held.get("K4"), held.get("K5")), (10, 11))
 
     def test_a_paused_ticket_on_a_red_pull_request_is_not_held(self):
         self.held_project()
@@ -407,6 +418,26 @@ class UnitTests(HostFixtureParts):
                           host["clean"]),
                          ("skipped (systemctl is not on this host)", [], True))
         self.assertIn(SKIPPED_UNITS, self.holo()[1].splitlines())
+
+    def test_an_unreadable_unit_beside_active_ones_is_reported(self):
+        self.project("p")
+        self.roomy_tmp()
+        self.on_path({"systemctl": "#!/bin/sh\n"
+                      "for unit; do :; done\n"
+                      "case \"$unit\" in\n"
+                      "  holophyte-loop@p) echo 'Access denied' >&2; exit 1 ;;\n"
+                      "  *) echo active ;;\n"
+                      "esac\n"})
+        host = json.loads(self.holo("--json")[1])["host"]
+        self.assertEqual(
+            (host["units"]["findings"], host["units"]["unreadable"],
+             host["clean"]),
+            ([], [{"unit": "holophyte-loop@p", "detail": "Access denied"}],
+             False))
+        text = self.holo()[1].splitlines()
+        self.assertNotIn("[host] nothing to do", text)
+        self.assertIn("  unit holophyte-loop@p not readable (Access denied)",
+                      text)
 
     def test_an_unreachable_user_manager_is_not_readable_and_no_finding(self):
         self.project("p")

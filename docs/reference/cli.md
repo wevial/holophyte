@@ -98,13 +98,16 @@ a removed or finished witness tree under the temporary directory or a
 removed or finished worktree: `pid`, `age_sec`, `cwd`, `args`), `units`
 (`systemctl --user is-active` of `holophyte-sweep.timer`,
 `holophyte-serve.socket` and each named project's `holophyte-loop@NAME`;
-`findings` are the `failed` units and a sweep timer not `active`), `kernel`
+`findings` are the `failed` units and a sweep timer not `active`;
+`unreadable`, each unit whose state could not be read, with its `detail`,
+keeps the host not `clean`), `kernel`
 (`errors`, the last hour's kernel lines naming an I/O error or an NVMe
 timeout or reset) and `clean`. A part that cannot run is `readable: false`
 with its `detail`. Both forms print the host block first: `[host] nothing
 to do` when clean, else `[host]` and an indented line per attention item
 (`attention KIND PROJECT: TEXT`) and finding (`/tmp P% used, SIZE free`,
-`leftover pid N (AGE): CWD ARGS`, `unit UNIT STATE`, `kernel N I/O errors in
+`leftover pid N (AGE): CWD ARGS`, `unit UNIT STATE`, `unit UNIT not
+readable (DETAIL)`, `kernel N I/O errors in
 the last hour: LAST LINE`), then an indented line per skipped part
 (`units: skipped (systemctl is not on this host)`, `kernel log: not
 readable`). The patrol only reports. The exit is 1 when a

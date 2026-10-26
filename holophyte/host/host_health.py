@@ -138,7 +138,7 @@ def units(names):
     if shutil.which("systemctl") is None:
         return {"readable": False,
                 "detail": "skipped (systemctl is not on this host)",
-                "units": [], "findings": []}
+                "units": [], "findings": [], "unreadable": []}
     states = []
     for unit in (*HOST_UNITS, *(LOOP_UNIT + name for name in names)):
         ok, detail = systemctl_user("is-active", unit)
@@ -147,11 +147,14 @@ def units(names):
     if not any(entry["state"] in UNIT_STATES for entry in states):
         return {"readable": False,
                 "detail": f"not readable ({states[0]['state']})",
-                "units": [], "findings": []}
+                "units": [], "findings": [], "unreadable": []}
     findings = [entry for entry in states if entry["state"] == "failed"
                 or (entry["unit"] == JUDGED_ACTIVE
                     and entry["state"] in UNIT_STATES - {"active"})]
-    return {"readable": True, "units": states, "findings": findings}
+    unread = [{"unit": entry["unit"], "detail": entry["state"]}
+              for entry in states if entry["state"] not in UNIT_STATES]
+    return {"readable": True, "units": states, "findings": findings,
+            "unreadable": unread}
 
 
 def _kernel_error(line):
@@ -181,5 +184,6 @@ def host_health(host_projects, attention):
     health["clean"] = not (attention or health["tmp"].get("full")
                            or health["leftovers"]["processes"]
                            or health["units"]["findings"]
+                           or health["units"]["unreadable"]
                            or health["kernel"]["errors"])
     return health
