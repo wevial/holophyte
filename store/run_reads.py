@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from time import time
 
-from .enums import InterventionActor
+from .enums import FailureKind, InterventionActor
 
 
 @dataclass(frozen=True)
@@ -377,9 +378,48 @@ class RecentRun:
     prSeenAdditions: int | None
     prSeenDeletions: int | None
     resumedAs: int | None
+    implementer: str | None = None
 
 
-def recent_runs(conn, since, limit, until=None):
+HISTORY_SORTS = ("started", "ended", "duration", "rounds", "state")
+HISTORY_ORDERS = ("asc", "desc")
+STATE_GROUPS = ("active", "merged", "failed", "abandoned")
+FAILURE_KINDS = tuple(kind.value for kind in FailureKind)
+
+
+@dataclass(frozen=True)
+class RunQuery:
+    offset: int = 0
+    sort: str = "started"
+    order: str = "desc"
+    q: str | None = None
+    states: tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
+    implementers: tuple[str, ...] = ()
+    now: int | None = None
+
+
+DEFAULT_QUERY = RunQuery()
+STATE_GROUP = (
+    "CASE WHEN endedAt IS NULL OR (outcome = 'paused' AND resumedAs IS NULL)"
+    " THEN 'active' WHEN outcome = 'paused' THEN NULL"
+    " WHEN outcome IN ('merged', 'abandoned') THEN outcome ELSE 'failed' END")
+SORT_KEYS = {
+    "started": "startedAt",
+    "ended": f"COALESCE(endedAt, {SQLITE_INT64_MAX})",
+    "duration": "COALESCE(endedAt, ?) - startedAt",
+    "rounds": "reviewRoundCount",
+    "state": f"CASE {STATE_GROUP} WHEN 'active' THEN 0 WHEN 'merged' THEN 1"
+             " WHEN 'failed' THEN 2 WHEN 'abandoned' THEN 3 ELSE 4 END",
+}
+FACET_COLUMNS = {"state": STATE_GROUP, "failure": "failureKind",
+                 "implementer": "implementer"}
+IMPLEMENTER_LABEL = (
+    "CASE WHEN json_valid({0}payload) AND json_type({0}payload, '$.label')"
+    " = 'text' THEN json_extract({0}payload, '$.label') END")
+
+
+def _history_base(conn, since, until):
     since = max(SQLITE_INT64_MIN, min(since, SQLITE_INT64_MAX))
     where = "r.endedAt IS NULL OR r.startedAt >= ?"
     params = [since]
@@ -388,27 +428,93 @@ def recent_runs(conn, since, limit, until=None):
         where = "r.endedAt IS NOT NULL AND r.startedAt >= ? AND r.startedAt < ?"
         params.append(until)
     columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
-    size = _pr_seen_media_sql(columns, PR_SEEN_MEDIA[:2])
-    rows = conn.execute(
-        "SELECT r.id, t.linearIdentifier, t.url, t.title, r.attempt, r.phase,"
-        " r.outcome, r.outcomeReason, r.failureKind, r.parkKind, r.startedAt,"
-        " r.endedAt, r.lastHeartbeat,"
+    additions, deletions = (
+        _pr_seen_media_sql(columns, (name,)) + f" AS {name}"
+        for name in PR_SEEN_MEDIA[:2])
+    return (
+        "SELECT r.id AS id, t.linearIdentifier AS linearIdentifier,"
+        " t.url AS ticketUrl, t.title AS title, r.attempt AS attempt,"
+        " r.phase AS phase, r.outcome AS outcome,"
+        " r.outcomeReason AS outcomeReason, r.failureKind AS failureKind,"
+        " r.parkKind AS parkKind, r.startedAt AS startedAt,"
+        " r.endedAt AS endedAt, r.lastHeartbeat AS lastHeartbeat,"
         " CASE WHEN r.endedAt IS NULL THEN (SELECT COUNT(*) FROM reviewRounds rr"
         "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
-        " ELSE r.reviewRoundCount END,"
-        " r.reviewRoundCap, r.prUrl, r.host, r.timeBoxMs, r.workingMs,"
-        " r.workStartedAt,"
+        " ELSE r.reviewRoundCount END AS reviewRoundCount,"
+        " r.reviewRoundCap AS reviewRoundCap, r.prUrl AS prUrl, r.host AS host,"
+        " r.timeBoxMs AS timeBoxMs, r.workingMs AS workingMs,"
+        " r.workStartedAt AS workStartedAt,"
         " (SELECT COALESCE(SUM(json_array_length(rr.findings)), 0)"
-        "    FROM reviewRounds rr WHERE rr.runId = r.id),"
-        f" r.mergeSha, {size},"
+        "    FROM reviewRounds rr WHERE rr.runId = r.id) AS findingCount,"
+        f" r.mergeSha AS mergeSha, {additions}, {deletions},"
         " CASE WHEN r.outcome = 'paused' THEN (SELECT MIN(n.id) FROM runs n"
-        "   WHERE n.ticketId = r.ticketId AND n.id > r.id) END,"
-        " COUNT(*) OVER ()"
+        "   WHERE n.ticketId = r.ticketId AND n.id > r.id) END AS resumedAs,"
+        f" (SELECT {IMPLEMENTER_LABEL.format('e.')} FROM runEvents e"
+        "   WHERE e.runId = r.id AND e.kind = 'implementer_profile'"
+        "   ORDER BY e.id DESC LIMIT 1) AS implementer"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        f" WHERE {where}"
-        " ORDER BY r.startedAt DESC, r.id DESC LIMIT ?",
-        (*params, limit)).fetchall()
-    return [RecentRun(*row[:-1]) for row in rows], rows[0][-1] if rows else 0
+        f" WHERE {where}"), params
+
+
+def _history_filters(query, skip=None):
+    clauses, params = [], []
+    if query.q:
+        clauses.append("(instr(lower(linearIdentifier), lower(?)) > 0"
+                       " OR instr(lower(title), lower(?)) > 0)")
+        params += [query.q, query.q]
+    picked = {"state": query.states, "failure": query.failures,
+              "implementer": query.implementers}
+    for name, column in FACET_COLUMNS.items():
+        values = picked[name]
+        if values and name != skip:
+            clauses.append(f"({column}) IN ({', '.join('?' * len(values))})")
+            params.extend(values)
+    return " AND ".join(clauses) or "1", params
+
+
+def _query_now(query):
+    return int(time() * 1000) if query.now is None else query.now
+
+
+def recent_runs(conn, since, limit, until=None, *, query=DEFAULT_QUERY):
+    base, params = _history_base(conn, since, until)
+    where, filters = _history_filters(query)
+    key = SORT_KEYS[query.sort]
+    ordering = [_query_now(query)] if "?" in key else []
+    names = ", ".join(field.name for field in fields(RecentRun))
+    rows = conn.execute(
+        f"SELECT {names}, COUNT(*) OVER () FROM ({base}) WHERE {where}"
+        f" ORDER BY {key} {query.order.upper()}, startedAt DESC, id DESC"
+        " LIMIT ? OFFSET ?",
+        (*params, *filters, *ordering, limit, query.offset)).fetchall()
+    if rows:
+        return [RecentRun(*row[:-1]) for row in rows], rows[0][-1]
+    if not query.offset:
+        return [], 0
+    (total,) = conn.execute(f"SELECT COUNT(*) FROM ({base}) WHERE {where}",
+                            (*params, *filters)).fetchone()
+    return [], total
+
+
+def run_counts(conn, since, until=None, query=DEFAULT_QUERY):
+    base, params = _history_base(conn, since, until)
+    keys = {"state": STATE_GROUPS, "failure": FAILURE_KINDS,
+            "implementer": implementer_labels(conn)}
+    counts = {}
+    for name, column in FACET_COLUMNS.items():
+        where, filters = _history_filters(query, skip=name)
+        counted = dict(conn.execute(
+            f"SELECT {column}, COUNT(*) FROM ({base}) WHERE {where}"
+            " GROUP BY 1", (*params, *filters)).fetchall())
+        counts[name] = {key: counted.get(key, 0) for key in keys[name]}
+    return counts
+
+
+def implementer_labels(conn):
+    rows = conn.execute(
+        f"SELECT DISTINCT {IMPLEMENTER_LABEL.format('')} FROM runEvents"
+        " WHERE kind = 'implementer_profile'").fetchall()
+    return sorted(row[0] for row in rows if row[0] is not None)
 
 
 @dataclass(frozen=True)

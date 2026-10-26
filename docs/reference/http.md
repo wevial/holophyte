@@ -13,7 +13,8 @@ one daemon serves and which fetches the others from the browser: without
 the header the browser refuses a cross-origin answer. The daemon reads by
 default and writes only through two opt-ins, documented in
 [The daemon's actions](daemon.md): the `POST /actions/...` routes
-`[serve] actions = true` opens and the `PUT /config` route
+`[serve] actions = true` opens, with a host daemon's board writes and
+its root's `PUT /prefs`, and the `PUT /config` route
 `[serve] config_edit = true` opens. On loopback the bind address is the
 whole boundary for reads, and beyond it every JSON route but `/peers` is
 behind a bearer token ([Authentication](#authentication)). Unknown paths
@@ -21,8 +22,8 @@ are 404 and any method but GET is 405, both with a JSON `error`, except
 those writing routes. A project with no store answers 503.
 
 `console/contract/` holds the machine-readable shapes of `GET /status`,
-`GET /attention` and `GET /peers`, of the host root's `GET /status`
-and `GET /attention`, of the run routes `GET /runs/N`,
+`GET /attention` and `GET /peers`, of the host root's `GET /status`,
+`GET /attention` and `GET /prefs`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
@@ -77,6 +78,7 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
   "actions": false,
   "config_edit": false,
+  "colour": "auto",
   "runs": [
     {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
      "title": "The sweep frees a silent lease", "phase": "working",
@@ -177,7 +179,10 @@ is none.
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
 and `PUT /config`; the console's settings sheet is read-only, naming the
-key, while it is `false`. `route_labels` names what each seat is configured
+key, while it is `false`. `colour` is the project's `[console] colour`
+(`auto`, `violet`, `teal`, `green` or `blue`), `auto` when unset, read
+from the file on each request so a saved colour shows on the next poll;
+an older daemon leaves it out. `route_labels` names what each seat is configured
 to run, labelled as a recorded turn is: the command's first word plus its
 `-m`/`--model` value. A seat left unset shows the default the loop
 dispatches, an unset `writer` or `trimmer` the implementer's label, and an unset
@@ -346,7 +351,7 @@ Releasing a hold requires a reason, just like holding: `holo release` requires
 `note`, and `POST /actions/release-hold` rejects a blank `note`. The Release
 UI and its required-reason form are covered by HOLO-403.
 
-## `GET /history?since=MS&until=MS&limit=N`
+## `GET /history?since=MS&until=MS&limit=N&offset=N&sort=KEY&order=asc|desc&q=TEXT&state=GROUP,…&failure=KIND,…&implementer=LABEL,…`
 
 ```json
 {"rows": [
@@ -357,8 +362,8 @@ UI and its required-reason form are covered by HOLO-403.
    "elapsed_ms": 540000, "working_ms": 480000, "estimate_ms": 1800000,
    "heartbeat_age_ms": 12000, "rounds": 1,
    "max_rounds": 2, "findings": 2, "merge_sha": null, "commit_url": null,
-   "additions": 120, "deletions": 14, "resumed_as": null, "pr_url": null,
-   "host": "writer-1"},
+   "additions": 120, "deletions": 14, "resumed_as": null,
+   "implementer": "claude opus", "pr_url": null, "host": "writer-1"},
   {"id": 225, "ticket": "KO-255", "ticket_url": null,
    "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
    "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
@@ -367,10 +372,17 @@ UI and its required-reason form are covered by HOLO-403.
    "elapsed_ms": 1200000, "working_ms": null, "estimate_ms": null,
    "heartbeat_age_ms": null, "rounds": 0,
    "max_rounds": 2, "findings": 0, "merge_sha": null, "commit_url": null,
-   "additions": null, "deletions": null, "resumed_as": null, "pr_url": null,
-   "host": "writer-1"}
-], "since": 1788393600000, "until": null, "limit": 200,
+   "additions": null, "deletions": null, "resumed_as": null,
+   "implementer": null, "pr_url": null, "host": "writer-1"}
+], "since": 1788393600000, "until": null, "limit": 200, "offset": 0,
+ "sort": "started", "order": "desc",
  "truncated": false, "total": 2,
+ "counts": {"state": {"active": 1, "merged": 0, "failed": 1, "abandoned": 0},
+            "failure": {"verify": 1, "review_route": 0, "fix_no_progress": 0,
+                        "no_commits": 0, "budget": 0, "merge_lock": 0,
+                        "infra": 0, "swept": 0, "unclassified": 0},
+            "implementer": {"claude opus": 1}},
+ "implementers": ["claude opus"],
  "now": 1788478743000}
 ```
 
@@ -406,18 +418,56 @@ the pull request size last recorded for the run (null when none was);
 `resumed_as`, for a run whose `outcome` is `paused`, the id of the next run
 of the same ticket after it, whether or not that run is in the answer (null
 for a paused run with no later run, and for every run not paused); and
-`pr_url` and `host`, as `/shipped` spells them. An older daemon omits
-`findings`, `merge_sha`, `commit_url`, `additions`, `deletions` and
-`resumed_as`.
+`pr_url` and `host`, as `/shipped` spells them; and `implementer`, the
+`label` in the payload of the run's newest `implementer_profile` event (null
+when it has none, as every run before those events began reads). An older
+daemon omits `findings`, `merge_sha`, `commit_url`, `additions`, `deletions`,
+`resumed_as` and `implementer`.
 
-The body echoes `since`, `until` (null when omitted) and the `limit` applied,
-and carries `total`, the number of matching runs before the limit, and
-`now`, the daemon's clock the open rows were measured against. `limit` defaults to
-200 and is capped at 500; `truncated` is true when more runs matched than
-`limit`, and there is no paging past it. A missing or non-integer `since`,
-a non-integer `until`, or a non-positive or non-integer `limit`, is 400
-with an `error` naming the parameter. An `until` at or before `since` is
-400 with `"until must be after since"`.
+Optional parameters page, sort and narrow the list; without any of them the
+route answers as above. A row is served only when it matches every one
+given:
+
+- `offset`, a non-negative integer (default 0), skips the first `offset`
+  matching rows after sorting; `limit` then cuts what follows.
+- `sort` is one of `started` (the default), `ended`, `duration`, `rounds`
+  and `state`, and `order` is `asc` or `desc` (the default). `started` orders
+  by `started_ms`; `ended` by `ended_ms`, an open run later than every ended
+  run; `duration` by `elapsed_ms`, an open run's measured to `now`; `rounds`
+  by `rounds` as the row serves it; `state` by the state groups in the order
+  active, merged, failed, abandoned, then a paused run a later run resumed.
+  Ties under every key fall back to `started_ms` descending, then `id`
+  descending, so a sort is stable across pages.
+- `q` matches a run whose ticket key or title contains the text, ignoring
+  ASCII case; `%` and `_` match only themselves, and a blank `q` is absent.
+- `state` is a comma list of `active` (not ended, or paused with no later
+  run of its ticket), `merged`, `abandoned` (ended with that outcome) and
+  `failed` (ended with any other outcome but `paused`, `rejected` included).
+  A paused run that a later run resumed is in no group, so any `state`
+  leaves it out.
+- `failure` is a comma list of failure kinds (`verify`, `review_route`,
+  `fix_no_progress`, `no_commits`, `budget`, `merge_lock`, `infra`, `swept`,
+  `unclassified`), matching a run's `failure_kind`.
+- `implementer` is a comma list of labels, matching a row's `implementer`;
+  labels hold no comma, so the list splits on commas after URL decoding.
+
+The body echoes `since`, `until` (null when omitted), the `limit` applied,
+and `offset`, `sort` and `order` as served, and carries `total`, the number
+of matching runs before `offset` and `limit`, and `now`, the daemon's clock
+the open rows were measured against. `limit` defaults to 200 and is capped
+at 5000; `truncated` is true when matching runs remain beyond `offset +
+limit`. `counts` holds the per-value counts beside each filter choice:
+`state` (each group), `failure` (every failure kind) and `implementer`
+(every label in `implementers`), each map counting the rows that match
+every parameter given except its own, before `offset` and `limit`, with 0
+for a value nothing matches. `implementers` is the sorted distinct labels
+of every `implementer_profile` event in the store.
+
+A missing or non-integer `since`, a non-integer `until`, a non-positive or
+non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
+`order`, `state` or `failure` value not listed above, is 400 with an
+`error` naming the parameter and any value it got. An `until` at or before
+`since` is 400 with `"until must be after since"`.
 
 ## `GET /runs/N`
 
@@ -917,12 +967,20 @@ A run with no entries answers an empty list. `N` parses as on
 {"since": 1788450000000, "limit": 200,
  "entries": [
   {"at": 1788451661675, "run": 52, "ticket": "KO-219", "kind": "merge",
-   "source": "loop", "text": "MERGED to main as 5acc138."},
+   "source": "loop", "text": "MERGED to main as 5acc138.",
+   "pr_url": "https://github.com/OWNER/REPO/pull/12"},
+  {"at": 1788451421675, "run": 51, "ticket": "KO-218", "kind": "failure",
+   "source": "factory", "text": "no heartbeat for 20 minutes",
+   "failure_kind": "swept", "pr_url": null},
   {"at": 1788451181675, "run": 50, "ticket": "KO-217", "kind": "intervention",
    "source": "operator", "text": "answered: keep the flag name",
-   "cleared": "question", "waited_ms": 818325},
+   "cleared": "question", "waited_ms": 818325, "pr_url": null},
+  {"at": 1788451061675, "run": 50, "ticket": "KO-217", "kind": "park",
+   "source": "factory", "text": "which flag name should ship?",
+   "pr_url": null},
   {"at": 1788450941675, "run": 52, "ticket": "KO-219", "kind": "round",
-   "source": "loop", "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed"}
+   "source": "loop", "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed",
+   "pr_url": "https://github.com/OWNER/REPO/pull/12"}
  ]}
 ```
 
@@ -937,7 +995,18 @@ is no paging past it, a day of ledger fits in one page. Each entry is its
 `at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
 spells them; an `intervention` entry carries `cleared` and `waited_ms`
 too, by the rule `/runs/N/ledger` states, so the fold reads each
-resolution's wait off the wire. For a thread, `/attention`'s blocked item is the question
+resolution's wait off the wire. Every entry carries `pr_url`: its run's
+pull request URL, or null when the run has none or the entry has no run.
+An unfiltered request (no `kind`, no `ticket`) also carries two kinds of
+row the ledger table does not hold, each with source `factory`, its run's
+`run`, `ticket` and `pr_url`, and the same `since` and `limit` rules: a
+`park` row for each run phase change into `blocked_on_operator`, or into
+`awaiting_merge_approval` because a thread needs a human's answer, whose
+`text` is the change's reason; and a run-ending `failure` row for each
+run that ended `failed` with no `failure` ledger row of its own, at its
+end, whose `text` is the run's outcome reason and whose `failure_kind`
+is the run's failure kind. A park on pending checks or a quiet wait has
+no row, and `park` is not a `kind` the filter accepts. For a thread, `/attention`'s blocked item is the question
 and `/ledger?ticket=KO-n&since=ASKED` is the rest: the `intervention`
 rows carry the operator's answer text. A missing or non-integer `since`,
 a bad `limit` or an unknown `kind` is 400 with an `error` naming the
@@ -1738,8 +1807,10 @@ next. A row that stays across polls is a store that stays locked.
 The root answers `GET /status` and `GET /attention` for the host, below,
 `GET /peers` from `host.toml`'s `[console] daemons`, `/` and the console's
 files, `POST /actions/run-sweep` ([Run sweep](daemon.md#post-actionsrun-sweep)),
-and `POST /actions/restart-daemon`
-([Restart daemon](daemon.md#post-actionsrestart-daemon)). Any other JSON path at the root
+`POST /actions/restart-daemon`
+([Restart daemon](daemon.md#post-actionsrestart-daemon)), and `GET /prefs`
+and `PUT /prefs` ([Host `GET /prefs` and `PUT /prefs`](#host-get-prefs-and-put-prefs)).
+Any other JSON path at the root
 is 404, naming the `/projects/NAME` prefix. Tokens are in
 [Authentication](#authentication).
 
@@ -1846,6 +1917,64 @@ each with `project` added. A project's `supervisor` item judges the host
 sweep's beat against two sweep intervals. `level` is `attention` when
 there is any item, else `working` when any project has a live run, else
 `none`; `now` is the daemon's clock.
+
+## Host `GET /prefs` and `PUT /prefs`
+
+The console's preferences that follow the maintainer across devices, one
+document at a host daemon's root. A daemon has one maintainer, the holder
+of the machine token, so the document is that maintainer's. A project
+daemon has no `/prefs`, and `/projects/NAME/prefs` is no project route:
+both are 404 as any unknown path.
+
+```json
+{"day_log": {"preset": "manual",
+             "items": {"merged": true, "review-round_2": false},
+             "projects": {"lotuspod": false}},
+ "updated_ms": 1788450534491}
+```
+
+`day_log` is the console's Today's log filter, or null when none is
+stored: `preset` is one of `highlights`, `everything` and `manual`;
+`items` maps the console's item ids (letters, digits, `-` and `_`, up to
+64 characters) and `projects` maps project names (up to 128 characters)
+to booleans, each at most 64 entries. The daemon checks that shape and
+leaves its meaning to the console. `updated_ms` is when the document was
+last written, in epoch milliseconds, or null when it never was. With no
+file both are null. A file that cannot be read or parsed answers 200 with
+both null and an `error` naming the file and the reason.
+
+`PUT /prefs` takes a JSON object holding some of the document's keys,
+today only `day_log`. Each key given replaces that key's value and null
+removes it; a key not given keeps its stored value, so `{}` changes
+nothing but `updated_ms`. Two writers race key by key: the last write
+wins, and there is no `If-Match`. It answers 200 with the whole stored
+document as `GET /prefs` reads it.
+
+```
+PUT /prefs
+Authorization: Bearer MACHINE_TOKEN
+Content-Type: application/json
+
+{"day_log": {"preset": "highlights", "items": {}, "projects": {}}}
+```
+
+Refusals are 400 with an `error` naming the key or field, and nothing is
+written: a body over 16 KiB (checked before it is parsed), a body that is
+not a JSON object, a key other than `day_log`, and a `day_log` of another
+shape (a missing or unknown field, another `preset`, an item id or
+project name out of bounds, a value that is not a boolean, more than 64
+entries).
+
+`GET /prefs` is a read route: open on loopback and behind the machine
+token beyond it, as the root's `GET /status` is. `PUT /prefs` answers
+only to the machine token on every bind, loopback included, and never to
+a project's own `token_file`, else 401 with `{}`; with host `[serve]
+actions` off it is 404. Nothing is written in either case.
+
+The document is the file `console-prefs.json` in `HOLOPHYTE_HOME`, outside
+every store and project config. A write goes to a temporary file in the
+same directory, flushed and synced, and replaces the file in one rename,
+with mode 0600; a `PUT` over an unreadable file replaces it.
 
 ## `PUT /tickets/ID`
 
@@ -2152,7 +2281,8 @@ refuses to start without it), and `POST /actions/...`, `GET /config` and
 A host daemon takes its one token from `host.toml`: `[serve]
 machine_token_file` is the bearer at the root and under every
 `/projects/NAME` prefix. It is demanded on every read route beyond
-loopback, and on every bind for `POST /actions/...` and `/config`; a bind
+loopback, and on every bind for `POST /actions/...`, `/config` and the
+root's `PUT /prefs`; a bind
 beyond loopback, `[serve] actions` or any project's `config_edit` without
 it is a startup error naming the key. A project's own `[serve] token_file`
 is accepted beside it under that project's prefix only, for one release;
@@ -2177,7 +2307,9 @@ discloses nothing and touches no store, and the request it clears is
 still refused without the bearer. Every other method but GET stays 405, `POST`
 included on every path but the `/actions/` routes and `PUT` on every path
 but `/config`, both in [The daemon's actions](daemon.md), and a host
-daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)); a host
+daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)) and its
+root's `/prefs` ([Host `GET /prefs` and `PUT /prefs`](#host-get-prefs-and-put-prefs)),
+behind the machine token alone; a host
 daemon also takes `POST` on `/tickets` ([`POST /tickets`](#post-tickets)),
 `/tickets/check` ([`POST /tickets/check`](#post-ticketscheck)),
 `/tickets/ID/move` ([`POST /tickets/ID/move`](#post-ticketsidmove)) and
@@ -2189,11 +2321,11 @@ each behind the machine token alone.
 | Status | When |
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
-| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
-| 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off |
-| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
+| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix, and `PUT /prefs` on any bind without the machine token |
+| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`, `offset`, `sort`, `order`, `state` or `failure`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N`; on a host daemon, `PUT /prefs` with a body over 16 KiB, not a JSON object, a key other than `day_log` or a `day_log` of another shape, `error` naming the key or field |
+| 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off; `PUT /prefs` with `[serve] actions` off, and `/prefs` on a project daemon or under `/projects/NAME` |
+| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel`, `PUT /tickets/ID` and the root's `PUT /prefs`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | any request while the daemon drains for restart (`daemon restarting`); the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
-| 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
+| 500 | on a host daemon, `PUT /prefs` when `console-prefs.json` cannot be written, `error` naming the file; one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
 | 504 | `/runs/N/files` when git does not answer within its cap |

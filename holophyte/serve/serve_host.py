@@ -32,6 +32,7 @@ from holophyte.serve.serve_actions import (
 from holophyte.serve.serve_board import post_path, post_ticket, put_ticket, ticket_path
 from holophyte.serve.serve_config import require_tomlkit
 from holophyte.serve.serve_merge import MERGE_ACTION
+from holophyte.serve.serve_prefs import PREFS_PATH, get_prefs, put_prefs
 from holophyte.serve.serve_watch import CODE_CHECK_SEC, CodeWatch, adopted_socket
 from holophyte.serve.server import (
     CONSOLE_DIR,
@@ -353,6 +354,8 @@ class HostHandler(StatusHandler):
                 return self.answer(*show(self.server))
             except HostError as bad:
                 return self.answer(503, {"error": str(bad)})
+        if path == PREFS_PATH:
+            return get_prefs(self)
         if path == "/peers":
             return self.answer(200, {"self": self.server.self_address,
                                      "peers": list(self.server.peers)})
@@ -428,7 +431,7 @@ class HostHandler(StatusHandler):
             return
         scope, path = found
         if scope is None:
-            return self.refuse()
+            return put_prefs(self) if path == PREFS_PATH else self.refuse()
         identifier = ticket_path(path)
         if identifier is not None:
             return put_ticket(self, scope, path, identifier)

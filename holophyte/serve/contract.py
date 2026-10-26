@@ -6,6 +6,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 from holophyte.scout.scout_contract import ScoutDetail, ScoutRoutes, Scouts
 from holophyte.serve.contract_emit import ClientDefault, check, render, write
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
+from holophyte.serve.contract_prefs import Prefs
 from holophyte.serve.contract_routes import (
     ActiveRoute,
     RouteLabels,
@@ -113,6 +114,7 @@ class Status(TypedDict):
     thresholds: Thresholds
     actions: NotRequired[bool]
     config_edit: bool
+    colour: NotRequired[Literal["auto", "violet", "teal", "green", "blue"]]
     runs: list[StatusRun]
     queued: list[QueuedTicket]
     witnesses: NotRequired[WitnessSet | None]
@@ -590,8 +592,22 @@ class HistoryRow(TypedDict):
     additions: NotRequired[int | None]
     deletions: NotRequired[int | None]
     resumed_as: NotRequired[int | None]
+    implementer: NotRequired[str | None]
     pr_url: str | None
     host: str | None
+
+
+class HistoryStateCounts(TypedDict):
+    active: int
+    merged: int
+    failed: int
+    abandoned: int
+
+
+class HistoryCounts(TypedDict):
+    state: HistoryStateCounts
+    failure: dict[str, int]
+    implementer: dict[str, int]
 
 
 class History(TypedDict):
@@ -599,8 +615,14 @@ class History(TypedDict):
     since: int
     until: int | None
     limit: int
+    offset: NotRequired[int]
+    sort: NotRequired[Literal["started", "ended", "duration", "rounds",
+                              "state"]]
+    order: NotRequired[Literal["asc", "desc"]]
     truncated: bool
     total: int
+    counts: NotRequired[HistoryCounts]
+    implementers: NotRequired[list[str]]
     now: int
 
 
@@ -637,6 +659,8 @@ class RunLedgerEntry(TypedDict):
 class LedgerEntry(RunLedgerEntry):
     run: int | None
     ticket: str | None
+    pr_url: str | None
+    failure_kind: NotRequired[str]
 
 
 class ActiveOutage(TypedDict):
@@ -884,6 +908,7 @@ ROUTES = {
     "peers": (Peers, "GET /peers"),
     "host-status": (HostStatus, "GET /status at a host daemon's root"),
     "host-attention": (HostAttention, "GET /attention at a host daemon's root"),
+    "prefs": (Prefs, "GET /prefs at a host daemon's root"),
     "run-detail": (RunDetail, "GET /runs/N"),
     "run-merge": (MergeReadiness, "GET /runs/N/merge"),
     "run-asks": (RunAsks, "GET /runs/N/asks"),

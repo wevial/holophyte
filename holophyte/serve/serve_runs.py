@@ -16,6 +16,7 @@ from holophyte.config.config_tables import MERGE_KEYS, loop_config, merge_config
 from holophyte.config.project import worktree_path
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
+from holophyte.serve import day_log
 from store.operator_notes import round_notes
 from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
@@ -518,10 +519,14 @@ def ledger(project, query):
                                           hide_launch_backoff=True)
         route_rows = (route_down_rows(conn)
                       if ticket is None and kind in (None, "intervention") else [])
-        feed = [ledger_entry(e, {"run": e.runId, "ticket": e.ticket})
+        feed = [ledger_entry(e, {"run": e.runId, "ticket": e.ticket,
+                                 "pr_url": e.prUrl})
                 for e in entries]
         if ticket is None and kind in (None, "intervention"):
             feed.extend(migration_rows(conn, since, limit, str(project.path)))
+        if ticket is None and kind is None:
+            feed.extend(day_log.park_rows(conn, since, limit))
+            feed.extend(day_log.failure_rows(conn, since, limit))
         feed.sort(key=lambda row: row["at"], reverse=True)
     finally:
         conn.close()
@@ -544,7 +549,7 @@ def migration_rows(conn, since, limit, project_path):
              "source": "factory", "action": "migrate", "tone": "neutral",
              "text": migration_line(note, detail["to"]),
              "schema_to": detail["to"], "schema_from": detail["from"],
-             "project": project_path,
+             "project": project_path, "pr_url": None,
              "cleared": None, "waited_ms": None} for note, at in rows
             for detail in [json.loads(note)]]
 
