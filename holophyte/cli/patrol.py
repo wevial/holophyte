@@ -1,7 +1,6 @@
 """`--patrol`: each project's checks for the operator seat; writes nothing."""
 import json
 import re
-import sys
 from time import time
 
 import store.read
@@ -55,7 +54,8 @@ def quiet(runs, events, now, quiet_ms):
     found = []
     for run in runs:
         beat = now - run.lastHeartbeat
-        event = None if events[run.id] is None else now - events[run.id]
+        last = events.get(run.id)
+        event = None if last is None else now - last
         if beat > quiet_ms and (event is None or event > quiet_ms):
             found.append({"ticket": run.linearIdentifier, "run": run.id,
                           "phase": run.phase, "heartbeat_age_ms": beat,
@@ -130,8 +130,8 @@ def entry_name(target):
     return None if entry is None else entry.name
 
 
-def project_snapshot(target, now=None):
-    now = int(time() * 1000) if now is None else now
+def project_snapshot(target):
+    now = int(time() * 1000)
     name = entry_name(target)
     if not target.store_path.exists():
         row = error_row(name, target.path, f"no store at {target.store_path}")
@@ -163,10 +163,10 @@ def host_entry(entry, now, stale_ms):
                                f"{type(bad).__name__}: {bad}")
 
 
-def host_snapshot(host, now=None):
+def host_snapshot(host):
     from holophyte.host.registry import settings
     from holophyte.serve.serve_host import beat_stale_ms, sweep_stale_items
-    now = int(time() * 1000) if now is None else now
+    now = int(time() * 1000)
     knobs = settings(host)
     items = sweep_stale_items(host.home, now, knobs.sweep_sec)
     projects = []
@@ -246,19 +246,18 @@ def render(snap):
     return lines
 
 
-def show(snap, as_json, out):
-    print(json.dumps(snap) if as_json else "\n".join(render(snap)), file=out)
+def show(snap, as_json):
+    print(json.dumps(snap) if as_json else "\n".join(render(snap)))
     return 1 if any(row["error"] for row in snap["projects"]) else 0
 
 
-def patrol_report(target, as_json=False, out=None, now=None):
-    return show(project_snapshot(target, now), as_json, out or sys.stdout)
+def patrol_report(target, as_json=False):
+    return show(project_snapshot(target), as_json)
 
 
-def host_patrol_report(host, as_json=False, out=None, now=None):
-    out = out or sys.stdout
+def host_patrol_report(host, as_json=False):
     if not host.path.exists():
         print(f"[holo2] no host registry at {host.path}; `factory.py project"
-              " add PATH` registers a project", file=out)
+              " add PATH` registers a project")
         return 1
-    return show(host_snapshot(host, now), as_json, out)
+    return show(host_snapshot(host), as_json)

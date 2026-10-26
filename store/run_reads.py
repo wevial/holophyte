@@ -619,7 +619,7 @@ def last_event_at(conn, run_ids):
         "SELECT runId, MAX(at) FROM runEvents"
         f" WHERE runId IN ({', '.join('?' * len(run_ids))}) GROUP BY runId",
         run_ids).fetchall()
-    return {**dict.fromkeys(run_ids), **dict(rows)}
+    return dict(rows)
 
 
 @dataclass(frozen=True)
