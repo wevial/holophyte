@@ -281,7 +281,7 @@ def run_detail(project, run_id, now=None):
         events = store.read.narrative_events(
             conn, run.id,
             detail_kinds=("implementer_output", "operator_note_consumed",
-                          "crash"))
+                          "crash", "review_boundary"))
         steered = chain_notes(conn, run.ticketId, chain["started_ms"])
         criteria = chain_criteria(judgements)
         precheck = served_precheck(store.read.witness_prechecks(conn, run.id))

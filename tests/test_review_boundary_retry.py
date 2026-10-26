@@ -18,14 +18,16 @@ from holophyte.agents.agent_routes import reset
 from holophyte.review import review_runner
 
 # `run` prints the next numbered turn's output and the preflight marker the
-# runner requires; `inspect` reports the removed container gone.
+# runner requires, then kills itself if that turn has a `.kill` file;
+# `inspect` reports the removed container gone.
 DOCKER = """#!/bin/sh
 case "$1" in
   run)
     n=$(( $(cat "$REVIEW_TURNS/count" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$REVIEW_TURNS/count"
     cat "$REVIEW_TURNS/$n"
-    echo "PREFLIGHT_OK candidate=stand-in" >&2 ;;
+    echo "PREFLIGHT_OK candidate=stand-in" >&2
+    if [ -e "$REVIEW_TURNS/$n.kill" ]; then kill -TERM $$; fi ;;
   inspect) exit 1 ;;
 esac
 exit 0
@@ -113,6 +115,17 @@ class StandInReviewerLoopTests(LoopFixture):
         kept = self.payloads("review_boundary")
         self.assertEqual([(p["line"], p["tail"], p["exit_status"]) for p in kept],
                          [(OFFENDING, first, 0), ('partial {"type', second, 0)])
+
+    def test_a_killed_review_container_is_kept_without_a_same_route_retry(self):
+        cut = '{"type":"item.comp'
+        (self.turns / "1.kill").touch()
+        self.review(events().splitlines(keepends=True)[0] + cut + "\n")
+        ((outcome, kind),) = self.read("SELECT outcome, failureKind FROM runs")
+        self.assertEqual((outcome, kind), ("failed", "review_route"))
+        self.assertEqual(len(self.review_turns()), 1)
+        (boundary,) = self.payloads("review_boundary")
+        self.assertEqual((boundary["role"], boundary["exit_status"],
+                          boundary["line"]), ("review", -15, cut))
 
     def test_a_long_line_with_control_characters_is_stored_clipped_and_clean(self):
         noise = "codex: \x1b[31mstream\x07 cut\t" + "x" * 5000

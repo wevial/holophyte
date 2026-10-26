@@ -95,6 +95,7 @@ def _run(
         )
         error.returncode = result.returncode
         error.output = f"{result.stdout}{result.stderr}"
+        error.stdout = result.stdout
         error.provider_error = provider_error(result.stdout)
         raise error
     return result
@@ -368,6 +369,15 @@ def codex_events(output: str):
             error.line = "".join(ch for ch in line if ch.isprintable())[
                 :EVIDENCE_LINE]
             raise error from exc
+
+
+def unparsed_line(stdout: str) -> str | None:
+    try:
+        for _ in codex_events(stdout):
+            pass
+    except ReviewBoundaryError as error:
+        return error.line
+    return None
 
 
 def provider_error(output: str) -> str | None:
@@ -655,6 +665,12 @@ def run_review(
             with _removing_on_signal(name):
                 result = _run(command, timeout=timeout, on_start=on_start,
                               check=codex is not None)
+        except ReviewBoundaryError as error:
+            if getattr(error, "returncode", None) is not None:
+                error.exit_status = error.returncode
+                error.tail = error.output[-EVIDENCE_TAIL:]
+                error.line = unparsed_line(error.stdout)
+            raise
         finally:
             _remove_container(name)
             if _fingerprint(staged.path, run_id) != staged.fingerprint:
