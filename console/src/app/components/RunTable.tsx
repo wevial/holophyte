@@ -110,7 +110,6 @@ function SortArrow({ order }: { order: RunOrder | null }) {
   );
 }
 
-/** The column heads; Started, Ended, Took, Rounds and State sort the table. */
 export function RunTableHeads({ sort, order, onSort }: { sort: RunSort; order: RunOrder; onSort: (key: RunSort) => void }) {
   return (
     <div data-run-heads className={`${GRID} relative z-[1] border border-rule bg-paper px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
