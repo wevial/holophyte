@@ -33,6 +33,7 @@ from holophyte.agents.review_workspace import (
 from holophyte.agents.turn_progress import TurnProgress
 from holophyte.config.agent_settings import (
     agent_command,
+    fallback_entries,
     review_route,
     review_tier,
     turn_cap,
@@ -183,9 +184,15 @@ def route_down(project, role, failure):
         return reason
     if (isinstance(failure.__cause__, review_runner.ReviewBoundaryError)
             and not command.startswith("claude ")
-            and container_fallback_profile(project, role)):
+            and (container_fallback_profile(project, role)
+                 or unreadable_adversary(project, role, failure))):
         return str(failure)
     return None
+
+
+def unreadable_adversary(project, role, failure):
+    return (role == "adversary" and boundary_evidence(role, failure) is not None
+            and bool(fallback_entries(project, "adversary")))
 
 
 def timed_out(failure):
@@ -205,20 +212,31 @@ def second_attempt(launch, failure):
 
 
 def unreadable_output(role, failure):
+    cause = boundary_evidence(role, failure)
+    if (role == "review" and cause is not None and cause.line is not None
+            and getattr(cause, "returncode", None) is None):
+        return cause
+    return None
+
+
+def boundary_evidence(role, failure):
     cause = failure.__cause__
-    if (role == "review" and isinstance(cause, review_runner.ReviewBoundaryError)
-            and cause.line is not None):
+    if (role in ("review", "adversary")
+            and isinstance(cause, review_runner.ReviewBoundaryError)
+            and cause.exit_status is not None):
         return cause
     return None
 
 
 def record_review_boundary(conn, run_id, role, failure):
-    error = unreadable_output(role, failure)
+    error = boundary_evidence(role, failure)
     if error is None or conn is None or run_id is None:
         return
     import store
-    store.record_event(conn, run_id, "review_boundary",
-                       f"{role} turn output unreadable: {error}", level="detail",
+    summary = f"{role} turn output unreadable (exit {error.exit_status}): {error}"
+    if error.line is not None:
+        summary += f"; line: {error.line}"
+    store.record_event(conn, run_id, "review_boundary", summary, level="detail",
                        payload=json.dumps({"role": role, "line": error.line,
                                            "tail": error.tail,
                                            "exit_status": error.exit_status}))

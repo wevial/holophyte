@@ -15,11 +15,13 @@ import holophyte.loop.implement
 from holophyte.agents import probes
 from holophyte.agents.agent_routes import reset
 from holophyte.review import review_runner
+from holophyte.serve import serve_runs
 
 CUT = '{"type":"item.comp'
 
 # `run` answers by the prompt, since the review and adversary turns run at
-# once; `inspect` reports the removed container gone.
+# once; `inspect` reports the removed container gone. The adversary reply is
+# killed by SIGTERM unless ADVERSARY_EXIT is 0.
 DOCKER = f"""#!{sys.executable}
 import json, os, signal, subprocess, sys
 args = sys.argv[1:]
@@ -42,7 +44,8 @@ if prompt == {probes.REVIEW_PROBE_GOAL!r}:
 elif prompt.startswith("You are a READ-ONLY adversarial"):
     print(json.dumps({{"type": "thread.started"}}))
     print({CUT!r}, flush=True)
-    os.kill(os.getpid(), signal.SIGTERM)
+    if os.environ.get("ADVERSARY_EXIT") != "0":
+        os.kill(os.getpid(), signal.SIGTERM)
 else:
     say("Reviewed the diff; no blockers.\\n"
         "CRITERION 1: met \\u2014 tests/test_thing.py::test_it_works\\n"
@@ -75,6 +78,17 @@ class KilledAdversaryContainerTests(LoopFixture):
         return [json.loads(payload) for (payload,) in self.read(
             f"SELECT payload FROM runEvents WHERE kind = '{kind}' ORDER BY seq")]
 
+    def loop(self):
+        provider = StubProvider(a_task())
+        guard = SpawnGuard(blocked=("claude", "codex", "podman"))
+        with no_agent_processes(guard), \
+                patch.dict(sys.modules,
+                           {"holophyte.board.linear_provider": provider}), \
+                patch.object(holophyte.loop.implement, "agent",
+                             FakeAgent(Commit(path="poetry.lock"))), \
+                contextlib.redirect_stdout(io.StringIO()):
+            holophyte.cli.operator.main(self.project, provider)
+
     def test_a_killed_adversary_container_is_kept_and_switches_to_the_fallback(self):
         calls = self.db.parent / "fallback-calls"
         script = self.db.parent / "adversary-fallback"
@@ -88,15 +102,7 @@ class KilledAdversaryContainerTests(LoopFixture):
         script.chmod(0o755)
         self.configure("[review]\nadversary = true\n"
                        f'[agents]\nadversary_fallback = "{script}"\n')
-        provider = StubProvider(a_task())
-        guard = SpawnGuard(blocked=("claude", "codex", "podman"))
-        with no_agent_processes(guard), \
-                patch.dict(sys.modules,
-                           {"holophyte.board.linear_provider": provider}), \
-                patch.object(holophyte.loop.implement, "agent",
-                             FakeAgent(Commit(path="poetry.lock"))), \
-                contextlib.redirect_stdout(io.StringIO()):
-            holophyte.cli.operator.main(self.project, provider)
+        self.loop()
         switches = [json.loads(summary) for (summary,) in self.read(
             "SELECT summary FROM runEvents WHERE kind = 'route_fallback'")]
         self.assertEqual([s["seat"] for s in switches], ["adversary"])
@@ -108,6 +114,29 @@ class KilledAdversaryContainerTests(LoopFixture):
         (boundary,) = self.payloads("review_boundary")
         self.assertEqual((boundary["role"], boundary["exit_status"],
                           boundary["line"]), ("adversary", -15, CUT))
+
+    def test_an_unreadable_adversary_reply_without_a_fallback_fails_kept(self):
+        self.configure("[review]\nadversary = true\n")
+        with patch.dict(os.environ, {"ADVERSARY_EXIT": "0"}):
+            self.loop()
+        ((run_id, outcome, kind, reason),) = self.read(
+            "SELECT id, outcome, failureKind, outcomeReason FROM runs")
+        self.assertEqual((outcome, kind), ("failed", "review_route"))
+        self.assertIn("reviewer route failed for adversary: "
+                      "Codex emitted invalid JSONL", reason)
+        self.assertEqual(self.read(
+            "SELECT count(*) FROM runEvents WHERE kind = 'route_fallback'"),
+            [(0,)])
+        self.assertEqual(len([p for p in self.payloads("agent_turn")
+                              if p["role"] == "adversary"]), 1)
+        (boundary,) = self.payloads("review_boundary")
+        self.assertEqual((boundary["role"], boundary["exit_status"],
+                          boundary["line"]), ("adversary", 0, CUT))
+        _, detail = serve_runs.run_detail(self.project, str(run_id))
+        (shown,) = [e["summary"] for e in detail["events"]
+                    if e["kind"] == "review_boundary"]
+        self.assertIn("exit 0", shown)
+        self.assertIn(CUT, shown)
 
 
 if __name__ == "__main__":
