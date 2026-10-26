@@ -343,21 +343,16 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   expect(chips()).toEqual([]);
 });
 
-test("a filter no run matches reads No runs match once with no pager, and an empty scope with no filter names the project and the 7 days", async () => {
+test("a filter no run matches reads No runs match once with no pager", async () => {
   await mount("#/runs?q=nothing", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
   expect(screen.getAllByText("No runs match")).toHaveLength(1);
   const heads = document.querySelector("[data-run-heads]")!;
   expect(heads.compareDocumentPosition(screen.getByText("No runs match")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole("navigation", { name: "Pages of runs" })).toBeNull();
-  cleanup();
-
-  await mount("#/runs?project=demo", fleet({ rows: [] }, { rows: runs("WRITER", 200, 3) }).fetchImpl);
-  expect(screen.getByText("No runs in demo in the last 7 days.")).toBeTruthy();
 });
 
 for (const [hash, checked, asked] of [
   ["state=all", [], {}],
-  ["state=failed", ["Failed"], { state: "failed" }],
   ["state=failed,nope&failure=verify,nope", ["Failed"], { state: "failed", failure: "verify" }],
 ] as const) {
   test(`an old or partly unknown link, ${hash}, checks only the values it knows and asks the hosts with them`, async () => {

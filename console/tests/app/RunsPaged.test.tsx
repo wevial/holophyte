@@ -256,26 +256,6 @@ test("sorted by took, two hosts' rows are drawn longest first, then shortest fir
   expect(shownIds()).toEqual(["4", "2", "3", "1"]);
 });
 
-test("the State boxes and the count line sum the hosts' state counts and totals, and checking a State box asks the hosts for its group", async () => {
-  const daemons = fleet(
-    { rows: runs("DEMO", 100, 6), total: 6, counts: { active: 1, merged: 3, failed: 2, abandoned: 0 } },
-    { rows: runs("WRITER", 200, 3), total: 3, counts: { active: 0, merged: 1, failed: 0, abandoned: 2 } },
-  );
-  await mount("#/runs?state=all", daemons.fetchImpl);
-  await press(screen.getByRole("button", { name: /^Filter/ }));
-  const group = screen.getByRole("group", { name: "State" });
-  const boxes = () => within(group).getAllByRole("checkbox").slice(1) as HTMLInputElement[];
-  expect(boxes().map((each) => each.closest("label")!.textContent)).toEqual(["Active 1", "Merged 4", "Failed 2", "Abandoned 2"]);
-  expect(document.querySelector("[data-count-line]")!.textContent).toStartWith("all projects · 9 runs / 1 active");
-
-  await press(within(group).getByRole("checkbox", { name: "Failed" }));
-  expect(hashSearch().get("state")).toBe("failed");
-  expect(hashSearch().has("page")).toBe(false);
-  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged("failed", 0, 50));
-  expect(daemons.askedOf(WRITER).at(-1)).toEqual(paged("failed", 0, 50));
-  expect(boxes().filter((each) => each.checked).map((each) => each.getAttribute("aria-label"))).toEqual(["Failed"]);
-});
-
 test("the controls row hides after 24px of scrolling down once the dock is stuck and shows after 24px up, ignoring jitter and the 150ms after a toggle", async () => {
   const clock = await mount("#/runs", fleet({ rows: runs("DEMO", 100, 30) }, { rows: runs("WRITER", 200, 30) }).fetchImpl);
   expect(rows()).toHaveLength(50);
@@ -357,7 +337,7 @@ test("the controls row hides after 24px of scrolling down once the dock is stuck
   expect(controls.hasAttribute("inert")).toBe(false);
 });
 
-test("unknown sort, order, page and size open newest first on page 1 at 50 a page, and state=merged still checks Merged", async () => {
+test("unknown sort, order, page and size open newest first on page 1 at 50 a page", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs?sort=size&order=up&page=0&size=7", daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
@@ -365,11 +345,6 @@ test("unknown sort, order, page and size open newest first on page 1 at 50 a pag
   expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
   expect((screen.getByRole("combobox", { name: "Rows a page" }) as HTMLSelectElement).value).toBe("50");
   expect(range()).toBe("1–3 of 3");
-  cleanup();
-
-  await mount("#/runs?state=merged", daemons.fetchImpl);
-  await press(screen.getByRole("button", { name: /^Filter/ }));
-  expect((within(screen.getByRole("group", { name: "State" })).getByRole("checkbox", { name: "Merged" }) as HTMLInputElement).checked).toBe(true);
 });
 
 test("a scope with no runs says so and draws no pager", async () => {

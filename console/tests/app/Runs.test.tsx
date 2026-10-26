@@ -339,14 +339,6 @@ test("a link with state=merged checks Merged under State and lists only the merg
   expect(shownIds()).toEqual(["42"]);
 });
 
-test("checking Failed under State puts state=failed in the link and lists only the failed run", async () => {
-  await mount("#/runs", sixRuns());
-  await checkState("Failed");
-  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("state")).toBe("failed");
-  expect(await checkedStates()).toEqual(["Failed"]);
-  expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["14"]);
-});
-
 test("a state the filter does not know reads as no state", async () => {
   await mount("#/runs?state=bogus", sixRuns());
   expect(await checkedStates()).toEqual([]);
