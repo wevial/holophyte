@@ -33,6 +33,7 @@ T0 = 1_700_000_000_000
 SAMPLES = {
     ("status",): ([], "status", True, None, {}),
     ("report",): ([], "report", True, None, {}),
+    ("patrol",): ([], "patrol", True, None, {}),
     ("sweep",): (["--act"], "sweep", True, None, {"act": True}),
     ("board", "diff"): ([], "board_diff", True, None, {}),
     ("board", "import"): (["--dry-run"], "board_import", True, None,

@@ -460,7 +460,7 @@ def round_caps(conn, run_ids):
         " ORDER BY e.id DESC LIMIT 1))"
         f" FROM runs r WHERE r.id IN ({', '.join('?' * len(run_ids))})",
         run_ids).fetchall()
-    return dict(rows)
+    return {**dict.fromkeys(run_ids), **dict(rows)}
 
 
 @dataclass(frozen=True)
@@ -590,3 +590,57 @@ def stranded_runs(conn):
         " AND r.id = t.lastRunId AND r.outcome = 'failed'"
         " ORDER BY r.endedAt, r.id").fetchall()
     return [_failed_run(row) for row in rows]
+
+
+@dataclass(frozen=True)
+class StrandedTicket:
+    linearIdentifier: str
+    runId: int | None
+    outcome: str | None
+    outcomeReason: str | None
+    endedAt: int | None
+
+
+def stranded_tickets(conn):
+    rows = conn.execute(
+        "SELECT t.linearIdentifier, r.id, r.outcome, r.outcomeReason, r.endedAt"
+        " FROM tickets t LEFT JOIN runs r ON r.id ="
+        " (SELECT MAX(n.id) FROM runs n WHERE n.ticketId = t.id)"
+        " WHERE t.status = 'in_flight' AND (r.id IS NULL OR r.endedAt IS NOT NULL)"
+        " ORDER BY t.id").fetchall()
+    return [StrandedTicket(*row) for row in rows]
+
+
+def last_event_at(conn, run_ids):
+    run_ids = tuple(run_ids)
+    if not run_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT runId, MAX(at) FROM runEvents"
+        f" WHERE runId IN ({', '.join('?' * len(run_ids))}) GROUP BY runId",
+        run_ids).fetchall()
+    return {**dict.fromkeys(run_ids), **dict(rows)}
+
+
+@dataclass(frozen=True)
+class EndedAttempt:
+    id: int
+    outcome: str | None
+    failureKind: str | None
+    outcomeReason: str | None
+
+
+def last_ended_runs(conn, count):
+    rows = conn.execute(
+        "SELECT t.linearIdentifier, r.id, r.outcome, r.failureKind,"
+        " r.outcomeReason FROM (SELECT id, ticketId, outcome, failureKind,"
+        " outcomeReason, ROW_NUMBER() OVER (PARTITION BY ticketId"
+        " ORDER BY id DESC) AS newest FROM runs WHERE endedAt IS NOT NULL) r"
+        " JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.newest <= ?"
+        " AND t.status IN ('ready', 'in_flight', 'blocked_on_operator')"
+        " ORDER BY t.id, r.id DESC", (count,)).fetchall()
+    runs = {}
+    for row in rows:
+        runs.setdefault(row[0], []).append(EndedAttempt(*row[1:]))
+    return runs

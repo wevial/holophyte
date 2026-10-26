@@ -21,7 +21,8 @@ TOKEN_FILE = "token_file"
 TRANSPORTS = ("ssh", "http")
 CLIENT_KEYS = frozenset((DEFAULT, HOST, REMOTE_COMMAND, TIMEZONE,
                          TRANSPORT_KEY, URL, TOKEN_FILE))
-HOST_FORMS = frozenset(("--status", "--serve", "--supervise", "GET /attention"))
+HOST_FORMS = frozenset(("--status", "--patrol", "--serve", "--supervise",
+                        "GET /attention"))
 
 
 class Resolved(NamedTuple):

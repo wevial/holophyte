@@ -6,6 +6,7 @@ from pathlib import Path
 
 from holophyte.cli.board_verbs import require_board
 from holophyte.cli.operator import report
+from holophyte.cli.patrol import host_patrol_report, patrol_report
 from holophyte.cli.status import host_status_report, status_report
 from holophyte.cli.store_import import dry_run
 from holophyte.config.serve_settings import serve_config
@@ -28,11 +29,13 @@ def _host_mode(parser, args):
     if args.supervise:
         from holophyte.host.sweep_host import supervise_host
         return supervise_host(Host.locate(), once=args.once)
-    if not args.status:
+    if not (args.status or args.patrol):
         parser.error("the following arguments are required: project (only "
-                     "--status, --serve and --supervise have a host form)")
+                     "--status, --patrol, --serve and --supervise have a host"
+                     " form)")
+    report = host_patrol_report if args.patrol else host_status_report
     try:
-        return host_status_report(Host.locate(), as_json=args.json)
+        return report(Host.locate(), as_json=args.json)
     except HostError as bad:
         raise SystemExit(str(bad)) from None
 
@@ -42,6 +45,8 @@ def _read_only_mode(args, target):
         return lambda: report(target)
     if args.status:
         return lambda: status_report(target, as_json=args.json)
+    if args.patrol:
+        return lambda: patrol_report(target, as_json=args.json)
     if args.import_store is not None:
         return lambda: dry_run(target, args.import_store)
     if args.serve is not None:

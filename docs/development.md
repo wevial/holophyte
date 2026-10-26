@@ -351,6 +351,9 @@ Each module, one line:
 - `holophyte/board/provider.py` — the `Provider` protocol the loop talks to a board through.
 - `holophyte/board/linear_provider.py` — the Linear GraphQL client: claim/fetch_task/
   set_state/comment, ready-ticket and blocker resolution, issue creation.
+- `holophyte/cli/patrol.py` — `--patrol [--json]`: per project, the
+  attention items grouped by kind, the runs in flight, stranded tickets,
+  quiet runs and repeat failures, less `[patrol] ignore`; read only.
 - `holophyte/cli/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.

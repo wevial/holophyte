@@ -32,6 +32,8 @@ from store.run_reads import (  # noqa: F401
     ended_runs,
     failed_attempts_since,
     finished_runs,
+    last_ended_runs,
+    last_event_at,
     last_independent_verdict,
     latest_human_intervention_at,
     latest_intervention,
@@ -45,6 +47,7 @@ from store.run_reads import (  # noqa: F401
     run_chains,
     run_snapshot,
     stranded_runs,
+    stranded_tickets,
     toil_since,
     witness_prechecks,
 )

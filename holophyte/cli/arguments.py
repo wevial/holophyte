@@ -153,9 +153,9 @@ def _modifier_checks(parser, args):
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
-    if args.json and not args.status:
-        parser.error("--json says how --status prints; it prints nothing "
-                     "by itself")
+    if args.json and not (args.status or args.patrol):
+        parser.error("--json says how --status or --patrol prints; it prints "
+                     "nothing by itself")
     if args.once and (not args.supervise or args.target is not None):
         parser.error("--once is the host sweep's single run: --supervise "
                      "--once with no project")
@@ -312,8 +312,15 @@ def build_parser():
         help="print what the factory is doing now -- projects, live and "
              "parked runs, ready tickets, schema, lock holders -- and exit; "
              "reads only")
+    modes.add_argument(
+        "--patrol", action="store_true",
+        help="print each project's attention items by group, its runs in "
+             "flight, stranded tickets, quiet runs and repeat failures, "
+             "less the [patrol] ignore list, or one `nothing to do` line; "
+             "reads only")
     parser.add_argument("--json", action="store_true",
-                        help="with --status: print it as one JSON object")
+                        help="with --status or --patrol: print it as one "
+                             "JSON object")
     modes.add_argument(
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "

@@ -78,7 +78,8 @@ def _legacy_cli(argv):
                      " one it serves the host")
     # Modes that write nothing locate without adopting: adoption moves files.
     target = Project.locate(args.target, adopt=not (
-        args.import_store is not None or args.board_diff or args.dry_run))
+        args.import_store is not None or args.board_diff or args.dry_run
+        or args.patrol))
     target.config()
     check_config(target)
     boardless = _boardless_mode(args, target)

@@ -13,6 +13,7 @@ command family, [below](#project-commands).
 | `--sweep --act PROJECT` | fails tripped runs, releases their leases, removes stray containers; retires finished tickets' worktrees and local branches; prints the same `failures KIND: N` lines | store, Docker, git |
 | `--board-diff PROJECT` | prints one line per board-owned field (title, body, priority, labels, column) where the store's row differs from the board's ready listing, one per listed issue with no store row, one per `ready` row with no live run the listing no longer names (in `[board] mode = "store"` only while its column is `ready`, since a store-mode ticket leaves the queue by its column), then a summary; exits 0 with none, 1 otherwise; a project with no `[board]` table exits naming the key | Linear (read), store, read-only |
 | `--status [--json] PROJECT` | prints what the factory is doing now: projects, live and parked runs, one `stuck KEY: waits on DEP, which needs a spec: REASON (N queued behind)` line for each ticket waiting on a dependency only a person can move (`stuck` in the JSON), two lines for each open story (state, generation, children merged/running/frontier/waiting, each witness's latest verdict at the last ledgered commit, errors, open decisions, open proposals, age, then one line per open proposal: `proposal pN from KEY-m: TEXT`), one `stale config KEY "ENTRY": matches no tracked file on REF SHA` line for each `[merge] ui_paths`, `[review] high_paths` or `medium_paths` or `[worktree] setup` input that matches no file tracked on main (`stale_config_paths` in the JSON), ready tickets, schema, lock holders; a live run's JSON row counts the `holo steer` notes no turn has carried yet as `steer_pending`; it carries `silent`, true when its heartbeat is older than `[supervisor] heartbeat_stale_min`; `--json` prints it as one JSON object | store, read-only |
+| `--patrol [--json] PROJECT` | prints what needs the operator seat, in one call: the `GET /attention` items in groups keyed by kind, then `:park_kind` (`blocked:thread`, `pr_open:ci`) or, for a `stuck_wait`, `:dependency_state`; the runs in flight with phase and heartbeat age; stranded tickets, `in_flight` with their newest run ended, whatever its outcome, or with no run; quiet runs, live with heartbeat and newest run event both older than `[patrol] quiet_min`; repeat failures, an open ticket whose `[patrol] repeat_runs` newest ended runs all failed with one `failureKind` and one reason. A ticket in `[patrol] ignore` is left out of every section. A project with none of attention, stranded, quiet or repeat entries is one line, `[NAME] nothing to do`, with ` · N in flight` and ` · ignored KEY` when they apply; `--json` prints it as one JSON object (below) | store, read-only |
 | `--import-store PATH --dry-run PROJECT` | opens the store at `PATH` and the project's own read-only and prints, per table, the rows an import would move, their id range, the offset a remap would add and a sha256 of the rows; refuses stores at different schema versions; `--dry-run` is required | store, read-only |
 | `--board-import [--dry-run] PROJECT` | copies every open issue of the project's Linear board, Backlog included, into its store by board id in one transaction, before the project moves to the native board: a row the store holds keeps its id, runs, ledger and `dependsOn`, a new one takes the issue's column and open blockers; prints `[holo2] KO-n: new`, `changed` (its revision moved) or `unchanged` per issue, then `[holo2] board import: N new, M changed, K unchanged; P pushes and Q notes pending for Linear`; a failure part-way rolls back and running it again is the restart; `--dry-run` prints the same and writes nothing; `[board] kind = "native"` is refused with exit 1 before Linear is asked | Linear (read), store |
 | `--supervise PROJECT` | the acting sweep every `sweep_interval_sec`, under the project's supervisor lock; runs the code it started with, and exits for its service manager to restart when a newer build has stamped the store; refused for a project `host.toml` lists, which the host sweep watches | store |
@@ -66,7 +67,20 @@ a live run continues through a move but is aborted by a cancel, ending
 `abandoned` at its next safe point. Both are usage errors on a Linear
 project, whose tickets are moved in Linear.
 
-`--report`, `--status`, `--sweep` and `--import-store --dry-run` read the
+`--patrol --json` prints `{"now", "form", "host", "projects"}`: `form` is
+`host` or `project`; `host.attention` holds the host-level items the host
+form finds; each of `projects`, in `host.toml` order, is `{"name", "path",
+"error", "clean", "attention", "in_flight", "stranded", "quiet",
+"repeat_failures", "ignored"}`, with `attention` a list of `{"group",
+"items"}`, each item as `GET /attention` gives it; `in_flight` rows hold
+`ticket`, `run`, `phase` and `heartbeat_age_ms`; `stranded` rows `ticket`,
+`run` and `outcome` (null with no run), `reason` and `ended_ms`; `quiet` rows
+`ticket`, `run`, `phase`, `heartbeat_age_ms` and `event_age_ms`;
+`repeat_failures` rows `ticket`, `runs` (newest first), `failure_kind` and
+`reason`; `ignored` the ignored keys that hid an entry. The exit is 1 when a
+project's `error` is set.
+
+`--report`, `--status`, `--patrol`, `--sweep` and `--import-store --dry-run` read the
 store and call nobody; `--serve` reads it too, and writes only through its
 two opt-ins, `[serve] actions` and `config_edit`
 ([The daemon's actions](daemon.md)); the loop and
@@ -103,13 +117,14 @@ See [Operating](../operating.md#registering-and-disabling-projects).
 
 A mode given no project means the host: every project listed in the host
 registry, `HOLOPHYTE_HOME/host.toml`, which `project add` and `project
-remove` write. `--status`, `--serve` and `--supervise` are the host forms;
+remove` write. `--status`, `--patrol`, `--serve` and `--supervise` are the host forms;
 any other mode without a project is a usage error.
 
 | Invocation | Does | Touches |
 | --- | --- | --- |
 | `--status [--json]` | the host form: the checkout's build and the last sweep's, the home's `supervisor.lock`, `sweep.json` (`sweep: none` without one), then every project in `HOLOPHYTE_HOME/host.toml` as the project form prints it, each line prefixed `[NAME]`; a project whose config, store or file cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
 | `--serve [HOST:PORT]` | the host daemon: every registered project's routes under `/projects/NAME/...` (`NAME` its `[serve] name`), and the host's `/status` and `/attention` at the root; serves on the socket the service manager hands over (`LISTEN_FDS`), else the address given, else `host.toml`'s `[serve] bind`; `host.toml`'s `[serve] machine_token_file` is the bearer beyond loopback and for every write, `[serve] actions` opens the project actions and `POST /actions/run-sweep`. On a factory `HEAD` move it exits 0 when handed its socket, and re-executes otherwise | `host.toml`, each store; writes only through the opt-ins, and `run-sweep` appends to `HOLOPHYTE_HOME/host-actions.jsonl` |
+| `--patrol [--json]` | the host form of `--patrol`: the host-level attention items (`sweep_stale`, `project_error`, `no_store`, `no_project_row`) as `[host] attention KIND` lines, then every project in `host.toml` order as the project form prints it; a project that cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
 | `--supervise [--once]` | the host sweep: under `HOLOPHYTE_HOME/supervisor.lock` (a second run beside a live one exits 1 naming its pid), sweeps every registered store and bumps its one host-sweep beat (pid 0), then acts on the trips and reconciles pull requests, board closes and owed loops round-robin under a deadline of half `[supervisor] sweep_sec`; a project whose own `supervisor.lock` names a live pid is skipped, a dead one is removed; a disabled project, or one with no store or no row for its path, is skipped; writes `HOLOPHYTE_HOME/sweep.json` after every project; `--once` is one run, exit 1 when any project errored, and without it a run every `sweep_sec` until SIGINT/SIGTERM | `host.toml`, each store, `sweep.json`, Linear, GitHub, the loop units |
 
 ## holo
@@ -130,7 +145,7 @@ that answers:
 A value holding a path separator, or naming an existing directory, is a
 repository path; any other value is a `[serve] name` in `host.toml`, and a
 name it does not register exits 2 naming the registered names rather than
-asking the next source. With no source answering, `status`, `serve` and
+asking the next source. With no source answering, `status`, `patrol`, `serve` and
 `supervise` are the [host forms](#host-forms), as is the `attention` read
 below, and any other command exits 2
 naming all four sources. `--verbose` prints the project and the source that
@@ -144,6 +159,7 @@ and by a fresh claim's implement stage, as `--scout` is by the host sweep.
 | Command | Aliases | Factory invocation |
 | --- | --- | --- |
 | `holo status [--json] [--watch [SECONDS]]` | | `--status [--json] [PROJECT]` |
+| `holo patrol [--json]` | | `--patrol [--json] [PROJECT]` |
 | `holo report [--since WINDOW] [--notes] [--json]` | | none: the window's counts, read from the store as below; `factory.py --report PROJECT` is unchanged |
 | `holo sweep [--act]` | | `--sweep [--act] PROJECT` |
 | `holo board diff` | | `--board-diff PROJECT` |

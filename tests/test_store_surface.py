@@ -319,6 +319,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "ended_runs",
                                                     "failed_attempts_since",
                                                     "finished_runs",
+                                                    # HOLO-595: `holo patrol`.
+                                                    "last_ended_runs",
+                                                    "last_event_at",
                                                     "last_independent_verdict",
                                                     "latest_human_intervention_at",
                                                     # HOLO-396: config last save.
@@ -340,6 +343,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "run_chains",
                                                     "run_snapshot",
                                                     "stranded_runs",
+                                                    "stranded_tickets",
                                                     "toil_since",
                                                     # HOLO-495: `/runs/N`'s
                                                     # witness pre-check.
