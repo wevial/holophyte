@@ -3,20 +3,11 @@
     {
       "run": 1,
       "ticket": "KO-7",
-      "pr_url": "https://github.com/OWNER/REPO/pull/7",
+      "pr_url": null,
       "at": 1750000000000,
       "kind": "round",
       "source": "loop",
       "text": "Round 1: ADDRESS operator_note event 2"
-    },
-    {
-      "run": 4,
-      "ticket": "KO-10",
-      "pr_url": "https://github.com/OWNER/REPO/pull/9",
-      "at": 1750000000000,
-      "kind": "park",
-      "source": "factory",
-      "text": "a thread needs a human's answer; nothing was posted on it"
     },
     {
       "at": 1750000000000,
@@ -37,23 +28,13 @@
     {
       "run": 3,
       "ticket": "KO-9",
-      "pr_url": null,
+      "pr_url": "https://github.com/example/repo/pull/9",
       "at": 1750000000000,
       "kind": "intervention",
       "source": "operator",
       "text": "human approve: go",
       "cleared": null,
       "waited_ms": null
-    },
-    {
-      "run": 5,
-      "ticket": "KO-11",
-      "pr_url": null,
-      "at": 1750000000000,
-      "kind": "failure",
-      "source": "factory",
-      "text": "swept: no heartbeat for 20 minutes",
-      "failure_kind": "swept"
     }
   ],
   "active_outages": [],
