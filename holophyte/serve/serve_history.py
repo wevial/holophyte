@@ -45,7 +45,7 @@ def parse_offset(query):
 
 def parse_list(query, name, allowed=None):
     text = parse_filter(query, name)
-    if not text:
+    if text is None or (allowed is None and not text):
         return ()
     values = tuple(text.split(","))
     for value in values:

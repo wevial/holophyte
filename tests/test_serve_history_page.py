@@ -165,7 +165,9 @@ class HistoryPageTests(ServeTestCase):
                                   ("offset", "x", "x"),
                                   ("state", "open", "open"),
                                   ("state", "failed,open", "open"),
-                                  ("failure", "verify,nope", "nope")):
+                                  ("failure", "verify,nope", "nope"),
+                                  ("state", "", ""),
+                                  ("failure", "", "")):
             with self.subTest(param=param, value=value):
                 body = self.ask(f"&{param}={value}", code=400)
                 self.assertIn(param, body["error"])
