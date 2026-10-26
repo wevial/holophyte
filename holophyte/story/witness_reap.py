@@ -21,7 +21,7 @@ DELETED = " (deleted)"
 def stop(proc, tree):
     if proc is not None:
         _stop_group(proc)
-    return stop_inside(tree)
+    stop_inside(tree)
 
 
 def stop_inside(tree):

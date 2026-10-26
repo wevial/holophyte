@@ -77,7 +77,7 @@ class _Command:
             self.held -= 1
             self.unwind()
 
-    def arm(self, proc, tree=None):
+    def arm(self, proc, tree):
         self.proc, self.tree = proc, tree
         self.unwind()
 
