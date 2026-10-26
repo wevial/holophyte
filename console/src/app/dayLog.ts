@@ -97,8 +97,7 @@ const humanAction = (line: string) => /^human (\w+)/.exec(line)?.[1];
 
 function failedPhrase(entry: LedgerEntry, line: string): string {
   if (entry.failure_kind) return `failed: ${words(entry.failure_kind)}`;
-  const what = /^FAILED (\w+)/.exec(line)?.[1];
-  return what ? `failed: ${words(what.toLowerCase())}` : "failed";
+  return /^FAILED verify\b/.test(line) ? "failed: verify" : "failed";
 }
 
 function parkPhrase(entry: LedgerEntry): string {
@@ -136,7 +135,8 @@ function babysitPhrase(line: string): string {
   const checked = checks ? `checks ${CHECKS[checks] ?? checks}` : "";
   const threads = Number(/: (\d+) unresolved thread/.exec(line)?.[1] ?? 0);
   const open = threads > 0 ? `${threads} open ${threads === 1 ? "thread" : "threads"}` : "";
-  return `babysit pass ${pass}: ${[open, checked].filter(Boolean).join(", ")}`;
+  const state = [open, checked].filter(Boolean).join(", ");
+  return state ? `babysit pass ${pass}: ${state}` : `babysit pass ${pass}`;
 }
 
 function fixPhrase(line: string): string {
@@ -224,6 +224,8 @@ export function keeps(filter: DayLogFilter, entry: LedgerEntry): boolean {
 
 const prefsKey = (origin: string) => ["prefs", origin] as const;
 
+const writes = new Map<string, Promise<unknown>>();
+
 async function putDayLog(fetch: (url: string, init?: RequestInit) => Promise<Response>, url: string, filter: DayLogFilter): Promise<string | null> {
   let response: Response;
   try {
@@ -259,9 +261,10 @@ export function useDayLogFilter(): { filter: DayLogFilter; setFilter: (next: Day
   const setFilter = (next: DayLogFilter) => {
     void client.cancelQueries({ queryKey: prefsKey(origin) }).then(() =>
       client.setQueryData<Prefs>(prefsKey(origin), (previous) => ({ updated_ms: null, ...previous, day_log: next })));
-    void putDayLog(deps.fetch, url, next).then((reason) => {
+    const write = (writes.get(origin) ?? Promise.resolve()).then(() => putDayLog(deps.fetch, url, next)).then((reason) => {
       if (reason != null) toast(`Today's log filter not saved: ${reason}`);
     });
+    writes.set(origin, write);
   };
   return { filter: data?.day_log ?? HIGHLIGHTS, setFilter };
 }

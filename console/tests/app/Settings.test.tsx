@@ -260,6 +260,10 @@ test("ticking Verdicts selects Manual and adds the verdicts to the log; a cleare
   expect(ticked()).toEqual(before);
   await click(screen.getByRole("button", { name: "Everything" }));
   expect(screen.getAllByRole("checkbox").every((input) => (input as HTMLInputElement).checked)).toBe(true);
+  await toOverview();
+  expect(logPhrases()).toEqual(["WRITER-1 merged", "DEMO-1 merged", "DEMO-1 review round 2: approve", "DEMO-1 review round 1: changes asked"]);
+  expect(screen.queryByRole("button", { name: /^(Show all|Highlights only)/ })).toBeNull();
+  await click(screen.getByRole("link", { name: "Filter Today's log" }));
   await click(screen.getByRole("button", { name: "Highlights" }));
   expect(ticked()).toEqual(HIGHLIGHT_TICKS);
 });
