@@ -353,7 +353,17 @@ Each module, one line:
   set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `holophyte/cli/patrol.py` — `--patrol [--json]`: per project, the
   attention items grouped by kind, the runs in flight, stranded tickets,
-  quiet runs and repeat failures, less `[patrol] ignore`; read only.
+  quiet runs and repeat failures, less `[patrol] ignore`, then main's
+  checks, the check-held pull requests and the host's health; read only.
+- `holophyte/pr/check_holds.py` — the patrol's GitHub reads: `main_checks()`,
+  main's check-run conclusion with each red run and whether main requires
+  it, and `pull_checks()`, whether an open pull request is held by a red
+  check as the merge fold decides.
+- `holophyte/host/host_health.py` — the patrol's host part: `tmp_usage()`,
+  `leftovers()` (this user's processes in a finished witness or worktree
+  tree, read from `/proc`), `units()` (`systemctl --user is-active`) and
+  `kernel_errors()` (the last hour's kernel I/O errors), each `readable`
+  or saying why it was skipped.
 - `holophyte/cli/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.

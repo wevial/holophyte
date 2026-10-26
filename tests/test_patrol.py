@@ -26,6 +26,12 @@ MIN = 60_000
 TABLES = ("runs", "tickets", "runEvents", "interventions", "steerNotes")
 
 
+def projects_text(text):
+    """The patrol's text less its `[host]` block."""
+    return "".join(line for line in text.splitlines(keepends=True)
+                   if not line.startswith("[host]"))
+
+
 class PatrolFixture(HostFixture):
     def setUp(self):
         super().setUp()
@@ -147,7 +153,8 @@ class StrandedTests(PatrolFixture):
         self.ended("solo", "A", [("failed", "verify", "red")])
         self.configure("solo", 'ignore = ["A"]')
         self.assertTrue(self.patrol("solo")["clean"])
-        self.assertEqual(self.holo("-p", "solo"),
+        code, text = self.holo("-p", "solo")
+        self.assertEqual((code, projects_text(text)),
                          (0, "[solo] nothing to do · ignored A\n"))
 
 
@@ -299,7 +306,7 @@ class UnreadableTests(PatrolFixture):
         self.assertEqual(code, 1)
         (row,) = json.loads(text)["projects"]
         self.assertIn("DatabaseError", row["error"])
-        self.assertEqual(self.holo("-p", "q")[1].splitlines()[0][:4], "[q] ")
+        self.assertEqual(projects_text(self.holo("-p", "q")[1])[:4], "[q] ")
 
 
 class LastEventTests(PatrolFixture):

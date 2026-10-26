@@ -77,7 +77,34 @@ form finds; each of `projects`, in `host.toml` order, is `{"name", "path",
 `run` and `outcome` (null with no run), `reason` and `ended_ms`; `quiet` rows
 `ticket`, `run`, `phase`, `heartbeat_age_ms` and `event_age_ms`;
 `repeat_failures` rows `ticket`, `runs` (newest first), `failure_kind` and
-`reason`; `ignored` the ignored keys that hid an entry. The exit is 1 when a
+`reason`; `ignored` the ignored keys that hid an entry. Each project also
+holds `main`, main's check runs on GitHub: `state` is `success`, `failure`
+(any red run, with `failed` listing each as `{"name", "required"}`, where
+`required` says main's rules require it), `pending`, `none` (no runs),
+`unknown` (the read failed; `detail` holds the error) or `skipped` (no GitHub
+origin); and `pull_requests`, each open pull request a live or parked run
+carries that a red check holds as the merge fold decides (a red required
+check, or any red check when main requires none): `ticket`, `run`, `url`,
+`number`, `failed`, `open_threads` (the recorded count) and `checks_only`
+(no open threads). A main `failure` or `unknown`, or a held pull request,
+makes the project not `clean`; the text adds `main failure: NAME (required),
+NAME`, `github: unreadable (DETAIL)` and `pr KEY #N held by checks: NAMES`
+with ` (checks only)`. `host` holds, beside `attention`, `tmp`
+(`used_percent` as `df` gives it, `free_bytes`, `full` at 80% or more),
+`leftovers` (this user's processes whose cwd or an absolute argument lies in
+a removed or finished witness tree under the temporary directory or a
+removed or finished worktree: `pid`, `age_sec`, `cwd`, `args`), `units`
+(`systemctl --user is-active` of `holophyte-sweep.timer`,
+`holophyte-serve.socket` and each named project's `holophyte-loop@NAME`;
+`findings` are the `failed` units and a sweep timer not `active`), `kernel`
+(`errors`, the last hour's kernel lines naming an I/O error or an NVMe
+timeout or reset) and `clean`. A part that cannot run is `readable: false`
+with its `detail`. Both forms print the host block first: `[host] nothing
+to do` when clean, else a `[host]` line per attention item and finding
+(`/tmp P% used, SIZE free`, `leftover pid N (AGE): CWD ARGS`, `unit UNIT
+STATE`, `kernel N I/O errors in the last hour: LAST LINE`), then a `[host]`
+line per skipped part (`units: skipped (systemctl is not on this host)`,
+`kernel log: not readable`). The patrol only reports. The exit is 1 when a
 project's `error` is set.
 
 `--report`, `--status`, `--patrol`, `--sweep` and `--import-store --dry-run` read the

@@ -6,13 +6,17 @@ from time import time
 import store.read
 from holophyte.config.config_tables import patrol_config
 from holophyte.holo.render import age
+from holophyte.host.host_health import host_health
 from holophyte.host.supervisor import SWEEPABLE_PHASES
+from holophyte.pr.check_holds import main_checks, pull_checks
+from holophyte.pr.pr_status import parse_pr_url
 from holophyte.serve.views import attention
 
 HOST_KINDS = frozenset(("sweep_stale", "project_error", "no_store",
                         "no_project_row"))
 SECTIONS = ("in_flight", "stranded", "quiet", "repeat_failures")
 REASON_WIDTH = 80
+SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
 
 
 def first_line(text):
@@ -82,12 +86,40 @@ def store_sections(target, now, quiet_ms, repeat_runs):
         events = store.read.last_event_at(conn, [run.id for run in runs])
         tickets = store.read.stranded_tickets(conn)
         ended = store.read.last_ended_runs(conn, repeat_runs)
+        blocked = store.read.blocked_tickets(conn)
     finally:
         conn.close()
     flying = in_flight(runs, now)
     return {"in_flight": flying, "stranded": stranded(tickets),
             "quiet": quiet(flying, events, now, quiet_ms),
-            "repeat_failures": repeat_failures(ended, repeat_runs)}
+            "repeat_failures": repeat_failures(ended, repeat_runs),
+            "pulls": pull_candidates(runs, blocked)}
+
+
+def pull_candidates(runs, blocked):
+    found = [(run.prUrl, run.linearIdentifier, run.id, run.prSeenOpenThreads)
+             for run in runs]
+    found += [(ticket.prUrl, ticket.linearIdentifier, ticket.runId,
+               ticket.prSeenOpenThreads) for ticket in blocked]
+    first = {}
+    for found_pull in found:
+        if found_pull[0] and found_pull[0] not in first:
+            first[found_pull[0]] = found_pull
+    return list(first.values())
+
+
+def held_pulls(target, candidates):
+    held = []
+    for url, ticket, run, open_threads in candidates:
+        pull = parse_pr_url(url)
+        checks = pull_checks(target, pull) if pull is not None else None
+        if checks is None or not checks["held"]:
+            continue
+        held.append({"ticket": ticket, "run": run, "url": url,
+                     "number": pull.number, "failed": checks["failed"],
+                     "open_threads": open_threads,
+                     "checks_only": open_threads == 0})
+    return held
 
 
 def unignored(entries, ignore, hid):
@@ -109,15 +141,20 @@ def project_row(name, target, items, now):
     row["attention"] = attention_groups(unignored(items, knobs.ignore, hid))
     row.update({key: unignored(sections[key], knobs.ignore, hid)
                 for key in SECTIONS})
+    row["main"] = main_checks(target)
+    row["pull_requests"] = unignored(held_pulls(target, sections["pulls"]),
+                                     knobs.ignore, hid)
     row["ignored"] = [key for key in dict.fromkeys(knobs.ignore) if key in hid]
     row["clean"] = not (row["attention"] or row["stranded"] or row["quiet"]
-                        or row["repeat_failures"])
+                        or row["repeat_failures"] or row["pull_requests"]
+                        or row["main"]["state"] in ("failure", "unknown"))
     return row
 
 
 def error_row(name, path, error):
     return {"name": name, "path": str(path), "error": error, "clean": False,
-            "attention": [], **{key: [] for key in SECTIONS}, "ignored": []}
+            "attention": [], **{key: [] for key in SECTIONS}, "main": None,
+            "pull_requests": [], "ignored": []}
 
 
 def entry_name(target):
@@ -137,8 +174,21 @@ def project_snapshot(target):
     else:
         row = guarded_row(name, target, now,
                           lambda: attention(target, now)[1]["items"])
-    return {"now": now, "form": "project", "host": {"attention": []},
-            "projects": [row]}
+    return {"now": now, "form": "project",
+            "host": host_health(host_entries(target), []), "projects": [row]}
+
+
+def host_entries(target):
+    from holophyte.host.registry import Host, HostError, HostProject
+    host = Host.locate()
+    try:
+        entries = list(host.projects())
+    except HostError:
+        entries = []
+    path = target.path.resolve()
+    if not any(entry.path == path for entry in entries):
+        entries.append(HostProject(name=None, path=path, target=target))
+    return entries
 
 
 def host_entry(entry, now, stale_ms):
@@ -176,8 +226,8 @@ def host_snapshot(host):
         found, row = host_entry(entry, now, beat_stale_ms(knobs))
         items.extend(found)
         projects.append(row)
-    return {"now": now, "form": "host", "host": {"attention": items},
-            "projects": projects}
+    return {"now": now, "form": "host",
+            "host": host_health(host.projects(), items), "projects": projects}
 
 
 def item_line(item):
@@ -226,6 +276,24 @@ def _event_age(ms):
     return "none" if ms is None else age(ms // 1000)
 
 
+def check_names(failed):
+    return ", ".join(check["name"] + " (required)" * check["required"]
+                     for check in failed)
+
+
+def github_lines(row):
+    lines = []
+    if row["main"]["state"] == "failure":
+        lines.append(f"main failure: {check_names(row['main']['failed'])}")
+    elif row["main"]["state"] == "unknown":
+        lines.append(f"github: unreadable ({row['main']['detail']})")
+    lines.extend(f"pr {pull['ticket']} #{pull['number']} held by checks:"
+                 f" {check_names(pull['failed'])}"
+                 f"{' (checks only)' if pull['checks_only'] else ''}"
+                 for pull in row["pull_requests"])
+    return lines
+
+
 def project_lines(row, now):
     name = f"[{row['name'] or row['path']}]"
     if row["error"]:
@@ -235,14 +303,47 @@ def project_lines(row, now):
         tail = [f"{len(row['in_flight'])} in flight"] * bool(row["in_flight"])
         return [" · ".join([f"{name} nothing to do", *tail,
                             *[ignored] * bool(ignored)])]
-    lines = attention_lines(row) + section_lines(row, now)
+    lines = attention_lines(row) + section_lines(row, now) + github_lines(row)
     return [name, *(f"  {line}" for line in lines + [ignored] * bool(ignored))]
 
 
-def render(snap):
-    lines = [f"[host] attention {item['kind']}"
+def size(count):
+    for unit in SIZE_UNITS:
+        if count < 1024 or unit == SIZE_UNITS[-1]:
+            return f"{count:.0f} {unit}" if unit == "B" else f"{count:.1f} {unit}"
+        count /= 1024
+
+
+def finding_lines(health):
+    lines = [f"attention {item['kind']}"
              f"{' ' + item['project'] if item.get('project') else ''}:"
-             f" {item_line(item)}" for item in snap["host"]["attention"]]
+             f" {item_line(item)}" for item in health["attention"]]
+    tmp, kernel = health["tmp"], health["kernel"]
+    if tmp.get("full"):
+        lines.append(f"/tmp {tmp['used_percent']}% used,"
+                     f" {size(tmp['free_bytes'])} free")
+    lines.extend(f"leftover pid {process['pid']} ({age(process['age_sec'])}):"
+                 f" {process['cwd']} {process['args']}"
+                 for process in health["leftovers"]["processes"])
+    lines.extend(f"unit {unit['unit']} {unit['state']}"
+                 for unit in health["units"]["findings"])
+    if kernel["errors"]:
+        lines.append(f"kernel {len(kernel['errors'])} I/O errors in the last"
+                     f" hour: {kernel['errors'][-1]}")
+    return lines
+
+
+def host_lines(health):
+    skipped = [f"{label}: {health[key]['detail']}" for key, label in
+               (("tmp", "/tmp"), ("leftovers", "leftovers"),
+                ("units", "units"), ("kernel", "kernel log"))
+               if not health[key]["readable"]]
+    found = ["nothing to do"] if health["clean"] else finding_lines(health)
+    return [f"[host] {line}" for line in found + skipped]
+
+
+def render(snap):
+    lines = host_lines(snap["host"])
     for row in snap["projects"]:
         lines.extend(project_lines(row, snap["now"]))
     return lines
