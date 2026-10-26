@@ -232,7 +232,7 @@ class ReapStaleTests(TokenFixture, unittest.TestCase):
         dead = self.scratch_dir("witness-dead", owner=exited.pid)
         git(self.repo, "worktree", "add", "-q", "--detach", str(dead / "tree"))
         live = self.scratch_dir("witness-live", owner=os.getpid())
-        (live / "tree").mkdir()
+        git(self.repo, "worktree", "add", "-q", "--detach", str(live / "tree"))
         young = self.scratch_dir("witness-young")
         git(self.repo, "worktree", "add", "-q", "--detach", str(young / "tree"))
         dead_sleep = self.sleeper(dead / "tree")
