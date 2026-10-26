@@ -598,7 +598,9 @@ def patrol_config(project):
 
 CONSOLE_KEYS = {
     "daemons": (),
+    "colour": "auto",
 }
+CONSOLE_COLOURS = ("auto", "violet", "teal", "green", "blue")
 
 
 def split_address(text):
