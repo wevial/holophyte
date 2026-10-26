@@ -144,6 +144,7 @@ interface RunPage {
   now: number;
   rows: RunRow[];
   total: number;
+  active: number;
   counts: RunCounts;
   implementers: string[];
   projects: { name: string; count: number }[];
@@ -214,7 +215,11 @@ export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage 
   const merged = historyRows(shown, answers, readiness, peers.now, compareRows(sort, order));
   const counts: RunCounts = { state: { active: 0, merged: 0, failed: 0, abandoned: 0 }, failure: {}, implementer: {} };
   let total = 0;
-  for (const answer of answers.values()) total += answer.total;
+  let active = 0;
+  for (const answer of answers.values()) {
+    total += answer.total;
+    active += answer.counts?.state.active ?? 0;
+  }
   const every = [...answers.values(), ...others.values()];
   for (const answer of every) {
     for (const group of RUN_GROUPS) counts.state[group] += answer.counts?.state[group] ?? 0;
@@ -231,7 +236,7 @@ export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage 
   }
   const projects = [...byName].map(([name, count]) => ({ name, count }));
   return {
-    now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, counts, implementers, projects, picked, settled,
+    now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, active, counts, implementers, projects, picked, settled,
   };
 }
 

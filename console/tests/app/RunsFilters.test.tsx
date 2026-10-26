@@ -376,6 +376,12 @@ test("checking a Project draws only its rows and asks the other host for one row
   expect(chips()).toContain("Implementer: claude opus, codex gpt-6-astra");
 });
 
+test("with a Project checked, the count line counts the active runs of that project's hosts only", async () => {
+  await mount("#/runs", countedFleet().fetchImpl);
+  await check("Project", "writer");
+  expect(countLine()).toStartWith("writer · 3 runs / 0 active");
+});
+
 test("a link's filters show in every control and chip and reach the hosts; a chip's Remove drops its filter and Clear filters keeps sort and size", async () => {
   const daemons = countedFleet();
   await mount("#/runs?q=lock&projects=demo&state=failed,abandoned&failure=verify&range=30d&sort=duration&order=desc&size=25", daemons.fetchImpl);

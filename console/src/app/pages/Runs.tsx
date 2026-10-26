@@ -146,7 +146,7 @@ export function Runs() {
   const order: RunOrder = search.order ?? "desc";
   const page = search.page ?? 1;
   const size = search.size ?? DEFAULT_SIZE;
-  const { now, rows, total, counts, implementers, projects, picked, settled } = useRunPage({ ...search, state: search.state ?? "", sort, order, page, size });
+  const { now, rows, total, active, counts, implementers, projects, picked, settled } = useRunPage({ ...search, state: search.state ?? "", sort, order, page, size });
   const navigate = useNavigate();
   const dock = useRef<HTMLDivElement>(null);
   const controls = useRef<HTMLDivElement>(null);
@@ -187,7 +187,7 @@ export function Runs() {
         <p data-count-line className="font-mono text-[13px] leading-[1.6] [overflow-wrap:anywhere] text-ink-2">
           {scope} · <b className="font-semibold text-ink">{total}</b> runs
           <Slash />
-          <b className="font-semibold text-ink">{counts.state.active}</b> active
+          <b className="font-semibold text-ink">{active}</b> active
           <Slash />
           {orderWords}
         </p>
