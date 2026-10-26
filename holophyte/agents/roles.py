@@ -192,7 +192,7 @@ def route_down(project, role, failure):
 
 def unreadable_adversary(project, role, failure):
     return (role == "adversary" and boundary_evidence(role, failure) is not None
-            and bool(fallback_entries(project, "adversary")))
+            and fallback_entries(project, "adversary"))
 
 
 def timed_out(failure):

@@ -372,8 +372,6 @@ def codex_events(output: str):
 
 
 def keep_exit_evidence(error: ReviewBoundaryError) -> None:
-    if getattr(error, "returncode", None) is None:
-        return
     error.exit_status = error.returncode
     error.tail = error.output[-EVIDENCE_TAIL:]
     error.line = unparsed_line(error.stdout)
