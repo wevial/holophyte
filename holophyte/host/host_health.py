@@ -19,6 +19,9 @@ ARGS_WIDTH = 100
 DELETED = " (deleted)"
 HOST_UNITS = ("holophyte-sweep.timer", "holophyte-serve.socket")
 JUDGED_ACTIVE = "holophyte-sweep.timer"
+UNIT_STATES = frozenset(("active", "reloading", "inactive", "failed",
+                         "activating", "deactivating", "maintenance",
+                         "refreshing"))
 KERNEL_ARGV = ["journalctl", "-k", "-p", "err", "--since", "-1h",
                "--no-pager", "-q"]
 UNREAD_HINT = "not seeing messages"
@@ -141,9 +144,13 @@ def units(names):
         ok, detail = systemctl_user("is-active", unit)
         states.append({"unit": unit,
                        "state": "active" if ok else detail.splitlines()[0]})
+    if not any(entry["state"] in UNIT_STATES for entry in states):
+        return {"readable": False,
+                "detail": f"not readable ({states[0]['state']})",
+                "units": [], "findings": []}
     findings = [entry for entry in states if entry["state"] == "failed"
                 or (entry["unit"] == JUDGED_ACTIVE
-                    and entry["state"] != "active")]
+                    and entry["state"] in UNIT_STATES - {"active"})]
     return {"readable": True, "units": states, "findings": findings}
 
 

@@ -408,6 +408,19 @@ class UnitTests(HostFixtureParts):
                          ("skipped (systemctl is not on this host)", [], True))
         self.assertIn(SKIPPED_UNITS, self.holo()[1].splitlines())
 
+    def test_an_unreachable_user_manager_is_not_readable_and_no_finding(self):
+        self.project("p")
+        self.roomy_tmp()
+        self.on_path({"systemctl": "#!/bin/sh\n"
+                      "echo 'Failed to connect to bus: No medium found' >&2\n"
+                      "exit 1\n"})
+        host = json.loads(self.holo("--json")[1])["host"]
+        self.assertEqual(
+            (host["units"]["readable"], host["units"]["findings"],
+             host["clean"]), (False, [], True))
+        self.assertIn("  units: not readable (Failed to connect to bus:"
+                      " No medium found)", self.holo()[1].splitlines())
+
 
 class KernelTests(HostFixtureParts):
     def journal(self, body):
