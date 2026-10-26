@@ -240,9 +240,9 @@ test("a Started button asks the hosts from its day and a custom range from its F
   expect(chips()).toEqual(["Started: Oct 1 – Oct 20"]);
 });
 
-const countedFleet = () => fleet(
+const countedFleet = (demoRows = 6) => fleet(
   {
-    rows: runs("DEMO", 100, 6),
+    rows: runs("DEMO", 100, demoRows),
     counts: { state: { active: 1, merged: 3, failed: 2, abandoned: 0 }, failure: { verify: 1, review_route: 1 }, implementer: { "claude opus": 4 } },
     implementers: ["claude opus"],
   },
@@ -271,8 +271,9 @@ test("the Filter popover holds Project, State, Failure kind and Implementer with
 });
 
 test("checking State and Failure kind boxes writes them as comma lists in section order, and the State head checks all, then none", async () => {
-  const daemons = countedFleet();
-  await mount("#/runs", daemons.fetchImpl);
+  const daemons = countedFleet(60);
+  await mount("#/runs?page=2", daemons.fetchImpl);
+  expect(hashSearch().get("page")).toBe("2");
   await check("State", "Failed");
   await check("Failure kind", "verify");
   await check("Failure kind", "review");
