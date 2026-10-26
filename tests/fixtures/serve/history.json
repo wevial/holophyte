@@ -23,7 +23,7 @@
       "additions": null,
       "deletions": null,
       "resumed_as": null,
-      "implementer": "claude opus",
+      "implementer": null,
       "pr_url": null,
       "host": null,
       "working_ms": null,
@@ -115,11 +115,7 @@
       "swept": 0,
       "unclassified": 0
     },
-    "implementer": {
-      "claude opus": 1
-    }
+    "implementer": {}
   },
-  "implementers": [
-    "claude opus"
-  ]
+  "implementers": []
 }
