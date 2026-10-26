@@ -28,7 +28,7 @@ def stop(proc, tree):
 
 def stop_inside(tree):
     stopped = set()
-    for _round in range(0):
+    for _round in range(ROUNDS):
         pids = inside(tree)
         if not pids:
             break
