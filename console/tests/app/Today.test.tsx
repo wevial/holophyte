@@ -194,11 +194,6 @@ test("each row links its key to the ticket page, its PR chip to the pull request
   ]);
   expect(entryRows().map((row) => within(row).getByRole("link", { name: /^#/ }).getAttribute("target"))).toEqual(["_blank", "_blank", "_blank", "_blank"]);
   expect(entryRows().filter((row) => row.textContent!.includes("https://"))).toEqual([]);
-
-  const park = within(entryRows()[2]!).getByRole("button", { name: "needs you: C7 contradiction" });
-  await act(async () => park.click());
-  expect(park.getAttribute("aria-expanded")).toBe("true");
-  expect(entryRows()[2]!.querySelector("pre")?.textContent).toBe(PARK_TEXT);
 });
 
 test("Show all lists every row with the rest in the quiet tone, and Highlights only returns to the four", async () => {

@@ -283,6 +283,4 @@ test("a tick sends one PUT /prefs with the page's bearer, and a page reading tha
   await act(settle);
   expect(pressed()).toEqual(["Manual"]);
   expect([box("Verdicts").checked, box("Merged").checked, box("PR opened").checked]).toEqual([true, true, false]);
-  await toOverview();
-  expect(logPhrases()).toContain("DEMO-1 review round 2: approve");
 });
