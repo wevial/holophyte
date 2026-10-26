@@ -371,12 +371,6 @@ def codex_events(output: str):
             raise error from exc
 
 
-def keep_exit_evidence(error: ReviewBoundaryError) -> None:
-    error.exit_status = error.returncode
-    error.tail = error.output[-EVIDENCE_TAIL:]
-    error.line = unparsed_line(error.stdout)
-
-
 def unparsed_line(stdout: str) -> str | None:
     try:
         for _ in codex_events(stdout):
@@ -672,7 +666,9 @@ def run_review(
                 result = _run(command, timeout=timeout, on_start=on_start,
                               check=codex is not None)
         except ReviewBoundaryError as error:
-            keep_exit_evidence(error)
+            error.exit_status = error.returncode
+            error.tail = error.output[-EVIDENCE_TAIL:]
+            error.line = unparsed_line(error.stdout)
             raise
         finally:
             _remove_container(name)
