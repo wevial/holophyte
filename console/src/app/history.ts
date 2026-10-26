@@ -224,10 +224,12 @@ export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage 
   const implementers = [...new Set(every.flatMap((answer) => answer.implementers ?? []))].sort();
   const union = every.length > 0 ? implementers.join(",") : null;
   useEffect(() => { if (union != null) setKnown(union); }, [union]);
-  const projects = hosts.flatMap((host) => {
+  const byName = new Map<string, number>();
+  for (const host of hosts) {
     const name = nameOf(host);
-    return name == null ? [] : [{ name, count: (answers.get(host.key) ?? others.get(host.key))?.total ?? 0 }];
-  });
+    if (name != null) byName.set(name, (byName.get(name) ?? 0) + ((answers.get(host.key) ?? others.get(host.key))?.total ?? 0));
+  }
+  const projects = [...byName].map(([name, count]) => ({ name, count }));
   return {
     now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, counts, implementers, projects, picked, settled,
   };

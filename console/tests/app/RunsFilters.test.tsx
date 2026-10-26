@@ -41,13 +41,13 @@ const NO_COUNTS: HistoryCounts = { state: { active: 0, merged: 0, failed: 0, aba
 
 /** Each daemon answers any `/history` with its rows whose ticket or title holds `q`, cut at `offset` and
  *  `limit`, its `total` counting every row it would answer; every query lands in `asked`. */
-function fleet(demo: Daemon, writer: Daemon) {
+function fleet(demo: Daemon, writer: Daemon, writerPath = "/srv/dev/writer") {
   const asked: { base: string; params: URLSearchParams }[] = [];
   const bodies = (project: string) => ({
     status: { ...working, project, runs: [], queued: [] },
     attention: { level: "none", now: NOW, project, items: [] },
   });
-  const polls = peersFetch(DEMO, { [DEMO]: bodies("/srv/dev/demo"), [WRITER]: bodies("/srv/dev/writer") });
+  const polls = peersFetch(DEMO, { [DEMO]: bodies("/srv/dev/demo"), [WRITER]: bodies(writerPath) });
   const fetchImpl: Fetch = async (url) => {
     for (const [base, daemon] of [[DEMO, demo], [WRITER, writer]] as const) {
       if (!url.startsWith(`${base}/history?`)) continue;
@@ -344,6 +344,12 @@ test("checking State and Failure kind boxes writes them as comma lists in sectio
   await press(await head("State"));
   expect(await checkedIn("State")).toEqual([]);
   expect(hashSearch().has("state")).toBe(false);
+});
+
+test("two hosts serving one project give it one Project box counting both hosts' runs", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: runs("WRITER", 200, 4) }, "/srv/dev/demo");
+  await mount("#/runs", daemons.fetchImpl);
+  expect(await valueRows("Project")).toEqual(["demo 7"]);
 });
 
 test("checking a Project draws only its rows and asks the other host for one row, leaving the scope, and Implementer asks with both labels", async () => {
