@@ -124,6 +124,9 @@ class KilledAdversaryContainerTests(LoopFixture):
         self.assertEqual((outcome, kind), ("failed", "review_route"))
         self.assertIn("reviewer route failed for adversary: "
                       "Codex emitted invalid JSONL", reason)
+        self.assertEqual(self.read(
+            "SELECT count(*) FROM runEvents WHERE kind = 'route_fallback'"),
+            [(0,)])
         self.assertEqual(len([p for p in self.payloads("agent_turn")
                               if p["role"] == "adversary"]), 1)
         (boundary,) = self.payloads("review_boundary")

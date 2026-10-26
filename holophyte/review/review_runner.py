@@ -666,9 +666,10 @@ def run_review(
                 result = _run(command, timeout=timeout, on_start=on_start,
                               check=codex is not None)
         except ReviewBoundaryError as error:
-            error.exit_status = error.returncode
-            error.tail = error.output[-EVIDENCE_TAIL:]
-            error.line = unparsed_line(error.stdout)
+            if getattr(error, "returncode", None) is not None:
+                error.exit_status = error.returncode
+                error.tail = error.output[-EVIDENCE_TAIL:]
+                error.line = unparsed_line(error.stdout)
             raise
         finally:
             _remove_container(name)
