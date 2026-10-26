@@ -109,9 +109,9 @@ def _reason_similarity(one, other):
     return len(one & other) / len(union) if union else 1.0
 
 
-def _reasons_repeat(later, earlier, threshold):
-    return any(_reason_similarity(one, other) >= threshold
-               for one in later for other in earlier)
+def _repeated_reason(later, earlier, threshold):
+    return next((one for one in later for other in earlier
+                 if _reason_similarity(one, other) >= threshold), None)
 
 
 def criteria_stuck(conn, run_id, threshold):
@@ -122,14 +122,15 @@ def criteria_stuck(conn, run_id, threshold):
     reasons = [_criterion_reasons(json.loads(each.findings))
                for each in rounds]
     unmet = set.intersection(*(set(each) for each in reasons))
-    stuck = sorted(
-        n for n in unmet
-        if all(_reasons_repeat(later[n], earlier[n], threshold)
-               for later, earlier in zip(reasons, reasons[1:])))
-    if not stuck:
+    repeated = {}
+    for n in unmet:
+        pairs = [_repeated_reason(later[n], earlier[n], threshold)
+                 for later, earlier in zip(reasons, reasons[1:])]
+        if all(reason is not None for reason in pairs):
+            repeated[n] = pairs[0]
+    if not repeated:
         return None
-    return (sorted(each.round for each in rounds), stuck,
-            {n: reasons[0][n][0] for n in stuck})
+    return sorted(each.round for each in rounds), sorted(repeated), repeated
 
 
 def _spoken_list(items):

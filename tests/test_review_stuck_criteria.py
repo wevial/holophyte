@@ -205,6 +205,21 @@ class RepeatedReasonTests(StuckCriteriaTestCase):
             for part in expected:
                 self.assertIn(part, recorded)
 
+    def test_the_quote_is_the_restatement_that_repeated(self):
+        timeout = "the request timeout is still unbounded"
+        run_id = self.a_run(phase="addressing")
+        self.rounds(run_id,
+                    [code("a.py", 1)] + restated_with(timeout),
+                    [code("b.py", 2)] + restated_with(timeout),
+                    [code("c.py", 3)]
+                    + restated_with("the migration skips the index backfill")
+                    + restated_with(timeout))
+
+        trip, = self.sweep(run_id).trips
+
+        self.assertIn(f'"not met \u2014 {timeout}"', trip.evidence)
+        self.assertNotIn("migration", trip.evidence)
+
     def test_a_threshold_of_one_needs_every_word_repeated(self):
         self.configure("[supervisor]\nreview_overlap_threshold = 1.0\n")
         run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP, REPEATED_GAP)
