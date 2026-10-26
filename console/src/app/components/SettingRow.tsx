@@ -41,7 +41,7 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
           <input aria-label={field.label} readOnly value={JSON.stringify(bound.value)} className="w-full min-w-0 border border-rule bg-paper px-3 py-2 font-mono text-[12px] text-ink-2" />
           <Link to="/settings/$tab" params={{ tab: "toml" }} search={{ project }} className="mt-2 block font-mono text-[12px] text-act underline">{UNBOUND_NOTE}</Link>
         </div> : <>
-          {field.kind === "select" ? <div className="inline-flex border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
+          {field.kind === "select" ? <div className="inline-flex max-w-full flex-wrap border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
             {field.options.map((option) => <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => onChange(option.value, original)} className={`${buttonClass} inline-flex items-center gap-2 ${value === option.value ? "bg-act-wash text-act" : "text-ink-2 hover:text-ink"}`}>
               {option.swatch && <span data-swatch aria-hidden="true" className="size-2.5 shrink-0" style={{ background: `var(${option.swatch})` }} />}
               {option.label}
