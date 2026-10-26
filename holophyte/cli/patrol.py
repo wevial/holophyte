@@ -338,8 +338,9 @@ def host_lines(health):
                (("tmp", "/tmp"), ("leftovers", "leftovers"),
                 ("units", "units"), ("kernel", "kernel log"))
                if not health[key]["readable"]]
-    found = ["nothing to do"] if health["clean"] else finding_lines(health)
-    return [f"[host] {line}" for line in found + skipped]
+    head = "[host] nothing to do" if health["clean"] else "[host]"
+    found = [] if health["clean"] else finding_lines(health)
+    return [head, *(f"  {line}" for line in found + skipped)]
 
 
 def render(snap):

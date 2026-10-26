@@ -28,8 +28,8 @@ from tests.phase_fixture import park_run
 from tests.test_patrol import MIN, NOW, PatrolFixture, projects_text
 
 PULL = "https://github.com/o/n/pull/{}"
-SKIPPED_UNITS = "[host] units: skipped (systemctl is not on this host)"
-UNREADABLE_KERNEL = "[host] kernel log: not readable"
+SKIPPED_UNITS = "  units: skipped (systemctl is not on this host)"
+UNREADABLE_KERNEL = "  kernel log: not readable"
 UNITS_SCRIPT = """#!/bin/sh
 for unit; do :; done
 case "$unit" in
@@ -286,6 +286,16 @@ class LeftoverTests(HostFixtureParts):
             Host.locate().projects())["processes"]}
         self.assertEqual(pids & {kept, gone}, {gone})
 
+    def test_a_removed_cwd_under_a_kept_worktree_parent_is_listed(self):
+        self.project("p")
+        parent = Project.locate(self.conns["p"][2]).worktrees / "feature"
+        (parent / "foo").mkdir(parents=True)
+        gone = self.sleeper(parent / "foo")
+        shutil.rmtree(parent / "foo")
+        pids = {process["pid"] for process in host_health.leftovers(
+            Host.locate().projects())["processes"]}
+        self.assertIn(gone, pids)
+
     def test_a_host_without_proc_skips_the_part(self):
         with patch.object(host_health, "PROC", self.root / "no-proc"):
             self.assertEqual(host_health.leftovers([]),
@@ -310,9 +320,9 @@ class UnitTests(HostFixtureParts):
             {"unit": "holophyte-loop@q", "state": "failed"}])
         self.assertEqual(
             [line for line in self.holo()[1].splitlines()
-             if line.startswith("[host] unit")],
-            ["[host] unit holophyte-sweep.timer inactive",
-             "[host] unit holophyte-loop@q failed"])
+             if line.startswith("  unit")],
+            ["  unit holophyte-sweep.timer inactive",
+             "  unit holophyte-loop@q failed"])
 
     def test_without_systemctl_the_part_is_skipped_and_no_finding(self):
         self.project("p")
@@ -378,14 +388,14 @@ class HostFindingTests(HostFixtureParts):
         self.on_path({"journalctl": "#!/bin/sh\n" + "".join(
             f"echo '{line}'\n" for line in KERNEL_LINES)})
         host = json.loads(self.holo("--json")[1])["host"]
-        lines = [line for line in self.holo()[1].splitlines()
-                 if line.startswith("[host]")]
+        lines = self.holo()[1].splitlines()
         self.assertFalse(host["clean"])
-        self.assertRegex(lines[0], rf"^\[host\] /tmp {host['tmp']['used_percent']}%"
+        self.assertEqual(lines[0], "[host]")
+        self.assertRegex(lines[1], rf"^  /tmp {host['tmp']['used_percent']}%"
                          r" used, \d+(\.\d)? (B|KiB|MiB|GiB|TiB) free$")
-        leftover = (rf"\[host\] leftover pid {pid} \(\d+ s\):"
+        leftover = (rf"  leftover pid {pid} \(\d+ s\):"
                     rf" {re.escape(str(witness))} sleep 600")
         self.assertEqual(len([line for line in lines
                               if re.fullmatch(leftover, line)]), 1)
-        self.assertIn("[host] kernel 2 I/O errors in the last hour:"
+        self.assertIn("  kernel 2 I/O errors in the last hour:"
                       f" {KERNEL_LINES[1]}", lines)

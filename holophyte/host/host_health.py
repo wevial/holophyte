@@ -84,7 +84,7 @@ class FinishedTrees:
             tree = _top(path, root)
             if tree is None:
                 continue
-            return not os.path.isdir(tree) or any(
+            return not os.path.exists(path) or any(
                 _is_under(path, done) for done in finished)
         return False
 

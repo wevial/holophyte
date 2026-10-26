@@ -100,11 +100,12 @@ removed or finished worktree: `pid`, `age_sec`, `cwd`, `args`), `units`
 (`errors`, the last hour's kernel lines naming an I/O error or an NVMe
 timeout or reset) and `clean`. A part that cannot run is `readable: false`
 with its `detail`. Both forms print the host block first: `[host] nothing
-to do` when clean, else a `[host]` line per attention item and finding
-(`/tmp P% used, SIZE free`, `leftover pid N (AGE): CWD ARGS`, `unit UNIT
-STATE`, `kernel N I/O errors in the last hour: LAST LINE`), then a `[host]`
-line per skipped part (`units: skipped (systemctl is not on this host)`,
-`kernel log: not readable`). The patrol only reports. The exit is 1 when a
+to do` when clean, else `[host]` and an indented line per attention item
+(`attention KIND PROJECT: TEXT`) and finding (`/tmp P% used, SIZE free`,
+`leftover pid N (AGE): CWD ARGS`, `unit UNIT STATE`, `kernel N I/O errors in
+the last hour: LAST LINE`), then an indented line per skipped part
+(`units: skipped (systemctl is not on this host)`, `kernel log: not
+readable`). The patrol only reports. The exit is 1 when a
 project's `error` is set.
 
 `--report`, `--status`, `--patrol`, `--sweep` and `--import-store --dry-run` read the
@@ -151,7 +152,7 @@ any other mode without a project is a usage error.
 | --- | --- | --- |
 | `--status [--json]` | the host form: the checkout's build and the last sweep's, the home's `supervisor.lock`, `sweep.json` (`sweep: none` without one), then every project in `HOLOPHYTE_HOME/host.toml` as the project form prints it, each line prefixed `[NAME]`; a project whose config, store or file cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
 | `--serve [HOST:PORT]` | the host daemon: every registered project's routes under `/projects/NAME/...` (`NAME` its `[serve] name`), and the host's `/status` and `/attention` at the root; serves on the socket the service manager hands over (`LISTEN_FDS`), else the address given, else `host.toml`'s `[serve] bind`; `host.toml`'s `[serve] machine_token_file` is the bearer beyond loopback and for every write, `[serve] actions` opens the project actions and `POST /actions/run-sweep`. On a factory `HEAD` move it exits 0 when handed its socket, and re-executes otherwise | `host.toml`, each store; writes only through the opt-ins, and `run-sweep` appends to `HOLOPHYTE_HOME/host-actions.jsonl` |
-| `--patrol [--json]` | the host form of `--patrol`: the host-level attention items (`sweep_stale`, `project_error`, `no_store`, `no_project_row`) as `[host] attention KIND` lines, then every project in `host.toml` order as the project form prints it; a project that cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
+| `--patrol [--json]` | the host form of `--patrol`: the host-level attention items (`sweep_stale`, `project_error`, `no_store`, `no_project_row`) as indented `attention KIND` lines of the `[host]` block, then every project in `host.toml` order as the project form prints it; a project that cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
 | `--supervise [--once]` | the host sweep: under `HOLOPHYTE_HOME/supervisor.lock` (a second run beside a live one exits 1 naming its pid), sweeps every registered store and bumps its one host-sweep beat (pid 0), then acts on the trips and reconciles pull requests, board closes and owed loops round-robin under a deadline of half `[supervisor] sweep_sec`; a project whose own `supervisor.lock` names a live pid is skipped, a dead one is removed; a disabled project, or one with no store or no row for its path, is skipped; writes `HOLOPHYTE_HOME/sweep.json` after every project; `--once` is one run, exit 1 when any project errored, and without it a run every `sweep_sec` until SIGINT/SIGTERM | `host.toml`, each store, `sweep.json`, Linear, GitHub, the loop units |
 
 ## holo
