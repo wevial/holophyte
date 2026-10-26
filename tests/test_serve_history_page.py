@@ -82,10 +82,12 @@ class HistoryPageTests(ServeTestCase):
         self.assertEqual(self.names_of(page), ["15", "14"])
         self.assertEqual((page["total"], page["truncated"], page["offset"]),
                          (7, True, 2))
-        past = self.ask("&offset=7")
-        self.assertEqual((past["rows"], past["total"]), ([], 7))
+        for offset in ("7", "99999999999999999999"):
+            with self.subTest(offset=offset):
+                past = self.ask(f"&offset={offset}")
+                self.assertEqual((past["rows"], past["total"]), ([], 7))
 
-    def test_each_sort_key_orders_rows_and_ties_fall_to_the_newer_start(self):
+    def test_ended_duration_rounds_and_state_sorts_break_ties_by_newer_start(self):
         self.start()
         by_duration = self.ask("&sort=duration&order=desc")
         ended = [self.names[row["id"]] for row in by_duration["rows"]

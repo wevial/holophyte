@@ -6,6 +6,7 @@ from time import time
 import store.read
 from holophyte.serve.serve_runs import (
     INTEGER,
+    SQLITE_MAX_INT,
     commit_url,
     json_host,
     no_store,
@@ -35,7 +36,7 @@ def parse_offset(query):
         return 0
     if not INTEGER.fullmatch(text) or int(text) < 0:
         raise ValueError(f"offset must be a non-negative integer, got {text!r}")
-    return int(text)
+    return min(int(text), SQLITE_MAX_INT)
 
 
 def parse_list(query, name, allowed=None):
@@ -50,12 +51,17 @@ def parse_list(query, name, allowed=None):
     return values
 
 
+def parse_query_text(query):
+    text = parse_filter(query, "q")
+    return text if text and text.strip() else None
+
+
 def parse_history_query(query):
     return RunQuery(
         offset=parse_offset(query),
         sort=parse_filter(query, "sort", HISTORY_SORTS) or "started",
         order=parse_filter(query, "order", HISTORY_ORDERS) or "desc",
-        q=(parse_filter(query, "q") or "").strip() or None,
+        q=parse_query_text(query),
         states=parse_list(query, "state", STATE_GROUPS),
         failures=parse_list(query, "failure", FAILURE_KINDS),
         implementers=parse_list(query, "implementer"))

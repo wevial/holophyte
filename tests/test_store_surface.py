@@ -344,6 +344,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-109: a run's chain
                                                     # of its ticket's runs.
                                                     "run_chains",
+                                                    # HOLO-603: the same.
                                                     "run_counts",
                                                     "run_snapshot",
                                                     "stranded_runs",
