@@ -424,6 +424,8 @@ Each module, one line:
   project's and a host root's, and `/runs/N`, `/runs/N/merge` and
   `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
   writes their JSON Schema and zod or `--check`s them.
+- `holophyte/serve/contract_prefs.py` — the console preferences document
+  a host daemon's root answers at `GET /prefs`, as the contract declares it.
 - `holophyte/serve/contract_pr.py` — the pull request facts and the
   unmerged dependency a parked pull request waits on, as the contract
   declares them on `/attention` and `/status`.
@@ -440,6 +442,10 @@ Each module, one line:
   (KO-758): the gate every one passes (the machine token alone, host
   `[serve] actions`, a native board, `If-Match`) and `PUT
   /projects/NAME/tickets/ID`, an edit authored `console`.
+- `holophyte/serve/serve_prefs.py` — the host daemon's root `GET /prefs`
+  and `PUT /prefs`: the console's preferences in `console-prefs.json` in
+  `HOLOPHYTE_HOME`, the `day_log` shape check, the machine-token gate and
+  the atomic 0600 write.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the

@@ -167,6 +167,7 @@ export const statusSchema = z.looseObject({
   thresholds: thresholdsSchema,
   actions: z.boolean().optional(),
   config_edit: z.boolean(),
+  colour: z.enum(["auto", "violet", "teal", "green", "blue"]).optional(),
   runs: z.array(statusRunSchema),
   queued: z.array(queuedTicketSchema),
   witnesses: witnessSetSchema.nullable().optional(),
@@ -410,6 +411,20 @@ export const hostAttentionSchema = z.looseObject({
   now: z.int(),
 });
 export type HostAttention = z.infer<typeof hostAttentionSchema>;
+
+export const dayLogPrefsSchema = z.looseObject({
+  preset: z.enum(["highlights", "everything", "manual"]),
+  items: z.record(z.string(), z.boolean()),
+  projects: z.record(z.string(), z.boolean()),
+});
+export type DayLogPrefs = z.infer<typeof dayLogPrefsSchema>;
+
+export const prefsSchema = z.looseObject({
+  day_log: dayLogPrefsSchema.nullable(),
+  updated_ms: z.int().nullable(),
+  error: z.string().optional(),
+});
+export type Prefs = z.infer<typeof prefsSchema>;
 
 export const runDetailRunSchema = z.looseObject({
   id: z.int(),
