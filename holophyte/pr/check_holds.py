@@ -43,16 +43,12 @@ def pull_checks(target, pull):
         state = answer.get("state") if isinstance(answer, dict) else None
         head = answer.get("head") if isinstance(answer, dict) else None
         sha = head.get("sha") if isinstance(head, dict) else None
-        if state != "open":
-            return {"state": state, "held": False, "failed": []}
-        if not isinstance(sha, str) or not sha:
-            raise InfraFailure(f"GitHub answered {pull.url} without a head")
+        if state != "open" or not isinstance(sha, str) or not sha:
+            return []
         runs, required = _reads(target, pull, sha)
-    except InfraFailure as bad:
-        return {"state": "unknown", "held": False, "failed": [],
-                "detail": str(bad)}
+    except InfraFailure:
+        return []
     failed = _failed(runs, required)
-    blocking = [check for check in failed
-                if check["required"] or not required]
-    return {"state": state, "head": sha, "held": bool(blocking),
-            "failed": failed}
+    if any(check["required"] or not required for check in failed):
+        return failed
+    return []

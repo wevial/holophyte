@@ -112,11 +112,11 @@ def held_pulls(target, candidates):
     held = []
     for url, ticket, run, open_threads in candidates:
         pull = parse_pr_url(url)
-        checks = pull_checks(target, pull) if pull is not None else None
-        if checks is None or not checks["held"]:
+        failed = pull_checks(target, pull) if pull is not None else []
+        if not failed:
             continue
         held.append({"ticket": ticket, "run": run, "url": url,
-                     "number": pull.number, "failed": checks["failed"],
+                     "number": pull.number, "failed": failed,
                      "open_threads": open_threads,
                      "checks_only": open_threads == 0})
     return held

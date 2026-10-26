@@ -357,8 +357,8 @@ Each module, one line:
   checks, the check-held pull requests and the host's health; read only.
 - `holophyte/pr/check_holds.py` — the patrol's GitHub reads: `main_checks()`,
   main's check-run conclusion with each red run and whether main requires
-  it, and `pull_checks()`, whether an open pull request is held by a red
-  check as the merge fold decides.
+  it, and `pull_checks()`, the red checks holding an open pull request
+  as the merge fold decides.
 - `holophyte/host/host_health.py` — the patrol's host part: `tmp_usage()`,
   `leftovers()` (this user's processes in a finished witness or worktree
   tree, read from `/proc`), `units()` (`systemctl --user is-active`) and
