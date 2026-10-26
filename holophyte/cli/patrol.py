@@ -101,7 +101,9 @@ def pull_candidates(runs, blocked):
     found = [(run.prUrl, run.linearIdentifier, run.id, run.prSeenOpenThreads)
              for run in runs]
     found += [(ticket.prUrl, ticket.linearIdentifier, ticket.runId,
-               ticket.prSeenOpenThreads) for ticket in blocked]
+               ticket.prSeenOpenThreads) for ticket in blocked
+              if store.read.parked_on_pull_request(
+                  ticket.outcome, ticket.prUrl, ticket.parkKind)]
     first = {}
     for found_pull in found:
         if found_pull[0]:

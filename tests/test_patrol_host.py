@@ -191,6 +191,25 @@ class HeldPullTests(GithubFixture):
                          ["K2"])
         self.assertEqual(row["ignored"], ["K1"])
 
+    def test_a_paused_ticket_on_a_red_pull_request_is_not_held(self):
+        self.held_project()
+        store.release(self.conns["q"][0], self.runs["K1"], "paused")
+        self.assertNotIn("K1", [pull["ticket"]
+                                for pull in self.patrol("q")["pull_requests"]])
+
+    def test_a_pull_answer_without_a_state_is_unreadable(self):
+        self.held_project()
+        healthy = self.rest
+
+        def rest(target, pull, method, path, payload=None):
+            return {} if path.endswith("/pulls/7") else healthy(
+                target, pull, method, path, payload)
+        with patch.object(holophyte.pr.pr_status, "rest", rest):
+            row = self.patrol("q")
+        self.assertEqual([pull["number"] for pull in row["unreadable_pulls"]],
+                         [7])
+        self.assertFalse(row["clean"])
+
     def test_an_unreadable_pull_request_is_reported_not_dropped(self):
         self.held_project()
         healthy = self.rest
