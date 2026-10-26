@@ -74,7 +74,7 @@ def parse_body(raw):
 
 
 def stored(home):
-    path = Path(home) / PREFS_FILE
+    path = home / PREFS_FILE
     try:
         raw = path.read_bytes()
     except FileNotFoundError:
@@ -117,7 +117,7 @@ def write_prefs(home, body, now):
             else:
                 document[key] = value
         document["updated_ms"] = now
-        replace(Path(home) / PREFS_FILE, json.dumps(document, indent=2) + "\n")
+        replace(home / PREFS_FILE, json.dumps(document, indent=2) + "\n")
         return read_prefs(home)
 
 
@@ -165,5 +165,5 @@ def put_prefs(handler):
         answer = write_prefs(server.host.home, body, int(time() * 1000))
     except OSError as bad:
         return handler.answer(500, {
-            "error": f"{Path(server.host.home) / PREFS_FILE}: {bad}"})
+            "error": f"{server.host.home / PREFS_FILE}: {bad}"})
     handler.answer(200, answer)
