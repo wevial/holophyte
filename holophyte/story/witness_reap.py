@@ -14,7 +14,6 @@ from holophyte.redact import safe_print as print
 
 STOP_GRACE = 30.0
 POLL = 0.1
-ROUNDS = 5
 OWNER = "owner"
 PROC = Path("/proc")
 DELETED = " (deleted)"
@@ -23,17 +22,14 @@ DELETED = " (deleted)"
 def stop(proc, tree):
     if proc is not None:
         _stop_group(proc)
-    stop_inside(tree)
+    return stop_inside(tree)
 
 
 def stop_inside(tree):
-    stopped = set()
-    for _round in range(ROUNDS):
-        pids = inside(tree)
-        if not pids:
-            break
-        _stop_pids(pids)
+    stopped, until = set(), time.monotonic() + STOP_GRACE
+    while pids := inside(tree):
         stopped.update(pids)
+        _stop_pids(pids, until)
     return len(stopped)
 
 
@@ -119,9 +115,12 @@ def _signal_group(pgid, signum):
     return True
 
 
-def _stop_pids(pids):
+def _stop_pids(pids, until):
+    if time.monotonic() >= until:
+        _signal_pids(pids, signal.SIGKILL)
+        time.sleep(POLL)
+        return
     _signal_pids(pids, signal.SIGTERM)
-    until = time.monotonic() + STOP_GRACE
     while pids and time.monotonic() < until:
         pids = [pid for pid in pids if _running(pid)]
         if pids:
@@ -180,9 +179,10 @@ def _in_tree(pid, roots):
         argv = (entry / "cmdline").read_bytes().decode(errors="replace")
     except OSError:
         argv = ""
-    paths = [cwd, *argv.split("\0")]
-    return any(_names(path, root) for path in paths for root in roots)
+    args = argv.split("\0")
+    paths = [cwd, *args, *(arg.partition("=")[2] for arg in args)]
+    return any(_contained(path, root) for path in paths for root in roots)
 
 
-def _names(path, root):
-    return path == root or path.endswith(root) or root + "/" in path
+def _contained(path, root):
+    return path == root or path.startswith(root + "/")

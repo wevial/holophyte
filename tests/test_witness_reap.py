@@ -118,21 +118,22 @@ class WitnessCommandTreeTests(TokenFixture, unittest.TestCase):
         self.assertIn("timed out", Path(rows[0].evidencePath).read_text())
         self.assertEqual(alive_carrying(self.token), [])
 
-    def test_a_process_spawned_as_the_tree_is_stopped_is_stopped_too(self):
+    def test_a_chain_spawned_as_the_tree_is_stopped_is_stopped_to_its_end(self):
         tree = self.root / "tree"
         tree.mkdir()
-        ready = self.root / "respawner"
-        respawner = (
+        ready, chain = self.root / "ready", self.root / "chain.py"
+        chain.write_text(
             "import os, signal, subprocess, sys, time\n"
-            "def respawn(*_):\n"
-            "    subprocess.Popen(['sleep', sys.argv[2]],"
-            " start_new_session=True)\n"
+            "def successor(*_):\n"
+            "    if int(sys.argv[3]):\n"
+            "        subprocess.Popen([sys.executable, *sys.argv[:3],"
+            " str(int(sys.argv[3]) - 1)], start_new_session=True)\n"
             "    os._exit(0)\n"
-            "signal.signal(signal.SIGTERM, respawn)\n"
-            "open(sys.argv[1], 'w').close()\n"
+            "signal.signal(signal.SIGTERM, successor)\n"
+            "open(sys.argv[1], 'a').close()\n"
             "time.sleep(300)\n")
         first = subprocess.Popen(
-            [sys.executable, "-c", respawner, str(ready), self.token],
+            [sys.executable, str(chain), str(ready), self.token, "8"],
             cwd=tree, start_new_session=True)
         self.addCleanup(first.wait)
         self.assertTrue(wait_for(ready.exists))
@@ -140,6 +141,20 @@ class WitnessCommandTreeTests(TokenFixture, unittest.TestCase):
         witness_reap.stop(None, tree)
 
         self.assertEqual(alive_carrying(self.token), [])
+
+    def test_a_process_beside_the_tree_is_left_running(self):
+        tree = self.root / "tree"
+        tree.mkdir()
+        beside = Path(f"{self.root / 'backup'}{tree}")
+        beside.mkdir(parents=True)
+        sleeper = subprocess.Popen(["sleep", self.token], cwd=beside)
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(lambda: sleeper.poll() is None and sleeper.kill())
+        self.assertTrue(wait_for(lambda: carrying(self.token)))
+
+        witness_reap.stop(None, tree)
+
+        self.assertIsNone(sleeper.poll())
 
 
 @unittest.skipUnless(PROC.is_dir(), "reading survivors needs /proc")
