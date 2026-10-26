@@ -55,7 +55,7 @@ const switcher = () => screen.getByRole("button", { name: /Switch project$/ });
 const find = () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
 const activeName = () => document.getElementById(find().getAttribute("aria-activedescendant")!)?.textContent;
 const badge = () => screen.getByRole("navigation", { name: "Pages" }).querySelector("[data-badge]");
-const optionNames = () => screen.getAllByRole("option").map((option) => option.textContent);
+const optionNames = () => within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option").map((option) => option.textContent);
 
 async function key(target: HTMLElement, name: string) {
   fireEvent.keyDown(target, { key: name });
