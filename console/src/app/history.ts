@@ -170,16 +170,13 @@ export function dayStart(day: string): Date {
 /** The Started window the search asks for, as `/history`'s `since` and
  *  `until`: `from` and `to` are whole local days and win over `range`. */
 function runWindow({ range, from, to }: RunsFilters, now: number): { since: number; until: number | null } {
-  if (from != null || to != null) {
-    const last = to == null ? null : dayStart(to);
-    return {
-      since: from == null ? 0 : dayStart(from).getTime(),
-      until: last == null ? null : new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1).getTime(),
-    };
-  }
+  if (from != null || to != null) return { since: from == null ? 0 : dayStart(from).getTime(), until: to == null ? null : plusDays(dayStart(to), 1) };
   const back = RANGE_DAYS_BACK[range ?? DEFAULT_RANGE];
-  const today = new Date(now);
-  return { since: back == null ? 0 : new Date(today.getFullYear(), today.getMonth(), today.getDate() - back).getTime(), until: null };
+  return { since: back == null ? 0 : plusDays(new Date(now), -back), until: null };
+}
+
+function plusDays(day: Date, days: number): number {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + days).getTime();
 }
 
 /** One page of the scoped fleet's runs in the asked Started window, filters

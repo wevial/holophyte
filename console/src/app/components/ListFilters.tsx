@@ -101,19 +101,21 @@ function usePopover(hidden: boolean) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    setOpen(false);
+    button.current?.focus();
+  };
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      setOpen(false);
-      button.current?.focus();
+      close();
     };
     const onPress = (event: PointerEvent) => {
       if (box.current?.contains(event.target as Node)) return;
       event.preventDefault();
-      setOpen(false);
-      button.current?.focus();
+      close();
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPress);
@@ -125,7 +127,7 @@ function usePopover(hidden: boolean) {
   useEffect(() => {
     if (hidden) setOpen(false);
   }, [hidden]);
-  return { open, setOpen, box, button };
+  return { open, setOpen, close, box, button };
 }
 
 function checkedOf(search: PageSearch, param: string): string[] {
@@ -254,7 +256,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
 }) {
   const { range, from, to } = useSearch({ strict: false }) as { range?: string; from?: string; to?: string };
   const write = useWrite();
-  const { open, setOpen, box, button } = usePopover(hidden);
+  const { open, setOpen, close, box, button } = usePopover(hidden);
   const custom = from != null || to != null;
   const field = "min-h-8 border border-rule bg-paper px-2 font-mono text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
   return (
@@ -285,7 +287,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
             <input type="date" value={to ?? ""} min={from} className={field}
               onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
           </label>
-          <button type="button" onClick={() => { setOpen(false); button.current?.focus(); }}
+          <button type="button" onClick={close}
             className="min-h-8 cursor-pointer self-end border border-ink-3 px-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-ink hover:bg-paper-2">
             Done
           </button>
