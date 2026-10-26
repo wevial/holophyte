@@ -6,6 +6,7 @@ from time import time
 import store.read
 from holophyte.serve.serve_runs import (
     INTEGER,
+    SQLITE_MAX_DIGITS,
     SQLITE_MAX_INT,
     commit_url,
     json_host,
@@ -34,9 +35,12 @@ def parse_offset(query):
     text = parse_filter(query, "offset")
     if text is None:
         return 0
-    if not INTEGER.fullmatch(text) or int(text) < 0:
+    digits = text.lstrip("-").lstrip("0")
+    if not INTEGER.fullmatch(text) or (text.startswith("-") and digits):
         raise ValueError(f"offset must be a non-negative integer, got {text!r}")
-    return min(int(text), SQLITE_MAX_INT)
+    if len(digits) > SQLITE_MAX_DIGITS:
+        return SQLITE_MAX_INT
+    return min(int(digits or "0"), SQLITE_MAX_INT)
 
 
 def parse_list(query, name, allowed=None):
@@ -83,7 +87,8 @@ def history(project, query, now=None):
     wanted = dataclasses.replace(wanted, now=now)
     conn = store.read.open_readonly(project.store_path)
     try:
-        runs, total = store.read.recent_runs(conn, since, limit, until, wanted)
+        runs, total = store.read.recent_runs(conn, since, limit, until,
+                                             query=wanted)
         counts = store.read.run_counts(conn, since, until, wanted)
         labels = store.read.implementer_labels(conn)
         caps = served_round_caps(conn, project, [run.id for run in runs])

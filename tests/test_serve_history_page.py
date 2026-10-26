@@ -82,8 +82,11 @@ class HistoryPageTests(ServeTestCase):
         self.assertEqual(self.names_of(page), ["15", "14"])
         self.assertEqual((page["total"], page["truncated"], page["offset"]),
                          (7, True, 2))
-        for offset in ("7", "99999999999999999999"):
-            with self.subTest(offset=offset):
+        padded = self.ask("&limit=2&offset=" + "0" * 4300 + "2")
+        self.assertEqual((self.names_of(padded), padded["offset"]),
+                         (["15", "14"], 2))
+        for offset in ("7", "99999999999999999999", "9" * 5000):
+            with self.subTest(offset=offset[:20]):
                 past = self.ask(f"&offset={offset}")
                 self.assertEqual((past["rows"], past["total"]), ([], 7))
 
@@ -123,7 +126,9 @@ class HistoryPageTests(ServeTestCase):
         self.start()
         self.assertEqual(self.names_of(self.ask("&q=LEDGER")), ["13"])
         self.assertEqual(self.names_of(self.ask("&q=ko-12")), ["12"])
-        self.assertEqual(self.ask(f"&q={quote('50%')}")["rows"], [])
+        for text in ("50%", "%", "ko-1_", "t_cket"):
+            with self.subTest(q=text):
+                self.assertEqual(self.ask(f"&q={quote(text)}")["rows"], [])
         none = self.ask("&q=ledger&state=merged")
         self.assertEqual((none["rows"], none["total"]), ([], 0))
         self.assertEqual(none["counts"]["state"],
