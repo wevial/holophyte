@@ -107,19 +107,13 @@ def _hand_off_gate_run(target, provider):
 def witness_child(target, provider):
     from holophyte.story.witness import COMMAND, witness_step
 
-    def cancel(signum, frame):
-        COMMAND.cancel(signum)
-
-    previous = {signum: signal.signal(signum, cancel)
-                for signum in (signal.SIGTERM, signal.SIGHUP)}
-    conn = open_store(target)
-    try:
-        witness_step(target, conn, store.tickets.ensure_project(
-            conn, provider.team, target.path), step=True)
-    finally:
-        conn.close()
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
+    with COMMAND.cancelled_by(signal.SIGTERM, signal.SIGHUP):
+        conn = open_store(target)
+        try:
+            witness_step(target, conn, store.tickets.ensure_project(
+                conn, provider.team, target.path), step=True)
+        finally:
+            conn.close()
     return 0
 
 

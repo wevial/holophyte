@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import time
@@ -76,6 +77,17 @@ class _Command:
         finally:
             self.held -= 1
             self.unwind()
+
+    @contextlib.contextmanager
+    def cancelled_by(self, *signums):
+        previous = {signum: signal.signal(
+            signum, lambda signum, frame: self.cancel(signum))
+            for signum in signums}
+        try:
+            yield
+        finally:
+            for signum, handler in previous.items():
+                signal.signal(signum, handler)
 
     def arm(self, proc, tree):
         self.proc, self.tree = proc, tree

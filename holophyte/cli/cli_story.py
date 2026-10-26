@@ -155,25 +155,14 @@ def _witness_pass_in_unit_environment(args, target, out):
         if refusal is not None:
             print(f"[holo2] {identifier}: {refusal}", file=out)
             raise SystemExit(1)
-        rows = _cancellable_pass(target, conn, row[0])
+        with COMMAND.cancelled_by(signal.SIGTERM, signal.SIGHUP,
+                                  signal.SIGINT):
+            rows = witness_pass(target, conn, row[0], "operator")
     print(f"[holo2] witness pass at {rows[0].mainSha}: " + ", ".join(
         f"{row.witnessKey} {row.verdict}"
         + (f" ({row.redKind})" if row.redKind else "") for row in rows),
         file=out)
     return True
-
-
-def _cancellable_pass(target, conn, story_id):
-    def cancel(signum, frame):
-        COMMAND.cancel(signum)
-
-    previous = {signum: signal.signal(signum, cancel)
-                for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
-    try:
-        return witness_pass(target, conn, story_id, "operator")
-    finally:
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
 
 
 def _decide(args, target, out):
