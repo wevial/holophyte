@@ -122,8 +122,9 @@ def leftovers(host_projects):
         if process is None:
             continue
         argv = process.pop("argv")
-        paths = [process["cwd"], *(arg.removesuffix(DELETED) for arg in argv
-                                   if os.path.isabs(arg))]
+        paths = [os.path.realpath(path) for path in (
+            process["cwd"], *(arg.removesuffix(DELETED) for arg in argv
+                              if os.path.isabs(arg)))]
         if any(trees.holds(path) for path in paths):
             found.append(process)
     found.sort(key=lambda process: process["pid"])

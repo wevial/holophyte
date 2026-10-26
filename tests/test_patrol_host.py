@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -229,8 +230,11 @@ class HostFixtureParts(PatrolFixture):
     def roomy_tmp(self):
         self.enterContext(patch.object(host_health, "TMP_FULL_PERCENT", 101))
 
-    def sleeper(self, cwd):
-        child = subprocess.Popen(["sleep", "600"], cwd=cwd)
+    def sleeper(self, cwd, *args):
+        """A real `sleep 600` in `cwd`, or a sleeping Python naming `args`."""
+        argv = ([sys.executable, "-c", "import time; time.sleep(600)", *args]
+                if args else ["sleep", "600"])
+        child = subprocess.Popen(argv, cwd=cwd)
         self.addCleanup(child.wait)
         self.addCleanup(child.kill)
         return child.pid
@@ -295,6 +299,21 @@ class LeftoverTests(HostFixtureParts):
         pids = {process["pid"] for process in host_health.leftovers(
             Host.locate().projects())["processes"]}
         self.assertIn(gone, pids)
+
+    def test_an_argument_path_is_judged_where_it_really_lies(self):
+        self.project("p")
+        (self.tmp / "witness-x").mkdir()
+        link = self.root / "tmp-link"
+        link.symlink_to(self.tmp)
+        tempfile.tempdir = str(link)
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        through_link = self.sleeper(elsewhere,
+                                    f"{link}/witness-x/server.py")
+        outside = self.sleeper(elsewhere, f"{self.tmp}/witness-x/../safe.py")
+        pids = {process["pid"] for process in host_health.leftovers(
+            Host.locate().projects())["processes"]}
+        self.assertEqual(pids & {through_link, outside}, {through_link})
 
     def test_a_host_without_proc_skips_the_part(self):
         with patch.object(host_health, "PROC", self.root / "no-proc"):
