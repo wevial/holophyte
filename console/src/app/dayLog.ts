@@ -9,21 +9,9 @@ import { OriginContext, PollDepsContext } from "./scope";
 export type Preset = DayLogPrefs["preset"];
 export type DayLogFilter = DayLogPrefs;
 
-export interface LogItem {
-  id: string;
-  label: string;
-  highlight: boolean;
-}
+const item = (id: string, label: string, highlight = false) => ({ id, label, highlight });
 
-export interface LogGroup {
-  id: string;
-  label: string;
-  items: LogItem[];
-}
-
-const item = (id: string, label: string, highlight = false): LogItem => ({ id, label, highlight });
-
-export const LOG_GROUPS: LogGroup[] = [
+export const LOG_GROUPS = [
   { id: "outcomes", label: "Outcomes", items: [item("merged", "Merged", true), item("failed", "Failed", true), item("pr-opened", "PR opened")] },
   { id: "needs-you", label: "Needs you", items: [item("parked", "Parked", true), item("merge-requeued", "Merge requeued", true)] },
   {
@@ -56,13 +44,8 @@ const ALL_ITEMS = LOG_GROUPS.flatMap((group) => group.items);
 export const HIGHLIGHTS: DayLogFilter = { preset: "highlights", items: Object.fromEntries(ALL_ITEMS.map((each) => [each.id, each.highlight])), projects: {} };
 export const EVERYTHING: DayLogFilter = { preset: "everything", items: Object.fromEntries(ALL_ITEMS.map((each) => [each.id, true])), projects: {} };
 
-export interface Category {
-  group: string;
-  item: string;
-}
-
 /** The entry's first line, cut at a code fence. */
-export function summaryOf(text: string): string {
+function summaryOf(text: string): string {
   return text.trim().split("```")[0]!.split("\n")[0]!.trim() || "Code block";
 }
 
@@ -193,7 +176,7 @@ function ruleOf(entry: LedgerEntry): { rule: Rule; line: string } {
   return { rule: RULES.find((rule) => rule.test(entry, line)) ?? OTHER, line };
 }
 
-export function categoryOf(entry: LedgerEntry): Category {
+export function categoryOf(entry: LedgerEntry): Pick<Rule, "group" | "item"> {
   const { rule } = ruleOf(entry);
   return { group: rule.group, item: rule.item };
 }
