@@ -27,7 +27,7 @@ const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status
 const MINUTE = 60_000;
 const today = (hour: number, minute: number) => new Date(2026, 9, 15, hour, minute).getTime();
 const NOW = today(18, 0);
-const YESTERDAY = new Date(2026, 9, 14, 0, 0).getTime();
+const SINCE = new Date(2026, 9, 9, 0, 0).getTime();
 
 const run = (row: Partial<HistoryRow> & Pick<HistoryRow, "id" | "ticket" | "title" | "started_ms">): HistoryRow => ({
   ticket_url: null, attempt: 1, phase: "reviewing", outcome: null, outcome_reason: null, failure_kind: null,
@@ -55,7 +55,7 @@ function groupOf(row: HistoryRow): "active" | "merged" | "failed" | "abandoned" 
   return row.outcome === "merged" || row.outcome === "abandoned" ? row.outcome : "failed";
 }
 
-/** Each daemon answers `/history` only at yesterday's local midnight, in the asked `state`,
+/** Each daemon answers `/history` only at local midnight six days before today's, in the asked `state`,
  *  newest first and cut at `offset` and `limit`; null answers 404.
  *  The demo daemon sends `items` on `/attention`, and only `readyRuns` are ready to merge. */
 function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: Item[] = [], readyRuns: number[] = []): Fetch {
@@ -69,7 +69,7 @@ function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: It
     if (merge) return Response.json({ ...ready, run: Number(merge[1]), ready: readyRuns.includes(Number(merge[1])) });
     for (const [base, rows] of [[DEMO, demo], [WRITER, writer]] as const) {
       const asked = new URL(url).searchParams;
-      if (url.startsWith(`${base}/history?`) && asked.get("since") === String(YESTERDAY) && rows) {
+      if (url.startsWith(`${base}/history?`) && asked.get("since") === String(SINCE) && rows) {
         const state = asked.get("state");
         const matching = rows.filter((row) => state == null || groupOf(row) === state).sort((a, b) => b.started_ms - a.started_ms);
         const offset = Number(asked.get("offset") ?? 0);
@@ -80,7 +80,7 @@ function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: It
           if (group) counts[group] += 1;
         }
         return Response.json({
-          rows: matching.slice(offset, offset + limit), since: YESTERDAY, until: null, limit, offset, truncated: matching.length > offset + limit,
+          rows: matching.slice(offset, offset + limit), since: SINCE, until: null, limit, offset, truncated: matching.length > offset + limit,
           total: matching.length, counts: { state: counts, failure: {}, implementer: {} }, now: NOW,
         });
       }
@@ -267,8 +267,20 @@ const writerAbandoned = run({ id: 43, ticket: "WRITER-43", title: "Drop the note
 const sixRuns = () => fleet([demo12, demoParked, demoFailed], [writer41, writerMerged, writerAbandoned]);
 
 const countLine = () => document.querySelector("[data-count-line]")!.textContent;
-const filterButtons = () => within(screen.getByRole("group", { name: "State" })).getAllByRole("button");
-const pressed = () => filterButtons().filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
+const openFilter = async () => {
+  if (!screen.queryByRole("dialog", { name: "Filter runs" })) await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Filter/ })));
+  return within(screen.getByRole("group", { name: "State" }));
+};
+const stateRows = async () => (await openFilter()).getAllByRole("checkbox").slice(1).map((box) => box.closest("label")!.textContent);
+const checkedStates = async () => (await openFilter()).getAllByRole("checkbox").slice(1).filter((box) => (box as HTMLInputElement).checked).map((box) => box.getAttribute("aria-label"));
+const checkState = async (name: string) => {
+  const box = (await openFilter()).getByRole("checkbox", { name });
+  await act(async () => {
+    fireEvent.click(box);
+    await settle();
+  });
+  for (let round = 0; round < 3; round += 1) await act(settle);
+};
 const searchState = () => new URLSearchParams(window.location.hash.split("?")[1]).get("state");
 const shownIds = () => rows().map((row) => row.getAttribute("data-run"));
 
@@ -294,76 +306,61 @@ test("a paused run a later run resumed reads resumed as that run in grey, while 
   expect(waiting.hasAttribute("data-need")).toBe(true);
 });
 
-test("Active leaves out a paused run a later run resumed and does not count it, while All does", async () => {
+test("Active under State leaves out a paused run a later run resumed and does not count it, while no state lists it", async () => {
   await mount("#/runs", resumedFleet());
-  expect(pressed()).toEqual(["Active 2"]);
-  expect(shownIds()).toEqual(["8", "4"]);
-  expect(countLine()).toBe("all projects · 2 runs / 2 active / newest first / today and yesterday");
-  await act(async () => {
-    fireEvent.click(filterButtons()[0]!);
-    await settle();
-  });
-  expect(pressed()).toEqual(["All 3"]);
+  expect(await checkedStates()).toEqual([]);
   expect(shownIds()).toEqual(["8", "5", "4"]);
-  expect(countLine()).toBe("all projects · 3 runs / 2 active / newest first / today and yesterday");
+  expect(countLine()).toBe("all projects · 3 runs / 2 active / newest first");
+  await checkState("Active");
+  expect(await checkedStates()).toEqual(["Active"]);
+  expect(shownIds()).toEqual(["8", "4"]);
+  expect(countLine()).toBe("all projects · 2 runs / 2 active / newest first");
 });
 
-test("the count line and every State button count the scoped runs, with Active pressed and only active runs listed by default", async () => {
+test("the count line and every State box count the scoped runs, with no State box checked and every run listed by default", async () => {
   await mount("#/runs", sixRuns());
-  expect(countLine()).toBe("all projects · 3 runs / 3 active / newest first / today and yesterday");
-  expect(filterButtons().map((button) => button.textContent)).toEqual(["All 6", "Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
-  expect(pressed()).toEqual(["Active 3"]);
-  expect(shownIds()).toEqual(["12", "13", "41"]);
-});
-
-test("pressing All from the default Active puts state=all in the link and lists every run", async () => {
-  await mount("#/runs", sixRuns());
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "All 6" }));
-    await settle();
-  });
-  expect(searchState()).toBe("all");
-  expect(pressed()).toEqual(["All 6"]);
+  expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first");
+  expect(await stateRows()).toEqual(["Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
+  expect(await checkedStates()).toEqual([]);
   expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
 });
 
-test("a link with state=merged selects Merged and lists only the merged run", async () => {
-  await mount("#/runs?state=merged", sixRuns());
-  expect(pressed()).toEqual(["Merged 1"]);
-  expect(shownIds()).toEqual(["42"]);
-});
-
-test("pressing Failed puts state=failed in the link and lists only the failed run", async () => {
+test("checking Active under State from the default puts state=active in the link and lists only the active runs", async () => {
   await mount("#/runs", sixRuns());
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Failed 1" }));
-    await settle();
-  });
-  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("state")).toBe("failed");
-  expect(pressed()).toEqual(["Failed 1"]);
-  expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["14"]);
-});
-
-test("a state the filter does not know reads as Active", async () => {
-  await mount("#/runs?state=bogus", sixRuns());
-  expect(pressed()).toEqual(["Active 3"]);
+  await checkState("Active");
+  expect(searchState()).toBe("active");
+  expect(await checkedStates()).toEqual(["Active"]);
   expect(shownIds()).toEqual(["12", "13", "41"]);
 });
 
-test("a scoped filter with no runs says so, and Show all projects drops the project but keeps the state", async () => {
+test("a link with state=merged checks Merged under State and lists only the merged run", async () => {
+  await mount("#/runs?state=merged", sixRuns());
+  expect(await checkedStates()).toEqual(["Merged"]);
+  expect(shownIds()).toEqual(["42"]);
+});
+
+test("checking Failed under State puts state=failed in the link and lists only the failed run", async () => {
+  await mount("#/runs", sixRuns());
+  await checkState("Failed");
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("state")).toBe("failed");
+  expect(await checkedStates()).toEqual(["Failed"]);
+  expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["14"]);
+});
+
+test("a state the filter does not know reads as no state", async () => {
+  await mount("#/runs?state=bogus", sixRuns());
+  expect(await checkedStates()).toEqual([]);
+  expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
+});
+
+test("a scoped filter with no runs says no runs match, with no Show all projects line", async () => {
   sessionStorage.setItem("holophyte.next.project", "demo");
   await mount("#/runs?project=demo&state=merged", sixRuns());
-  expect(screen.getByText(/^Showing/).textContent).toBe("Showing demo only");
   expect(rows()).toHaveLength(0);
-  expect(screen.getByText("No merged runs in demo today or yesterday.")).toBeTruthy();
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Show all projects" }));
-    await settle();
-  });
-  const search = new URLSearchParams(window.location.hash.split("?")[1]);
-  expect(search.get("state")).toBe("merged");
-  expect(search.has("project")).toBe(false);
-  expect(sessionStorage.getItem("holophyte.next.project")).toBeNull();
+  expect(screen.getByText("No runs match")).toBeTruthy();
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Show all projects" })).toBeNull();
+  expect(sessionStorage.getItem("holophyte.next.project")).toBe("demo");
 });
 
 test("the footer links to older days with project scope and names the time zone", async () => {
