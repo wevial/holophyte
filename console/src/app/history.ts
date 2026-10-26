@@ -161,7 +161,7 @@ function sumInto(sums: Record<string, number>, counts: Record<string, number> | 
 
 const RANGE_DAYS_BACK: Record<RunRange, number | null> = { today: 0, "2d": 1, "7d": 6, "30d": 29, any: null };
 
-function dayStart(day: string): Date {
+export function dayStart(day: string): Date {
   const [year, month, date] = day.split("-").map(Number) as [number, number, number];
   return new Date(year, month - 1, date);
 }

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { dayStart } from "../history";
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -133,6 +134,11 @@ function usePopover(hidden: boolean) {
   return { open, setOpen, box, button };
 }
 
+function checkedOf(search: PageSearch, param: string): string[] {
+  const raw = search[param];
+  return typeof raw === "string" ? raw.split(",") : [];
+}
+
 function useWrite() {
   const navigate = useNavigate();
   return (change: PageSearch) => void navigate({ to: ".", search: (previous: PageSearch) => ({ ...previous, page: undefined, ...change }) });
@@ -158,7 +164,7 @@ function CalendarIcon() {
 export interface FilterSection {
   label: string;
   param: string;
-  options: readonly { value: string; label: string; count: number }[];
+  options: readonly (FilterOption & { count: number })[];
 }
 
 function Check({ name, checked, mixed = false, onChange, children, head = false, disabled = false }: {
@@ -176,8 +182,7 @@ function Check({ name, checked, mixed = false, onChange, children, head = false,
 
 function Section({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
   const id = useId();
-  const raw = search[section.param];
-  const checked = typeof raw === "string" ? raw.split(",") : [];
+  const checked = checkedOf(search, section.param);
   const on = section.options.filter((option) => checked.includes(option.value));
   const all = section.options.length > 0 && on.length === section.options.length;
   const set = (values: string[]) => {
@@ -211,11 +216,7 @@ export function FilterPopover({ label, sections, hidden }: { label: string; sect
   const search = useSearch({ strict: false }) as PageSearch;
   const write = useWrite();
   const { open, setOpen, box, button } = usePopover(hidden);
-  const count = sections.reduce((sum, section) => {
-    const raw = search[section.param];
-    const checked = typeof raw === "string" ? raw.split(",") : [];
-    return sum + section.options.filter((option) => checked.includes(option.value)).length;
-  }, 0);
+  const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   return (
     <div ref={box} className="relative shrink-0">
       <button
@@ -242,8 +243,7 @@ export function FilterPopover({ label, sections, hidden }: { label: string; sect
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 function dayLabel(day: string): string {
-  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
-  return DAY_LABEL.format(new Date(year, month - 1, date));
+  return DAY_LABEL.format(dayStart(day));
 }
 
 /** `from` and `to`, local `YYYY-MM-DD` days, as "Oct 1 – Oct 20". */
@@ -256,7 +256,7 @@ export function dayRangeLabel(from: string | undefined, to: string | undefined):
  *  dropping it, and a Custom range popover writing `from` and `to`, which
  *  win over `range` while set; `hidden` closes it. */
 export function RangeButtons({ label, presets, fallback, hidden }: {
-  label: string; presets: readonly { value: string; label: string }[]; fallback: string; hidden: boolean;
+  label: string; presets: readonly FilterOption[]; fallback: string; hidden: boolean;
 }) {
   const { range, from, to } = useSearch({ strict: false }) as { range?: string; from?: string; to?: string };
   const write = useWrite();

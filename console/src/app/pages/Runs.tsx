@@ -6,7 +6,7 @@ import { ChevronIcon } from "../components/icons";
 import { dayRangeLabel, FilterPopover, RangeButtons, SearchField, type FilterSection } from "../components/ListFilters";
 import { RunTable, RunTableHeads } from "../components/RunTable";
 import {
-  DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
+  DEFAULT_RANGE, DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
   type RunGroup, type RunOrder, type RunRange, type RunSort, type RunsFilters, type RunsSearch,
 } from "../history";
 import { PollDepsContext, type ScopeSearch } from "../scope";
@@ -209,7 +209,7 @@ export function Runs() {
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 @min-[1100px]:flex-nowrap">
               <SearchField label="Search runs" width="w-[220px] min-w-[112px] shrink" />
-              <RangeButtons label="Started" presets={RANGES} fallback="7d" hidden={hidden} />
+              <RangeButtons label="Started" presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
               <FilterPopover label="Filter runs" sections={sections} hidden={hidden} />
               <span className="ml-auto shrink-0 font-mono text-[12.5px] whitespace-nowrap text-ink-3">{total} runs</span>
               <select
