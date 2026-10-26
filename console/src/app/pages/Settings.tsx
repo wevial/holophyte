@@ -1,5 +1,5 @@
-import { Fragment, useState } from "react";
-import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useContext, useEffect, useState } from "react";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { CONFIG_EDIT_OFF, bind, namedKey, type ConfigProbe, type ConfigAnswer, type ConfigBody } from "../../lib/config";
 import { hostName, underHost } from "../../lib/hosts";
 import { RESTART_LABEL, ROUTES, ACTIONS_OFF } from "../../lib/actions";
@@ -8,11 +8,11 @@ import { formatStamp } from "../../lib/format";
 import { useAction, useConfigSave } from "../actions";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Btn } from "../components/Btn";
-import { storeScope, switcherRows, type SwitcherRow } from "../projects";
+import { switcherRows } from "../projects";
 import { useConfig } from "../queries";
-import { keepScope, useConsolePeers } from "../scope";
-import { hostsNeedingAttention, settingsHost, patchLines, lineDiff, SETTINGS_FIELDS, SETTINGS_TABS } from "../settings";
-import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
+import { useConsolePeers } from "../scope";
+import { settingsHost, patchLines, lineDiff, SETTINGS_FIELDS, SETTINGS_TABS } from "../settings";
+import { SettingsDraftProvider, SettingsMarksContext, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
 import { AppearanceTab } from "../components/AppearanceTab";
@@ -23,8 +23,6 @@ import { TomlEditor, type TomlCheckState } from "../components/TomlEditor";
 import { NotFound } from "./Placeholder";
 
 type Tab = (typeof SETTINGS_TABS)[number];
-
-const GROUP_LABEL = "font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3";
 
 const APPEARANCE_SUBTITLE = "yours, in this browser · applies at once, nothing to save";
 
@@ -67,17 +65,16 @@ function SettingsPage({ tab }: { tab: Tab }) {
   const search = useSearch({ from: "__root__" });
   const rows = switcherRows(hosts, now, new Map()).filter((row) => row.name != null);
   const project = search.project ?? rows[0]?.name ?? "";
-  return <SettingsProjectPage key={project} project={project} tab={tab} rows={rows} />;
+  return <SettingsProjectPage key={project} project={project} tab={tab} />;
 }
 
-function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string; rows: SwitcherRow[] }) {
+function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
   const { hosts } = useConsolePeers();
   const navigate = useNavigate();
   const host = settingsHost(hosts, project);
   const { data: answer } = useConfig(host?.base ?? null);
   const file = answer?.state === "ok" ? answer.config.path.split("/").pop() || "config.toml" : "config.toml";
   const hostLabel = host ? hostName(host) : "its host";
-  const attention = hostsNeedingAttention(hosts);
   const draft = useSettingsDraft();
   const edits = draft.projects[project] ?? {};
   const rawText = draft.raw[project] ?? (answer?.state === "ok" ? answer.config.text : "");
@@ -138,56 +135,24 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
       } else setRefusal(result.error);
     }
   };
+  const { setMarks } = useContext(SettingsMarksContext);
+  const counts = Object.fromEntries(SETTINGS_TABS.map((item) => [item.id, SETTINGS_FIELDS.filter((field) => field.tab === item.id && `${field.table}.${field.key}` in edits).length]));
+  const countsKey = JSON.stringify(counts);
+  useEffect(() => {
+    setMarks({ counts: JSON.parse(countsKey) as Record<string, number>, checkRefused });
+  }, [setMarks, countsKey, checkRefused]);
+  useEffect(() => () => setMarks(null), [setMarks]);
   const heading = <>
-    <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
+    <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">{tab.label}</h1>
     <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
+    {tab.group === "Project" && <p className="w-full break-words font-mono text-[13px] text-ink-2">{project} · {file} on {hostLabel}{answer?.state === "ok" ? configStamp(answer.config) : ""}</p>}
   </>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
-  const count = (tab: string) => SETTINGS_FIELDS.filter((field) => field.tab === tab && `${field.table}.${field.key}` in edits).length;
   return (
     <section aria-labelledby="page-title" className="max-w-[1180px] px-5 pt-3.5 pb-7 min-[720px]:px-8">
-      <header className="border-b border-rule pb-5">
-        <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Settings</h1>
-        <p className="mt-2 break-words font-mono text-[13px] text-ink-2">{project} · {file} on {hostLabel}{answer?.state === "ok" ? configStamp(answer.config) : ""}</p>
-      </header>
-      <div className="flex min-w-0 flex-col gap-6 py-6 min-[720px]:flex-row min-[720px]:gap-8">
-        <nav aria-label="Settings sections" className="flex shrink-0 flex-wrap items-start gap-y-1 min-[720px]:w-[212px] min-[720px]:flex-col min-[720px]:items-stretch">
-          <div className="mb-3 w-full">
-            <label htmlFor="settings-project" className={GROUP_LABEL}>Project</label>
-            <select
-              id="settings-project"
-              value={project}
-              onChange={(event) => {
-                const project = event.target.value;
-                storeScope(project);
-                void navigate({ to: "/settings/$tab", params: { tab: tab.id }, search: { project } });
-              }}
-              className="mt-2 min-h-10 w-full min-w-0 border border-rule bg-paper px-3 font-mono text-[13px] text-ink"
-            >
-              {rows.map((row) => <option key={row.name} value={row.name!}>{row.label}{row.held ? " · held" : ""}</option>)}
-            </select>
-          </div>
-          {SETTINGS_TABS.map((item, index) => (
-            <Fragment key={item.id}>
-              {item.group !== "Project" && SETTINGS_TABS[index - 1]?.group !== item.group && <p className={`${GROUP_LABEL} mb-2 mt-5 w-full px-3`}>{item.group}</p>}
-              <Link
-                to="/settings/$tab"
-                params={{ tab: item.id }}
-                search={keepScope}
-                aria-current={tab.id === item.id ? "page" : undefined}
-                className={`flex min-h-10 items-center gap-3 border-l-2 px-3 py-2 text-[14px] ${tab.id === item.id ? "border-act bg-act-wash text-act" : "border-transparent text-ink-2 hover:bg-paper-2 hover:text-ink"}`}
-              >
-                {item.label}
-                {item.group === "Project" && count(item.id) > 0 && <span className="ml-auto font-mono text-[11px] text-act">{count(item.id)}</span>}
-                {item.id === "toml" && checkRefused && <span className="ml-auto font-mono text-[11px] text-bad">1</span>}
-                {item.id === "hold" && host?.status?.admission === "held" && <span className="font-mono text-[11px] text-wait">held</span>}
-                {item.id === "hosts" && attention > 0 && <span className="ml-auto font-mono text-[12px] text-need">{attention}</span>}
-              </Link>
-            </Fragment>
-          ))}
-        </nav>
-        <div className="min-w-0 flex-1">
-        {banner && <div role="status" className="mb-4 border border-live bg-paper p-5">
+      <div className="min-w-0 pb-6">
+        {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 pb-5">{heading}</header>}
+        {banner && <div role="status" className="mt-6 border border-live bg-paper p-5">
           <p className="font-mono text-[13px] text-live">Saved config.toml at revision {banner.revision.slice(0, 7)}.</p>
           <p className="mt-2 font-read text-[14px] text-ink-2">It applies at the {banner.applies}.</p>
           {banner.probe && <p className={`mt-2 font-mono text-[13px] ${banner.probe.ok ? "text-live" : "text-bad"}`}>{banner.probe.ok ? "Implementer probe passed." : `Implementer probe failed: ${banner.probe.output.at(-1) ?? ""}`}</p>}
@@ -197,8 +162,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
           </div>
           {restart.data && <p className="mt-3 font-mono text-[12px]">{restart.data.detail}</p>}
         </div>}
-        <section className={tab.id === "log" ? "" : "border border-rule bg-paper p-5 min-[720px]:p-6"}>
-          {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">{heading}</header>}
+        <section>
           {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
             <div className="mt-6">
               {rawChanged && <p className="mb-4 font-mono text-[13px] text-ink-3">Save or revert the raw edit first.</p>}
@@ -235,7 +199,6 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
           <p className="font-read text-[14px] text-ink-2">Applies at the {answer?.state === "ok" ? answer.config.applies : "next loop start"}.</p>
           <p className="mt-2 font-read text-[14px] text-ink-3">Runs in flight keep the settings they started with.</p>
         </ConfirmDialog>}
-        </div>
       </div>
       <footer className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
         <p>project settings live in {file} on its host; each save keeps the previous text as a backup</p>

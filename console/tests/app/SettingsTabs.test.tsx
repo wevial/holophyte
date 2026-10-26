@@ -19,7 +19,9 @@ async function mount(tab: string, values: ConfigValues, options: { status?: Part
   const fetch: Fetch = async (url, init) => {
     if (!url.endsWith("/config")) return poll(url, init);
     if (init?.method === "PUT") {
-      writes.push(JSON.parse(String(init.body)));
+      const body = JSON.parse(String(init.body)) as { check?: boolean };
+      if (body.check) return Response.json({ error: "[loop] workers must be an integer >= 1, got 0", line: 2 }, { status: 400 });
+      writes.push(body);
       return Response.json({ revision: "b".repeat(64), applies: "next loop start", probe: options.probe });
     }
     return Response.json({ text: "", values, path: "/srv/demo/config.toml", applies: "next loop start", revision: "a".repeat(64) });
@@ -128,4 +130,23 @@ test("UI paths retain an entered newline so another glob can be typed on its own
   fireEvent.change(paths, { target: { value: `${paths.value}assets/**` } });
   await save();
   expect(writes).toEqual([{ patch: { "merge.ui_paths": ["console/**", "assets/**"] } }]);
+});
+
+test("the sidebar's sections carry the unsaved-edit count, the refused-check mark, held and the hosts-attention count", async () => {
+  await mount("general", { loop: { workers: 2 } }, { status: { admission: "held", supervisor: { ...working.supervisor, state: "stale", heartbeat_age_ms: 600000 } } });
+  const sidebar = () => within(screen.getByRole("complementary", { name: "Console" }));
+  const link = (name: RegExp) => within(sidebar().getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name });
+  fireEvent.click(screen.getByRole("button", { name: "One more worker" }));
+  expect(link(/^General/).textContent).toBe("General1");
+  expect(link(/^Hold \/ release/).textContent).toBe("Hold / releaseheld");
+  expect(link(/^Hosts/).textContent).toBe("Hosts1");
+  expect(link(/^Raw TOML/).textContent).toBe("Raw TOML");
+
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  fireEvent.click(link(/^Raw TOML/));
+  await act(settle);
+  fireEvent.change(screen.getByRole("textbox", { name: "config.toml for demo" }), { target: { value: "[loop]\nworkers = 0\n" } });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 550)); await settle(); });
+  expect(link(/^Raw TOML/).textContent).toBe("Raw TOML1");
+  expect(link(/^General/).textContent).toBe("General");
 });

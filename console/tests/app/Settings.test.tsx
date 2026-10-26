@@ -111,15 +111,13 @@ test("Review presents the project file and ordered grouped sections with matchin
   const view = await mount("#/settings/review?project=demo");
   view.failRunner();
   await view.poll();
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Review");
   expect(screen.getByText("demo · config.toml on writer-host")).toBeTruthy();
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   const links = within(nav).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML", "Hosts1", "Appearance", "Today's log"]);
-  expect(nav.textContent).toMatch(/Project.*General.*Review.*Agents.*Capture.*Hold \/ release.*Raw TOML.*Factory.*Hosts.*You.*Appearance.*Today's log/);
+  expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts1", "General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]);
   expect(nav.textContent).not.toContain("You · this browser");
   expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Review"]);
-  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Review");
   expect(screen.getByText("[loop], [review] and [agents] in config.toml")).toBeTruthy();
   const footer = screen.getByRole("link", { name: "Settings, 1 host needs attention" });
   expect(footer.getAttribute("aria-current")).toBe("page");
@@ -128,24 +126,27 @@ test("Review presents the project file and ordered grouped sections with matchin
   expect(screen.getByText("appearance stays in this browser")).toBeTruthy();
 });
 
-test("the project picker preserves the current tab, remembers the choice and names held projects; an unscoped Settings uses the first without rewriting", async () => {
-  const view = await mount("#/settings/review?project=demo");
+test("the sidebar's project picker preserves the current tab, remembers the choice and names held projects; an unscoped Settings uses the first without rewriting", async () => {
+  const view = await mount("#/settings/general?project=demo");
   view.failRunner();
   await view.poll();
-  const picker = screen.getByRole("combobox", { name: "Project" });
+  const sidebar = screen.getByRole("complementary", { name: "Console" });
+  const picker = within(sidebar).getByRole("combobox", { name: "Project" }) as HTMLSelectElement;
   expect(within(picker).getAllByRole("option").map((item) => item.textContent)).toEqual(["demo", "writer", "relos · held"]);
   fireEvent.change(picker, { target: { value: "writer" } });
   await act(settle);
-  expect(window.location.hash).toBe("#/settings/review?project=writer");
+  expect(window.location.hash).toBe("#/settings/general?project=writer");
   expect(readStoredScope()).toBe("writer");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
   expect(screen.getByText("writer · config.toml on writer-host")).toBeTruthy();
+  expect((within(sidebar).getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("writer");
   fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "relos" } });
   await act(settle);
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   expect(within(nav).getByRole("link", { name: /Hold \/ release/ }).textContent).toContain("held");
   cleanup();
   await mount("#/settings");
-  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("General");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
   expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("demo");
   expect(window.location.hash).toBe("#/settings");
 });
@@ -161,7 +162,7 @@ test("project panels distinguish pending, disabled and failed config reads while
     expect(screen.getByText(message)).toBeTruthy();
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Hold / release" }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Hold / release");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold / release");
     cleanup();
   }
 });
@@ -171,7 +172,7 @@ test("an unknown project's panels report no matching host and selecting a known 
   for (const label of ["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(label);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(label);
     expect(screen.getByText("No host is available for unknown.")).toBeTruthy();
     expect(screen.queryByText(/^Reading config.toml/)).toBeNull();
   }
@@ -188,11 +189,83 @@ test("the head and project subtitles use the filename returned by config and fac
   for (const [label, subtitle] of [["Hosts", "the factory's hosts"], ["Appearance", "yours, in this browser · applies at once, nothing to save"]] as const) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 2, name: label })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: label })).toBeTruthy();
     expect(screen.getByText(subtitle)).toBeTruthy();
     if (label === "Hosts") expect(screen.getAllByRole("article")).toHaveLength(3);
     else expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeTruthy();
   }
+});
+
+test("on Appearance the sidebar holds Back and the grouped sections in place of the switcher and Pages, and the page holds only that section", async () => {
+  await mount("#/settings/appearance");
+  const sidebar = screen.getByRole("complementary", { name: "Console" });
+  expect(within(sidebar).getByRole("link", { name: "Back" })).toBeTruthy();
+  expect(within(sidebar).queryByRole("navigation", { name: "Pages" })).toBeNull();
+  expect(within(sidebar).queryByRole("button", { name: /Switch project$/ })).toBeNull();
+  const nav = within(sidebar).getByRole("navigation", { name: "Settings sections" });
+  const groups = within(nav).getAllByRole("group").map((group) => [
+    document.getElementById(group.getAttribute("aria-labelledby")!)?.textContent,
+    within(group).getAllByRole("link").map((link) => link.textContent),
+  ]);
+  expect(groups).toEqual([
+    ["You", ["Appearance", "Today's log"]],
+    ["Factory", ["Hosts"]],
+    ["Project", ["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]],
+  ]);
+  const footer = within(sidebar).getByRole("contentinfo");
+  expect(within(footer).getByRole("link", { name: "Settings" })).toBeTruthy();
+  expect(within(within(footer).getByRole("group", { name: "Theme" })).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(["Dawn", "Night", "System"]);
+
+  const current = within(nav).getByRole("link", { name: "Appearance" });
+  expect(current.getAttribute("aria-current")).toBe("page");
+  expect(current.className).toEqual(expect.stringContaining("border-act bg-act-wash text-act"));
+  expect(screen.getAllByRole("navigation", { name: "Settings sections" })).toHaveLength(1);
+  expect(screen.getAllByRole("combobox", { name: "Project" }).every((select) => sidebar.contains(select))).toBe(true);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appearance");
+});
+
+test("Back links to the page Settings was opened from, with its search, after moving between sections and projects", async () => {
+  await mount("#/runs?project=demo&state=failed");
+  await act(async () => fireEvent.click(screen.getByRole("link", { name: "Settings" })));
+  await act(settle);
+  await act(async () => fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Review" })));
+  await act(settle);
+  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "writer" } });
+  await act(settle);
+  expect(window.location.hash).toBe("#/settings/review?project=writer");
+  const back = screen.getByRole("link", { name: "Back" });
+  expect(back.getAttribute("href")).toMatch(/#\/runs\?project=demo&state=failed$/);
+  await act(async () => fireEvent.click(back));
+  await act(settle);
+  expect(window.location.hash).toBe("#/runs?project=demo&state=failed");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Runs");
+});
+
+test("Settings as the first page loaded goes Back to the Overview in its scope", async () => {
+  await mount("#/settings/general?project=demo");
+  const back = screen.getByRole("link", { name: "Back" });
+  expect(back.getAttribute("href")).toMatch(/#\/\?project=demo$/);
+  await act(async () => fireEvent.click(back));
+  await act(settle);
+  expect(window.location.hash).toBe("#/?project=demo");
+  expect(within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: /^Overview/ }).getAttribute("aria-current")).toBe("page");
+});
+
+test("a folded sidebar draws unfolded without its fold button on Settings, and folds again on Back without rewriting the stored fold", async () => {
+  localStorage.setItem("holophyte.next.rail", "folded");
+  await mount("#/");
+  const sidebar = () => screen.getByRole("complementary", { name: "Console" });
+  expect(sidebar().getAttribute("data-folded")).toBe("true");
+  await act(async () => fireEvent.click(screen.getByRole("link", { name: "Settings" })));
+  await act(settle);
+  expect(sidebar().getAttribute("data-folded")).toBe("false");
+  expect(screen.queryByRole("button", { name: /^(Expand|Collapse) sidebar$/ })).toBeNull();
+  await act(async () => fireEvent.click(screen.getByRole("link", { name: "Back" })));
+  await act(settle);
+  expect(window.location.hash).toBe("#/");
+  expect(sidebar().getAttribute("data-folded")).toBe("true");
+  expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+  expect(localStorage.getItem("holophyte.next.rail")).toBe("folded");
 });
 
 test("an unknown Settings tab shows the console not-found page", async () => {
@@ -213,7 +286,7 @@ const logPhrases = () => Array.from(screen.getByRole("complementary", { name: "T
 const preview = () => screen.getByRole("complementary", { name: "Today's log preview" });
 const previewPhrases = () => Array.from(preview().querySelectorAll("li"), (row) => row.querySelector("[data-phrase]")?.textContent).filter(Boolean);
 const toOverview = async () => {
-  await act(async () => within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Overview" }).click());
+  await act(async () => screen.getByRole("link", { name: "Back" }).click());
   await act(settle);
   await act(settle);
 };
@@ -227,12 +300,12 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   await act(settle);
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   expect(within(nav).getByRole("link", { name: "Today's log" }).getAttribute("href")).toMatch(/#\/settings\/log$/);
-  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Today's log");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today's log");
   expect(screen.getByText("yours, in this browser · applies at once, nothing to save")).toBeTruthy();
   expect(within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Highlights", "Everything", "Manual"]);
   expect(pressed()).toEqual(["Highlights"]);
   const header = screen.getByRole("group", { name: "Preset" }).closest("header")!;
-  expect(header.contains(screen.getByRole("heading", { level: 2, name: "Today's log" }))).toBe(true);
+  expect(header.contains(screen.getByRole("heading", { level: 1, name: "Today's log" }))).toBe(true);
   expect(header.className).toEqual(expect.stringContaining("border-b border-rule"));
   expect(header.parentElement!.className).not.toContain("bg-paper");
   const sections = screen.getAllByRole("region").filter((region) => [...GROUPS, "Projects"].includes(region.getAttribute("aria-label") ?? ""));

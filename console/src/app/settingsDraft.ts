@@ -57,3 +57,12 @@ export function useSettingsDraft() {
   if (!draft) throw new Error("Settings draft requires its provider");
   return draft;
 }
+
+type SettingsMarks = { counts: Record<string, number>; checkRefused: boolean };
+type MarksContext = { marks: SettingsMarks | null; setMarks: (marks: SettingsMarks | null) => void };
+export const SettingsMarksContext = createContext<MarksContext>({ marks: null, setMarks: () => {} });
+
+export function SettingsMarksProvider({ children }: { children: ReactNode }) {
+  const [marks, setMarks] = useState<SettingsMarks | null>(null);
+  return createElement(SettingsMarksContext.Provider, { value: { marks, setMarks } }, children);
+}
