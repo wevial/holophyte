@@ -243,7 +243,8 @@ export function useStory<R extends HostRecord<PollBodies>>(hosts: R[], project: 
 export interface DayLedger {
   /** Each scoped host's last good `/ledger` answer, by its record `key`. */
   answers: Map<string, Ledger>;
-  /** Every host's entries since local midnight, newest first. */
+  /** Every host's entries since local midnight, newest first, each
+   *  `project` the answering host's. */
   entries: LedgerEntry[];
 }
 
@@ -251,8 +252,12 @@ export interface DayLedger {
  *  before `now`, of any kind, so each answer also carries its outages. */
 export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): DayLedger {
   const answers = useAnswers(hosts, `/ledger?since=${localMidnight(now)}&limit=${LEDGER_LIMIT}`, ledgerSchema, deps);
-  const entries = Array.from(answers.values())
-    .flatMap((answer) => answer.entries)
+  const projects = new Map(hosts.map((host) => [host.key, host.project]));
+  const entries = Array.from(answers, ([key, answer]) => {
+    const project = projects.get(key);
+    return project == null ? answer.entries : answer.entries.map((entry) => ({ ...entry, project }));
+  })
+    .flat()
     .sort((a, b) => b.at - a.at);
   return { answers, entries };
 }

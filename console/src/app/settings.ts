@@ -40,7 +40,8 @@ export const SETTINGS_TABS = [
   { id: "hold", label: "Hold / release", group: "Project" },
   { id: "toml", label: "Raw TOML", group: "Project" },
   { id: "hosts", label: "Hosts", group: "Factory" },
-  { id: "appearance", label: "Appearance", group: "You · this browser" },
+  { id: "appearance", label: "Appearance", group: "You" },
+  { id: "log", label: "Today's log", group: "You" },
 ] as const;
 
 type SettingsHost = HostRecord<ContractBodies>;

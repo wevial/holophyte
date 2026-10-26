@@ -1,4 +1,5 @@
 import re
+import signal
 import sys
 from contextlib import closing
 
@@ -10,7 +11,7 @@ from holophyte.redact import safe_print as print
 from holophyte.story.story_approval import ApprovalRefused, approve
 from holophyte.story.story_close import DecisionRefused, decide
 from holophyte.story.story_filing import StoryRefused, file_story, update_story
-from holophyte.story.witness import pass_refusal, witness_pass
+from holophyte.story.witness import COMMAND, pass_refusal, witness_pass
 
 RED_KINDS = ("exception",)
 INTEGER = re.compile(r"-?[0-9]+")
@@ -154,7 +155,9 @@ def _witness_pass_in_unit_environment(args, target, out):
         if refusal is not None:
             print(f"[holo2] {identifier}: {refusal}", file=out)
             raise SystemExit(1)
-        rows = witness_pass(target, conn, row[0], "operator")
+        with COMMAND.cancelled_by(signal.SIGTERM, signal.SIGHUP,
+                                  signal.SIGINT):
+            rows = witness_pass(target, conn, row[0], "operator")
     print(f"[holo2] witness pass at {rows[0].mainSha}: " + ", ".join(
         f"{row.witnessKey} {row.verdict}"
         + (f" ({row.redKind})" if row.redKind else "") for row in rows),
