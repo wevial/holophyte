@@ -160,12 +160,11 @@ export function Runs() {
     const fresh = key === "started" && nextOrder === "desc";
     go({ sort: fresh ? undefined : key, order: fresh ? undefined : nextOrder });
   };
-  const implementerList = [...new Set([...implementers, ...listOf(search.implementer)])].sort();
   const sections: FilterSection[] = [
     { label: "Project", param: "projects", options: projects.map(({ name, count }) => ({ value: name, label: name, count })) },
     { label: "State", param: "state", options: RUN_GROUPS.map((group) => ({ value: group, label: STATE_LABELS[group], count: counts.state[group] })) },
     { label: "Failure kind", param: "failure", options: FAILURE_KINDS.map((kind) => ({ value: kind, label: FAILURE_LABELS[kind], count: counts.failure[kind] ?? 0 })) },
-    { label: "Implementer", param: "implementer", options: implementerList.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
+    { label: "Implementer", param: "implementer", options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
   ];
   const chips = chipsOf(search, sections);
   const scope = picked.length === 1 ? picked[0] : picked.length > 1 ? `${picked.length} projects` : (project ?? "all projects");

@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { describe, type ReadinessMap } from "../lib/attention";
 import type { History, HistoryRow, Status } from "../lib/contract.gen";
@@ -202,7 +202,8 @@ export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage 
   const query = new URLSearchParams({ since: String(window.since) });
   if (window.until != null) query.set("until", String(window.until));
   if (search.q) query.set("q", search.q);
-  const lists = { state: keptList(state, RUN_GROUPS), failure: keptList(search.failure, FAILURE_KINDS), implementer: keptList(search.implementer) };
+  const [known, setKnown] = useState<string | null>(null);
+  const lists = { state: keptList(state, RUN_GROUPS), failure: keptList(search.failure, FAILURE_KINDS), implementer: keptList(search.implementer, known == null ? undefined : listOf(known)) };
   for (const [name, value] of Object.entries(lists)) if (value) query.set(name, value);
   query.set("sort", sort);
   query.set("order", order);
@@ -213,14 +214,16 @@ export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage 
   const merged = historyRows(shown, answers, readiness, peers.now, compareRows(sort, order));
   const counts: RunCounts = { state: { active: 0, merged: 0, failed: 0, abandoned: 0 }, failure: {}, implementer: {} };
   let total = 0;
-  for (const answer of answers.values()) {
-    total += answer.total;
+  for (const answer of answers.values()) total += answer.total;
+  const every = [...answers.values(), ...others.values()];
+  for (const answer of every) {
     for (const group of RUN_GROUPS) counts.state[group] += answer.counts?.state[group] ?? 0;
     sumInto(counts.failure, answer.counts?.failure);
     sumInto(counts.implementer, answer.counts?.implementer);
   }
-  const every = [...answers.values(), ...others.values()];
   const implementers = [...new Set(every.flatMap((answer) => answer.implementers ?? []))].sort();
+  const union = every.length > 0 ? implementers.join(",") : null;
+  useEffect(() => { if (union != null) setKnown(union); }, [union]);
   const projects = hosts.flatMap((host) => {
     const name = nameOf(host);
     return name == null ? [] : [{ name, count: (answers.get(host.key) ?? others.get(host.key))?.total ?? 0 }];

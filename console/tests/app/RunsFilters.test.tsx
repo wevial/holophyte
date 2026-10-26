@@ -311,6 +311,9 @@ test("checking a Project draws only its rows and asks the other host for one row
   expect(shown.every((text) => text!.includes("DEMO-"))).toBe(true);
   expect(daemons.lastOf(WRITER).limit).toBe("1");
   expect(await valueRows("Project")).toEqual(["demo 6", "writer 3"]);
+  expect(await valueRows("State")).toEqual(["Active 1", "Merged 4", "Failed 2", "Abandoned 2"]);
+  expect((await valueRows("Failure kind")).slice(0, 1)).toEqual(["verify 3"]);
+  expect(await valueRows("Implementer")).toEqual(["claude opus 5", "codex gpt-6-astra 2"]);
   expect(countLine()).toStartWith("demo · ");
   expect(chips()).toEqual(["Project: demo"]);
   expect(sessionStorage.getItem("holophyte.next.project")).toBeNull();
@@ -343,16 +346,31 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   expect(chips()).toEqual([]);
 });
 
-test("a filter no run matches reads No runs match once with no pager", async () => {
+test("an Implementer the hosts do not list is dropped from the query, the boxes and the chips, and a listed one is kept", async () => {
+  const daemons = countedFleet();
+  await mount("#/runs?implementer=nope,claude%20opus", daemons.fetchImpl);
+  for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).implementer).toBe("claude opus");
+  expect((await section("Implementer")).getAllByRole("checkbox").slice(1).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
+  expect(await checkedIn("Implementer")).toEqual(["claude opus"]);
+  expect(chips()).toEqual(["Implementer: claude opus"]);
+  expect(filterButton().textContent).toBe("Filter · 1");
+});
+
+test("a filter no run matches reads No runs match once with no pager, and an empty scope with no filter names the project and the 7 days", async () => {
   await mount("#/runs?q=nothing", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
   expect(screen.getAllByText("No runs match")).toHaveLength(1);
   const heads = document.querySelector("[data-run-heads]")!;
   expect(heads.compareDocumentPosition(screen.getByText("No runs match")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole("navigation", { name: "Pages of runs" })).toBeNull();
+  cleanup();
+
+  await mount("#/runs?project=demo", fleet({ rows: [] }, { rows: runs("WRITER", 200, 3) }).fetchImpl);
+  expect(screen.getByText("No runs in demo in the last 7 days.")).toBeTruthy();
 });
 
 for (const [hash, checked, asked] of [
   ["state=all", [], {}],
+  ["state=failed", ["Failed"], { state: "failed" }],
   ["state=failed,nope&failure=verify,nope", ["Failed"], { state: "failed", failure: "verify" }],
 ] as const) {
   test(`an old or partly unknown link, ${hash}, checks only the values it knows and asks the hosts with them`, async () => {
