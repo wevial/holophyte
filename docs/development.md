@@ -828,6 +828,14 @@ Each module, one line:
   paths; `witness-tree.json` stamps each table step's key over its `run` and
   its inputs at the commit, so a step whose key matches and whose `keep`
   paths exist is reused, until an earlier table step runs or a setup fails.
+- `holophyte/story/witness_reap.py` — `stop()` ends a witness command's
+  process group and every process of this user whose working directory or
+  an argument is inside the command's tree, SIGTERM first and SIGKILL
+  after `STOP_GRACE`, once the command ends, times out or the runner is
+  signalled; `reap_stale()` reaps each `witness-*` scratch directory an
+  earlier pass left behind, its `owner` pid gone or, with no `owner`,
+  older than `[story] witness_sec`, and a loop pass stops whatever still
+  runs in the warm tree before it prepares it.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file and no child is in Ready or

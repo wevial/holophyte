@@ -307,6 +307,7 @@ PINNED = {
     "holophyte/story/story_scope.py": 3,
     "holophyte/story/story_views.py": 1,
     "holophyte/story/witness.py": 1,
+    "holophyte/story/witness_reap.py": 1,
     "holophyte/story/witness_running.py": 1,
     "holophyte/story/witness_tree.py": 1,
     "holophyte/story/witness_trigger.py": 1,
