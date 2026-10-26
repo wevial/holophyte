@@ -22,6 +22,7 @@ from holophyte.config.project import Project, worktree_path
 from holophyte.host import host_health
 from holophyte.host.registry import Host
 from holophyte.loop.gates import InfraFailure
+from holophyte.story.witness_running import mark_running
 from tests.host_fixture import git
 from tests.phase_fixture import park_run
 from tests.test_patrol import MIN, NOW, PatrolFixture, projects_text
@@ -181,6 +182,14 @@ class HeldPullTests(GithubFixture):
         held = {pull["number"]: pull for pull in self.patrol("q")["pull_requests"]}
         self.assertEqual(held[7]["failed"], [{"name": "docs", "required": False}])
 
+    def test_an_ignored_ticket_hides_its_held_pull_request(self):
+        self.held_project()
+        self.configure("q", 'ignore = ["K1"]')
+        row = self.patrol("q")
+        self.assertEqual([pull["ticket"] for pull in row["pull_requests"]],
+                         ["K2"])
+        self.assertEqual(row["ignored"], ["K1"])
+
 
 class TmpUsageTests(unittest.TestCase):
     def test_used_percent_and_free_bytes_match_the_real_df(self):
@@ -263,6 +272,20 @@ class LeftoverTests(HostFixtureParts):
             {process["pid"]: process["args"] for process in found["processes"]
              }[first], "sleep 600")
 
+    def test_a_live_witness_pass_keeps_only_its_existing_trees(self):
+        self.project("p")
+        mark_running(Project.locate(self.conns["p"][2]), "S", ["K"])
+        live = self.tmp / "witness-live" / "tree"
+        live.mkdir(parents=True)
+        kept = self.sleeper(live)
+        removed = self.tmp / "witness-gone" / "tree"
+        removed.mkdir(parents=True)
+        gone = self.sleeper(removed)
+        shutil.rmtree(self.tmp / "witness-gone")
+        pids = {process["pid"] for process in host_health.leftovers(
+            Host.locate().projects())["processes"]}
+        self.assertEqual(pids & {kept, gone}, {gone})
+
     def test_a_host_without_proc_skips_the_part(self):
         with patch.object(host_health, "PROC", self.root / "no-proc"):
             self.assertEqual(host_health.leftovers([]),
@@ -341,3 +364,28 @@ class CleanHostTests(HostFixtureParts):
                     ["attention", "tmp", "leftovers", "units", "kernel",
                      "clean"]))
                 self.assertTrue(host["clean"])
+
+
+@unittest.skipUnless(Path("/proc").is_dir(), "needs /proc")
+class HostFindingTests(HostFixtureParts):
+    def test_each_finding_is_its_own_host_line(self):
+        self.project("p")
+        self.enterContext(patch.object(host_health, "TMP_FULL_PERCENT", 0))
+        witness = self.tmp / "witness-x" / "tree"
+        witness.mkdir(parents=True)
+        pid = self.sleeper(witness)
+        shutil.rmtree(self.tmp / "witness-x")
+        self.on_path({"journalctl": "#!/bin/sh\n" + "".join(
+            f"echo '{line}'\n" for line in KERNEL_LINES)})
+        host = json.loads(self.holo("--json")[1])["host"]
+        lines = [line for line in self.holo()[1].splitlines()
+                 if line.startswith("[host]")]
+        self.assertFalse(host["clean"])
+        self.assertRegex(lines[0], rf"^\[host\] /tmp {host['tmp']['used_percent']}%"
+                         r" used, \d+(\.\d)? (B|KiB|MiB|GiB|TiB) free$")
+        leftover = (rf"\[host\] leftover pid {pid} \(\d+ s\):"
+                    rf" {re.escape(str(witness))} sleep 600")
+        self.assertEqual(len([line for line in lines
+                              if re.fullmatch(leftover, line)]), 1)
+        self.assertIn("[host] kernel 2 I/O errors in the last hour:"
+                      f" {KERNEL_LINES[1]}", lines)
