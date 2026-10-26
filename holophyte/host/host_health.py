@@ -156,8 +156,8 @@ def kernel_errors():
         done = subprocess.run(KERNEL_ARGV, capture_output=True, text=True,
                               timeout=JOURNAL_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired):
-        return {"readable": False, "detail": "not readable", "errors": []}
-    if done.returncode != 0 or UNREAD_HINT in done.stderr:
+        done = None
+    if done is None or done.returncode != 0 or UNREAD_HINT in done.stderr:
         return {"readable": False, "detail": "not readable", "errors": []}
     return {"readable": True,
             "errors": [line for line in done.stdout.splitlines()
