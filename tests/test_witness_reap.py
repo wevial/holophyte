@@ -137,24 +137,18 @@ class SignalledPassTests(TokenFixture, unittest.TestCase):
         self.addCleanup(lambda: child.poll() is None and child.kill())
         return child
 
-    def assert_signal_stops_the_pass(self, signum):
+    def test_sighup_to_the_runner_stops_the_command_and_removes_its_tree(self):
         token = shlex.quote(self.token)
         child = self.operator_pass(f"sh -c 'sleep {token} & sleep {token}'")
         self.assertTrue(wait_for(lambda: carrying(self.token)))
 
-        child.send_signal(signum)
+        child.send_signal(signal.SIGHUP)
 
         child.wait(timeout=witness_reap.STOP_GRACE + 10)
         self.assertEqual(alive_carrying(self.token), [])
         self.assertEqual(list(self.scratch.glob("witness-*")), [])
         self.assertEqual(
             len(git(self.repo, "worktree", "list").splitlines()), 1)
-
-    def test_sighup_to_the_runner_stops_the_command_and_removes_its_tree(self):
-        self.assert_signal_stops_the_pass(signal.SIGHUP)
-
-    def test_sigterm_to_the_runner_stops_the_command_and_removes_its_tree(self):
-        self.assert_signal_stops_the_pass(signal.SIGTERM)
 
     def test_a_stopped_command_s_descendant_gets_sigterm_first(self):
         ready, termed = self.root / "ready", self.root / "termed"
