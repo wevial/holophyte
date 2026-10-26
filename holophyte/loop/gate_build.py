@@ -20,9 +20,7 @@ class GateHandoff(store.RunEnded):
 
 
 class GateReexec(Exception):
-    def __init__(self, run_id):
-        super().__init__(run_id)
-        self.run_id = run_id
+    pass
 
 
 def _commit(checkout, rev):
