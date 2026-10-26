@@ -1,4 +1,5 @@
 """A witness command's processes are stopped before its tree is removed."""
+import contextlib
 import os
 import shutil
 import signal
@@ -124,10 +125,8 @@ def _stop_pids(pids):
 
 def _signal_pids(pids, signum):
     for pid in pids:
-        try:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(pid, signum)
-        except (ProcessLookupError, PermissionError):
-            pass
 
 
 def _running(pid):
@@ -170,13 +169,12 @@ def _in_tree(pid, roots):
     try:
         cwd = os.readlink(entry / "cwd").removesuffix(DELETED)
     except OSError:
-        cwd = None
+        cwd = ""
     try:
         argv = (entry / "cmdline").read_bytes().decode(errors="replace")
     except OSError:
         argv = ""
-    paths = [cwd] if cwd else []
-    paths += argv.split("\0")
+    paths = [cwd, *argv.split("\0")]
     return any(_names(path, root) for path in paths for root in roots)
 
 
