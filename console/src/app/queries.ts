@@ -314,8 +314,11 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
 
 /** Each answering host's `/history` answers to `queries`, by its record
  *  `key`, as the first answer with every answer's rows joined in order; a
- *  host without the route, or still missing an answer, has no entry. */
-export function useHistory(hosts: HostRecord<PollBodies>[], queries: string[], deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
+ *  host without the route, or still missing an answer, has no entry.
+ *  `settled` is whether a host was asked and every query has its own answer or failure. */
+export function useHistory(
+  hosts: HostRecord<PollBodies>[], queries: string[], deps: { fetch: Fetch } = defaultPollDeps,
+): { answers: Map<string, History>; settled: boolean } {
   const asked = hosts.filter((host) => host.status != null);
   const results = useQueries({
     queries: asked.flatMap((host) => queries.map((query) => {
@@ -335,7 +338,7 @@ export function useHistory(hosts: HostRecord<PollBodies>[], queries: string[], d
     const [first] = parts;
     if (first && parts.every((part) => part)) answers.set(host.key, { ...first, rows: parts.flatMap((part) => part!.rows) });
   });
-  return answers;
+  return { answers, settled: results.length > 0 && results.every((result) => result.isFetched && !result.isPlaceholderData) };
 }
 
 function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fetch) {

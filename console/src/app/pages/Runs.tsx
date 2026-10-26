@@ -78,7 +78,7 @@ export function Runs() {
   const order: RunOrder = search.order ?? "desc";
   const page = search.page ?? 1;
   const size = search.size ?? DEFAULT_SIZE;
-  const { now, rows, total, counts } = useRunPage({ state: filter, sort, order, page, size });
+  const { now, rows, total, counts, settled } = useRunPage({ state: filter, sort, order, page, size });
   const navigate = useNavigate();
   const dock = useRef<HTMLDivElement>(null);
   const controls = useRef<HTMLDivElement>(null);
@@ -94,7 +94,12 @@ export function Runs() {
     go({ sort: fresh ? undefined : key, order: fresh ? undefined : nextOrder });
   };
   const first = (page - 1) * size;
-  const previousPage = Math.max(1, Math.min(page - 1, Math.ceil(total / size)));
+  const backTo = Math.min(page - 1, Math.ceil(total / size));
+  const pastEnd = settled && rows.length === 0 && page > 1;
+  useEffect(() => {
+    if (!pastEnd) return;
+    void navigate({ to: ".", replace: true, search: (previous: ScopeSearch & RunsSearch) => ({ ...previous, page: backTo > 1 ? backTo : undefined }) });
+  }, [pastEnd, backTo, navigate]);
   return (
     <section aria-labelledby="page-title" className="@container flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-2">
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
@@ -182,14 +187,12 @@ export function Runs() {
           </div>
         }
       />
-      {(rows.length > 0 || page > 1) && (
+      {rows.length > 0 && (
         <nav aria-label="Pages of runs" className="-mt-2 flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-          {rows.length > 0 && (
-            <span className="font-mono text-[12.5px] text-ink-2">
-              {first + 1}–{first + rows.length} of {total}
-            </span>
-          )}
-          <Btn disabled={page === 1} onClick={() => go({ page: previousPage === 1 ? undefined : previousPage })}>
+          <span className="font-mono text-[12.5px] text-ink-2">
+            {first + 1}–{first + rows.length} of {total}
+          </span>
+          <Btn disabled={page === 1} onClick={() => go({ page: page === 2 ? undefined : page - 1 })}>
             <ChevronIcon folded={false} /> Previous
           </Btn>
           <Btn disabled={first + rows.length >= total} onClick={() => go({ page: page + 1 })}>

@@ -114,6 +114,9 @@ export const PAGE_SIZES = [25, 50, 100] as const;
 
 export const DEFAULT_SIZE = 50;
 
+/** The deepest page the address may name, so the batches asked for stay few. */
+const MAX_PAGE = 1000;
+
 const SORT_KEY: Record<RunSort, (row: RunRow) => number> = {
   started: (row) => row.started_ms,
   ended: (row) => row.ended_ms ?? Number.POSITIVE_INFINITY,
@@ -139,6 +142,7 @@ interface RunPage {
   rows: RunRow[];
   total: number;
   counts: Record<RunFilter, number>;
+  settled: boolean;
 }
 
 /** The most rows a daemon's `/history` answers at once. */
@@ -166,7 +170,7 @@ export function useRunPage({ state, sort, order, page, size }: Required<RunsSear
     queries.push(query.toString());
   }
   const readiness = useReadiness(hosts, deps);
-  const answers = useHistory(hosts, queries, deps);
+  const { answers, settled } = useHistory(hosts, queries, deps);
   const merged = historyRows(hosts, answers, readiness, peers.now, compareRows(sort, order));
   const counts: Record<RunFilter, number> = { all: 0, active: 0, merged: 0, failed: 0, abandoned: 0 };
   let total = 0;
@@ -175,7 +179,7 @@ export function useRunPage({ state, sort, order, page, size }: Required<RunsSear
     for (const group of RUN_GROUPS) counts[group] += answer.counts?.state[group] ?? 0;
   }
   counts.all = state === "all" ? total : RUN_GROUPS.reduce((sum, group) => sum + counts[group], 0);
-  return { now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, counts };
+  return { now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, counts, settled };
 }
 
 const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
@@ -203,7 +207,7 @@ export function validateRunsSearch({ state, sort, order, page, size }: Record<st
     state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined,
     sort: RUN_SORTS.includes(sort as RunSort) ? (sort as RunSort) : undefined,
     order: order === "asc" || order === "desc" ? order : undefined,
-    page: Number.isInteger(pageNumber) && pageNumber > 1 ? pageNumber : undefined,
+    page: Number.isInteger(pageNumber) && pageNumber > 1 && pageNumber <= MAX_PAGE ? pageNumber : undefined,
     size: PAGE_SIZES.some((each) => each === sizeNumber) ? sizeNumber : undefined,
   };
 }
