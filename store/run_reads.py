@@ -410,6 +410,8 @@ SORT_KEYS = {
     "state": f"CASE {STATE_GROUP} WHEN 'active' THEN 0 WHEN 'merged' THEN 1"
              " WHEN 'failed' THEN 2 WHEN 'abandoned' THEN 3 ELSE 4 END",
 }
+FACET_COLUMNS = {"state": STATE_GROUP, "failure": "failureKind",
+                 "implementer": "implementer"}
 IMPLEMENTER_LABEL = (
     "CASE WHEN json_valid({0}payload) AND json_type({0}payload, '$.label')"
     " = 'text' THEN json_extract({0}payload, '$.label') END")
@@ -458,10 +460,10 @@ def _history_filters(query, skip=None):
         clauses.append("(instr(lower(linearIdentifier), lower(?)) > 0"
                        " OR instr(lower(title), lower(?)) > 0)")
         params += [query.q, query.q]
-    for name, column, values in (("state", STATE_GROUP, query.states),
-                                 ("failure", "failureKind", query.failures),
-                                 ("implementer", "implementer",
-                                  query.implementers)):
+    picked = {"state": query.states, "failure": query.failures,
+              "implementer": query.implementers}
+    for name, column in FACET_COLUMNS.items():
+        values = picked[name]
         if values and name != skip:
             clauses.append(f"({column}) IN ({', '.join('?' * len(values))})")
             params.extend(values)
@@ -492,10 +494,8 @@ def run_counts(conn, since, until, query):
     base, params = _history_base(conn, since, until)
     keys = {"state": STATE_GROUPS, "failure": FAILURE_KINDS,
             "implementer": implementer_labels(conn)}
-    columns = {"state": STATE_GROUP, "failure": "failureKind",
-               "implementer": "implementer"}
     counts = {}
-    for name, column in columns.items():
+    for name, column in FACET_COLUMNS.items():
         where, filters = _history_filters(query, skip=name)
         counted = dict(conn.execute(
             f"SELECT {column}, COUNT(*) FROM ({base}) WHERE {where}"
