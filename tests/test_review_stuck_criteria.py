@@ -174,7 +174,11 @@ class RepeatedReasonTests(StuckCriteriaTestCase):
     def test_a_reworded_reason_counts_and_three_repeats_trip(self):
         run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP)
         self.assertEqual(self.sweep(run_id).trips, [])
-        self.rounds_from(run_id, 5, REPEATED_GAP)
+        at = T0 + 22 * MINUTE
+        store.record_review_round(
+            self.conn, run_id, 5, "changes_requested", "reviewer",
+            findings=[code("gap_5.py", 5)] + restated_with(REPEATED_GAP),
+            started_at=at, ended_at=at + MINUTE)
 
         trip, = self.sweep(run_id, T0 + 30 * MINUTE).trips
 
@@ -184,6 +188,7 @@ class RepeatedReasonTests(StuckCriteriaTestCase):
 
     def test_the_failure_quotes_the_newest_repeated_reason(self):
         run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP, REPEATED_GAP)
+        self.heartbeat_at(run_id, T0 + 20 * MINUTE)
 
         holophyte.host.supervisor.sweep(
             self.project, self.conn, T0 + 20 * MINUTE, act=True,
@@ -205,13 +210,6 @@ class RepeatedReasonTests(StuckCriteriaTestCase):
         run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP, REPEATED_GAP)
 
         self.assertEqual(self.sweep(run_id).trips, [])
-
-    def rounds_from(self, run_id, number, reason):
-        at = T0 + 22 * MINUTE
-        store.record_review_round(
-            self.conn, run_id, number, "changes_requested", "reviewer",
-            findings=[code(f"gap_{number}.py", number)]
-            + restated_with(reason), started_at=at, ended_at=at + MINUTE)
 
 
 if __name__ == "__main__":
