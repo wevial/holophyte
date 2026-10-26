@@ -10,9 +10,6 @@ const GROUPS = ["You", "Factory", "Project"] as const;
 
 const GROUP_LABEL = "font-mono text-[11px] leading-[1.3] font-medium uppercase tracking-[0.1em] text-ink-3";
 
-const SECTION_LINK =
-  "relative flex min-h-11 items-center gap-3 border-l-2 px-4 text-[12px] font-medium uppercase tracking-[0.12em]";
-
 function BackRow({ back }: { back: string | null }) {
   const router = useRouter();
   const className = "flex min-h-11 w-full items-center gap-2 border border-rule bg-paper px-3 text-[13px] font-medium text-ink hover:bg-paper-2";
@@ -81,7 +78,7 @@ export function SettingsNav({ back }: { back: string | null }) {
                 params={{ tab: item.id }}
                 search={keepScope}
                 aria-current={current === item.id ? "page" : undefined}
-                className={`${SECTION_LINK} ${current === item.id ? "border-act bg-act-wash text-act" : "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink"}`}
+                className={`relative flex min-h-11 items-center gap-3 border-l-2 px-4 text-[12px] font-medium uppercase tracking-[0.12em] ${current === item.id ? "border-act bg-act-wash text-act" : "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink"}`}
               >
                 <span className="flex-1">{item.label}</span>
                 {item.group === "Project" && count(item.id) > 0 && <span className="font-mono text-[11px] tracking-normal text-act">{count(item.id)}</span>}
