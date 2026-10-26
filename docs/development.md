@@ -1223,6 +1223,9 @@ the section the maintainer picks for each one both sides changed.
 `console/src/app/runDays.ts` defines thirty local-day windows and aggregates
 each day’s runs. `console/src/app/pages/RunsHistory.tsx` renders their counts,
 work totals and five-day pager.
+The Runs page (`console/src/app/pages/Runs.tsx`) pages and sorts through
+`GET /history`: one daemon in scope serves each page itself, and with several
+`useRunPage()` in `console/src/app/history.ts` merges each daemon's first pages.
 
 The Run page’s `next/components/CriteriaList.tsx` shows review marks and
 witness notes, with its verdict count supplied by `criteriaClause()` in

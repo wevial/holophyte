@@ -47,7 +47,16 @@ const writer40 = run({
 
 type Item = Attention["items"][number];
 
-/** Each daemon answers `/history` only at yesterday's local midnight; null answers 404.
+/** The daemon's state groups: an open run, or a paused one no later run resumed, is active;
+ *  a paused run a later run resumed is in none. */
+function groupOf(row: HistoryRow): "active" | "merged" | "failed" | "abandoned" | null {
+  if (row.outcome == null || (row.outcome === "paused" && row.resumed_as == null)) return "active";
+  if (row.outcome === "paused") return null;
+  return row.outcome === "merged" || row.outcome === "abandoned" ? row.outcome : "failed";
+}
+
+/** Each daemon answers `/history` only at yesterday's local midnight, in the asked `state`,
+ *  newest first and cut at `offset` and `limit`; null answers 404.
  *  The demo daemon sends `items` on `/attention`, and only `readyRuns` are ready to merge. */
 function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: Item[] = [], readyRuns: number[] = []): Fetch {
   const bodies = (project: string, list: Item[]) => ({
@@ -59,8 +68,21 @@ function fleet(demo: HistoryRow[] | null, writer: HistoryRow[] | null, items: It
     const merge = url.match(/\/runs\/(\d+)\/merge$/);
     if (merge) return Response.json({ ...ready, run: Number(merge[1]), ready: readyRuns.includes(Number(merge[1])) });
     for (const [base, rows] of [[DEMO, demo], [WRITER, writer]] as const) {
-      if (url === `${base}/history?since=${YESTERDAY}` && rows) {
-        return Response.json({ rows, since: YESTERDAY, until: null, limit: 500, truncated: false, total: 0, now: NOW });
+      const asked = new URL(url).searchParams;
+      if (url.startsWith(`${base}/history?`) && asked.get("since") === String(YESTERDAY) && rows) {
+        const state = asked.get("state");
+        const matching = rows.filter((row) => state == null || groupOf(row) === state).sort((a, b) => b.started_ms - a.started_ms);
+        const offset = Number(asked.get("offset") ?? 0);
+        const limit = Number(asked.get("limit") ?? 200);
+        const counts = { active: 0, merged: 0, failed: 0, abandoned: 0 };
+        for (const row of rows) {
+          const group = groupOf(row);
+          if (group) counts[group] += 1;
+        }
+        return Response.json({
+          rows: matching.slice(offset, offset + limit), since: YESTERDAY, until: null, limit, offset, truncated: matching.length > offset + limit,
+          total: matching.length, counts: { state: counts, failure: {}, implementer: {} }, now: NOW,
+        });
       }
     }
     return polls(url);
@@ -158,14 +180,14 @@ test("a scoped Runs lists only that project's runs, with a dash for no rounds or
   await mount("#/runs?project=demo&state=all", fleet([demo12, demo9], [writer40]));
   const [first, second] = rows();
   expect(rows()).toHaveLength(2);
-  expect(cells(first!)).toEqual(["12", "DEMO-12", "Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "16m"]);
-  expect(cells(second!)).toEqual(["9", "DEMO-9", "Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "1h 43m"]);
+  expect(cells(first!)).toEqual(["12", "DEMO-12", "Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "–", "16m"]);
+  expect(cells(second!)).toEqual(["9", "DEMO-9", "Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "–", "1h 43m"]);
 });
 
 test("the table heads the ticket key and the title as separate columns, the key linked to its ticket page", async () => {
   await mount("#/runs", fleet([run({ id: 21, ticket: "HOLO-12", title: "Fix the sweep", started_ms: today(17, 0) })], []));
-  const head = document.querySelector("[data-run-table] [aria-hidden='true']")!;
-  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "State", "Rounds", "PR", "Started", "Took"]);
+  const head = document.querySelector("[data-run-heads]")!;
+  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "State", "Rounds", "PR", "Started", "Ended", "Took"]);
   const [row] = rows();
   expect(cells(row!).slice(1, 3)).toEqual(["HOLO-12", "Fix the sweep"]);
   expect(runLink(row!).getAttribute("aria-label")).toStartWith("Run 21, HOLO-12 Fix the sweep, demo,");
@@ -225,6 +247,17 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
   expect(runLink(rows()[4]!).getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
 });
 
+test("the Ended column, between Started and Took, reads an ended run's end as Started reads a start and a dash while a run is open", async () => {
+  const endedYesterday = run({
+    id: 30, ticket: "DEMO-30", title: "End late", started_ms: new Date(2026, 9, 14, 15, 50).getTime(),
+    phase: "done", outcome: "merged", ended_ms: new Date(2026, 9, 14, 16, 20).getTime(),
+  });
+  await mount("#/runs?state=all", fleet([demo12, endedYesterday], []));
+  const [open, closed] = rows();
+  expect(cells(open!)[8]).toBe("–");
+  expect(cells(closed!).slice(7)).toEqual(["yest 15:50", "yest 16:20", "16m"]);
+});
+
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
 const demoParked = run({ id: 13, ticket: "DEMO-13", title: "Park the pull", started_ms: today(15, 0), phase: "awaiting_merge_approval" });
 const demoFailed = run({ id: 14, ticket: "DEMO-14", title: "Fail the build", started_ms: today(14, 0), ...ended("failed") });
@@ -265,13 +298,19 @@ test("Active leaves out a paused run a later run resumed and does not count it, 
   await mount("#/runs", resumedFleet());
   expect(pressed()).toEqual(["Active 2"]);
   expect(shownIds()).toEqual(["8", "4"]);
+  expect(countLine()).toBe("all projects · 2 runs / 2 active / newest first / today and yesterday");
+  await act(async () => {
+    fireEvent.click(filterButtons()[0]!);
+    await settle();
+  });
+  expect(pressed()).toEqual(["All 3"]);
+  expect(shownIds()).toEqual(["8", "5", "4"]);
   expect(countLine()).toBe("all projects · 3 runs / 2 active / newest first / today and yesterday");
-  expect(filterButtons()[0]!.textContent).toBe("All 3");
 });
 
 test("the count line and every State button count the scoped runs, with Active pressed and only active runs listed by default", async () => {
   await mount("#/runs", sixRuns());
-  expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first / today and yesterday");
+  expect(countLine()).toBe("all projects · 3 runs / 3 active / newest first / today and yesterday");
   expect(filterButtons().map((button) => button.textContent)).toEqual(["All 6", "Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
   expect(pressed()).toEqual(["Active 3"]);
   expect(shownIds()).toEqual(["12", "13", "41"]);
@@ -334,6 +373,6 @@ test("the footer links to older days with project scope and names the time zone"
   expect(Array.from(footer.children, (line) => line.textContent)).toEqual([
     "Active runs also show on the Overview. Open a run for its stage, log and agent.",
     "Older days",
-    "times PDT",
+    "times show in PDT",
   ]);
 });
