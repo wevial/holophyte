@@ -168,7 +168,7 @@ function dayStart(day: string): Date {
 
 /** The Started window the search asks for, as `/history`'s `since` and
  *  `until`: `from` and `to` are whole local days and win over `range`. */
-export function runWindow({ range, from, to }: RunsFilters, now: number): { since: number; until: number | null } {
+function runWindow({ range, from, to }: RunsFilters, now: number): { since: number; until: number | null } {
   if (from != null || to != null) {
     const last = to == null ? null : dayStart(to);
     return {
@@ -267,7 +267,7 @@ export interface RunsFilters {
 
 /** `value`'s comma list without blanks, repeats or values outside `allowed`,
  *  in `allowed`'s order when given; undefined when nothing is left. */
-export function keptList(value: unknown, allowed?: readonly string[]): string | undefined {
+function keptList(value: unknown, allowed?: readonly string[]): string | undefined {
   if (typeof value !== "string") return undefined;
   const given = [...new Set(value.split(",").map((each) => each.trim()).filter((each) => each !== ""))];
   const kept = allowed ? allowed.filter((each) => given.includes(each)) : given;
