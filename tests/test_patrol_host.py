@@ -298,7 +298,7 @@ class UnitTests(HostFixtureParts):
         self.project("p")
         self.project("q")
         self.on_path({"systemctl": UNITS_SCRIPT})
-        code, text = self.holo("--json")
+        text = self.holo("--json")[1]
         units = json.loads(text)["host"]["units"]
         self.assertEqual(units["units"], [
             {"unit": "holophyte-sweep.timer", "state": "inactive"},
@@ -318,7 +318,7 @@ class UnitTests(HostFixtureParts):
         self.project("p")
         self.roomy_tmp()
         self.on_path({})
-        code, text = self.holo("--json")
+        text = self.holo("--json")[1]
         host = json.loads(text)["host"]
         self.assertEqual((host["units"]["detail"], host["units"]["findings"],
                           host["clean"]),
@@ -356,7 +356,7 @@ class CleanHostTests(HostFixtureParts):
         expected = ["[host] nothing to do", SKIPPED_UNITS, UNREADABLE_KERNEL]
         for argv in ((), ("-p", "p")):
             with self.subTest(argv=argv):
-                code, text = self.holo(*argv)
+                text = self.holo(*argv)[1]
                 self.assertEqual(text.splitlines()[:3], expected)
                 self.assertEqual(text.splitlines()[3], "[p] nothing to do")
                 host = json.loads(self.holo("--json", *argv)[1])["host"]
