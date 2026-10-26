@@ -42,7 +42,7 @@ from holophyte.serve.contract import (
 from holophyte.serve.contract_emit import ContractError, json_schema
 
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
-ANSWERS = ("status", "attention", "host-status", "host-attention",
+ANSWERS = ("status", "attention", "host-status", "host-attention", "prefs",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
            "run-transcript",
@@ -143,7 +143,7 @@ class GeneratedFilesTests(unittest.TestCase):
                          [f"{stem}.schema.json" for stem in (
                              "attention", "board", "findings", "history", "holds",
                              "host-attention", "host-status", "ledger",
-                             "peers", "run-asks", "run-detail", "run-files",
+                             "peers", "prefs", "run-asks", "run-detail", "run-files",
                              "run-merge", "run-transcript", "run-turns",
                              "scout-routes", "scout", "scouts", "shipped",
                              "status", "story", "ticket-check", "ticket-search",

@@ -1,0 +1,13 @@
+{
+  "day_log": {
+    "preset": "manual",
+    "items": {
+      "merged": true,
+      "review-round_2": false
+    },
+    "projects": {
+      "alpha": false
+    }
+  },
+  "updated_ms": 1750000000000
+}
