@@ -93,7 +93,7 @@ export function FilterSelect({ label, param, allLabel, options }: { label: strin
   );
 }
 
-const SEGMENT = "min-h-9 cursor-pointer px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] whitespace-nowrap text-ink-2 not-first:border-l not-first:border-ink-3 hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper";
+const SEGMENT = "min-h-8 cursor-pointer px-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] whitespace-nowrap text-ink-2 not-first:border-l not-first:border-ink-3 hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper";
 
 /** A popover's open state, closed by `hidden`, Escape or a press outside
  *  `box`, which gives focus back to `button` and focuses nothing else. */
@@ -228,7 +228,7 @@ export function FilterPopover({ label, sections, hidden }: { label: string; sect
       </button>
       {open && (
         <div role="dialog" aria-label={label}
-          className="absolute top-full left-0 z-20 mt-1 max-h-[calc(100vh-11rem)] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
+          className="absolute top-full left-0 z-20 mt-1 max-h-[min(560px,calc(100vh-11rem))] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
           {sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />)}
         </div>
       )}

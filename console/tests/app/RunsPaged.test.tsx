@@ -194,7 +194,7 @@ async function mountPage(search: Required<RunsSearch>, fetchImpl: Fetch) {
 test("with several hosts in scope each serves its first page * size rows and the page is cut from their merge by start", async () => {
   const at = (id: number, ticket: string, hour: number) => run({ id, ticket, title: ticket, started_ms: today(hour, 0) });
   const daemons = fleet({ rows: [at(1, "DEMO-1", 10), at(2, "DEMO-2", 8)] }, { rows: [at(3, "WRITER-3", 9), at(4, "WRITER-4", 7)] });
-  await mountPage({ state: "", sort: "started", order: "desc", size: 2, page: 2 }, daemons.fetchImpl);
+  await mountPage({ state: "all", sort: "started", order: "desc", size: 2, page: 2 }, daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 4)]);
   expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 4)]);
   expect(rows().map((row) => row.textContent)).toEqual(["DEMO-2", "WRITER-4"]);
@@ -202,7 +202,7 @@ test("with several hosts in scope each serves its first page * size rows and the
 
 test("with several hosts in scope a page past the daemon's 5000-row cap is asked for in batches of at most 5000, up to each host's total", async () => {
   const daemons = fleet({ rows: runs("DEMO", 6000, 5101) }, { rows: [] });
-  await mountPage({ state: "", sort: "started", order: "desc", size: 100, page: 51 }, daemons.fetchImpl);
+  await mountPage({ state: "all", sort: "started", order: "desc", size: 100, page: 51 }, daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 5000), paged(null, 5000, 100)]);
   expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 5000)]);
   const shown = rows().map((row) => row.textContent);

@@ -209,7 +209,7 @@ export function Runs() {
               inert={hidden}
               className="flex flex-col gap-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0 @max-[1099px]:sticky @max-[1099px]:left-0 @max-[1099px]:w-[100cqw]"
             >
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 min-[1100px]:flex-nowrap">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2.5 min-[1100px]:flex-nowrap">
               <SearchField key={fieldKey} label="Search runs" width="w-[220px] min-w-[112px] shrink" />
               <RangeButtons label="Started" presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
               <FilterPopover label="Filter runs" sections={sections} hidden={hidden} />
