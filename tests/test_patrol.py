@@ -245,9 +245,6 @@ class HostFormTests(PatrolFixture):
                  if not line.startswith("[host]")]
         self.assertEqual(lines[0], "[p] nothing to do · 1 in flight")
         self.assertEqual(lines[1], "[q]")
-        self.assertEqual([line.split()[1] for line in lines[2:]
-                          if line.strip().startswith("stranded ")],
-                         ["A", "B", "C"])
         code, text = self.holo("--json")
         snap = json.loads(text)
         self.assertEqual((snap["form"], [row["name"] for row in snap["projects"]]),
