@@ -7,15 +7,17 @@ import tempfile
 import threading
 from pathlib import Path
 from time import time
+from typing import get_args
 
+from holophyte.serve.contract_prefs import DayLogPrefs
 from holophyte.serve.server import authorized
 
 PREFS_PATH = "/prefs"
 PREFS_FILE = "console-prefs.json"
 MAX_PREFS_BODY = 16 * 1024
 KEYS = ("day_log",)
-PRESETS = ("highlights", "everything", "manual")
-DAY_LOG_FIELDS = ("preset", "items", "projects")
+PRESETS = get_args(DayLogPrefs.__annotations__["preset"])
+DAY_LOG_FIELDS = tuple(DayLogPrefs.__annotations__)
 MAX_ENTRIES = 64
 MAX_PROJECT_NAME = 128
 ITEM_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
