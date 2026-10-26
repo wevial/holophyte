@@ -177,6 +177,16 @@
             }
           ]
         },
+        "implementer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "pr_url": {
           "anyOf": [
             {
@@ -222,6 +232,56 @@
       ],
       "additionalProperties": true
     },
+    "HistoryStateCounts": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "integer"
+        },
+        "merged": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "abandoned": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "active",
+        "merged",
+        "failed",
+        "abandoned"
+      ],
+      "additionalProperties": true
+    },
+    "HistoryCounts": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/HistoryStateCounts"
+        },
+        "failure": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "implementer": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "failure",
+        "implementer"
+      ],
+      "additionalProperties": true
+    },
     "History": {
       "type": "object",
       "properties": {
@@ -247,11 +307,38 @@
         "limit": {
           "type": "integer"
         },
+        "offset": {
+          "type": "integer"
+        },
+        "sort": {
+          "enum": [
+            "started",
+            "ended",
+            "duration",
+            "rounds",
+            "state"
+          ]
+        },
+        "order": {
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
         "truncated": {
           "type": "boolean"
         },
         "total": {
           "type": "integer"
+        },
+        "counts": {
+          "$ref": "#/$defs/HistoryCounts"
+        },
+        "implementers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "now": {
           "type": "integer"

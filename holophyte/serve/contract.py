@@ -590,8 +590,22 @@ class HistoryRow(TypedDict):
     additions: NotRequired[int | None]
     deletions: NotRequired[int | None]
     resumed_as: NotRequired[int | None]
+    implementer: NotRequired[str | None]
     pr_url: str | None
     host: str | None
+
+
+class HistoryStateCounts(TypedDict):
+    active: int
+    merged: int
+    failed: int
+    abandoned: int
+
+
+class HistoryCounts(TypedDict):
+    state: HistoryStateCounts
+    failure: dict[str, int]
+    implementer: dict[str, int]
 
 
 class History(TypedDict):
@@ -599,8 +613,14 @@ class History(TypedDict):
     since: int
     until: int | None
     limit: int
+    offset: NotRequired[int]
+    sort: NotRequired[Literal["started", "ended", "duration", "rounds",
+                              "state"]]
+    order: NotRequired[Literal["asc", "desc"]]
     truncated: bool
     total: int
+    counts: NotRequired[HistoryCounts]
+    implementers: NotRequired[list[str]]
     now: int
 
 

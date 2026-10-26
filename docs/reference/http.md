@@ -346,7 +346,7 @@ Releasing a hold requires a reason, just like holding: `holo release` requires
 `note`, and `POST /actions/release-hold` rejects a blank `note`. The Release
 UI and its required-reason form are covered by HOLO-403.
 
-## `GET /history?since=MS&until=MS&limit=N`
+## `GET /history?since=MS&until=MS&limit=N&offset=N&sort=KEY&order=asc|desc&q=TEXT&state=GROUP,…&failure=KIND,…&implementer=LABEL,…`
 
 ```json
 {"rows": [
@@ -357,8 +357,8 @@ UI and its required-reason form are covered by HOLO-403.
    "elapsed_ms": 540000, "working_ms": 480000, "estimate_ms": 1800000,
    "heartbeat_age_ms": 12000, "rounds": 1,
    "max_rounds": 2, "findings": 2, "merge_sha": null, "commit_url": null,
-   "additions": 120, "deletions": 14, "resumed_as": null, "pr_url": null,
-   "host": "writer-1"},
+   "additions": 120, "deletions": 14, "resumed_as": null,
+   "implementer": "claude opus", "pr_url": null, "host": "writer-1"},
   {"id": 225, "ticket": "KO-255", "ticket_url": null,
    "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
    "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
@@ -367,10 +367,17 @@ UI and its required-reason form are covered by HOLO-403.
    "elapsed_ms": 1200000, "working_ms": null, "estimate_ms": null,
    "heartbeat_age_ms": null, "rounds": 0,
    "max_rounds": 2, "findings": 0, "merge_sha": null, "commit_url": null,
-   "additions": null, "deletions": null, "resumed_as": null, "pr_url": null,
-   "host": "writer-1"}
-], "since": 1788393600000, "until": null, "limit": 200,
+   "additions": null, "deletions": null, "resumed_as": null,
+   "implementer": null, "pr_url": null, "host": "writer-1"}
+], "since": 1788393600000, "until": null, "limit": 200, "offset": 0,
+ "sort": "started", "order": "desc",
  "truncated": false, "total": 2,
+ "counts": {"state": {"active": 1, "merged": 0, "failed": 1, "abandoned": 0},
+            "failure": {"verify": 1, "review_route": 0, "fix_no_progress": 0,
+                        "no_commits": 0, "budget": 0, "merge_lock": 0,
+                        "infra": 0, "swept": 0, "unclassified": 0},
+            "implementer": {"claude opus": 1}},
+ "implementers": ["claude opus"],
  "now": 1788478743000}
 ```
 
@@ -406,18 +413,56 @@ the pull request size last recorded for the run (null when none was);
 `resumed_as`, for a run whose `outcome` is `paused`, the id of the next run
 of the same ticket after it, whether or not that run is in the answer (null
 for a paused run with no later run, and for every run not paused); and
-`pr_url` and `host`, as `/shipped` spells them. An older daemon omits
-`findings`, `merge_sha`, `commit_url`, `additions`, `deletions` and
-`resumed_as`.
+`pr_url` and `host`, as `/shipped` spells them; and `implementer`, the
+`label` in the payload of the run's newest `implementer_profile` event (null
+when it has none, as every run before those events began reads). An older
+daemon omits `findings`, `merge_sha`, `commit_url`, `additions`, `deletions`,
+`resumed_as` and `implementer`.
 
-The body echoes `since`, `until` (null when omitted) and the `limit` applied,
-and carries `total`, the number of matching runs before the limit, and
-`now`, the daemon's clock the open rows were measured against. `limit` defaults to
-200 and is capped at 500; `truncated` is true when more runs matched than
-`limit`, and there is no paging past it. A missing or non-integer `since`,
-a non-integer `until`, or a non-positive or non-integer `limit`, is 400
-with an `error` naming the parameter. An `until` at or before `since` is
-400 with `"until must be after since"`.
+Optional parameters page, sort and narrow the list; without any of them the
+route answers as above. A row is served only when it matches every one
+given:
+
+- `offset`, a non-negative integer (default 0), skips the first `offset`
+  matching rows after sorting; `limit` then cuts what follows.
+- `sort` is one of `started` (the default), `ended`, `duration`, `rounds`
+  and `state`, and `order` is `asc` or `desc` (the default). `started` orders
+  by `started_ms`; `ended` by `ended_ms`, an open run later than every ended
+  run; `duration` by `elapsed_ms`, an open run's measured to `now`; `rounds`
+  by `rounds` as the row serves it; `state` by the state groups in the order
+  active, merged, failed, abandoned, then a paused run a later run resumed.
+  Ties under every key fall back to `started_ms` descending, then `id`
+  descending, so a sort is stable across pages.
+- `q` matches a run whose ticket key or title contains the text, ignoring
+  ASCII case; `%` and `_` match only themselves, and a blank `q` is absent.
+- `state` is a comma list of `active` (not ended, or paused with no later
+  run of its ticket), `merged`, `abandoned` (ended with that outcome) and
+  `failed` (ended with any other outcome but `paused`, `rejected` included).
+  A paused run that a later run resumed is in no group, so any `state`
+  leaves it out.
+- `failure` is a comma list of failure kinds (`verify`, `review_route`,
+  `fix_no_progress`, `no_commits`, `budget`, `merge_lock`, `infra`, `swept`,
+  `unclassified`), matching a run's `failure_kind`.
+- `implementer` is a comma list of labels, matching a row's `implementer`;
+  labels hold no comma, so the list splits on commas after URL decoding.
+
+The body echoes `since`, `until` (null when omitted), the `limit` applied,
+and `offset`, `sort` and `order` as served, and carries `total`, the number
+of matching runs before `offset` and `limit`, and `now`, the daemon's clock
+the open rows were measured against. `limit` defaults to 200 and is capped
+at 5000; `truncated` is true when matching runs remain beyond `offset +
+limit`. `counts` holds the per-value counts beside each filter choice:
+`state` (each group), `failure` (every failure kind) and `implementer`
+(every label in `implementers`), each map counting the rows that match
+every parameter given except its own, before `offset` and `limit`, with 0
+for a value nothing matches. `implementers` is the sorted distinct labels
+of every `implementer_profile` event in the store.
+
+A missing or non-integer `since`, a non-integer `until`, a non-positive or
+non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
+`order`, `state` or `failure` value not listed above, is 400 with an
+`error` naming the parameter and any value it got. An `until` at or before
+`since` is 400 with `"until must be after since"`.
 
 ## `GET /runs/N`
 
@@ -2190,7 +2235,7 @@ each behind the machine token alone.
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
 | 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
+| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`, `offset`, `sort`, `order`, `state` or `failure`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
 | 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off |
 | 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |

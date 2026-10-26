@@ -783,18 +783,39 @@ export const historyRowSchema = z.looseObject({
   additions: z.int().nullable().optional(),
   deletions: z.int().nullable().optional(),
   resumed_as: z.int().nullable().optional(),
+  implementer: z.string().nullable().optional(),
   pr_url: z.string().nullable(),
   host: z.string().nullable(),
 });
 export type HistoryRow = z.infer<typeof historyRowSchema>;
+
+export const historyStateCountsSchema = z.looseObject({
+  active: z.int(),
+  merged: z.int(),
+  failed: z.int(),
+  abandoned: z.int(),
+});
+export type HistoryStateCounts = z.infer<typeof historyStateCountsSchema>;
+
+export const historyCountsSchema = z.looseObject({
+  state: historyStateCountsSchema,
+  failure: z.record(z.string(), z.int()),
+  implementer: z.record(z.string(), z.int()),
+});
+export type HistoryCounts = z.infer<typeof historyCountsSchema>;
 
 export const historySchema = z.looseObject({
   rows: z.array(historyRowSchema),
   since: z.int(),
   until: z.int().nullable(),
   limit: z.int(),
+  offset: z.int().optional(),
+  sort: z.enum(["started", "ended", "duration", "rounds", "state"]).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
   truncated: z.boolean(),
   total: z.int(),
+  counts: historyCountsSchema.optional(),
+  implementers: z.array(z.string()).optional(),
   now: z.int(),
 });
 export type History = z.infer<typeof historySchema>;
