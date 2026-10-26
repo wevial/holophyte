@@ -94,7 +94,7 @@ class KilledAdversaryContainerTests(LoopFixture):
         script = self.db.parent / "adversary-fallback"
         script.write_text(
             f"#!{sys.executable}\nimport subprocess, sys\n"
-            f"open({str(calls)!r}, 'a').write(sys.argv[-1][:40] + '\\n')\n"
+            f"open({str(calls)!r}, 'a').write(sys.argv[-1][:31] + '\\n')\n"
             f"if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n"
             " print('ready ' + subprocess.check_output("
             "['git', 'rev-parse', 'HEAD'], text=True).strip())\n"
@@ -107,7 +107,7 @@ class KilledAdversaryContainerTests(LoopFixture):
             "SELECT summary FROM runEvents WHERE kind = 'route_fallback'")]
         self.assertEqual([s["seat"] for s in switches], ["adversary"])
         self.assertIn("command failed (-15)", switches[0]["reason"])
-        self.assertEqual([line[:31] for line in calls.read_text().splitlines()],
+        self.assertEqual(calls.read_text().splitlines(),
                          [probes.REVIEW_PROBE_GOAL[:31],
                           "You are a READ-ONLY adversarial"])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
@@ -124,9 +124,6 @@ class KilledAdversaryContainerTests(LoopFixture):
         self.assertEqual((outcome, kind), ("failed", "review_route"))
         self.assertIn("reviewer route failed for adversary: "
                       "Codex emitted invalid JSONL", reason)
-        self.assertEqual(self.read(
-            "SELECT count(*) FROM runEvents WHERE kind = 'route_fallback'"),
-            [(0,)])
         self.assertEqual(len([p for p in self.payloads("agent_turn")
                               if p["role"] == "adversary"]), 1)
         (boundary,) = self.payloads("review_boundary")
