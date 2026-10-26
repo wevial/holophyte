@@ -233,7 +233,11 @@ def record_review_boundary(conn, run_id, role, failure):
     if error is None or conn is None or run_id is None:
         return
     import store
-    summary = f"{role} turn output unreadable (exit {error.exit_status}): {error}"
+    headline = (f"command failed ({error.returncode})"
+                if getattr(error, "returncode", None) is not None
+                else str(error).partition("\n")[0])
+    summary = (f"{role} turn output unreadable (exit {error.exit_status}): "
+               f"{headline}")
     if error.line is not None:
         summary += f"; line: {error.line}"
     store.record_event(conn, run_id, "review_boundary", summary, level="detail",

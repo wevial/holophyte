@@ -114,6 +114,10 @@ class KilledAdversaryContainerTests(LoopFixture):
         (boundary,) = self.payloads("review_boundary")
         self.assertEqual((boundary["role"], boundary["exit_status"],
                           boundary["line"]), ("adversary", -15, CUT))
+        ((summary,),) = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'review_boundary'")
+        self.assertIn("command failed (-15)", summary)
+        self.assertNotIn("thread.started", summary)
 
     def test_an_unreadable_adversary_reply_without_a_fallback_fails_kept(self):
         self.configure("[review]\nadversary = true\n")
