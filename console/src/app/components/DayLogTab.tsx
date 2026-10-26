@@ -45,7 +45,7 @@ function tally(entries: LedgerEntry[]) {
 /** Settings › Today's log: a preset and, per group, the items and projects
  *  the Overview's log keeps, saved at the origin daemon on each change,
  *  beside a preview of the log they keep. */
-export function DayLogTab() {
+export function DayLogTab({ heading }: { heading: ReactNode }) {
   const saved = useDayLogFilter();
   const [chosen, setChosen] = useState<DayLogFilter | null>(null);
   const filter = chosen ?? saved.filter;
@@ -69,9 +69,10 @@ export function DayLogTab() {
     setFilter(preset === "highlights" ? HIGHLIGHTS : preset === "everything" ? EVERYTHING : { ...filter, preset: "manual", items });
   };
   return (
-    <div className="mt-5 grid gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_280px]">
-    <div className="min-w-0">
-      <div className="flex flex-wrap items-center justify-end gap-3">
+    <>
+    <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-rule pb-5">
+      <div className="flex min-w-0 flex-[1_1_280px] flex-wrap items-baseline gap-x-4 gap-y-1">{heading}</div>
+      <div className="ml-auto flex shrink-0 flex-wrap items-center gap-3">
         <span id="day-log-preset" className="font-sans text-[14px] text-ink">Preset</span>
         <div role="group" aria-labelledby="day-log-preset" className="inline-flex border border-rule">
           {PRESETS.map((preset) => (
@@ -82,7 +83,10 @@ export function DayLogTab() {
           ))}
         </div>
       </div>
-      <div className="mt-5 border border-rule bg-paper text-[14px]">
+    </header>
+    <div className="mt-5 grid gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="min-w-0">
+      <div className="border border-rule bg-paper text-[14px]">
         {LOG_GROUPS.map((group) => {
           const on = group.items.filter((each) => items[each.id]).length;
           const total = group.items.reduce((sum, each) => sum + (counts.items.get(each.id) ?? 0), 0);
@@ -115,5 +119,6 @@ export function DayLogTab() {
     </div>
     <DayLog entries={entries} preview={filter} className="min-[1100px]:sticky min-[1100px]:top-4 min-[1100px]:h-auto min-[1100px]:max-h-[calc(100vh-2rem)]" />
     </div>
+    </>
   );
 }

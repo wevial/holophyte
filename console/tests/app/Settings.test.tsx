@@ -231,6 +231,9 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   expect(screen.getByText("yours, in this browser · applies at once, nothing to save")).toBeTruthy();
   expect(within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Highlights", "Everything", "Manual"]);
   expect(pressed()).toEqual(["Highlights"]);
+  const header = screen.getByRole("group", { name: "Preset" }).closest("header")!;
+  expect(header.contains(screen.getByRole("heading", { level: 2, name: "Today's log" }))).toBe(true);
+  expect(header.className).toEqual(expect.stringContaining("border-b border-rule"));
   const sections = screen.getAllByRole("region").filter((region) => [...GROUPS, "Projects"].includes(region.getAttribute("aria-label") ?? ""));
   expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([...GROUPS, "Projects"]);
   expect(new Set(sections.map((section) => section.parentElement)).size).toBe(1);
@@ -289,4 +292,11 @@ test("a tick sends one PUT /prefs with the page's bearer, and a page reading tha
   await act(settle);
   expect(pressed()).toEqual(["Manual"]);
   expect([box("Verdicts").checked, box("Merged").checked, box("PR opened").checked]).toEqual([true, true, false]);
+  cleanup();
+
+  await mount("#/settings/log", fleet(undefined, { preset: "everything", items: { merged: true }, projects: {} }));
+  await act(settle);
+  expect(pressed()).toEqual(["Everything"]);
+  expect([box("Merged").checked, box("Verdicts").checked, box("PR opened").checked, box("Parked").checked]).toEqual([true, false, false, true]);
+  expect(previewPhrases()).toEqual(["merged", "merged"]);
 });

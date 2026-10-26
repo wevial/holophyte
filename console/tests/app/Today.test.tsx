@@ -6,6 +6,7 @@ import { addressOf } from "../../src/lib/hosts";
 import type { Status as PolledStatus } from "../../src/lib/types";
 import type { ActiveOutage, DayLogPrefs, LedgerEntry, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
+import { EVERYTHING } from "../../src/app/dayLog";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { useDayLedger } from "../../src/app/queries";
 import { ConsoleApp } from "../../src/app/router";
@@ -234,7 +235,7 @@ test("a saved manual filter adds its items and drops cleared projects; Everythin
   expect(logLines()).toEqual(["11:15 DEMO-10 merged", "09:40 DEMO-4 needs you: C7 contradiction"]);
   cleanup();
 
-  await mount("#/", fixtureDay({ prefs: prefsOf({ preset: "everything", items: {}, projects: { writer: false } }) }).fetch);
+  await mount("#/", fixtureDay({ prefs: prefsOf(EVERYTHING) }).fetch);
   expect(logLines()).toEqual(ALL_LINES);
   expect(toggle()).toBeNull();
 });
@@ -380,8 +381,8 @@ test("an Other phrase wrapping past the two-line clamp opens to its full text, s
   const observers = manualResizeObserver();
   try {
     await wrapAt40(async () => {
-      const everything = prefsOf({ preset: "everything", items: {}, projects: {} });
-      await mount("#/", fleet({ ledger: ledgerOf(entry(at(11, 0), "note", "loop", "DEMO-9", long)) }, {}, { prefs: everything }).fetch);
+      const other = prefsOf({ preset: "manual", items: { other: true }, projects: {} });
+      await mount("#/", fleet({ ledger: ledgerOf(entry(at(11, 0), "note", "loop", "DEMO-9", long)) }, {}, { prefs: other }).fetch);
       observers.resizeAll();
       const opener = within(log()).getByRole("button", { name: long });
 

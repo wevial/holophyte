@@ -186,16 +186,14 @@ export function phraseOf(entry: LedgerEntry): string {
   return rule.phrase(entry, line);
 }
 
-/** The filter as the tab shows it: a preset's own item set, or the saved
- *  manual choices with an unnamed item at its Highlights value. */
+/** The filter's items as saved, an item it does not name at its
+ *  Highlights value; each preset writes its whole item set when picked. */
 export function itemsOf(filter: DayLogFilter): Record<string, boolean> {
-  if (filter.preset === "highlights") return HIGHLIGHTS.items;
-  if (filter.preset === "everything") return EVERYTHING.items;
   return Object.fromEntries(ALL_ITEMS.map((each) => [each.id, filter.items[each.id] ?? each.highlight]));
 }
 
 export function projectOn(filter: DayLogFilter, project: string): boolean {
-  return filter.preset !== "manual" || (filter.projects[project] ?? true);
+  return filter.projects[project] ?? true;
 }
 
 /** Whether `filter` keeps `entry`; an entry with no project passes the

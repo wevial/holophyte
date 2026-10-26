@@ -138,6 +138,10 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
       } else setRefusal(result.error);
     }
   };
+  const heading = <>
+    <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
+    <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
+  </>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   const count = (tab: string) => SETTINGS_FIELDS.filter((field) => field.tab === tab && `${field.table}.${field.key}` in edits).length;
   return (
@@ -194,10 +198,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
           {restart.data && <p className="mt-3 font-mono text-[12px]">{restart.data.detail}</p>}
         </div>}
         <section className="border border-rule bg-paper p-5 min-[720px]:p-6">
-          <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-            <h2 className="font-sans text-[20px] font-semibold">{tab.label}</h2>
-            <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
-          </header>
+          {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">{heading}</header>}
           {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
             <div className="mt-6">
               {rawChanged && <p className="mb-4 font-mono text-[13px] text-ink-3">Save or revert the raw edit first.</p>}
@@ -221,7 +222,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
             onChange={(text) => { setRawRefusal(null); draft.editRaw(project, text === answer.config.text ? null : text); }}
             onRevert={() => { setRawRefusal(null); draft.editRaw(project, null); }}
             onCheck={(state) => { setCheck(state); if (!state.pending) setCheckRefused(state.error !== null); }} onSave={() => { setRefusal(null); setConfirm("raw"); }}
-          /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "log" ? <DayLogTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
+          /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "log" ? <DayLogTab heading={heading} /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
         <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
         {confirm && <ConfirmDialog label="Save · holophyte" heading={rawMode ? `Save ${file}?` : "Save these changes?"} confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(null); }} onConfirm={() => void write()}
