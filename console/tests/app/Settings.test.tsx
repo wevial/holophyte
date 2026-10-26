@@ -277,6 +277,18 @@ test("ticking Verdicts selects Manual and adds the verdicts to the preview and t
   expect(ticked()).toEqual(HIGHLIGHT_TICKS);
 });
 
+test("a tick on a saved preset keeps the projects it hides, on the page and in the PUT", async () => {
+  for (const preset of ["highlights", "everything"] as const) {
+    const view = await mount("#/settings/log", fleet(undefined, { preset, items: {}, projects: { writer: false } }));
+    await act(settle);
+    await click(box("Verdicts"));
+    expect(box("writer").checked).toBe(false);
+    expect((view.puts.at(-1)!.body as { day_log: DayLogPrefs }).day_log.projects).toEqual({ writer: false });
+    expect(within(preview()).queryByRole("link", { name: "WRITER-1" })).toBeNull();
+    cleanup();
+  }
+});
+
 test("a tick sends one PUT /prefs with the page's bearer, and a page reading that filter back shows Manual and the verdicts", async () => {
   localStorage.setItem(tokenKey(addressOf(ORIGIN)), "machine-token");
   const view = await mount("#/settings/log");

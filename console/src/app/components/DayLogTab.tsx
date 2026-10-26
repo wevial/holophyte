@@ -62,7 +62,7 @@ export function DayLogTab({ heading }: { heading: ReactNode }) {
   const manual = (change: Partial<Pick<DayLogFilter, "items" | "projects">>) => setFilter({
     preset: "manual",
     items: { ...items, ...change.items },
-    projects: { ...(filter.preset === "manual" ? filter.projects : {}), ...change.projects },
+    projects: { ...filter.projects, ...change.projects },
   });
   const pick = (preset: Preset) => {
     if (preset === filter.preset) return;
