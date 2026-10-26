@@ -96,7 +96,7 @@ export function FilterSelect({ label, param, allLabel, options }: { label: strin
 const SEGMENT = "min-h-9 cursor-pointer px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] whitespace-nowrap text-ink-2 not-first:border-l not-first:border-ink-3 hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper";
 
 /** A popover's open state, closed by `hidden`, Escape or a press outside
- *  `box`; focus goes back to `button` unless a press focused a control. */
+ *  `box`, which gives focus back to `button` and focuses nothing else. */
 function usePopover(hidden: boolean) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -111,11 +111,9 @@ function usePopover(hidden: boolean) {
     };
     const onPress = (event: PointerEvent) => {
       if (box.current?.contains(event.target as Node)) return;
+      event.preventDefault();
       setOpen(false);
-      setTimeout(() => {
-        const at = document.activeElement;
-        if (at == null || at === document.body || box.current?.contains(at)) button.current?.focus();
-      });
+      button.current?.focus();
     };
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPress);

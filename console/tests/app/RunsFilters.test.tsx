@@ -203,9 +203,32 @@ test("Escape and a press outside close the Filter popover and give focus back to
   await openFilter();
   (await section("State")).getByRole("checkbox", { name: "Merged" }).focus();
   await act(async () => void fireEvent.pointerDown(document.querySelector("[data-count-line]")!));
-  await settleAll();
   expect(dialog()).toBeNull();
   expect(document.activeElement).toBe(filterButton());
+
+  await openFilter();
+  let pressOnSearch: boolean | undefined;
+  await act(async () => void (pressOnSearch = fireEvent.pointerDown(field())));
+  expect(dialog()).toBeNull();
+  expect(pressOnSearch).toBe(false);
+  expect(document.activeElement).toBe(filterButton());
+});
+
+test("a run started before yesterday shows its date with its clock, and yesterday's keeps yest", async () => {
+  const older = new Date(2026, 9, 9, 10, 30).getTime();
+  const yesterday = new Date(2026, 9, 14, 21, 5).getTime();
+  const rows = [
+    run({ id: 2, ticket: "DEMO-2", title: "Last night", started_ms: yesterday }),
+    run({ id: 1, ticket: "DEMO-1", title: "Last week", started_ms: older, ended_ms: older + 30 * MINUTE, outcome: "merged", phase: "merged" }),
+  ];
+  await mount("#/runs", fleet({ rows }, { rows: [] }).fetchImpl);
+  const label = (id: number) => screen.getByRole("link", { name: new RegExp(`^Run ${id}, `) }).getAttribute("aria-label");
+  expect(label(1)).toEndWith("started Oct 9 10:30");
+  expect(label(2)).toEndWith("started yest 21:05");
+  const lastWeek = screen.getByRole("link", { name: /^Run 1, / }).closest("li")!.textContent;
+  expect(lastWeek).toContain("Oct 9 10:30");
+  expect(lastWeek).toContain("Oct 9 11:00");
+  expect(lastWeek).not.toContain("yest");
 });
 
 test("Escape with focus moved from the Filter popover to Search still closes it and gives focus back to its button", async () => {
