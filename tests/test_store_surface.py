@@ -319,6 +319,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "ended_runs",
                                                     "failed_attempts_since",
                                                     "finished_runs",
+                                                    # HOLO-603: `/history`'s
+                                                    # filter labels and counts.
+                                                    "implementer_labels",
                                                     # HOLO-595: `holo patrol`.
                                                     "last_ended_runs",
                                                     "last_event_at",
@@ -341,6 +344,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-109: a run's chain
                                                     # of its ticket's runs.
                                                     "run_chains",
+                                                    # HOLO-603: the same.
+                                                    "run_counts",
                                                     "run_snapshot",
                                                     "stranded_runs",
                                                     "stranded_tickets",

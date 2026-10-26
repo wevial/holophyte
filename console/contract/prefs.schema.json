@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Prefs",
+  "description": "GET /prefs at a host daemon's root",
+  "$ref": "#/$defs/Prefs",
+  "$defs": {
+    "DayLogPrefs": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "enum": [
+            "highlights",
+            "everything",
+            "manual"
+          ]
+        },
+        "items": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "projects": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        }
+      },
+      "required": [
+        "preset",
+        "items",
+        "projects"
+      ],
+      "additionalProperties": true
+    },
+    "Prefs": {
+      "type": "object",
+      "properties": {
+        "day_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DayLogPrefs"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "day_log",
+        "updated_ms"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

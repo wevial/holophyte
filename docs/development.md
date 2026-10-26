@@ -397,6 +397,9 @@ Each module, one line:
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
+  does not hold: a `park` row for each park waiting on the maintainer and a
+  `failure` row for each failed run with no `failure` ledger row.
 - `holophyte/serve/serve_history.py` — the daemon's `GET /history`: every
   open run and every run started since a time, one row per run.
 - `holophyte/serve/serve_findings.py` — the daemon's `GET /findings`: the
@@ -421,6 +424,8 @@ Each module, one line:
   project's and a host root's, and `/runs/N`, `/runs/N/merge` and
   `/runs/N/asks`, `ROUTES` naming each, and `main()`, which
   writes their JSON Schema and zod or `--check`s them.
+- `holophyte/serve/contract_prefs.py` — the console preferences document
+  a host daemon's root answers at `GET /prefs`, as the contract declares it.
 - `holophyte/serve/contract_pr.py` — the pull request facts and the
   unmerged dependency a parked pull request waits on, as the contract
   declares them on `/attention` and `/status`.
@@ -437,6 +442,10 @@ Each module, one line:
   (KO-758): the gate every one passes (the machine token alone, host
   `[serve] actions`, a native board, `If-Match`) and `PUT
   /projects/NAME/tickets/ID`, an edit authored `console`.
+- `holophyte/serve/serve_prefs.py` — the host daemon's root `GET /prefs`
+  and `PUT /prefs`: the console's preferences in `console-prefs.json` in
+  `HOLOPHYTE_HOME`, the `day_log` shape check, the machine-token gate and
+  the atomic 0600 write.
 - `holophyte/redact.py` — secret values in a `config.toml` text, found by
   walking its TOML syntax: hidden for `GET /config`, put back for `PUT`.
 - `holophyte/files.py` — the files a run touched, read from git in the
