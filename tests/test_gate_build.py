@@ -111,8 +111,7 @@ class GateBuildTests(LoopFixture):
                 (args, os.environ.get("HOLOPHYTE_GATE_RUN"),
                  self.read("SELECT id, endedAt FROM runs"), self.transitions()))
 
-        with patch.object(holophyte.loop.gate_build, "EXEC", record,
-                          create=True):
+        with patch.object(holophyte.loop.gate_build, "EXEC", record):
             rc, _ = self.worker(Commit("the scripted work"), APPROVE,
                                 provider=provider, build=self.base)
 
