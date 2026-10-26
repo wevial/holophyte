@@ -103,8 +103,8 @@ def pull_candidates(runs, blocked):
                ticket.prSeenOpenThreads) for ticket in blocked]
     first = {}
     for found_pull in found:
-        if found_pull[0] and found_pull[0] not in first:
-            first[found_pull[0]] = found_pull
+        if found_pull[0]:
+            first.setdefault(found_pull[0], found_pull)
     return list(first.values())
 
 
