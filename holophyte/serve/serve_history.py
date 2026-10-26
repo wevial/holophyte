@@ -90,7 +90,6 @@ def history(project, query, now=None):
         runs, total = store.read.recent_runs(conn, since, limit, until,
                                              query=wanted)
         counts = store.read.run_counts(conn, since, until, wanted)
-        labels = store.read.implementer_labels(conn)
         caps = served_round_caps(conn, project, [run.id for run in runs])
     finally:
         conn.close()
@@ -102,7 +101,8 @@ def history(project, query, now=None):
                  "offset": wanted.offset, "sort": wanted.sort,
                  "order": wanted.order,
                  "truncated": total > wanted.offset + limit, "total": total,
-                 "counts": counts, "implementers": labels, "now": now}
+                 "counts": counts,
+                 "implementers": list(counts["implementer"]), "now": now}
 
 
 def history_row(project, run, now, max_rounds, origin):
