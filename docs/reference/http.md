@@ -917,12 +917,20 @@ A run with no entries answers an empty list. `N` parses as on
 {"since": 1788450000000, "limit": 200,
  "entries": [
   {"at": 1788451661675, "run": 52, "ticket": "KO-219", "kind": "merge",
-   "source": "loop", "text": "MERGED to main as 5acc138."},
+   "source": "loop", "text": "MERGED to main as 5acc138.",
+   "pr_url": "https://github.com/OWNER/REPO/pull/12"},
+  {"at": 1788451421675, "run": 51, "ticket": "KO-218", "kind": "failure",
+   "source": "factory", "text": "no heartbeat for 20 minutes",
+   "failure_kind": "swept", "pr_url": null},
   {"at": 1788451181675, "run": 50, "ticket": "KO-217", "kind": "intervention",
    "source": "operator", "text": "answered: keep the flag name",
-   "cleared": "question", "waited_ms": 818325},
+   "cleared": "question", "waited_ms": 818325, "pr_url": null},
+  {"at": 1788451061675, "run": 50, "ticket": "KO-217", "kind": "park",
+   "source": "factory", "text": "which flag name should ship?",
+   "pr_url": null},
   {"at": 1788450941675, "run": 52, "ticket": "KO-219", "kind": "round",
-   "source": "loop", "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed"}
+   "source": "loop", "text": "Round 1: changes_requested · reviewer reviewer-model · verify passed",
+   "pr_url": "https://github.com/OWNER/REPO/pull/12"}
  ]}
 ```
 
@@ -937,7 +945,18 @@ is no paging past it, a day of ledger fits in one page. Each entry is its
 `at`, `run`, `ticket`, `kind`, `source` and `text`, as `/runs/N/ledger`
 spells them; an `intervention` entry carries `cleared` and `waited_ms`
 too, by the rule `/runs/N/ledger` states, so the fold reads each
-resolution's wait off the wire. For a thread, `/attention`'s blocked item is the question
+resolution's wait off the wire. Every entry carries `pr_url`: its run's
+pull request URL, or null when the run has none or the entry has no run.
+An unfiltered request (no `kind`, no `ticket`) also carries two kinds of
+row the ledger table does not hold, each with source `factory`, its run's
+`run`, `ticket` and `pr_url`, and the same `since` and `limit` rules: a
+`park` row for each run phase change into `blocked_on_operator`, or into
+`awaiting_merge_approval` because a thread needs a human's answer, whose
+`text` is the change's reason; and a run-ending `failure` row for each
+run that ended `failed` with no `failure` ledger row of its own, at its
+end, whose `text` is the run's outcome reason and whose `failure_kind`
+is the run's failure kind. A park on pending checks or a quiet wait has
+no row, and `park` is not a `kind` the filter accepts. For a thread, `/attention`'s blocked item is the question
 and `/ledger?ticket=KO-n&since=ASKED` is the rest: the `intervention`
 rows carry the operator's answer text. A missing or non-integer `since`,
 a bad `limit` or an unknown `kind` is 400 with an `error` naming the

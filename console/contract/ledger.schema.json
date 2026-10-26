@@ -73,6 +73,19 @@
               "type": "null"
             }
           ]
+        },
+        "pr_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_kind": {
+          "type": "string"
         }
       },
       "required": [
@@ -81,7 +94,8 @@
         "source",
         "text",
         "run",
-        "ticket"
+        "ticket",
+        "pr_url"
       ],
       "additionalProperties": true
     },

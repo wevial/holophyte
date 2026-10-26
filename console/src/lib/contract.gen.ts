@@ -831,6 +831,8 @@ export const ledgerEntrySchema = z.looseObject({
   project: z.string().optional(),
   run: z.int().nullable(),
   ticket: z.string().nullable(),
+  pr_url: z.string().nullable(),
+  failure_kind: z.string().optional(),
 });
 export type LedgerEntry = z.infer<typeof ledgerEntrySchema>;
 

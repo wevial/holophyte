@@ -20,7 +20,7 @@ from serve_fixture import MERGE_SHA, MIN, ServeTestCase  # noqa: E402 - after th
 import holophyte.files  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-from tests.phase_fixture import finish_run
+from tests.phase_fixture import advance_phase, finish_run, park_run
 
 
 class RunLedgerTests(ServeTestCase):
@@ -138,7 +138,7 @@ class LedgerWindowTests(ServeTestCase):
     @staticmethod
     def entry(at, run, ticket, kind, text, source):
         body = {"at": at, "run": run, "ticket": ticket, "kind": kind,
-                "source": source, "text": text}
+                "source": source, "text": text, "pr_url": None}
         if kind == "intervention":
             # KO-308: nothing waited before this seeded step, so the two
             # fields ride along as null.
@@ -318,6 +318,153 @@ class LedgerWaitTests(ServeTestCase):
         for entry in others:
             self.assertNotIn("cleared", entry)
             self.assertNotIn("waited_ms", entry)
+
+
+class DayLogTests(ServeTestCase):
+    """`/ledger?since=MS` unfiltered: each entry's run pull request URL,
+    a `park` row for a park on the operator or a thread, and a `failure`
+    row for a failed run the ledger has no `failure` row for."""
+
+    REASON = "the after command failed with exit 1"
+    THREAD = "a thread needs a human's answer; nothing was posted on it"
+    SWEPT = "no heartbeat for 20 minutes"
+    URL = "https://github.com/OWNER/REPO/pull/31"
+    THREAD_URL = "https://github.com/OWNER/REPO/pull/33"
+
+    def claim(self, conn, n, at):
+        ticket = store.tickets.mirror_ticket(
+            conn, self.project_id, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=f"ticket {n}",
+            acceptance_criteria=[f"Given ticket {n}, then worked"],
+            verification_commands=["echo ok"], time_box_ms=25 * MIN)
+        store.tickets.transition(conn, ticket, "in_flight")
+        return store.claim(conn, self.project_id, ticket, now=at)
+
+    def seed(self):
+        """Six runs inside the window, stamped T1 < ... < T7, and two
+        before `since`: a park on the operator and a sweep."""
+        now = int(time() * 1000)
+        self.since = now - 60 * MIN
+        before = self.since - 10 * MIN
+        self.t = [self.since + n * MIN for n in range(1, 8)]
+        with patch("store.schema.time.time", return_value=before / 1000):
+            conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            self.project_id = store.tickets.ensure_project(conn, "team-1",
+                                                           self.target)
+            self.old_park = self.claim(conn, 41, before - MIN)
+            advance_phase(conn, self.old_park, "working", now=before - MIN)
+            store.park(conn, self.old_park, "blocked_on_operator", self.REASON,
+                       now=before)
+            self.old_swept = self.claim(conn, 42, before - MIN)
+            store.release(conn, self.old_swept, "failed", reason=self.SWEPT,
+                          failure_kind="swept", now=before)
+
+            self.blocked = self.claim(conn, 31, self.since)
+            store.set_pull_request(conn, self.blocked, self.URL)
+            store.record_ledger(conn, self.blocked, "round", "Round 1: pass",
+                                now=self.t[0])
+            advance_phase(conn, self.blocked, "working", now=self.t[0])
+            store.park(conn, self.blocked, "blocked_on_operator", self.REASON,
+                       now=self.t[2])
+            self.plain = self.claim(conn, 32, self.since)
+            store.record_ledger(conn, self.plain, "note", "operator looked in",
+                                source="operator", now=self.t[1])
+            finish_run(conn, self.plain, "merged", now=self.t[1],
+                       merge_sha=MERGE_SHA)
+            self.thread = self.claim(conn, 33, self.since)
+            park_run(conn, self.thread, "awaiting_merge_approval", self.THREAD,
+                     pr_url=self.THREAD_URL, now=self.t[3], park_kind="thread")
+            self.checks = self.claim(conn, 34, self.since)
+            park_run(conn, self.checks, "awaiting_merge_approval",
+                     "checks pending on the pull request",
+                     pr_url="https://github.com/OWNER/REPO/pull/34",
+                     now=self.t[4])
+            self.swept = self.claim(conn, 35, self.since)
+            store.release(conn, self.swept, "failed", reason=self.SWEPT,
+                          failure_kind="swept", now=self.t[5])
+            self.recorded = self.claim(conn, 36, self.since)
+            store.record_ledger(conn, self.recorded, "failure", "verify red",
+                                now=self.t[6])
+            store.release(conn, self.recorded, "failed", reason="verify red",
+                          now=self.t[6])
+        finally:
+            conn.close()
+        self.start()
+
+    def entries(self, query=""):
+        code, _, body = self.request("GET", f"/ledger?since={self.since}{query}")
+        self.assertEqual(code, 200, body)
+        return body["entries"]
+
+    def test_every_entry_carries_its_runs_pull_request_url(self):
+        self.seed()
+        urls = {self.blocked: self.URL, self.thread: self.THREAD_URL,
+                self.checks: "https://github.com/OWNER/REPO/pull/34"}
+
+        entries = self.entries()
+
+        self.assertEqual({e["run"] for e in entries if e["kind"] in ("round", "note")},
+                         {self.blocked, self.plain})
+        for entry in entries:
+            with self.subTest(run=entry["run"], kind=entry["kind"]):
+                self.assertIn("pr_url", entry)
+                self.assertEqual(entry["pr_url"], urls.get(entry["run"]))
+
+    def test_parks_on_the_operator_or_a_thread_are_rows_and_a_checks_wait_is_not(self):
+        self.seed()
+
+        parks = [e for e in self.entries() if e["kind"] == "park"]
+
+        self.assertEqual(parks, [
+            {"at": self.t[3], "run": self.thread, "ticket": "KO-33",
+             "kind": "park", "source": "factory", "text": self.THREAD,
+             "pr_url": self.THREAD_URL},
+            {"at": self.t[2], "run": self.blocked, "ticket": "KO-31",
+             "kind": "park", "source": "factory", "text": self.REASON,
+             "pr_url": self.URL},
+        ])
+
+    def test_a_failed_run_without_a_failure_row_gets_one_with_its_kind(self):
+        self.seed()
+
+        failures = [e for e in self.entries() if e["kind"] == "failure"]
+
+        self.assertEqual(failures, [
+            {"at": self.t[6], "run": self.recorded, "ticket": "KO-36",
+             "kind": "failure", "source": "loop", "text": "verify red",
+             "pr_url": None},
+            {"at": self.t[5], "run": self.swept, "ticket": "KO-35",
+             "kind": "failure", "source": "factory", "text": self.SWEPT,
+             "failure_kind": "swept", "pr_url": None},
+        ])
+
+    def test_kind_or_ticket_leaves_out_park_and_run_ending_failure_rows(self):
+        self.seed()
+        unfiltered = self.entries()
+        self.assertIn("park", [e["kind"] for e in unfiltered])
+        self.assertIn(self.swept, [e["run"] for e in unfiltered])
+
+        for query in ("&kind=failure", "&ticket=KO-35"):
+            with self.subTest(query=query):
+                entries = self.entries(query)
+                self.assertNotIn("park", [e["kind"] for e in entries])
+                self.assertNotIn(self.swept, [e["run"] for e in entries])
+        self.assertEqual([e["run"] for e in self.entries("&kind=failure")],
+                         [self.recorded])
+
+    def test_rows_before_since_are_left_out_and_limit_keeps_the_newest(self):
+        self.seed()
+
+        runs = {e["run"] for e in self.entries()}
+        self.assertNotIn(self.old_park, runs)
+        self.assertNotIn(self.old_swept, runs)
+
+        newest = self.entries("&limit=2")
+        self.assertEqual([(e["at"], e["run"], e["kind"]) for e in newest],
+                         [(self.t[6], self.recorded, "failure"),
+                          (self.t[5], self.swept, "failure")])
 
 
 class RunFilesTests(ServeTestCase):
