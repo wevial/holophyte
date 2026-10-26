@@ -58,7 +58,7 @@ export function useSettingsDraft() {
   return draft;
 }
 
-export type SettingsMarks = { counts: Record<string, number>; checkRefused: boolean };
+type SettingsMarks = { counts: Record<string, number>; checkRefused: boolean };
 type MarksContext = { marks: SettingsMarks | null; setMarks: (marks: SettingsMarks | null) => void };
 export const SettingsMarksContext = createContext<MarksContext>({ marks: null, setMarks: () => {} });
 
