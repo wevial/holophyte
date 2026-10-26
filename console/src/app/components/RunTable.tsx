@@ -137,7 +137,7 @@ export function RunTableHeads({ sort, order, onSort }: { sort: RunSort; order: R
 
 /** The runs as one table that scrolls sideways inside its own box while it
  *  is narrower than the table; `dock` sits above the rows inside that box. */
-export function RunTable({ rows, now, empty, label = "Runs, newest first", dock }: { rows: RunRow[]; now: number; empty: string; label?: string; dock?: ReactNode }) {
+export function RunTable({ rows, now, empty, label, dock }: { rows: RunRow[]; now: number; empty: string; label: string; dock?: ReactNode }) {
   return (
     <div data-run-table className="overflow-x-auto @min-[1100px]:overflow-x-visible">
       <div className="min-w-[1100px]">

@@ -104,7 +104,7 @@ export function historyRows(
     .sort(compare);
 }
 
-export const RUN_SORTS = ["started", "ended", "duration", "rounds", "state"] as const;
+const RUN_SORTS = ["started", "ended", "duration", "rounds", "state"] as const;
 
 export type RunSort = (typeof RUN_SORTS)[number];
 
@@ -134,7 +134,7 @@ function compareRows(sort: RunSort, order: RunOrder): (a: RunRow, b: RunRow) => 
   };
 }
 
-export interface RunPage {
+interface RunPage {
   now: number;
   rows: RunRow[];
   total: number;
@@ -145,12 +145,11 @@ export interface RunPage {
  *  the asked state and order. One daemon serves the page itself; with
  *  several, each serves its first `page * size` rows and the page is cut
  *  from their merge. */
-export function useRunPage(search: RunsSearch): RunPage {
+export function useRunPage({ state, sort, order, page, size }: Required<RunsSearch>): RunPage {
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const hosts = scopedHosts(peers.hosts, project);
-  const { state = "active", sort = "started", order = "desc", page = 1, size = DEFAULT_SIZE } = search;
   const single = hosts.length === 1;
   const query = new URLSearchParams({ since: String(localMidnight(localMidnight(peers.now) - 1)) });
   if (state !== "all") query.set("state", state);

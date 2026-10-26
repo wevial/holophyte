@@ -164,7 +164,7 @@ test("one host in scope serves each page itself, Next walks to the last page, an
   expect(range()).toBe("1–25 of 120");
 });
 
-function PageOfRuns({ search }: { search: RunsSearch }) {
+function PageOfRuns({ search }: { search: Required<RunsSearch> }) {
   const { rows } = useRunPage(search);
   return <ol aria-label="Runs, newest first">{rows.map((row) => <li key={`${row.base} ${row.id}`}>{row.ticket}</li>)}</ol>;
 }
@@ -179,7 +179,7 @@ test("with several hosts in scope each serves its first page * size rows and the
     polled_ms: NOW, seen_ms: NOW, error: null, needs_token: false,
   });
   const peers: PeersState<ContractBodies> = { hosts: [host(DEMO, "/srv/dev/demo"), host(WRITER, "/srv/dev/writer")], polledAgo: 0, polls: 1, now: NOW };
-  const root = createRootRoute({ component: () => <PageOfRuns search={{ state: "all", size: 2, page: 2 }} /> });
+  const root = createRootRoute({ component: () => <PageOfRuns search={{ state: "all", sort: "started", order: "desc", size: 2, page: 2 }} /> });
   window.location.hash = "#/";
   render(
     <QueryClientProvider client={consoleQueryClient()}>
