@@ -8,6 +8,7 @@ from holophyte.config.config_tables import patrol_config
 from holophyte.holo.render import age
 from holophyte.host.host_health import host_health
 from holophyte.host.supervisor import SWEEPABLE_PHASES
+from holophyte.loop.gates import InfraFailure
 from holophyte.pr.check_holds import main_checks, pull_checks
 from holophyte.pr.pr_status import parse_pr_url
 from holophyte.serve.views import attention
@@ -109,17 +110,22 @@ def pull_candidates(runs, blocked):
 
 
 def held_pulls(target, candidates):
-    held = []
+    held, unreadable = [], []
     for url, ticket, run, open_threads in candidates:
         pull = parse_pr_url(url)
-        failed = pull_checks(target, pull) if pull is not None else []
+        try:
+            failed = pull_checks(target, pull) if pull is not None else []
+        except InfraFailure as bad:
+            unreadable.append({"ticket": ticket, "run": run, "url": url,
+                               "number": pull.number, "detail": str(bad)})
+            continue
         if not failed:
             continue
         held.append({"ticket": ticket, "run": run, "url": url,
                      "number": pull.number, "failed": failed,
                      "open_threads": open_threads,
                      "checks_only": open_threads == 0})
-    return held
+    return held, unreadable
 
 
 def unignored(entries, ignore, hid):
@@ -142,11 +148,13 @@ def project_row(name, target, items, now):
     row.update({key: unignored(sections[key], knobs.ignore, hid)
                 for key in SECTIONS})
     row["main"] = main_checks(target)
-    row["pull_requests"] = unignored(held_pulls(target, sections["pulls"]),
-                                     knobs.ignore, hid)
+    held, unreadable = held_pulls(target, sections["pulls"])
+    row["pull_requests"] = unignored(held, knobs.ignore, hid)
+    row["unreadable_pulls"] = unignored(unreadable, knobs.ignore, hid)
     row["ignored"] = [key for key in dict.fromkeys(knobs.ignore) if key in hid]
     row["clean"] = not (row["attention"] or row["stranded"] or row["quiet"]
                         or row["repeat_failures"] or row["pull_requests"]
+                        or row["unreadable_pulls"]
                         or row["main"]["state"] in ("failure", "unknown"))
     return row
 
@@ -154,7 +162,7 @@ def project_row(name, target, items, now):
 def error_row(name, path, error):
     return {"name": name, "path": str(path), "error": error, "clean": False,
             "attention": [], **{key: [] for key in SECTIONS}, "main": None,
-            "pull_requests": [], "ignored": []}
+            "pull_requests": [], "unreadable_pulls": [], "ignored": []}
 
 
 def entry_name(target):
@@ -291,6 +299,8 @@ def github_lines(row):
                  f" {check_names(pull['failed'])}"
                  f"{' (checks only)' if pull['checks_only'] else ''}"
                  for pull in row["pull_requests"])
+    lines.extend(f"pr {pull['ticket']} #{pull['number']} github: unreadable"
+                 f" ({pull['detail']})" for pull in row["unreadable_pulls"])
     return lines
 
 

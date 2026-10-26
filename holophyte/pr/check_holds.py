@@ -36,18 +36,17 @@ def main_checks(target):
 
 
 def pull_checks(target, pull):
-    try:
-        answer = pr_status.rest(
-            target, pull, "GET",
-            f"repos/{pull.owner}/{pull.name}/pulls/{pull.number}")
-        state = answer.get("state") if isinstance(answer, dict) else None
-        head = answer.get("head") if isinstance(answer, dict) else None
-        sha = head.get("sha") if isinstance(head, dict) else None
-        if state != "open" or not isinstance(sha, str) or not sha:
-            return []
-        runs, required = _reads(target, pull, sha)
-    except InfraFailure:
+    answer = pr_status.rest(
+        target, pull, "GET",
+        f"repos/{pull.owner}/{pull.name}/pulls/{pull.number}")
+    state = answer.get("state") if isinstance(answer, dict) else None
+    head = answer.get("head") if isinstance(answer, dict) else None
+    sha = head.get("sha") if isinstance(head, dict) else None
+    if state != "open":
         return []
+    if not isinstance(sha, str) or not sha:
+        raise InfraFailure(f"GitHub answered {pull.url} without its head")
+    runs, required = _reads(target, pull, sha)
     failed = _failed(runs, required)
     if any(check["required"] or not required for check in failed):
         return failed

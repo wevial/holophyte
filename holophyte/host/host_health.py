@@ -50,10 +50,9 @@ def _top(path, root):
     return os.path.join(root, path[len(root):].lstrip(os.sep).split(os.sep)[0])
 
 
-def _project_trees(entry, now):
-    """`(worktrees root, finished worktree paths, witness running)`."""
+def _project_trees(entry):
+    """`(worktrees root, finished worktree paths)`."""
     target = entry.target
-    witness = running_set(target, now) is not None
     finished = []
     if target.store_path.exists():
         try:
@@ -65,16 +64,17 @@ def _project_trees(entry, now):
                 conn.close()
         except sqlite3.Error:
             finished = []
-    return os.path.realpath(target.worktrees), finished, witness
+    return os.path.realpath(target.worktrees), finished
 
 
 class FinishedTrees:
     def __init__(self, host_projects, now):
         self.tmp = os.path.realpath(tempfile.gettempdir())
-        found = [_project_trees(entry, now) for entry in host_projects
+        found = [_project_trees(entry) for entry in host_projects
                  if entry.error is None]
-        self.worktrees = [(root, finished) for root, finished, _ in found]
-        self.witness_live = any(witness for _, _, witness in found)
+        self.worktrees = [(root, finished) for root, finished in found]
+        self.witness_live = any(running_set(entry.target, now) is not None
+                                for entry in host_projects)
 
     def holds(self, path):
         witness = _top(path, self.tmp)

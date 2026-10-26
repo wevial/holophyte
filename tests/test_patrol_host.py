@@ -191,6 +191,27 @@ class HeldPullTests(GithubFixture):
                          ["K2"])
         self.assertEqual(row["ignored"], ["K1"])
 
+    def test_an_unreadable_pull_request_is_reported_not_dropped(self):
+        self.held_project()
+        healthy = self.rest
+        for failing in ("/pulls/7", "/commits/S7/check-runs"):
+            def rest(target, pull, method, path, payload=None):
+                if failing in path:
+                    raise InfraFailure("GitHub answered 502")
+                return healthy(target, pull, method, path, payload)
+            with self.subTest(failing=failing), \
+                    patch.object(holophyte.pr.pr_status, "rest", rest):
+                row = self.patrol("q")
+                self.assertEqual(
+                    [(pull["ticket"], pull["number"], pull["detail"])
+                     for pull in row["unreadable_pulls"]],
+                    [("K1", 7, "GitHub answered 502")])
+                self.assertEqual([pull["number"]
+                                  for pull in row["pull_requests"]], [8])
+                self.assertFalse(row["clean"])
+                self.assertIn("  pr K1 #7 github: unreadable"
+                              " (GitHub answered 502)\n", self.holo("-p", "q")[1])
+
 
 class TmpUsageTests(unittest.TestCase):
     def test_used_percent_and_free_bytes_match_the_real_df(self):
@@ -289,6 +310,20 @@ class LeftoverTests(HostFixtureParts):
         pids = {process["pid"] for process in host_health.leftovers(
             Host.locate().projects())["processes"]}
         self.assertEqual(pids & {kept, gone}, {gone})
+
+    def test_a_live_witness_pass_counts_for_a_project_whose_config_breaks(self):
+        self.project("p")
+        target = Project.locate(self.conns["p"][2])
+        mark_running(target, "S", ["K"])
+        live = self.tmp / "witness-live" / "tree"
+        live.mkdir(parents=True)
+        kept = self.sleeper(live)
+        target.config_path.write_text("[board\n")
+        (entry,) = Host.locate().projects()
+        self.assertIsNotNone(entry.error)
+        pids = {process["pid"] for process in host_health.leftovers(
+            [entry])["processes"]}
+        self.assertNotIn(kept, pids)
 
     def test_a_removed_cwd_under_a_kept_worktree_parent_is_listed(self):
         self.project("p")

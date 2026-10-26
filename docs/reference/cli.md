@@ -86,10 +86,12 @@ origin); and `pull_requests`, each open pull request a live or parked run
 carries that a red check holds as the merge fold decides (a red required
 check, or any red check when main requires none): `ticket`, `run`, `url`,
 `number`, `failed`, `open_threads` (the recorded count) and `checks_only`
-(no open threads). A main `failure` or `unknown`, or a held pull request,
-makes the project not `clean`; the text adds `main failure: NAME (required),
-NAME`, `github: unreadable (DETAIL)` and `pr KEY #N held by checks: NAMES`
-with ` (checks only)`. `host` holds, beside `attention`, `tmp`
+(no open threads); and `unreadable_pulls`, each such pull request whose
+GitHub read failed: `ticket`, `run`, `url`, `number` and `detail`. A main
+`failure` or `unknown`, a held pull request or an unreadable one makes the
+project not `clean`; the text adds `main failure: NAME (required), NAME`,
+`github: unreadable (DETAIL)`, `pr KEY #N held by checks: NAMES` with
+` (checks only)`, and `pr KEY #N github: unreadable (DETAIL)`. `host` holds, beside `attention`, `tmp`
 (`used_percent` as `df` gives it, `free_bytes`, `full` at 80% or more),
 `leftovers` (this user's processes whose cwd or an absolute argument lies in
 a removed or finished witness tree under the temporary directory or a
