@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, fields
-from time import time
 
 from .enums import FailureKind, InterventionActor
 
@@ -399,7 +398,6 @@ class RunQuery:
     now: int | None = None
 
 
-DEFAULT_QUERY = RunQuery()
 STATE_GROUP = (
     "CASE WHEN endedAt IS NULL OR (outcome = 'paused' AND resumedAs IS NULL)"
     " THEN 'active' WHEN outcome = 'paused' THEN NULL"
@@ -470,15 +468,11 @@ def _history_filters(query, skip=None):
     return " AND ".join(clauses) or "1", params
 
 
-def _query_now(query):
-    return int(time() * 1000) if query.now is None else query.now
-
-
-def recent_runs(conn, since, limit, until=None, *, query=DEFAULT_QUERY):
+def recent_runs(conn, since, limit, until, query):
     base, params = _history_base(conn, since, until)
     where, filters = _history_filters(query)
     key = SORT_KEYS[query.sort]
-    ordering = [_query_now(query)] if "?" in key else []
+    ordering = [query.now] if "?" in key else []
     names = ", ".join(field.name for field in fields(RecentRun))
     rows = conn.execute(
         f"SELECT {names}, COUNT(*) OVER () FROM ({base}) WHERE {where}"
@@ -494,7 +488,7 @@ def recent_runs(conn, since, limit, until=None, *, query=DEFAULT_QUERY):
     return [], total
 
 
-def run_counts(conn, since, until=None, query=DEFAULT_QUERY):
+def run_counts(conn, since, until, query):
     base, params = _history_base(conn, since, until)
     keys = {"state": STATE_GROUPS, "failure": FAILURE_KINDS,
             "implementer": implementer_labels(conn)}

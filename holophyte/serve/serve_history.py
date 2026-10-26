@@ -83,8 +83,7 @@ def history(project, query, now=None):
     wanted = dataclasses.replace(wanted, now=now)
     conn = store.read.open_readonly(project.store_path)
     try:
-        runs, total = store.read.recent_runs(conn, since, limit, until,
-                                             query=wanted)
+        runs, total = store.read.recent_runs(conn, since, limit, until, wanted)
         counts = store.read.run_counts(conn, since, until, wanted)
         labels = store.read.implementer_labels(conn)
         caps = served_round_caps(conn, project, [run.id for run in runs])
