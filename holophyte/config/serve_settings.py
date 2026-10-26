@@ -7,12 +7,26 @@ from holophyte.config.reader import KNOWN_KEYS
 ConsoleConfig = collections.namedtuple("ConsoleConfig", ("daemons", "colour"))
 
 
-def console_config(project):
+def console_table(project):
     table = project.config().get("console", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {project.config_path}: [console] must be a table, got "
             f"{type(table).__name__}")
+    return table
+
+
+def console_colour(project):
+    colour = console_table(project).get("colour", CONSOLE_KEYS["colour"])
+    if not isinstance(colour, str) or colour not in CONSOLE_COLOURS:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [console] colour must be one of "
+            f"{', '.join(CONSOLE_COLOURS)}, got {colour!r}")
+    return colour
+
+
+def console_config(project):
+    table = console_table(project)
     daemons = table.get("daemons", CONSOLE_KEYS["daemons"])
     if not isinstance(daemons, (list, tuple)):
         raise SystemExit(
@@ -33,12 +47,7 @@ def console_config(project):
                 f"[holo2] {project.config_path}: [console] daemons: {entry!r} "
                 f"is listed twice")
         seen.add(entry)
-    colour = table.get("colour", CONSOLE_KEYS["colour"])
-    if not isinstance(colour, str) or colour not in CONSOLE_COLOURS:
-        raise SystemExit(
-            f"[holo2] {project.config_path}: [console] colour must be one of "
-            f"{', '.join(CONSOLE_COLOURS)}, got {colour!r}")
-    return ConsoleConfig(daemons=tuple(daemons), colour=colour)
+    return ConsoleConfig(daemons=tuple(daemons), colour=console_colour(project))
 
 
 SERVE_KEYS = {

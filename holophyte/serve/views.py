@@ -13,7 +13,7 @@ from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale
 from holophyte.config.config_tables import board_mode, loop_config, sweep_config
-from holophyte.config.serve_settings import console_config, serve_config
+from holophyte.config.serve_settings import console_colour, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.review.criterion_ids import with_numbers
@@ -30,9 +30,9 @@ FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
 
 def saved_colour(project):
     try:
-        return console_config(dataclasses.replace(project, _config=None)).colour
+        return console_colour(dataclasses.replace(project, _config=None))
     except SystemExit:
-        return console_config(project).colour
+        return console_colour(project)
 
 
 def status(project, now=None, started_ms=None, beat_stale_ms=None):

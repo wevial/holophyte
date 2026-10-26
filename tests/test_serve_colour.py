@@ -42,6 +42,14 @@ class HostStatusColourTests(HostServeCase):
 
         self.assertEqual((code, body["colour"]), (200, "blue"))
 
+    def test_a_projects_unused_peer_list_does_not_hide_its_colour(self):
+        self.config("alpha", '[console]\ndaemons = ["bad"]\ncolour = "blue"\n')
+        self.start()
+
+        code, body = self.request("GET", "/projects/alpha/status")
+
+        self.assertEqual((code, body["colour"]), (200, "blue"))
+
 
 class ColourConfigEditTests(ServeTestCase):
     TOKEN = "colour-test-token"
