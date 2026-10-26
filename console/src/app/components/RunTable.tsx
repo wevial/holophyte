@@ -1,19 +1,20 @@
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatClock, formatSettled } from "../../lib/format";
 import { localMidnight } from "../../lib/ledger";
-import type { RunRow } from "../history";
+import type { RunOrder, RunRow, RunSort } from "../history";
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
 import { STATES, type State } from "../state";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
-const GRID = "grid grid-cols-[84px_100px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_80px] items-start gap-3";
+const GRID = "grid grid-cols-[84px_100px_minmax(0,2.6fr)_96px_minmax(0,1.7fr)_64px_96px_96px_96px_80px] items-start gap-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 const NEEDS_YOU = new Set<State>(["stale", "question", "paused", "ready_to_merge"]);
 
-function started(ms: number, now: number): string {
+function clock(ms: number, now: number): string {
   return ms < localMidnight(now) ? `yest ${formatClock(ms)}` : formatClock(ms);
 }
 
@@ -46,7 +47,7 @@ export function ResumedAs({ row }: { row: { base: string; resumed_as?: number | 
 }
 
 function RunTableRow({ row, now }: { row: RunRow; now: number }) {
-  const start = started(row.started_ms, now);
+  const start = clock(row.started_ms, now);
   const quiet = row.state === "merged" || row.state === "abandoned" || row.state === "resumed";
   const need = NEEDS_YOU.has(row.state);
   return (
@@ -80,34 +81,75 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
       <span className={MONO}>{row.rounds > 0 ? row.rounds : DASH}</span>
       <span className={MONO}>{prNumber(row.pr_url)}</span>
       <span className={`${MONO} whitespace-nowrap`}>{start}</span>
+      <span className={`${MONO} whitespace-nowrap`}>{row.ended_ms == null ? DASH : clock(row.ended_ms, now)}</span>
       <span className={`${MONO} whitespace-nowrap text-right`}>{formatSettled(row.elapsed_ms)}</span>
-
     </li>
   );
 }
 
-/** The runs as one table that scrolls sideways inside its own box. */
-export function RunTable({ rows, now, empty }: { rows: RunRow[]; now: number; empty: string }) {
+const HEADS: { label: string; sort?: RunSort; right?: boolean }[] = [
+  { label: "Run" },
+  { label: "Ticket" },
+  { label: "Title" },
+  { label: "Project" },
+  { label: "State", sort: "state" },
+  { label: "Rounds", sort: "rounds" },
+  { label: "PR" },
+  { label: "Started", sort: "started" },
+  { label: "Ended", sort: "ended" },
+  { label: "Took", sort: "duration", right: true },
+];
+
+function SortArrow({ order }: { order: RunOrder | null }) {
   return (
-    <div data-run-table className="overflow-x-auto border border-rule bg-paper">
+    <svg aria-hidden="true" viewBox="0 0 8 10" width={8} height={10} fill="none" stroke="currentColor" strokeWidth={1.4} className={order ? "text-act" : "opacity-50"}>
+      {order === "desc" && <path d="M4 1v8M1 6l3 3 3-3" />}
+      {order === "asc" && <path d="M4 9V1M1 4l3-3 3 3" />}
+      {order == null && <path d="M4 1v8M2 3l2-2 2 2M2 7l2 2 2-2" />}
+    </svg>
+  );
+}
+
+/** The column heads; Started, Ended, Took, Rounds and State sort the table. */
+export function RunTableHeads({ sort, order, onSort }: { sort: RunSort; order: RunOrder; onSort: (key: RunSort) => void }) {
+  return (
+    <div data-run-heads className={`${GRID} relative z-[1] border border-rule bg-paper px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
+      {HEADS.map((head) =>
+        head.sort ? (
+          <button
+            key={head.label}
+            type="button"
+            aria-label={`Sort by ${head.label.toLowerCase()}`}
+            aria-pressed={sort === head.sort}
+            onClick={() => onSort(head.sort!)}
+            className={`inline-flex cursor-pointer items-center gap-1.5 uppercase tracking-[0.12em] hover:text-ink aria-pressed:text-ink ${head.right ? "justify-self-end" : "justify-self-start"}`}
+          >
+            {head.label}
+            <SortArrow order={sort === head.sort ? order : null} />
+          </button>
+        ) : (
+          <span key={head.label}>{head.label}</span>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** The runs as one table that scrolls sideways inside its own box while it
+ *  is narrower than the table; `dock` sits above the rows inside that box. */
+export function RunTable({ rows, now, empty, label = "Runs, newest first", dock }: { rows: RunRow[]; now: number; empty: string; label?: string; dock?: ReactNode }) {
+  return (
+    <div data-run-table className="overflow-x-auto @min-[1100px]:overflow-x-visible">
       <div className="min-w-[1100px]">
-        <div aria-hidden="true" className={`${GRID} border-b border-rule px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
-          <span>Run</span>
-          <span>Ticket</span>
-          <span>Title</span>
-          <span>Project</span>
-          <span>State</span>
-          <span>Rounds</span>
-          <span>PR</span>
-          <span>Started</span>
-          <span className="text-right">Took</span>
+        {dock}
+        <div className="border-x border-b border-rule bg-paper">
+          <ol aria-label={label} className="m-0 list-none p-0">
+            {rows.map((row) => (
+              <RunTableRow key={`${row.base} ${row.id}`} row={row} now={now} />
+            ))}
+          </ol>
+          {rows.length === 0 && <p className="m-0 px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
         </div>
-        <ol aria-label="Runs, newest first" className="m-0 list-none p-0">
-          {rows.map((row) => (
-            <RunTableRow key={`${row.base} ${row.id}`} row={row} now={now} />
-          ))}
-        </ol>
-        {rows.length === 0 && <p className="m-0 px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
       </div>
     </div>
   );

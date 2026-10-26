@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { fetchConfig } from "../lib/config";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
 import { SHIPPED_PAGE } from "../hooks/useShipped";
@@ -293,8 +293,9 @@ export function useFindings<R extends HostRecord<PollBodies>>(
 }
 
 /** Each status-answering host's last good `path` answer, by its record
- *  `key`; a host whose daemon lacks the route (404) has no entry. */
-function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.ZodType<T>, deps: { fetch: Fetch }): Map<string, T> {
+ *  `key`; a host whose daemon lacks the route (404) has no entry. With
+ *  `keep`, a host's answer to the previous `path` stands until the new one comes. */
+function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.ZodType<T>, deps: { fetch: Fetch }, keep = false): Map<string, T> {
   const asked = hosts.filter((host) => host.status != null);
   const results = useQueries({
     queries: asked.map((host) => ({
@@ -302,6 +303,7 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
       queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, schema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
+      placeholderData: keep ? keepPreviousData : undefined,
     })),
   });
   const answers = new Map<string, T>();
@@ -312,10 +314,10 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
   return answers;
 }
 
-/** Each answering host's `/history` since yesterday's local midnight before
- *  `now`, by its record `key`; a host without the route has no entry. */
-export function useHistory(hosts: HostRecord<PollBodies>[], now: number, deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
-  return useAnswers(hosts, `/history?since=${localMidnight(localMidnight(now) - 1)}`, historySchema, deps);
+/** Each answering host's `/history?query`, by its record `key`; a host
+ *  without the route has no entry. */
+export function useHistory(hosts: HostRecord<PollBodies>[], query: string, deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
+  return useAnswers(hosts, `/history?${query}`, historySchema, deps, true);
 }
 
 function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fetch) {

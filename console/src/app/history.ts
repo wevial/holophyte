@@ -80,9 +80,11 @@ function stageWord(row: HostedRun, item: AttentionItem | null, now: number): str
 
 const ITEM_KIND: Partial<Record<State, string>> = { parked: "pr_open", question: "blocked", paused: "paused" };
 
-/** Every answer's rows, tagged with their host and project, newest start
- *  first and then by id. */
-export function historyRows(hosts: HostRecord<ContractBodies>[], answers: Map<string, History>, readiness: ReadinessMap, now: number): RunRow[] {
+/** Every answer's rows, tagged with their host and project, in the order
+ *  `compare` gives. */
+export function historyRows(
+  hosts: HostRecord<ContractBodies>[], answers: Map<string, History>, readiness: ReadinessMap, now: number, compare: (a: RunRow, b: RunRow) => number,
+): RunRow[] {
   return hosts
     .flatMap((host) => {
       const answer = answers.get(host.key);
@@ -99,18 +101,74 @@ export function historyRows(hosts: HostRecord<ContractBodies>[], answers: Map<st
         return { ...row, stage: stageWord(row, item, now) };
       });
     })
-    .sort((a, b) => b.started_ms - a.started_ms || b.id - a.id);
+    .sort(compare);
 }
 
-/** The scoped fleet's runs since yesterday's local midnight. */
-export function useRunHistory(): { now: number; rows: RunRow[] } {
+export const RUN_SORTS = ["started", "ended", "duration", "rounds", "state"] as const;
+
+export type RunSort = (typeof RUN_SORTS)[number];
+
+export type RunOrder = "asc" | "desc";
+
+export const PAGE_SIZES = [25, 50, 100] as const;
+
+export const DEFAULT_SIZE = 50;
+
+const SORT_KEY: Record<RunSort, (row: RunRow) => number> = {
+  started: (row) => row.started_ms,
+  ended: (row) => row.ended_ms ?? Number.POSITIVE_INFINITY,
+  duration: (row) => row.elapsed_ms,
+  rounds: (row) => row.rounds,
+  state: (row) => GROUP_RANK[stateGroup(row.state)],
+};
+
+/** The daemons' order: the sort key, then newest start, then project and id,
+ *  so merging each daemon's first rows keeps every page exact. */
+function compareRows(sort: RunSort, order: RunOrder): (a: RunRow, b: RunRow) => number {
+  const key = SORT_KEY[sort];
+  const sign = order === "asc" ? 1 : -1;
+  return (a, b) => {
+    const [left, right] = [key(a), key(b)];
+    const byKey = left === right ? 0 : left < right ? -sign : sign;
+    return byKey || b.started_ms - a.started_ms || a.project.localeCompare(b.project) || b.id - a.id;
+  };
+}
+
+export interface RunPage {
+  now: number;
+  rows: RunRow[];
+  total: number;
+  counts: Record<RunFilter, number>;
+}
+
+/** One page of the scoped fleet's runs since yesterday's local midnight, in
+ *  the asked state and order. One daemon serves the page itself; with
+ *  several, each serves its first `page * size` rows and the page is cut
+ *  from their merge. */
+export function useRunPage(search: RunsSearch): RunPage {
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const hosts = scopedHosts(peers.hosts, project);
+  const { state = "active", sort = "started", order = "desc", page = 1, size = DEFAULT_SIZE } = search;
+  const single = hosts.length === 1;
+  const query = new URLSearchParams({ since: String(localMidnight(localMidnight(peers.now) - 1)) });
+  if (state !== "all") query.set("state", state);
+  query.set("sort", sort);
+  query.set("order", order);
+  query.set("offset", String(single ? (page - 1) * size : 0));
+  query.set("limit", String(single ? size : page * size));
   const readiness = useReadiness(hosts, deps);
-  const answers = useHistory(hosts, peers.now, deps);
-  return { now: peers.now, rows: historyRows(hosts, answers, readiness, peers.now) };
+  const answers = useHistory(hosts, query.toString(), deps);
+  const merged = historyRows(hosts, answers, readiness, peers.now, compareRows(sort, order));
+  const counts: Record<RunFilter, number> = { all: 0, active: 0, merged: 0, failed: 0, abandoned: 0 };
+  let total = 0;
+  for (const answer of answers.values()) {
+    total += answer.total;
+    for (const group of RUN_GROUPS) counts[group] += answer.counts?.state[group] ?? 0;
+  }
+  counts.all = state === "all" ? total : RUN_GROUPS.reduce((sum, group) => sum + counts[group], 0);
+  return { now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, counts };
 }
 
 const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
@@ -121,12 +179,26 @@ export type RunFilter = RunGroup | "all";
 
 const RUN_FILTERS: readonly RunFilter[] = ["all", ...RUN_GROUPS];
 
+const GROUP_RANK: Record<RunGroup | "superseded", number> = { active: 0, merged: 1, failed: 2, abandoned: 3, superseded: 4 };
+
 export interface RunsSearch {
   state?: RunFilter;
+  sort?: RunSort;
+  order?: RunOrder;
+  page?: number;
+  size?: number;
 }
 
-export function validateRunsSearch({ state }: Record<string, unknown>): RunsSearch {
-  return { state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined };
+export function validateRunsSearch({ state, sort, order, page, size }: Record<string, unknown>): RunsSearch {
+  const pageNumber = Number(page);
+  const sizeNumber = Number(size);
+  return {
+    state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined,
+    sort: RUN_SORTS.includes(sort as RunSort) ? (sort as RunSort) : undefined,
+    order: order === "asc" || order === "desc" ? order : undefined,
+    page: Number.isInteger(pageNumber) && pageNumber > 1 ? pageNumber : undefined,
+    size: PAGE_SIZES.some((each) => each === sizeNumber) ? sizeNumber : undefined,
+  };
 }
 
 /** A paused run that a later run resumed is "superseded": only All lists it. */
