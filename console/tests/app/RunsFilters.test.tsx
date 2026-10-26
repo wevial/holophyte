@@ -203,8 +203,31 @@ test("Escape and a press outside close the Filter popover and give focus back to
   await openFilter();
   (await section("State")).getByRole("checkbox", { name: "Merged" }).focus();
   await act(async () => void fireEvent.pointerDown(document.querySelector("[data-count-line]")!));
+  await settleAll();
   expect(dialog()).toBeNull();
   expect(document.activeElement).toBe(filterButton());
+});
+
+test("Escape with focus moved from the Filter popover to Search still closes it and gives focus back to its button", async () => {
+  await mount("#/runs", countedFleet().fetchImpl);
+  await openFilter();
+  field().focus();
+  await act(async () => void fireEvent.keyDown(field(), { key: "Escape" }));
+  expect(dialog()).toBeNull();
+  expect(document.activeElement).toBe(filterButton());
+});
+
+test("Clear filters empties Search and drops a search still waiting on its debounce", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
+  await mount("#/runs?state=failed", daemons.fetchImpl);
+  fireEvent.change(field(), { target: { value: "lock" } });
+  await press(screen.getByRole("button", { name: "Clear filters" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  await settleAll();
+  expect(hashSearch().has("q")).toBe(false);
+  expect(field().value).toBe("");
+  expect(daemons.lastOf(DEMO).q).toBeUndefined();
+  expect(chips()).toEqual([]);
 });
 
 test("a Started button asks the hosts from its day and a custom range from its From day until the day after its To", async () => {

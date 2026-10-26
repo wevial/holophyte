@@ -112,7 +112,7 @@ function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): C
   return chips;
 }
 
-function Chips({ chips, onClear }: { chips: Chip[]; onClear: (clears: Partial<typeof CLEARED>) => void }) {
+function Chips({ chips, onClear, onClearAll }: { chips: Chip[]; onClear: (clears: Partial<typeof CLEARED>) => void; onClearAll: () => void }) {
   return (
     <div data-chips className="flex flex-wrap items-center gap-2">
       {chips.map((chip) => {
@@ -131,7 +131,7 @@ function Chips({ chips, onClear }: { chips: Chip[]; onClear: (clears: Partial<ty
           </span>
         );
       })}
-      <button type="button" onClick={() => onClear(CLEARED)}
+      <button type="button" onClick={onClearAll}
         className="ml-1 min-h-7 cursor-pointer font-sans text-[13px] font-medium text-ink underline underline-offset-2 hover:text-act">
         Clear filters
       </button>
@@ -155,6 +155,11 @@ export function Runs() {
   const orderWords = SORT_WORDS[sort][order];
   const go = (next: RunsSearch & RunsFilters) =>
     void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch & RunsFilters) => ({ ...previous, page: undefined, ...next }) });
+  const [fieldKey, setFieldKey] = useState(0);
+  const clearAll = () => {
+    setFieldKey((key) => key + 1);
+    go(CLEARED);
+  };
   const sortBy = (key: RunSort) => {
     const nextOrder: RunOrder = key === sort ? (order === "asc" ? "desc" : "asc") : key === "state" ? "asc" : "desc";
     const fresh = key === "started" && nextOrder === "desc";
@@ -207,7 +212,7 @@ export function Runs() {
               className="flex flex-col gap-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0 @max-[1099px]:sticky @max-[1099px]:left-0 @max-[1099px]:w-[100cqw]"
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 min-[1100px]:flex-nowrap">
-              <SearchField label="Search runs" width="w-[220px] min-w-[112px] shrink" />
+              <SearchField key={fieldKey} label="Search runs" width="w-[220px] min-w-[112px] shrink" />
               <RangeButtons label="Started" presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
               <FilterPopover label="Filter runs" sections={sections} hidden={hidden} />
               <span className="ml-auto shrink-0 font-mono text-[12.5px] whitespace-nowrap text-ink-3">{total} runs</span>
@@ -227,7 +232,7 @@ export function Runs() {
                 ))}
               </select>
               </div>
-              {chips.length > 0 && <Chips chips={chips} onClear={go} />}
+              {chips.length > 0 && <Chips chips={chips} onClear={go} onClearAll={clearAll} />}
             </div>
             <RunTableHeads sort={sort} order={order} onSort={sortBy} />
           </div>
