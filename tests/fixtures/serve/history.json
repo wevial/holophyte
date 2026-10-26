@@ -23,6 +23,7 @@
       "additions": null,
       "deletions": null,
       "resumed_as": null,
+      "implementer": null,
       "pr_url": null,
       "host": null,
       "working_ms": null,
@@ -51,6 +52,7 @@
       "additions": null,
       "deletions": null,
       "resumed_as": null,
+      "implementer": null,
       "pr_url": "https://github.com/example/repo/pull/10",
       "host": "writer",
       "working_ms": 0,
@@ -79,6 +81,7 @@
       "additions": null,
       "deletions": null,
       "resumed_as": null,
+      "implementer": null,
       "pr_url": null,
       "host": "writer",
       "working_ms": 0,
@@ -90,5 +93,29 @@
   "truncated": false,
   "now": 1750000000000,
   "until": null,
-  "total": 3
+  "total": 3,
+  "offset": 0,
+  "sort": "started",
+  "order": "desc",
+  "counts": {
+    "state": {
+      "active": 3,
+      "merged": 0,
+      "failed": 0,
+      "abandoned": 0
+    },
+    "failure": {
+      "verify": 0,
+      "review_route": 0,
+      "fix_no_progress": 0,
+      "no_commits": 0,
+      "budget": 0,
+      "merge_lock": 0,
+      "infra": 0,
+      "swept": 0,
+      "unclassified": 0
+    },
+    "implementer": {}
+  },
+  "implementers": []
 }

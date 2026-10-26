@@ -502,7 +502,7 @@ class WitnessDebounceTests(_DebounceFixture):
         self.assertLess(time.monotonic() - started, 10)
         self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
         (command,) = commands
-        self.assertEqual(command.returncode, -signal.SIGKILL)
+        self.assertEqual(command.returncode, -signal.SIGTERM)
         self.assertEqual(self.real_rows(), [])
 
     def test_a_cancel_during_a_checkout_waits_for_the_step_and_its_timeout(self):

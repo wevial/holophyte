@@ -353,7 +353,17 @@ Each module, one line:
   set_state/comment, ready-ticket and blocker resolution, issue creation.
 - `holophyte/cli/patrol.py` — `--patrol [--json]`: per project, the
   attention items grouped by kind, the runs in flight, stranded tickets,
-  quiet runs and repeat failures, less `[patrol] ignore`; read only.
+  quiet runs and repeat failures, less `[patrol] ignore`, then main's
+  checks, the check-held pull requests and the host's health; read only.
+- `holophyte/pr/check_holds.py` — the patrol's GitHub reads: `main_checks()`,
+  main's check-run conclusion with each red run and whether main requires
+  it, and `pull_checks()`, the red checks holding an open pull request
+  as the merge fold decides.
+- `holophyte/host/host_health.py` — the patrol's host part: `tmp_usage()`,
+  `leftovers()` (this user's processes in a finished witness or worktree
+  tree, read from `/proc`), `units()` (`systemctl --user is-active`) and
+  `kernel_errors()` (the last hour's kernel I/O errors), each `readable`
+  or saying why it was skipped.
 - `holophyte/cli/status.py` — `--status [--json]` (KO-596): what the project is
   doing now — projects and admission, live and parked runs, the ready
   count, the schema version and the lock holders — read only, no network.
@@ -818,6 +828,14 @@ Each module, one line:
   paths; `witness-tree.json` stamps each table step's key over its `run` and
   its inputs at the commit, so a step whose key matches and whose `keep`
   paths exist is reused, until an earlier table step runs or a setup fails.
+- `holophyte/story/witness_reap.py` — `stop()` ends a witness command's
+  process group and every process of this user whose working directory or
+  an argument is inside the command's tree, SIGTERM first and SIGKILL
+  after `STOP_GRACE`, once the command ends, times out or the runner is
+  signalled; `reap_stale()` reaps each `witness-*` scratch directory an
+  earlier pass left behind, its `owner` pid gone or, with no `owner`,
+  older than `[story] witness_sec`, and a loop pass stops whatever still
+  runs in the warm tree before it prepares it.
 - `holophyte/story/story_close.py` — `settle_story()` ends each witness pass
   under the merge lock: at main's tip it closes the story when every
   witness is green with its approved file and no child is in Ready or
