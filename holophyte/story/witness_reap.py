@@ -81,7 +81,7 @@ def _stale(scratch, limit):
         owner = int((scratch / OWNER).read_text().strip())
     except (OSError, ValueError):
         return time.time() - status.st_mtime > limit
-    return not pid_alive(owner)
+    return not pid_alive(owner) or _stat(owner)[:1] == ["Z"]
 
 
 def _stop_group(proc):
