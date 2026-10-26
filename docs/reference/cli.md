@@ -95,7 +95,9 @@ project not `clean`; the text adds `main failure: NAME (required), NAME`,
 (`used_percent` as `df` gives it, `free_bytes`, `full` at 80% or more),
 `leftovers` (this user's processes whose cwd or an absolute argument lies in
 a removed or finished witness tree under the temporary directory or a
-removed or finished worktree: `pid`, `age_sec`, `cwd`, `args`), `units`
+removed or finished worktree, an absolute argument being
+read up to its first `:` so a `--volume` value is judged by its source:
+`pid`, `age_sec`, `cwd`, `args`), `units`
 (`systemctl --user is-active` of `holophyte-sweep.timer`,
 `holophyte-serve.socket` and each named project's `holophyte-loop@NAME`;
 `findings` are the `failed` units and a sweep timer not `active`;
