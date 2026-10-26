@@ -248,14 +248,15 @@ class TmpUsageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(tempfile, "tempdir", directory):
             usage = host_health.tmp_usage()
-            df = subprocess.run(["df", "-P", directory], capture_output=True,
+            df = subprocess.run(["df", "-Pk", directory], capture_output=True,
                                 text=True, check=True).stdout
             block = os.statvfs(directory).f_frsize
         fields = df.splitlines()[-1].split()
+        free = int(fields[-3]) * 1024
+        other_writers = max(block, free // 1000)
         self.assertAlmostEqual(usage["used_percent"], int(fields[-2][:-1]),
                                delta=1)
-        self.assertAlmostEqual(usage["free_bytes"], int(fields[-3]) * 1024,
-                               delta=block)
+        self.assertAlmostEqual(usage["free_bytes"], free, delta=other_writers)
 
 
 class HostFixtureParts(PatrolFixture):
