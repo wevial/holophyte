@@ -1160,7 +1160,7 @@ history, since the static route has no single-page fallback: `#/` is
 Overview, `#/runs` Runs, `#/tickets` Tickets and `#/findings` Findings,
 each in the shell its root renders. Settings lives at `#/settings` (General)
 and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
-`toml`, `hosts` and `appearance`; an unknown tab is a not-found page.
+`toml`, `hosts`, `appearance` and `log`; an unknown tab is a not-found page.
 `console/src/app/settingsDraft.ts` holds per-project field and raw drafts for the Settings page.
 `console/src/app/components/TomlEditor.tsx` edits and checks the whole TOML file with a line gutter.
 `console/src/app/components/SettingRow.tsx` binds the shared field rows, and
@@ -1168,6 +1168,8 @@ and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `console/src/app/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
 `console/src/app/components/HostsTab.tsx` renders their health, projects and last reports.
 `console/src/app/components/RouteTable.tsx` lists their agent routes, probes and recorded fallback use.
+`console/src/app/dayLog.ts` sorts each ledger entry into the Today's log groups, writes its short phrase and keeps the filter saved at the origin daemon's `/prefs`;
+`console/src/app/components/DayLogTab.tsx` renders that filter's Settings tab.
 `console/src/app/checker.ts` places each `/tickets/check` message on the New ticket field it names and words the Checker panel's summary.
 
 `console/src/app/settings.ts` defines the grouped tabs and host attention

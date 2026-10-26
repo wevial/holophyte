@@ -170,6 +170,10 @@
   --tag: var(--violet-5);
   --tag-ink: var(--violet-12);
   --focus: var(--violet-9);
+  --p-violet: #5a4ebf;
+  --p-teal: #00677a;
+  --p-green: #006537;
+  --p-blue: #2f5fb3;
   --scrim: rgba(236, 234, 243, 0.8);
   --edge: var(--neutral-9);
   --edge-dim: var(--neutral-7);
@@ -351,6 +355,10 @@
   --tag: var(--violet-5);
   --tag-ink: var(--violet-12);
   --focus: var(--violet-8);
+  --p-violet: #a9a6ff;
+  --p-teal: #7fd6e6;
+  --p-green: #7ef4ac;
+  --p-blue: #9db8ff;
   --scrim: rgba(13, 10, 21, 0.74);
   --edge: var(--neutral-9);
   --edge-dim: var(--neutral-7);
@@ -529,6 +537,10 @@
     --tag: var(--violet-5);
     --tag-ink: var(--violet-12);
     --focus: var(--violet-8);
+    --p-violet: #a9a6ff;
+    --p-teal: #7fd6e6;
+    --p-green: #7ef4ac;
+    --p-blue: #9db8ff;
     --scrim: rgba(13, 10, 21, 0.74);
     --edge: var(--neutral-9);
     --edge-dim: var(--neutral-7);
@@ -597,6 +609,10 @@
   --color-p2-ink: var(--p2-ink);
   --color-tag-ink: var(--tag-ink);
   --color-focus: var(--focus);
+  --color-p-violet: var(--p-violet);
+  --color-p-teal: var(--p-teal);
+  --color-p-green: var(--p-green);
+  --color-p-blue: var(--p-blue);
   --color-pink-on: var(--pink-on);
   --color-red-on: var(--red-on);
   --color-orange-on: var(--orange-on);
