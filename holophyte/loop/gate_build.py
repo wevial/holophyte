@@ -154,15 +154,18 @@ def gate_task(target, conn, provider, run_id):
     return dict(live, _run=run, _gate=gate), ticket.id
 
 
-def hand_off_gate_run(target, run_id, why):
+def hand_off_gate_run(target, provider, run_id, why):
+    from holophyte.board import projection
     from holophyte.loop.runs import open_store
 
     conn = open_store(target)
     try:
-        _, gate = _gate_event(conn, run_id)
+        row, gate = _gate_event(conn, run_id)
         if gate is not None:
             hand_off(conn, run_id, gate["sha"], why)
     except GateHandoff:
-        pass
+        projection.mirror_push(conn, row.ticketId, provider)
+        projection.release_lease_label(target, conn, row.ticketId, provider,
+                                       run_id)
     finally:
         conn.close()

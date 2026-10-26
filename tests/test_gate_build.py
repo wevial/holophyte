@@ -246,6 +246,7 @@ class GateBuildTests(LoopFixture):
         down.write_text("#!/bin/sh\nexit 1\n")
         down.chmod(0o755)
         self.configure(f'[agents]\nimplementer = "{down}"\nwriter = "{down}"\n')
+        provider.states.clear()
 
         rc, _ = self.worker(provider=provider, build=head, env=env)
 
@@ -256,6 +257,8 @@ class GateBuildTests(LoopFixture):
         self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
         self.assertEqual(len(self.read(
             "SELECT 1 FROM runEvents WHERE kind = 'gate_handoff'")), 1)
+        self.assertEqual(provider.states, [("iss-131", "Todo")])
+        self.assertEqual(provider.labels["iss-131"], [])
         self.assertNotIn(f"Merge {BRANCH}: add a thing", self.subjects())
 
     def test_a_dirty_candidate_after_the_reexec_is_handed_off_not_gated(self):
