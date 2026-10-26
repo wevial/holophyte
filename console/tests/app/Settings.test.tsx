@@ -210,6 +210,8 @@ const logPhrases = () => Array.from(screen.getByRole("complementary", { name: "T
   const key = row.querySelector('a[href*="/tickets/"]')?.textContent;
   return key ? `${key} ${row.querySelector("[data-phrase]")?.textContent}` : null;
 }).filter(Boolean);
+const preview = () => screen.getByRole("complementary", { name: "Today's log preview" });
+const previewPhrases = () => Array.from(preview().querySelectorAll("li"), (row) => row.querySelector("[data-phrase]")?.textContent).filter(Boolean);
 const toOverview = async () => {
   await act(async () => within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Overview" }).click());
   await act(settle);
@@ -240,10 +242,14 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   expect(ticked()).toEqual(HIGHLIGHT_TICKS);
 });
 
-test("ticking Verdicts selects Manual and adds the verdicts to the log; a cleared project leaves it; the presets set the boxes", async () => {
+test("ticking Verdicts selects Manual and adds the verdicts to the preview and the log; a cleared project leaves it; the presets set the boxes", async () => {
   await mount("#/settings/log");
   await act(settle);
+  expect(previewPhrases()).toEqual(["merged", "merged"]);
+  expect(within(preview()).getByText("2 of 4")).toBeTruthy();
   await click(box("Verdicts"));
+  expect(previewPhrases()).toEqual(["merged", "merged", "review round 2: approve", "review round 1: changes asked"]);
+  expect(within(preview()).getByText("4 of 4")).toBeTruthy();
   expect(pressed()).toEqual(["Manual"]);
   expect(box("Review rounds").indeterminate).toBe(true);
   await toOverview();

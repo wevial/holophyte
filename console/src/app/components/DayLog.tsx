@@ -1,10 +1,10 @@
-import { useLayoutEffect, useState } from "react";
+import { useId, useLayoutEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { LedgerEntry } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
 import { formatClock } from "../../lib/format";
 import { prLabel } from "../../lib/shipped";
-import { categoryOf, keeps, phraseOf, projectColours, useDayLogFilter } from "../dayLog";
+import { categoryOf, keeps, phraseOf, projectColours, useDayLogFilter, type DayLogFilter } from "../dayLog";
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
 import { SettingsIcon } from "./icons";
@@ -131,9 +131,13 @@ function keysOf(entries: LedgerEntry[]): string[] {
 }
 
 /** The day's ledger across the scoped hosts, `entries` newest first, kept
- *  to the saved filter unless Show all is pressed. */
-export function DayLog({ entries, className = "" }: { entries: LedgerEntry[]; className?: string }) {
-  const { filter } = useDayLogFilter();
+ *  to the saved filter unless Show all is pressed; a `preview` shows the
+ *  entries that filter keeps, with their count. */
+export function DayLog({ entries, preview, className = "" }: { entries: LedgerEntry[]; preview?: DayLogFilter; className?: string }) {
+  const saved = useDayLogFilter();
+  const filter = preview ?? saved.filter;
+  const heading = useId();
+  const Heading = preview ? "h3" : "h2";
   const { hosts } = useConsolePeers();
   const colours = projectColours(hosts);
   const [showAll, setShowAll] = useState(false);
@@ -144,21 +148,23 @@ export function DayLog({ entries, className = "" }: { entries: LedgerEntry[]; cl
   const earlier = listed.length - shown.length;
   const keys = keysOf(shown);
   return (
-    <aside aria-labelledby="day-log" className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
-      <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 bg-canvas py-1">
-        <h2 id="day-log" className="mr-auto font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
+    <aside aria-labelledby={preview ? undefined : heading} aria-label={preview ? "Today's log preview" : undefined}
+      className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
+      <div className={`sticky top-0 z-10 flex min-h-11 items-center gap-2 py-1 ${preview ? "bg-paper" : "bg-canvas"}`}>
+        <Heading id={heading} className="mr-auto font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
           Today's log
-        </h2>
-        {hidden > 0 && (
+        </Heading>
+        {preview && <span className="font-sans text-[13.5px] text-ink">{kept.length} of {entries.length}</span>}
+        {!preview && hidden > 0 && (
           <button type="button" aria-pressed={showAll} onClick={() => setShowAll(!showAll)}
             className={`min-h-8 px-1.5 font-sans text-[13.5px] ${showAll ? "bg-act-wash text-act" : "text-ink hover:text-act"}`}>
             {showAll ? "Highlights only" : `Show all (${hidden} hidden)`}
           </button>
         )}
-        <Link to="/settings/$tab" params={{ tab: "log" }} search={keepScope} aria-label="Filter Today's log" title="Filter Today's log"
+        {!preview && <Link to="/settings/$tab" params={{ tab: "log" }} search={keepScope} aria-label="Filter Today's log" title="Filter Today's log"
           className="flex size-8 shrink-0 items-center justify-center border border-rule text-ink-2 hover:border-ink-3 hover:text-ink">
           <SettingsIcon />
-        </Link>
+        </Link>}
       </div>
       {shown.length === 0 ? (
         <p className="font-mono text-[12.5px] text-ink-3">{entries.length === 0 ? "Nothing logged since midnight." : "Nothing in the filter since midnight."}</p>
