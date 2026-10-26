@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { dayStart } from "../history";
 
@@ -95,14 +95,17 @@ export function FilterSelect({ label, param, allLabel, options }: { label: strin
 
 const SEGMENT = "min-h-9 cursor-pointer px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] whitespace-nowrap text-ink-2 not-first:border-l not-first:border-ink-3 hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper";
 
-/** Closes the popover in `box` on Escape or a press outside it, giving
- *  focus back to `button` when it was inside. */
-function useDismiss(open: boolean, close: () => void, box: RefObject<HTMLElement | null>, button: RefObject<HTMLElement | null>) {
+/** A popover's open state, closed by `hidden`, by Escape or by a press
+ *  outside `box`, which gives focus back to `button` when it was inside. */
+function usePopover(hidden: boolean) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
     const dismiss = () => {
       const within = box.current?.contains(document.activeElement) ?? false;
-      close();
+      setOpen(false);
       if (within || document.activeElement === document.body) button.current?.focus();
     };
     const onKey = (event: KeyboardEvent) => {
@@ -119,15 +122,7 @@ function useDismiss(open: boolean, close: () => void, box: RefObject<HTMLElement
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPress);
     };
-  }, [open, close, box, button]);
-}
-
-function usePopover(hidden: boolean) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const close = useRef(() => setOpen(false)).current;
-  useDismiss(open, close, box, button);
+  }, [open]);
   useEffect(() => {
     if (hidden) setOpen(false);
   }, [hidden]);
