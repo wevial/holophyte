@@ -110,7 +110,7 @@ def project_row(name, target, items, now):
     row["attention"] = attention_groups(unignored(items, knobs.ignore, hid))
     row.update({key: unignored(sections[key], knobs.ignore, hid)
                 for key in SECTIONS})
-    row["ignored"] = [key for key in knobs.ignore if key in hid]
+    row["ignored"] = [key for key in dict.fromkeys(knobs.ignore) if key in hid]
     row["clean"] = not (row["attention"] or row["stranded"] or row["quiet"]
                         or row["repeat_failures"])
     return row
@@ -214,7 +214,7 @@ def section_lines(row, now):
                  for run in row["quiet"])
     lines.extend(f"repeat {entry['ticket']} runs"
                  f" {', '.join(str(run) for run in entry['runs'])}"
-                 f" {entry['failure_kind']}:"
+                 f" {entry['failure_kind'] or '(no kind)'}:"
                  f" {first_line(entry['reason']) or '(no reason)'}"
                  for entry in row["repeat_failures"])
     return lines
