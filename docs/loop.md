@@ -413,6 +413,11 @@ runs at the newest tip. A pass writes all of its verdicts in one store
 transaction once its set has finished, so a cancelled run records nothing.
 The serial loop and `--witness-pass` get that single write but no window
 and no cancel.
+A witness command's processes, its process group and anything still
+running inside its tree, are stopped (SIGTERM, then SIGKILL after a grace)
+when it ends, times out or its runner is signalled, before the tree is
+removed, and each pass first reaps the scratch tree and processes an
+earlier pass left behind once the pass that owned them is gone.
 
 ## State machines
 

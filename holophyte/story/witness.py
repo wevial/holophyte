@@ -5,7 +5,6 @@ import fcntl
 import hashlib
 import os
 import re
-import signal
 import subprocess
 import tempfile
 import time
@@ -26,6 +25,7 @@ from holophyte.story.story_close import (
     settle_owed,
     settle_story,
 )
+from holophyte.story.witness_reap import reap_stale, stop, stop_warm, write_owner
 from holophyte.story.witness_running import (
     clear_restarts,
     clear_running,
@@ -62,9 +62,10 @@ Verdict = collections.namedtuple(
 
 class _Command:
     def __init__(self):
-        self.proc = None
+        self.proc = self.tree = None
         self.held = 0
         self.cancelled = None
+        self.stopping = False
 
     @contextlib.contextmanager
     def hold(self):
@@ -76,8 +77,8 @@ class _Command:
             self.held -= 1
             self.unwind()
 
-    def arm(self, proc):
-        self.proc = proc
+    def arm(self, proc, tree=None):
+        self.proc, self.tree = proc, tree
         self.unwind()
 
     def cancel(self, signum):
@@ -89,11 +90,11 @@ class _Command:
         return self.proc is not None and self.proc.returncode is None
 
     def unwind(self):
-        if self.cancelled is None:
+        if self.cancelled is None or self.stopping:
             return
-        if self._running():
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(self.proc.pid, signal.SIGKILL)
+        self.stopping = True
+        if self.proc is not None:
+            stop(self.proc, self.tree)
         raise SystemExit(128 + self.cancelled)
 
 
@@ -164,6 +165,7 @@ def run_witnesses(target, conn, story_id, sha, verifier, copy_files=False,
     stamp = f"{verifier}-{time.time_ns()}"
     deadline = time.monotonic() + story_config(target).witness_sec
     secrets = redact.known_secrets(target.config())
+    reap_stale(target)
     with contextlib.ExitStack() as stack:
         with COMMAND.hold():
             tree, warm, failed = _tree(stack, target, sha, verifier, deadline)
@@ -202,6 +204,7 @@ def _tree(stack, target, sha, verifier, deadline):
     warm = (stack.enter_context(warm_tree(target)) if verifier == "loop"
             else None)
     if warm is not None:
+        stop_warm(warm.path)
         failed = warm.prepare(sha, deadline)
         if not failed:
             return warm.path, warm, None
@@ -210,8 +213,9 @@ def _tree(stack, target, sha, verifier, deadline):
     elif verifier == "loop":
         print("[holo2] another pass holds the warm witness tree; this pass"
               " runs in a scratch tree")
-    tree = Path(stack.enter_context(
-        tempfile.TemporaryDirectory(prefix="witness-"))) / "tree"
+    scratch = stack.enter_context(tempfile.TemporaryDirectory(prefix="witness-"))
+    write_owner(scratch)
+    tree = Path(scratch) / "tree"
     stack.callback(subprocess.run, ["git", "worktree", "remove", "--force",
                                     "--force", str(tree)],
                    cwd=target.path, capture_output=True)
@@ -495,8 +499,7 @@ def _run_one(run, witness, file_hash, log):
         _write_log(log, transcript + SPENT, secrets)
         return "error", None, file_hash, time.monotonic() - started
     try:
-        code, output = _verify_command(run.target, NO_COLOR + witness.command,
-                                       run.tree, remaining, on_start=COMMAND.arm)
+        code, output = _command(run, witness, remaining)
     except subprocess.TimeoutExpired as expired:
         _write_log(log, f"{transcript}{expired.output or ''}\n[witness] timed"
                         f" out after {remaining:.0f}s\n", secrets)
@@ -514,6 +517,15 @@ def _run_one(run, witness, file_hash, log):
     if code == 0:
         return "green", None, file_hash, seconds
     return "red", red_kind(output), file_hash, seconds
+
+
+def _command(run, witness, remaining):
+    try:
+        return _verify_command(run.target, NO_COLOR + witness.command, run.tree,
+                               remaining,
+                               on_start=lambda proc: COMMAND.arm(proc, run.tree))
+    finally:
+        stop(COMMAND.proc, run.tree)
 
 
 def _setup(run):

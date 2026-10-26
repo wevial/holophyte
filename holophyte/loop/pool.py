@@ -110,14 +110,16 @@ def witness_child(target, provider):
     def cancel(signum, frame):
         COMMAND.cancel(signum)
 
-    previous = signal.signal(signal.SIGTERM, cancel)
+    previous = {signum: signal.signal(signum, cancel)
+                for signum in (signal.SIGTERM, signal.SIGHUP)}
     conn = open_store(target)
     try:
         witness_step(target, conn, store.tickets.ensure_project(
             conn, provider.team, target.path), step=True)
     finally:
         conn.close()
-        signal.signal(signal.SIGTERM, previous)
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
     return 0
 
 

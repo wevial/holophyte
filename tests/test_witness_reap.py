@@ -2,18 +2,34 @@
 
 Run: python3 -m unittest discover -s tests -p 'test_witness_reap.py' -v
 """
+import contextlib
+import io
 import os
 import random
 import shlex
 import signal
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import store
+from holophyte.story import witness_reap
 from holophyte.story.witness import main_tip, run_witnesses
-from tests.test_witness_runner import PASSES, PYTHON, WitnessRunnerFixture, git
+from holophyte.story.witness_reap import reap_stale
+from tests.test_witness_runner import (
+    PASSES,
+    PYTHON,
+    WitnessRunnerFixture,
+    commit_file,
+    git,
+)
+
+FACTORY = Path(__file__).resolve().parent.parent / "factory.py"
+NATIVE = '[board]\nkind = "native"\nkey = "KO"\n'
 
 PROC = Path("/proc")
 
@@ -40,6 +56,13 @@ def kill_carrying(token):
             pass
 
 
+def wait_for(ready, limit=30.0):
+    until = time.monotonic() + limit
+    while not ready() and time.monotonic() < until:
+        time.sleep(0.1)
+    return ready()
+
+
 def alive_carrying(token, settle=2.0):
     until = time.monotonic() + settle
     while carrying(token) and time.monotonic() < until:
@@ -47,8 +70,7 @@ def alive_carrying(token, settle=2.0):
     return carrying(token)
 
 
-@unittest.skipUnless(PROC.is_dir(), "reading survivors needs /proc")
-class WitnessCommandTreeTests(WitnessRunnerFixture, unittest.TestCase):
+class TokenFixture(WitnessRunnerFixture):
     def setUp(self):
         super().setUp()
         self.token = f"300.{random.randrange(10**9):09d}"
@@ -59,6 +81,9 @@ class WitnessCommandTreeTests(WitnessRunnerFixture, unittest.TestCase):
         tempdir.start()
         self.addCleanup(tempdir.stop)
 
+
+@unittest.skipUnless(PROC.is_dir(), "reading survivors needs /proc")
+class WitnessCommandTreeTests(TokenFixture, unittest.TestCase):
     def test_a_green_command_leaves_no_descendant_running(self):
         token = shlex.quote(self.token)
         detached = shlex.quote(
@@ -77,6 +102,150 @@ class WitnessCommandTreeTests(WitnessRunnerFixture, unittest.TestCase):
         self.assertEqual(
             len(git(self.repo, "worktree", "list").splitlines()), 1)
         self.assertEqual(alive_carrying(self.token), [])
+
+    def test_a_command_past_the_budget_leaves_no_descendant_running(self):
+        token = shlex.quote(self.token)
+        target = self.project("[story]\nwitness_sec = 3\n")
+        self.approve([("W1", "tests/test_w1.py",
+                       f"sh -c 'sleep {token} & sleep {token}'", PASSES)])
+
+        rows = run_witnesses(target, self.conn, self.story_id,
+                             main_tip(target), "operator", copy_files=True)
+
+        self.assertEqual([row.verdict for row in rows], ["error"])
+        self.assertIn("timed out", Path(rows[0].evidencePath).read_text())
+        self.assertEqual(alive_carrying(self.token), [])
+
+
+@unittest.skipUnless(PROC.is_dir(), "reading survivors needs /proc")
+class SignalledPassTests(TokenFixture, unittest.TestCase):
+    def operator_pass(self, command):
+        """`factory.py --witness-pass` as a real child, its store the
+        project's own and its temporary directory the test's scratch."""
+        target = self.project(NATIVE)
+        self.conn.close()
+        self.conn = store.open(target.store_path)
+        self.addCleanup(self.conn.close)
+        commit_file(self.repo, "tests/test_w1.py", PASSES, "w1 lands")
+        self.approve([("W1", "tests/test_w1.py", command, PASSES)])
+        env = {key: value for key, value in os.environ.items()
+               if key != "LINEAR_API_KEY"}
+        child = subprocess.Popen(
+            [sys.executable, str(FACTORY), str(self.repo), "--witness-pass",
+             "KO-1"], env=dict(env, TMPDIR=str(self.scratch)),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: child.poll() is None and child.kill())
+        return child
+
+    def assert_signal_stops_the_pass(self, signum):
+        token = shlex.quote(self.token)
+        child = self.operator_pass(f"sh -c 'sleep {token} & sleep {token}'")
+        self.assertTrue(wait_for(lambda: carrying(self.token)))
+
+        child.send_signal(signum)
+
+        child.wait(timeout=witness_reap.STOP_GRACE + 10)
+        self.assertEqual(alive_carrying(self.token), [])
+        self.assertEqual(list(self.scratch.glob("witness-*")), [])
+        self.assertEqual(
+            len(git(self.repo, "worktree", "list").splitlines()), 1)
+
+    def test_sighup_to_the_runner_stops_the_command_and_removes_its_tree(self):
+        self.assert_signal_stops_the_pass(signal.SIGHUP)
+
+    def test_sigterm_to_the_runner_stops_the_command_and_removes_its_tree(self):
+        self.assert_signal_stops_the_pass(signal.SIGTERM)
+
+    def test_a_stopped_command_s_descendant_gets_sigterm_first(self):
+        ready, termed = self.root / "ready", self.root / "termed"
+        descendant = shlex.quote(
+            f"trap 'touch {termed}; exit 0' TERM; touch {ready};"
+            " while :; do sleep 0.1; done")
+        child = self.operator_pass(f"sh -c {descendant} & wait")
+        self.assertTrue(wait_for(ready.exists))
+
+        child.send_signal(signal.SIGTERM)
+
+        child.wait(timeout=witness_reap.STOP_GRACE + 10)
+        self.assertTrue(termed.exists())
+
+
+@unittest.skipUnless(PROC.is_dir(), "finding a tree's processes needs /proc")
+class ReapStaleTests(TokenFixture, unittest.TestCase):
+    def scratch_dir(self, name, owner=None):
+        path = self.scratch / name
+        path.mkdir()
+        if owner is not None:
+            (path / "owner").write_text(f"{owner}\n")
+        return path
+
+    def sleeper(self, cwd):
+        proc = subprocess.Popen(["sleep", self.token], cwd=cwd)
+        self.addCleanup(proc.wait)
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        return proc
+
+    def test_a_dead_owner_s_tree_is_reaped_and_a_live_or_young_one_kept(self):
+        target = self.project()
+        exited = subprocess.Popen(["true"])
+        exited.wait()
+        dead = self.scratch_dir("witness-dead", owner=exited.pid)
+        git(self.repo, "worktree", "add", "-q", "--detach", str(dead / "tree"))
+        live = self.scratch_dir("witness-live", owner=os.getpid())
+        (live / "tree").mkdir()
+        young = self.scratch_dir("witness-young")
+        dead_sleep = self.sleeper(dead / "tree")
+        live_sleep = self.sleeper(live / "tree")
+        self.assertTrue(wait_for(lambda: len(carrying(self.token)) == 2))
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            reap_stale(target)
+
+        self.assertFalse(dead.exists())
+        self.assertEqual(dead_sleep.wait(timeout=5), -signal.SIGTERM)
+        self.assertEqual(
+            len(git(self.repo, "worktree", "list").splitlines()), 1)
+        self.assertEqual(out.getvalue().splitlines(), [
+            f"[holo2] reaped the leftover witness tree {dead}: 1 process"
+            " stopped"])
+        self.assertIsNone(live_sleep.poll())
+        self.assertTrue((live / "tree").is_dir())
+        self.assertTrue(young.is_dir())
+
+        aged = time.time() - 601
+        os.utime(young, (aged, aged))
+        with contextlib.redirect_stdout(io.StringIO()):
+            reap_stale(target)
+
+        self.assertFalse(young.exists())
+        self.assertIsNone(live_sleep.poll())
+        self.assertTrue((live / "tree").is_dir())
+
+    def test_a_loop_pass_stops_what_runs_in_the_warm_tree_before_its_witness(self):
+        target = self.project()
+        warm = Path(target.holo_dir) / "witness-tree"
+        pid_file, snapshot = self.root / "sleep-pid", self.root / "sleep-stat"
+        self.approve([("W1", "tests/test_w1.py",
+                       f"cat /proc/$(cat {pid_file})/stat > {snapshot} 2>&1;"
+                       " true", PASSES)])
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_witnesses(target, self.conn, self.story_id, main_tip(target),
+                          "loop", copy_files=True)
+        leftover = self.sleeper(warm)
+        self.assertTrue(wait_for(lambda: carrying(self.token)))
+        pid_file.write_text(f"{leftover.pid}\n")
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rows = run_witnesses(target, self.conn, self.story_id,
+                                 main_tip(target), "loop", copy_files=True)
+
+        self.assertEqual([row.verdict for row in rows], ["green"])
+        state = snapshot.read_text().rpartition(")")[2].split()[:1]
+        self.assertIn(state, ([], ["Z"]))
+        self.assertIn(f"[holo2] the warm witness tree {warm} had 1 process"
+                      " left running: stopped", out.getvalue().splitlines())
 
 
 if __name__ == "__main__":
