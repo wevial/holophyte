@@ -50,16 +50,14 @@ def stranded(tickets):
              "ended_ms": ticket.endedAt} for ticket in tickets]
 
 
-def quiet(runs, events, now, quiet_ms):
+def quiet(flying, events, now, quiet_ms):
     found = []
-    for run in runs:
-        beat = now - run.lastHeartbeat
-        last = events.get(run.id)
+    for run in flying:
+        last = events.get(run["run"])
         event = None if last is None else now - last
-        if beat > quiet_ms and (event is None or event > quiet_ms):
-            found.append({"ticket": run.linearIdentifier, "run": run.id,
-                          "phase": run.phase, "heartbeat_age_ms": beat,
-                          "event_age_ms": event})
+        if run["heartbeat_age_ms"] > quiet_ms and (event is None
+                                                   or event > quiet_ms):
+            found.append({**run, "event_age_ms": event})
     return found
 
 
@@ -86,8 +84,9 @@ def store_sections(target, now, quiet_ms, repeat_runs):
         ended = store.read.last_ended_runs(conn, repeat_runs)
     finally:
         conn.close()
-    return {"in_flight": in_flight(runs, now), "stranded": stranded(tickets),
-            "quiet": quiet(runs, events, now, quiet_ms),
+    flying = in_flight(runs, now)
+    return {"in_flight": flying, "stranded": stranded(tickets),
+            "quiet": quiet(flying, events, now, quiet_ms),
             "repeat_failures": repeat_failures(ended, repeat_runs)}
 
 
