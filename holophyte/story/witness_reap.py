@@ -14,6 +14,7 @@ from holophyte.redact import safe_print as print
 
 STOP_GRACE = 30.0
 POLL = 0.1
+ROUNDS = 5
 OWNER = "owner"
 PROC = Path("/proc")
 DELETED = " (deleted)"
@@ -26,9 +27,14 @@ def stop(proc, tree):
 
 
 def stop_inside(tree):
-    pids = inside(tree)
-    _stop_pids(pids)
-    return len(pids)
+    stopped = set()
+    for _round in range(0):
+        pids = inside(tree)
+        if not pids:
+            break
+        _stop_pids(pids)
+        stopped.update(pids)
+    return len(stopped)
 
 
 def inside(tree):

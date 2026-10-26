@@ -86,11 +86,13 @@ class TokenFixture(WitnessRunnerFixture):
 class WitnessCommandTreeTests(TokenFixture, unittest.TestCase):
     def test_a_green_command_leaves_no_descendant_running(self):
         token = shlex.quote(self.token)
+        ready = shlex.quote(str(self.root / "detached"))
         detached = shlex.quote(
-            "import os, time; os.setsid(); time.sleep(300)")
+            "import os, sys, time; os.setsid();"
+            " open(sys.argv[1], 'w').close(); time.sleep(300)")
         command = (f"sleep {token} >/dev/null 2>&1 &"
-                   f" {PYTHON} -c {detached} {token} >/dev/null 2>&1 &"
-                   " exit 0")
+                   f" {PYTHON} -c {detached} {ready} {token} >/dev/null 2>&1 &"
+                   f" while [ ! -e {ready} ]; do sleep 0.1; done; exit 0")
         target = self.project()
         self.approve([("W1", "tests/test_w1.py", command, PASSES)])
 
@@ -116,6 +118,29 @@ class WitnessCommandTreeTests(TokenFixture, unittest.TestCase):
         self.assertIn("timed out", Path(rows[0].evidencePath).read_text())
         self.assertEqual(alive_carrying(self.token), [])
 
+    def test_a_process_spawned_as_the_tree_is_stopped_is_stopped_too(self):
+        tree = self.root / "tree"
+        tree.mkdir()
+        ready = self.root / "respawner"
+        respawner = (
+            "import os, signal, subprocess, sys, time\n"
+            "def respawn(*_):\n"
+            "    subprocess.Popen(['sleep', sys.argv[2]],"
+            " start_new_session=True)\n"
+            "    os._exit(0)\n"
+            "signal.signal(signal.SIGTERM, respawn)\n"
+            "open(sys.argv[1], 'w').close()\n"
+            "time.sleep(300)\n")
+        first = subprocess.Popen(
+            [sys.executable, "-c", respawner, str(ready), self.token],
+            cwd=tree, start_new_session=True)
+        self.addCleanup(first.wait)
+        self.assertTrue(wait_for(ready.exists))
+
+        witness_reap.stop(None, tree)
+
+        self.assertEqual(alive_carrying(self.token), [])
+
 
 @unittest.skipUnless(PROC.is_dir(), "reading survivors needs /proc")
 class SignalledPassTests(TokenFixture, unittest.TestCase):
@@ -137,18 +162,24 @@ class SignalledPassTests(TokenFixture, unittest.TestCase):
         self.addCleanup(lambda: child.poll() is None and child.kill())
         return child
 
-    def test_sighup_to_the_runner_stops_the_command_and_removes_its_tree(self):
+    def assert_signal_stops_the_pass(self, signum):
         token = shlex.quote(self.token)
         child = self.operator_pass(f"sh -c 'sleep {token} & sleep {token}'")
         self.assertTrue(wait_for(lambda: carrying(self.token)))
 
-        child.send_signal(signal.SIGHUP)
+        child.send_signal(signum)
 
         child.wait(timeout=witness_reap.STOP_GRACE + 10)
         self.assertEqual(alive_carrying(self.token), [])
         self.assertEqual(list(self.scratch.glob("witness-*")), [])
         self.assertEqual(
             len(git(self.repo, "worktree", "list").splitlines()), 1)
+
+    def test_sighup_to_the_runner_stops_the_command_and_removes_its_tree(self):
+        self.assert_signal_stops_the_pass(signal.SIGHUP)
+
+    def test_sigterm_to_the_runner_stops_the_command_and_removes_its_tree(self):
+        self.assert_signal_stops_the_pass(signal.SIGTERM)
 
     def test_a_stopped_command_s_descendant_gets_sigterm_first(self):
         ready, termed = self.root / "ready", self.root / "termed"
