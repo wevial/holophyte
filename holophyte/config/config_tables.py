@@ -559,6 +559,43 @@ def report_config(project):
     return ReportConfig(**values)
 
 
+PATROL_KEYS = {
+    "ignore": (),
+    "quiet_min": 20,
+    "repeat_runs": 2,
+}
+PatrolConfig = collections.namedtuple(
+    "PatrolConfig", ("ignore", "quiet_ms", "repeat_runs"))
+
+
+def patrol_config(project):
+    table = project.config().get("patrol", {})
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [patrol] must be a table, got "
+            f"{type(table).__name__}")
+    ignore = table.get("ignore", PATROL_KEYS["ignore"])
+    quiet = table.get("quiet_min", PATROL_KEYS["quiet_min"])
+    repeat = table.get("repeat_runs", PATROL_KEYS["repeat_runs"])
+    checks = (
+        ("ignore", ignore, "a list of ticket keys",
+         isinstance(ignore, (list, tuple))
+         and all(isinstance(key, str) and key.strip() for key in ignore)),
+        ("quiet_min", quiet, "a finite positive number",
+         isinstance(quiet, (int, float)) and not isinstance(quiet, bool)
+         and math.isfinite(quiet) and quiet > 0),
+        ("repeat_runs", repeat, "an integer of at least 2",
+         isinstance(repeat, int) and not isinstance(repeat, bool)
+         and repeat >= 2))
+    for key, value, constraint, ok in checks:
+        if not ok:
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [patrol] {key} must be "
+                f"{constraint}, got {value!r}")
+    return PatrolConfig(ignore=tuple(ignore), quiet_ms=int(quiet * 60000),
+                        repeat_runs=repeat)
+
+
 CONSOLE_KEYS = {
     "daemons": (),
 }

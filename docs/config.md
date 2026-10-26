@@ -1603,6 +1603,27 @@ against its own, so the label can be renamed later without a migration. The
 value must be a non-empty string; anything else is a startup error naming the
 key.
 
+## `[patrol]`
+
+What `--patrol` (`holo patrol`) leaves out and how it judges a run quiet or
+a failure repeated. It reads only; nothing else reads this table.
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `ignore` | Default: `[]` | A list of ticket keys the operator has acknowledged; each is left out of every section, and listed under `ignored` when it hid an entry. |
+| `quiet_min` | Default: `20` | A finite positive number of minutes; a live run whose heartbeat and newest run event are both older is listed as quiet. |
+| `repeat_runs` | Default: `2` | An integer of at least 2; a ready, in-flight or parked ticket whose this many newest ended runs all failed with one failure kind and one reason is listed as a repeat failure. |
+
+```toml
+[patrol]
+ignore = ["KEY-12"]
+quiet_min = 20
+repeat_runs = 2
+```
+
+Reasons are compared by their first line, digits replaced by `N`, cut to 80
+characters. A wrong value exits naming the key and its constraint.
+
 ## `[questions]`
 
 Typed triage of bare PR mentions, answered by TypeSafe's Jev or by the Claude

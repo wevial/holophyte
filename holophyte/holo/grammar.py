@@ -75,6 +75,9 @@ NEGATIVE_NUMBER = re.compile(r"-[0-9]+|-[0-9]*\.[0-9]+")
 COMMANDS = (
     Command(("status",), "--status", "what the factory is doing now",
             flags=(JSON, WATCH)),
+    Command(("patrol",), "--patrol",
+            "each project's attention, stranded, quiet and repeat-failing tickets",
+            flags=(JSON,)),
     Command(("report",), "--report",
             "a window's counts, then its runs; its notes with --notes",
             flags=(WINDOW, NOTES, JSON)),

@@ -11,6 +11,7 @@ from holophyte.config.config_tables import (
     CONSOLE_KEYS,
     LOOP_KEYS,
     MERGE_KEYS,
+    PATROL_KEYS,
     REPORT_KEYS,
     STORY_KEYS,
     SUPERVISOR_KEYS,
@@ -91,6 +92,7 @@ KNOWN_KEYS["story"] = frozenset(STORY_KEYS)
 KNOWN_KEYS["trim"] = frozenset(TRIM_KEYS)
 KNOWN_KEYS["review"] = frozenset(REVIEW_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
+KNOWN_KEYS["patrol"] = frozenset(PATROL_KEYS)
 KNOWN_KEYS["questions"] = frozenset((
     "url", "key_env", "min_confidence", "backend", "model", "effort",
     "backend_fallback", "fallback_model", "fallback_effort", "failures",

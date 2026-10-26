@@ -317,6 +317,9 @@ def render(args, code, text, tail, timezone):
         files = document(files) or {"error": tail or "the host sent no files"}
         show_page(body, files, timezone)
         return 0
+    elif args.command.mode == "--patrol":
+        from holophyte.cli.patrol import render as patrol_lines
+        print("\n".join(patrol_lines(body)))
     elif args.command.mode == "--report":
         from holophyte.holo.report_page import show_body
         return show_body(args, body, timezone) if code == 0 else code

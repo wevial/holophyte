@@ -39,6 +39,7 @@ only to build the console (`bun --cwd=console run build`); see
 
 ```
 holo status [--json]                             # what the factory is doing: one project, or every project on the host
+holo patrol [--json]                             # what needs the operator: attention, stranded, quiet and repeat-failing tickets
 holo start ["note"] -p NAME|PATH                 # start the project's loop unit and return; the note releases a hold
 holo stop [--now] "note" -p NAME|PATH            # hold the project: the loop ends after its live runs; --now aborts them
 holo board [--json] -p NAME|PATH                 # the board's columns

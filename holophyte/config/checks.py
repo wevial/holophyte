@@ -19,6 +19,7 @@ from holophyte.config.config_tables import (
     board_config,
     loop_config,
     merge_config,
+    patrol_config,
     report_config,
     story_config,
     sweep_config,
@@ -87,6 +88,7 @@ def check_config(project):
     check_agent_fallbacks(project)
     adversary_credential(project)
     sweep_config(project)
+    patrol_config(project)
     loop_config(project)
     report_config(project)
     story_config(project)

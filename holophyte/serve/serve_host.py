@@ -217,15 +217,19 @@ def host_status(server, now=None):
     }
 
 
+def sweep_stale_items(home, now, sweep_sec):
+    sweep = sweep_view(home, now, sweep_sec)
+    if sweep["state"] in SWEEP_OK:
+        return []
+    return [{"kind": "sweep_stale", "project": None, "state": sweep["state"],
+             "started": sweep["started"], "ended": sweep["ended"],
+             "level": "attention"}]
+
+
 def host_attention(server, now=None):
     now = int(time() * 1000) if now is None else now
     knobs = server.settings
-    sweep = sweep_view(server.host.home, now, knobs.sweep_sec)
-    items = []
-    if sweep["state"] not in SWEEP_OK:
-        items.append({"kind": "sweep_stale", "project": None,
-                      "state": sweep["state"], "started": sweep["started"],
-                      "ended": sweep["ended"], "level": "attention"})
+    items = sweep_stale_items(server.host.home, now, knobs.sweep_sec)
     working = False
     stale_ms = beat_stale_ms(knobs)
     for found, busy in each_project(
