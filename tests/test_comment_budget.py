@@ -145,6 +145,7 @@ PINNED = {
 
     "holophyte/host/__init__.py": 0,
     "holophyte/host/ci_wake.py": 0,
+    "holophyte/host/host_health.py": 4,
     "holophyte/host/reconcile.py": 13,
     "holophyte/host/registry.py": 8,
     "holophyte/host/startup.py": 0,
@@ -202,6 +203,7 @@ PINNED = {
 
     "holophyte/pr/__init__.py": 0,
     "holophyte/pr/capture_files.py": 1,
+    "holophyte/pr/check_holds.py": 2,
     "holophyte/pr/evidence_fetch.py": 0,
     "holophyte/pr/evidence_refresh.py": 0,
     "holophyte/pr/github.py": 18,
