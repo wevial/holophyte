@@ -2,6 +2,8 @@
 import json
 import os
 import subprocess
+from dataclasses import replace
+from time import sleep, time
 
 import store
 import store.read
@@ -13,6 +15,8 @@ from holophyte.redact import safe_print as print
 
 GATE_RUN_ENV = "HOLOPHYTE_GATE_RUN"
 EXEC = os.execv
+BOARD_TRIES = 3
+BOARD_WAIT_S = 10
 
 
 class GateHandoff(store.RunEnded):
@@ -59,9 +63,13 @@ def before_gate(project, conn, run_id, sha, rnd):
     version, _ = pool_handoff.fetched_schema(project, ref="HEAD")
     if version == SCHEMA_VERSION:
         _checkpoint_reexec(conn, run_id, sha, rnd, loaded, head)
-    note = (f"the factory checkout moved from {loaded[:12]} to {head[:12]}"
-            " under this run; handing the approved candidate"
-            f" {sha[:12]} to the next build at the merge gate")
+    hand_off(conn, run_id, sha, f"the factory checkout moved from {loaded[:12]}"
+             f" to {head[:12]} under this run")
+
+
+def hand_off(conn, run_id, sha, why):
+    note = (f"{why}; handing the approved candidate {sha[:12]} to the next"
+            " build at the merge gate")
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
     with store.transaction(conn):
         store.record_event(conn, run_id, "gate_handoff", note)
@@ -91,6 +99,33 @@ def replace_into_gate(run_id):
     reexec_self(f"re-executing run {run_id} into the merge gate", EXEC)
 
 
+def _fetch_task(provider, issue_id):
+    for attempt in range(1, BOARD_TRIES + 1):
+        try:
+            return provider.fetch_task(issue_id), None
+        except Exception as e:
+            print(f"[holo2] {issue_id} could not be read back from the board"
+                  f" ({e}); try {attempt} of {BOARD_TRIES}")
+            error = e
+            if attempt < BOARD_TRIES:
+                sleep(BOARD_WAIT_S)
+    return None, error
+
+
+def _board_down(target, conn, provider, run_id, ticket_id, error):
+    from holophyte.loop.claim_store import BOARD_DOWN
+    from holophyte.loop.dispatch import fail_run
+    from holophyte.loop.gates import InfraFailure, outcome_class_of
+
+    refused = InfraFailure(f"the board did not answer after the re-exec into"
+                           f" the merge gate ({error}); the approved candidate"
+                           " was not gated")
+    print(f"[holo2] run failed: {refused.reason}")
+    fail_run(target, conn, run_id, ticket_id, provider, refused.reason,
+             outcome_class_of(refused), refused.failure_kind)
+    return BOARD_DOWN, ticket_id
+
+
 def gate_task(target, conn, provider, run_id):
     from holophyte.loop.claim import claimed_run
 
@@ -101,6 +136,9 @@ def gate_task(target, conn, provider, run_id):
     if not event:
         return None
     ticket = store.read.ticket_by_id(conn, row.ticketId)
-    live = provider.fetch_task(ticket.linearIssueId)
-    return dict(live, _run=claimed_run(target, live, conn, run_id, provider),
-                _gate=json.loads(event[0])), ticket.id
+    live, error = _fetch_task(provider, ticket.linearIssueId)
+    if error is not None:
+        return _board_down(target, conn, provider, run_id, ticket.id, error)
+    run = claimed_run(target, live, conn, run_id, provider)
+    run = replace(run, started=run.clock() - (time() * 1000 - row.startedAt) / 1000)
+    return dict(live, _run=run, _gate=json.loads(event[0])), ticket.id

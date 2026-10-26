@@ -129,6 +129,8 @@ def _worker(target, provider):
                       " nothing to resume")
                 return WORKER_IDLE
             (task, ticket_id), run_id = resumed, int(gate_run)
+            if task is BOARD_DOWN:
+                return WORKER_BOARD_DOWN
         elif linear_budget_low():
             return WORKER_IDLE
         else:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import unittest
@@ -22,6 +23,7 @@ import holophyte.loop.gate_build  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.implement  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert above
+import store  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 
 BRANCH = "task/ko-131-add-a-thing"
@@ -139,6 +141,71 @@ class GateBuildTests(LoopFixture):
                          [(run_id, "merged")])
         self.assertIn(f"Merge {BRANCH}: add a thing", self.subjects())
         self.git("merge-base", "--is-ancestor", candidate, "main")
+
+    def reexecuted(self, provider):
+        head = self.commit_schema(store.schema.SCHEMA_VERSION)
+        with patch.object(holophyte.loop.gate_build, "EXEC", lambda *a: None):
+            self.worker(Commit("the scripted work"), APPROVE,
+                        provider=provider, build=self.base)
+        (run_id,), = self.read("SELECT id FROM runs")
+        return head, {"HOLOPHYTE_GATE_RUN": str(run_id)}
+
+    def test_the_resumed_gate_reports_time_since_the_claim(self):
+        provider = StubProvider(a_task(1))
+        head, env = self.reexecuted(provider)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE runs SET startedAt = startedAt - 3600000")
+
+        rc, _ = self.worker(provider=provider, build=head, env=env)
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_MERGED)
+        (text,), = self.read("SELECT text FROM ledger WHERE kind = 'merge'")
+        actual = float(text.split("actual: ")[1].split()[0])
+        self.assertGreaterEqual(actual, 60)
+
+    def test_a_board_error_after_the_reexec_fails_the_run_for_a_new_claim(self):
+        provider = StubProvider(a_task(1))
+        head, env = self.reexecuted(provider)
+        reads = []
+
+        def down(issue_id):
+            reads.append(issue_id)
+            raise RuntimeError("the board timed out")
+
+        with patch.object(provider, "fetch_task", down), \
+                patch.object(holophyte.loop.gate_build, "BOARD_WAIT_S", 0):
+            rc, _ = self.worker(provider=provider, build=head, env=env)
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_BOARD_DOWN)
+        self.assertGreater(len(reads), 1)
+        self.assertEqual(self.read("SELECT outcome, outcomeClass FROM runs"),
+                         [("failed", "infra")])
+        self.assertEqual(self.read("SELECT activeRunId FROM tickets"), [(None,)])
+        self.assertNotIn(f"Merge {BRANCH}: add a thing", self.subjects())
+        self.assertEqual(provider.labels["iss-131"], [])
+        with sqlite3.connect(self.db) as conn:
+            store.requeue(conn, 1, "the board answers again")
+        provider.queue.append(a_task(1))
+        rc, _ = self.worker(Commit("the scripted work again"), APPROVE,
+                            provider=provider, build=head)
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_MERGED)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("failed",), ("merged",)])
+
+    def test_a_dirty_candidate_after_the_reexec_is_handed_off_not_gated(self):
+        provider = StubProvider(a_task(1))
+        head, env = self.reexecuted(provider)
+        (self.worktrees / BRANCH.split("/", 1)[1] / "stray.txt").write_text(
+            "left after the approval\n")
+
+        rc, _ = self.worker(provider=provider, build=head, env=env)
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_HANDOFF)
+        self.assertNotIn(f"Merge {BRANCH}: add a thing", self.subjects())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+        (summary,), = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'gate_handoff'")
+        self.assertIn("uncommitted changes", summary)
 
     def test_a_moved_checkout_under_a_changed_schema_still_hands_off(self):
         self.commit_schema(store.schema.SCHEMA_VERSION + 1)

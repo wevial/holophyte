@@ -12,6 +12,7 @@ from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.loop import escalation
 from holophyte.loop import run as run_state
 from holophyte.loop.adjudicate import _terminal_adjudication
+from holophyte.loop.branch_sync import _candidate_drift
 from holophyte.loop.claim import (
     _cut_worktree,
     _setup_worktree,
@@ -19,8 +20,13 @@ from holophyte.loop.claim import (
     merge_conflicts,
 )
 from holophyte.loop.dispatch import HANDED_OFF, REEXEC, SWEPT
-from holophyte.loop.gate_build import GateHandoff, GateReexec, before_gate
-from holophyte.loop.gates import InfraFailure, RunFailure, sh
+from holophyte.loop.gate_build import (
+    GateHandoff,
+    GateReexec,
+    before_gate,
+    hand_off,
+)
+from holophyte.loop.gates import InfraFailure, sh
 from holophyte.loop.gates import (
     MergeParked as MergeParked,
 )
@@ -89,10 +95,11 @@ def _ticket_text(project, conn, run_id, title, body):
 
 def _resume_into_gate(run, task):
     gate, wt = task["_gate"], run.wt
-    head = sh(["git", "rev-parse", "HEAD"], cwd=wt) if wt.exists() else None
-    if head != gate["sha"]:
-        raise RunFailure(f"the worktree {wt} is at {head}, not the approved"
-                         f" {gate['sha']}; not resuming at the merge gate")
+    drift = (_candidate_drift(wt, run.branch, gate["sha"]) if wt.exists()
+             else f"the worktree {wt} is gone")
+    if drift is not None:
+        hand_off(run.conn, run.run_id, gate["sha"], "the approved candidate"
+                 f" drifted before the merge gate: {drift}")
     body = (task.get("body") or "").strip()
     ticket = _ticket_text(run.project, run.conn, run.run_id, task["title"], body)
     ticket = reviewed_ticket(run.conn, run.run_id, ticket)
