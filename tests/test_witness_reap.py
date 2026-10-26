@@ -234,6 +234,7 @@ class ReapStaleTests(TokenFixture, unittest.TestCase):
         live = self.scratch_dir("witness-live", owner=os.getpid())
         (live / "tree").mkdir()
         young = self.scratch_dir("witness-young")
+        git(self.repo, "worktree", "add", "-q", "--detach", str(young / "tree"))
         dead_sleep = self.sleeper(dead / "tree")
         live_sleep = self.sleeper(live / "tree")
         self.assertTrue(wait_for(lambda: len(carrying(self.token)) == 2))
@@ -244,8 +245,7 @@ class ReapStaleTests(TokenFixture, unittest.TestCase):
 
         self.assertFalse(dead.exists())
         self.assertEqual(dead_sleep.wait(timeout=5), -signal.SIGTERM)
-        self.assertEqual(
-            len(git(self.repo, "worktree", "list").splitlines()), 1)
+        self.assertNotIn(str(dead / "tree"), git(self.repo, "worktree", "list"))
         self.assertEqual(out.getvalue().splitlines(), [
             f"[holo2] reaped the leftover witness tree {dead}: 1 process"
             " stopped"])
@@ -261,6 +261,36 @@ class ReapStaleTests(TokenFixture, unittest.TestCase):
         self.assertFalse(young.exists())
         self.assertIsNone(live_sleep.poll())
         self.assertTrue((live / "tree").is_dir())
+
+    def test_a_pass_reaps_only_a_stale_tree_of_its_own_repository(self):
+        target = self.project()
+        self.approve([("W1", "tests/test_w1.py", "true", PASSES)])
+        exited = subprocess.Popen(["true"])
+        exited.wait()
+        own = self.scratch_dir("witness-own", owner=exited.pid)
+        git(self.repo, "worktree", "add", "-q", "--detach", str(own / "tree"))
+        notes = self.scratch_dir("witness-notes")
+        (notes / "tree").mkdir()
+        (notes / "tree" / "notes.txt").write_text("kept\n")
+        aged = time.time() - 601
+        os.utime(notes, (aged, aged))
+        other_repo = self.root / "other"
+        git(self.root, "init", "-q", str(other_repo))
+        commit_file(other_repo, "a.txt", "a\n", "initial")
+        other = self.scratch_dir("witness-other", owner=exited.pid)
+        git(other_repo, "worktree", "add", "-q", "--detach",
+            str(other / "tree"))
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            rows = run_witnesses(target, self.conn, self.story_id,
+                                 main_tip(target), "operator", copy_files=True)
+
+        self.assertEqual([row.verdict for row in rows], ["green"])
+        self.assertFalse(own.exists())
+        self.assertNotIn(str(own / "tree"), git(self.repo, "worktree", "list"))
+        self.assertEqual((notes / "tree" / "notes.txt").read_text(), "kept\n")
+        self.assertTrue((other / "tree" / "a.txt").is_file())
+        self.assertIn(str(other / "tree"), git(other_repo, "worktree", "list"))
 
     def test_a_loop_pass_stops_what_runs_in_the_warm_tree_before_its_witness(self):
         target = self.project()

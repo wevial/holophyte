@@ -48,8 +48,9 @@ def write_owner(scratch):
 
 def reap_stale(target):
     limit = story_config(target).witness_sec
+    worktrees = _worktrees_dir(target)
     for scratch in sorted(Path(tempfile.gettempdir()).glob("witness-*")):
-        if not _stale(scratch, limit):
+        if not _stale(scratch, limit) or not _ours(scratch, worktrees):
             continue
         tree = scratch / "tree"
         stopped = stop_inside(tree)
@@ -85,6 +86,29 @@ def _stale(scratch, limit):
     except (OSError, ValueError):
         return time.time() - status.st_mtime > limit
     return not pid_alive(owner) or _stat(owner)[:1] == ["Z"]
+
+
+def _worktrees_dir(target):
+    found = subprocess.run(["git", "rev-parse", "--git-common-dir"],
+                           cwd=target.path, capture_output=True, text=True)
+    if found.returncode or not found.stdout.strip():
+        return None
+    return Path(os.path.realpath(
+        Path(target.path) / found.stdout.strip() / "worktrees"))
+
+
+def _ours(scratch, worktrees):
+    link = scratch / "tree" / ".git"
+    if worktrees is None or link.is_symlink() or not link.is_file():
+        return False
+    try:
+        head, _, gitdir = link.read_text().partition("gitdir:")
+    except OSError:
+        return False
+    if head.strip() or not gitdir.strip():
+        return False
+    resolved = Path(os.path.realpath(link.parent / gitdir.strip()))
+    return resolved.parent == worktrees
 
 
 def _stop_group(proc):
