@@ -146,6 +146,17 @@ class _HandedOff:
 HANDED_OFF = _HandedOff()
 
 
+class _Reexec:
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return "REEXEC"
+
+
+REEXEC = _Reexec()
+
+
 def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
     from holophyte.loop.pipeline import run_task
 
@@ -173,7 +184,7 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
         cleanup_review_refs(target.path, run_id)
         if merged is PARKED:
             release_lease_label(target, conn, ticket_id, provider, run_id)
-        elif merged is SWEPT or merged is HANDED_OFF:
+        elif merged is SWEPT or merged is HANDED_OFF or merged is REEXEC:
             pass
         elif merged:
             release_run(conn, run_id, True,
@@ -184,16 +195,20 @@ def _dispatch(target, conn, run_id, provider, task, ticket_id, refresh=True):
             if refresh:
                 refresh_findings(target, conn)
         else:
-            # Its own failure must not replace the one in flight; the lease stays.
-            try:
-                if close_out_failure(target, conn, run_id, ticket_id,
-                                     reason,
-                                     provider=provider,
-                                     outcome_class=outcome_class,
-                                     refresh=refresh, failure_kind=failure_kind):
-                    park_steered_cap(conn, run_id, ticket_id, provider)
-                    escalate(conn, run_id, ticket_id)
-                    triage_failure(target, conn, run_id, ticket_id)
-            except Exception as close_err:
-                print(f"[holo2] close-out failed: {close_err}")
+            fail_run(target, conn, run_id, ticket_id, provider, reason,
+                     outcome_class, failure_kind, refresh)
     return merged
+
+
+def fail_run(target, conn, run_id, ticket_id, provider, reason, outcome_class,
+             failure_kind, refresh=True):
+    # Its own failure must not replace the one in flight; the lease stays.
+    try:
+        if close_out_failure(target, conn, run_id, ticket_id, reason,
+                             provider=provider, outcome_class=outcome_class,
+                             refresh=refresh, failure_kind=failure_kind):
+            park_steered_cap(conn, run_id, ticket_id, provider)
+            escalate(conn, run_id, ticket_id)
+            triage_failure(target, conn, run_id, ticket_id)
+    except Exception as close_err:
+        print(f"[holo2] close-out failed: {close_err}")
