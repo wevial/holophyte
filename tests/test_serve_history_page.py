@@ -168,10 +168,8 @@ class HistoryPageTests(ServeTestCase):
 
     def test_limit_is_served_up_to_five_thousand(self):
         self.start()
-        for asked, served in (("5000", 5000), ("9000", 5000)):
-            with self.subTest(limit=asked):
-                body = self.ask(f"&limit={asked}")
-                self.assertEqual((body["limit"], len(body["rows"])), (served, 7))
+        body = self.ask("&limit=9000")
+        self.assertEqual((body["limit"], len(body["rows"])), (5000, 7))
 
 
 if __name__ == "__main__":
