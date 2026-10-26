@@ -77,3 +77,7 @@ becomes 1.
 it depends on the host.
 
 `ticket-check.json` pins `POST /tickets/check` in `tests/test_serve_ticket_check.py`: three template problems and one missing-path advisory, without filing a ticket.
+
+`prefs.json` pins a host daemon's root `GET /prefs` after a `PUT /prefs` of
+its `day_log`, built in `tests/test_serve_prefs.py`: the answer's
+`updated_ms` is replaced by the pinned value before the comparison.

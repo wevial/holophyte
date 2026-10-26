@@ -13,7 +13,8 @@ one daemon serves and which fetches the others from the browser: without
 the header the browser refuses a cross-origin answer. The daemon reads by
 default and writes only through two opt-ins, documented in
 [The daemon's actions](daemon.md): the `POST /actions/...` routes
-`[serve] actions = true` opens and the `PUT /config` route
+`[serve] actions = true` opens, with a host daemon's board writes and
+its root's `PUT /prefs`, and the `PUT /config` route
 `[serve] config_edit = true` opens. On loopback the bind address is the
 whole boundary for reads, and beyond it every JSON route but `/peers` is
 behind a bearer token ([Authentication](#authentication)). Unknown paths
@@ -21,8 +22,8 @@ are 404 and any method but GET is 405, both with a JSON `error`, except
 those writing routes. A project with no store answers 503.
 
 `console/contract/` holds the machine-readable shapes of `GET /status`,
-`GET /attention` and `GET /peers`, of the host root's `GET /status`
-and `GET /attention`, of the run routes `GET /runs/N`,
+`GET /attention` and `GET /peers`, of the host root's `GET /status`,
+`GET /attention` and `GET /prefs`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
@@ -1742,8 +1743,10 @@ next. A row that stays across polls is a store that stays locked.
 The root answers `GET /status` and `GET /attention` for the host, below,
 `GET /peers` from `host.toml`'s `[console] daemons`, `/` and the console's
 files, `POST /actions/run-sweep` ([Run sweep](daemon.md#post-actionsrun-sweep)),
-and `POST /actions/restart-daemon`
-([Restart daemon](daemon.md#post-actionsrestart-daemon)). Any other JSON path at the root
+`POST /actions/restart-daemon`
+([Restart daemon](daemon.md#post-actionsrestart-daemon)), and `GET /prefs`
+and `PUT /prefs` ([Host `GET /prefs` and `PUT /prefs`](#host-get-prefs-and-put-prefs)).
+Any other JSON path at the root
 is 404, naming the `/projects/NAME` prefix. Tokens are in
 [Authentication](#authentication).
 
@@ -1850,6 +1853,64 @@ each with `project` added. A project's `supervisor` item judges the host
 sweep's beat against two sweep intervals. `level` is `attention` when
 there is any item, else `working` when any project has a live run, else
 `none`; `now` is the daemon's clock.
+
+## Host `GET /prefs` and `PUT /prefs`
+
+The console's preferences that follow the maintainer across devices, one
+document at a host daemon's root. A daemon has one maintainer, the holder
+of the machine token, so the document is that maintainer's. A project
+daemon has no `/prefs`, and `/projects/NAME/prefs` is no project route:
+both are 404 as any unknown path.
+
+```json
+{"day_log": {"preset": "manual",
+             "items": {"merged": true, "review-round_2": false},
+             "projects": {"lotuspod": false}},
+ "updated_ms": 1788450534491}
+```
+
+`day_log` is the console's Today's log filter, or null when none is
+stored: `preset` is one of `highlights`, `everything` and `manual`;
+`items` maps the console's item ids (letters, digits, `-` and `_`, up to
+64 characters) and `projects` maps project names (up to 128 characters)
+to booleans, each at most 64 entries. The daemon checks that shape and
+leaves its meaning to the console. `updated_ms` is when the document was
+last written, in epoch milliseconds, or null when it never was. With no
+file both are null. A file that cannot be read or parsed answers 200 with
+both null and an `error` naming the file and the reason.
+
+`PUT /prefs` takes a JSON object holding some of the document's keys,
+today only `day_log`. Each key given replaces that key's value and null
+removes it; a key not given keeps its stored value, so `{}` changes
+nothing but `updated_ms`. Two writers race key by key: the last write
+wins, and there is no `If-Match`. It answers 200 with the whole stored
+document as `GET /prefs` reads it.
+
+```
+PUT /prefs
+Authorization: Bearer MACHINE_TOKEN
+Content-Type: application/json
+
+{"day_log": {"preset": "highlights", "items": {}, "projects": {}}}
+```
+
+Refusals are 400 with an `error` naming the key or field, and nothing is
+written: a body over 16 KiB (checked before it is parsed), a body that is
+not a JSON object, a key other than `day_log`, and a `day_log` of another
+shape (a missing or unknown field, another `preset`, an item id or
+project name out of bounds, a value that is not a boolean, more than 64
+entries).
+
+`GET /prefs` is a read route: open on loopback and behind the machine
+token beyond it, as the root's `GET /status` is. `PUT /prefs` answers
+only to the machine token on every bind, loopback included, and never to
+a project's own `token_file`, else 401 with `{}`; with host `[serve]
+actions` off it is 404. Nothing is written in either case.
+
+The document is the file `console-prefs.json` in `HOLOPHYTE_HOME`, outside
+every store and project config. A write goes to a temporary file in the
+same directory, flushed and synced, and replaces the file in one rename,
+with mode 0600; a `PUT` over an unreadable file replaces it.
 
 ## `PUT /tickets/ID`
 
@@ -2156,7 +2217,8 @@ refuses to start without it), and `POST /actions/...`, `GET /config` and
 A host daemon takes its one token from `host.toml`: `[serve]
 machine_token_file` is the bearer at the root and under every
 `/projects/NAME` prefix. It is demanded on every read route beyond
-loopback, and on every bind for `POST /actions/...` and `/config`; a bind
+loopback, and on every bind for `POST /actions/...`, `/config` and the
+root's `PUT /prefs`; a bind
 beyond loopback, `[serve] actions` or any project's `config_edit` without
 it is a startup error naming the key. A project's own `[serve] token_file`
 is accepted beside it under that project's prefix only, for one release;
@@ -2181,7 +2243,9 @@ discloses nothing and touches no store, and the request it clears is
 still refused without the bearer. Every other method but GET stays 405, `POST`
 included on every path but the `/actions/` routes and `PUT` on every path
 but `/config`, both in [The daemon's actions](daemon.md), and a host
-daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)); a host
+daemon's `/tickets/ID` ([`PUT /tickets/ID`](#put-ticketsid)) and its
+root's `/prefs` ([Host `GET /prefs` and `PUT /prefs`](#host-get-prefs-and-put-prefs)),
+behind the machine token alone; a host
 daemon also takes `POST` on `/tickets` ([`POST /tickets`](#post-tickets)),
 `/tickets/check` ([`POST /tickets/check`](#post-ticketscheck)),
 `/tickets/ID/move` ([`POST /tickets/ID/move`](#post-ticketsidmove)) and
@@ -2193,11 +2257,11 @@ each behind the machine token alone.
 | Status | When |
 | --- | --- |
 | 204 | `OPTIONS` on any path: the CORS preflight, empty, with the `Access-Control-*` headers above |
-| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix |
-| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N` |
-| 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off |
-| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel` and `PUT /tickets/ID`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
+| 401 | a non-loopback daemon, any route but `/`, its files and `/peers`, without the exact `Authorization: Bearer` value; body `{}`; on a host daemon also a project's own token presented at the root or under another project's prefix, and `PUT /prefs` on any bind without the machine token |
+| 400 | `/runs` or `/holds` with a bad `limit`; `/shipped` with a bad `limit`, `before` or `outcome`; `/history` with a missing or non-integer `since`, a non-integer `until`, an `until` at or before `since`, or a bad `limit`; `/ledger` with a missing or non-integer `since`, a bad `limit` or an unknown `kind`; `/report` with a `since` not `Nh`, `Nd` or `all`; `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with a non-integer `N`; on a host daemon, `PUT /prefs` with a body over 16 KiB, not a JSON object, a key other than `day_log` or a `day_log` of another shape, `error` naming the key or field |
+| 404 | `/runs/N`, `/runs/N/files`, `/runs/N/ledger` or `/runs/N/merge` with no such run, body carries `run`; `/tickets/KO-n` with no mirrored ticket, body `{}`; any other path with no console file behind it; body carries `path`, and `detail` when the console is not built. On a host daemon also `/projects/NAME/...` for a name outside the registry, and a project route at the root, both before any store is opened; `restart-daemon` on a project daemon or under `/projects/NAME/actions/`, or with `[serve] actions` off; `PUT /prefs` with `[serve] actions` off, and `/prefs` on a project daemon or under `/projects/NAME` |
+| 405 | methods other than GET and OPTIONS, except these POST and PUT routes: `POST /actions/*` (at the host root, `run-sweep` and `restart-daemon`), `PUT /config`, and, on a host daemon, `POST /tickets`, `POST /tickets/check`, `POST /tickets/ID/move`, `POST /tickets/ID/cancel`, `PUT /tickets/ID` and the root's `PUT /prefs`; `Allow: GET`, except GET on a host daemon’s `/tickets/check`, which returns `Allow: POST` |
 | 409 | `/runs/N/files` for a run with no branch and no merge sha, or whose branch or merge commit is no longer in the repository; `error` names it |
 | 503 | any request while the daemon drains for restart (`daemon restarting`); the project has no store yet; body carries `error`, `detail` and `project`, the repository the daemon serves, as a path. On a host daemon, under one project's prefix: its store stamped newer than the build can read, locked or corrupt (`error`, `project` its name), or `/status` with no project row for its path (`project_row` null, `detail` naming `project add`); and any route when `host.toml` itself cannot be read |
-| 500 | on a host daemon, one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
+| 500 | on a host daemon, `PUT /prefs` when `console-prefs.json` cannot be written, `error` naming the file; one project's route failing any other way; body carries `error` (type and message, redacted) and `project`, and the traceback goes to the daemon's log |
 | 504 | `/runs/N/files` when git does not answer within its cap |

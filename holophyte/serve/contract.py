@@ -6,6 +6,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 from holophyte.scout.scout_contract import ScoutDetail, ScoutRoutes, Scouts
 from holophyte.serve.contract_emit import ClientDefault, check, render, write
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
+from holophyte.serve.contract_prefs import Prefs
 from holophyte.serve.contract_routes import (
     ActiveRoute,
     RouteLabels,
@@ -885,6 +886,7 @@ ROUTES = {
     "peers": (Peers, "GET /peers"),
     "host-status": (HostStatus, "GET /status at a host daemon's root"),
     "host-attention": (HostAttention, "GET /attention at a host daemon's root"),
+    "prefs": (Prefs, "GET /prefs at a host daemon's root"),
     "run-detail": (RunDetail, "GET /runs/N"),
     "run-merge": (MergeReadiness, "GET /runs/N/merge"),
     "run-asks": (RunAsks, "GET /runs/N/asks"),
