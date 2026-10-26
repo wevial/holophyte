@@ -16,6 +16,7 @@ import { SettingsDraftProvider, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
 import { AppearanceTab } from "../components/AppearanceTab";
+import { DayLogTab } from "../components/DayLogTab";
 import { HoldTab } from "../components/HoldTab";
 import { HostsTab } from "../components/HostsTab";
 import { TomlEditor, type TomlCheckState } from "../components/TomlEditor";
@@ -24,6 +25,8 @@ import { NotFound } from "./Placeholder";
 type Tab = (typeof SETTINGS_TABS)[number];
 
 const GROUP_LABEL = "font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3";
+
+const APPEARANCE_SUBTITLE = "yours, in this browser · applies at once, nothing to save";
 
 function subtitle(tab: Tab["id"], file: string, project: string): string {
   return {
@@ -34,7 +37,8 @@ function subtitle(tab: Tab["id"], file: string, project: string): string {
     hold: `admission for ${project} · applies now, no restart`,
     toml: file,
     hosts: "the factory's hosts",
-    appearance: "yours, in this browser · applies at once, nothing to save",
+    appearance: APPEARANCE_SUBTITLE,
+    log: APPEARANCE_SUBTITLE,
   }[tab];
 }
 
@@ -217,7 +221,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
             onChange={(text) => { setRawRefusal(null); draft.editRaw(project, text === answer.config.text ? null : text); }}
             onRevert={() => { setRawRefusal(null); draft.editRaw(project, null); }}
             onCheck={(state) => { setCheck(state); if (!state.pending) setCheckRefused(state.error !== null); }} onSave={() => { setRefusal(null); setConfirm("raw"); }}
-          /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
+          /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "log" ? <DayLogTab /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
         <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
         {confirm && <ConfirmDialog label="Save · holophyte" heading={rawMode ? `Save ${file}?` : "Save these changes?"} confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(null); }} onConfirm={() => void write()}

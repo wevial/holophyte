@@ -71,6 +71,15 @@ describe("the Hybrid palette", () => {
     expect(failing).toEqual([]);
   });
 
+  test("the project key colours resolve to the approved values and read at 4.5:1 on paper in every theme", () => {
+    const names = ["--p-violet", "--p-teal", "--p-green", "--p-blue"];
+    const expected = { dawn: ["#5a4ebf", "#00677a", "#006537", "#2f5fb3"], night: ["#a9a6ff", "#7fd6e6", "#7ef4ac", "#9db8ff"] };
+    for (const [path, values] of [[dawn, expected.dawn], [night, expected.night], [systemDark, expected.night]] as const) {
+      expect(names.map((name) => resolveToken(decls, path, name))).toEqual([...values]);
+      for (const name of names) expect(contrast(resolveToken(decls, path, name), resolveToken(decls, path, "--paper"))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   test("next components take their colours from theme tokens, leaving only the Appearance swatches as hex", async () => {
     expect(colourHits('className="bg-p1 text-[#171a2c]"')).toEqual(["#171a2c"]);
     const root = new URL("../../src/app/", import.meta.url).pathname;

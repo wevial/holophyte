@@ -5,8 +5,10 @@ import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import { readStoredScope } from "../../src/app/projects";
 import { CONFIG_EDIT_OFF } from "../../src/lib/config";
-import type { Status } from "../../src/lib/contract.gen";
-import type { Fetch } from "../../src/lib/poll";
+import type { DayLogPrefs, LedgerEntry, Status } from "../../src/lib/contract.gen";
+import { addressOf } from "../../src/lib/hosts";
+import { tokenedFetch, type Fetch } from "../../src/lib/poll";
+import { tokenKey } from "../../src/lib/token";
 import { fakeDeps, NO_ATTENTION, peersFetch, settle, type StubDaemon } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
@@ -15,7 +17,18 @@ const RUNNER = "http://runner-host:7710";
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 const config = (path = "/srv/demo/config.toml") => Response.json({ text: "", values: {}, path, applies: "next loop start" });
 
-function fleet(configFetch: Fetch = async () => config()) {
+const logged = (at: number, ticket: string, kind: string, text: string): LedgerEntry => ({ at, run: 1, ticket, pr_url: null, kind, source: "loop", text });
+const LEDGERS: Record<string, LedgerEntry[]> = {
+  [ORIGIN]: [
+    logged(3, "DEMO-1", "merge", "MERGED to main as 5acc138."),
+    logged(2, "DEMO-1", "round", "Round 2: APPROVE\nReviewer verdict:\nVERDICT: APPROVE"),
+    logged(1, "DEMO-1", "round", "Round 1: REQUEST_CHANGES -> fix round\nReviewer findings:\n- p1 the limit"),
+  ],
+  [WRITER]: [logged(4, "WRITER-1", "merge", "MERGED to main as 3c9a2f1.")],
+};
+
+function fleet(configFetch: Fetch = async () => config(), dayLog: DayLogPrefs | null = null) {
+  const puts: { body: unknown; authorization: string | null }[] = [];
   const status = (project: string, host: string): Status => ({ ...working, runs: [], project: `/srv/${project}`, host, admission: project === "relos" ? "held" : "enabled" });
   const demo = status("demo", "writer-host");
   const writer = status("writer", "writer-host");
@@ -25,9 +38,18 @@ function fleet(configFetch: Fetch = async () => config()) {
     [RUNNER]: { status: status("relos", "runner-host"), attention: { ...NO_ATTENTION, project: "/srv/relos" } },
   };
   const poll = peersFetch(ORIGIN, daemons);
-  const fetch: Fetch = (url, init) => url.endsWith("/config") ? configFetch(url, init) : poll(url, init);
+  const fetch: Fetch = async (url, init) => {
+    if (url === `${ORIGIN}/prefs`) {
+      if (init?.method === "PUT") puts.push({ body: JSON.parse(String(init.body)), authorization: new Headers(init.headers).get("authorization") });
+      return Response.json({ day_log: dayLog, updated_ms: null });
+    }
+    const ledger = Object.keys(LEDGERS).find((base) => url.startsWith(`${base}/ledger?`));
+    if (ledger) return Response.json({ entries: LEDGERS[ledger], active_outages: [], since: 0, limit: 1000 });
+    return url.endsWith("/config") ? configFetch(url, init) : poll(url, init);
+  };
   return {
     fetch,
+    puts,
     failRunner: () => { daemons[RUNNER] = { down: new Error("connection refused") }; },
     staleWriter: () => {
       for (const item of [demo, writer]) item.supervisor = { ...item.supervisor, state: "stale", heartbeat_age_ms: 600000 };
@@ -37,7 +59,7 @@ function fleet(configFetch: Fetch = async () => config()) {
 
 async function mount(hash: string, source = fleet()) {
   window.location.hash = hash;
-  const fake = fakeDeps(source.fetch);
+  const fake = fakeDeps(tokenedFetch(source.fetch));
   const client = consoleQueryClient();
   render(<QueryClientProvider client={client}><ConsoleApp base={ORIGIN} pollDeps={fake.deps} /></QueryClientProvider>);
   await act(settle);
@@ -93,8 +115,9 @@ test("Review presents the project file and ordered grouped sections with matchin
   expect(screen.getByText("demo · config.toml on writer-host")).toBeTruthy();
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   const links = within(nav).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML", "Hosts1", "Appearance"]);
-  expect(nav.textContent).toMatch(/Project.*General.*Review.*Agents.*Capture.*Hold \/ release.*Raw TOML.*Factory.*Hosts.*You · this browser.*Appearance/);
+  expect(links.map((link) => link.textContent)).toEqual(["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML", "Hosts1", "Appearance", "Today's log"]);
+  expect(nav.textContent).toMatch(/Project.*General.*Review.*Agents.*Capture.*Hold \/ release.*Raw TOML.*Factory.*Hosts.*You.*Appearance.*Today's log/);
+  expect(nav.textContent).not.toContain("You · this browser");
   expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Review"]);
   expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Review");
   expect(screen.getByText("[loop], [review] and [agents] in config.toml")).toBeTruthy();
@@ -176,4 +199,86 @@ test("an unknown Settings tab shows the console not-found page", async () => {
   await mount("#/settings/nope");
   expect(screen.getByText("There is no page here.")).toBeTruthy();
   expect(screen.queryByRole("navigation", { name: "Settings sections" })).toBeNull();
+});
+
+const GROUPS = ["Outcomes", "Needs you", "Operator actions", "Review rounds", "Babysit and CI", "Supervisor and system"];
+const box = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInputElement;
+const pressed = () => within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
+const ticked = () => screen.getAllByRole("checkbox").filter((input) => (input as HTMLInputElement).checked).map((input) => input.getAttribute("aria-label"));
+const HIGHLIGHT_TICKS = ["Merged", "Failed", "Needs you", "Parked", "Merge requeued", "Operator actions", "Requeues", "Steers", "Notes", "Approvals", "Pause, abort, start", "Factory amendments", "demo", "writer", "relos"];
+const logPhrases = () => Array.from(screen.getByRole("complementary", { name: "Today's log" }).querySelectorAll("li"), (row) => {
+  const key = row.querySelector('a[href*="/tickets/"]')?.textContent;
+  return key ? `${key} ${row.querySelector("[data-phrase]")?.textContent}` : null;
+}).filter(Boolean);
+const toOverview = async () => {
+  await act(async () => within(screen.getByRole("navigation", { name: "Pages" })).getByRole("link", { name: "Overview" }).click());
+  await act(settle);
+  await act(settle);
+};
+const click = async (element: HTMLElement) => {
+  await act(async () => fireEvent.click(element));
+  await act(settle);
+};
+
+test("Today's log is the second You tab, with the Preset control, one section per group in one container and a Projects section", async () => {
+  await mount("#/settings/log");
+  await act(settle);
+  const nav = screen.getByRole("navigation", { name: "Settings sections" });
+  expect(within(nav).getByRole("link", { name: "Today's log" }).getAttribute("href")).toMatch(/#\/settings\/log$/);
+  expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Today's log");
+  expect(screen.getByText("yours, in this browser · applies at once, nothing to save")).toBeTruthy();
+  expect(within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Highlights", "Everything", "Manual"]);
+  expect(pressed()).toEqual(["Highlights"]);
+  const sections = screen.getAllByRole("region").filter((region) => [...GROUPS, "Projects"].includes(region.getAttribute("aria-label") ?? ""));
+  expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([...GROUPS, "Projects"]);
+  expect(new Set(sections.map((section) => section.parentElement)).size).toBe(1);
+  expect(sections[0]!.parentElement!.className).toEqual(expect.stringContaining("border border-rule bg-paper"));
+  expect(within(sections[0]!).getAllByRole("checkbox").map((input) => input.getAttribute("aria-label"))).toEqual(["Outcomes", "Merged", "Failed", "PR opened"]);
+  expect(within(sections.at(-1)!).getAllByRole("checkbox").map((input) => input.getAttribute("aria-label"))).toEqual(["demo", "writer", "relos"]);
+  expect(box("PR opened").checked).toBe(false);
+  expect([box("Outcomes").indeterminate, box("Outcomes").checked]).toEqual([true, false]);
+  expect(ticked()).toEqual(HIGHLIGHT_TICKS);
+});
+
+test("ticking Verdicts selects Manual and adds the verdicts to the log; a cleared project leaves it; the presets set the boxes", async () => {
+  await mount("#/settings/log");
+  await act(settle);
+  await click(box("Verdicts"));
+  expect(pressed()).toEqual(["Manual"]);
+  expect(box("Review rounds").indeterminate).toBe(true);
+  await toOverview();
+  expect(logPhrases()).toEqual(["WRITER-1 merged", "DEMO-1 merged", "DEMO-1 review round 2: approve", "DEMO-1 review round 1: changes asked"]);
+
+  await click(screen.getByRole("link", { name: "Filter Today's log" }));
+  await click(box("writer"));
+  await toOverview();
+  expect(logPhrases()).toEqual(["DEMO-1 merged", "DEMO-1 review round 2: approve", "DEMO-1 review round 1: changes asked"]);
+
+  await click(screen.getByRole("link", { name: "Filter Today's log" }));
+  const before = ticked();
+  await click(screen.getByRole("button", { name: "Manual" }));
+  expect(ticked()).toEqual(before);
+  await click(screen.getByRole("button", { name: "Everything" }));
+  expect(screen.getAllByRole("checkbox").every((input) => (input as HTMLInputElement).checked)).toBe(true);
+  await click(screen.getByRole("button", { name: "Highlights" }));
+  expect(ticked()).toEqual(HIGHLIGHT_TICKS);
+});
+
+test("a tick sends one PUT /prefs with the page's bearer, and a page reading that filter back shows Manual and the verdicts", async () => {
+  localStorage.setItem(tokenKey(addressOf(ORIGIN)), "machine-token");
+  const view = await mount("#/settings/log");
+  await act(settle);
+  await click(box("Verdicts"));
+  expect(view.puts).toHaveLength(1);
+  expect(view.puts[0]!.authorization).toBe("Bearer machine-token");
+  const saved = (view.puts[0]!.body as { day_log: DayLogPrefs }).day_log;
+  expect([saved.preset, saved.items.verdicts]).toEqual(["manual", true]);
+  cleanup();
+
+  await mount("#/settings/log", fleet(undefined, { preset: "manual", items: { verdicts: true }, projects: {} }));
+  await act(settle);
+  expect(pressed()).toEqual(["Manual"]);
+  expect([box("Verdicts").checked, box("Merged").checked, box("PR opened").checked]).toEqual([true, true, false]);
+  await toOverview();
+  expect(logPhrases()).toContain("DEMO-1 review round 2: approve");
 });
