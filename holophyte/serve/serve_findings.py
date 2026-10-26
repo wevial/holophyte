@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import store.read
+from holophyte.config.config_tables import sweep_config
 from holophyte.host.supervisor import (
     CRITERION_STUCK,
     REVIEW_STUCK,
@@ -43,14 +44,16 @@ def findings(project, query):
         runs = [window_run(conn, project, run_id) for run_id in run_ids]
         follow_ups = [follow_up_body(row)
                       for row in follow_ups_since(conn, since)]
-        defects = ticket_defects(conn, since, limit)
+        defects = ticket_defects(
+            conn, since, limit,
+            sweep_config(project).review_overlap_threshold)
     finally:
         conn.close()
     return 200, {"since": since, "limit": limit, "runs": runs,
                  "follow_ups": follow_ups, "ticket_defects": defects}
 
 
-def ticket_defects(conn, since, limit):
+def ticket_defects(conn, since, limit, threshold):
     stops = conn.execute(
         "SELECT e.runId, e.kind, e.summary, e.payload, e.at, r.ticketId,"
         " r.revision, t.linearIdentifier FROM runs r"
@@ -72,7 +75,8 @@ def ticket_defects(conn, since, limit):
             continue
         defects.append({
             "ticket": ticket, "run": run_id, "kind": kind,
-            "criteria": stopped_criteria(conn, run_id, kind, payload),
+            "criteria": stopped_criteria(conn, run_id, kind, payload,
+                                         threshold),
             "reason": summary, "at": at, "revision": revised[0],
             "revised_ms": revised[1],
             "requeue_note": requeue_note(conn, run_id)})
@@ -104,11 +108,12 @@ def revision_after(conn, run_id, ticket_id, claimed, at):
         (ticket_id, claimed, at, *(later or ()))).fetchone()
 
 
-def stopped_criteria(conn, run_id, kind, payload):
+def stopped_criteria(conn, run_id, kind, payload, threshold):
     if kind == CONTRADICTION:
         return [each.get("id") or f"C{each['criterion']}"
                 for each in json.loads(payload or "{}").get("criteria", [])]
-    stuck = criteria_stuck(conn, run_id) if kind == CRITERION_STUCK else None
+    stuck = (criteria_stuck(conn, run_id, threshold)
+             if kind == CRITERION_STUCK else None)
     return [] if stuck is None else [f"C{n}" for n in stuck[1]]
 
 

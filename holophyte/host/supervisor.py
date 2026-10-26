@@ -3,6 +3,7 @@ import contextlib
 import functools
 import json
 import os
+import re
 import signal
 import socket
 import sqlite3
@@ -83,23 +84,64 @@ def review_overlap(conn, run_id):
     return None if overlap is None else (earlier, later, overlap)
 
 
-def criteria_stuck(conn, run_id):
+CRITERION_LINE_RE = re.compile(r"CRITERION C\d+:\s*(.*)")
+QUOTED_REASON_CHARS = 200
+
+
+def _criterion_reasons(findings):
+    reasons = collections.defaultdict(list)
+    for finding in findings:
+        if finding.get("path") == store.CRITERIA_PATH:
+            first_line = (finding.get("message") or "").partition("\n")[0]
+            matched = CRITERION_LINE_RE.match(first_line)
+            reasons[finding.get("line")].append(
+                matched[1].strip() if matched else first_line.strip())
+    return reasons
+
+
+def _reason_words(reason):
+    return set(re.findall(r"\w+", reason.casefold()))
+
+
+def _reason_similarity(one, other):
+    one, other = _reason_words(one), _reason_words(other)
+    union = one | other
+    return len(one & other) / len(union) if union else 1.0
+
+
+def _repeated_reason(later, earlier, threshold):
+    return next((one for one in later for other in earlier
+                 if _reason_similarity(one, other) >= threshold), None)
+
+
+def criteria_stuck(conn, run_id, threshold):
     rounds = store.read.newest_ended_rounds(conn, run_id,
                                             CRITERION_STUCK_ROUNDS)
     if len(rounds) < CRITERION_STUCK_ROUNDS:
         return None
-    unmet = set.intersection(*(
-        {finding.get("line") for finding in json.loads(each.findings)
-         if finding.get("path") == store.CRITERIA_PATH}
-        for each in rounds))
-    if not unmet:
+    reasons = [_criterion_reasons(json.loads(each.findings))
+               for each in rounds]
+    unmet = set.intersection(*(set(each) for each in reasons))
+    repeated = {}
+    for n in unmet:
+        pairs = [_repeated_reason(later[n], earlier[n], threshold)
+                 for later, earlier in zip(reasons, reasons[1:])]
+        if all(reason is not None for reason in pairs):
+            repeated[n] = pairs[0]
+    if not repeated:
         return None
-    return sorted(each.round for each in rounds), sorted(unmet)
+    return sorted(each.round for each in rounds), sorted(repeated), repeated
 
 
 def _spoken_list(items):
     *head, last = [str(item) for item in items]
     return f"{', '.join(head)} and {last}" if head else last
+
+
+def _quoted_reason(reason):
+    if len(reason) > QUOTED_REASON_CHARS:
+        reason = reason[:QUOTED_REASON_CHARS - 1] + "\u2026"
+    return f'"{reason}"'
 
 
 def review_trip(conn, run_id, overlap_threshold):
@@ -109,13 +151,15 @@ def review_trip(conn, run_id, overlap_threshold):
         return (REVIEW_STUCK,
                 f"rounds {earlier} and {later} share {shared:.2f} of"
                 f" their findings ({overlap_threshold} threshold)")
-    stuck = criteria_stuck(conn, run_id)
+    stuck = criteria_stuck(conn, run_id, overlap_threshold)
     if stuck is not None:
-        rounds, unmet = stuck
+        rounds, unmet, reasons = stuck
         noun = "criterion" if len(unmet) == 1 else "criteria"
+        quoted = (_quoted_reason(reasons[unmet[0]]) if len(unmet) == 1 else
+                  "; ".join(f"{n} {_quoted_reason(reasons[n])}" for n in unmet))
         return (CRITERION_STUCK,
                 f"{noun} {_spoken_list(unmet)} restated as unmet in rounds"
-                f" {_spoken_list(rounds)}")
+                f" {_spoken_list(rounds)}: {quoted}")
     return None
 
 
@@ -141,7 +185,8 @@ def still_tripped(target, conn, trip, knobs=None):
         return (overlap is not None
                 and overlap[2] >= knobs.review_overlap_threshold)
     if trip.condition == CRITERION_STUCK:
-        return criteria_stuck(conn, trip.run_id) is not None
+        return criteria_stuck(conn, trip.run_id,
+                              knobs.review_overlap_threshold) is not None
     return True
 
 
