@@ -90,6 +90,7 @@
   },
   "actions": false,
   "config_edit": false,
+  "colour": "auto",
   "runs": [
     {
       "id": 1,

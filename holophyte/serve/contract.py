@@ -113,6 +113,7 @@ class Status(TypedDict):
     thresholds: Thresholds
     actions: NotRequired[bool]
     config_edit: bool
+    colour: NotRequired[Literal["auto", "violet", "teal", "green", "blue"]]
     runs: list[StatusRun]
     queued: list[QueuedTicket]
     witnesses: NotRequired[WitnessSet | None]

@@ -845,6 +845,15 @@
         "config_edit": {
           "type": "boolean"
         },
+        "colour": {
+          "enum": [
+            "auto",
+            "violet",
+            "teal",
+            "green",
+            "blue"
+          ]
+        },
         "runs": {
           "type": "array",
           "items": {
