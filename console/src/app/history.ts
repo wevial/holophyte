@@ -204,8 +204,8 @@ export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage 
   if (window.until != null) query.set("until", String(window.until));
   if (search.q) query.set("q", search.q);
   const [known, setKnown] = useState<string | null>(null);
-  const lists = { state: keptList(state, RUN_GROUPS), failure: keptList(search.failure, FAILURE_KINDS), implementer: keptList(search.implementer, known == null ? undefined : listOf(known)) };
-  for (const [name, value] of Object.entries(lists)) if (value) query.set(name, value);
+  const implementer = keptList(search.implementer, known == null ? undefined : listOf(known));
+  for (const [name, value] of Object.entries({ state, failure: search.failure, implementer })) if (value) query.set(name, value);
   query.set("sort", sort);
   query.set("order", order);
   const end = page * size;
