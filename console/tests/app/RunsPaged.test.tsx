@@ -37,12 +37,12 @@ const runs = (prefix: string, first: number, count: number) =>
   Array.from({ length: count }, (_, at) => run({ id: first - at, ticket: `${prefix}-${first - at}`, title: `Run ${first - at}`, started_ms: today(17, 59) - at * MINUTE }));
 
 interface Daemon {
-  rows: HistoryRow[];
+  rows: HistoryRow[] | ((params: URLSearchParams) => HistoryRow[]);
   total?: number;
   counts?: HistoryStateCounts;
 }
 
-/** Each daemon answers `/history` at yesterday's local midnight with its rows newest first, cut at
+/** Each daemon answers `/history` at yesterday's local midnight with its rows in the order given, cut at
  *  `offset` and `limit`, the limit capped at 5000 as the daemon caps it, and with `total` and `counts` as given (else every row and none);
  *  every `/history` query it is asked lands in `asked`. */
 function fleet(demo: Daemon, writer: Daemon) {
@@ -60,10 +60,10 @@ function fleet(demo: Daemon, writer: Daemon) {
       if (params.get("since") !== String(YESTERDAY)) return new Response("bad since", { status: 400 });
       const offset = Number(params.get("offset") ?? 0);
       const limit = Math.min(Number(params.get("limit") ?? 200), 5000);
-      const sorted = [...daemon.rows].sort((a, b) => b.started_ms - a.started_ms);
-      const total = daemon.total ?? sorted.length;
+      const ordered = typeof daemon.rows === "function" ? daemon.rows(params) : daemon.rows;
+      const total = daemon.total ?? ordered.length;
       return Response.json({
-        rows: sorted.slice(offset, offset + limit), since: YESTERDAY, until: null, limit, offset, truncated: total > offset + limit, total,
+        rows: ordered.slice(offset, offset + limit), since: YESTERDAY, until: null, limit, offset, truncated: total > offset + limit, total,
         counts: { state: daemon.counts ?? { active: 0, merged: 0, failed: 0, abandoned: 0 }, failure: {}, implementer: {} }, now: NOW,
       });
     }
@@ -210,7 +210,7 @@ test("with several hosts in scope a page past the daemon's 5000-row cap is asked
   expect([shown[0], shown.at(-1)]).toEqual(["DEMO-1000", "DEMO-901"]);
 });
 
-test("a sort head sorts descending, then flips, State starts ascending, and newest first drops sort and order", async () => {
+test("a sort head puts its sort and order in the hash, asks the hosts with them and names the list, State starts ascending, and newest first drops both", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 60) }, { rows: [] });
   await mount("#/runs", daemons.fetchImpl);
   await press(button("Next"));
@@ -237,6 +237,23 @@ test("a sort head sorts descending, then flips, State starts ascending, and newe
   expect(hashSearch().has("sort")).toBe(false);
   expect(hashSearch().has("order")).toBe(false);
   expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
+});
+
+test("sorted by took, two hosts' rows are drawn longest first, then shortest first after a second press", async () => {
+  const took = (id: number, ticket: string, hour: number, minutes: number) =>
+    run({ id, ticket, title: ticket, started_ms: today(hour, 0), elapsed_ms: minutes * MINUTE });
+  const longestFirst = (rows: HistoryRow[]) => (params: URLSearchParams) => (params.get("order") === "asc" ? [...rows].reverse() : rows);
+  const daemons = fleet(
+    { rows: longestFirst([took(1, "DEMO-1", 9, 120), took(2, "DEMO-2", 11, 40)]) },
+    { rows: longestFirst([took(3, "WRITER-3", 12, 90), took(4, "WRITER-4", 10, 10)]) },
+  );
+  await mount("#/runs", daemons.fetchImpl);
+
+  await press(button("Sort by took"));
+  expect(shownIds()).toEqual(["1", "3", "2", "4"]);
+
+  await press(button("Sort by took"));
+  expect(shownIds()).toEqual(["4", "2", "3", "1"]);
 });
 
 test("the State buttons and the count line sum the hosts' state counts and totals, and a State button asks the hosts for its group", async () => {
