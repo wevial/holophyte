@@ -7,10 +7,12 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 from unittest.mock import patch
 
 import holophyte.cli.patrol
 import store
+import store.read
 import store.tickets
 from holophyte.config.project import Project
 from holophyte.holo import cli as holo_cli
@@ -275,3 +277,42 @@ class ReadOnlyTests(PatrolFixture):
                 self.holo(*argv, "-p", name)
         self.assertEqual({name: self.footprint(name) for name in self.conns},
                          before)
+
+
+class UnreadableTests(PatrolFixture):
+    def test_patrol_leaves_a_legacy_sibling_config_where_it_is(self):
+        path = self.root / "legacy"
+        subprocess.run(["git", "init", "-q", str(path)], check=True)
+        sibling = self.root / "legacy.holophyte.toml"
+        sibling.write_text("[patrol]\nquiet_min = 5\n")
+        code, text = self.cli("--patrol", "--json", str(path))
+        self.assertEqual(code, 1)
+        self.assertTrue(sibling.is_file())
+        self.assertFalse(Project.locate(path, adopt=False).config_path.exists())
+        self.assertIn("no store at", json.loads(text)["projects"][0]["error"])
+
+    def test_a_corrupt_store_is_the_project_error_and_exit_one(self):
+        self.project("q")
+        self.conns["q"][0].close()
+        Project.locate(self.conns["q"][2]).store_path.write_bytes(b"not sqlite" * 512)
+        code, text = self.holo("--json", "-p", "q")
+        self.assertEqual(code, 1)
+        (row,) = json.loads(text)["projects"]
+        self.assertIn("DatabaseError", row["error"])
+        self.assertEqual(self.holo("-p", "q")[1].splitlines()[0][:4], "[q] ")
+
+
+class LastEventTests(PatrolFixture):
+    def test_a_run_with_no_event_maps_to_none(self):
+        conn = self.project("q")
+        ticket = self.ticket("q", "K")
+        with_events = self.claim("q", ticket, NOW - 3 * MIN)
+        store.release(conn, with_events, "killed", "swept", now=NOW - 2 * MIN)
+        conn.execute("INSERT INTO runs (ticketId, projectId, attempt, phase,"
+                     " startedAt, lastHeartbeat) SELECT ticketId, projectId,"
+                     " 2, 'working', ?, ? FROM runs WHERE id = ?",
+                     (NOW, NOW, with_events))
+        bare = conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+        conn.commit()
+        self.assertEqual(store.read.last_event_at(conn, [with_events, bare]),
+                         {with_events: NOW - 2 * MIN, bare: None})

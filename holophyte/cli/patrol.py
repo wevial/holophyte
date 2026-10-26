@@ -135,8 +135,8 @@ def project_snapshot(target):
     if not target.store_path.exists():
         row = error_row(name, target.path, f"no store at {target.store_path}")
     else:
-        _, body = attention(target, now)
-        row = project_row(name, target, body["items"], now)
+        row = guarded_row(name, target, now,
+                          lambda: attention(target, now)[1]["items"])
     return {"now": now, "form": "project", "host": {"attention": []},
             "projects": [row]}
 
@@ -154,12 +154,15 @@ def host_entry(entry, now, stale_ms):
         return host, error_row(entry.name, entry.path, errors[0])
     items = [{key: value for key, value in item.items() if key != "project"}
              for item in own]
+    return host, guarded_row(entry.name, entry.target, now, lambda: items)
+
+
+def guarded_row(name, target, now, items):
     try:
-        return host, project_row(entry.name, entry.target, items, now)
+        return project_row(name, target, items(), now)
     # Whatever one project raises is its error; the patrol goes on.
     except (Exception, SystemExit) as bad:
-        return host, error_row(entry.name, entry.path,
-                               f"{type(bad).__name__}: {bad}")
+        return error_row(name, target.path, f"{type(bad).__name__}: {bad}")
 
 
 def host_snapshot(host):

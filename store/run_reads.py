@@ -460,7 +460,7 @@ def round_caps(conn, run_ids):
         " ORDER BY e.id DESC LIMIT 1))"
         f" FROM runs r WHERE r.id IN ({', '.join('?' * len(run_ids))})",
         run_ids).fetchall()
-    return dict(rows)
+    return {**dict.fromkeys(run_ids), **dict(rows)}
 
 
 @dataclass(frozen=True)
@@ -619,7 +619,7 @@ def last_event_at(conn, run_ids):
         "SELECT runId, MAX(at) FROM runEvents"
         f" WHERE runId IN ({', '.join('?' * len(run_ids))}) GROUP BY runId",
         run_ids).fetchall()
-    return dict(rows)
+    return {**dict.fromkeys(run_ids), **dict(rows)}
 
 
 @dataclass(frozen=True)
