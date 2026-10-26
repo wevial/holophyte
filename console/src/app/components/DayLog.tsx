@@ -150,7 +150,7 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
   return (
     <aside aria-labelledby={preview ? undefined : heading} aria-label={preview ? "Today's log preview" : undefined}
       className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
-      <div className={`sticky top-0 z-10 flex min-h-11 items-center gap-2 py-1 ${preview ? "bg-paper" : "bg-canvas"}`}>
+      <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 bg-canvas py-1">
         <Heading id={heading} className="mr-auto font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
           Today's log
         </Heading>

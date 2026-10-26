@@ -234,6 +234,7 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   const header = screen.getByRole("group", { name: "Preset" }).closest("header")!;
   expect(header.contains(screen.getByRole("heading", { level: 2, name: "Today's log" }))).toBe(true);
   expect(header.className).toEqual(expect.stringContaining("border-b border-rule"));
+  expect(header.parentElement!.className).not.toContain("bg-paper");
   const sections = screen.getAllByRole("region").filter((region) => [...GROUPS, "Projects"].includes(region.getAttribute("aria-label") ?? ""));
   expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([...GROUPS, "Projects"]);
   expect(new Set(sections.map((section) => section.parentElement)).size).toBe(1);

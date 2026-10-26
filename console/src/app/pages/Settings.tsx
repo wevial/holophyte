@@ -197,7 +197,7 @@ function SettingsProjectPage({ tab, project, rows }: { tab: Tab; project: string
           </div>
           {restart.data && <p className="mt-3 font-mono text-[12px]">{restart.data.detail}</p>}
         </div>}
-        <section className="border border-rule bg-paper p-5 min-[720px]:p-6">
+        <section className={tab.id === "log" ? "" : "border border-rule bg-paper p-5 min-[720px]:p-6"}>
           {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2">{heading}</header>}
           {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
             <div className="mt-6">
