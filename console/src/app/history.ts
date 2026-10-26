@@ -141,10 +141,13 @@ interface RunPage {
   counts: Record<RunFilter, number>;
 }
 
+/** The most rows a daemon's `/history` answers at once. */
+const HISTORY_CAP = 5000;
+
 /** One page of the scoped fleet's runs since yesterday's local midnight, in
  *  the asked state and order. One daemon serves the page itself; with
- *  several, each serves its first `page * size` rows and the page is cut
- *  from their merge. */
+ *  several, each serves its first `page * size` rows, `HISTORY_CAP` at a
+ *  time, and the page is cut from their merge. */
 export function useRunPage({ state, sort, order, page, size }: Required<RunsSearch>): RunPage {
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
@@ -155,10 +158,15 @@ export function useRunPage({ state, sort, order, page, size }: Required<RunsSear
   if (state !== "all") query.set("state", state);
   query.set("sort", sort);
   query.set("order", order);
-  query.set("offset", String(single ? (page - 1) * size : 0));
-  query.set("limit", String(single ? size : page * size));
+  const queries: string[] = [];
+  const end = page * size;
+  for (let offset = single ? end - size : 0; offset < end; offset += HISTORY_CAP) {
+    query.set("offset", String(offset));
+    query.set("limit", String(Math.min(HISTORY_CAP, end - offset)));
+    queries.push(query.toString());
+  }
   const readiness = useReadiness(hosts, deps);
-  const answers = useHistory(hosts, query.toString(), deps);
+  const answers = useHistory(hosts, queries, deps);
   const merged = historyRows(hosts, answers, readiness, peers.now, compareRows(sort, order));
   const counts: Record<RunFilter, number> = { all: 0, active: 0, merged: 0, failed: 0, abandoned: 0 };
   let total = 0;

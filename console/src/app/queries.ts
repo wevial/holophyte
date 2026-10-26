@@ -293,9 +293,8 @@ export function useFindings<R extends HostRecord<PollBodies>>(
 }
 
 /** Each status-answering host's last good `path` answer, by its record
- *  `key`; a host whose daemon lacks the route (404) has no entry. With
- *  `keep`, a host's answer to the previous `path` stands until the new one comes. */
-function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.ZodType<T>, deps: { fetch: Fetch }, keep = false): Map<string, T> {
+ *  `key`; a host whose daemon lacks the route (404) has no entry. */
+function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.ZodType<T>, deps: { fetch: Fetch }): Map<string, T> {
   const asked = hosts.filter((host) => host.status != null);
   const results = useQueries({
     queries: asked.map((host) => ({
@@ -303,7 +302,6 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
       queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, schema),
       refetchInterval: POLL_INTERVAL_MS,
       staleTime: POLL_INTERVAL_MS,
-      placeholderData: keep ? keepPreviousData : undefined,
     })),
   });
   const answers = new Map<string, T>();
@@ -314,10 +312,30 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
   return answers;
 }
 
-/** Each answering host's `/history?query`, by its record `key`; a host
- *  without the route has no entry. */
-export function useHistory(hosts: HostRecord<PollBodies>[], query: string, deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
-  return useAnswers(hosts, `/history?${query}`, historySchema, deps, true);
+/** Each answering host's `/history` answers to `queries`, by its record
+ *  `key`, as the first answer with every answer's rows joined in order; a
+ *  host without the route, or still missing an answer, has no entry. */
+export function useHistory(hosts: HostRecord<PollBodies>[], queries: string[], deps: { fetch: Fetch } = defaultPollDeps): Map<string, History> {
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.flatMap((host) => queries.map((query) => {
+      const path = `/history?${query}`;
+      return {
+        queryKey: routeKey(host.base, path),
+        queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, historySchema),
+        refetchInterval: POLL_INTERVAL_MS,
+        staleTime: POLL_INTERVAL_MS,
+        placeholderData: keepPreviousData,
+      };
+    })),
+  });
+  const answers = new Map<string, History>();
+  asked.forEach((host, index) => {
+    const parts = results.slice(index * queries.length, (index + 1) * queries.length).map((result) => result.data);
+    const [first] = parts;
+    if (first && parts.every((part) => part)) answers.set(host.key, { ...first, rows: parts.flatMap((part) => part!.rows) });
+  });
+  return answers;
 }
 
 function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fetch) {

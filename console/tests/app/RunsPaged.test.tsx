@@ -43,7 +43,7 @@ interface Daemon {
 }
 
 /** Each daemon answers `/history` at yesterday's local midnight with its rows newest first, cut at
- *  `offset` and `limit`, and with `total` and `counts` as given (else every row and none);
+ *  `offset` and `limit`, the limit capped at 5000 as the daemon caps it, and with `total` and `counts` as given (else every row and none);
  *  every `/history` query it is asked lands in `asked`. */
 function fleet(demo: Daemon, writer: Daemon) {
   const asked: { base: string; params: URLSearchParams }[] = [];
@@ -59,7 +59,7 @@ function fleet(demo: Daemon, writer: Daemon) {
       asked.push({ base, params });
       if (params.get("since") !== String(YESTERDAY)) return new Response("bad since", { status: 400 });
       const offset = Number(params.get("offset") ?? 0);
-      const limit = Number(params.get("limit") ?? 200);
+      const limit = Math.min(Number(params.get("limit") ?? 200), 5000);
       const sorted = [...daemon.rows].sort((a, b) => b.started_ms - a.started_ms);
       const total = daemon.total ?? sorted.length;
       return Response.json({
@@ -169,17 +169,15 @@ function PageOfRuns({ search }: { search: Required<RunsSearch> }) {
   return <ol aria-label="Runs, newest first">{rows.map((row) => <li key={`${row.base} ${row.id}`}>{row.ticket}</li>)}</ol>;
 }
 
-test("with several hosts in scope each serves its first page * size rows and the page is cut from their merge by start", async () => {
-  const at = (id: number, ticket: string, hour: number) => run({ id, ticket, title: ticket, started_ms: today(hour, 0) });
-  const daemons = fleet({ rows: [at(1, "DEMO-1", 10), at(2, "DEMO-2", 8)] }, { rows: [at(3, "WRITER-3", 9), at(4, "WRITER-4", 7)] });
-  const fake = fakeDeps(daemons.fetchImpl);
+async function mountPage(search: Required<RunsSearch>, fetchImpl: Fetch) {
+  const fake = fakeDeps(fetchImpl);
   const host = (base: string, project: string): HostRecord<ContractBodies> => ({
     key: base.replace("http://", ""), address: base.replace("http://", ""), base, label: base, project: null,
     status: { ...working, project, runs: [], queued: [] }, attention: { level: "none", now: NOW, project, items: [] },
     polled_ms: NOW, seen_ms: NOW, error: null, needs_token: false,
   });
   const peers: PeersState<ContractBodies> = { hosts: [host(DEMO, "/srv/dev/demo"), host(WRITER, "/srv/dev/writer")], polledAgo: 0, polls: 1, now: NOW };
-  const root = createRootRoute({ component: () => <PageOfRuns search={{ state: "all", sort: "started", order: "desc", size: 2, page: 2 }} /> });
+  const root = createRootRoute({ component: () => <PageOfRuns search={search} /> });
   window.location.hash = "#/";
   render(
     <QueryClientProvider client={consoleQueryClient()}>
@@ -191,9 +189,25 @@ test("with several hosts in scope each serves its first page * size rows and the
     </QueryClientProvider>,
   );
   for (let round = 0; round < 4; round += 1) await act(settle);
+}
+
+test("with several hosts in scope each serves its first page * size rows and the page is cut from their merge by start", async () => {
+  const at = (id: number, ticket: string, hour: number) => run({ id, ticket, title: ticket, started_ms: today(hour, 0) });
+  const daemons = fleet({ rows: [at(1, "DEMO-1", 10), at(2, "DEMO-2", 8)] }, { rows: [at(3, "WRITER-3", 9), at(4, "WRITER-4", 7)] });
+  await mountPage({ state: "all", sort: "started", order: "desc", size: 2, page: 2 }, daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 4)]);
   expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 4)]);
   expect(rows().map((row) => row.textContent)).toEqual(["DEMO-2", "WRITER-4"]);
+});
+
+test("with several hosts in scope a page past the daemon's 5000-row cap is asked for in batches of at most 5000", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 6000, 5101) }, { rows: [] });
+  await mountPage({ state: "all", sort: "started", order: "desc", size: 100, page: 51 }, daemons.fetchImpl);
+  expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 5000), paged(null, 5000, 100)]);
+  expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 5000), paged(null, 5000, 100)]);
+  const shown = rows().map((row) => row.textContent);
+  expect(shown).toHaveLength(100);
+  expect([shown[0], shown.at(-1)]).toEqual(["DEMO-1000", "DEMO-901"]);
 });
 
 test("a sort head sorts descending, then flips, State starts ascending, and newest first drops sort and order", async () => {
