@@ -26,6 +26,16 @@ MIN = 60_000
 TABLES = ("runs", "tickets", "runEvents", "interventions", "steerNotes")
 
 
+def projects_text(text):
+    """The patrol's text less its leading `[host]` block."""
+    lines = text.splitlines(keepends=True)
+    assert lines[0].startswith("[host]"), text
+    body = 1
+    while body < len(lines) and lines[body].startswith("  "):
+        body += 1
+    return "".join(lines[body:])
+
+
 class PatrolFixture(HostFixture):
     def setUp(self):
         super().setUp()
@@ -147,7 +157,8 @@ class StrandedTests(PatrolFixture):
         self.ended("solo", "A", [("failed", "verify", "red")])
         self.configure("solo", 'ignore = ["A"]')
         self.assertTrue(self.patrol("solo")["clean"])
-        self.assertEqual(self.holo("-p", "solo"),
+        code, text = self.holo("-p", "solo")
+        self.assertEqual((code, projects_text(text)),
                          (0, "[solo] nothing to do · ignored A\n"))
 
 
@@ -243,8 +254,7 @@ class HostFormTests(PatrolFixture):
         self.stranded_project("q")
         code, text = self.holo()
         self.assertEqual(code, 0, text)
-        lines = [line for line in text.splitlines()
-                 if not line.startswith("[host]")]
+        lines = projects_text(text).splitlines()
         self.assertEqual(lines[0], "[p] nothing to do · 1 in flight")
         self.assertEqual(lines[1], "[q]")
         code, text = self.holo("--json")
@@ -299,7 +309,7 @@ class UnreadableTests(PatrolFixture):
         self.assertEqual(code, 1)
         (row,) = json.loads(text)["projects"]
         self.assertIn("DatabaseError", row["error"])
-        self.assertEqual(self.holo("-p", "q")[1].splitlines()[0][:4], "[q] ")
+        self.assertEqual(projects_text(self.holo("-p", "q")[1])[:4], "[q] ")
 
 
 class LastEventTests(PatrolFixture):
