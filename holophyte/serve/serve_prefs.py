@@ -99,12 +99,11 @@ def stored(home):
 
 def read_prefs(home):
     try:
-        document, error = stored(home), None
+        document = stored(home)
     except ValueError as bad:
-        document, error = {}, str(bad)
-    answer = {"day_log": document.get("day_log"),
-              "updated_ms": document.get("updated_ms")}
-    return answer if error is None else {**answer, "error": error}
+        return {"day_log": None, "updated_ms": None, "error": str(bad)}
+    return {"day_log": document.get("day_log"),
+            "updated_ms": document.get("updated_ms")}
 
 
 def write_prefs(home, body, now):
