@@ -260,14 +260,17 @@ interface ColouredHost {
 /** Each project's key colour, by its name: its `/status` colour unless
  *  `auto`, else the palette's colour at its index in `hosts`' project order. */
 export function projectColours(hosts: ColouredHost[]): Map<string, string> {
-  const colours = new Map<string, string>();
+  const chosen = new Map<string, string | undefined>();
   for (const host of hosts) {
     if (host.project == null) continue;
     const name = projectName(host.project);
-    if (colours.has(name)) continue;
-    const chosen = host.status?.colour;
-    const colour = chosen && chosen !== "auto" ? chosen : PALETTE[colours.size % PALETTE.length]!;
-    colours.set(name, `var(--p-${colour})`);
+    if (!chosen.has(name)) chosen.set(name, undefined);
+    if (host.status != null && chosen.get(name) == null) chosen.set(name, host.status.colour ?? "auto");
+  }
+  const colours = new Map<string, string>();
+  for (const [name, colour] of chosen) {
+    const drawn = colour && colour !== "auto" ? colour : PALETTE[colours.size % PALETTE.length]!;
+    colours.set(name, `var(--p-${drawn})`);
   }
   return colours;
 }

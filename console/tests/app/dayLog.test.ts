@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { categoryOf, phraseOf } from "../../src/app/dayLog";
+import { categoryOf, phraseOf, projectColours } from "../../src/app/dayLog";
 import type { LedgerEntry } from "../../src/lib/contract.gen";
 
 const PR = "https://github.com/kovial/holophyte/pull/896";
@@ -63,4 +63,12 @@ test("a migration row falls to Other, cut at its first colon, and an unlisted hu
   expect(phraseOf(migration)).toBe("store schema 41 (migrated from 40 at 2026-10-26T09");
   const decide = row("intervention", "operator", "human decide: option B");
   expect([categoryOf(decide).item, phraseOf(decide)]).toEqual(["pause-abort-start", "operator decided"]);
+});
+
+test("a project's colour comes from a host that answered, not an earlier host without a status", () => {
+  const colours = projectColours([
+    { project: "/srv/demo", status: null },
+    { project: "/srv/demo", status: { colour: "teal" } },
+  ]);
+  expect(colours.get("demo")).toBe("var(--p-teal)");
 });
