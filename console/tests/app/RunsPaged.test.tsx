@@ -343,3 +343,14 @@ test("a scope with no runs says so and draws no pager", async () => {
   expect(screen.getByText("No active runs in demo today or yesterday.")).toBeTruthy();
   expect(pager()).toBeNull();
 });
+
+test("a page past the last one keeps the pager, and Previous goes back to the last page with runs", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 120, 120) }, { rows: [] });
+  await mount("#/runs?project=demo&state=all&page=5", daemons.fetchImpl);
+  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged(null, 200, 50));
+  expect(rows()).toHaveLength(0);
+  expect(button("Next").hasAttribute("disabled")).toBe(true);
+  await press(button("Previous"));
+  expect(hashSearch().get("page")).toBe("3");
+  expect(range()).toBe("101–120 of 120");
+});
