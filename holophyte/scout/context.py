@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import NamedTuple
 
 import store.read
+from holophyte.config.config_tables import sweep_config
 from holophyte.host.supervisor import SWEEP_EVENT
 from holophyte.redact import known_secrets, outbound
 from holophyte.review.findings import decode_findings
@@ -170,6 +171,7 @@ def run_pack(pack, run_id):
 
 
 def defect_facts(project, run_id):
+    threshold = sweep_config(project).review_overlap_threshold
     with readonly(project) as conn:
         stops = conn.execute(
             "SELECT kind, summary, payload FROM runEvents WHERE runId = ?"
@@ -179,7 +181,8 @@ def defect_facts(project, run_id):
                      for kind, summary, payload in stops
                      if stop_kind(kind, summary)), None)
         criteria = (None if stop is None else
-                    stopped_criteria(conn, run_id, stop[0], stop[2]))
+                    stopped_criteria(conn, run_id, stop[0], stop[2],
+                                     threshold))
         claimed = conn.execute(
             "SELECT ticketId, revision FROM runs WHERE id = ?",
             (run_id,)).fetchone()

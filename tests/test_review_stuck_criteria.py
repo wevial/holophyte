@@ -3,7 +3,10 @@
 `review_stuck` compares two rounds' code findings; a criterion the reviewer
 restates as unmet carries the same key every round, so it is left out of that
 measure and judged on its own: the same criterion unmet in three consecutive
-ended rounds trips `criterion_stuck`. Restatements are built by the reviewer
+ended rounds trips `criterion_stuck` when its reason in each round shares at
+least `review_overlap_threshold` of its words with its reason in the round
+before, so a criterion restated for a new gap each round is still converging
+and does not trip. Restatements are built by the reviewer
 reply parser and rounds go in through `store.record_review_round()`, so the
 sweep reads what the loop would have written.
 
@@ -20,7 +23,7 @@ import store  # noqa: E402 - after the sys.path insert above
 from holophyte.review.reply_parsing import criteria_findings  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sweep_fixture import MINUTE, T0, SweepTestCase  # noqa: E402
+from sweep_fixture import MINUTE, T0, StubProvider, SweepTestCase  # noqa: E402
 
 CRITERIA = ["the first criterion", "the second criterion",
             "the third criterion"]
@@ -29,6 +32,14 @@ CRITERIA = ["the first criterion", "the second criterion",
 def restated(*unmet):
     reply = "\n".join(
         f"CRITERION {n}: {'not met' if n in unmet else 'met'} - reason {n}"
+        for n in range(1, len(CRITERIA) + 1))
+    return criteria_findings(reply, CRITERIA)
+
+
+def restated_with(reason):
+    reply = "\n".join(
+        f"CRITERION {n}: not met - {reason}" if n == 2
+        else f"CRITERION {n}: met - reason {n}"
         for n in range(1, len(CRITERIA) + 1))
     return criteria_findings(reply, CRITERIA)
 
@@ -136,6 +147,71 @@ class PersistentCriterionTests(StuckCriteriaTestCase):
 
         self.assertFalse(outcome.acted)
         self.assertEqual(store.run_phase(self.conn, run_id), "addressing")
+
+
+NEW_GAPS = (
+    "no retained test publishes a plain first revision followed by a"
+    " live-block revision and checks its scripts",
+    "commented bridge text inside an HTML comment still adds the bridge hash",
+    "the old page's script-src misses the theme head hash after a reload")
+REPEATED_GAP = ("the old page's script-src still misses the theme head's hash"
+                " after a reload")
+
+
+class RepeatedReasonTests(StuckCriteriaTestCase):
+    def converging_run(self, *reasons):
+        run_id = self.a_run(phase="addressing")
+        self.rounds(run_id, *(
+            [code(f"gap_{number}.py", number)] + restated_with(reason)
+            for number, reason in enumerate(reasons, 1)))
+        return run_id
+
+    def test_a_criterion_restated_for_a_new_gap_each_round_does_not_trip(self):
+        run_id = self.converging_run(*NEW_GAPS)
+
+        self.assertEqual(self.sweep(run_id).trips, [])
+
+    def test_a_reworded_reason_counts_and_three_repeats_trip(self):
+        run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP)
+        self.assertEqual(self.sweep(run_id).trips, [])
+        self.rounds_from(run_id, 5, REPEATED_GAP)
+
+        trip, = self.sweep(run_id, T0 + 30 * MINUTE).trips
+
+        self.assertEqual(trip.condition, "criterion_stuck")
+        self.assertIn("criterion 2 restated as unmet in rounds 3, 4 and 5",
+                      trip.evidence)
+
+    def test_the_failure_quotes_the_newest_repeated_reason(self):
+        run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP, REPEATED_GAP)
+
+        holophyte.host.supervisor.sweep(
+            self.project, self.conn, T0 + 20 * MINUTE, act=True,
+            provider=StubProvider())
+
+        expected = ("criterion 2 restated as unmet in rounds 3, 4 and 5",
+                    f'"not met \u2014 {REPEATED_GAP}"')
+        (event,), = self.conn.execute(
+            "SELECT group_concat(summary, '|') FROM runEvents"
+            " WHERE runId = ? AND kind = 'supervisor_sweep'", (run_id,))
+        (reason,), = self.conn.execute(
+            "SELECT outcomeReason FROM runs WHERE id = ?", (run_id,))
+        for recorded in (event, reason):
+            for part in expected:
+                self.assertIn(part, recorded)
+
+    def test_a_threshold_of_one_needs_every_word_repeated(self):
+        self.configure("[supervisor]\nreview_overlap_threshold = 1.0\n")
+        run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP, REPEATED_GAP)
+
+        self.assertEqual(self.sweep(run_id).trips, [])
+
+    def rounds_from(self, run_id, number, reason):
+        at = T0 + 22 * MINUTE
+        store.record_review_round(
+            self.conn, run_id, number, "changes_requested", "reviewer",
+            findings=[code(f"gap_{number}.py", number)]
+            + restated_with(reason), started_at=at, ended_at=at + MINUTE)
 
 
 if __name__ == "__main__":
