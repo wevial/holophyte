@@ -114,9 +114,6 @@ export const PAGE_SIZES = [25, 50, 100] as const;
 
 export const DEFAULT_SIZE = 50;
 
-/** The deepest page the address may name, so the batches asked for stay few. */
-const MAX_PAGE = 1000;
-
 const SORT_KEY: Record<RunSort, (row: RunRow) => number> = {
   started: (row) => row.started_ms,
   ended: (row) => row.ended_ms ?? Number.POSITIVE_INFINITY,
@@ -145,13 +142,10 @@ interface RunPage {
   settled: boolean;
 }
 
-/** The most rows a daemon's `/history` answers at once. */
-const HISTORY_CAP = 5000;
-
 /** One page of the scoped fleet's runs since yesterday's local midnight, in
  *  the asked state and order. One daemon serves the page itself; with
- *  several, each serves its first `page * size` rows, `HISTORY_CAP` at a
- *  time, and the page is cut from their merge. */
+ *  several, each serves its first `page * size` rows and the page is cut
+ *  from their merge. */
 export function useRunPage({ state, sort, order, page, size }: Required<RunsSearch>): RunPage {
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
@@ -162,15 +156,9 @@ export function useRunPage({ state, sort, order, page, size }: Required<RunsSear
   if (state !== "all") query.set("state", state);
   query.set("sort", sort);
   query.set("order", order);
-  const queries: string[] = [];
   const end = page * size;
-  for (let offset = single ? end - size : 0; offset < end; offset += HISTORY_CAP) {
-    query.set("offset", String(offset));
-    query.set("limit", String(Math.min(HISTORY_CAP, end - offset)));
-    queries.push(query.toString());
-  }
   const readiness = useReadiness(hosts, deps);
-  const { answers, settled } = useHistory(hosts, queries, deps);
+  const { answers, settled } = useHistory(hosts, query.toString(), single ? end - size : 0, end, deps);
   const merged = historyRows(hosts, answers, readiness, peers.now, compareRows(sort, order));
   const counts: Record<RunFilter, number> = { all: 0, active: 0, merged: 0, failed: 0, abandoned: 0 };
   let total = 0;
@@ -207,7 +195,7 @@ export function validateRunsSearch({ state, sort, order, page, size }: Record<st
     state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined,
     sort: RUN_SORTS.includes(sort as RunSort) ? (sort as RunSort) : undefined,
     order: order === "asc" || order === "desc" ? order : undefined,
-    page: Number.isInteger(pageNumber) && pageNumber > 1 && pageNumber <= MAX_PAGE ? pageNumber : undefined,
+    page: Number.isSafeInteger(pageNumber) && pageNumber > 1 ? pageNumber : undefined,
     size: PAGE_SIZES.some((each) => each === sizeNumber) ? sizeNumber : undefined,
   };
 }

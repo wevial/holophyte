@@ -312,33 +312,46 @@ function useAnswers<T>(hosts: HostRecord<PollBodies>[], path: string, schema: z.
   return answers;
 }
 
-/** Each answering host's `/history` answers to `queries`, by its record
- *  `key`, as the first answer with every answer's rows joined in order; a
- *  host without the route, or still missing an answer, has no entry.
- *  `settled` is whether a host was asked and every query has its own answer or failure. */
+/** The most rows a daemon's `/history` answers at once. */
+const HISTORY_CAP = 5000;
+
+function historyQuery(host: HostRecord<PollBodies>, query: string, offset: number, limit: number, fetch: Fetch) {
+  const path = `/history?${query}&offset=${offset}&limit=${limit}`;
+  return {
+    queryKey: routeKey(host.base, path),
+    queryFn: () => routeOrNone(fetch, `${host.base}${path}`, historySchema),
+    refetchInterval: POLL_INTERVAL_MS,
+    staleTime: POLL_INTERVAL_MS,
+    placeholderData: keepPreviousData,
+  };
+}
+
+/** Each answering host's `/history?query` rows from `start` up to `end`, by
+ *  its record `key`, asked `HISTORY_CAP` at a time: the first batch's
+ *  `total` bounds the rest. A host's entry is its first answer with every
+ *  batch's rows joined in order; a host without the route, or still missing
+ *  a batch, has none. `settled` is whether a host was asked and every batch
+ *  has its own answer or failure. */
 export function useHistory(
-  hosts: HostRecord<PollBodies>[], queries: string[], deps: { fetch: Fetch } = defaultPollDeps,
+  hosts: HostRecord<PollBodies>[], query: string, start: number, end: number, deps: { fetch: Fetch } = defaultPollDeps,
 ): { answers: Map<string, History>; settled: boolean } {
   const asked = hosts.filter((host) => host.status != null);
-  const results = useQueries({
-    queries: asked.flatMap((host) => queries.map((query) => {
-      const path = `/history?${query}`;
-      return {
-        queryKey: routeKey(host.base, path),
-        queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, historySchema),
-        refetchInterval: POLL_INTERVAL_MS,
-        staleTime: POLL_INTERVAL_MS,
-        placeholderData: keepPreviousData,
-      };
-    })),
+  const firsts = useQueries({ queries: asked.map((host) => historyQuery(host, query, start, Math.min(HISTORY_CAP, end - start), deps.fetch)) });
+  const later = asked.flatMap((host, index) => {
+    const stop = Math.min(end, firsts[index]?.data?.total ?? start);
+    const offsets: number[] = [];
+    for (let offset = start + HISTORY_CAP; offset < stop; offset += HISTORY_CAP) offsets.push(offset);
+    return offsets.map((offset) => ({ host, offset, limit: Math.min(HISTORY_CAP, end - offset) }));
   });
+  const rests = useQueries({ queries: later.map(({ host, offset, limit }) => historyQuery(host, query, offset, limit, deps.fetch)) });
   const answers = new Map<string, History>();
   asked.forEach((host, index) => {
-    const parts = results.slice(index * queries.length, (index + 1) * queries.length).map((result) => result.data);
-    const [first] = parts;
-    if (first && parts.every((part) => part)) answers.set(host.key, { ...first, rows: parts.flatMap((part) => part!.rows) });
+    const first = firsts[index]?.data;
+    const parts = later.flatMap((batch, at) => (batch.host === host ? [rests[at]?.data] : []));
+    if (first && parts.every((part) => part)) answers.set(host.key, { ...first, rows: [first, ...parts].flatMap((part) => part!.rows) });
   });
-  return { answers, settled: results.length > 0 && results.every((result) => result.isFetched && !result.isPlaceholderData) };
+  const results = [...firsts, ...rests];
+  return { answers, settled: firsts.length > 0 && results.every((result) => result.isFetched && !result.isPlaceholderData) };
 }
 
 function historyDayQuery(base: string, day: DayWindow, limit: number, fetch: Fetch) {

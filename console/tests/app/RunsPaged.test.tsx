@@ -200,11 +200,11 @@ test("with several hosts in scope each serves its first page * size rows and the
   expect(rows().map((row) => row.textContent)).toEqual(["DEMO-2", "WRITER-4"]);
 });
 
-test("with several hosts in scope a page past the daemon's 5000-row cap is asked for in batches of at most 5000", async () => {
+test("with several hosts in scope a page past the daemon's 5000-row cap is asked for in batches of at most 5000, up to each host's total", async () => {
   const daemons = fleet({ rows: runs("DEMO", 6000, 5101) }, { rows: [] });
   await mountPage({ state: "all", sort: "started", order: "desc", size: 100, page: 51 }, daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 5000), paged(null, 5000, 100)]);
-  expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 5000), paged(null, 5000, 100)]);
+  expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 5000)]);
   const shown = rows().map((row) => row.textContent);
   expect(shown).toHaveLength(100);
   expect([shown[0], shown.at(-1)]).toEqual(["DEMO-1000", "DEMO-901"]);
@@ -372,7 +372,27 @@ test("a page past the last one goes back to the last page with runs, and an empt
   expect(pager()).toBeNull();
 });
 
-test("a page too deep to ask for opens page 1", async () => {
+test("a page beyond the fleet's runs asks each host for one batch and goes back to the last page", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: runs("WRITER", 200, 2) });
+  await mount("#/runs?state=all&page=1000000000000", daemons.fetchImpl);
+  expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 5000), paged(null, 0, 50)]);
+  expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 5000), paged(null, 0, 50)]);
+  expect(hashSearch().has("page")).toBe(false);
+  expect(range()).toBe("1–5 of 5");
+});
+
+test("Next reaches every page of one host's runs, however deep", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 30000, 25001) }, { rows: [] });
+  await mount("#/runs?project=demo&state=all&size=25&page=1000", daemons.fetchImpl);
+  expect(range()).toBe("24976–25000 of 25001");
+  await press(button("Next"));
+  expect(hashSearch().get("page")).toBe("1001");
+  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged(null, 25000, 25));
+  expect(range()).toBe("25001–25001 of 25001");
+  expect(button("Next").hasAttribute("disabled")).toBe(true);
+});
+
+test("a page that is not a safe integer opens page 1", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: runs("WRITER", 200, 2) });
   await mount("#/runs?state=all&page=1e308", daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
