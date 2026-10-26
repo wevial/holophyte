@@ -639,6 +639,8 @@ class RunLedgerEntry(TypedDict):
 class LedgerEntry(RunLedgerEntry):
     run: int | None
     ticket: str | None
+    pr_url: str | None
+    failure_kind: NotRequired[str]
 
 
 class ActiveOutage(TypedDict):
