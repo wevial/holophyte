@@ -5,6 +5,7 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
   RouterProvider,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
@@ -24,7 +25,6 @@ import { RunPage } from "./pages/Run";
 import { Runs } from "./pages/Runs";
 import { ScoutPage } from "./pages/Scout";
 import { Scouts } from "./pages/Scouts";
-import { RunsHistory, validateHistorySearch } from "./pages/RunsHistory";
 import { Settings } from "./pages/Settings";
 import { StoriesIndex, Story } from "./pages/Story";
 import { TicketPage } from "./pages/Ticket";
@@ -67,10 +67,15 @@ function pageRoute<TPath extends string>(path: TPath, page: () => ReactNode) {
   return createRoute({ getParentRoute: () => rootRoute, path, component: page });
 }
 
+function redirectHistory({ project, outcome }: Record<string, unknown>): never {
+  const state = outcome === "merged" || outcome === "failed" || outcome === "abandoned" ? outcome : undefined;
+  throw redirect({ to: "/runs", search: { project: typeof project === "string" ? project : undefined, state, range: "30d" }, replace: true });
+}
+
 const routeTree = rootRoute.addChildren([
   pageRoute("/", Overview),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/runs/history", validateSearch: validateHistorySearch, component: RunsHistory }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/runs/history", beforeLoad: ({ location }) => redirectHistory(location.search) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run", component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets", validateSearch: validateTicketsSearch, component: Tickets }),
   pageRoute("/tickets/$project/new", NewTicket),
