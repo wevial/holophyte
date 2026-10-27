@@ -359,7 +359,6 @@ test("the footer holds no link to older days and names the time zone", async () 
   await mount("#/runs?project=demo", sixRuns());
   const footer = document.querySelector("section footer")!;
   expect(within(footer as HTMLElement).queryAllByRole("link")).toEqual([]);
-  expect(footer.querySelector('a[href*="#/runs/history"]')).toBeNull();
   expect(Array.from(footer.children, (line) => line.textContent)).toEqual([
     "Active runs also show on the Overview. Open a run for its stage, log and agent.",
     "times show in PDT",
