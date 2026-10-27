@@ -3,18 +3,41 @@ import { useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Btn } from "../components/Btn";
 import { ChevronIcon } from "../components/icons";
+import { dayRangeLabel, FilterPopover, RangeButtons, SearchField, type FilterSection } from "../components/ListFilters";
 import { RunTable, RunTableHeads } from "../components/RunTable";
-import { DEFAULT_SIZE, PAGE_SIZES, useRunPage, type RunFilter, type RunOrder, type RunSort, type RunsSearch } from "../history";
-import { storeScope } from "../projects";
+import {
+  DEFAULT_RANGE, DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
+  type RunGroup, type RunOrder, type RunRange, type RunSort, type RunsFilters, type RunsSearch,
+} from "../history";
 import { PollDepsContext, type ScopeSearch } from "../scope";
 
-const FILTERS: { id: RunFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "active", label: "Active" },
-  { id: "merged", label: "Merged" },
-  { id: "failed", label: "Failed" },
-  { id: "abandoned", label: "Abandoned" },
+const STATE_LABELS: Record<RunGroup, string> = { active: "Active", merged: "Merged", failed: "Failed", abandoned: "Abandoned" };
+
+const FAILURE_LABELS: Record<(typeof FAILURE_KINDS)[number], string> = {
+  verify: "verify",
+  review_route: "review",
+  fix_no_progress: "no progress on a fix",
+  no_commits: "no commits",
+  budget: "past its time box",
+  merge_lock: "merge",
+  swept: "swept",
+  infra: "infra",
+  unclassified: "unclassified",
+};
+
+const RANGES: { value: RunRange; label: string; chip: string }[] = [
+  { value: "today", label: "Today", chip: "Today" },
+  { value: "2d", label: "2d", chip: "Last 2 days" },
+  { value: "7d", label: "7d", chip: "Last 7 days" },
+  { value: "30d", label: "30d", chip: "Last 30 days" },
+  { value: "any", label: "Any", chip: "Any time" },
 ];
+
+const CHIP_WORDS = { projects: "Project", state: "State", failure: "Failure", implementer: "Implementer" } as const;
+
+const CLEARED = {
+  q: undefined, projects: undefined, state: undefined, failure: undefined, implementer: undefined, range: undefined, from: undefined, to: undefined,
+} satisfies RunsSearch & RunsFilters;
 
 const SORT_WORDS: Record<RunSort, Record<RunOrder, string>> = {
   started: { desc: "newest first", asc: "oldest first" },
@@ -70,29 +93,84 @@ function useControlsShift(dock: RefObject<HTMLDivElement | null>, controls: RefO
   return shift;
 }
 
+interface Chip {
+  word: string;
+  value: string;
+  clears: Partial<typeof CLEARED>;
+}
+
+function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): Chip[] {
+  const chips: Chip[] = [];
+  if (search.q) chips.push({ word: "Search", value: `“${search.q}”`, clears: { q: undefined } });
+  for (const section of sections) {
+    const param = section.param as keyof typeof CHIP_WORDS;
+    const checked = listOf(search[param]);
+    const labels = section.options.filter((option) => checked.includes(option.value)).map((option) => option.label);
+    if (labels.length > 0) chips.push({ word: CHIP_WORDS[param], value: labels.join(", "), clears: { [param]: undefined } });
+  }
+  const started = search.from != null || search.to != null ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === search.range)?.chip;
+  if (started) chips.push({ word: "Started", value: started, clears: { range: undefined, from: undefined, to: undefined } });
+  return chips;
+}
+
+function Chips({ chips, onClear, onClearAll }: { chips: Chip[]; onClear: (clears: Partial<typeof CLEARED>) => void; onClearAll: () => void }) {
+  return (
+    <div data-chips className="flex flex-wrap items-center gap-2">
+      {chips.map((chip) => (
+        <span key={chip.word} className="inline-flex min-h-7 items-center gap-2 border border-rule bg-paper pr-1 pl-2.5 font-mono text-[12px] text-ink-2">
+          <span>
+            {chip.word}: <b className="font-semibold text-ink">{chip.value}</b>
+          </span>
+          <button type="button" aria-label={`Remove ${chip.word}: ${chip.value}`} onClick={() => onClear(chip.clears)}
+            className="inline-flex size-6 cursor-pointer items-center justify-center text-ink-3 hover:text-ink">
+            <svg aria-hidden="true" viewBox="0 0 10 10" width={9} height={9} stroke="currentColor" strokeWidth={1.4}>
+              <path d="M1 1l8 8M9 1l-8 8" />
+            </svg>
+          </button>
+        </span>
+      ))}
+      <button type="button" onClick={onClearAll}
+        className="ml-1 min-h-7 cursor-pointer font-sans text-[13px] font-medium text-ink underline underline-offset-2 hover:text-act">
+        Clear filters
+      </button>
+    </div>
+  );
+}
+
 export function Runs() {
   const search = useSearch({ from: "/runs" });
   const { project } = search;
-  const filter: RunFilter = search.state ?? "active";
   const sort: RunSort = search.sort ?? "started";
   const order: RunOrder = search.order ?? "desc";
   const page = search.page ?? 1;
   const size = search.size ?? DEFAULT_SIZE;
-  const { now, rows, total, counts, settled } = useRunPage({ state: filter, sort, order, page, size });
+  const { now, rows, total, active, counts, implementers, projects, picked, settled } = useRunPage({ ...search, state: search.state ?? "", sort, order, page, size });
   const navigate = useNavigate();
   const dock = useRef<HTMLDivElement>(null);
   const controls = useRef<HTMLDivElement>(null);
   const shift = useControlsShift(dock, controls);
   const hidden = shift != null;
-  const word = filter === "all" ? "" : `${filter} `;
   const orderWords = SORT_WORDS[sort][order];
-  const go = (next: RunsSearch) =>
-    void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch) => ({ ...previous, page: undefined, ...next }) });
+  const go = (next: RunsSearch & RunsFilters) =>
+    void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch & RunsFilters) => ({ ...previous, page: undefined, ...next }) });
+  const [fieldKey, setFieldKey] = useState(0);
+  const clearAll = () => {
+    setFieldKey((key) => key + 1);
+    go(CLEARED);
+  };
   const sortBy = (key: RunSort) => {
     const nextOrder: RunOrder = key === sort ? (order === "asc" ? "desc" : "asc") : key === "state" ? "asc" : "desc";
     const fresh = key === "started" && nextOrder === "desc";
     go({ sort: fresh ? undefined : key, order: fresh ? undefined : nextOrder });
   };
+  const sections: FilterSection[] = [
+    { label: "Project", param: "projects", options: projects.map(({ name, count }) => ({ value: name, label: name, count })) },
+    { label: "State", param: "state", options: RUN_GROUPS.map((group) => ({ value: group, label: STATE_LABELS[group], count: counts.state[group] })) },
+    { label: "Failure kind", param: "failure", options: FAILURE_KINDS.map((kind) => ({ value: kind, label: FAILURE_LABELS[kind], count: counts.failure[kind] ?? 0 })) },
+    { label: "Implementer", param: "implementer", options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
+  ];
+  const chips = chipsOf(search, sections);
+  const scope = picked.length === 1 ? picked[0] : picked.length > 1 ? `${picked.length} projects` : (project ?? "all projects");
   const first = (page - 1) * size;
   const backTo = Math.min(page - 1, Math.ceil(total / size));
   const pastEnd = settled && rows.length === 0 && page > 1;
@@ -105,37 +183,18 @@ export function Runs() {
       <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Runs</h1>
         <p data-count-line className="font-mono text-[13px] leading-[1.6] [overflow-wrap:anywhere] text-ink-2">
-          {project ?? "all projects"} · {total} runs
+          {scope} · <b className="font-semibold text-ink">{total}</b> runs
           <Slash />
-          <b className="font-semibold text-ink">{counts.active}</b> active
+          <b className="font-semibold text-ink">{active}</b> active
           <Slash />
           {orderWords}
-          <Slash />
-          today and yesterday
         </p>
-        {project != null && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
-            <span>
-              Showing <b className="font-medium [overflow-wrap:anywhere] text-act">{project}</b> only
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                storeScope(null);
-                void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
-              }}
-              className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
-            >
-              Show all projects
-            </button>
-          </div>
-        )}
       </header>
       <RunTable
         rows={rows}
         now={now}
         label={`Runs, ${orderWords}`}
-        empty={`No ${word}runs in ${project ?? "any project"} today or yesterday.`}
+        empty={chips.length > 0 ? "No runs match" : `No runs in ${project ?? "any project"} in the last 7 days.`}
         dock={
           <div
             ref={dock}
@@ -148,25 +207,13 @@ export function Runs() {
               data-controls
               data-hidden={hidden ? "" : undefined}
               inert={hidden}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0 @max-[1099px]:sticky @max-[1099px]:left-0 @max-[1099px]:w-[100cqw]"
+              className="flex flex-col gap-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0 @max-[1099px]:sticky @max-[1099px]:left-0 @max-[1099px]:w-[100cqw]"
             >
-              <span id="runs-state-label" className="font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3">
-                State
-              </span>
-              <div role="group" aria-labelledby="runs-state-label" className="inline-flex flex-wrap border border-ink-3">
-                {FILTERS.map(({ id, label }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={filter === id}
-                    onClick={() => go({ state: id })}
-                    className="min-h-9 cursor-pointer px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] text-ink-2 aria-pressed:bg-ink aria-pressed:text-paper"
-                  >
-                    {label} <b className="font-medium tracking-normal">{counts[id]}</b>
-                  </button>
-                ))}
-              </div>
-              <span className="ml-auto font-mono text-[12.5px] text-ink-3">{total} runs</span>
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2.5 min-[1100px]:flex-nowrap">
+              <SearchField key={fieldKey} label="Search runs" width="w-[220px] min-w-[112px] shrink" />
+              <RangeButtons label="Started" presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
+              <FilterPopover label="Filter runs" sections={sections} hidden={hidden} />
+              <span className="ml-auto shrink-0 font-mono text-[12.5px] whitespace-nowrap text-ink-3">{total} runs</span>
               <select
                 aria-label="Rows a page"
                 value={size}
@@ -174,7 +221,7 @@ export function Runs() {
                   const picked = Number(event.target.value);
                   go({ size: picked === DEFAULT_SIZE ? undefined : picked });
                 }}
-                className="min-h-9 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[13px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
+                className="min-h-9 shrink-0 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[13px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
               >
                 {PAGE_SIZES.map((each) => (
                   <option key={each} value={each}>
@@ -182,6 +229,8 @@ export function Runs() {
                   </option>
                 ))}
               </select>
+              </div>
+              {chips.length > 0 && <Chips chips={chips} onClear={go} onClearAll={clearAll} />}
             </div>
             <RunTableHeads sort={sort} order={order} onSort={sortBy} />
           </div>

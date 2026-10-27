@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { describe, type ReadinessMap } from "../lib/attention";
 import type { History, HistoryRow, Status } from "../lib/contract.gen";
@@ -134,65 +134,175 @@ function compareRows(sort: RunSort, order: RunOrder): (a: RunRow, b: RunRow) => 
   };
 }
 
+interface RunCounts {
+  state: Record<RunGroup, number>;
+  failure: Record<string, number>;
+  implementer: Record<string, number>;
+}
+
 interface RunPage {
   now: number;
   rows: RunRow[];
   total: number;
-  counts: Record<RunFilter, number>;
+  active: number;
+  counts: RunCounts;
+  implementers: string[];
+  projects: { name: string; count: number }[];
+  picked: string[];
   settled: boolean;
 }
 
-/** One page of the scoped fleet's runs since yesterday's local midnight, in
- *  the asked state and order. One daemon serves the page itself; with
- *  several, each serves its first `page * size` rows and the page is cut
- *  from their merge. */
-export function useRunPage({ state, sort, order, page, size }: Required<RunsSearch>): RunPage {
+export function listOf(text: string | undefined): string[] {
+  return text ? text.split(",") : [];
+}
+
+function sumInto(sums: Record<string, number>, counts: Record<string, number> | undefined) {
+  for (const [key, count] of Object.entries(counts ?? {})) sums[key] = (sums[key] ?? 0) + count;
+}
+
+const RANGE_DAYS_BACK: Record<RunRange, number | null> = { today: 0, "2d": 1, "7d": 6, "30d": 29, any: null };
+
+export function dayStart(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  return new Date(year, month - 1, date);
+}
+
+/** The Started window the search asks for, as `/history`'s `since` and
+ *  `until`: `from` and `to` are whole local days and win over `range`. */
+function runWindow({ range, from, to }: RunsFilters, now: number): { since: number; until: number | null } {
+  if (from != null || to != null) return { since: from == null ? 0 : dayStart(from).getTime(), until: to == null ? null : plusDays(dayStart(to), 1) };
+  const back = RANGE_DAYS_BACK[range ?? DEFAULT_RANGE];
+  return { since: back == null ? 0 : plusDays(new Date(now), -back), until: null };
+}
+
+function plusDays(day: Date, days: number): number {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + days).getTime();
+}
+
+/** One page of the scoped fleet's runs in the asked Started window, filters
+ *  and order. The hosts `projects` names serve the page: one serves it
+ *  itself; with several, each serves its first `page * size` rows and the
+ *  page is cut from their merge. A host `projects` leaves out is asked for
+ *  one row, for its count. */
+export function useRunPage(search: Required<RunsSearch> & RunsFilters): RunPage {
+  const { state, sort, order, page, size } = search;
   const deps = useContext(PollDepsContext);
   const peers = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const hosts = scopedHosts(peers.hosts, project);
-  const single = hosts.length === 1;
-  const query = new URLSearchParams({ since: String(localMidnight(localMidnight(peers.now) - 1)) });
-  if (state !== "all") query.set("state", state);
+  const nameOf = (host: HostRecord<ContractBodies>) => (host.status ? projectName(host.status.project) : null);
+  const names = hosts.flatMap((host) => nameOf(host) ?? []);
+  const picked = listOf(search.projects).filter((name) => names.includes(name));
+  const shown = picked.length > 0 ? hosts.filter((host) => picked.includes(nameOf(host) ?? "")) : hosts;
+  const left = hosts.filter((host) => !shown.includes(host));
+  const single = shown.length === 1;
+  const window = runWindow(search, peers.now);
+  const query = new URLSearchParams({ since: String(window.since) });
+  if (window.until != null) query.set("until", String(window.until));
+  if (search.q) query.set("q", search.q);
+  const [known, setKnown] = useState<string | null>(null);
+  const implementer = keptList(search.implementer, known == null ? undefined : listOf(known));
+  for (const [name, value] of Object.entries({ state: keptList(state, RUN_GROUPS), failure: search.failure, implementer })) if (value) query.set(name, value);
   query.set("sort", sort);
   query.set("order", order);
   const end = page * size;
-  const readiness = useReadiness(hosts, deps);
-  const { answers, settled } = useHistory(hosts, query.toString(), single ? end - size : 0, end, deps);
-  const merged = historyRows(hosts, answers, readiness, peers.now, compareRows(sort, order));
-  const counts: Record<RunFilter, number> = { all: 0, active: 0, merged: 0, failed: 0, abandoned: 0 };
+  const readiness = useReadiness(shown, deps);
+  const { answers, settled } = useHistory(shown, query.toString(), single ? end - size : 0, end, deps);
+  const others = useHistory(left, query.toString(), 0, 1, deps).answers;
+  const merged = historyRows(shown, answers, readiness, peers.now, compareRows(sort, order));
+  const counts: RunCounts = { state: { active: 0, merged: 0, failed: 0, abandoned: 0 }, failure: {}, implementer: {} };
   let total = 0;
+  let active = 0;
   for (const answer of answers.values()) {
     total += answer.total;
-    for (const group of RUN_GROUPS) counts[group] += answer.counts?.state[group] ?? 0;
+    active += answer.counts?.state.active ?? 0;
   }
-  counts.all = state === "all" ? total : RUN_GROUPS.reduce((sum, group) => sum + counts[group], 0);
-  return { now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, counts, settled };
+  const every = [...answers.values(), ...others.values()];
+  for (const answer of every) {
+    for (const group of RUN_GROUPS) counts.state[group] += answer.counts?.state[group] ?? 0;
+    sumInto(counts.failure, answer.counts?.failure);
+    sumInto(counts.implementer, answer.counts?.implementer);
+  }
+  const implementers = [...new Set(every.flatMap((answer) => answer.implementers ?? []))].sort();
+  const union = every.length > 0 ? implementers.join(",") : null;
+  useEffect(() => { if (union != null) setKnown(union); }, [union]);
+  const byName = new Map<string, number>();
+  for (const host of hosts) {
+    const name = nameOf(host);
+    if (name != null) byName.set(name, (byName.get(name) ?? 0) + ((answers.get(host.key) ?? others.get(host.key))?.total ?? 0));
+  }
+  const projects = [...byName].map(([name, count]) => ({ name, count }));
+  return {
+    now: peers.now, rows: single ? merged : merged.slice((page - 1) * size, page * size), total, active, counts, implementers, projects, picked, settled,
+  };
 }
 
-const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
+export const RUN_GROUPS = ["active", "merged", "failed", "abandoned"] as const;
 
 export type RunGroup = (typeof RUN_GROUPS)[number];
 
-export type RunFilter = RunGroup | "all";
+export const FAILURE_KINDS = ["verify", "review_route", "fix_no_progress", "no_commits", "budget", "merge_lock", "swept", "infra", "unclassified"] as const;
 
-const RUN_FILTERS: readonly RunFilter[] = ["all", ...RUN_GROUPS];
+const RUN_RANGES = ["today", "2d", "7d", "30d", "any"] as const;
+
+export type RunRange = (typeof RUN_RANGES)[number];
+
+export const DEFAULT_RANGE: RunRange = "7d";
 
 const GROUP_RANK: Record<RunGroup | "superseded", number> = { active: 0, merged: 1, failed: 2, abandoned: 3, superseded: 4 };
 
+/** `state` is a comma list of run groups. */
 export interface RunsSearch {
-  state?: RunFilter;
+  state?: string;
   sort?: RunSort;
   order?: RunOrder;
   page?: number;
   size?: number;
 }
 
-export function validateRunsSearch({ state, sort, order, page, size }: Record<string, unknown>): RunsSearch {
+/** `projects`, `failure` and `implementer` are comma lists; `from` and `to`
+ *  are local `YYYY-MM-DD` days. */
+export interface RunsFilters {
+  q?: string;
+  projects?: string;
+  failure?: string;
+  implementer?: string;
+  range?: RunRange;
+  from?: string;
+  to?: string;
+}
+
+/** `value`'s comma list without blanks, repeats or values outside `allowed`,
+ *  in `allowed`'s order when given; undefined when nothing is left. */
+function keptList(value: unknown, allowed?: readonly string[]): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const given = [...new Set(value.split(",").map((each) => each.trim()).filter((each) => each !== ""))];
+  const kept = allowed ? allowed.filter((each) => given.includes(each)) : given;
+  return kept.length > 0 ? kept.join(",") : undefined;
+}
+
+function validDay(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const day = dayStart(value);
+  const written = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  return written === value ? value : undefined;
+}
+
+export function validateRunsSearch(search: Record<string, unknown>): RunsSearch & RunsFilters {
+  const { state, sort, order, page, size, q, projects, failure, implementer, range } = search;
   const pageNumber = Number(page);
   const sizeNumber = Number(size);
+  const from = validDay(search.from);
+  const to = validDay(search.to);
   return {
-    state: RUN_FILTERS.includes(state as RunFilter) ? (state as RunFilter) : undefined,
+    q: typeof q === "string" && q.trim() !== "" ? q.trim() : undefined,
+    projects: keptList(projects),
+    state: keptList(state, RUN_GROUPS),
+    failure: keptList(failure, FAILURE_KINDS),
+    implementer: keptList(implementer),
+    range: range !== DEFAULT_RANGE && RUN_RANGES.includes(range as RunRange) ? (range as RunRange) : undefined,
+    from,
+    to: to != null && (from == null || to >= from) ? to : undefined,
     sort: RUN_SORTS.includes(sort as RunSort) ? (sort as RunSort) : undefined,
     order: order === "asc" || order === "desc" ? order : undefined,
     page: Number.isSafeInteger(pageNumber) && pageNumber > 1 ? pageNumber : undefined,

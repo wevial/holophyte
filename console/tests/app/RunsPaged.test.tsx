@@ -24,7 +24,7 @@ const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status
 const MINUTE = 60_000;
 const today = (hour: number, minute: number) => new Date(2026, 9, 15, hour, minute).getTime();
 const NOW = today(18, 0);
-const YESTERDAY = new Date(2026, 9, 14, 0, 0).getTime();
+const SINCE = new Date(2026, 9, 9, 0, 0).getTime();
 
 const run = (row: Partial<HistoryRow> & Pick<HistoryRow, "id" | "ticket" | "title" | "started_ms">): HistoryRow => ({
   ticket_url: null, attempt: 1, phase: "reviewing", outcome: null, outcome_reason: null, failure_kind: null,
@@ -42,7 +42,7 @@ interface Daemon {
   counts?: HistoryStateCounts;
 }
 
-/** Each daemon answers `/history` at yesterday's local midnight with its rows in the order given, cut at
+/** Each daemon answers `/history` at local midnight six days before today's with its rows in the order given, cut at
  *  `offset` and `limit`, the limit capped at 5000 as the daemon caps it, and with `total` and `counts` as given (else every row and none);
  *  every `/history` query it is asked lands in `asked`. */
 function fleet(demo: Daemon, writer: Daemon) {
@@ -57,13 +57,13 @@ function fleet(demo: Daemon, writer: Daemon) {
       if (!url.startsWith(`${base}/history?`)) continue;
       const params = new URL(url).searchParams;
       asked.push({ base, params });
-      if (params.get("since") !== String(YESTERDAY)) return new Response("bad since", { status: 400 });
+      if (params.get("since") !== String(SINCE)) return new Response("bad since", { status: 400 });
       const offset = Number(params.get("offset") ?? 0);
       const limit = Math.min(Number(params.get("limit") ?? 200), 5000);
       const ordered = typeof daemon.rows === "function" ? daemon.rows(params) : daemon.rows;
       const total = daemon.total ?? ordered.length;
       return Response.json({
-        rows: ordered.slice(offset, offset + limit), since: YESTERDAY, until: null, limit, offset, truncated: total > offset + limit, total,
+        rows: ordered.slice(offset, offset + limit), since: SINCE, until: null, limit, offset, truncated: total > offset + limit, total,
         counts: { state: daemon.counts ?? { active: 0, merged: 0, failed: 0, abandoned: 0 }, failure: {}, implementer: {} }, now: NOW,
       });
     }
@@ -101,7 +101,7 @@ const press = async (element: HTMLElement) => {
 };
 const button = (name: string) => screen.getByRole("button", { name });
 const paged = (state: string | null, offset: number, limit: number, sort = "started", order = "desc") => ({
-  since: String(YESTERDAY), ...(state ? { state } : {}), sort, order, offset: String(offset), limit: String(limit),
+  since: String(SINCE), ...(state ? { state } : {}), sort, order, offset: String(offset), limit: String(limit),
 });
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -121,11 +121,11 @@ afterAll(() => {
   else process.env.TZ = zone;
 });
 
-test("Runs asks each host once for the first 50 active runs newest first and reads the summed total in its pager", async () => {
+test("Runs asks each host once for the first 50 runs of the last 7 days newest first, in no state, and reads the summed total in its pager", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3), total: 3 }, { rows: runs("WRITER", 200, 2), total: 2 });
   await mount("#/runs", daemons.fetchImpl);
-  expect(daemons.askedOf(DEMO)).toEqual([paged("active", 0, 50)]);
-  expect(daemons.askedOf(WRITER)).toEqual([paged("active", 0, 50)]);
+  expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
+  expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 50)]);
   expect(button("Sort by started").getAttribute("aria-pressed")).toBe("true");
   expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
   expect(rows()).toHaveLength(5);
@@ -220,8 +220,8 @@ test("a sort head puts its sort and order in the hash, asks the hosts with them 
   expect(hashSearch().get("sort")).toBe("duration");
   expect(hashSearch().get("order")).toBe("desc");
   expect(hashSearch().has("page")).toBe(false);
-  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged("active", 0, 50, "duration", "desc"));
-  expect(daemons.askedOf(WRITER).at(-1)).toEqual(paged("active", 0, 50, "duration", "desc"));
+  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged(null, 0, 50, "duration", "desc"));
+  expect(daemons.askedOf(WRITER).at(-1)).toEqual(paged(null, 0, 50, "duration", "desc"));
   expect(list().getAttribute("aria-label")).toBe("Runs, longest first");
   expect(button("Sort by took").getAttribute("aria-pressed")).toBe("true");
 
@@ -254,24 +254,6 @@ test("sorted by took, two hosts' rows are drawn longest first, then shortest fir
 
   await press(button("Sort by took"));
   expect(shownIds()).toEqual(["4", "2", "3", "1"]);
-});
-
-test("the State buttons and the count line sum the hosts' state counts and totals, and a State button asks the hosts for its group", async () => {
-  const daemons = fleet(
-    { rows: runs("DEMO", 100, 6), total: 6, counts: { active: 1, merged: 3, failed: 2, abandoned: 0 } },
-    { rows: runs("WRITER", 200, 3), total: 3, counts: { active: 0, merged: 1, failed: 0, abandoned: 2 } },
-  );
-  await mount("#/runs?state=all", daemons.fetchImpl);
-  const group = screen.getByRole("group", { name: "State" });
-  expect(within(group).getAllByRole("button").map((each) => each.textContent)).toEqual(["All 9", "Active 1", "Merged 4", "Failed 2", "Abandoned 2"]);
-  expect(document.querySelector("[data-count-line]")!.textContent).toStartWith("all projects · 9 runs / 1 active");
-
-  await press(within(group).getByRole("button", { name: "Failed 2" }));
-  expect(hashSearch().get("state")).toBe("failed");
-  expect(hashSearch().has("page")).toBe(false);
-  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged("failed", 0, 50));
-  expect(daemons.askedOf(WRITER).at(-1)).toEqual(paged("failed", 0, 50));
-  expect(within(group).getByRole("button", { pressed: true }).textContent).toStartWith("Failed");
 });
 
 test("the controls row hides after 24px of scrolling down once the dock is stuck and shows after 24px up, ignoring jitter and the 150ms after a toggle", async () => {
@@ -355,23 +337,19 @@ test("the controls row hides after 24px of scrolling down once the dock is stuck
   expect(controls.hasAttribute("inert")).toBe(false);
 });
 
-test("unknown sort, order, page and size open newest first on page 1 at 50 a page, and state=merged still presses Merged", async () => {
+test("unknown sort, order, page and size open newest first on page 1 at 50 a page", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs?sort=size&order=up&page=0&size=7", daemons.fetchImpl);
-  expect(daemons.askedOf(DEMO)).toEqual([paged("active", 0, 50)]);
-  expect(daemons.askedOf(WRITER)).toEqual([paged("active", 0, 50)]);
+  expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
+  expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 50)]);
   expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
   expect((screen.getByRole("combobox", { name: "Rows a page" }) as HTMLSelectElement).value).toBe("50");
   expect(range()).toBe("1–3 of 3");
-  cleanup();
-
-  await mount("#/runs?state=merged", daemons.fetchImpl);
-  expect(within(screen.getByRole("group", { name: "State" })).getByRole("button", { pressed: true }).textContent).toStartWith("Merged");
 });
 
 test("a scope with no runs says so and draws no pager", async () => {
   await mount("#/runs?project=demo", fleet({ rows: [] }, { rows: runs("WRITER", 200, 3) }).fetchImpl);
-  expect(screen.getByText("No active runs in demo today or yesterday.")).toBeTruthy();
+  expect(screen.getByText("No runs in demo in the last 7 days.")).toBeTruthy();
   expect(pager()).toBeNull();
 });
 
@@ -385,7 +363,7 @@ test("a page past the last one goes back to the last page with runs, and an empt
 
   await mount("#/runs?project=demo&page=2", fleet({ rows: [] }, { rows: [] }).fetchImpl);
   expect(hashSearch().has("page")).toBe(false);
-  expect(screen.getByText("No active runs in demo today or yesterday.")).toBeTruthy();
+  expect(screen.getByText("No runs in demo in the last 7 days.")).toBeTruthy();
   expect(pager()).toBeNull();
 });
 

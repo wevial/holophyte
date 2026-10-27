@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { formatClock, formatSettled } from "../../lib/format";
+import { formatClock, formatSettled, formatStamp } from "../../lib/format";
 import { localMidnight } from "../../lib/ledger";
 import type { RunOrder, RunRow, RunSort } from "../history";
 import { runPage } from "../run";
@@ -15,7 +15,9 @@ const DASH = "–";
 const NEEDS_YOU = new Set<State>(["stale", "question", "paused", "ready_to_merge"]);
 
 function clock(ms: number, now: number): string {
-  return ms < localMidnight(now) ? `yest ${formatClock(ms)}` : formatClock(ms);
+  const today = localMidnight(now);
+  if (ms >= today) return formatClock(ms);
+  return ms >= localMidnight(today - 1) ? `yest ${formatClock(ms)}` : formatStamp(ms);
 }
 
 export function prNumber(url: string | null): string {
