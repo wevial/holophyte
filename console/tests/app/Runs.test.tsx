@@ -355,13 +355,13 @@ test("a scoped filter with no runs says no runs match, with no Show all projects
   expect(sessionStorage.getItem("holophyte.next.project")).toBe("demo");
 });
 
-test("the footer links to older days with project scope and names the time zone", async () => {
+test("the footer holds no link to older days and names the time zone", async () => {
   await mount("#/runs?project=demo", sixRuns());
   const footer = document.querySelector("section footer")!;
-  expect(within(footer as HTMLElement).getByRole("link", { name: "Older days" }).getAttribute("href")).toEndWith("#/runs/history?project=demo");
+  expect(within(footer as HTMLElement).queryAllByRole("link")).toEqual([]);
+  expect(footer.querySelector('a[href*="#/runs/history"]')).toBeNull();
   expect(Array.from(footer.children, (line) => line.textContent)).toEqual([
     "Active runs also show on the Overview. Open a run for its stage, log and agent.",
-    "Older days",
     "times show in PDT",
   ]);
 });

@@ -1,6 +1,6 @@
 import { zoneName } from "./runShared";
 import { useContext, useEffect, useRef, useState, type RefObject } from "react";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Btn } from "../components/Btn";
 import { ChevronIcon } from "../components/icons";
 import { dayRangeLabel, FilterPopover, RangeButtons, SearchField, type FilterSection } from "../components/ListFilters";
@@ -251,7 +251,6 @@ export function Runs() {
       )}
       <footer className="flex flex-wrap gap-x-[18px] gap-y-1.5 font-mono text-[12px] leading-[1.4] text-ink-3">
         <span>Active runs also show on the Overview. Open a run for its stage, log and agent.</span>
-        <Link to="/runs/history" search={{ project }} className="text-act underline underline-offset-2">Older days</Link>
         <span>times show in {zoneName(now)}</span>
       </footer>
     </section>

@@ -94,49 +94,6 @@ export function withinDays(groups: DayGroup[], days: number): DayGroup[] {
   return groups.filter((group) => group.daysAgo < days);
 }
 
-export type BoxClass = "ok" | "warn" | "over";
-
-/** Actual over the box: ok at or under 80 %, warn above 80 % up to 100 %,
- *  over past 100 %; null with no box to compare against. */
-export function boxRatio(actualMin: number, estimateMin: number | null): BoxClass | null {
-  if (estimateMin == null || estimateMin <= 0) return null;
-  const ratio = actualMin / estimateMin;
-  if (ratio > 1) return "over";
-  if (ratio > 0.8) return "warn";
-  return "ok";
-}
-
-/** The bar's fill as a share of its track, capped at full; empty with no box. */
-export function boxFill(actualMin: number, estimateMin: number | null): number {
-  if (estimateMin == null || estimateMin <= 0) return 0;
-  return Math.min(1, Math.max(0, actualMin / estimateMin));
-}
-
-/** "18m / 30m" beside the bar; "18m / —" with no box. */
-export function minutesLabel(actualMin: number, estimateMin: number | null): string {
-  const box = estimateMin == null || estimateMin <= 0 ? "—" : `${Math.round(estimateMin)}m`;
-  return `${Math.round(actualMin)}m / ${box}`;
-}
-
-/** The signed difference of the rounded minutes: "−12m", "+8m", "0m";
- *  empty with no box. */
-export function deltaLabel(actualMin: number, estimateMin: number | null): string {
-  if (estimateMin == null || estimateMin <= 0) return "";
-  const delta = Math.round(actualMin) - Math.round(estimateMin);
-  if (delta < 0) return `−${-delta}m`;
-  if (delta > 0) return `+${delta}m`;
-  return "0m";
-}
-
-export type DeltaTone = "ok" | "over" | "muted";
-
-/** Under the box reads in the ok text, past it in the over text, on it muted. */
-export function deltaTone(actualMin: number, estimateMin: number | null): DeltaTone {
-  if (estimateMin == null || estimateMin <= 0) return "muted";
-  const delta = Math.round(actualMin) - Math.round(estimateMin);
-  return delta < 0 ? "ok" : delta > 0 ? "over" : "muted";
-}
-
 /** The short form of a merge sha; empty with none. */
 export function shortSha(sha: string | null): string {
   return sha ? sha.slice(0, 7) : "";

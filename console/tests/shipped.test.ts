@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boxFill, boxRatio, deltaLabel, deltaTone, groupByDay, minutesLabel, tagRows, todayMerges, withinDays } from "../src/lib/shipped";
+import { groupByDay, tagRows, todayMerges, withinDays } from "../src/lib/shipped";
 import type { ShippedWireRow } from "../src/lib/types";
 import { fixture } from "./harness";
 
@@ -38,23 +38,6 @@ test("todayMerges orders the merges of several hosts newest first", () => {
     { ...ROWS[0]!, id: 9, ended_ms: Date.UTC(2026, 8, 5, 8, 0), outcome: "merged", daemon: "http://writer:7711" },
   ];
   expect(todayMerges(rows, now, "UTC").map((kept) => kept.id)).toEqual([9, 7]);
-});
-
-test("the bar is ok at or under 80 %, warn above 80 % to 100 %, over past it; the delta signs and tones follow", () => {
-  expect([24, 25, 30, 38].map((actual) => boxRatio(actual, 30))).toEqual(["ok", "warn", "warn", "over"]);
-  expect([24, 25, 30, 38].map((actual) => deltaLabel(actual, 30))).toEqual(["−6m", "−5m", "0m", "+8m"]);
-  expect([24, 25, 30, 38].map((actual) => deltaTone(actual, 30))).toEqual(["ok", "ok", "muted", "over"]);
-  expect(boxFill(38, 30)).toBe(1);
-  expect(boxFill(24, 30)).toBeCloseTo(0.8, 9);
-});
-
-test("no box: the bar is empty, the minutes read Nm / — and there is no delta", () => {
-  expect(boxRatio(15, null)).toBeNull();
-  expect(boxRatio(15, 0)).toBeNull();
-  expect(boxFill(15, null)).toBe(0);
-  expect(minutesLabel(15.4, null)).toBe("15m / —");
-  expect(minutesLabel(17.6, 30)).toBe("18m / 30m");
-  expect(deltaLabel(15, null)).toBe("");
 });
 
 test("rows from two daemons each carry the name of that daemon's /status project", () => {

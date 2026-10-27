@@ -1,38 +1,4 @@
-import { boxFill, boxRatio, commitLink, deltaLabel, deltaTone, minutesLabel, prLabel, shortSha } from "../../lib/shipped";
-
-const FILLS = { ok: "bg-ok", warn: "bg-warn", over: "bg-bad" };
-const DELTA = { ok: "text-ok-text", over: "text-bad-text", muted: "text-muted" };
-
-/** Actual against the time box: a 6px bar green at or under 80 %, amber
- *  above, red past the box, then "18m / 30m" and the signed delta. */
-export function ActualVsBox({ actualMin, estimateMin }: { actualMin: number; estimateMin: number | null }) {
-  const tone = boxRatio(actualMin, estimateMin);
-  const delta = deltaLabel(actualMin, estimateMin);
-  return (
-    <span className="flex items-center gap-2">
-      <span
-        role="progressbar"
-        aria-valuenow={Math.round(boxFill(actualMin, estimateMin) * 100)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        data-tone={tone ?? "none"}
-        className="block h-[6px] w-[92px] shrink-0 overflow-hidden rounded-[3px] bg-track"
-      >
-        {tone && (
-          <span className={`block h-full ${FILLS[tone]}`} style={{ width: `${boxFill(actualMin, estimateMin) * 100}%` }} />
-        )}
-      </span>
-      <span data-minutes className="font-mono text-[11px] text-muted">
-        {minutesLabel(actualMin, estimateMin)}
-      </span>
-      {delta && (
-        <span data-delta={deltaTone(actualMin, estimateMin)} className={`font-mono text-[11px] ${DELTA[deltaTone(actualMin, estimateMin)]}`}>
-          {delta}
-        </span>
-      )}
-    </span>
-  );
-}
+import { commitLink, prLabel, shortSha } from "../../lib/shipped";
 
 const SHA_CLASS = "font-mono text-[12px] text-link";
 
