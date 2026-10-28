@@ -7,6 +7,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from holophyte.agents.agent_output import AgentOutput, claude_usage, count
+from holophyte.config.reader import IMPL_EFFORT, IMPL_MODEL
 from holophyte.redact import register_values
 
 READ_ONLY_TOOLS = ["Bash", "Edit", "Write", "NotebookEdit"]
@@ -35,19 +36,20 @@ def run_turn(seat, goal, cwd, timeout):
             f"the claude_agent_sdk package is not importable ({missing}); "
             f"install claude-agent-sdk") from None
     stderr = []
-    options = sdk.ClaudeAgentOptions(
-        cli_path=cli_path(seat.binary), cwd=str(cwd),
-        model=seat.options.get("model"), effort=seat.options.get("effort"),
-        disallowed_tools=list(READ_ONLY_TOOLS),
-        setting_sources=list(SETTING_SOURCES),
-        system_prompt={"type": "preset", "preset": "claude_code"},
-        env=credential_env(seat.options), stderr=stderr.append)
     command = seat.named(seat.turn(goal))
     try:
+        options = sdk.ClaudeAgentOptions(
+            cli_path=cli_path(seat.binary), cwd=str(cwd),
+            model=seat.options.get("model", IMPL_MODEL),
+            effort=seat.options.get("effort", IMPL_EFFORT),
+            disallowed_tools=list(READ_ONLY_TOOLS),
+            setting_sources=list(SETTING_SOURCES),
+            system_prompt={"type": "preset", "preset": "claude_code"},
+            env=credential_env(seat.options), stderr=stderr.append)
         result = asyncio.run(bounded(sdk, options, goal, timeout, command))
     except sdk.CLINotFoundError as error:
         raise LaunchError(f"claude binary not found: {error}") from error
-    except subprocess.TimeoutExpired:
+    except (LaunchError, subprocess.TimeoutExpired):
         raise
     except Exception as error:
         cause = (str(error).splitlines() or [type(error).__name__])[0]
