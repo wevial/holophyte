@@ -732,7 +732,7 @@ class MergeModePullRequestTests(MergeModeFixture):
             [(f"Fast-forwarded {BRANCH} to {theirs} from origin (1 commit(s)"
               " pushed by someone else)",)])
         self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "merge"])
+                         ["state", "state", "merge"])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
                                    " WHERE id = 2"),
                          [("merged", self.MERGE_SHA)])
