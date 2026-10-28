@@ -402,15 +402,26 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
 
 
     def test_pr_merged_by_a_person_during_a_covering_review_ends_the_run_merged(self):
-        self.configure('[merge]\nmode = "pr"\npr_quiet_sec = 0\n')
+        self.merged_during_a_covering_review(
+            "", REQUEST_CHANGES, Commit("fix: the covering review's finding"),
+            APPROVE, Idle(""))
+
+    def test_pr_merged_during_a_covering_review_approving_unchanged_ends_merged(self):
+        self.merged_during_a_covering_review("", APPROVE, Idle(""))
+
+    def test_pr_merged_during_a_covering_review_at_the_pass_cap_ends_merged(self):
+        self.merged_during_a_covering_review(
+            "pr_rounds = 2\n", REQUEST_CHANGES,
+            Commit("fix: the covering review's finding"), APPROVE, Idle(""))
+
+    def merged_during_a_covering_review(self, merge, *review):
+        self.configure(f'[merge]\nmode = "pr"\npr_quiet_sec = 0\n{merge}')
         self.fake_route(states=[self.pr_state([self.DEFECT]),
                                 self.pr_state(),
                                 self.pr_state(merged=True)])
         fake = FakeAgent(Commit("the scripted work"), APPROVE, Idle(""),
                          Reply("THREAD 1: ADDRESS -- a real crash"),
-                         Commit("fix: default load()"), REQUEST_CHANGES,
-                         Commit("fix: the covering review's finding"), APPROVE,
-                         Idle(""))
+                         Commit("fix: default load()"), *review)
         with no_agent_processes(), \
                 patch.dict(sys.modules,
                            {"holophyte.board.linear_provider": self.provider()}), \
