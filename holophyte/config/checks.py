@@ -33,6 +33,7 @@ from holophyte.config.reader import (
     DOCKER_PROBE_TIMEOUT,
     KNOWN_KEYS,
     adversary_credential,
+    critic_fallback,
 )
 from holophyte.config.review_settings import review_config
 from holophyte.config.serve_settings import console_config, serve_config
@@ -117,6 +118,7 @@ def check_document(project):
 
 
 def check_agent_fallbacks(project):
+    critic_fallback(project)
     for role, key in AGENT_CONFIG_KEYS.items():
         for entry in range(len(fallback_entries(project, role))):
             fallback = agent_command(project, role, "", fallback=True,

@@ -9,6 +9,7 @@ import store
 import store.board
 import store.read
 from holophyte.agents.agent_routes import routes
+from holophyte.agents.agent_turns import record_turn, timed_turn
 from holophyte.agents.harness import critic_seat
 from holophyte.board.projection import (
     comment_body,
@@ -64,6 +65,7 @@ FRESHNESS: UNSURE <one-line reason>
 FRESHNESS_LINE = re.compile(r"FRESHNESS:\s+(FRESH|STALE|UNSURE)(?:\s+(.*))?")
 WARNINGS = {}
 ADVISORIES = {}
+TURNS = {}
 
 
 def _git(repo, *args):
@@ -445,8 +447,11 @@ def ask_critic(conn, project, task):
     from holophyte.agents.review_workspace import critic_workspace
     goal = critic_brief(conn, project, task)
     with critic_workspace(project) as checkout:
-        return str(holophyte.loop.review_round.agent(project, "critic", goal, checkout,
-                                        timeout=CRITIC_TIMEOUT))
+        return str(timed_turn(
+            project, "critic", "critic",
+            lambda: holophyte.loop.review_round.agent(
+                project, "critic", goal, checkout, timeout=CRITIC_TIMEOUT),
+            lambda payload, _: TURNS.__setitem__(task["id"], payload)))
 
 
 def _failure(error):
@@ -458,6 +463,7 @@ def _failure(error):
 
 def critic_admits(project, conn, project_id, provider, task):
     WARNINGS.pop(task["id"], None)
+    TURNS.pop(task["id"], None)
     if not critic_due(project, task):
         return True
     try:
@@ -473,6 +479,7 @@ def critic_admits(project, conn, project_id, provider, task):
     verdict, reason = answer
     if verdict == "fresh":
         return True
+    TURNS.pop(task["id"], None)
     park_stale(project, conn, project_id, provider, task,
                [f"critic: {verdict} \u2014 {reason}"],
                why=f"the critic answered {verdict.upper()}", admitted=True,
@@ -481,6 +488,9 @@ def critic_admits(project, conn, project_id, provider, task):
 
 
 def carry_warning(conn, run_id, task):
+    turn = TURNS.pop(task["id"], None)
+    if turn is not None:
+        record_turn(conn, run_id, turn)
     warning = WARNINGS.pop(task["id"], None)
     if warning is not None:
         store.record_event(conn, run_id, "warning", warning)

@@ -116,11 +116,17 @@ def writer_turn(project, goal, cwd, timeout, on_start):
 
 
 def critic_turn(project, goal, cwd, timeout):
-    """No fallback: the critic is advice, and a claim goes ahead when it fails."""
+    """Advice only: a claim goes ahead when the turn fails, with no mid-turn switch."""
+    goal = outbound(goal, known_secrets(project.config()))
+    cap = PROBE_TIMEOUT if timeout is None else timeout
+    fallback = routes(project).commands.get("critic")
+    if fallback is not None:
+        argv = shlex.split(fallback) + [goal]
+        code, output = run_capped(argv, cwd, cap)
+        return AgentOutput(output.strip(), shlex.join(argv[:-1]), exit_code=code)
     seat = critic_seat(project)
-    argv = seat.turn(outbound(goal, known_secrets(project.config())))
-    code, output = run_capped(argv, cwd, PROBE_TIMEOUT if timeout is None
-                              else timeout)
+    argv = seat.turn(goal)
+    code, output = run_capped(argv, cwd, cap)
     return AgentOutput(output.strip(), seat.named(argv), exit_code=code)
 
 

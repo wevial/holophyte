@@ -73,6 +73,7 @@ KNOWN_KEYS = {
     "agents": frozenset(AGENT_CONFIG_KEYS.values()) | frozenset(REVIEW_ROUTE_KEYS)
               | frozenset(REVIEW_FALLBACK_KEYS) | frozenset(REVIEW_TIER_KEYS)
               | frozenset(AGENT_FALLBACK_KEYS) | frozenset({"budget_scale",
+                  "critic_fallback",
                   "turn_cap_min", "turn_quiet_sec",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
@@ -122,6 +123,16 @@ def adversary_credential(project):
             "environment")
     register_values([os.environ.get(value["env"], "")])
     return value["env"]
+
+
+def critic_fallback(project):
+    command = config_table(project, "agents").get("critic_fallback")
+    if command is not None and not (isinstance(command, str)
+                                    and command.strip()):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] critic_fallback must be "
+            "a non-empty command string")
+    return command
 
 
 def config_table(project, name):

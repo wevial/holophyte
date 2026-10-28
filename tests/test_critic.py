@@ -11,6 +11,9 @@ import contextlib
 import io
 import json
 import os
+import re
+import shlex
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -23,12 +26,20 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 # Both discovery and named-module unittest commands need the harness on sys.path.
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, Commit, Critic, FakeAgent  # noqa: E402
+from fake_agent import (  # noqa: E402
+    AGENT_BINARIES,
+    APPROVE,
+    Commit,
+    Critic,
+    FakeAgent,
+    SpawnGuard,
+)
 from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.agents.fallback  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.harness  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
+import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
@@ -178,6 +189,82 @@ class CriticProbeTests(unittest.TestCase):
             holophyte.loop.pool.worker(project, SimpleNamespace(team="test"))
         self.assertEqual(seen, [True])
         self.assertEqual(self.critic_calls(), [])
+
+    def with_fallback(self, extra=""):
+        fallback = self.repo.parent / "critic-fallback"
+        fallback.write_text(f"#!{sys.executable}\n{FAKE_CODEX}")
+        fallback.chmod(0o755)
+        command = f"{fallback} --model sonnet"
+        project = self.target(f'[agents]\n{extra}critic_fallback = "{command}"\n'
+                              f'[agents.critic]\n[harnesses]\ncodex = "{self.fake}"\n')
+        return project, fallback, command
+
+    def route_fallbacks(self):
+        conn = sqlite3.connect(self.holo / "store.db")
+        self.addCleanup(conn.close)
+        return [json.loads(guidance)["seat"] for (guidance,) in conn.execute(
+            "SELECT guidance FROM interventions WHERE action = 'route_fallback'"
+            " AND runId IS NULL")]
+
+    def test_a_failed_critic_probe_switches_to_a_passing_critic_fallback(self):
+        project, fallback, command = self.with_fallback()
+        failing = self.fake.read_text().replace(
+            'if os.environ.get("FAKE_CRITIC_FAIL"):', "if True:")
+        self.fake.write_text(failing)
+
+        started, printed = self.start(project, activate=False)
+
+        self.assertTrue(started)
+        self.assertIn("critic probe failed (exit 1)", printed)
+        self.assertRegex(printed, r"critic route down \(.+\); using fallback: .*"
+                         + re.escape(str(fallback)))
+        self.assertFalse(routes(project).critic_failed)
+        self.assertEqual(routes(project).commands["critic"], command)
+        self.assertEqual(self.route_fallbacks(), ["critic"])
+
+    def test_a_critic_whose_fallback_also_fails_is_off_and_the_loop_starts(self):
+        project, _, _ = self.with_fallback()
+        with patch.dict("os.environ", {"FAKE_CRITIC_FAIL": "1"}):
+            started, printed = self.start(project)
+
+        self.assertTrue(started)
+        self.assertIn(
+            "[holo2] critic route down; claims skip the relevance check", printed)
+        self.assertTrue(routes(project).critic_failed)
+        self.assertNotIn("critic", routes(project).commands)
+        self.assertEqual(len(self.critic_calls()), 2)
+
+    def test_a_scheduler_on_the_critic_fallback_hands_it_to_its_workers(self):
+        writer = self.repo.parent / "writer.sh"
+        writer.write_text("#!/bin/sh\necho ready\n")
+        writer.chmod(0o755)
+        project, _, command = self.with_fallback(f'writer = "{writer}"\n')
+        failing = self.fake.read_text().replace(
+            'if os.environ.get("FAKE_CRITIC_FAIL"):', "if True:")
+        self.fake.write_text(failing)
+        started, _ = self.start(project, activate=False)
+        self.assertTrue(started)
+        probed = len(self.critic_calls())
+        spawned, seen = [], []
+
+        def spawn(argv, env, **_):
+            spawned.append(env)
+            return SimpleNamespace(pid=1)
+
+        def claim(target, _):
+            seen.append(routes(target).commands.get("critic"))
+        fallback_env = holophyte.loop.pool.CRITIC_FALLBACK_ENV
+        with patch.object(holophyte.loop.pool, "SPAWN", spawn), \
+                contextlib.redirect_stdout(io.StringIO()):
+            holophyte.loop.pool._spawn_worker(project, 1)
+        self.assertEqual(spawned[0].get(fallback_env), "1")
+        with patch.dict("os.environ", {fallback_env: spawned[0][fallback_env]}), \
+                patch.object(holophyte.loop.pool, "_worker", claim), \
+                contextlib.redirect_stdout(io.StringIO()):
+            holophyte.loop.pool.worker(project, SimpleNamespace(team="test"))
+
+        self.assertEqual(seen, [command])
+        self.assertEqual(len(self.critic_calls()), probed)
 
 
 HOUR_MS = 3600 * 1000
@@ -450,6 +537,110 @@ class ClaudeCriticTests(LoopFixture):
         comments = dict(provider.comments)
         self.assertIn("critic: stale", comments["iss-131"])
         self.assertIn("already done by KO-5", comments["iss-131"])
+
+
+class CriticFallbackTurnTests(LoopFixture):
+    def test_a_critic_on_its_fallback_runs_the_fallback_command_in_a_detached_checkout(
+            self):
+        calls = self.target.parent / "fallback-calls.jsonl"
+        fallback = self.target.parent / "critic-fallback"
+        fallback.write_text(
+            f"#!{sys.executable}\nimport json, os, subprocess, sys\n"
+            "git = lambda *a: subprocess.run(['git', *a], capture_output=True,"
+            " text=True)\n"
+            f"with open({str(calls)!r}, 'a') as out:\n"
+            "    out.write(json.dumps({'argv': sys.argv, 'cwd': os.getcwd(),"
+            " 'head': git('rev-parse', 'HEAD').stdout.strip(),"
+            " 'detached': git('symbolic-ref', '-q', 'HEAD').returncode != 0})"
+            " + '\\n')\n"
+            "print('ready' if 'single word: ready' in sys.argv[-1] else"
+            " 'FRESHNESS: STALE already done by KO-5')\n")
+        fallback.chmod(0o755)
+        down = self.target.parent / "critic-down"
+        down.write_text("#!/bin/sh\nexit 1\n")
+        down.chmod(0o755)
+        command = f"{fallback} --model sonnet"
+        self.configure(f'[agents]\ncritic_fallback = "{command}"\n'
+                       f'[agents.critic]\n[harnesses]\ncodex = "{down}"\n'
+                       '[loop]\ncritic_after_hours = 12\n')
+        self.addCleanup(reset, self.project)
+        task = filed(13, 1)
+        provider = StubProvider(task)
+        conn = holophyte.loop.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project_id = tickets.ensure_project(conn, provider.team, self.target)
+        with patch.object(sys, "stdout", io.StringIO()):
+            holophyte.agents.probes.probe_critic(self.project, provider,
+                                                 activate=True)
+            admitted = holophyte.review.freshness.critic_admits(
+                self.project, conn, project_id, provider, task)
+
+        self.assertFalse(admitted)
+        comments = dict(provider.comments)
+        self.assertIn("critic: stale", comments["iss-131"])
+        self.assertIn("already done by KO-5", comments["iss-131"])
+        turn = [json.loads(line) for line in calls.read_text().splitlines()][-1]
+        self.assertEqual(turn["argv"][:-1], shlex.split(command))
+        self.assertIn("Ticket KO-131:", turn["argv"][-1])
+        self.assertTrue(turn["detached"])
+        self.assertEqual(turn["head"], self.git("rev-parse", "main").strip())
+        self.assertFalse(Path(turn["cwd"]).exists())
+
+
+class RealCritic:
+    """The real `agent()` for the critic's turn; `fake` answers every other."""
+
+    def __init__(self, fake):
+        self.fake = fake
+
+    def __call__(self, target, role, *args, **kwargs):
+        answer = holophyte.agents.roles.agent if role == "critic" else self.fake
+        return answer(target, role, *args, **kwargs)
+
+
+class CriticTurnRecordTests(LoopFixture):
+    def claimed_with(self, answer):
+        """KO-131, filed 13 hours ago, claimed past a claude critic stub that
+        runs `answer` after it passes its probe; the run's critic turns."""
+        stub = self.target.parent / "claude"
+        stub.write_text(
+            f"#!{sys.executable}\nimport sys, time\n"
+            "if 'single word: ready' in sys.argv[-1]:\n"
+            "    print('ready')\n    sys.exit(0)\n" + answer)
+        stub.chmod(0o755)
+        self.configure('[agents.critic]\nharness = "claude"\nmodel = "sonnet"\n'
+                       f'effort = "high"\n[harnesses]\nclaude = "{stub}"\n'
+                       '[loop]\ncritic_after_hours = 12\n')
+        self.addCleanup(reset, self.project)
+        guard = SpawnGuard(blocked=tuple(name for name in AGENT_BINARIES
+                                         if name != "claude"))
+        with patch.object(sys, "stdout", io.StringIO()):
+            self.loop(fake=RealCritic(FakeAgent(Commit("one"), APPROVE)),
+                      provider=StubProvider(filed(13, 1)), guard=guard)
+        turns = [json.loads(payload) for (payload,) in self.read(
+            "SELECT e.payload FROM runEvents e JOIN runs r ON r.id = e.runId"
+            " JOIN tickets t ON t.id = r.ticketId WHERE e.kind = 'agent_turn'"
+            " AND t.linearIdentifier = 'KO-131' ORDER BY e.seq")]
+        return [turn for turn in turns if turn["role"] == "critic"]
+
+    def test_a_critic_turn_that_admits_is_recorded_on_the_claimed_run(self):
+        [turn] = self.claimed_with("print('FRESHNESS: FRESH')\n")
+
+        self.assertEqual(turn["route"], "primary")
+        self.assertTrue(turn["label"].endswith("sonnet"), turn["label"])
+        self.assertEqual(turn["exit_status"], 0)
+        self.assertFalse(turn["timed_out"])
+        self.assertGreaterEqual(turn["seconds"], 0)
+
+    def test_a_critic_turn_that_times_out_is_recorded_on_the_claimed_run(self):
+        with patch.object(holophyte.review.freshness, "CRITIC_TIMEOUT", 2):
+            turns = self.claimed_with("time.sleep(30)\n")
+
+        self.assertIn("critic: its turn failed (timed out after 2 seconds)",
+                      [summary for (summary,) in self.read(
+                          "SELECT summary FROM runEvents WHERE kind = 'warning'"
+                          " AND summary LIKE 'critic:%'")][0])
+        self.assertEqual([turn["timed_out"] for turn in turns], [True])
 
 
 class CriticAnswerTests(unittest.TestCase):

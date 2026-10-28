@@ -30,6 +30,7 @@ WORKER_BOARD_DOWN = 5
 WORKER_HANDOFF = 6
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
+CRITIC_FALLBACK_ENV = "HOLOPHYTE_CRITIC_FALLBACK"
 SPAWN = subprocess.Popen
 
 
@@ -81,7 +82,7 @@ def worker(target, provider):
     banner()
     configured = target.config().get("agents") or {}
     reset(target)
-    routes(target).critic_failed = os.environ.get(CRITIC_DOWN_ENV) == "1"
+    inherit_critic(target)
     try:
         if any(k in configured for k in ("writer", "trimmer", *AGENT_FALLBACK_KEYS,
                                          *REVIEW_FALLBACK_KEYS)):
@@ -94,6 +95,17 @@ def worker(target, provider):
     finally:
         reset(target)
     return gate_build.replace_into_gate(result.run_id)
+
+
+def inherit_critic(target):
+    from holophyte.agents.agent_routes import routes
+    from holophyte.config.reader import critic_fallback
+
+    state = routes(target)
+    state.critic_failed = os.environ.get(CRITIC_DOWN_ENV) == "1"
+    fallback = critic_fallback(target)
+    if os.environ.get(CRITIC_FALLBACK_ENV) == "1" and fallback is not None:
+        state.commands["critic"] = fallback
 
 
 def _hand_off_gate_run(target, provider):
@@ -532,9 +544,12 @@ def _spawn_worker(target, slot):
 
     program, argv = reexec_command()
     env = dict(os.environ, **{WORKER_SLOT_ENV: str(slot)})
-    env.pop(CRITIC_DOWN_ENV, None)
+    for key in (CRITIC_DOWN_ENV, CRITIC_FALLBACK_ENV):
+        env.pop(key, None)
     if routes(target).critic_failed:
         env[CRITIC_DOWN_ENV] = "1"
+    if "critic" in routes(target).commands:
+        env[CRITIC_FALLBACK_ENV] = "1"
     child = SPAWN([program, *argv[1:], "--worker"], env=env,
                   stdin=subprocess.DEVNULL)
     print(f"[holo2] started worker {slot} as pid {child.pid}")

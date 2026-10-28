@@ -9,7 +9,7 @@ container. When the verify gate and the review both pass, the candidate lands
 by a local `--no-ff` merge or, under `[merge] mode = "pr"`, through a pull
 request the babysitter watches through its checks and review threads;
 `[merge] approve = "human"` parks it for an operator either way. Python and
-SQLite, with two pinned runtime dependencies.
+SQLite, with three pinned runtime dependencies.
 
 A ticket can belong to a [story](holophyte/tickets/templates/storyTemplate.md) ([its config](docs/config.md#story)), and where
 `[merge] ui_paths` is set one declaring a major UI change needs an approved mock-up
@@ -24,10 +24,11 @@ Python 3.11+ and Git on the host, and Docker for the reviewer container and,
 under `[agents] implementer_isolation = "container"`, the implementer's turns.
 A Linear board, and only a Linear board, needs `LINEAR_API_KEY` in the
 environment or a `.env` at the checkout root (beside `factory.py`).
-`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit` and `mcp` are the runtime dependencies, pinned in
+`ruff` is the one developer tool (`pip install --user ruff`). `tomlkit`, `mcp` and `claude-agent-sdk` are the runtime dependencies, pinned in
 `requirements.txt` (`python3 -m pip install --user -r requirements.txt`);
 the daemon needs `tomlkit` to edit a config in place and exits naming it
-when it is missing, and only `holo mcp` needs `mcp`.
+when it is missing, only `holo mcp` needs `mcp`, and nothing imports
+`claude-agent-sdk` yet (it is for the upcoming SDK critic backend).
 `python3 -m pip install --user -e .` in the checkout installs
 the `holo` command, which imports from the checkout and so follows its
 `HEAD`. Bun is needed

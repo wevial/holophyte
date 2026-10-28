@@ -129,7 +129,8 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
         has_fallback = seat + "_fallback" in table or (
             container_pair_seat(project, role)
             and container_fallback_profile(project, role))
-        if role == "trim" or (role != "implement" and not has_fallback):
+        if role in ("trim", "critic") or (role != "implement"
+                                          and not has_fallback):
             continue
         probe = ((implementer_probe or probe_implementer)(project)
                  if role == "implement" else
@@ -147,8 +148,8 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
     probe_writer(project, activate=activate)
     probe_trimmer(project, provider, activate=activate)
     if critic:
-        # Even a scheduler keeps `critic_failed`: its workers inherit it.
-        probe_critic(project, activate=True)
+        # Even a scheduler keeps the critic's route: its workers inherit it.
+        probe_critic(project, provider, activate=True)
     return True
 
 

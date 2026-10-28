@@ -461,7 +461,8 @@ JSON-RPC error, -32602. stdout carries only protocol messages, and closing stdin
 `holo mcp --http [HOST:PORT]` serves the same tools over HTTP at `POST
 /mcp`, on the writer host behind its machine token, the writes only under
 `host.toml`'s `[serve] actions`: [`POST /mcp`](http.md#post-mcp).
-`holo mcp` alone needs the MCP Python SDK (`mcp` in `requirements.txt`);
+`holo mcp` alone needs the MCP Python SDK (`mcp` in `requirements.txt`,
+beside `claude-agent-sdk`, which nothing imports yet);
 without it, it exits 1 naming the package and
 `python3 -m pip install --user -r requirements.txt`, and every other
 command runs as before.

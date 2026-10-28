@@ -92,6 +92,7 @@ implementer's command and isolation settings.
 | `adjudicator_fallback` | Default: Absent (disabled) | Non-empty command string distinct from the primary; set for a probed backup adjudicator. |
 | `adversary_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `adversary`; set for a probed backup adversary. When it is set startup probes the adversary seat, and an adversary turn whose output carries an outage line probes it and switches to it, as `reviewer_fallback` does. An adversary turn whose Codex output cannot be read, or whose container exits non-zero, also probes the fallback and switches to it, running the pass once on it. With no fallback such a turn fails the run as `review_route`, with the unreadable line, the output's tail and the exit status recorded as a `review_boundary` event. |
 | `trimmer_fallback` | Default: Absent (disabled) | Non-empty command string distinct from `trimmer`; set for a probed backup trimmer. Startup activates it when the trimmer's probe fails and its own passes, and a trim turn whose output carries an outage line switches to it; a trimmer that fails with no fallback, or a fallback that fails its probe, reverts that run's trim. |
+| `critic_fallback` | Default: Absent (disabled) | Non-empty command string, run with the critic's brief as its last argument; set it for a probed backup critic. Startup probes it in a throwaway directory when the critic's probe fails; when it passes, startup prints the switch, records a `route_fallback` project intervention for seat `critic`, and the critic's turns run it in the same detached checkout of `main`. The switch happens at startup only: a failed critic turn later still claims with a warning. When both routes fail the critic is off, as with no fallback. |
 | `implementer_profiles` | Default: Absent (every ticket runs on `[agents.implementer]`) | Only tables `[agents.implementer_profiles.NAME]`, `NAME` of letters, digits, `_` and `-`, each with `harness`, `model`, `effort` and `orchestration` under the rules of `[agents.implementer]`; startup refuses a non-table, a command string, an unknown key, a harness that cannot implement, a bad effort or a bad name, naming `[agents.implementer_profiles.NAME]`. A ticket's `Implementer: NAME` line in "Estimate & dependencies" runs that run's implement and fix turns on the profile in place of `[agents.implementer]`, which stays the default (see below). |
 | `implementer_shadow` | Default: Absent (no shadow) | Only the table `[agents.implementer_shadow]`, with `harness`, `model` and `effort` under the same rules as `[agents.implementer]` (no `orchestration`); startup refuses a command string, an unknown key, a harness that cannot implement or a bad effort, naming `[agents.implementer_shadow]`. Set it to run a second implementer on a claimed run's ticket for comparison: the shadow probes its route, implements the ticket once in its own worktree `SLUG.shadow` on the local branch `shadow/SLUG`, cut from the run's base commit, runs the ticket's verify commands and the baseline checks, and records one `shadow_result` run event (see below). It never pushes, opens a pull request, merges, writes to the board, changes the run's phase or adds to its working time, and a down shadow route switches no route. `--report` compares each shadowed run's primary and shadow implementations side by side. |
 
@@ -363,10 +364,14 @@ temporary directory that is removed on every exit. With `harness = "claude"`
 the turn is `claude -p --session-id U --model M --effort E PROMPT` in a fresh
 session, `M` and `E` defaulting to `opus` and `high`, in the same detached
 worktree; its reply is read as a Codex reply is. Startup probes it after the
-writer; a failed probe prints "critic route down; claims skip the relevance
-check" and the loop carries on without the critic. Under `[loop] workers > 1`
-only the scheduler probes it; each worker inherits that outcome rather than
-probing again.
+writer. A failed probe with `[agents] critic_fallback` set probes the fallback,
+and a passing fallback runs every critic turn from then on. When the critic has
+no fallback, or its fallback fails too, startup prints "critic route down;
+claims skip the relevance check" and the loop carries on without the critic.
+Under `[loop] workers > 1` only the scheduler probes it; each worker inherits
+that outcome, the fallback included, rather than probing again. A critic turn
+that admits a ticket is recorded as an `agent_turn` event on the run that
+claims it.
 
 ```toml
 [agents.critic]
