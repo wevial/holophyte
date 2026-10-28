@@ -21,9 +21,9 @@ class LaunchError(RuntimeError):
 
 
 def critic_turn(seat, goal, cwd, timeout):
-    argv = seat.turn(goal)
     code, reply, usage = run_turn(seat, goal, cwd, timeout)
-    output = AgentOutput(reply.strip(), seat.named(argv), exit_code=code)
+    output = AgentOutput(reply.strip(), seat.named(seat.turn(goal)),
+                         exit_code=code)
     output.usage = usage
     return output
 
@@ -53,16 +53,13 @@ def run_turn(seat, goal, cwd, timeout):
         raise
     except Exception as error:
         cause = (str(error).splitlines() or [type(error).__name__])[0]
-        raise LaunchError(failed_cli(cause, stderr)) from error
+        tail = " | ".join(stderr[-STDERR_TAIL_LINES:])
+        raise LaunchError(f"the claude CLI failed ({cause})"
+                          + (f": {tail}" if tail else "")) from error
     usage = claude_usage({"usage": result.usage,
                           "total_cost_usd": result.total_cost_usd})
     return (1 if result.is_error else 0, result.result or "",
             dict(usage, num_turns=count(result.num_turns)))
-
-
-def failed_cli(cause, stderr):
-    tail = " | ".join(stderr[-STDERR_TAIL_LINES:])
-    return f"the claude CLI failed ({cause})" + (f": {tail}" if tail else "")
 
 
 def cli_path(binary):
@@ -98,7 +95,7 @@ async def bounded(sdk, options, goal, timeout, command):
     done, _ = await asyncio.wait({exchange}, timeout=timeout)
     if done:
         return exchange.result()
-    process = cli_process(client)
+    process = getattr(getattr(client, "_transport", None), "_process", None)
     exchange.cancel()
     await asyncio.wait({exchange}, timeout=STOP_GRACE)
     if process is not None and process.returncode is None:
@@ -119,8 +116,3 @@ async def converse(sdk, client, goal):
         raise sdk.ClaudeSDKError("the session ended with no result")
     finally:
         await client.disconnect()
-
-
-def cli_process(client):
-    transport = getattr(client, "_transport", None)
-    return getattr(transport, "_process", None)
