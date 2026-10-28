@@ -194,6 +194,8 @@ class CriticProbeTests(unittest.TestCase):
         fallback = self.repo.parent / "critic-fallback"
         fallback.write_text(f"#!{sys.executable}\n{FAKE_CODEX}")
         fallback.chmod(0o755)
+        self.fake.write_text(self.fake.read_text().replace(
+            'if os.environ.get("FAKE_CRITIC_FAIL"):', "if True:"))
         command = f"{fallback} --model sonnet"
         project = self.target(f'[agents]\n{extra}critic_fallback = "{command}"\n'
                               f'[agents.critic]\n[harnesses]\ncodex = "{self.fake}"\n')
@@ -208,9 +210,6 @@ class CriticProbeTests(unittest.TestCase):
 
     def test_a_failed_critic_probe_switches_to_a_passing_critic_fallback(self):
         project, fallback, command = self.with_fallback()
-        failing = self.fake.read_text().replace(
-            'if os.environ.get("FAKE_CRITIC_FAIL"):', "if True:")
-        self.fake.write_text(failing)
 
         started, printed = self.start(project, activate=False)
 
@@ -239,9 +238,6 @@ class CriticProbeTests(unittest.TestCase):
         writer.write_text("#!/bin/sh\necho ready\n")
         writer.chmod(0o755)
         project, _, command = self.with_fallback(f'writer = "{writer}"\n')
-        failing = self.fake.read_text().replace(
-            'if os.environ.get("FAKE_CRITIC_FAIL"):', "if True:")
-        self.fake.write_text(failing)
         started, _ = self.start(project, activate=False)
         self.assertTrue(started)
         probed = len(self.critic_calls())
