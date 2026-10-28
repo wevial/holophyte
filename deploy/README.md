@@ -6,11 +6,12 @@ on a writer host, to copy under `~/.config/systemd/user/` and enable by hand.
 
 ## Install
 
-The factory has two Python dependencies, both pinned in `requirements.txt`:
+The factory has three Python dependencies, all pinned in `requirements.txt`:
 `tomlkit`, which the daemon's `PUT /config` uses to edit a project's config
 in place without losing comments and `project add` uses to rewrite
-`host.toml`, and `mcp`, which only `holo mcp` (and so
-`holophyte-mcp.service`) needs. On the writer host,
+`host.toml`; `mcp`, which only `holo mcp` (and so
+`holophyte-mcp.service`) needs; and `claude-agent-sdk`, which nothing
+imports yet (it is for the upcoming SDK critic backend). On the writer host,
 before enabling the host units:
 
 ```

@@ -80,6 +80,16 @@ def recorded_turn(project, role, routed_role, conn, run_id, launch,
                   family_route=None):
     if conn is None or run_id is None:
         return launch()
+
+    def ended(payload, crashed):
+        record_turn(conn, run_id, payload)
+        if crashed is not None:
+            record_crash(project, conn, run_id, role, payload["exit_status"],
+                         crashed)
+    return timed_turn(project, role, routed_role, launch, ended, family_route)
+
+
+def timed_turn(project, role, routed_role, launch, ended, family_route=None):
     payload = dict(role=role, label=turn_label(project, routed_role, family_route),
                    route="fallback" if routed_role in routes(project).commands
                    else "primary", exit_status=None, timed_out=False)
@@ -107,11 +117,13 @@ def recorded_turn(project, role, routed_role, conn, run_id, launch,
         raise
     finally:
         payload["seconds"] = monotonic() - started
-        store.record_event(conn, run_id, "agent_turn", f"{role} turn ended",
-                           level="detail", payload=json.dumps(payload))
-        if crashed is not None:
-            record_crash(project, conn, run_id, role, payload["exit_status"],
-                         crashed)
+        ended(payload, crashed)
+
+
+def record_turn(conn, run_id, payload):
+    store.record_event(conn, run_id, "agent_turn",
+                       f"{payload['role']} turn ended", level="detail",
+                       payload=json.dumps(payload))
 
 
 def record_crash(project, conn, run_id, role, exit_status, output):

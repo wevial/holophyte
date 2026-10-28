@@ -732,8 +732,9 @@ the result is then held, recorded, backed up and written exactly as a
 version does not read, a value of another shape or a `[table]` that is
 not one is 400 naming the key and nothing is written; a value the loader
 refuses is the same 400 a `text` gets. The interventions note names the
-patched keys. `tomlkit` is one of the factory's two dependencies
-(`requirements.txt`; the other, `mcp`, only `holo mcp` needs); a daemon
+patched keys. `tomlkit` is one of the factory's three dependencies
+(`requirements.txt`; of the others, only `holo mcp` needs `mcp` and nothing
+imports `claude-agent-sdk` yet); a daemon
 started without it exits naming the module and the install line.
 
 `probe` is the implementer probe the loop runs at startup, run here when

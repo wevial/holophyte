@@ -26,10 +26,10 @@ class DependencyPinTests(unittest.TestCase):
         dockerfile = (ROOT / "docker" / "reviewer.Dockerfile").read_text()
         arguments = dict(re.findall(r"^ARG (\w+)_VERSION=(\S+)$", dockerfile, re.M))
         pins = requirement_pins()
-        self.assertLessEqual({"tomlkit", "mcp"}, set(pins))
+        self.assertLessEqual({"tomlkit", "mcp", "claude-agent-sdk"}, set(pins))
         for name, version in pins.items():
             with self.subTest(package=name):
-                self.assertEqual(arguments.get(name.upper()), version)
+                self.assertEqual(arguments.get(name.replace("-", "_").upper()), version)
 
     def test_readme_install_section_names_every_pinned_package(self):
         section = install_section((ROOT / "README.md").read_text())

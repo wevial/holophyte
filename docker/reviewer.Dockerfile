@@ -116,15 +116,18 @@ RUN set -eu \
 ENV PATH=/opt/claude/bin:$PATH \
     DISABLE_AUTOUPDATER=1
 
-# tomlkit and mcp are the factory's Python dependencies (`requirements.txt`;
-# tomlkit for the daemon's `PUT /config` patch, mcp for `holo mcp` only): the
+# tomlkit, mcp and claude-agent-sdk are the factory's Python dependencies
+# (`requirements.txt`; tomlkit for the daemon's `PUT /config` patch, mcp for
+# `holo mcp` only, claude-agent-sdk for the SDK critic backend): the
 # reviewer's `python3 -m unittest discover` runs against the versions the
 # unit check installs.
 ARG TOMLKIT_VERSION=0.15.1
 ARG MCP_VERSION=2.3.0
+ARG CLAUDE_AGENT_SDK_VERSION=0.2.167
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
         "tomlkit==${TOMLKIT_VERSION}" \
-        "mcp==${MCP_VERSION}"
+        "mcp==${MCP_VERSION}" \
+        "claude-agent-sdk==${CLAUDE_AGENT_SDK_VERSION}"
 
 RUN mkdir -p /home/reviewer /workspace \
     && chmod 0755 /home/reviewer /workspace

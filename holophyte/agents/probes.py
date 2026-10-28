@@ -31,6 +31,7 @@ from holophyte.config.reader import (
     IMPL_MODEL,
     SHA_ROLES,
     adversary_credential,
+    critic_fallback,
     review_profile,
 )
 from holophyte.isolation import launcher
@@ -292,27 +293,33 @@ def probe_writer(project, *, activate):
         state.publish()
 
 
-def probe_critic(project, *, activate, timeout=None):
+def probe_critic(project, provider, *, activate, timeout=None):
     seat = critic_seat(project)
     if seat is None:
         return None
-    cmd = seat.turn(PROBE_GOAL)
-    cap = PROBE_TIMEOUT if timeout is None else timeout
-    try:
-        with critic_workspace(project) as checkout:
-            code, out = run_capped(cmd, checkout, cap)
-        probe = ProbeResult(cmd, code, out or "", cap, seat="critic")
-    except subprocess.TimeoutExpired as expired:
-        partial = expired.output or ""
-        if isinstance(partial, bytes):
-            partial = partial.decode(errors="replace")
-        probe = ProbeResult(cmd, None, partial, cap, seat="critic")
-    except (OSError, RuntimeError) as failed:
-        probe = ProbeResult(cmd, None, "", cap, launch_error=str(failed),
-                            seat="critic")
+    probe = critic_probe(project, seat.turn(PROBE_GOAL), timeout)
     print(probe_diagnostic(project, probe))
+    if not probe.ok and critic_fallback(project) is not None:
+        from holophyte.agents.fallback import startup_fallback
+        probe = startup_fallback(project, provider, "critic", probe, activate)
     if not probe.ok:
         print("[holo2] critic route down; claims skip the relevance check")
     if activate:
         routes(project).critic_failed = not probe.ok
     return probe
+
+
+def critic_probe(project, cmd, timeout):
+    cap = PROBE_TIMEOUT if timeout is None else timeout
+    try:
+        with critic_workspace(project) as checkout:
+            code, out = run_capped(cmd, checkout, cap)
+        return ProbeResult(cmd, code, out or "", cap, seat="critic")
+    except subprocess.TimeoutExpired as expired:
+        partial = expired.output or ""
+        if isinstance(partial, bytes):
+            partial = partial.decode(errors="replace")
+        return ProbeResult(cmd, None, partial, cap, seat="critic")
+    except (OSError, RuntimeError) as failed:
+        return ProbeResult(cmd, None, "", cap, launch_error=str(failed),
+                           seat="critic")
