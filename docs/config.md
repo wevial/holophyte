@@ -397,7 +397,8 @@ title and body. `report_freshness` takes `verdict` (`fresh`, `stale` or
 `unsure`) and a `reason`, required unless the verdict is `fresh`; a refused
 call reports nothing and a second report is refused, so the first verdict
 stands. The brief asks for the tool call and still asks for the FRESHNESS
-line. A verdict reported through the tool decides the claim; a turn that
+line. A verdict reported through the tool decides the claim, even when the
+turn then fails or times out; a turn that
 reports nothing falls back to its reply's FRESHNESS line, and the critic's
 `agent_turn` event records `tool_verdict`, true when the tool decided. Every
 other critic harness, and a `critic_fallback`, hosts no tools and is decided by

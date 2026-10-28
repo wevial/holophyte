@@ -24,9 +24,18 @@ class LaunchError(RuntimeError):
 
 def critic_turn(seat, goal, cwd, timeout, task=None, secrets=()):
     scope = None if task is None else turn_tools.Scope(task, secrets)
-    code, reply, usage = run_turn(seat, goal, cwd, timeout, scope)
-    output = AgentOutput(reply.strip(), seat.named(seat.turn(goal)),
-                         exit_code=code)
+    command = seat.named(seat.turn(goal))
+    try:
+        code, reply, usage = run_turn(seat, goal, cwd, timeout, scope)
+    except (LaunchError, subprocess.TimeoutExpired) as error:
+        if scope is None or scope.reported is None:
+            raise
+        output = AgentOutput(str(error), command, exit_code=1,
+                             timed_out=isinstance(error,
+                                                  subprocess.TimeoutExpired))
+        output.reported = scope.reported
+        return output
+    output = AgentOutput(reply.strip(), command, exit_code=code)
     output.usage = usage
     if scope is not None:
         output.reported = scope.reported

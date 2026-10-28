@@ -112,6 +112,22 @@ class TurnToolsTests(SdkCriticCase):
         self.assertIn("critic: stale", comment)
         self.assertIn("already done by KO-5", comment)
 
+    def test_a_reported_stale_verdict_parks_when_the_turn_then_fails(self):
+        self.stubbed("never sent", vanish=True, mcp=[call(
+            "report_freshness",
+            {"verdict": "stale", "reason": "already done by KO-5"})])
+        task = filed(13, 1)
+        provider = StubProvider(task)
+
+        admitted, _ = self.admits(task, provider)
+
+        [(error, _)] = map(said, self.mcp_answers())
+        self.assertFalse(error)
+        self.assertFalse(admitted)
+        comment = dict(provider.comments)["iss-131"]
+        self.assertIn("critic: stale", comment)
+        self.assertIn("already done by KO-5", comment)
+
     def test_a_reported_verdict_wins_over_the_reply_line_and_is_marked_on_the_turn(
             self):
         self.stubbed("Checked.\nFRESHNESS: STALE contradicted",

@@ -87,6 +87,8 @@ for line in iter(sys.stdin.readline, ""):
         probe = "single word: ready" in message["message"]["content"]
         if SCRIPT["mcp"] and not probe:
             call_tools()
+            if SCRIPT["vanish"]:
+                sys.exit(1)
         text = "ready" if probe and not SCRIPT["is_error"] else SCRIPT["answer"]
         send({"type": "assistant", "session_id": "s-1",
               "parent_tool_use_id": None, "message": {
@@ -115,18 +117,21 @@ class SdkCriticCase(LoopFixture):
         self.addCleanup(reset, self.project)
 
     def stubbed(self, answer=STALE, *, is_error=False, usage=None, cost=None,
-                num_turns=1, pid=None, pids=None, extra="", agents="", mcp=()):
+                num_turns=1, pid=None, pids=None, extra="", agents="", mcp=(),
+                vanish=False):
         """Configure a `claude-sdk` critic whose `[harnesses] claude` is a stub
         CLI answering `answer` with the given usage, or, given `pid`, writing
         its pid there and never answering; given `pids`, every invocation,
         `-v` included, appends its pid there, ignores SIGTERM and hangs.
         Given `mcp`, (method, params) pairs, a turn first sends each to the
-        `holo_run` server and `mcp_answers()` returns the responses."""
+        `holo_run` server and `mcp_answers()` returns the responses; with
+        `vanish`, the stub then exits 1 without answering."""
         script = json.dumps(dict(
             calls=str(self.calls), answer=answer, is_error=is_error,
             usage=usage or {}, cost=cost, num_turns=num_turns,
             pid=str(pid) if pid else None, pids=str(pids) if pids else None,
-            mcp=[list(call) for call in mcp], answers=str(self.answers)))
+            mcp=[list(call) for call in mcp], answers=str(self.answers),
+            vanish=vanish))
         self.stub.write_text(f"#!{sys.executable}\nimport json\n"
                              f"SCRIPT = json.loads({script!r})\n" + STUB)
         self.stub.chmod(0o755)
