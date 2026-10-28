@@ -265,7 +265,7 @@ class FakeAgent:
 
     def __call__(self, target, role, goal, cwd, *, base_sha=None, conn=None,
                  candidate_sha=None, timeout=None, on_start=None, run_id=None,
-                 review_round=None, family_route=None):
+                 review_round=None, family_route=None, task=None):
         # Like agent(), dispatch the requested turn through its effective seat.
         from holophyte.agents.roles import effective_role
         role = effective_role(target, role)

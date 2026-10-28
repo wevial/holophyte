@@ -55,6 +55,7 @@ PINNED = {
     "holophyte/agents/transcript_config.py": 0,
     "holophyte/agents/transcripts.py": 4,
     "holophyte/agents/turn_progress.py": 0,
+    "holophyte/agents/turn_tools.py": 1,
 
     "holophyte/babysit/__init__.py": 0,
     "holophyte/babysit/adjudicator_outage.py": 0,

@@ -37,6 +37,7 @@ from holophyte.agents.review_workspace import (
     table_review,
 )
 from holophyte.agents.turn_progress import TurnProgress
+from holophyte.agents.turn_tools import report_asked
 from holophyte.config.agent_settings import (
     agent_command,
     fallback_entries,
@@ -121,9 +122,10 @@ def writer_turn(project, goal, cwd, timeout, on_start):
     return AgentOutput(output.strip(), shlex.join(cmd[:-1]), exit_code=code)
 
 
-def critic_turn(project, goal, cwd, timeout):
+def critic_turn(project, goal, cwd, timeout, task=None):
     """Advice only: a claim goes ahead when the turn fails, with no mid-turn switch."""
-    goal = outbound(goal, known_secrets(project.config()))
+    secrets = known_secrets(project.config())
+    goal = outbound(goal, secrets)
     cap = PROBE_TIMEOUT if timeout is None else timeout
     fallback = routes(project).commands.get("critic")
     if fallback is not None:
@@ -132,7 +134,8 @@ def critic_turn(project, goal, cwd, timeout):
         return AgentOutput(output.strip(), shlex.join(argv[:-1]), exit_code=code)
     seat = critic_seat(project)
     if seat.name == ClaudeSdk.name:
-        return sdk_critic_turn(seat, goal, cwd, cap)
+        return sdk_critic_turn(seat, goal if task is None else report_asked(goal),
+                               cwd, cap, task, secrets)
     argv = seat.turn(goal)
     code, output = run_capped(argv, cwd, cap)
     return AgentOutput(output.strip(), seat.named(argv), exit_code=code)
@@ -140,7 +143,7 @@ def critic_turn(project, goal, cwd, timeout):
 
 def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None, family_route=None):
+          review_round=None, family_route=None, task=None):
     from store.working import working
 
     requested_role = role
@@ -152,7 +155,8 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                      project, goal, cwd, timeout, on_start))
         if role == "critic":
             return recorded_turn(project, requested_role, role, conn, run_id,
-                                 lambda: critic_turn(project, goal, cwd, timeout))
+                                 lambda: critic_turn(project, goal, cwd, timeout,
+                                                     task))
         record_pending_switch(project, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,

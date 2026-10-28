@@ -389,6 +389,21 @@ the critic's timeout is ended and its CLI process stopped. A probe that cannot
 start names the cause: the SDK not importable, the binary not found, the key
 file missing, empty or unreadable, or the CLI failing.
 
+A `claude-sdk` critic turn also hosts an in-process MCP server, `holo_run`,
+scoped to the ticket it judges, and allows its two tools,
+`mcp__holo_run__read_ticket` and `mcp__holo_run__report_freshness`. Neither
+takes a project or ticket argument. `read_ticket` returns the ticket's key,
+title and body. `report_freshness` takes `verdict` (`fresh`, `stale` or
+`unsure`) and a `reason`, required unless the verdict is `fresh`; a refused
+call reports nothing and a second report is refused, so the first verdict
+stands. The brief asks for the tool call and still asks for the FRESHNESS
+line. A verdict reported through the tool decides the claim, even when the
+turn then fails or times out; a turn that
+reports nothing falls back to its reply's FRESHNESS line, and the critic's
+`agent_turn` event records `tool_verdict`, true when the tool decided. Every
+other critic harness, and a `critic_fallback`, hosts no tools and is decided by
+its FRESHNESS line.
+
 ```toml
 [agents.critic]
 model  = "gpt-6-luna"   # optional; passed to -m

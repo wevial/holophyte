@@ -447,11 +447,12 @@ def ask_critic(conn, project, task):
     from holophyte.agents.review_workspace import critic_workspace
     goal = critic_brief(conn, project, task)
     with critic_workspace(project) as checkout:
-        return str(timed_turn(
+        return timed_turn(
             project, "critic", "critic",
             lambda: holophyte.loop.review_round.agent(
-                project, "critic", goal, checkout, timeout=CRITIC_TIMEOUT),
-            lambda payload, _: TURNS.__setitem__(task["id"], payload)))
+                project, "critic", goal, checkout, timeout=CRITIC_TIMEOUT,
+                task=task),
+            lambda payload, _: TURNS.__setitem__(task["id"], payload))
 
 
 def _failure(error):
@@ -467,7 +468,8 @@ def critic_admits(project, conn, project_id, provider, task):
     if not critic_due(project, task):
         return True
     try:
-        answer = parse_freshness(ask_critic(conn, project, task))
+        output = ask_critic(conn, project, task)
+        answer = getattr(output, "reported", None) or parse_freshness(output)
         failure = None if answer else "its answer ended in no FRESHNESS verdict"
     except Exception as e:
         answer, failure = None, f"its turn failed ({_failure(e)})"

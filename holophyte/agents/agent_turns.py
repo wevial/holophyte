@@ -105,6 +105,8 @@ def timed_turn(project, role, routed_role, launch, ended, family_route=None):
             payload["service_tier"] = output.service_tier
         if hasattr(output, "usage"):
             payload["usage"] = output.usage
+        if hasattr(output, "reported"):
+            payload["tool_verdict"] = output.reported is not None
         return output
     except Exception as exc:
         cause = exc.__cause__ or exc

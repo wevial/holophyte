@@ -6,6 +6,7 @@ import subprocess
 from contextlib import suppress
 from pathlib import Path
 
+from holophyte.agents import turn_tools
 from holophyte.agents.agent_output import AgentOutput, claude_usage, count
 from holophyte.config.reader import IMPL_EFFORT, IMPL_MODEL
 from holophyte.redact import register_values
@@ -21,15 +22,27 @@ class LaunchError(RuntimeError):
     pass
 
 
-def critic_turn(seat, goal, cwd, timeout):
-    code, reply, usage = run_turn(seat, goal, cwd, timeout)
-    output = AgentOutput(reply.strip(), seat.named(seat.turn(goal)),
-                         exit_code=code)
+def critic_turn(seat, goal, cwd, timeout, task=None, secrets=()):
+    scope = None if task is None else turn_tools.Scope(task, secrets)
+    command = seat.named(seat.turn(goal))
+    try:
+        code, reply, usage = run_turn(seat, goal, cwd, timeout, scope)
+    except (LaunchError, subprocess.TimeoutExpired) as error:
+        if scope is None or scope.reported is None:
+            raise
+        output = AgentOutput(str(error), command, exit_code=1,
+                             timed_out=isinstance(error,
+                                                  subprocess.TimeoutExpired))
+        output.reported = scope.reported
+        return output
+    output = AgentOutput(reply.strip(), command, exit_code=code)
     output.usage = usage
+    if scope is not None:
+        output.reported = scope.reported
     return output
 
 
-def run_turn(seat, goal, cwd, timeout):
+def run_turn(seat, goal, cwd, timeout, scope=None):
     try:
         import claude_agent_sdk as sdk
     except ImportError as missing:
@@ -38,6 +51,9 @@ def run_turn(seat, goal, cwd, timeout):
             f"install claude-agent-sdk") from None
     stderr = []
     command = seat.named(seat.turn(goal))
+    tools = {} if scope is None else dict(
+        mcp_servers={turn_tools.SERVER: turn_tools.server(sdk, scope)},
+        allowed_tools=turn_tools.allowed())
     try:
         options = sdk.ClaudeAgentOptions(
             cli_path=cli_path(seat.binary), cwd=str(cwd),
@@ -46,7 +62,7 @@ def run_turn(seat, goal, cwd, timeout):
             disallowed_tools=list(READ_ONLY_TOOLS),
             setting_sources=list(SETTING_SOURCES),
             system_prompt={"type": "preset", "preset": "claude_code"},
-            env=credential_env(seat.options), stderr=stderr.append)
+            env=credential_env(seat.options), stderr=stderr.append, **tools)
         os.environ[SKIP_VERSION_CHECK] = "1"
         result = asyncio.run(bounded(sdk, options, goal, timeout, command))
     except sdk.CLINotFoundError as error:
