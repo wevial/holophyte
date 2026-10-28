@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import unittest
@@ -40,8 +41,14 @@ from holophyte.agents.agent_routes import reset, routes  # noqa: E402
 from tests.test_critic import RealCritic, filed  # noqa: E402
 
 STUB = """
-import json, os, subprocess, sys, time
+import json, os, signal, subprocess, sys, time
 SCRIPT = json.loads({script!r})
+if SCRIPT.get("pids"):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    with open(SCRIPT["pids"], "a") as out:
+        out.write(f"{{os.getpid()}}\\n")
+    while True:
+        time.sleep(1)
 if sys.argv[1:] == ["-v"]:
     print("2.1.300 (Claude Code)")
     sys.exit(0)
@@ -99,14 +106,15 @@ class SdkCriticCase(LoopFixture):
         self.addCleanup(reset, self.project)
 
     def stubbed(self, answer=STALE, *, is_error=False, usage=None, cost=None,
-                num_turns=1, pid=None, extra="", agents=""):
+                num_turns=1, pid=None, pids=None, extra="", agents=""):
         """Configure a `claude-sdk` critic whose `[harnesses] claude` is a stub
         CLI answering `answer` with the given usage, or, given `pid`, writing
-        its pid there and never answering."""
+        its pid there and never answering; given `pids`, every invocation,
+        `-v` included, appends its pid there, ignores SIGTERM and hangs."""
         script = json.dumps(dict(
             calls=str(self.calls), answer=answer, is_error=is_error,
             usage=usage or {}, cost=cost, num_turns=num_turns,
-            pid=str(pid) if pid else None))
+            pid=str(pid) if pid else None, pids=str(pids) if pids else None))
         self.stub.write_text(f"#!{sys.executable}\n"
                              + STUB.format(script=script))
         self.stub.chmod(0o755)
@@ -204,6 +212,20 @@ class SdkCriticTurnTests(SdkCriticCase):
         self.assertIn("critic: its turn failed (timed out after 2 seconds)",
                       printed)
         self.assertFalse(running(int(pid_file.read_text())))
+
+    def test_a_timed_out_sdk_critic_turn_leaves_no_cli_process_running(self):
+        pids = self.target.parent / "stub.pids"
+        self.stubbed(pids=pids)
+
+        with patch.dict("os.environ"):
+            os.environ.pop("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", None)
+            with self.assertRaises(subprocess.TimeoutExpired):
+                holophyte.agents.roles.critic_turn(
+                    self.project, "GOAL", self.target, 1)
+
+        started = [int(pid) for pid in pids.read_text().split()]
+        self.assertTrue(started)
+        self.assertEqual([pid for pid in started if running(pid)], [])
 
     def test_the_sdk_critic_inherits_the_login_or_takes_the_configured_key_file(
             self):

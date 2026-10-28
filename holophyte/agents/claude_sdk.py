@@ -14,6 +14,7 @@ READ_ONLY_TOOLS = ["Bash", "Edit", "Write", "NotebookEdit"]
 SETTING_SOURCES = ["user", "project", "local"]
 STOP_GRACE = 3
 STDERR_TAIL_LINES = 5
+SKIP_VERSION_CHECK = "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"
 
 
 class LaunchError(RuntimeError):
@@ -46,6 +47,7 @@ def run_turn(seat, goal, cwd, timeout):
             setting_sources=list(SETTING_SOURCES),
             system_prompt={"type": "preset", "preset": "claude_code"},
             env=credential_env(seat.options), stderr=stderr.append)
+        os.environ[SKIP_VERSION_CHECK] = "1"
         result = asyncio.run(bounded(sdk, options, goal, timeout, command))
     except sdk.CLINotFoundError as error:
         raise LaunchError(f"claude binary not found: {error}") from error
