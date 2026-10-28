@@ -570,6 +570,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         answered = fix_summary(answered, wt, reviewed, sha)
         refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
+        set_phase(conn, run_id, "merge_gate", f"babysitting {pull.url}")
         return sha
     ledger(conn, run_id, task_id, "round",
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"
