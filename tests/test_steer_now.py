@@ -284,7 +284,7 @@ class SteerNowTests(SweepTestCase):
         self.assertIn(NOTE, self.argv(2)[-1])
 
     def test_a_fallback_implementer_takes_the_note_without_stopping_the_turn(self):
-        self.claude(first='touch "$STATE/ready"\necho $$ > "$STATE/pid"\n'
+        self.claude(first='echo $$ > "$STATE/pid"\ntouch "$STATE/ready"\n'
                           f'sleep {4 * BEAT}\necho finished\nexit 0\n')
         store.record_agent_session(self.conn, self.run_id, "primary-session",
                                    "implement", "primary")
