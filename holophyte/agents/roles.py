@@ -124,7 +124,8 @@ def writer_turn(project, goal, cwd, timeout, on_start):
 
 def critic_turn(project, goal, cwd, timeout, task=None):
     """Advice only: a claim goes ahead when the turn fails, with no mid-turn switch."""
-    goal = outbound(goal, known_secrets(project.config()))
+    secrets = known_secrets(project.config())
+    goal = outbound(goal, secrets)
     cap = PROBE_TIMEOUT if timeout is None else timeout
     fallback = routes(project).commands.get("critic")
     if fallback is not None:
@@ -134,7 +135,7 @@ def critic_turn(project, goal, cwd, timeout, task=None):
     seat = critic_seat(project)
     if seat.name == ClaudeSdk.name:
         return sdk_critic_turn(seat, goal if task is None else report_asked(goal),
-                               cwd, cap, task)
+                               cwd, cap, task, secrets)
     argv = seat.turn(goal)
     code, output = run_capped(argv, cwd, cap)
     return AgentOutput(output.strip(), seat.named(argv), exit_code=code)

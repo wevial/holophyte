@@ -3,6 +3,7 @@ import json
 
 from holophyte.holo.mcp_server import refusal
 from holophyte.holo.mcp_tools import READ, WRITE, Answer, Field, Tool, input_schema
+from holophyte.redact import outbound
 
 SERVER = "holo_run"
 VERDICTS = ("fresh", "stale", "unsure")
@@ -29,8 +30,9 @@ TOOLS = (
 
 
 class Scope:
-    def __init__(self, task):
+    def __init__(self, task, secrets=()):
         self.task = task
+        self.secrets = secrets
         self.reported = None
 
 
@@ -45,8 +47,9 @@ def report_asked(goal):
 
 
 def read_ticket(scope, arguments):
-    body = {"key": scope.task["id"], "title": scope.task.get("title") or "",
-            "body": scope.task.get("body") or ""}
+    body = {name: outbound(scope.task.get(field) or "", scope.secrets)
+            for name, field in (("key", "id"), ("title", "title"),
+                                ("body", "body"))}
     return Answer(False, json.dumps(body), body)
 
 

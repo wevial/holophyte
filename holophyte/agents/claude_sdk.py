@@ -22,8 +22,8 @@ class LaunchError(RuntimeError):
     pass
 
 
-def critic_turn(seat, goal, cwd, timeout, task=None):
-    scope = None if task is None else turn_tools.Scope(task)
+def critic_turn(seat, goal, cwd, timeout, task=None, secrets=()):
+    scope = None if task is None else turn_tools.Scope(task, secrets)
     code, reply, usage = run_turn(seat, goal, cwd, timeout, scope)
     output = AgentOutput(reply.strip(), seat.named(seat.turn(goal)),
                          exit_code=code)

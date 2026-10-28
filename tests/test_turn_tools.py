@@ -85,6 +85,19 @@ class TurnToolsTests(SdkCriticCase):
         self.assertTrue(second[0])
         self.assertIn("'key'", second[1])
 
+    def test_read_ticket_redacts_a_known_secret_as_the_brief_does(self):
+        token = "ghp_turnToolsSecret0123456789"
+        self.stubbed("FRESHNESS: FRESH", mcp=[call("read_ticket", {})])
+        task = filed(13, 1, body=f"B uses {token}", title=f"T {token}")
+
+        with patch.dict("os.environ", {"GH_TOKEN": token}):
+            self.admits(task, StubProvider(task))
+
+        [(error, text)] = map(said, self.mcp_answers())
+        self.assertFalse(error)
+        self.assertNotIn(token, text)
+        self.assertEqual(json.loads(text)["key"], "KO-131")
+
     def test_a_reported_stale_verdict_parks_without_a_freshness_line(self):
         self.stubbed("Looked at main; it is done.", mcp=[call(
             "report_freshness",
