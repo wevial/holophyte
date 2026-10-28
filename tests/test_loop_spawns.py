@@ -78,7 +78,7 @@ class InProcessGitHubTests(unittest.TestCase):
         api_lines = [line for line in shell_lines if line.startswith("gh api ")]
         self.assertEqual(len(shell_spawns), len(api_lines))
         self.assertEqual([kind for kind, _ in shell_api],
-                         ["state", "reply", "resolve", "state", "merge"])
+                         ["state", "reply", "resolve", "state", "state", "merge"])
         self.assertEqual(lines, shell_lines)
         self.assertEqual(api, shell_api)
         self.assertEqual(spawned, [])

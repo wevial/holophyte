@@ -17,6 +17,11 @@ from holophyte.babysit.covering_fix import fix_or_park
 from holophyte.babysit.description_review import TAG_BRIEF, fix_summary, rereviewed
 from holophyte.babysit.main_side import verify_detached_main
 from holophyte.babysit.note_triage import triage_notes, untriaged
+from holophyte.babysit.pass_ends import (
+    _at_the_cap,
+    _merge_or_fix_checks,
+    _merged_meanwhile,
+)
 from holophyte.babysit.thread_answers import answer_asks, post
 from holophyte.babysit.thread_findings import thread_finding
 from holophyte.babysit.thread_text import (  # noqa: F401
@@ -56,7 +61,7 @@ from holophyte.loop.gates import (
 from holophyte.loop.run import Run
 from holophyte.loop.runs import heartbeat_while, record_round, set_phase
 from holophyte.loop.stop import boundary, fix_state, paused_goal, stop_if_requested
-from holophyte.pr import github, merge_queue, pr_ready, pr_status
+from holophyte.pr import github, pr_ready, pr_status
 from holophyte.pr.missing_checks import Retrigger, unreported
 from holophyte.pr.pr_head import _just_pushed_state, _pr_terminal
 from holophyte.pr.pr_media import capture_spec_digest
@@ -250,7 +255,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                    just_pushed=False):
     """Human approval covers only the released sha; later fixes are reviewed."""
     project, conn, run_id, provider = run.project, run.conn, run.run_id, run.provider
-    task_id, issue_id = run.task_id, run.issue_id
+    task_id = run.task_id
     branch, wt, sha = run.branch, run.wt, run.sha
     budget_min, url = run.budget_min, run.pr_url
     from holophyte.pr.pullrequest import _park_on_pr
@@ -339,6 +344,10 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 project, conn, run_id, provider, task_id, branch, sha,
                 beat_s, pull, reviewed)
             continue
+        done = fixed != reviewed and _merged_meanwhile(
+            replace(run, sha=sha), beat_s, pull, reviewed)
+        if done:
+            return replace(run, sha=sha, merge_sha=done)
         # An `--approve` covered the release, not these reviewed fixes.
         released, reviewed, approved = ((released if marked else sha,
                                          reviewed, approved)
@@ -350,22 +359,12 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
             continue
         if merge.approve == "auto" or approved:
             try:
-                merge_sha = merge_queue.verified_merge(
-                    project, conn, run_id, provider, task_id, issue_id, branch,
-                    wt, sha, beat_s, pull, reviewed, verified, verify_cmd,
-                    contracts, ticket, budget_min, merge.approve == "auto")
+                merge_sha, sha, pushed_state = _merge_or_fix_checks(
+                    replace(run, sha=sha), beat_s, pull, state, reviewed,
+                    verified, ticket, verify_cmd, contracts, pass_no, check_fix)
                 if merge_sha is None:
                     continue
                 return replace(run, sha=sha, merge_sha=merge_sha)
-            except merge_queue.QueueRemoved as removed:
-                set_phase(conn, run_id, "merge_gate", "the merge queue removed"
-                          " the pull request; fixing its checks")
-                sha, pushed_state = fix_checks_or_park(
-                    replace(run, sha=sha), beat_s, pull, replace(
-                        state, checks="failure", failed_checks=removed.failed),
-                    ticket, verify_cmd, contracts, pass_no, reviewed,
-                    check_fix, removed.group)
-                continue
             except github.MergeRefused as refused:
                 set_phase(conn, run_id, "merge_gate",
                           f"GitHub refused the merge: {refused}")
@@ -380,19 +379,8 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 continue
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     _ready(released, sha), (), reviewed=reviewed)
-    retrigger = Retrigger(run, beat_s, pull, sha, reviewed)
-    state = _settled_or_park(
-        project, conn, run_id, beat_s, pull, pushed_state, provider,
-        task_id, branch, sha, reviewed, refresh, retrigger)
-    sha, reviewed = retrigger.sha, retrigger.reviewed
-    _pr_terminal(project, conn, run_id, provider, task_id, branch, sha,
-                 pull, state, reviewed)
-    cap = (f"pr_main_refreshes = {merge.pr_main_refreshes} main refreshes made"
-           if refreshes == merge.pr_main_refreshes
-           else f"pr_rounds = {merge.pr_rounds} passes made")
-    _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                f"[merge] {cap}; the babysitter stops here", state.threads,
-                reviewed=reviewed)
+    return _at_the_cap(replace(run, sha=sha), beat_s, pull, pushed_state,
+                       reviewed, refresh, refreshes == merge.pr_main_refreshes)
 
 
 def _fixes_reviewed(merge):
@@ -570,6 +558,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         answered = fix_summary(answered, wt, reviewed, sha)
         refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
                         branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
+        set_phase(conn, run_id, "merge_gate", f"babysitting {pull.url}")
         return sha
     ledger(conn, run_id, task_id, "round",
            f"Round {rnd}: REQUEST_CHANGES on the fix at {sha} on"

@@ -440,7 +440,7 @@ class MergeModeBabysitChecksTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(fake.roles, ["implement", "review", "implement", "adjudicate",
                                       "implement", "review", "implement"])
         self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "reply", "resolve", "state"])
+                         ["state", "reply", "resolve", "state", "state"])
         fixed = self.git("rev-parse", BRANCH).strip()
         self.assertEqual(fake.turns[5].candidate_sha, fixed)
         self.assertEqual(

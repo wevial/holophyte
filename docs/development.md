@@ -792,6 +792,10 @@ Each module, one line:
 - `holophyte/babysit/main_side.py` — the babysit pass's main-side verify
   after a merge of main turns the branch red: main runs without what only
   the branch adds, and is not compared when the failing command was left out.
+- `holophyte/babysit/pass_ends.py` — where a babysit pass ends outside its
+  loop: the verified merge or the merge queue's check fix, a pull request a
+  person merged while a covering review ran, and the park at `[merge]
+  pr_rounds` or `pr_main_refreshes`.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
   commands at one commit of main, in the warm tree for a loop pass and
   otherwise in a scratch worktree, within

@@ -170,7 +170,7 @@ class MergeModeBabysitThreadsTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(fake.turns[5].base_sha, self.base)
         self.assertIn(fake.turns[1].candidate_sha[:12], fake.turns[5].goal)
         self.assertEqual([kind for kind, _ in self.api_calls()],
-                         ["state", "reply", "resolve", "state", "merge"])
+                         ["state", "reply", "resolve", "state", "state", "merge"])
         self.assertEqual(
             self.read("SELECT round, verdict, reviewerModel FROM reviewRounds"
                       " ORDER BY round"),
