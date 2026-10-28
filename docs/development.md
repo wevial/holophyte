@@ -265,6 +265,8 @@ Each module, one line:
   and transport failure.
 - `holophyte/agents/claude_sdk.py` — one critic turn over a Claude Agent SDK
   session: its options, credential environment, usage and stop at the timeout.
+- `holophyte/agents/turn_tools.py` — the `holo_run` tools an SDK critic turn
+  hosts, `read_ticket` and `report_freshness`, scoped to the judged ticket.
 - `holophyte/agents/claude_stream.py` — a streaming Claude turn read line by
   line, its `result` lines kept, and a turn quiet for `turn_quiet_sec` ended as
   stalled.
