@@ -263,6 +263,8 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
+- `holophyte/agents/claude_sdk.py` — one critic turn over a Claude Agent SDK
+  session: its options, credential environment, usage and stop at the timeout.
 - `holophyte/agents/claude_stream.py` — a streaming Claude turn read line by
   line, its `result` lines kept, and a turn quiet for `turn_quiet_sec` ended as
   stalled.

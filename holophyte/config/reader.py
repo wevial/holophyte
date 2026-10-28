@@ -98,7 +98,8 @@ KNOWN_KEYS["questions"] = frozenset((
     "url", "key_env", "min_confidence", "backend", "model", "effort",
     "backend_fallback", "fallback_model", "fallback_effort", "failures",
     "complexity", "titles"))
-KNOWN_KEYS["harnesses"] = frozenset(harness.ADAPTERS)
+KNOWN_KEYS["harnesses"] = frozenset(
+    adapter.harness_key for adapter in harness.ADAPTERS.values())
 KNOWN_KEYS["scout"] = frozenset((
     "leads", "helpers", "lead", "helper", "budget_min", "swarm",
     "helper_turns", "waves", "steer_budget_min", "steer_helpers", "github"))

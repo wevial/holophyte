@@ -879,6 +879,37 @@ class CriticTableTests(unittest.TestCase):
                 with self.assertRaisesRegex(SystemExit, message):
                     holophyte.config.checks.check_document(self.target(config))
 
+    def test_claude_sdk_is_critic_only_and_its_credential_keys_are_checked(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        key = Path(outside.name) / "key"
+        sdk = '[agents.critic]\nharness = "claude-sdk"\n'
+        accepted = self.target(f'{sdk}api_key_file = "{key}"\n'
+                               'base_url = "https://proxy.example.invalid"\n')
+        holophyte.config.checks.check_document(accepted)
+        for config, message in (
+            ('[agents.reviewer]\nharness = "claude-sdk"\nmodel = "sonnet"\n',
+             r"\[agents\.reviewer\] harness: 'claude-sdk' supports critic, "
+             r"not reviewer"),
+            (f'[agents.critic]\nharness = "claude"\napi_key_file = "{key}"\n',
+             r"\[agents\.critic\] api_key_file: harness 'claude' takes no "
+             r"api_key_file"),
+            (f'{sdk}base_url = "https://proxy.example.invalid"\n',
+             r"\[agents\.critic\] base_url: allowed only beside api_key_file"),
+            (f'{sdk}api_key_file = "keys/anthropic"\n',
+             r"\[agents\.critic\] api_key_file must be an absolute or ~ path"),
+            (f'{sdk}api_key_file = "INSIDE/anthropic-key"\n',
+             r"\[agents\.critic\] api_key_file .* is inside the project checkout"),
+            ('[harnesses]\nclaude-sdk = "/usr/bin/claude"\n',
+             r"\[harnesses\] claude-sdk: unknown key"),
+        ):
+            with self.subTest(config=config):
+                project = self.target(config)
+                (project.config_path).write_text(
+                    config.replace("INSIDE", str(project.path)))
+                with self.assertRaisesRegex(SystemExit, message):
+                    holophyte.config.checks.check_document(project)
+
 
 if __name__ == "__main__":
     unittest.main()

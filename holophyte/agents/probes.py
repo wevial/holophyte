@@ -8,7 +8,8 @@ from pathlib import Path
 
 from holophyte.agents.agent_output import claude_result, streamed
 from holophyte.agents.agent_routes import route_prose, routes, safe_command
-from holophyte.agents.harness import critic_seat
+from holophyte.agents.claude_sdk import run_turn
+from holophyte.agents.harness import ClaudeSdk, critic_seat
 from holophyte.agents.harness import seat as harness_seat
 from holophyte.agents.probe_log import record_probe
 from holophyte.agents.review_workspace import (
@@ -297,7 +298,9 @@ def probe_critic(project, provider, *, activate, timeout=None):
     seat = critic_seat(project)
     if seat is None:
         return None
-    probe = critic_probe(project, seat.turn(PROBE_GOAL), timeout)
+    probe = critic_probe(project, seat.turn(PROBE_GOAL), timeout,
+                         sdk_probe(seat) if seat.name == ClaudeSdk.name
+                         else run_capped)
     print(probe_diagnostic(project, probe))
     if not probe.ok and critic_fallback(project) is not None:
         from holophyte.agents.fallback import startup_fallback
@@ -309,11 +312,18 @@ def probe_critic(project, provider, *, activate, timeout=None):
     return probe
 
 
-def critic_probe(project, cmd, timeout):
+def sdk_probe(seat):
+    def run(cmd, checkout, cap):
+        code, reply, _ = run_turn(seat, PROBE_GOAL, checkout, cap)
+        return code, reply
+    return run
+
+
+def critic_probe(project, cmd, timeout, run=run_capped):
     cap = PROBE_TIMEOUT if timeout is None else timeout
     try:
         with critic_workspace(project) as checkout:
-            code, out = run_capped(cmd, checkout, cap)
+            code, out = run(cmd, checkout, cap)
         return ProbeResult(cmd, code, out or "", cap, seat="critic")
     except subprocess.TimeoutExpired as expired:
         partial = expired.output or ""
