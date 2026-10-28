@@ -6,6 +6,8 @@ import shlex
 import subprocess
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 from holophyte.review import review_runner
 from holophyte.tickets.ticket_template import ORCHESTRATION_MODES
@@ -18,6 +20,7 @@ SCOUT_HELPER = "scout-helper"
 SCOUT_RUNNER = "scout-runner"
 READ_ONLY_ROLES = (SCOUT_LEAD, SCOUT_HELPER)
 TABLE_KEYS = ("harness", "model", "effort")
+CREDENTIAL_KEYS = ("api_key_file", "base_url")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 SHADOW_KEY = "implementer_shadow"
 PROFILES_KEY = "implementer_profiles"
@@ -48,6 +51,10 @@ class Adapter:
 
     @property
     def binary(self):
+        return self.name
+
+    @property
+    def harness_key(self):
         return self.name
 
     def reported_session(self, binary, output, role, run):
@@ -243,8 +250,19 @@ class Cursor(Adapter):
         return [binary, "-p", "--model", options["model"], "--force", "--trust"]
 
 
-ADAPTERS = {adapter.name: adapter for adapter in (Claude(), Codex(), Cursor(),
-                                                  Devin())}
+class ClaudeSdk(Adapter):
+    name = "claude-sdk"
+    binary = "claude"
+    harness_key = "claude"
+    roles = frozenset({"critic"})
+    resumes = False
+
+    def turn(self, binary, options, role):
+        return [self.name, *Claude.route(options)]
+
+
+ADAPTERS = {adapter.name: adapter for adapter in (Claude(), ClaudeSdk(), Codex(),
+                                                  Cursor(), Devin())}
 
 
 @dataclass(frozen=True)
@@ -290,7 +308,8 @@ def parse_role(where, key, table):
         raise SystemExit(
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
-    accepted = IMPLEMENTER_KEYS if key == "implementer" or profile else TABLE_KEYS
+    accepted = (IMPLEMENTER_KEYS if key == "implementer" or profile
+                else TABLE_KEYS + CREDENTIAL_KEYS if key == "critic" else TABLE_KEYS)
     adapter = route_adapter(where, f"[agents.{key}]", table, role, accepted,
                             shown=key, listed=TABLE_ROLES)
     check_orchestration(where, table, adapter, key)
@@ -477,8 +496,39 @@ def implementer_profiles(target):
     return seats
 
 
+def check_credentials(where, key, table, adapter, checkout):
+    label = f"[agents.{key}]"
+    present = [option for option in CREDENTIAL_KEYS if option in table]
+    if not present:
+        return
+    if adapter.name != ClaudeSdk.name:
+        raise SystemExit(
+            f"{where}: {label} {present[0]}: harness {adapter.name!r} takes "
+            f"no {present[0]}; only harness {ClaudeSdk.name!r} does")
+    key_file = table.get("api_key_file")
+    if key_file is None:
+        raise SystemExit(
+            f"{where}: {label} base_url: allowed only beside api_key_file")
+    if not isinstance(key_file, str) or not (
+            key_file.startswith("~") or os.path.isabs(key_file)):
+        raise SystemExit(
+            f"{where}: {label} api_key_file must be an absolute or ~ path, "
+            f"got {key_file!r}")
+    if Path(key_file).expanduser().resolve().is_relative_to(
+            Path(checkout).resolve()):
+        raise SystemExit(
+            f"{where}: {label} api_key_file {key_file!r} is inside the project "
+            f"checkout; keep the key outside it")
+    url = table.get("base_url")
+    if url is not None and not (isinstance(url, str) and urlparse(
+            url).scheme in ("http", "https") and urlparse(url).netloc):
+        raise SystemExit(
+            f"{where}: {label} base_url must be an http(s) URL, got {url!r}")
+
+
 def table_seat(target, where, key, table, role, *, launched):
     adapter = parse_role(where, key, table)
+    check_credentials(where, key, table, adapter, target.path)
     from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     # A container implementer's binary comes from the image, not `[harnesses]`.
@@ -491,7 +541,7 @@ def harness_binary(target, where, adapter):
     from holophyte.config.reader import config_table
     paths = config_table(target, "harnesses")
     check_paths(where, paths)
-    return paths.get(adapter.name, adapter.binary)
+    return paths.get(adapter.harness_key, adapter.binary)
 
 
 def critic_table(where, table):

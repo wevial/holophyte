@@ -13,13 +13,19 @@ from holophyte.agents.agent_output import (
 )
 from holophyte.agents.agent_routes import routes, safe_command
 from holophyte.agents.agent_turns import family_label, recorded_turn
+from holophyte.agents.claude_sdk import critic_turn as sdk_critic_turn
 from holophyte.agents.fallback import (
     activate_fallback,
     failed_turn,
     outage_reason,
     record_pending_switch,
 )
-from holophyte.agents.harness import agent_session, critic_seat, route_text
+from holophyte.agents.harness import (
+    ClaudeSdk,
+    agent_session,
+    critic_seat,
+    route_text,
+)
 from holophyte.agents.harness import seat as harness_seat
 from holophyte.agents.probes import PROBE_TIMEOUT, container_fallback_profile
 from holophyte.agents.review_workspace import (
@@ -125,6 +131,8 @@ def critic_turn(project, goal, cwd, timeout):
         code, output = run_capped(argv, cwd, cap)
         return AgentOutput(output.strip(), shlex.join(argv[:-1]), exit_code=code)
     seat = critic_seat(project)
+    if seat.name == ClaudeSdk.name:
+        return sdk_critic_turn(seat, goal, cwd, cap)
     argv = seat.turn(goal)
     code, output = run_capped(argv, cwd, cap)
     return AgentOutput(output.strip(), seat.named(argv), exit_code=code)
