@@ -3,6 +3,7 @@ import tomllib
 from pathlib import Path
 
 from holophyte.agents import harness
+from holophyte.automation.automation_config import AUTOMATION_KEYS
 from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
@@ -94,6 +95,7 @@ KNOWN_KEYS["trim"] = frozenset(TRIM_KEYS)
 KNOWN_KEYS["review"] = frozenset(REVIEW_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["patrol"] = frozenset(PATROL_KEYS)
+KNOWN_KEYS["automations"] = frozenset(AUTOMATION_KEYS)
 KNOWN_KEYS["questions"] = frozenset((
     "url", "key_env", "min_confidence", "backend", "model", "effort",
     "backend_fallback", "fallback_model", "fallback_effort", "failures",

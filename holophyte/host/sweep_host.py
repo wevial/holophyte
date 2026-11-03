@@ -10,6 +10,7 @@ import store
 from holophyte import deadline
 from holophyte.admission import project_of
 from holophyte.admission import state as admission_state
+from holophyte.automation.step import run_automations
 from holophyte.cli.status import HOME_LOCK, SWEEP_STATE, load_sweep_state
 from holophyte.host.reconcile import GITHUB_BUDGET, _failed_pull_requests
 from holophyte.host.registry import HostError, settings
@@ -348,6 +349,9 @@ def run_pass(host, stop=None, out=None, clock=None, revision=None):
                      key=entry_key, home_dir=host.home)
     errors = reconcile_all(swept, state, home, stop, sweep_sec, now, out)
     state["projects"].update(errors)
+    run_automations([entry for entry, _seen in swept], state, stop, sweep_sec,
+                    now, out, key=entry_key,
+                    save=lambda saved: save_state(home, saved))
     if stop.is_set():
         print("[holo2] host sweep stopped on signal before its run was"
               " whole", file=out)

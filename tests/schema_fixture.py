@@ -157,6 +157,9 @@ DOCUMENTED_COLUMNS = {
                      "filedAt"},
     "threadMessages": {"id", "projectId", "scoutId", "author", "mode", "text",
                        "blocks", "answersId", "at", "consumedBy", "consumedAt"},
+    "automationFirings": {"id", "projectId", "automation", "revision",
+                          "subject", "cause", "firingKey", "mode", "state",
+                          "reason", "detail", "createdAt", "settledAt"},
 }
 
 
