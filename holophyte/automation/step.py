@@ -77,7 +77,12 @@ def start_worker(name, target, firing_id):
 
 def start_workers(name, target, leased, out):
     for firing_id in leased:
-        started = start_worker(name, target, firing_id)
+        try:
+            started = start_worker(name, target, firing_id)
+        except (Exception, SystemExit) as bad:
+            print(f"[holo2] {name}: firing {firing_id} leased, its worker"
+                  f" did not start: {bad}", file=out)
+            continue
         print(f"[holo2] {name}: firing {firing_id} leased to a worker,"
               f" {started}", file=out)
 

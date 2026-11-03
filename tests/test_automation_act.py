@@ -304,6 +304,37 @@ class ActTests(ActFixture):
         self.assertEqual(argv[argv.index("--automation-firing") + 1],
                          str(firing.id))
 
+    def test_a_worker_that_fails_to_start_does_not_stop_the_next(self):
+        self.act("alpha")
+        repo, path = "repos/o/alpha", self.paths["alpha"]
+        self.act_github.answer(path, f"GET {repo}/commits/{S}/check-runs", {
+            "total_count": 2, "check_runs": [
+                job("unit", "failure", 11, 7), job("lint", "failure", 21, 8)]})
+        self.act_github.answer(path, f"GET {repo}/rules/branches/main", [{
+            "type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "unit"},
+                                           {"context": "lint"}]}}])
+        self.act_github.answer(path, f"GET {repo}/actions/runs/8",
+                               {"id": 8, "run_attempt": 1})
+        argvs = []
+
+        def spawn(argv, **_kwargs):
+            argvs.append(argv)
+            if len(argvs) == 1:
+                raise OSError("no fork")
+            return SimpleNamespace(pid=0)
+
+        out = self.sweep(spawn)
+
+        firings = {row.id: row for row in self.firings("alpha")}
+        started = [int(argv[argv.index("--automation-firing") + 1])
+                   for argv in argvs]
+        self.assertEqual(sorted(started), sorted(firings))
+        self.assertEqual(len(started), 2)
+        self.assertIn(f"firing {started[0]} leased, its worker did not start:"
+                      " no fork", out)
+        self.assertIn(f"firing {started[1]} leased to a worker", out)
+
     def test_a_rerun_a_person_made_first_is_refused_cleanly(self):
         self.act("alpha")
         self.recorded_pass()
