@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 
 import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
 from holophyte.holo.cli import build_parser  # noqa: E402 - likewise
+from holophyte.holo.grammar import COMMANDS  # noqa: E402 - likewise
 
 README = ROOT / "README.md"
 DOCS = ROOT / "docs"
@@ -212,6 +213,13 @@ class HoloUsageTests(unittest.TestCase):
         words = [*holo_command_words(), "frobnicate"]
         self.assertEqual(unnamed_holo_words(CLI_PAGE.read_text(), words),
                          ["frobnicate"])
+
+    def test_cli_page_names_every_grouped_factory_mode_with_its_verb(self):
+        grouped = [" ".join(command.words) for command in COMMANDS
+                   if len(command.words) > 1 and command.mode
+                   and command.mode.startswith("--")]
+        self.assertIn("automations off", grouped)
+        self.assertEqual(unnamed_holo_words(CLI_PAGE.read_text(), grouped), [])
 
     def test_cli_page_mcp_write_table_names_every_signed_write(self):
         from holophyte.holo.mcp_tools import WRITES

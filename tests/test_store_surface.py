@@ -444,8 +444,13 @@ class StoreSurfaceTests(unittest.TestCase):
                                                        "waiting_messages"]),
                                  # HOLO-615: the host sweep's automation
                                  # firings, reserved once per key and read.
-                                 (store.automations, ["firings",
-                                                      "reserve_firing"]),
+                                 # HOLO-616: an automation's pause, set
+                                 # and cleared by the operator, and read.
+                                 (store.automations, ["automation_pause",
+                                                      "firings",
+                                                      "pause_automation",
+                                                      "reserve_firing",
+                                                      "resume_automation"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

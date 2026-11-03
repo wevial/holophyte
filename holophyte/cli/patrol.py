@@ -5,6 +5,8 @@ from time import time
 
 import store.automations
 import store.read
+from holophyte.automation.automation_config import BUILT_INS
+from holophyte.automation.gate import read_switch
 from holophyte.config.config_tables import patrol_config
 from holophyte.holo.render import age
 from holophyte.host.host_health import host_health
@@ -91,6 +93,8 @@ def store_sections(target, now, quiet_ms, repeat_runs):
         ended = store.read.last_ended_runs(conn, repeat_runs)
         blocked = store.read.blocked_tickets(conn)
         fired = store.automations.firings(conn, since=now - PROPOSALS_MS)
+        paused = [store.automations.automation_pause(conn, name)
+                  for name in BUILT_INS]
     finally:
         conn.close()
     flying = in_flight(runs, now)
@@ -98,7 +102,11 @@ def store_sections(target, now, quiet_ms, repeat_runs):
             "quiet": quiet(flying, events, now, quiet_ms),
             "repeat_failures": repeat_failures(ended, repeat_runs),
             "pulls": pull_candidates(runs, blocked),
-            "automations": proposals(fired)}
+            "automations": proposals(fired),
+            "automation_pauses": [
+                {"automation": pause.automation, "note": pause.note,
+                 "actor": pause.actor, "created_ms": pause.createdAt}
+                for pause in paused if pause is not None]}
 
 
 def proposals(fired):
@@ -165,9 +173,11 @@ def project_row(name, target, items, now):
     row["unreadable_pulls"] = unignored(unreadable, knobs.ignore, hid)
     row["ignored"] = [key for key in dict.fromkeys(knobs.ignore) if key in hid]
     row["automations"] = sections["automations"]
+    row["automation_pauses"] = sections["automation_pauses"]
     row["clean"] = not (row["attention"] or row["stranded"] or row["quiet"]
                         or row["repeat_failures"] or row["pull_requests"]
                         or row["unreadable_pulls"] or row["automations"]
+                        or row["automation_pauses"]
                         or row["main"]["state"] in ("failure", "unknown"))
     return row
 
@@ -176,7 +186,7 @@ def error_row(name, path, error):
     return {"name": name, "path": str(path), "error": error, "clean": False,
             "attention": [], **{key: [] for key in SECTIONS}, "main": None,
             "pull_requests": [], "unreadable_pulls": [], "ignored": [],
-            "automations": []}
+            "automations": [], "automation_pauses": []}
 
 
 def entry_name(target):
@@ -196,8 +206,22 @@ def project_snapshot(target):
     else:
         row = guarded_row(name, target, now,
                           lambda: attention(target, now)[1]["items"])
-    return {"now": now, "form": "project",
-            "host": host_health(host_entries(target), []), "projects": [row]}
+    from holophyte.host.registry import Host
+    health = with_switch(host_health(host_entries(target), []),
+                         Host.locate().home, now)
+    return {"now": now, "form": "project", "host": health, "projects": [row]}
+
+
+def with_switch(health, home, now):
+    switch = read_switch(home)
+    record = switch.record or {}
+    at = record.get("at") if isinstance(record.get("at"), int) else None
+    health["automations_off"] = None if not switch.off else {
+        "note": record.get("note"), "author": record.get("author"),
+        "at_ms": at, "age_sec": None if at is None else (now - at) // 1000,
+        "problem": switch.problem}
+    health["clean"] = health["clean"] and not switch.off
+    return health
 
 
 def host_entries(target):
@@ -249,7 +273,9 @@ def host_snapshot(host):
         items.extend(found)
         projects.append(row)
     return {"now": now, "form": "host",
-            "host": host_health(host.projects(), items), "projects": projects}
+            "host": with_switch(host_health(host.projects(), items),
+                                host.home, now),
+            "projects": projects}
 
 
 def item_line(item):
@@ -319,9 +345,12 @@ def github_lines(row):
 
 
 def automation_lines(row):
-    return [f"automation {firing['automation']} {firing['state']}"
-            f" {str(firing['detail'].get('sha', ''))[:12]}: {firing['reason']}"
-            for firing in row["automations"]]
+    paused = [f"automation {pause['automation']} paused: {pause['note']}"
+              for pause in row["automation_pauses"]]
+    return paused + [
+        f"automation {firing['automation']} {firing['state']}"
+        f" {str(firing['detail'].get('sha', ''))[:12]}: {firing['reason']}"
+        for firing in row["automations"]]
 
 
 def project_lines(row, now):
@@ -345,10 +374,20 @@ def size(count):
         count /= 1024
 
 
+def switch_lines(off):
+    if off is None:
+        return []
+    if off["problem"] is not None:
+        return [f"automations off: {off['problem']}"]
+    since = "?" if off["age_sec"] is None else age(off["age_sec"])
+    return [f"automations off since {since}: {off['note']}"]
+
+
 def finding_lines(health):
-    lines = [f"attention {item['kind']}"
-             f"{' ' + item['project'] if item.get('project') else ''}:"
-             f" {item_line(item)}" for item in health["attention"]]
+    lines = switch_lines(health.get("automations_off"))
+    lines += [f"attention {item['kind']}"
+              f"{' ' + item['project'] if item.get('project') else ''}:"
+              f" {item_line(item)}" for item in health["attention"]]
     tmp, kernel = health["tmp"], health["kernel"]
     if tmp.get("full"):
         lines.append(f"/tmp {tmp['used_percent']}% used,"

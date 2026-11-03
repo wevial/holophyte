@@ -338,6 +338,37 @@ class AutomationTests(PatrolFixture):
                       self.holo("-p", "q")[1])
 
 
+class AutomationStopTests(PatrolFixture):
+    def run_holo(self, *argv):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIn(holo_cli.main(list(argv)), (None, 0))
+
+    def test_the_kill_switch_and_a_pause_are_patrol_lines(self):
+        self.project("q")
+        self.run_holo("automations", "off", "investigating")
+        self.run_holo("automation", "pause", "main_watch", "flaky runner",
+                      "-p", "q")
+
+        snap = json.loads(self.holo("--json")[1])
+        text = self.holo()[1]
+
+        self.assertEqual(snap["form"], "host")
+        self.assertEqual(snap["host"]["automations_off"]["note"],
+                         "investigating")
+        self.assertFalse(snap["host"]["clean"])
+        [row] = snap["projects"]
+        self.assertFalse(row["clean"])
+        self.assertEqual([(pause["automation"], pause["note"])
+                          for pause in row["automation_pauses"]],
+                         [("main_watch", "flaky runner")])
+        host = text[:len(text) - len(projects_text(text))].splitlines()
+        [off] = [line for line in host
+                 if line.startswith("  automations off since ")]
+        self.assertIn("investigating", off)
+        self.assertIn("  automation main_watch paused: flaky runner\n",
+                      projects_text(text))
+
+
 class LastEventTests(PatrolFixture):
     def test_a_run_with_no_event_maps_to_none(self):
         conn = self.project("q")

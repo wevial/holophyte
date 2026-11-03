@@ -29,9 +29,13 @@ def _host_mode(parser, args):
     if args.supervise:
         from holophyte.host.sweep_host import supervise_host
         return supervise_host(Host.locate(), once=args.once)
+    if args.automations_off or args.automations_on:
+        from holophyte.automation.switches import set_switch
+        return set_switch(Host.locate().home, args.automations_off, args.note)
     if not (args.status or args.patrol):
         parser.error("the following arguments are required: project (only "
-                     "--status, --patrol, --serve and --supervise have a host"
+                     "--status, --patrol, --serve, --supervise,"
+                     " --automations-off and --automations-on have a host"
                      " form)")
     report = host_patrol_report if args.patrol else host_status_report
     try:

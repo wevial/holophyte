@@ -127,6 +127,18 @@ COMMANDS = (
             records=("hold",)),
     Command(("release",), "--release-hold", "enable admission again",
             note=REQUIRED, records=("release_hold",)),
+    Command(("automations", "off"), "--automations-off",
+            "stop every automation on the host until automations on",
+            note=REQUIRED, records=()),
+    Command(("automations", "on"), "--automations-on",
+            "let the host's automations run again", note=REQUIRED,
+            records=()),
+    Command(("automation", "pause"), "--automation-pause",
+            "stop one automation on the project until it is resumed",
+            takes=("NAME",), note=REQUIRED, records=()),
+    Command(("automation", "resume"), "--automation-resume",
+            "clear one automation's pause on the project", takes=("NAME",),
+            note=REQUIRED, records=()),
     Command(("start",), None, "start the project's loop unit and return",
             note=OPTIONAL, flags=(FOREGROUND,),
             records=("release_hold", "launch_loop")),
@@ -243,6 +255,10 @@ GROUPS = {
     "story": "a story's modes",
     "ticket": "holo ticket KEY: one ticket's detail; holo ticket check FILE:"
               " check a draft; ticket VERB is holo VERB",
+    "automations": "the host's kill switch: holo automations off NOTE stops"
+                   " every automation, holo automations on NOTE clears it",
+    "automation": "one automation on the project: holo automation pause"
+                  " NAME NOTE, holo automation resume NAME NOTE",
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
     "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
              " show ID: one scout's detail; holo scout ask ID TEXT: ask a"

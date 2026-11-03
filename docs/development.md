@@ -345,7 +345,16 @@ Each module, one line:
 - `holophyte/automation/step.py` — the host sweep's automation step after
   the reconcile: each project in `dry_run`, round robin from
   `automation_cursor` under its own `AUTOMATION_SHARE` of `sweep_sec`, a cut
-  or failed project one `automations cut` or `automations failed` line.
+  or failed project one `automations cut` or `automations failed` line;
+  nothing at all while the kill switch is off, and a project only while
+  its main watch has no standing pause, before its mode is read.
+- `holophyte/automation/gate.py` — the host's kill switch:
+  `read_switch()` reads `HOLOPHYTE_HOME/automations.json`, an unreadable
+  record counting as off.
+- `holophyte/automation/switches.py` — the operator's commands:
+  `set_switch()` for `--automations-off` and `--automations-on`, the record
+  replaced whole and a `host-actions.jsonl` line, and `pause()` and
+  `resume()` for `--automation-pause` and `--automation-resume`.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
   `check()` before each unit of Linear or GitHub work, and `admit()`
   before each Linear or GitHub request, which past the bound fails as an
@@ -372,7 +381,8 @@ Each module, one line:
   attention items grouped by kind, the runs in flight, stranded tickets,
   quiet runs and repeat failures, less `[patrol] ignore`, then main's
   checks, the check-held pull requests, the automation firings proposed in
-  the last 24 hours and the host's health; read only.
+  the last 24 hours, the paused automations and the host's health with its
+  kill switch; read only.
 - `holophyte/pr/check_holds.py` — the patrol's GitHub reads: `main_checks()`,
   main's head sha and the conclusion of its check runs, with each red run,
   whether main requires it and its job and workflow run ids, and
@@ -957,7 +967,10 @@ The store is its own package:
   and `reject_proposal()` answer one with its `decide` intervention.
 - `store/automations.py` — the `automationFirings` table:
   `reserve_firing()` inserts a `proposed` firing once per key, returning
-  its id or `None`, and `firings()` reads them back, newest first.
+  its id or `None`, and `firings()` reads them back, newest first; and the
+  `automationPauses` table: `pause_automation()` and `resume_automation()`
+  open and clear an automation's one pause, and `automation_pause()` reads
+  the open one.
 - `store/scouts.py` — a scout run's record: `create_scout()`,
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper

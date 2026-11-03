@@ -3,6 +3,7 @@ MAIN_WATCH = "main_watch"
 OFF, DRY_RUN = "off", "dry_run"
 MAIN_WATCH_MODES = (OFF, DRY_RUN)
 AUTOMATION_KEYS = {MAIN_WATCH: frozenset({"mode"})}
+BUILT_INS = tuple(AUTOMATION_KEYS)
 
 
 def main_watch_mode(project):

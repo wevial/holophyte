@@ -351,7 +351,7 @@ def run_pass(host, stop=None, out=None, clock=None, revision=None):
     state["projects"].update(errors)
     run_automations([entry for entry, _seen in swept], state, stop, sweep_sec,
                     now, out, key=entry_key,
-                    save=lambda saved: save_state(home, saved))
+                    save=lambda saved: save_state(home, saved), home=home)
     if stop.is_set():
         print("[holo2] host sweep stopped on signal before its run was"
               " whole", file=out)
