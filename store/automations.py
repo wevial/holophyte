@@ -8,8 +8,10 @@ from .enums import FiringMode, FiringState, PauseActor, check_clause
 
 PROPOSED = FiringState.PROPOSED.value
 LEASED = FiringState.LEASED.value
-SETTLED = frozenset((FiringState.REFUSED.value, FiringState.CONFIRMED.value,
-                     FiringState.CANCELED.value))
+CONFIRMED = FiringState.CONFIRMED.value
+UNKNOWN = FiringState.UNKNOWN.value
+CANCELED = FiringState.CANCELED.value
+SETTLED = frozenset((FiringState.REFUSED.value, CONFIRMED, UNKNOWN, CANCELED))
 OPERATOR = PauseActor.OPERATOR.value
 
 FIRINGS_DDL = f"""
@@ -138,14 +140,13 @@ def _firing(row):
     return Firing(*row[:10], json.loads(row[10]), *row[11:])
 
 
-def firings(conn, since=None):
+def firings(conn):
     """None read from a store an older build last wrote, which lacks the table."""
     if not _has_table(conn, "automationFirings"):
         return []
     rows = conn.execute(
         f"SELECT {_selected(conn)} FROM automationFirings"
-        " WHERE createdAt >= ? ORDER BY createdAt DESC, id DESC",
-        (0 if since is None else since,)).fetchall()
+        " ORDER BY createdAt DESC, id DESC").fetchall()
     return [_firing(row) for row in rows]
 
 
@@ -178,10 +179,30 @@ def settle_firing(conn, firing_id, pid, state, reason, *, now, detail=None):
         cursor = conn.execute(
             "UPDATE automationFirings SET state = ?, reason = ?,"
             " detail = COALESCE(?, detail), settledAt = ?"
-            " WHERE id = ? AND state = ? AND workerPid = ?",
+            " WHERE id = ? AND state = ? AND workerPid IS ?",
             (state, reason, None if detail is None
              else json.dumps(detail, sort_keys=True), now, firing_id,
              LEASED, pid))
+        return cursor.rowcount == 1
+
+
+def replay_firing(conn, firing_id, *, lease_until, now):
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE automationFirings SET leaseUntil = ?, detail = json_set("
+            "detail, '$.replays', COALESCE(json_extract(detail, '$.replays'),"
+            " 0) + 1) WHERE id = ? AND state = ? AND workerPid IS NULL"
+            " AND leaseUntil <= ?", (lease_until, firing_id, LEASED, now))
+        return cursor.rowcount == 1
+
+
+def record_result(conn, firing_id, result, reason, *, now):
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE automationFirings SET reason = ?, detail = json_set("
+            "detail, '$.result', ?, '$.result_at', ?) WHERE id = ?"
+            " AND state = ? AND json_extract(detail, '$.result') IS NULL",
+            (reason, result, now, firing_id, CONFIRMED))
         return cursor.rowcount == 1
 
 

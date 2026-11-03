@@ -451,6 +451,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-620: the main watch's merge hold,
                                  # placed on its firing, ended and read by
                                  # the merge gate, its runs read by patrol.
+                                 # HOLO-618: the sweep replays or settles
+                                 # an expired lease, and records a
+                                 # confirmed rerun's result.
                                  (store.automations, ["automation_pause",
                                                       "end_merge_hold",
                                                       "firing",
@@ -460,6 +463,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                                       "open_merge_hold",
                                                       "pause_automation",
                                                       "place_merge_hold",
+                                                      "record_result",
+                                                      "replay_firing",
                                                       "reserve_firing",
                                                       "resume_automation",
                                                       "settle_firing",

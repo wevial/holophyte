@@ -1706,6 +1706,25 @@ never its `[serve] name`, whose firings the sweep reserves in dry run. A rule
 change that bumps the main watch's revision returns an `act` project to dry
 run until its `revision` names the new one.
 
+A leased firing whose lease expires is settled from what GitHub shows,
+never by calling again. One no worker took is leased once more and its
+worker started, counting `replays` in its detail; a second expiry cancels it,
+`no worker took the firing after one replay`. One a worker took is read back
+from the workflow run: an attempt past the recorded one settles it
+`confirmed` with `read_back` and `rerun_attempt`, the same attempt `canceled`,
+`the worker ended before its rerun reached GitHub`, and an unreadable answer
+`unknown`, naming the error. A confirmed firing's rerun is read each pass at
+its sha, the newest job per check name answering, until it records a
+`result`: `green` when every check it named passed, `suspected flake: NAMES
+passed on rerun at SHA12`; `red_again` when one failed on a job it did not
+record, `red again at SHA12: NAMES; merged since GREEN12: SHA7 SUBJECT, ...`,
+at most 20 commits from GitHub's compare of the last head whose required
+checks the sweep read as success (`sweep.json`'s `main_green`, per project)
+to the sha, or `no green main seen yet`; and `superseded`, read before the
+rerun's checks, once main's head is past the firing's sha.
+`holo patrol` lists an `unknown` firing until a person settles it, and a
+`red_again` result for 24 hours; a suspected flake is not listed.
+
 While a required check is red on main's head, an `act` main watch at the
 approved revision also places a merge hold naming that sha and its red
 checks, with a `confirmed` `hold_merges` firing; a newer red head moves the

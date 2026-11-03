@@ -32,23 +32,41 @@ def _failed_jobs(runs, required):
             for check in pr_status._failed_checks(runs)]
 
 
-def main_checks(target):
+def newest_runs(runs):
+    ordered = sorted((run for run in runs if type(run.get("id")) is int),
+                     key=lambda run: run["id"])
+    return {run.get("name"): run for run in ordered}
+
+
+def _required_green(runs, required):
+    newest = newest_runs(runs)
+    return bool(required) and all(
+        newest.get(name, {}).get("conclusion") == "success"
+        for name in required)
+
+
+def main_reading(target):
     pull = github._origin_pull(target)
     if pull is None:
-        return {"state": "skipped", "detail": "no GitHub origin"}
+        return {"state": "skipped", "detail": "no GitHub origin"}, False
     try:
         sha = _head(target, pull)
         runs, required = _reads(target, pull, sha)
     except InfraFailure as bad:
-        return {"state": "unknown", "detail": str(bad)}
+        return {"state": "unknown", "detail": str(bad)}, False
+    green = _required_green(runs, required)
     failed = _failed_jobs(runs, required)
     if failed:
-        return {"state": "failure", "sha": sha, "failed": failed}
+        return {"state": "failure", "sha": sha, "failed": failed}, green
     if not runs:
-        return {"state": "none", "sha": sha}
+        return {"state": "none", "sha": sha}, green
     if any(run.get("status") != "completed" for run in runs):
-        return {"state": "pending", "sha": sha}
-    return {"state": "success", "sha": sha}
+        return {"state": "pending", "sha": sha}, green
+    return {"state": "success", "sha": sha}, green or not required
+
+
+def main_checks(target):
+    return main_reading(target)[0]
 
 
 def pull_checks(target, pull):

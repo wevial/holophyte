@@ -206,8 +206,11 @@ What a run must remember between runs and no store column holds lives in
 `HOLOPHYTE_HOME/sweep.json`, rewritten whole after every project: when the
 run started and ended, its pid, revision and exit, each project's outcome
 (`ok`, `skipped: WHY` or `error: WHY`), the unavailable counts, the
-round-robin cursor, the GitHub rate budget and the pull-request and board
-throttles. A missing or unreadable file is an empty state and one line. A
+round-robin cursor, the GitHub rate budget, the pull-request and board
+throttles, and `main_green`, the last head of each project's main the
+automation step read with every required check's newest run a success
+(every check run completed and none red when main requires none). A missing
+or unreadable file is an empty state and one line. A
 run whose `started` has no `ended` did not finish; the next run says so and
 resumes at the cursor. One project's failure is that project's `error`,
 never the run's; the run exits 1 when any project errored, and the timer
