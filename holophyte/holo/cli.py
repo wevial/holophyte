@@ -60,6 +60,9 @@ def project_argv(args, default):
     from holophyte.holo.resolve import HOST_FORMS, HOST_SWITCHES, none_found, resolve
     from holophyte.host.registry import HostError
     if args.command.mode in HOST_SWITCHES:
+        if args.project is not None:
+            args.leaf.error(f"holo {' '.join(args.command.words)} is the"
+                            " host's; it takes no -p")
         return []
     try:
         resolved = resolve(args.project, default)

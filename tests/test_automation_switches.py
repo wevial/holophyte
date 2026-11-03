@@ -32,9 +32,11 @@ class SwitchFixture(MainWatchFixture):
 
     def holo(self, *argv):
         """`holo ARGV`'s exit code and its stderr, a SystemExit's text included."""
-        err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(err):
+        return self.holo_out(*argv)[:2]
+
+    def holo_out(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
                 code = holo_cli.main(list(argv))
             except SystemExit as stop:
@@ -42,7 +44,11 @@ class SwitchFixture(MainWatchFixture):
         if isinstance(code, str):
             err.write(code)
             code = 1
-        return code or 0, err.getvalue()
+        return code or 0, err.getvalue(), out.getvalue()
+
+    def result(self, *argv):
+        code, _, out = self.holo_out(*argv, "--json")
+        return code, json.loads(out)
 
     def opted_in_red(self, *names):
         for name in names:
@@ -99,6 +105,25 @@ class KillSwitchTests(SwitchFixture):
         self.assertEqual(self.holo("automations", "on", "x")[0], 1)
         self.assertEqual(self.files(), written)
 
+    def test_a_project_given_to_the_host_switch_is_refused(self):
+        code, err = self.holo("automations", "off", "maintenance", "-p", "alpha")
+
+        self.assertEqual(code, 2)
+        self.assertIn("-p", err)
+        self.assertEqual(self.files(), {})
+
+    def test_the_switch_prints_a_json_result_and_a_json_refusal(self):
+        code, result = self.result("automations", "off", "investigating")
+        self.assertEqual(code, 0)
+        self.assertEqual((result["action"], result["ok"]),
+                         ("automations off", True))
+        self.assertIn("investigating", result["detail"])
+
+        code, result = self.result("automations", "off", "again")
+        self.assertEqual(code, 1)
+        self.assertFalse(result["ok"])
+        self.assertIn("investigating", result["detail"])
+
     def test_an_unreadable_kill_switch_counts_as_off(self):
         self.opted_in_red("alpha")
         path = self.home / "automations.json"
@@ -150,6 +175,16 @@ class PauseTests(SwitchFixture):
                             "-p", "alpha")
         self.assertEqual(code, 1)
         self.assertEqual(self.pauses("alpha"), [])
+
+    def test_a_pause_prints_a_json_result(self):
+        code, result = self.result("automation", "pause", "main_watch",
+                                   "flaky runner", "-p", "alpha")
+
+        self.assertEqual(code, 0)
+        self.assertEqual((result["action"], result["ok"]),
+                         ("automation pause", True))
+        self.assertEqual([row[1] for row in self.pauses("alpha")],
+                         ["flaky runner"])
 
     def test_pausing_a_paused_automation_names_the_standing_pause(self):
         self.holo("automation", "pause", "main_watch", "flaky runner",
