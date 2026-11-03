@@ -11,6 +11,7 @@ from holophyte.automation.automation_config import (
 from holophyte.automation.policy import RERUN_FAILED_JOBS, report_only_reason
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github, pr_status
+from holophyte.pr.check_holds import newest_runs
 
 REVISION = 1
 SUBJECT = "main"
@@ -42,20 +43,10 @@ def workflow_run_attempt(target, pull, run):
     return attempt
 
 
-def newest_jobs(runs):
-    newest = {}
-    for run in runs:
-        name, job_id = run.get("name"), run.get("id")
-        if type(job_id) is int and (name not in newest
-                                    or job_id > newest[name]["id"]):
-            newest[name] = run
-    return newest
-
-
 def rerun_reading(firing, runs):
     jobs = firing.detail["jobs"]
     recorded = {job["job_id"] for job in jobs}
-    newest = newest_jobs(runs)
+    newest = newest_runs(runs)
     answered = [(job["name"], newest.get(job["name"])) for job in jobs]
     red = [name for name, run in answered if run is not None
            and run["id"] not in recorded and run.get("status") == "completed"
@@ -89,6 +80,9 @@ def merged_since(target, pull, green, sha):
 
 def result_of(target, pull, firing, head, green):
     sha = firing.detail["sha"]
+    if head != sha:
+        return SUPERSEDED, (f"main moved to {head[:12]} before the rerun at"
+                            f" {sha[:12]} was read")
     runs = pr_status._check_runs_of(target, pull, sha)
     if runs is None:
         raise InfraFailure(f"GitHub answered an unreadable check read at {sha}")
@@ -101,9 +95,6 @@ def result_of(target, pull, firing, head, green):
                  f"merged since {green[:12]}:"
                  f" {merged_since(target, pull, green, sha)}")
         return RED_AGAIN, f"red again at {sha[:12]}: {named}; {since}"
-    if head is not None and head != sha:
-        return SUPERSEDED, (f"main moved to {head[:12]} before the rerun at"
-                            f" {sha[:12]} finished")
     return None
 
 

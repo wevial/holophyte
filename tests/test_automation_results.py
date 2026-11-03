@@ -138,6 +138,22 @@ class ExpiredLeaseTests(ResultFixture):
         self.assertFalse(row["clean"])
 
 
+class MainGreenTests(ResultFixture):
+    def test_main_green_is_the_last_head_whose_required_checks_passed(self):
+        self.act("alpha")
+        self.head("alpha", G, [job("unit", "success", 5, 3),
+                               job("lint", "failure", 6, 4)])
+        self.later()
+        self.assertEqual(self.state()["main_green"], {"alpha": G})
+
+        self.head("alpha", S2, [job("lint", "success", 21, 8)])
+        self.later()
+        self.head("alpha", S, [job("unit", "skipped", 31, 9)])
+        self.later()
+
+        self.assertEqual(self.state()["main_green"], {"alpha": G})
+
+
 class RerunResultTests(ResultFixture):
     def confirmed(self, *names):
         """Real workers rerun main's failed jobs; each firing is confirmed."""
@@ -213,6 +229,20 @@ class RerunResultTests(ResultFixture):
         firing = self.only("alpha")
         self.assertEqual(firing.detail["result"], "superseded")
         self.assertIn(S2[:12], firing.reason)
+
+    def test_a_finished_rerun_after_main_moved_is_superseded(self):
+        self.act("alpha")
+        self.confirmed("alpha")
+        self.head("alpha", S2, [job("unit", "success", 21, 8)])
+        self.rerun_answers("alpha", [job("unit", "failure", 12, 7)])
+
+        self.later()
+
+        firing = self.only("alpha")
+        self.assertEqual(firing.detail["result"], "superseded")
+        self.assertIn(S2[:12], firing.reason)
+        out, _row = self.patrol("alpha")
+        self.assertNotIn("automation main_watch", out)
 
     def test_the_reruns_own_failure_triggers_nothing(self):
         self.act("alpha")

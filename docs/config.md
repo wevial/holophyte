@@ -1718,9 +1718,10 @@ its sha, the newest job per check name answering, until it records a
 `result`: `green` when every check it named passed, `suspected flake: NAMES
 passed on rerun at SHA12`; `red_again` when one failed on a job it did not
 record, `red again at SHA12: NAMES; merged since GREEN12: SHA7 SUBJECT, ...`,
-at most 20 commits from GitHub's compare of the last head the sweep read
-green (`sweep.json`'s `main_green`, per project) to the sha, or `no green
-main seen yet`; and `superseded` when main's head moved while the rerun ran.
+at most 20 commits from GitHub's compare of the last head whose required
+checks the sweep read as success (`sweep.json`'s `main_green`, per project)
+to the sha, or `no green main seen yet`; and `superseded`, read before the
+rerun's checks, once main's head is past the firing's sha.
 `holo patrol` lists an `unknown` firing until a person settles it, and a
 `red_again` result for 24 hours; a suspected flake is not listed.
 

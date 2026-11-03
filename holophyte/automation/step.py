@@ -26,7 +26,7 @@ from holophyte.loop.reexec import (
 )
 from holophyte.loop.runs import open_store
 from holophyte.pr import github
-from holophyte.pr.check_holds import main_checks
+from holophyte.pr.check_holds import main_reading
 
 AUTOMATION_SHARE = 0.25
 SPAWN = subprocess.Popen
@@ -137,9 +137,11 @@ def read_results(target, conn, project, pull, checks, green, now):
     for firing in project_firings(conn, project, store.automations.CONFIRMED):
         if "result" in firing.detail:
             continue
+        if checks.get("sha") is None:
+            return
         try:
             found = main_watch.result_of(target, pull, firing,
-                                         checks.get("sha"), green)
+                                         checks["sha"], green)
         except InfraFailure:
             continue
         if found is not None:
@@ -154,10 +156,10 @@ def observe_store(name, target, watch, listed, now, greens, out):
         pull = github._origin_pull(target)
         if project is not None and pull is not None:
             settle_expired(target, conn, project, pull, now, leased)
-            checks = main_checks(target)
+            checks, required_green = main_reading(target)
             read_results(target, conn, project, pull, checks,
                          greens.get(name), now)
-            if checks["state"] == "success":
+            if required_green:
                 greens[name] = checks["sha"]
             main_watch.observe(target, conn, project, pull, checks, now,
                                watch, listed, leased)
