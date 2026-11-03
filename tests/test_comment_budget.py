@@ -61,8 +61,10 @@ PINNED = {
     "holophyte/automation/automation_config.py": 1,
     "holophyte/automation/gate.py": 1,
     "holophyte/automation/main_watch.py": 1,
+    "holophyte/automation/policy.py": 1,
     "holophyte/automation/step.py": 3,
     "holophyte/automation/switches.py": 1,
+    "holophyte/automation/worker.py": 1,
 
     "holophyte/babysit/__init__.py": 0,
     "holophyte/babysit/adjudicator_outage.py": 0,

@@ -159,7 +159,8 @@ DOCUMENTED_COLUMNS = {
                        "blocks", "answersId", "at", "consumedBy", "consumedAt"},
     "automationFirings": {"id", "projectId", "automation", "revision",
                           "subject", "cause", "firingKey", "mode", "state",
-                          "reason", "detail", "createdAt", "settledAt"},
+                          "reason", "detail", "createdAt", "settledAt",
+                          "leaseUntil", "workerPid"},
     "automationPauses": {"id", "automation", "note", "actor", "createdAt",
                          "clearedAt", "clearNote"},
 }

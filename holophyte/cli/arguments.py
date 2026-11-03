@@ -388,6 +388,11 @@ def build_parser():
              "-- its lead worktree, its heartbeat and its end -- and exit 0 "
              "when it ends done, else 1; spawned by the host sweep, not "
              "meant to be typed")
+    modes.add_argument(
+        "--automation-firing", metavar="ID", type=int,
+        help="internal: take the lease of act firing ID of the project's "
+             "store, recheck it and make its one GitHub call, settle it and "
+             "exit 0; spawned by the host sweep, not meant to be typed")
     parser.add_argument(
         "--act", action="store_true",
         help="with --sweep: fail each tripped run and release its leases, "

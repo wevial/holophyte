@@ -525,6 +525,11 @@ daemons = []
 # integer of at least 1. Separate from any project's `[loop] workers`.
 max_parallel = 2
 
+[automations]
+# Repositories, as OWNER/NAME of a project's GitHub origin compared without
+# case, whose firings the sweep reserves in dry run whatever their mode.
+report_only = []
+
 [[project]]
 path = "/path/to/holophyte"
 ```

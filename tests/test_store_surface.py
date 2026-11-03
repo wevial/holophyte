@@ -446,11 +446,16 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # firings, reserved once per key and read.
                                  # HOLO-616: an automation's pause, set
                                  # and cleared by the operator, and read.
+                                 # HOLO-617: an act firing's worker reads
+                                 # its firing, takes it and settles it.
                                  (store.automations, ["automation_pause",
+                                                      "firing",
                                                       "firings",
                                                       "pause_automation",
                                                       "reserve_firing",
-                                                      "resume_automation"]),
+                                                      "resume_automation",
+                                                      "settle_firing",
+                                                      "take_firing"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.

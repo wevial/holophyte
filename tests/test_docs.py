@@ -24,8 +24,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import holophyte.cli.entry  # noqa: E402 - after the sys.path insert above
+from holophyte.automation.automation_config import AUTOMATION_KEYS  # noqa: E402
 from holophyte.holo.cli import build_parser  # noqa: E402 - likewise
 from holophyte.holo.grammar import COMMANDS  # noqa: E402 - likewise
+from holophyte.host.registry import HOST_KEYS  # noqa: E402 - likewise
 
 README = ROOT / "README.md"
 DOCS = ROOT / "docs"
@@ -120,6 +122,18 @@ class DevelopmentDocTests(unittest.TestCase):
         self.assertEqual(stale, [])
         self.assertIn("C901", text)
         self.assertRegex(text, r"\babove 12\b")
+
+
+class AutomationsDocTests(unittest.TestCase):
+    def test_the_automations_section_names_every_rule_and_host_key(self):
+        text = (DOCS / "config.md").read_text()
+        section = text.split("## `[automations]`", 1)[1].split("\n## ", 1)[0]
+        keys = {key for rule in AUTOMATION_KEYS.values() for key in rule}
+        keys |= HOST_KEYS["automations"]
+        self.assertLessEqual({"revision", "report_only"}, keys)
+        self.assertEqual(sorted(
+            key for key in keys
+            if not re.search(rf"`(?:\[[\w.]+\] )?{key}`", section)), [])
 
 
 class LoopDocTests(unittest.TestCase):
