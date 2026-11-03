@@ -147,6 +147,16 @@ class ActFixture(SwitchFixture):
         [firing] = self.firings(name)
         return firing
 
+    def leased(self, action, revision=1):
+        conn = self.conn("alpha")
+        project = conn.execute("SELECT id FROM projects").fetchone()[0]
+        now = int(time.time() * 1000)
+        return store.automations.reserve_firing(
+            conn, project, "main_watch", revision, "main", f"{action} cause",
+            mode="act", reason="r", detail={
+                "action": action, "sha": S, "workflow_run_id": 7,
+                "run_attempt": 1}, now=now, lease_until=now + 60_000)
+
 
 class ActTests(ActFixture):
     def test_an_act_firing_reruns_main_once(self):
@@ -251,16 +261,6 @@ class ActTests(ActFixture):
 
 
 class PolicyTests(ActFixture):
-    def leased(self, action):
-        conn = self.conn("alpha")
-        project = conn.execute("SELECT id FROM projects").fetchone()[0]
-        now = int(time.time() * 1000)
-        return store.automations.reserve_firing(
-            conn, project, "main_watch", 1, "main", f"{action} cause",
-            mode="act", reason="r", detail={
-                "action": action, "sha": S, "workflow_run_id": 7,
-                "run_attempt": 1}, now=now, lease_until=now + 60_000)
-
     def test_an_action_outside_the_policy_is_refused_before_github(self):
         self.act("alpha")
         refused = {}
@@ -276,6 +276,35 @@ class PolicyTests(ActFixture):
         self.assertIn("main_watch's list", refused["move_ready"].reason)
         self.assertEqual(self.act_github.calls(self.paths["alpha"]), [])
 
+
+class StaleRuleTests(ActFixture):
+    def test_a_firing_from_a_past_rule_revision_is_canceled(self):
+        """The maintainer still approves revision 0, the firing's, but the
+        running rule is at revision 1, which no one approved."""
+        self.act("alpha", revision=0)
+        firing_id = self.leased("rerun_failed_jobs", revision=0)
+
+        ran = self.worker("alpha", firing_id)
+
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        firing = store.automations.firing(self.conn("alpha"), firing_id)
+        self.assertEqual(firing.state, "canceled")
+        self.assertIn("rule revision 1", firing.reason)
+        self.assertEqual(self.act_github.calls(self.paths["alpha"]), [])
+
+    def test_a_config_that_no_longer_reads_cancels_the_firing(self):
+        self.act("alpha")
+        firing_id = self.leased("rerun_failed_jobs")
+        config = Project.locate(self.paths["alpha"], adopt=False).config_path
+        config.write_text(config.read_text().replace("revision = 1\n", ""))
+
+        ran = self.worker("alpha", firing_id)
+
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        firing = store.automations.firing(self.conn("alpha"), firing_id)
+        self.assertEqual(firing.state, "canceled")
+        self.assertIn("needs revision", firing.reason)
+        self.assertEqual(self.act_github.calls(self.paths["alpha"]), [])
 
 if __name__ == "__main__":
     import unittest

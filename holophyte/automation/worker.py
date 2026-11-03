@@ -4,9 +4,13 @@ import time
 
 import store
 import store.automations
-from holophyte.automation.automation_config import ACT, main_watch_config
+from holophyte.automation.automation_config import (
+    ACT,
+    main_watch_config,
+    unapproved,
+)
 from holophyte.automation.gate import inhibitor
-from holophyte.automation.main_watch import workflow_run_attempt
+from holophyte.automation.main_watch import REVISION, workflow_run_attempt
 from holophyte.automation.policy import refusal
 from holophyte.babysit.check_fix import rerun_failed_jobs
 from holophyte.config.project import Project
@@ -28,10 +32,13 @@ def now_ms():
 def config_change(target, firing):
     try:
         watch = main_watch_config(Project.locate(target.path, adopt=False))
-    except ValueError as bad:
+    except (ValueError, SystemExit) as bad:
         return f"the config no longer reads: {bad}"
     if watch.mode != ACT:
         return f"[automations.{firing.automation}] mode is now {watch.mode}"
+    stale = unapproved(watch, REVISION)
+    if stale is not None:
+        return stale
     if watch.revision != firing.revision:
         return (f"[automations.{firing.automation}] revision is now"
                 f" {watch.revision}, not rule revision {firing.revision}")
