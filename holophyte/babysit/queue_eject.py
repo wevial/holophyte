@@ -119,7 +119,8 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
               f" the full run on the head commit, was re-queued once, and"
               f" failed the same way on merge group {removed.group[:12]}")
     label = merge_config(run.project).queue_full_label
-    latest = _latest_full_run(run, beat_s, pull, reviewed)
+    latest = _latest_full_run(run, beat_s, pull, reviewed,
+                              f"a test failure ({shown}) ejected it")
     _record_label(run, label)
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
@@ -149,7 +150,8 @@ def labelled_full_run(run, beat_s, pull, reviewed):
     label = _label_on(run.conn, run.run_id)
     if label is None:
         return None
-    latest = _latest_full_run(run, beat_s, pull, reviewed)
+    latest = _latest_full_run(run, beat_s, pull, reviewed,
+                              f"it carries {label}")
     if _awaited(run, beat_s, pull, reviewed, latest,
                 latest.get("run_attempt") or 1) != "success":
         return _head_failures(run, beat_s, pull, latest["id"])
@@ -163,11 +165,10 @@ def unlabel_ended_run(target, conn, run_id):
     label = _label_on(conn, run_id)
     if label is None:
         return
-    ended, outcome, pr_url = conn.execute(
-        "SELECT endedAt, outcome, prUrl FROM runs WHERE id = ?",
-        (run_id,)).fetchone()
+    ended, pr_url = conn.execute(
+        "SELECT endedAt, prUrl FROM runs WHERE id = ?", (run_id,)).fetchone()
     pull = pr_status.parse_pr_url(pr_url)
-    if ended is not None and outcome != "paused" and pull is not None:
+    if ended is not None and pull is not None:
         drop_label(target, conn, run_id, pull, label)
 
 
@@ -202,24 +203,23 @@ def _record_label(run, label):
                            payload=json.dumps({"label": label, "on": True}))
 
 
-def _latest_full_run(run, beat_s, pull, reviewed):
-    workflow = merge_config(run.project).queue_full_workflow
+def _latest_full_run(run, beat_s, pull, reviewed, why):
+    workflow, refused = merge_config(run.project).queue_full_workflow, ""
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
             answer = github.rest(
                 run.project, pull, "GET", f"repos/{pull.repo}/actions/runs"
                 f"?head_sha={run.sha}&per_page={RUNS_PAGE}")
-    except InfraFailure as refused:
-        answer = {"refused": str(refused)}
+    except InfraFailure as failure:
+        answer, refused = {}, f": {failure}"
     batch = answer.get("workflow_runs") if isinstance(answer, dict) else None
     runs = [r for r in batch or () if isinstance(r, dict)
             and r.get("name") == workflow and isinstance(r.get("id"), int)]
     if not runs:
         _park(run, pull, reviewed,
-              f"the merge queue removed the pull request for a test failure,"
-              f" and no run of [merge] queue_full_workflow = {workflow!r} on"
-              f" the head commit {run.sha[:12]} can be re-run"
-              + (f": {answer['refused']}" if "refused" in answer else ""))
+              f"the pull request is due a full run because {why}, and no run"
+              f" of [merge] queue_full_workflow = {workflow!r} on the head"
+              f" commit {run.sha[:12]} was found to re-run{refused}")
     return max(runs, key=lambda r: r["id"])
 
 

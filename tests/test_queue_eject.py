@@ -340,6 +340,18 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
 
+    def test_a_test_failure_with_no_full_run_on_the_head_parks_unlabelled(
+            self):
+        self.eject(REQUEUED_AND_MERGED,
+                   config=FULL.replace('"E2E"', '"E2E (localhost)"'),
+                   log=FAILED, groups=((GROUP_SHA, UNIT),))
+
+        self.assertEqual([kind for kind, _ in self.asked], ["enqueue"])
+        self.assertIn("queue_full_workflow = 'E2E (localhost)'",
+                      self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
     def test_a_run_that_ends_with_its_label_on_removes_it(self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
                    groups=((GROUP_SHA, UNIT),), abort=True)
