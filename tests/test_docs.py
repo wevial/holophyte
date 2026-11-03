@@ -135,6 +135,12 @@ class AutomationsDocTests(unittest.TestCase):
             key for key in keys
             if not re.search(rf"`(?:\[[\w.]+\] )?{key}`", section)), [])
 
+    def test_the_automations_section_states_the_merge_hold_fix_rule(self):
+        text = (DOCS / "config.md").read_text()
+        section = text.split("## `[automations]`", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("carries main's red commit", section)
+        self.assertIn("`hold_merges`", section)
+
 
 class LoopDocTests(unittest.TestCase):
     def test_the_trim_step_sits_between_implement_and_the_verify_gate(self):
