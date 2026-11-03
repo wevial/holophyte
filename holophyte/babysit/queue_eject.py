@@ -220,21 +220,33 @@ def _latest_full_run(run, beat_s, pull, reviewed, why):
     workflow, refused = merge_config(run.project).queue_full_workflow, ""
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
-            answer = github.rest(
-                run.project, pull, "GET", f"repos/{pull.repo}/actions/runs"
-                f"?head_sha={run.sha}&per_page={RUNS_PAGE}")
+            every = _head_runs(run, pull)
     except InfraFailure as failure:
-        answer, refused = {}, f": {failure}"
-    batch = answer.get("workflow_runs") if isinstance(answer, dict) else None
-    runs = [r for r in batch or () if isinstance(r, dict)
-            and r.get("name") == workflow and isinstance(r.get("id"), int)
-            and r.get("event") in PULL_EVENTS]
+        every, refused = [], f": {failure}"
+    runs = [r for r in every if r.get("name") == workflow
+            and isinstance(r.get("id"), int) and r.get("event") in PULL_EVENTS]
     if not runs:
         _park(run, pull, reviewed,
               f"the pull request is due a full run because {why}, and no run"
               f" of [merge] queue_full_workflow = {workflow!r} on the head"
               f" commit {run.sha[:12]} was found to re-run{refused}")
     return max(runs, key=lambda r: r["id"])
+
+
+def _head_runs(run, pull):
+    base = (f"repos/{pull.repo}/actions/runs?head_sha={run.sha}"
+            f"&per_page={RUNS_PAGE}")
+    runs, page = [], 1
+    while True:
+        answer = github.rest(run.project, pull, "GET", f"{base}&page={page}")
+        batch = answer.get("workflow_runs") if isinstance(answer, dict) else None
+        if not isinstance(batch, list):
+            raise InfraFailure(f"workflow runs page {page} of {run.sha[:12]}"
+                               " did not return a list")
+        runs.extend(r for r in batch if isinstance(r, dict))
+        if len(batch) < RUNS_PAGE:
+            return runs
+        page += 1
 
 
 def _awaited(run, beat_s, pull, reviewed, latest, attempt):

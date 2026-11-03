@@ -65,8 +65,11 @@ class FullWorkflow:
         if "enqueuePullRequest" in (body or ""):
             self.asked.append(("enqueue", None))
         if "actions/runs?head_sha=" in args:
-            sha = args.split("head_sha=", 1)[1].split("&", 1)[0]
-            return out(json.dumps({"workflow_runs": self.runs_on(sha)}))
+            query = parse_qs(args.split("?", 1)[1].split()[0])
+            size, page = int(query["per_page"][0]), int(query["page"][0])
+            runs = self.runs_on(query["head_sha"][0])
+            return out(json.dumps({"workflow_runs":
+                                   runs[(page - 1) * size:page * size]}))
         ran = re.search(r"actions/runs/(\d+)(/\S+)?$", args)
         if ran and ran[2]:
             self.asked.append((ran[2], int(ran[1])))
@@ -75,11 +78,15 @@ class FullWorkflow:
         return out(json.dumps(self.run(int(ran[1])))) if ran else None
 
     def runs_on(self, sha):
+        """Newest first, as GitHub lists them: a page of newer lint runs
+        ahead of the E2E runs."""
         first = sha == self.test.pushed()[0][1]
-        ids = (76, FULL_RUN) if first else (FIX_RUN,)
-        return [dict(self.run(n), head_sha=sha) for n in ids] + (
-            [dict(self.run(90), name="lint", head_sha=sha),
-             dict(self.run(95), event="push", head_sha=sha)] if first else [])
+        ids = (FULL_RUN, 76) if first else (FIX_RUN,)
+        lint = [dict(self.run(n), name="lint", head_sha=sha)
+                for n in range(300, 200, -1)]
+        return lint + ([dict(self.run(95), event="push", head_sha=sha)]
+                       if first else []) + [dict(self.run(n), head_sha=sha)
+                                            for n in ids]
 
     def run(self, n):
         done = {"id": n, "name": "E2E", "event": "pull_request",
@@ -110,8 +117,8 @@ class QueueEjectionTests(MergeModeFixture):
         `unreadable` fails with an HTTP 502 and one holding a key of
         `bodies` answers its value. `main_moves` lands a commit
         on `origin/main` as the first removal is read. The first pushed
-        commit has pull request E2E runs 76 and `FULL_RUN`, a newer lint
-        run and a newer push run of E2E; a
+        commit has pull request E2E runs 76 and `FULL_RUN` behind a full
+        page of newer lint runs and a newer push run of E2E; a
         re-run of `FULL_RUN` ends `rerun`, and once it ends red the
         head commit reports `E2E_HEAD`. A later commit's E2E run
         `FIX_RUN` is green. `abort` asks the run to abort while the
