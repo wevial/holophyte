@@ -3,6 +3,8 @@ factory's real `gh` call path against a `gh` on PATH answering main's reads.
 
 Run: python3 -m unittest discover -s tests -p 'test_main_watch.py' -v
 """
+import json
+
 import store
 import store.automations
 from holophyte.config.checks import check_config
@@ -64,7 +66,7 @@ class MainWatchTests(MainWatchFixture):
         self.github.main(self.paths["alpha"], S, [
             job("unit", "success", 11, 7), job("docs", "failure", 12, 7)])
         self.github.main(self.paths["beta"], S, [
-            job("unit", "in_progress", 11, 7, status="in_progress")])
+            job("unit", None, 11, 7, status="in_progress")])
 
         sweep_pass(T0)
 
@@ -109,19 +111,22 @@ class AutomationCursorTests(MainWatchFixture):
     NAMES = ("alpha", "beta")
 
     def test_a_cut_project_moves_the_automation_cursor(self):
-        """`sweep_sec = 8` gives the step two seconds, one for each project;
-        alpha's head read takes longer, so its next read is refused."""
+        """`sweep_sec = 8` gives the step two seconds. The pass starts at beta;
+        alpha's head read outlasts what beta left, so its next is refused."""
         with open(self.home / "host.toml", "a") as registry:
             registry.write("\n[supervisor]\nsweep_sec = 8\n")
+        (self.home / "sweep.json").write_text(
+            json.dumps({"automation_cursor": "beta"}))
         for name in self.NAMES:
             automations(self.paths[name], "dry_run")
             self.red(name)
         self.github.main(self.paths["alpha"], S,
-                         [job("unit", "failure", 11, 7)], head_sleep=1.5)
+                         [job("unit", "failure", 11, 7)], head_sleep=2.5)
 
         printed = sweep_pass(T0)
 
         self.assertIn("[holo2] alpha: automations cut, share spent before",
                       printed)
         self.assertEqual(self.firings("alpha"), [])
+        self.assertEqual(len(self.firings("beta")), 1)
         self.assertEqual(self.state()["automation_cursor"], "beta")

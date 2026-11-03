@@ -2,19 +2,24 @@
 
 Run: python3 -m unittest discover -s tests -p 'test_automation_firings.py' -v
 """
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 import store
 import store.automations
+import store.read
 
 
 class FiringKeyTests(unittest.TestCase):
-    def test_a_firing_key_is_reserved_once(self):
+    def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        conn = store.open(Path(directory.name) / "store.db")
+        self.path = Path(directory.name) / "store.db"
+
+    def test_a_firing_key_is_reserved_once(self):
+        conn = store.open(self.path)
         self.addCleanup(conn.close)
         project = store.ensure_project(conn, "team-1", "/repos/p")
 
@@ -31,6 +36,17 @@ class FiringKeyTests(unittest.TestCase):
         self.assertEqual(conn.execute(
             "SELECT id, state, createdAt FROM automationFirings").fetchall(),
             [(first, "proposed", 1000)])
+
+    def test_a_store_an_older_build_wrote_reads_no_firings(self):
+        store.open(self.path).close()
+        raw = sqlite3.connect(self.path)
+        raw.executescript("DROP TABLE automationFirings;\n"
+                          "PRAGMA user_version = 62;\n")
+        raw.close()
+        conn = store.read.open_readonly(self.path)
+        self.addCleanup(conn.close)
+
+        self.assertEqual(store.automations.firings(conn), [])
 
 
 if __name__ == "__main__":

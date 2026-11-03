@@ -57,6 +57,7 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save):
     start = names.index(cursor) if cursor in names else 0
     order = order[start:] + order[:start]
     end = time.monotonic() + sweep_sec * AUTOMATION_SHARE
+    after_cut = None
     for index, entry in enumerate(order):
         name = key(entry)
         state["automation_cursor"] = name
@@ -72,5 +73,7 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save):
         if bad is not None:
             print(f"[holo2] {name}: automations failed: {bad}", file=out)
         state["automation_cursor"] = names[(start + index + 1) % len(names)]
+        if reached is not None or bad is not None:
+            after_cut = state["automation_cursor"]
         save(state)
-    state["automation_cursor"] = names[(start + 1) % len(names)]
+    state["automation_cursor"] = after_cut or names[(start + 1) % len(names)]

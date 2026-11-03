@@ -79,10 +79,10 @@ form finds; each of `projects`, in `host.toml` order, is `{"name", "path",
 `repeat_failures` rows `ticket`, `runs` (newest first), `failure_kind` and
 `reason`; `ignored` the ignored keys that hid an entry. Each project also
 holds `main`, main's check runs on GitHub: `state` is `success`, `failure`
-(any red run, with `failed` listing each as `{"name", "required"}`, where
-`required` says main's rules require it, as `{"name", "required", "job_id",
-"workflow_run_id"}` with the GitHub Actions job and workflow run ids, null
-for a check that is not an Actions job), `pending`, `none` (no runs),
+(any red run, with `failed` listing each as `{"name", "required", "job_id",
+"workflow_run_id"}`, where `required` says main's rules require it and the
+two ids are the GitHub Actions job and workflow run, null for a check that
+is not an Actions job), `pending`, `none` (no runs),
 `unknown` (the read failed; `detail` holds the error) or `skipped` (no GitHub
 origin), with `sha`, main's head commit the check runs were read at, beside
 every state but the last two; `automations`, each automation firing

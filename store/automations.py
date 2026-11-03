@@ -64,6 +64,10 @@ def reserve_firing(conn, project, automation, revision, subject, cause, *,
 
 
 def firings(conn, since=None):
+    """None read from a store an older build last wrote, which lacks the table."""
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                    " AND name = 'automationFirings'").fetchone() is None:
+        return []
     rows = conn.execute(
         f"SELECT {', '.join(Firing._fields)} FROM automationFirings"
         " WHERE createdAt >= ? ORDER BY createdAt DESC, id DESC",

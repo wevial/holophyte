@@ -330,7 +330,7 @@ PINNED = {
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
-    "store/automations.py": 2,
+    "store/automations.py": 3,
     "store/board.py": 7,
     "store/criteria.py": 0,
     "store/console_asks.py": 0,

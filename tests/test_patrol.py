@@ -313,7 +313,6 @@ class UnreadableTests(PatrolFixture):
         self.assertEqual(projects_text(self.holo("-p", "q")[1])[:4], "[q] ")
 
 
-
 class AutomationTests(PatrolFixture):
     def test_a_proposed_firing_is_an_automations_line(self):
         sha = "5e1f0c2a9b7d4e3f8a6c1b0d2e4f6a8c0b1d3e5f"
