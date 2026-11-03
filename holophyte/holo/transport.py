@@ -35,6 +35,7 @@ from holophyte.holo.resolve import (
     ENVIRONMENT,
     HOST,
     HOST_FORMS,
+    HOST_SWITCHES,
     REMOTE_COMMAND,
     TIMEZONE,
     TOKEN_FILE,
@@ -248,6 +249,10 @@ def ticket_stdin(args, stack):
 
 
 def named_project(args, config, label, over):
+    if args.command.mode in HOST_SWITCHES:
+        if args.project is not None:
+            refuse(f"[holo2] {label} is the host's; it takes no -p")
+        return None
     project = seat_project(args.project, config.get(DEFAULT))
     if project is None and args.command.mode not in HOST_FORMS:
         refuse(f"[holo2] {label} needs a project and no source names one:"

@@ -4,9 +4,10 @@ from typing import NamedTuple
 
 import store
 
-from .enums import FiringMode, FiringState, check_clause
+from .enums import FiringMode, FiringState, PauseActor, check_clause
 
 PROPOSED = FiringState.PROPOSED.value
+OPERATOR = PauseActor.OPERATOR.value
 
 FIRINGS_DDL = f"""
 CREATE TABLE IF NOT EXISTS automationFirings (
@@ -26,6 +27,30 @@ CREATE TABLE IF NOT EXISTS automationFirings (
     settledAt  INTEGER
 );
 """
+
+PAUSES_DDL = f"""
+CREATE TABLE IF NOT EXISTS automationPauses (
+    id         INTEGER PRIMARY KEY,
+    automation TEXT    NOT NULL,
+    note       TEXT    NOT NULL,
+    actor      TEXT    NOT NULL {check_clause('actor', PauseActor)},
+    createdAt  INTEGER NOT NULL,
+    clearedAt  INTEGER,
+    clearNote  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS automationPauses_open
+    ON automationPauses (automation) WHERE clearedAt IS NULL;
+"""
+
+
+class Pause(NamedTuple):
+    id: int
+    automation: str
+    note: str
+    actor: str
+    createdAt: int
+    clearedAt: int | None
+    clearNote: str | None
 
 
 class Firing(NamedTuple):
@@ -65,8 +90,7 @@ def reserve_firing(conn, project, automation, revision, subject, cause, *,
 
 def firings(conn, since=None):
     """None read from a store an older build last wrote, which lacks the table."""
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
-                    " AND name = 'automationFirings'").fetchone() is None:
+    if not _has_table(conn, "automationFirings"):
         return []
     rows = conn.execute(
         f"SELECT {', '.join(Firing._fields)} FROM automationFirings"
@@ -74,3 +98,36 @@ def firings(conn, since=None):
         (0 if since is None else since,)).fetchall()
     return [Firing(*row[:10], json.loads(row[10]), *row[11:])
             for row in rows]
+
+
+def _has_table(conn, name):
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                        " AND name = ?", (name,)).fetchone() is not None
+
+
+def automation_pause(conn, automation):
+    if not _has_table(conn, "automationPauses"):
+        return None
+    row = conn.execute(
+        f"SELECT {', '.join(Pause._fields)} FROM automationPauses"
+        " WHERE automation = ? AND clearedAt IS NULL", (automation,)).fetchone()
+    return None if row is None else Pause(*row)
+
+
+def pause_automation(conn, automation, note, *, actor, now):
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "INSERT INTO automationPauses (automation, note, actor, createdAt)"
+            " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            (automation, note, actor, now))
+        return cursor.lastrowid if cursor.rowcount else None
+
+
+def resume_automation(conn, automation, note, *, now):
+    with store.transaction(conn):
+        standing = automation_pause(conn, automation)
+        if standing is None:
+            return None
+        conn.execute("UPDATE automationPauses SET clearedAt = ?, clearNote = ?"
+                     " WHERE id = ?", (now, note, standing.id))
+        return standing.id

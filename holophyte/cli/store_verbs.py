@@ -25,6 +25,12 @@ def _store_verb(args, target, board):
         from holophyte.loop.stop import command
         command(target, args.pause or args.resume, args.note, resume=bool(args.resume))
         return True
+    if args.automation_pause or args.automation_resume:
+        from holophyte.automation.switches import pause, resume
+        verb = pause if args.automation_pause else resume
+        verb(target, args.automation_pause or args.automation_resume,
+             args.note)
+        return True
     if args.hold or args.release_hold:
         from holophyte.admission import change
         change(target, args.hold, args.note)

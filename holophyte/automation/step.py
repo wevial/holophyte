@@ -1,19 +1,41 @@
 """The host sweep's automation step: each opted-in project's rules, round robin."""
 import time
 
+import store.automations
+import store.read
 from holophyte import deadline
 from holophyte.admission import project_of
 from holophyte.automation import main_watch
-from holophyte.automation.automation_config import DRY_RUN, main_watch_mode
+from holophyte.automation.automation_config import (
+    DRY_RUN,
+    MAIN_WATCH,
+    main_watch_mode,
+)
+from holophyte.automation.gate import read_switch
 from holophyte.loop.runs import open_store
 
 AUTOMATION_SHARE = 0.25
+
+
+def paused(entry):
+    conn = store.read.open_readonly(entry.target.store_path)
+    try:
+        return store.automations.automation_pause(conn, MAIN_WATCH)
+    finally:
+        conn.close()
 
 
 def watched(entries, out, key):
     """The entries in `dry_run`; a wrong mode is off for this pass, said once."""
     found = []
     for entry in entries:
+        try:
+            if paused(entry) is not None:
+                continue
+        except (Exception, SystemExit) as bad:
+            print(f"[holo2] {key(entry)}: automations failed: {bad}",
+                  file=out)
+            continue
         try:
             mode = main_watch_mode(entry.target)
         except ValueError as bad:
@@ -48,7 +70,13 @@ def observe_one(target, now, end, stop):
     return None, None
 
 
-def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save):
+def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
+                    home):
+    switch = read_switch(home)
+    if switch.problem is not None:
+        print(f"[holo2] automations off: {switch.problem}", file=out)
+    if switch.off:
+        return
     order = watched(entries, out, key)
     if not order:
         return

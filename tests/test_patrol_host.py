@@ -526,7 +526,7 @@ class CleanHostTests(HostFixtureParts):
                 host = json.loads(self.holo("--json", *argv)[1])["host"]
                 self.assertEqual(sorted(host), sorted(
                     ["attention", "tmp", "leftovers", "units", "kernel",
-                     "clean"]))
+                     "automations_off", "clean"]))
                 self.assertTrue(host["clean"])
 
 
