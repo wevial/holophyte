@@ -91,7 +91,10 @@ origin), with `sha`, main's head commit the check runs were read at, beside
 every state but the last two; `automations`, each automation firing
 proposed in the last 24 hours, newest first: `id`, `automation`, `state`,
 `reason`, `detail` and `created_ms`; `automation_pauses`, each automation
-paused on the project: `automation`, `note`, `actor` and `created_ms`; and `pull_requests`, each open pull request a live or parked run
+paused on the project: `automation`, `note`, `actor` and `created_ms`;
+`merge_hold`, the main watch's open merge hold or null: `id`, `sha`,
+`checks`, `held_ms`, `age_sec` and `runs_held`, the runs whose newest
+`main_hold_parked` event names it; and `pull_requests`, each open pull request a live or parked run
 carries that a red check holds as the merge fold decides (a red required
 check, or any red check when main requires none): `ticket`, `run`, `url`,
 `number`, `failed`, `open_threads` (the recorded count) and `checks_only`

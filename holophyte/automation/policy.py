@@ -3,7 +3,8 @@ from holophyte.automation.automation_config import MAIN_WATCH
 from holophyte.host.registry import HostError
 
 RERUN_FAILED_JOBS = "rerun_failed_jobs"
-CAPABILITIES = {MAIN_WATCH: (RERUN_FAILED_JOBS,)}
+HOLD_MERGES = "hold_merges"
+CAPABILITIES = {MAIN_WATCH: (RERUN_FAILED_JOBS, HOLD_MERGES)}
 NEVER = ("approve", "merge", "cancel", "abort", "close", "repoint", "force",
          "steer", "edit_config", "edit_ticket")
 

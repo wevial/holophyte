@@ -47,6 +47,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS automationPauses_open
     ON automationPauses (automation) WHERE clearedAt IS NULL;
 """
 
+HOLDS_DDL = """
+CREATE TABLE IF NOT EXISTS mergeHolds (
+    id        INTEGER PRIMARY KEY,
+    projectId INTEGER NOT NULL REFERENCES projects (id),
+    sha       TEXT    NOT NULL,
+    checks    TEXT    NOT NULL CHECK (json_type(checks) = 'array'),
+    firingId  INTEGER NOT NULL REFERENCES automationFirings (id),
+    heldAt    INTEGER NOT NULL,
+    endedAt   INTEGER,
+    endReason TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS mergeHolds_open
+    ON mergeHolds (projectId) WHERE endedAt IS NULL;
+"""
+
+
+class MergeHold(NamedTuple):
+    id: int
+    projectId: int
+    sha: str
+    checks: list
+    firingId: int
+    heldAt: int
+    endedAt: int | None
+    endReason: str | None
+
 
 class Pause(NamedTuple):
     id: int
@@ -184,3 +210,46 @@ def resume_automation(conn, automation, note, *, now):
         conn.execute("UPDATE automationPauses SET clearedAt = ?, clearNote = ?"
                      " WHERE id = ?", (now, note, standing.id))
         return standing.id
+
+
+def open_merge_hold(conn, project):
+    if not _has_table(conn, "mergeHolds"):
+        return None
+    row = conn.execute(
+        f"SELECT {', '.join(MergeHold._fields)} FROM mergeHolds"
+        " WHERE projectId = ? AND endedAt IS NULL", (project,)).fetchone()
+    return None if row is None else MergeHold(*row[:3], json.loads(row[3]),
+                                              *row[4:])
+
+
+
+def held_runs(conn, hold_id):
+    return conn.execute(
+        "SELECT COUNT(*) FROM runEvents AS e WHERE e.kind = 'main_hold_parked'"
+        " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
+        " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')",
+        (hold_id,)).fetchone()[0]
+
+def end_merge_hold(conn, hold_id, reason, *, now):
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE mergeHolds SET endedAt = ?, endReason = ?"
+            " WHERE id = ? AND endedAt IS NULL", (now, reason, hold_id))
+        return cursor.rowcount == 1
+
+
+def place_merge_hold(conn, project, firing_id, sha, checks, reason, *, now):
+    with store.transaction(conn):
+        standing = open_merge_hold(conn, project)
+        if standing is not None:
+            end_merge_hold(conn, standing.id, f"superseded by {sha[:12]}",
+                           now=now)
+        hold = conn.execute(
+            "INSERT INTO mergeHolds (projectId, sha, checks, firingId, heldAt)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (project, sha, json.dumps(list(checks)), firing_id, now)).lastrowid
+        conn.execute(
+            "UPDATE automationFirings SET state = ?, reason = ?, settledAt = ?"
+            " WHERE id = ? AND state = ?",
+            (FiringState.CONFIRMED.value, reason, now, firing_id, LEASED))
+        return hold

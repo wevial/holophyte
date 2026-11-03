@@ -328,7 +328,8 @@ class AutomationTests(PatrolFixture):
         row = self.patrol("q")
 
         self.assertEqual(row["main"]["state"], "success")
-        [firing] = row["automations"]
+        [firing] = [firing for firing in row["automations"]
+                    if "workflow_run_id" in firing["detail"]]
         self.assertEqual((firing["automation"], firing["state"],
                           firing["detail"]["sha"]),
                          ("main_watch", "proposed", sha))
@@ -337,6 +338,31 @@ class AutomationTests(PatrolFixture):
                       " rerun the failed jobs of workflow run 7",
                       self.holo("-p", "q")[1])
 
+
+class MergeHoldTests(PatrolFixture):
+    def test_an_open_merge_hold_is_a_patrol_line(self):
+        sha = "5e1f0c2a9b7d4e3f8a6c1b0d2e4f6a8c0b1d3e5f"
+        conn = self.project("q")
+        project = self.conns["q"][1]
+        firing = store.automations.reserve_firing(
+            conn, project, "main_watch", 1, "merges", f"o/q@{sha}", mode="act",
+            reason="holding merges", detail={"action": "hold_merges"},
+            now=NOW - 5 * MIN, lease_until=NOW)
+        hold = store.automations.place_merge_hold(
+            conn, project, firing, sha, ["unit"], "held merges",
+            now=NOW - 5 * MIN)
+        run = self.live("q", "K", NOW - MIN)
+        store.record_event(conn, run, "main_hold_parked", "waits",
+                           level="detail", payload=json.dumps({"hold": hold}))
+
+        row = self.patrol("q")
+        text = projects_text(self.holo("-p", "q")[1])
+
+        self.assertFalse(row["clean"])
+        [line] = [line for line in text.splitlines()
+                  if "merge hold: main red at" in line]
+        self.assertIn(f"{sha[:12]} (unit)", line)
+        self.assertIn("1 runs held", line)
 
 class AutomationStopTests(PatrolFixture):
     def run_holo(self, *argv):

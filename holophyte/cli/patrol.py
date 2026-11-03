@@ -5,6 +5,7 @@ from time import time
 
 import store.automations
 import store.read
+from holophyte.admission import project_of
 from holophyte.automation.automation_config import BUILT_INS
 from holophyte.automation.gate import read_switch
 from holophyte.config.config_tables import patrol_config
@@ -95,6 +96,7 @@ def store_sections(target, now, quiet_ms, repeat_runs):
         fired = store.automations.firings(conn, since=now - PROPOSALS_MS)
         paused = [store.automations.automation_pause(conn, name)
                   for name in BUILT_INS]
+        hold = merge_hold(conn, target, now)
     finally:
         conn.close()
     flying = in_flight(runs, now)
@@ -106,7 +108,19 @@ def store_sections(target, now, quiet_ms, repeat_runs):
             "automation_pauses": [
                 {"automation": pause.automation, "note": pause.note,
                  "actor": pause.actor, "created_ms": pause.createdAt}
-                for pause in paused if pause is not None]}
+                for pause in paused if pause is not None],
+            "merge_hold": hold}
+
+
+def merge_hold(conn, target, now):
+    project = project_of(conn, target)
+    hold = (None if project is None
+            else store.automations.open_merge_hold(conn, project))
+    if hold is None:
+        return None
+    return {"id": hold.id, "sha": hold.sha, "checks": hold.checks,
+            "held_ms": hold.heldAt, "age_sec": (now - hold.heldAt) // 1000,
+            "runs_held": store.automations.held_runs(conn, hold.id)}
 
 
 def proposals(fired):
@@ -174,10 +188,11 @@ def project_row(name, target, items, now):
     row["ignored"] = [key for key in dict.fromkeys(knobs.ignore) if key in hid]
     row["automations"] = sections["automations"]
     row["automation_pauses"] = sections["automation_pauses"]
+    row["merge_hold"] = sections["merge_hold"]
     row["clean"] = not (row["attention"] or row["stranded"] or row["quiet"]
                         or row["repeat_failures"] or row["pull_requests"]
                         or row["unreadable_pulls"] or row["automations"]
-                        or row["automation_pauses"]
+                        or row["automation_pauses"] or row["merge_hold"]
                         or row["main"]["state"] in ("failure", "unknown"))
     return row
 
@@ -186,7 +201,7 @@ def error_row(name, path, error):
     return {"name": name, "path": str(path), "error": error, "clean": False,
             "attention": [], **{key: [] for key in SECTIONS}, "main": None,
             "pull_requests": [], "unreadable_pulls": [], "ignored": [],
-            "automations": [], "automation_pauses": []}
+            "automations": [], "automation_pauses": [], "merge_hold": None}
 
 
 def entry_name(target):
@@ -347,6 +362,11 @@ def github_lines(row):
 def automation_lines(row):
     paused = [f"automation {pause['automation']} paused: {pause['note']}"
               for pause in row["automation_pauses"]]
+    hold = row["merge_hold"]
+    if hold is not None:
+        paused.append(f"merge hold: main red at {hold['sha'][:12]}"
+                      f" ({', '.join(hold['checks'])}) since"
+                      f" {age(hold['age_sec'])}, {hold['runs_held']} runs held")
     return paused + [
         f"automation {firing['automation']} {firing['state']}"
         f" {str(firing['detail'].get('sha', ''))[:12]}: {firing['reason']}"
