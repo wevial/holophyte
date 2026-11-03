@@ -197,6 +197,9 @@ class RerunResultTests(ResultFixture):
     def test_a_pending_rerun_waits_and_a_moved_head_supersedes_it(self):
         self.act("alpha")
         before = self.confirmed("alpha")
+        self.rerun_answers("alpha", [job("unit", "failure", 11, 7)])
+        self.later()
+        self.assertEqual(self.only("alpha"), before)
         self.rerun_answers("alpha", [job("unit", None, 12, 7,
                                          status="in_progress")])
 

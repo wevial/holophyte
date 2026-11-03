@@ -208,7 +208,8 @@ run started and ended, its pid, revision and exit, each project's outcome
 (`ok`, `skipped: WHY` or `error: WHY`), the unavailable counts, the
 round-robin cursor, the GitHub rate budget, the pull-request and board
 throttles, and `main_green`, the last head of each project's main the
-automation step read with every check run completed and none red. A missing or unreadable file is an empty state and one line. A
+automation step read with every check run completed and none red. A missing
+or unreadable file is an empty state and one line. A
 run whose `started` has no `ended` did not finish; the next run says so and
 resumes at the cursor. One project's failure is that project's `error`,
 never the run's; the run exits 1 when any project errored, and the timer
