@@ -490,6 +490,23 @@ def resolve_thread(target, pull, thread_id):
     graphql(target, pull, RESOLVE_MUTATION, {"thread": thread_id})
 
 
+def add_label(target, pull, label):
+    return rest(target, pull, "POST",
+                f"repos/{pull.repo}/issues/{pull.number}/labels",
+                {"labels": [label]})
+
+
+def remove_label(target, pull, label):
+    return rest(target, pull, "DELETE",
+                f"repos/{pull.repo}/issues/{pull.number}/labels/"
+                f"{urllib.parse.quote(label, safe='')}")
+
+
+def rerun_workflow_run(target, pull, workflow_run_id):
+    return rest(target, pull, "POST",
+                f"repos/{pull.repo}/actions/runs/{workflow_run_id}/rerun")
+
+
 def merge_pull_request(target, pull, sha):
     method = config_tables.merge_config(target).pr_merge_method
     payload = {"merge_method": method, "sha": sha}

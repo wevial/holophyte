@@ -200,6 +200,9 @@ EXPECTED_READ = [
     # Whether a parked ticket waits on its pull request, which
     # `/attention` serves as `pr_open` and a stuck wait does not count.
     "parked_on_pull_request",
+    # HOLO-614: the runs of one ticket on one pull request, so a successor
+    # run reads the full-suite label and reproduction its parked run left.
+    "pull_request_runs",
     # HOLO-250: the `serve` daemon's Floor read of the ready tickets whose
     # last run ended, waiting for the next claim.
     "queued_tickets",
