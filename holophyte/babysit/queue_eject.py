@@ -4,6 +4,7 @@ import re
 from time import monotonic
 
 import store
+import store.read
 from holophyte.babysit.check_failures import failure_lines, normalized
 from holophyte.config.config_tables import merge_config
 from holophyte.deadline import CallRefused
@@ -260,10 +261,13 @@ def unlabel_ended_run(target, conn, run_id):
     label = _label_on(conn, run_id)
     if label is None:
         return
-    ended, pr_url = conn.execute(
-        "SELECT endedAt, prUrl FROM runs WHERE id = ?", (run_id,)).fetchone()
+    if any(ended is None for _, ended in store.read.pull_request_runs(
+            conn, run_id)):
+        return
+    (pr_url,) = conn.execute(
+        "SELECT prUrl FROM runs WHERE id = ?", (run_id,)).fetchone()
     pull = pr_status.parse_pr_url(pr_url)
-    if ended is not None and pull is not None:
+    if pull is not None:
         drop_label(target, conn, run_id, pull, label)
 
 
@@ -287,10 +291,18 @@ def _label_on(conn, run_id):
 def _label_record(conn, run_id):
     if conn is None or run_id is None:
         return {}
-    row = conn.execute(
-        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
-        " ORDER BY id DESC LIMIT 1", (run_id, LABEL_EVENT)).fetchone()
-    return json.loads(row[0]) if row else {}
+    rows = _pull_request_events(conn, run_id, LABEL_EVENT)
+    return json.loads(rows[-1]) if rows else {}
+
+
+def _pull_request_events(conn, run_id, kind):
+    runs = [run for run, _ in store.read.pull_request_runs(conn, run_id)]
+    if not runs:
+        return []
+    marks = ", ".join("?" * len(runs))
+    return [payload for (payload,) in conn.execute(
+        f"SELECT payload FROM runEvents WHERE runId IN ({marks}) AND kind = ?"
+        " ORDER BY id", (*runs, kind))]
 
 
 def _label_event(conn, run_id, record, summary):
@@ -454,11 +466,8 @@ def _record(run, summary):
 
 
 def _requeued(run, event):
-    rows = run.conn.execute(
-        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
-        " ORDER BY id", (run.run_id, event)).fetchall()
-    return [(record["names"], record["group"])
-            for record in (json.loads(row[0]) for row in rows)]
+    return [(record["names"], record["group"]) for record in map(
+        json.loads, _pull_request_events(run.conn, run.run_id, event))]
 
 
 def _park(run, pull, reviewed, why):

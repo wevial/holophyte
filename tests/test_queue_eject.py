@@ -3,12 +3,12 @@ once and parks if it repeats, a park signature parks at once, and a test
 failure is reproduced on the pull request by the labelled full run."""
 from __future__ import annotations
 
+import io
 import json
 import re
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote
 
@@ -28,6 +28,7 @@ from test_merge_queue import (  # noqa: E402
 )
 
 import holophyte.babysit.queue_eject  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.deadline  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
@@ -250,24 +251,18 @@ class QueueEjectionTests(MergeModeFixture):
             if then is not None:
                 then()
 
-    def resume_full_run(self):
-        """`labelled_full_run` on the parked run, as a later pass calls it."""
-        conn = store.open(str(self.db))
-        try:
-            ((run_id, pr_url),) = conn.execute(
-                "SELECT id, prUrl FROM runs").fetchall()
-            sha = self.pushed()[0][1]
-            run = SimpleNamespace(project=self.project, conn=conn,
-                                  run_id=run_id, sha=sha)
-            self.resumed = holophyte.babysit.queue_eject.labelled_full_run(
-                run, 30, holophyte.pr.pr_status.parse_pr_url(pr_url), sha)
-        finally:
-            conn.close()
+    def hand_off(self):
+        """Release the parked run as `holo babysit` does; a successor run
+        picks the candidate up on its pull request."""
+        holophyte.cli.operator.babysit_ticket(
+            self.project, "KO-131", holophyte.cli.operator.BABYSIT_DEFAULT_NOTE,
+            out=io.StringIO())
+        self.loop(provider=self.provider())
 
     def abort_run(self):
         conn = store.open(str(self.db))
         try:
-            ((run_id,),) = conn.execute("SELECT id FROM runs").fetchall()
+            ((run_id,),) = conn.execute("SELECT MAX(id) FROM runs").fetchall()
             store.abort(conn, run_id, "stop here")
         finally:
             conn.close()
@@ -487,18 +482,30 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(len(self.enqueued()), 1)
         self.assertIn("removing e2e:full", self.question())
 
-    def test_a_refused_rerun_is_asked_again_on_resume_before_its_result_counts(
+    def test_a_successor_run_reruns_the_refused_full_run_and_unlabels_before_requeue(
             self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
-                   groups=((GROUP_SHA, UNIT),), refuse=1,
-                   then=self.resume_full_run)
+                   groups=((GROUP_SHA, UNIT),), refuse=1, then=self.hand_off)
 
         self.assertEqual([kind for kind, _ in self.asked],
-                         ["enqueue", "POST", "/rerun", "/rerun", "DELETE"])
-        self.assertIsNone(self.resumed)
+                         ["enqueue", "POST", "/rerun", "/rerun", "DELETE",
+                          "enqueue"])
         self.assertEqual(len(self.read("SELECT summary FROM runEvents WHERE"
                                        " summary LIKE '%did not reproduce%'")),
                          1)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("abandoned",), ("merged",)])
+
+    def test_a_successor_run_that_ends_removes_the_label_its_parked_run_added(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), refuse=1, abort=True,
+                   then=self.hand_off)
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "/rerun", "/rerun", "DELETE"])
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("abandoned",), ("abandoned",)])
 
     def test_a_red_rerun_whose_check_run_reports_late_still_gets_the_fix_round(
             self):
