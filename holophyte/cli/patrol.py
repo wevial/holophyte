@@ -7,6 +7,7 @@ import store.automations
 import store.read
 from holophyte.automation.automation_config import BUILT_INS
 from holophyte.automation.gate import read_switch
+from holophyte.automation.main_watch import RED_AGAIN
 from holophyte.config.config_tables import patrol_config
 from holophyte.holo.render import age
 from holophyte.host.host_health import host_health
@@ -92,7 +93,7 @@ def store_sections(target, now, quiet_ms, repeat_runs):
         tickets = store.read.stranded_tickets(conn)
         ended = store.read.last_ended_runs(conn, repeat_runs)
         blocked = store.read.blocked_tickets(conn)
-        fired = store.automations.firings(conn, since=now - PROPOSALS_MS)
+        fired = store.automations.firings(conn)
         paused = [store.automations.automation_pause(conn, name)
                   for name in BUILT_INS]
     finally:
@@ -102,18 +103,28 @@ def store_sections(target, now, quiet_ms, repeat_runs):
             "quiet": quiet(flying, events, now, quiet_ms),
             "repeat_failures": repeat_failures(ended, repeat_runs),
             "pulls": pull_candidates(runs, blocked),
-            "automations": proposals(fired),
+            "automations": listed_firings(fired, now - PROPOSALS_MS),
             "automation_pauses": [
                 {"automation": pause.automation, "note": pause.note,
                  "actor": pause.actor, "created_ms": pause.createdAt}
                 for pause in paused if pause is not None]}
 
 
-def proposals(fired):
+def listed(firing, since):
+    if firing.state == store.automations.UNKNOWN:
+        return True
+    if firing.detail.get("result") == RED_AGAIN:
+        return firing.detail.get("result_at", 0) >= since
+    return (firing.state == store.automations.PROPOSED
+            and firing.createdAt >= since)
+
+
+def listed_firings(fired, since):
     return [{"id": firing.id, "automation": firing.automation,
-             "state": firing.state, "reason": firing.reason,
-             "detail": firing.detail, "created_ms": firing.createdAt}
-            for firing in fired if firing.state == store.automations.PROPOSED]
+             "state": firing.state, "result": firing.detail.get("result"),
+             "reason": firing.reason, "detail": firing.detail,
+             "created_ms": firing.createdAt}
+            for firing in fired if listed(firing, since)]
 
 
 def pull_candidates(runs, blocked):
@@ -348,7 +359,8 @@ def automation_lines(row):
     paused = [f"automation {pause['automation']} paused: {pause['note']}"
               for pause in row["automation_pauses"]]
     return paused + [
-        f"automation {firing['automation']} {firing['state']}"
+        f"automation {firing['automation']}"
+        f" {'red again' if firing['result'] == RED_AGAIN else firing['state']}"
         f" {str(firing['detail'].get('sha', ''))[:12]}: {firing['reason']}"
         for firing in row["automations"]]
 
