@@ -8,6 +8,7 @@ import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))  # factory.py imports store by name
@@ -42,7 +43,8 @@ class QueueEjectionTests(MergeModeFixture):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the one check run it failed with. Every job log reads
-        `log`, every check run's annotations `annotations`."""
+        `log`, every check run's annotations `annotations`, served in
+        pages of the size asked for."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
         self.job_log.write_text(log)
@@ -52,7 +54,10 @@ class QueueEjectionTests(MergeModeFixture):
         def gh(target, argv, body, path):
             args = " ".join(argv[1:])
             if "/annotations" in args:
-                return out(json.dumps(list(annotations)))
+                query = parse_qs(args.split("?", 1)[1].split()[0])
+                size, page = int(query["per_page"][0]), int(query.get("page", ["1"])[0])
+                return out(json.dumps(
+                    list(annotations)[(page - 1) * size:page * size]))
             if "actions/runs?event=merge_group" in args:
                 sha, _ = served.pop(0) if len(served) > 1 else served[0]
                 return out(json.dumps({"workflow_runs": [
@@ -124,15 +129,32 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
 
-    def test_a_failure_whose_annotation_matches_an_infra_signature_is_requeued(
+    def test_a_line_of_an_annotation_matching_an_anchored_infra_signature_is_requeued(
             self):
+        self.eject(REQUEUED_AND_MERGED,
+                   config=LABELLED + "queue_infra_signatures ="
+                   " ['^The runner has received a shutdown signal\\.$']\n",
+                   log=FAILED, groups=((GROUP_SHA, UNIT),),
+                   annotations=[{"annotation_level": "failure",
+                                 "message": "Job unit stopped.\nThe runner"
+                                 " has received a shutdown signal."}])
+
+        self.assertEqual(self.fix_turns(), [])
+        self.assertEqual(len(self.enqueued()), 2)
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+
+    def test_an_infra_annotation_past_the_first_page_is_requeued(self):
+        warning = {"annotation_level": "warning",
+                   "message": "Node.js 16 actions are deprecated."}
         self.eject(REQUEUED_AND_MERGED,
                    config=LABELLED + "queue_infra_signatures ="
                    " ['runner has received a shutdown signal']\n",
                    log=FAILED, groups=((GROUP_SHA, UNIT),),
-                   annotations=[{"annotation_level": "failure",
-                                 "message": "The runner has received a"
-                                 " shutdown signal."}])
+                   annotations=[warning] * 100 + [{
+                       "annotation_level": "failure",
+                       "message": "The runner has received a shutdown"
+                                  " signal."}])
 
         self.assertEqual(self.fix_turns(), [])
         self.assertEqual(len(self.enqueued()), 2)

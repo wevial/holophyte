@@ -50,16 +50,22 @@ def _lines(target, pull, check):
 
 
 def _annotations(target, pull, check):
-    try:
-        answer = github.rest(target, pull, "GET",
-                             f"repos/{pull.repo}/check-runs/{check.job_id}"
-                             f"/annotations?per_page={ANNOTATIONS_PAGE}")
-    except InfraFailure:
-        return []
-    if not isinstance(answer, list):
-        return []
-    return [str(note.get(field) or "").strip() for note in answer
-            if isinstance(note, dict) for field in ("title", "message")]
+    base = (f"repos/{pull.repo}/check-runs/{check.job_id}/annotations"
+            f"?per_page={ANNOTATIONS_PAGE}")
+    notes, page = [], 1
+    while True:
+        try:
+            answer = github.rest(target, pull, "GET", f"{base}&page={page}")
+        except InfraFailure:
+            break
+        if not isinstance(answer, list):
+            break
+        notes.extend(note for note in answer if isinstance(note, dict))
+        if len(answer) < ANNOTATIONS_PAGE:
+            break
+        page += 1
+    return [line.strip() for note in notes for field in ("title", "message")
+            for line in str(note.get(field) or "").splitlines()]
 
 
 def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
