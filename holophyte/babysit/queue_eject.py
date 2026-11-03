@@ -7,21 +7,24 @@ from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import github
+from holophyte.redact import redact_values
 
-INFRA, PARK, TEST = "infra", "park", "test"
+INFRA, PARK, TEST, UNREADABLE = "infra", "park", "test", "unreadable"
 _STAMP = re.compile(r"^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ?")
 ANNOTATIONS_PAGE = 100
 REQUEUE_EVENT = "queue_infra_requeue"
 
 
 def classify(target, pull, failed):
-    """Every failed check is read: a park signature anywhere wins."""
+    """A park signature on a readable check wins; an unread check is never empty."""
     merge = merge_config(target)
     texts = [(check, _lines(target, pull, check)) for check in failed]
     for _, lines in texts:
-        line = _first_match(merge.queue_park_signatures, lines)
+        line = _first_match(merge.queue_park_signatures, lines or ())
         if line:
             return PARK, line
+    if any(lines is None for _, lines in texts):
+        return UNREADABLE, ""
     if all(check.conclusion == "cancelled"
            or _first_match(merge.queue_infra_signatures, lines)
            for check, lines in texts):
@@ -38,10 +41,11 @@ def _first_match(patterns, lines):
 def _lines(target, pull, check):
     try:
         log = github.job_log(target, pull, check.job_id)
+        notes = _annotations(target, pull, check)
     except InfraFailure:
-        log = ""
+        return None
     lines = [_STAMP.sub("", line).strip() for line in log.splitlines()]
-    return [line for line in lines + _annotations(target, pull, check) if line]
+    return [line for line in lines + notes if line]
 
 
 def _annotations(target, pull, check):
@@ -49,10 +53,7 @@ def _annotations(target, pull, check):
             f"?per_page={ANNOTATIONS_PAGE}")
     notes, page = [], 1
     while True:
-        try:
-            answer = github.rest(target, pull, "GET", f"{base}&page={page}")
-        except InfraFailure:
-            break
+        answer = github.rest(target, pull, "GET", f"{base}&page={page}")
         if not isinstance(answer, list):
             break
         notes.extend(note for note in answer if isinstance(note, dict))
@@ -73,24 +74,27 @@ def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
         _park(run, pull, reviewed,
               f"the merge queue removed the pull request: {names} failed on"
               f" merge group {removed.group[:12]} with a problem a re-queue"
-              f" cannot fix ([merge] queue_park_signatures): {line}")
+              f" cannot fix ([merge] queue_park_signatures):"
+              f" {redact_values(line)}")
     if kind == TEST:
         return None
     failed = sorted({check.name for check in removed.failed})
+    cause = ("for infra" if kind == INFRA
+             else "and the failed checks' evidence could not be read")
     persisted = run.conn is not None and run.run_id is not None
     history = _requeued(run) if persisted else requeued
     earlier = next((group for names_of, group in history
                     if names_of == failed), None)
     if earlier is not None:
         _park(run, pull, reviewed,
-              f"the merge queue removed the pull request again for infra:"
-              f" {names} failed on merge group {earlier[:12]}, was"
-              f" re-queued once, and failed the same way on merge group"
-              f" {removed.group[:12]}")
+              f"the merge queue removed the pull request again: {names}"
+              f" failed on merge group {earlier[:12]}, was re-queued once,"
+              f" and failed the same way on merge group"
+              f" {removed.group[:12]} {cause}")
     if persisted:
         store.record_event(run.conn, run.run_id, "merge_queue",
                            f"{names} failed on merge group"
-                           f" {removed.group[:12]} for infra; re-queuing"
+                           f" {removed.group[:12]} {cause}; re-queuing"
                            f" {pull.url} once without a fix round")
         store.record_event(run.conn, run.run_id, REQUEUE_EVENT,
                            f"re-queued after merge group {removed.group[:12]}",

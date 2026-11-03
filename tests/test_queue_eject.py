@@ -14,7 +14,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))  # factory.py imports store by name
 sys.path.insert(0, str(HERE))  # discovery never imports `fake_agent`
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
-from fake_github import out  # noqa: E402
+from fake_github import out, refused  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
 from test_merge_queue import (  # noqa: E402
     FAILED,
@@ -30,6 +30,8 @@ import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
 
 SECOND_GROUP = "8b1c" * 10
 CANCELLED = dict(UNIT, conclusion="cancelled")
+E2E = dict(UNIT, name="e2e", id=43,
+           html_url="https://github.com/example/repo/actions/runs/5/job/43")
 LABELLED = '[merge]\nmode = "pr"\nqueue_full_label = "e2e:full"\n'
 REMOVED_TWICE = [queue_read(), queue_read(queued=False),
                  queue_read(), queue_read(queued=False)]
@@ -39,21 +41,25 @@ REQUEUED_AND_MERGED = [queue_read(), queue_read(queued=False),
 
 class QueueEjectionTests(MergeModeFixture):
     def eject(self, reads, config=LABELLED, log="", annotations=(),
-              groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False):
+              groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False,
+              unreadable=()):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
-        sha and the one check run it failed with. Every job log reads
+        sha and the check runs it failed with. Every job log reads
         `log`, every check run's annotations `annotations`, served in
-        pages of the size asked for. `main_moves` lands a commit on
-        `origin/main` as the first removal is read."""
+        pages of the size asked for; a request whose path holds one of
+        `unreadable` fails with an HTTP 502. `main_moves` lands a commit
+        on `origin/main` as the first removal is read."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
         self.job_log.write_text(log)
         served, routed = list(groups), holophyte.pr.github._gh_run
-        reads_of_group = {sha: [run] for sha, run in groups}
+        reads_of_group = {sha: list(runs) for sha, *runs in groups}
 
         def gh(target, argv, body, path):
             args = " ".join(argv[1:])
+            if any(part in args for part in unreadable):
+                return refused("gh: Bad Gateway (HTTP 502)")
             if "/annotations" in args:
                 query = parse_qs(args.split("?", 1)[1].split()[0])
                 size, page = int(query["per_page"][0]), int(query.get("page", ["1"])[0])
@@ -62,7 +68,7 @@ class QueueEjectionTests(MergeModeFixture):
             if "actions/runs?event=merge_group" in args:
                 if main_moves and len(served) == len(groups):
                     self.land_on_main()
-                sha, _ = served.pop(0) if len(served) > 1 else served[0]
+                sha = (served.pop(0) if len(served) > 1 else served[0])[0]
                 return out(json.dumps({"workflow_runs": [
                     dict(group_run("failure"), head_sha=sha)]}))
             return routed(target, argv, body, path)
@@ -214,6 +220,45 @@ class QueueEjectionTests(MergeModeFixture):
                    log=f"2026-09-23T12:06:00Z {line}\n")
 
         self.assertEqual(self.fake.roles, ["implement", "review", "implement"])
+        self.assertEqual(len(self.enqueued()), 1)
+        self.assertIn(line, self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_an_unreadable_job_log_is_requeued_once_then_parks_saying_so(self):
+        self.eject(REMOVED_TWICE, log=FAILED,
+                   groups=((GROUP_SHA, UNIT), (SECOND_GROUP, UNIT)),
+                   unreadable=("jobs/42/logs",))
+
+        self.assertEqual(self.fix_turns(), [])
+        self.assertEqual(len(self.enqueued()), 2)
+        question = self.question()
+        self.assertIn("could not be read", question)
+        self.assertIn(GROUP_SHA[:12], question)
+        self.assertIn(SECOND_GROUP[:12], question)
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_an_annotations_page_failing_after_the_first_is_requeued(self):
+        warning = {"annotation_level": "warning",
+                   "message": "Node.js 16 actions are deprecated."}
+        self.eject(REQUEUED_AND_MERGED, log=FAILED, groups=((GROUP_SHA, UNIT),),
+                   annotations=[warning] * 101,
+                   unreadable=("annotations?per_page=100&page=2",))
+
+        self.assertEqual(self.fix_turns(), [])
+        self.assertEqual(len(self.enqueued()), 2)
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+
+    def test_a_park_match_beside_an_unreadable_check_parks_at_once(self):
+        line = "Error: secret E2E_TOKEN is not set"
+        self.eject(REQUEUED_AND_MERGED,
+                   config=LABELLED + "queue_park_signatures ="
+                   " ['secret \\S+ is not set']\n",
+                   log=f"{line}\n", groups=((GROUP_SHA, UNIT, E2E),),
+                   unreadable=("jobs/42/logs",))
+
         self.assertEqual(len(self.enqueued()), 1)
         self.assertIn(line, self.question())
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
