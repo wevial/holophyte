@@ -88,21 +88,25 @@ two ids are the GitHub Actions job and workflow run, null for a check that
 is not an Actions job), `pending`, `none` (no runs),
 `unknown` (the read failed; `detail` holds the error) or `skipped` (no GitHub
 origin), with `sha`, main's head commit the check runs were read at, beside
-every state but the last two; `automations`, each automation firing
-proposed in the last 24 hours, newest first: `id`, `automation`, `state`,
-`reason`, `detail` and `created_ms`; `automation_pauses`, each automation
+every state but the last two; `automations`, newest first, each automation
+firing proposed in the last 24 hours, each `unknown` one until a person
+settles it, and each whose rerun's `result` was `red_again` in the last 24
+hours: `id`, `automation`, `state`, `result` (null until the rerun's result
+is read), `reason`, `detail` and `created_ms`; `automation_pauses`, each automation
 paused on the project: `automation`, `note`, `actor` and `created_ms`; and `pull_requests`, each open pull request a live or parked run
 carries that a red check holds as the merge fold decides (a red required
 check, or any red check when main requires none): `ticket`, `run`, `url`,
 `number`, `failed`, `open_threads` (the recorded count) and `checks_only`
 (no open threads); and `unreadable_pulls`, each such pull request whose
 GitHub read failed: `ticket`, `run`, `url`, `number` and `detail`. A main
-`failure` or `unknown`, a proposed firing, a paused automation, a held pull
+`failure` or `unknown`, a listed firing, a paused automation, a held pull
 request or an unreadable one makes the project not `clean`; the text adds `main failure: NAME (required), NAME`,
 `github: unreadable (DETAIL)`, `pr KEY #N held by checks: NAMES` with
 ` (checks only)`, `pr KEY #N github: unreadable (DETAIL)`,
 `automation NAME paused: NOTE` and
-`automation main_watch proposed SHA12: REASON`. `host` holds, beside `attention`, `tmp`
+`automation main_watch proposed SHA12: REASON`,
+`automation main_watch unknown SHA12: REASON` and
+`automation main_watch red again SHA12: REASON`. `host` holds, beside `attention`, `tmp`
 (`used_percent` as `df` gives it, `free_bytes`, `full` at 80% or more),
 `leftovers` (this user's processes whose cwd or an absolute argument lies in
 a removed or finished witness tree under the temporary directory or a

@@ -448,10 +448,15 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # and cleared by the operator, and read.
                                  # HOLO-617: an act firing's worker reads
                                  # its firing, takes it and settles it.
+                                 # HOLO-618: the sweep replays or settles
+                                 # an expired lease, and records a
+                                 # confirmed rerun's result.
                                  (store.automations, ["automation_pause",
                                                       "firing",
                                                       "firings",
                                                       "pause_automation",
+                                                      "record_result",
+                                                      "replay_firing",
                                                       "reserve_firing",
                                                       "resume_automation",
                                                       "settle_firing",
