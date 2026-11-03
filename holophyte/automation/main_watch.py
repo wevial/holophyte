@@ -1,11 +1,19 @@
 """The main watch: a red required check on main's head, one firing per workflow run."""
 import store.automations
-from holophyte.automation.automation_config import DRY_RUN, MAIN_WATCH
+from holophyte.automation.automation_config import (
+    ACT,
+    DRY_RUN,
+    MAIN_WATCH,
+    unapproved,
+)
+from holophyte.automation.policy import RERUN_FAILED_JOBS, report_only_reason
+from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github
 from holophyte.pr.check_holds import main_checks
 
 REVISION = 1
 SUBJECT = "main"
+LEASE_MS = 5 * 60 * 1000
 
 
 def failed_jobs_of_required_runs(checks):
@@ -21,18 +29,46 @@ def failed_jobs_of_required_runs(checks):
     return runs
 
 
-def observe(target, conn, project, now):
+def workflow_run_attempt(target, pull, run):
+    answer = github.rest(target, pull, "GET",
+                         f"repos/{pull.owner}/{pull.name}/actions/runs/{run}")
+    attempt = answer.get("run_attempt") if isinstance(answer, dict) else None
+    if type(attempt) is not int:
+        raise InfraFailure(f"workflow run {run} answered no"
+                           f" run_attempt: {attempt!r}")
+    return attempt
+
+
+def observe(target, conn, project, now, watch, listed):
     pull = github._origin_pull(target)
     if pull is None:
-        return
+        return []
+    held = None
+    if watch.mode == ACT:
+        held = (unapproved(watch, REVISION)
+                or report_only_reason(pull, listed))
+    leased = []
     checks = main_checks(target)
     for run, jobs in failed_jobs_of_required_runs(checks).items():
         sha = checks["sha"]
         names = ", ".join(job["name"] for job in jobs)
-        store.automations.reserve_firing(
-            conn, project, MAIN_WATCH, REVISION, SUBJECT,
-            f"{pull.owner}/{pull.name}@{sha} run {run}", mode=DRY_RUN,
-            reason=(f"would rerun the failed jobs of workflow run {run}"
-                    f" ({names}) at {sha}"),
-            detail={"sha": sha, "workflow_run_id": run, "jobs": jobs},
-            now=now)
+        reason = (f"would rerun the failed jobs of workflow run {run}"
+                  f" ({names}) at {sha}")
+        detail = {"sha": sha, "workflow_run_id": run, "jobs": jobs}
+        cause = f"{pull.owner}/{pull.name}@{sha} run {run}"
+        if watch.mode != ACT or held is not None:
+            store.automations.reserve_firing(
+                conn, project, MAIN_WATCH, REVISION, SUBJECT, cause,
+                mode=DRY_RUN, reason=reason if held is None
+                else f"{reason}; dry run: {held}", detail=detail, now=now)
+            continue
+        detail.update(action=RERUN_FAILED_JOBS,
+                      run_attempt=workflow_run_attempt(target, pull, run))
+        firing = store.automations.reserve_firing(
+            conn, project, MAIN_WATCH, REVISION, SUBJECT, cause, mode=ACT,
+            reason=f"rerunning the failed jobs of workflow run {run}"
+                   f" ({names}) at {sha}",
+            detail=detail, now=now, lease_until=now + LEASE_MS)
+        if firing is not None:
+            leased.append(firing)
+    return leased

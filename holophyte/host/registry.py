@@ -16,7 +16,7 @@ HOST_FILE = "host.toml"
 # Any other key is refused, so a typo is not a knob the operator believes set.
 HOST_KEYS = {"serve": {"bind", "machine_token_file", "actions"},
              "supervisor": {"sweep_sec"}, "console": {"daemons"},
-             "scout": {"max_parallel"}}
+             "scout": {"max_parallel"}, "automations": {"report_only"}}
 SWEEP_SEC = 60
 SCOUT_MAX_PARALLEL = 2
 HostSettings = collections.namedtuple(

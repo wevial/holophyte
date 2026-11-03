@@ -1692,12 +1692,19 @@ project.
 
 | Key | Default | Allowed values and when to change |
 | --- | --- | --- |
-| `main_watch` | Default: `mode = "off"` | A table with `mode`: `"off"` or `"dry_run"`. In `dry_run` the sweep reads main's head commit and its check runs once a pass, and for each workflow run with a failed required check records one `proposed` firing, `would rerun the failed jobs of workflow run W (NAMES) at SHA`, once per head and workflow run; it acts on nothing. `holo patrol` lists the proposals of the last 24 hours. |
+| `main_watch` | Default: `mode = "off"` | A table with `mode`: `"off"`, `"dry_run"` or `"act"`, and `revision`, a whole number. In `dry_run` the sweep reads main's head commit and its check runs once a pass, and for each workflow run with a failed required check records one `proposed` firing, `would rerun the failed jobs of workflow run W (NAMES) at SHA`, once per head and workflow run; it acts on nothing. `holo patrol` lists the proposals of the last 24 hours. `act` needs `revision`, the rule revision the maintainer approved: at the main watch's current revision (1) the firing is `leased` and a detached worker asks GitHub to rerun the workflow run's failed jobs once, unless the kill switch, a pause, a changed config, the capability policy or a rerun someone already made stops it. At any other `revision`, or in a repository listed in `host.toml`'s `[automations] report_only`, the firing stays a `dry_run` proposal whose reason adds `rule revision R is not approved ([automations.main_watch] revision = N)` or `report-only repository OWNER/NAME`. |
 
 ```toml
 [automations.main_watch]
-mode = "dry_run"
+mode = "act"
+revision = 1
 ```
+
+`host.toml`'s `[automations] report_only` is a list of `OWNER/NAME`
+repositories, compared without case with each project's GitHub origin,
+never its `[serve] name`, whose automations never leave dry run. A rule
+change that bumps the main watch's revision returns an `act` project to dry
+run until its `revision` names the new one.
 
 A red optional check, a pending main and an unreadable one record nothing.
 A wrong `mode` is `off` for that project in the sweep, which prints one

@@ -7,6 +7,9 @@ import store
 from .enums import FiringMode, FiringState, PauseActor, check_clause
 
 PROPOSED = FiringState.PROPOSED.value
+LEASED = FiringState.LEASED.value
+SETTLED = frozenset((FiringState.REFUSED.value, FiringState.CONFIRMED.value,
+                     FiringState.CANCELED.value))
 OPERATOR = PauseActor.OPERATOR.value
 
 FIRINGS_DDL = f"""
@@ -24,7 +27,9 @@ CREATE TABLE IF NOT EXISTS automationFirings (
     detail     TEXT    NOT NULL DEFAULT '{{}}'
         CHECK (json_type(detail) = 'object'),
     createdAt  INTEGER NOT NULL,
-    settledAt  INTEGER
+    settledAt  INTEGER,
+    leaseUntil INTEGER,
+    workerPid  INTEGER
 );
 """
 
@@ -67,6 +72,8 @@ class Firing(NamedTuple):
     detail: dict
     createdAt: int
     settledAt: int | None
+    leaseUntil: int | None
+    workerPid: int | None
 
 
 def _firing_key(automation, revision, project, subject, cause):
@@ -74,18 +81,31 @@ def _firing_key(automation, revision, project, subject, cause):
 
 
 def reserve_firing(conn, project, automation, revision, subject, cause, *,
-                   mode, reason, detail, now):
+                   mode, reason, detail, now, lease_until=None):
     """The new row's id, or None when its key is already reserved."""
     key = _firing_key(automation, revision, project, subject, cause)
+    state = PROPOSED if lease_until is None else LEASED
     with store.transaction(conn):
         cursor = conn.execute(
             "INSERT INTO automationFirings (projectId, automation, revision,"
             " subject, cause, firingKey, mode, state, reason, detail,"
-            " createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " createdAt, leaseUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (firingKey) DO NOTHING",
             (project, automation, revision, subject, cause, key, mode,
-             PROPOSED, reason, json.dumps(detail, sort_keys=True), now))
+             state, reason, json.dumps(detail, sort_keys=True), now,
+             lease_until))
         return cursor.lastrowid if cursor.rowcount else None
+
+
+def _selected(conn):
+    present = {row[1] for row in
+               conn.execute("PRAGMA table_info(automationFirings)")}
+    return ", ".join(field if field in present else f"NULL AS {field}"
+                     for field in Firing._fields)
+
+
+def _firing(row):
+    return Firing(*row[:10], json.loads(row[10]), *row[11:])
 
 
 def firings(conn, since=None):
@@ -93,11 +113,40 @@ def firings(conn, since=None):
     if not _has_table(conn, "automationFirings"):
         return []
     rows = conn.execute(
-        f"SELECT {', '.join(Firing._fields)} FROM automationFirings"
+        f"SELECT {_selected(conn)} FROM automationFirings"
         " WHERE createdAt >= ? ORDER BY createdAt DESC, id DESC",
         (0 if since is None else since,)).fetchall()
-    return [Firing(*row[:10], json.loads(row[10]), *row[11:])
-            for row in rows]
+    return [_firing(row) for row in rows]
+
+
+def firing(conn, firing_id):
+    row = conn.execute(f"SELECT {_selected(conn)} FROM automationFirings"
+                       " WHERE id = ?", (firing_id,)).fetchone()
+    return None if row is None else _firing(row)
+
+
+def take_firing(conn, firing_id, pid, *, now):
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE automationFirings SET workerPid = ? WHERE id = ?"
+            " AND state = ? AND workerPid IS NULL AND leaseUntil > ?",
+            (pid, firing_id, LEASED, now))
+        return firing(conn, firing_id) if cursor.rowcount else None
+
+
+def settle_firing(conn, firing_id, pid, state, reason, *, now, detail=None):
+    if state not in SETTLED:
+        raise ValueError(f"a firing settles as one of {sorted(SETTLED)},"
+                         f" not {state!r}")
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE automationFirings SET state = ?, reason = ?,"
+            " detail = COALESCE(?, detail), settledAt = ?"
+            " WHERE id = ? AND state = ? AND workerPid = ?",
+            (state, reason, None if detail is None
+             else json.dumps(detail, sort_keys=True), now, firing_id,
+             LEASED, pid))
+        return cursor.rowcount == 1
 
 
 def _has_table(conn, name):

@@ -1,6 +1,7 @@
 """Importing this module locates no target, reads no config or HOLOPHYTE_HOME."""
 import sys
 
+from holophyte.automation.worker import automation_firing_mode
 from holophyte.board.projection import file_ticket
 from holophyte.board.provider import board_for
 from holophyte.cli.arguments import (
@@ -56,6 +57,8 @@ def _boardless_mode(args, target):
         return lambda: scout_probe_mode(target)
     if args.scout is not None:
         return lambda: scout_mode(target, args.scout)
+    if args.automation_firing is not None:
+        return lambda: automation_firing_mode(target, args.automation_firing)
     return None
 
 
