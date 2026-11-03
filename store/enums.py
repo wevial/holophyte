@@ -41,6 +41,11 @@ class BoardColumn(str, Enum):
     CANCELED = 'canceled'
 
 
+class PauseActor(str, Enum):
+    OPERATOR = 'operator'
+    AUTOMATION = 'automation'
+
+
 class Affinity(str, Enum):
     ANY = 'any'
     GUI = 'gui'
@@ -365,6 +370,7 @@ CONSTRAINED_COLUMNS = {
     ('threadMessages', 'mode'): ThreadMode,
     ('automationFirings', 'mode'): FiringMode,
     ('automationFirings', 'state'): FiringState,
+    ('automationPauses', 'actor'): PauseActor,
 }
 
 

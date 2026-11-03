@@ -28,6 +28,8 @@ command family, [below](#project-commands).
 | `--abort KO-n --close-pr [--pr-comment TEXT] --note TEXT PROJECT` | the same abort recorded as `abort_close`; once the run has ended it closes the pull request with no comment, or, with `--pr-comment TEXT`, first posts TEXT alone under the factory's comment header, keeping the branch. The abort note is never posted to GitHub. `--pr-comment` without `--close-pr` is refused | store, worktree, Linear, GitHub |
 | `--hold --note TEXT PROJECT` | holds the project's admission: a `hold` intervention carrying the note; no new ticket is claimed while existing runs finish; creates the project's store row from `[board]` when it has none; refuses a project already held, or one with neither a row nor `[board]` | store |
 | `--release-hold --note TEXT PROJECT` | enables admission again: a `release_hold` intervention carrying the note; refuses a project already enabled, or one with neither a row nor `[board]` | store |
+| `--automation-pause NAME --note TEXT PROJECT` | stops the built-in automation `NAME` (`main_watch`) on the project: an `automationPauses` row with the note, actor `operator` and the time; the host sweep's automation step runs nothing of it until `--automation-resume`, and editing or reloading the config never clears it. Another name exits 2 naming the built-ins; a paused automation exits 1 naming the standing pause | store |
+| `--automation-resume NAME --note TEXT PROJECT` | clears the automation's standing pause, setting its `clearedAt` and `clearNote`; one not paused exits 1 | store |
 | `--close KO-n --landed URL [--note TEXT] PROJECT` | closes a ticket whose change landed outside the factory: a `close_out` intervention on its last run naming `URL` and the note, the question cleared and the ticket walked to `merged` with no merge sha, in one transaction; then the lease label removed, the board issue moved and the ledger posted as a comment; refuses a ticket already merged, one with a live run, or one whose last run did not end `rejected`, `failed`, `abandoned` or `killed` | store, Linear |
 | `--gap-layer KEY-n LAYER --note TEXT [--carried-by KEY-n] [--found-by witness\|operator] PROJECT` | records the correction layer the lesson of the gap ticket `KEY-n` answers landed in: appends one `gapLayers` row with `LAYER` (`impossible`, `static`, `witness`, `guidance`, `review` or `none`), the note, the operator's user as author, `--carried-by`, the ticket carrying the lesson when it is not the gap's own, and `--found-by`, who found the gap (`foundBy`, `operator` when omitted); `--report`'s `gap layers:` line counts each ticket's latest row and its `gaps found: witness N, operator M` line counts those rows by finder. No `interventions` row is written: the verb changes no run, ticket or project state, and an intervention would count as human toil in `--report` and `/status`. An unknown layer or finder, or `--found-by` without `--gap-layer`, is a usage error (exit 2); a ticket the store does not hold exits 1 naming it | store |
 | `--file-ticket TICKET.md [--state Todo\|Backlog] [--priority urgent\|high\|medium\|low] [--note TEXT [--author NAME]] PROJECT` | validates, then refuses a body the claim would park as stale: each path named that `main` lacks and each symbol not in its paired file prints `[holo2] PATH: REASON` and exits 1 with nothing filed, or prints `[holo2] PATH: warning: REASON` and files when the body names a `Depends on`; creates the issue in the Linear project the project's `[board]` names, reads it back, validates again; then posts `AUTHOR: NOTE` as its first board note through the board's `comment()`, `AUTHOR` the caller's login when `--author` is left off; a note the board refuses exits 2 naming the filed ticket | Linear |
@@ -87,16 +89,18 @@ is not an Actions job), `pending`, `none` (no runs),
 origin), with `sha`, main's head commit the check runs were read at, beside
 every state but the last two; `automations`, each automation firing
 proposed in the last 24 hours, newest first: `id`, `automation`, `state`,
-`reason`, `detail` and `created_ms`; and `pull_requests`, each open pull request a live or parked run
+`reason`, `detail` and `created_ms`; `automation_pauses`, each automation
+paused on the project: `automation`, `note`, `actor` and `created_ms`; and `pull_requests`, each open pull request a live or parked run
 carries that a red check holds as the merge fold decides (a red required
 check, or any red check when main requires none): `ticket`, `run`, `url`,
 `number`, `failed`, `open_threads` (the recorded count) and `checks_only`
 (no open threads); and `unreadable_pulls`, each such pull request whose
 GitHub read failed: `ticket`, `run`, `url`, `number` and `detail`. A main
-`failure` or `unknown`, a proposed firing, a held pull request or an
-unreadable one makes the project not `clean`; the text adds `main failure: NAME (required), NAME`,
+`failure` or `unknown`, a proposed firing, a paused automation, a held pull
+request or an unreadable one makes the project not `clean`; the text adds `main failure: NAME (required), NAME`,
 `github: unreadable (DETAIL)`, `pr KEY #N held by checks: NAMES` with
-` (checks only)`, `pr KEY #N github: unreadable (DETAIL)` and
+` (checks only)`, `pr KEY #N github: unreadable (DETAIL)`,
+`automation NAME paused: NOTE` and
 `automation main_watch proposed SHA12: REASON`. `host` holds, beside `attention`, `tmp`
 (`used_percent` as `df` gives it, `free_bytes`, `full` at 80% or more),
 `leftovers` (this user's processes whose cwd or an absolute argument lies in
@@ -110,10 +114,14 @@ read up to its first `:` so a `--volume` value is judged by its source:
 `unreadable`, each unit whose state could not be read, with its `detail`,
 keeps the host not `clean`), `kernel`
 (`errors`, the last hour's kernel lines naming an I/O error or an NVMe
-timeout or reset) and `clean`. A part that cannot run is `readable: false`
+timeout or reset), `automations_off` (null while the host's kill switch is
+on, else its `note`, `author`, `at_ms`, `age_sec` and `problem`, set
+when the record cannot be read; an off switch keeps the host not `clean`)
+and `clean`. A part that cannot run is `readable: false`
 with its `detail`. Both forms print the host block first: `[host] nothing
 to do` when clean, else `[host]` and an indented line per attention item
-(`attention KIND PROJECT: TEXT`) and finding (`/tmp P% used, SIZE free`,
+(`attention KIND PROJECT: TEXT`) and finding (`automations off since AGE:
+NOTE` or `automations off: PROBLEM`, `/tmp P% used, SIZE free`,
 `leftover pid N (AGE): CWD ARGS`, `unit UNIT STATE`, `unit UNIT not
 readable (DETAIL)`, `kernel N I/O errors in
 the last hour: LAST LINE`), then an indented line per skipped part
@@ -158,7 +166,8 @@ See [Operating](../operating.md#registering-and-disabling-projects).
 
 A mode given no project means the host: every project listed in the host
 registry, `HOLOPHYTE_HOME/host.toml`, which `project add` and `project
-remove` write. `--status`, `--patrol`, `--serve` and `--supervise` are the host forms;
+remove` write. `--status`, `--patrol`, `--serve`, `--supervise`, `--automations-off` and
+`--automations-on` are the host forms, the last two the only form they take;
 any other mode without a project is a usage error.
 
 | Invocation | Does | Touches |
@@ -167,6 +176,8 @@ any other mode without a project is a usage error.
 | `--serve [HOST:PORT]` | the host daemon: every registered project's routes under `/projects/NAME/...` (`NAME` its `[serve] name`), and the host's `/status` and `/attention` at the root; serves on the socket the service manager hands over (`LISTEN_FDS`), else the address given, else `host.toml`'s `[serve] bind`; `host.toml`'s `[serve] machine_token_file` is the bearer beyond loopback and for every write, `[serve] actions` opens the project actions and `POST /actions/run-sweep`. On a factory `HEAD` move it exits 0 when handed its socket, and re-executes otherwise | `host.toml`, each store; writes only through the opt-ins, and `run-sweep` appends to `HOLOPHYTE_HOME/host-actions.jsonl` |
 | `--patrol [--json]` | the host form of `--patrol`: the host-level attention items (`sweep_stale`, `project_error`, `no_store`, `no_project_row`) as indented `attention KIND` lines of the `[host]` block, then every project in `host.toml` order as the project form prints it; a project that cannot be read is its own error line and the exit is 1; no `host.toml` is exit 1 naming `project add` | `host.toml`, each store, read-only |
 | `--supervise [--once]` | the host sweep: under `HOLOPHYTE_HOME/supervisor.lock` (a second run beside a live one exits 1 naming its pid), sweeps every registered store and bumps its one host-sweep beat (pid 0), then acts on the trips and reconciles pull requests, board closes and owed loops round-robin under a deadline of half `[supervisor] sweep_sec`; a project whose own `supervisor.lock` names a live pid is skipped, a dead one is removed; a disabled project, or one with no store or no row for its path, is skipped; writes `HOLOPHYTE_HOME/sweep.json` after every project; `--once` is one run, exit 1 when any project errored, and without it a run every `sweep_sec` until SIGINT/SIGTERM | `host.toml`, each store, `sweep.json`, Linear, GitHub, the loop units |
+| `--automations-off --note TEXT` | the host's kill switch: writes `HOLOPHYTE_HOME/automations.json` (`off`, the note, the time and the caller's login, replaced whole) and appends one `automations_off` line to `host-actions.jsonl`; while it stands the host sweep's automation step runs nothing on any project, reading no project's config and making no GitHub read. A record that cannot be read or parsed counts as off, and each sweep prints one `automations off:` line naming the file. Off while off exits 1 naming the standing record and writes nothing; editing or reloading config never clears it | `automations.json`, `host-actions.jsonl` |
+| `--automations-on --note TEXT` | clears the kill switch: the record says `off: false` with the note, and one `automations_on` line is appended to `host-actions.jsonl`; on while on exits 1 and writes nothing | `automations.json`, `host-actions.jsonl` |
 
 ## holo
 
@@ -221,6 +232,10 @@ and by a fresh claim's implement stage, as `--scout` is by the host sweep.
 | `holo pause KEY NOTE` | `holo ticket pause` | `--pause KEY --note NOTE PROJECT` |
 | `holo resume KEY NOTE` | `holo ticket resume` | `--resume KEY --note NOTE PROJECT` |
 | `holo abort KEY NOTE [--close-pr [--pr-comment TEXT]]` | `holo ticket abort` | `--abort KEY --note NOTE [--close-pr [--pr-comment TEXT]] PROJECT` |
+| `holo automations off NOTE` | | `--automations-off --note NOTE`, the host form only: a named project is not passed |
+| `holo automations on NOTE` | | `--automations-on --note NOTE`, the host form only |
+| `holo automation pause NAME NOTE` | | `--automation-pause NAME --note NOTE PROJECT` |
+| `holo automation resume NAME NOTE` | | `--automation-resume NAME --note NOTE PROJECT` |
 | `holo hold NOTE` | | `--hold --note NOTE PROJECT` |
 | `holo release NOTE` | | `--release-hold --note NOTE PROJECT` |
 | `holo start [NOTE]` | `holo loop start` | none: `systemctl --user start holophyte-loop@NAME`, recorded first as the console's launch-loop is |
@@ -572,8 +587,8 @@ whose output it prints.
 | Code | Meaning |
 | --- | --- |
 | 0 | done, or the board was empty |
-| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, a refused `project` command, a stale revision or refused move or cancel; a `holo` read answered 404, 503 or any status but 200 and 400; `holo report` on a project with no store |
-| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml`; a `holo` read answered 400; a `holo report --since` window it does not take |
+| 1 | a startup refusal, a failed run under `stop_on_failure`, an invalid ticket file, a refused requeue, approval, babysitter, re-point, pause, resume, abort, close-out, hold or hold release, `--automations-off` while off or `--automations-on` while on, a pause of a paused automation or a resume of one not paused, a refused `project` command, a stale revision or refused move or cancel; a `holo` read answered 404, 503 or any status but 200 and 400; `holo report` on a project with no store |
+| 2 | `--file-ticket`: the issue exists but its stored body failed re-validation; argparse errors, `project` commands' included; `holo`: no project found, a name `host.toml` does not register, or a refused `client.toml`; a `holo` read answered 400; a `holo report --since` window it does not take; `--automation-pause` or `--automation-resume` naming no built-in automation, which names the built-ins (`main_watch`) |
 
 ## Output prefix
 

@@ -57,8 +57,10 @@ def build_parser():
 
 
 def project_argv(args, default):
-    from holophyte.holo.resolve import HOST_FORMS, none_found, resolve
+    from holophyte.holo.resolve import HOST_FORMS, HOST_SWITCHES, none_found, resolve
     from holophyte.host.registry import HostError
+    if args.command.mode in HOST_SWITCHES:
+        return []
     try:
         resolved = resolve(args.project, default)
     except HostError as bad:

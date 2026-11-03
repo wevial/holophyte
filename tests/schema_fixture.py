@@ -160,6 +160,8 @@ DOCUMENTED_COLUMNS = {
     "automationFirings": {"id", "projectId", "automation", "revision",
                           "subject", "cause", "firingKey", "mode", "state",
                           "reason", "detail", "createdAt", "settledAt"},
+    "automationPauses": {"id", "automation", "note", "actor", "createdAt",
+                         "clearedAt", "clearNote"},
 }
 
 

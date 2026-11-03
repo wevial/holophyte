@@ -80,7 +80,22 @@ def label_names(text):
             if name]
 
 
+def _automation_checks(parser, args):
+    host = args.automations_off or args.automations_on
+    if not (host or args.automation_pause or args.automation_resume):
+        return False
+    if host and args.target is not None:
+        parser.error("--automations-off and --automations-on are the host's;"
+                     " they take no project")
+    if not (args.note or "").strip():
+        parser.error("--automations-off, --automations-on, --automation-pause"
+                     " and --automation-resume require --note TEXT")
+    return True
+
+
 def _note_checks(parser, args):
+    if _automation_checks(parser, args):
+        return
     if args.force and args.approve is None and args.requeue is None:
         parser.error("--force belongs to --approve or --requeue")
     if args.force and args.approve is not None \
@@ -438,6 +453,21 @@ def build_parser():
         help="on a native board: cancel the ticket at --revision N, recording "
              "--note; a live run is aborted and ends abandoned at its next "
              "safe point, naming which run")
+    modes.add_argument(
+        "--automations-off", action="store_true",
+        help="with no project: stop every automation on the host until "
+             "--automations-on, recorded in HOLOPHYTE_HOME/automations.json "
+             "and host-actions.jsonl; requires --note")
+    modes.add_argument(
+        "--automations-on", action="store_true",
+        help="with no project: clear --automations-off; requires --note")
+    modes.add_argument(
+        "--automation-pause", metavar="NAME",
+        help="stop the built-in automation NAME on the project until "
+             "--automation-resume, an automationPauses row; requires --note")
+    modes.add_argument(
+        "--automation-resume", metavar="NAME",
+        help="clear the automation's standing pause; requires --note")
     modes.add_argument("--hold", action="store_true",
                        help="hold project admission; requires --note")
     modes.add_argument("--release-hold", action="store_true",
