@@ -40,10 +40,6 @@ def main_watch_config(project):
     return WatchConfig(mode, revision)
 
 
-def main_watch_mode(project):
-    return main_watch_config(project).mode
-
-
 def unapproved(config, revision):
     if config.revision == revision:
         return None
