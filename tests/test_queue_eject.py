@@ -39,12 +39,13 @@ REQUEUED_AND_MERGED = [queue_read(), queue_read(queued=False),
 
 class QueueEjectionTests(MergeModeFixture):
     def eject(self, reads, config=LABELLED, log="", annotations=(),
-              groups=((GROUP_SHA, CANCELLED),), steps=()):
+              groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the one check run it failed with. Every job log reads
         `log`, every check run's annotations `annotations`, served in
-        pages of the size asked for."""
+        pages of the size asked for. `main_moves` lands a commit on
+        `origin/main` as the first removal is read."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
         self.job_log.write_text(log)
@@ -59,6 +60,8 @@ class QueueEjectionTests(MergeModeFixture):
                 return out(json.dumps(
                     list(annotations)[(page - 1) * size:page * size]))
             if "actions/runs?event=merge_group" in args:
+                if main_moves and len(served) == len(groups):
+                    self.land_on_main()
                 sha, _ = served.pop(0) if len(served) > 1 else served[0]
                 return out(json.dumps({"workflow_runs": [
                     dict(group_run("failure"), head_sha=sha)]}))
@@ -73,6 +76,13 @@ class QueueEjectionTests(MergeModeFixture):
                       lambda target, pull, sha: reads_of_group.get(sha, [])):
             self.fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                                      Idle(""), *steps, provider=self.provider())
+
+    def land_on_main(self):
+        moved = self.git("-c", "user.name=Elsewhere",
+                         "-c", "user.email=elsewhere@example.invalid",
+                         "commit-tree", "main^{tree}", "-p", "main",
+                         "-m", "land elsewhere").strip()
+        self.git("update-ref", "refs/remotes/origin/main", moved)
 
     def enqueued(self):
         return [v["sha"] for kind, v in self.api_calls() if kind == "enqueue"]
@@ -123,6 +133,39 @@ class QueueEjectionTests(MergeModeFixture):
                    log="2026-09-23T12:06:00.1Z The self-hosted runner lost"
                        " communication with the server.\n" + FAILED,
                    groups=((GROUP_SHA, UNIT),))
+
+        self.assertEqual(self.fix_turns(), [])
+        self.assertEqual(len(self.enqueued()), 2)
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+
+    def test_the_same_checks_ejected_again_across_a_main_refresh_park_naming_both(
+            self):
+        self.eject(REMOVED_TWICE + [queue_read(queued=False, merged=True)],
+                   groups=((GROUP_SHA, CANCELLED), (SECOND_GROUP, CANCELLED)),
+                   main_moves=True)
+
+        before, refreshed = self.enqueued()
+        self.assertIn("land elsewhere",
+                      self.git("log", "--format=%s", refreshed))
+        self.assertNotIn("land elsewhere",
+                         self.git("log", "--format=%s", before))
+        question = self.question()
+        self.assertIn(GROUP_SHA[:12], question)
+        self.assertIn(SECOND_GROUP[:12], question)
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_an_annotation_whose_raw_details_match_an_infra_signature_is_requeued(
+            self):
+        self.eject(REQUEUED_AND_MERGED,
+                   config=LABELLED + "queue_infra_signatures ="
+                   " ['^Runner lost$']\n",
+                   log=FAILED, groups=((GROUP_SHA, UNIT),),
+                   annotations=[{"annotation_level": "failure",
+                                 "message": "Process completed with exit"
+                                            " code 1.",
+                                 "raw_details": "Context\nRunner lost"}])
 
         self.assertEqual(self.fix_turns(), [])
         self.assertEqual(len(self.enqueued()), 2)

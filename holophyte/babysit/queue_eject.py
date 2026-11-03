@@ -1,4 +1,5 @@
 """Tell a merge-queue ejection's infra failure from a test failure."""
+import json
 import re
 from dataclasses import dataclass
 
@@ -11,6 +12,7 @@ from holophyte.pr import github
 INFRA, PARK, TEST = "infra", "park", "test"
 _STAMP = re.compile(r"^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ?")
 ANNOTATIONS_PAGE = 100
+REQUEUE_EVENT = "queue_infra_requeue"
 
 
 @dataclass(frozen=True)
@@ -64,7 +66,8 @@ def _annotations(target, pull, check):
         if len(answer) < ANNOTATIONS_PAGE:
             break
         page += 1
-    return [line.strip() for note in notes for field in ("title", "message")
+    return [line.strip() for note in notes
+            for field in ("title", "message", "raw_details")
             for line in str(note.get(field) or "").splitlines()]
 
 
@@ -80,13 +83,14 @@ def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
               f" cannot fix ([merge] queue_park_signatures): {verdict.line}")
     if verdict.kind == TEST:
         return None
-    failed = {check.name for check in removed.failed}
-    earlier = next((e for e in requeued
-                    if {c.name for c in e.failed} == failed), None)
+    failed = sorted({check.name for check in removed.failed})
+    history = _requeued(run) if run.conn is not None else requeued
+    earlier = next((group for names_of, group in history
+                    if names_of == failed), None)
     if earlier is not None:
         _park(run, pull, reviewed,
               f"the merge queue removed the pull request again for infra:"
-              f" {names} failed on merge group {earlier.group[:12]}, was"
+              f" {names} failed on merge group {earlier[:12]}, was"
               f" re-queued once, and failed the same way on merge group"
               f" {removed.group[:12]}")
     if run.conn is not None and run.run_id is not None:
@@ -94,7 +98,19 @@ def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
                            f"{names} failed on merge group"
                            f" {removed.group[:12]} for infra; re-queuing"
                            f" {pull.url} once without a fix round")
-    return (*requeued, removed)
+        store.record_event(run.conn, run.run_id, REQUEUE_EVENT,
+                           f"re-queued after merge group {removed.group[:12]}",
+                           level="detail", payload=json.dumps(
+                               {"names": failed, "group": removed.group}))
+    return (*requeued, (failed, removed.group))
+
+
+def _requeued(run):
+    rows = run.conn.execute(
+        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
+        " ORDER BY id", (run.run_id, REQUEUE_EVENT)).fetchall()
+    return [(record["names"], record["group"])
+            for record in (json.loads(row[0]) for row in rows)]
 
 
 def _park(run, pull, reviewed, why):
