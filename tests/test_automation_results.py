@@ -52,15 +52,14 @@ class ResultFixture(ActFixture):
         self.act_github.answer(self.paths[name], key, value)
 
     def head(self, name, sha, runs):
-        repo = self.repos[name]
-        self.answer(name, f"GET repos/{repo}/commits/main", {"sha": sha})
-        self.answer(name, f"GET repos/{repo}/commits/{sha}/check-runs",
-                    {"total_count": len(runs), "check_runs": runs})
+        self.answer(name, f"GET repos/{self.repos[name]}/commits/main",
+                    {"sha": sha})
+        self.rerun_answers(name, runs, sha)
 
-    def rerun_answers(self, name, runs):
-        repo = self.repos[name]
-        self.answer(name, f"GET repos/{repo}/commits/{S}/check-runs",
-                    {"total_count": len(runs), "check_runs": runs})
+    def rerun_answers(self, name, runs, sha=S):
+        self.answer(name, f"GET repos/{self.repos[name]}/commits/{sha}"
+                    "/check-runs", {"total_count": len(runs),
+                                    "check_runs": runs})
 
     def compares(self, name):
         return [call for call in self.act_github.calls(self.paths[name])
