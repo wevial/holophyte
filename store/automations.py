@@ -82,19 +82,23 @@ def _firing_key(automation, revision, project, subject, cause):
 
 def reserve_firing(conn, project, automation, revision, subject, cause, *,
                    mode, reason, detail, now, lease_until=None):
-    """The new row's id, or None when its key is already reserved."""
+    """The id of a new row, or of a proposal on the key a lease takes over."""
     key = _firing_key(automation, revision, project, subject, cause)
     state = PROPOSED if lease_until is None else LEASED
     with store.transaction(conn):
-        cursor = conn.execute(
+        row = conn.execute(
             "INSERT INTO automationFirings (projectId, automation, revision,"
             " subject, cause, firingKey, mode, state, reason, detail,"
             " createdAt, leaseUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT (firingKey) DO NOTHING",
+            " ON CONFLICT (firingKey) DO UPDATE SET mode = excluded.mode,"
+            " state = excluded.state, reason = excluded.reason,"
+            " detail = excluded.detail, leaseUntil = excluded.leaseUntil"
+            " WHERE automationFirings.state = ? AND excluded.state = ?"
+            " RETURNING id",
             (project, automation, revision, subject, cause, key, mode,
              state, reason, json.dumps(detail, sort_keys=True), now,
-             lease_until))
-        return cursor.lastrowid if cursor.rowcount else None
+             lease_until, PROPOSED, LEASED)).fetchone()
+        return None if row is None else row[0]
 
 
 def _selected(conn):

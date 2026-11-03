@@ -336,6 +336,48 @@ class ActTests(ActFixture):
         self.assertEqual(argv[argv.index("--automation-firing") + 1],
                          str(self.only("beta").id))
 
+    def test_a_dry_run_proposal_is_leased_once_act_is_allowed(self):
+        host = self.home / HOST_FILE
+        listing = '\n[automations]\nreport_only = ["o/beta"]\n'
+        host.write_text(host.read_text() + listing)
+        self.act("alpha", revision=0)
+        self.act("beta")
+        self.assertEqual(self.recorded_pass(), [])
+        proposed = {name: self.only(name) for name in self.NAMES}
+        self.assertEqual({row.state for row in proposed.values()},
+                         {"proposed"})
+
+        config = Project.locate(self.paths["alpha"], adopt=False).config_path
+        config.write_text(config.read_text().replace("revision = 0",
+                                                     "revision = 1"))
+        host.write_text(host.read_text().replace(listing, ""))
+        argvs = self.recorded_pass()
+
+        for name in self.NAMES:
+            firing = self.only(name)
+            self.assertEqual((firing.id, firing.mode, firing.state),
+                             (proposed[name].id, "act", "leased"))
+            self.assertEqual(firing.detail["run_attempt"], 1)
+        self.assertEqual(
+            sorted(argv[argv.index("--automation-firing") + 1]
+                   for argv in argvs),
+            sorted(str(proposed[name].id) for name in self.NAMES))
+        self.assertEqual(self.recorded_pass(), [])
+
+    def test_a_repository_listed_after_the_lease_is_not_rerun(self):
+        self.act("alpha")
+        self.recorded_pass()
+        with open(self.home / HOST_FILE, "a") as registry:
+            registry.write('\n[automations]\nreport_only = ["O/Alpha"]\n')
+
+        ran = self.worker("alpha", self.only("alpha").id)
+
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        firing = self.only("alpha")
+        self.assertEqual(firing.state, "canceled")
+        self.assertIn("report-only repository o/alpha", firing.reason)
+        self.assertEqual(self.act_github.writes(self.paths["alpha"]), [])
+
 
 class PolicyTests(ActFixture):
     def test_an_action_outside_the_policy_is_refused_before_github(self):

@@ -11,10 +11,10 @@ from holophyte.automation.automation_config import (
 )
 from holophyte.automation.gate import inhibitor
 from holophyte.automation.main_watch import REVISION, workflow_run_attempt
-from holophyte.automation.policy import refusal
+from holophyte.automation.policy import refusal, report_only, report_only_reason
 from holophyte.babysit.check_fix import rerun_failed_jobs
 from holophyte.config.project import Project
-from holophyte.host.registry import home
+from holophyte.host.registry import Host, HostError, home
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import open_store
 from holophyte.pr import github
@@ -45,9 +45,19 @@ def config_change(target, firing):
     return None
 
 
+def report_only_listing(target):
+    try:
+        listed = report_only(Host.locate(home()))
+    except HostError as bad:
+        return f"the host config no longer reads: {bad}"
+    pull = github._origin_pull(target)
+    return None if pull is None else report_only_reason(pull, listed)
+
+
 def standing_refusal(conn, target, firing):
     stopped = (inhibitor(home(), conn, firing.automation)
-               or config_change(target, firing))
+               or config_change(target, firing)
+               or report_only_listing(target))
     if stopped is not None:
         return CANCELED, stopped
     refused = refusal(firing.automation, firing.detail.get("action"))
