@@ -64,12 +64,11 @@ def built_in(name):
 
 def pause(target, name, note):
     built_in(name)
-    now = int(time() * 1000)
     conn = open_store(target)
     try:
         if store.automations.pause_automation(
                 conn, name, note, actor=store.automations.OPERATOR,
-                now=now) is None:
+                now=int(time() * 1000)) is None:
             held = store.automations.automation_pause(conn, name)
             raise SystemExit(f"[holo2] automation {name} is already paused"
                              f" by {held.actor}: {held.note}")
@@ -80,11 +79,10 @@ def pause(target, name, note):
 
 def resume(target, name, note):
     built_in(name)
-    now = int(time() * 1000)
     conn = open_store(target)
     try:
-        if store.automations.resume_automation(conn, name, note,
-                                               now=now) is None:
+        if store.automations.resume_automation(
+                conn, name, note, now=int(time() * 1000)) is None:
             raise SystemExit(f"[holo2] automation {name} is not paused on"
                              f" {target.path}")
     finally:
