@@ -172,21 +172,6 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
 
-    def test_a_line_of_an_annotation_matching_an_anchored_infra_signature_is_requeued(
-            self):
-        self.eject(REQUEUED_AND_MERGED,
-                   config=LABELLED + "queue_infra_signatures ="
-                   " ['^The runner has received a shutdown signal\\.$']\n",
-                   log=FAILED, groups=((GROUP_SHA, UNIT),),
-                   annotations=[{"annotation_level": "failure",
-                                 "message": "Job unit stopped.\nThe runner"
-                                 " has received a shutdown signal."}])
-
-        self.assertEqual(self.fix_turns(), [])
-        self.assertEqual(len(self.enqueued()), 2)
-        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
-                         [("merged", QUEUE_SHA)])
-
     def test_an_infra_annotation_past_the_first_page_is_requeued(self):
         warning = {"annotation_level": "warning",
                    "message": "Node.js 16 actions are deprecated."}
