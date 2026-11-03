@@ -28,6 +28,7 @@ from test_merge_queue import (  # noqa: E402
 )
 
 import holophyte.babysit.queue_eject  # noqa: E402 - after the sys.path insert above
+import holophyte.deadline  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.merge_queue  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
@@ -55,12 +56,15 @@ REQUEUED_AND_MERGED = [queue_read(), queue_read(queued=False),
 
 class FullWorkflow:
     """The E2E workflow's runs and the pull request's labels, answered for
-    `eject`: the first `refuse` re-runs are refused, and a red re-run's
-    check run reaches the head commit after `late` reads of it."""
+    `eject`: the first `refuse` re-runs are refused, a red re-run's
+    check run reaches the head commit after `late` reads of it, and
+    `spent` refuses label removals as a spent call deadline does."""
 
-    def __init__(self, test, rerun, abort, labels=(), refuse=0, late=0):
+    def __init__(self, test, rerun, abort, labels=(), refuse=0, late=0,
+                 spent=False):
         self.test, self.rerun, self.abort = test, rerun, abort
         self.labels, self.refuse, self.late = set(labels), refuse, late
+        self.spent = spent
         self.asked, self.reruns = [], []
 
     def head_checks(self, sha):
@@ -78,6 +82,8 @@ class FullWorkflow:
             self.asked.append((label[1], json.loads(body or "null")))
             if label[1] == "POST":
                 self.labels |= set(json.loads(body)["labels"])
+            elif self.spent:
+                raise holophyte.deadline.CallRefused("share spent before the call")
             else:
                 self.labels.discard(unquote(label[2].lstrip("/")))
         if "enqueuePullRequest" in (body or ""):
@@ -136,7 +142,7 @@ class QueueEjectionTests(MergeModeFixture):
               groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False,
               unreadable=(), bodies=None, rerun="success", abort=False,
               group_logs=None, merged_by_hand=False, labels=(), refuse=0,
-              late=0, then=None):
+              late=0, then=None, spent=False):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the check runs it failed with. Every job log reads
@@ -157,7 +163,8 @@ class QueueEjectionTests(MergeModeFixture):
         and the pull request read as merged on GitHub by a maintainer.
         The pull request starts with `labels` on, the first `refuse`
         re-runs are refused, and the red re-run's check run reaches the
-        head commit only on its `late`-th read after the first. `then`
+        head commit only on its `late`-th read after the first; `spent`
+        refuses every label removal for a spent call deadline. `then`
         is called last, still against the fake."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
@@ -165,7 +172,7 @@ class QueueEjectionTests(MergeModeFixture):
         served, routed = list(groups), holophyte.pr.github._gh_run
         reads_of_group = {sha: list(runs) for sha, *runs in groups}
 
-        full = FullWorkflow(self, rerun, abort, labels, refuse, late)
+        full = FullWorkflow(self, rerun, abort, labels, refuse, late, spent)
         self.asked = full.asked
 
         unread, by_hand = list(unreadable), []
@@ -475,6 +482,17 @@ class QueueEjectionTests(MergeModeFixture):
         (turn,) = [t for t in self.fake.turns if "CHECK e2e" in t.goal]
         self.assertIn(E2E_HEAD["html_url"], turn.goal)
 
+    def test_a_red_rerun_with_no_readable_failed_check_parks_naming_the_run(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), rerun="failure", late=10**6)
+
+        question = self.question()
+        self.assertIn(f"workflow run {FULL_RUN} attempt 2", question)
+        self.assertIn("ended failure", question)
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
     def test_a_full_suite_label_already_on_is_neither_added_nor_removed(self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
                    groups=((GROUP_SHA, UNIT),), labels=("e2e:full",))
@@ -513,6 +531,16 @@ class QueueEjectionTests(MergeModeFixture):
                          ["enqueue", "POST", "/rerun", "DELETE"])
         self.assertEqual(self.read("SELECT outcome FROM runs"),
                          [("abandoned",)])
+
+    def test_a_label_removal_refused_at_run_end_by_the_call_deadline_is_warned(self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), abort=True,
+                   spent=True)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"),
+                         [("abandoned",)])
+        self.assertTrue(self.read("SELECT summary FROM runEvents WHERE"
+                                  " summary LIKE '%removing e2e:full%failed%'"))
 
     def test_a_log_matching_a_park_signature_parks_at_once_quoting_the_line(
             self):

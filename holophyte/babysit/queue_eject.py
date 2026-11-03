@@ -6,6 +6,7 @@ from time import monotonic
 import store
 from holophyte.babysit.check_failures import failure_lines, normalized
 from holophyte.config.config_tables import merge_config
+from holophyte.deadline import CallRefused
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while, warn_on_run
 from holophyte.loop.stop import stop_if_requested
@@ -190,9 +191,10 @@ def _labels(run, pull):
 def _full_result(run, beat_s, pull, reviewed, record):
     workflow_run, attempt = record["run"], record["attempt"]
     _rerun_unless_started(run, beat_s, pull, reviewed, workflow_run, attempt)
-    if _awaited(run, beat_s, pull, reviewed, workflow_run,
-                attempt) != "success":
-        return _reported_failures(run, beat_s, pull, workflow_run, attempt)
+    ended = _awaited(run, beat_s, pull, reviewed, workflow_run, attempt)
+    if ended != "success":
+        return _red_or_park(run, beat_s, pull, reviewed, workflow_run,
+                            attempt, ended)
     group, label = record["group"], record["label"]
     _record_requeue(run, UNREPRODUCED_EVENT, record["specs"], group,
                     f"the failure on merge group {group[:12]} did not"
@@ -228,10 +230,11 @@ def labelled_full_run(run, beat_s, pull, reviewed):
     label = record["label"]
     latest = _latest_full_run(run, beat_s, pull, reviewed,
                               f"it carries {label}")
-    if _awaited(run, beat_s, pull, reviewed, latest["id"],
-                latest.get("run_attempt") or 1) != "success":
-        return _reported_failures(run, beat_s, pull, latest["id"],
-                                  latest.get("run_attempt") or 1)
+    attempt = latest.get("run_attempt") or 1
+    ended = _awaited(run, beat_s, pull, reviewed, latest["id"], attempt)
+    if ended != "success":
+        return _red_or_park(run, beat_s, pull, reviewed, latest["id"],
+                            attempt, ended)
     _record(run, f"workflow run {latest['id']} passed on the head commit"
                  f" {run.sha[:12]}; removing {label} before re-queuing")
     _drop_or_park(run, pull, reviewed, label)
@@ -259,7 +262,7 @@ def unlabel_ended_run(target, conn, run_id):
 def drop_label(target, conn, run_id, pull, label):
     try:
         github.remove_label(target, pull, label)
-    except InfraFailure as refused:
+    except (InfraFailure, CallRefused) as refused:
         warn_on_run(conn, run_id, f"removing {label} from {pull.url}"
                                   f" failed: {refused}")
         return False
@@ -352,6 +355,16 @@ def _nap(run, beat_s, remaining):
     stop_if_requested(run.conn, run.run_id, "merge_gate")
     with heartbeat_while(run.conn, run.run_id, beat_s):
         github.SLEEP(min(github.CHECK_POLL_S, remaining))
+
+
+def _red_or_park(run, beat_s, pull, reviewed, workflow_run, attempt, ended):
+    failed = _reported_failures(run, beat_s, pull, workflow_run, attempt)
+    if not failed:
+        _park(run, pull, reviewed,
+              f"workflow run {workflow_run} attempt {attempt} on the head"
+              f" commit {run.sha[:12]} ended {ended}, and no failed check"
+              " of that run could be read")
+    return failed
 
 
 def _reported_failures(run, beat_s, pull, workflow_run, attempt):
