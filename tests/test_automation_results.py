@@ -138,6 +138,27 @@ class ExpiredLeaseTests(ResultFixture):
         self.assertFalse(row["clean"])
 
 
+    def test_a_firing_settled_during_its_workers_read_sends_no_rerun(self):
+        self.act("alpha")
+        self.recorded_pass()
+        read = "GET repos/o/alpha/actions/runs/7"
+        self.answer("alpha", f"EXEC BEFORE {read}",
+                    "import sqlite3\n"
+                    f"conn = sqlite3.connect("
+                    f"{str(self.target('alpha').store_path)!r})\n"
+                    "conn.execute(\"UPDATE automationFirings SET state ="
+                    f" 'canceled', reason = {step.UNSENT!r}\")\n"
+                    "conn.commit()\n")
+
+        ran = self.worker("alpha", self.only("alpha").id)
+
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertEqual(self.rerun_posts("alpha"), [])
+        firing = self.only("alpha")
+        self.assertEqual(firing.state, "canceled")
+        self.assertEqual(firing.reason, step.UNSENT)
+
+
 class MainGreenTests(ResultFixture):
     def test_main_green_is_the_last_head_whose_required_checks_passed(self):
         self.act("alpha")

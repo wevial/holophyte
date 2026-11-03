@@ -83,6 +83,12 @@ class Worker:
                 self.settle(*found)
             return found is not None
 
+    def still_leased(self):
+        current = store.automations.firing(self.conn, self.firing.id)
+        return (current is not None
+                and current.state == store.automations.LEASED
+                and current.workerPid == self.firing.workerPid)
+
     def attempt_refusal(self, pull, run, recorded):
         if pull is None:
             return "the project has no GitHub origin"
@@ -105,6 +111,10 @@ class Worker:
         refused = self.attempt_refusal(pull, run, recorded)
         with store.transaction(self.conn):
             if self.settled_if_refused(refused):
+                return 0
+            if not self.still_leased():
+                print(f"[holo2] firing {self.firing.id} was settled before"
+                      " its rerun; no rerun sent", flush=True)
                 return 0
             try:
                 rerun_failed_jobs(self.target, pull, run)
