@@ -95,7 +95,8 @@ class QueueEjectionTests(MergeModeFixture):
 
     def eject(self, reads, config=LABELLED, log="", annotations=(),
               groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False,
-              unreadable=(), bodies=None, rerun="success", abort=False):
+              unreadable=(), bodies=None, rerun="success", abort=False,
+              group_logs=None):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the check runs it failed with. Every job log reads
@@ -109,7 +110,8 @@ class QueueEjectionTests(MergeModeFixture):
         head commit reports `E2E_HEAD`. A later commit's E2E run
         `FIX_RUN` is green. `abort` asks the run to abort while the
         re-run is still in progress. `self.asked` keeps the label calls,
-        re-runs and enqueues in order."""
+        re-runs and enqueues in order. `group_logs` maps a merge group
+        sha to the job log every check reads once that group is served."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
         self.job_log.write_text(log)
@@ -138,6 +140,8 @@ class QueueEjectionTests(MergeModeFixture):
                 if main_moves and len(served) == len(groups):
                     self.land_on_main()
                 sha = (served.pop(0) if len(served) > 1 else served[0])[0]
+                if sha in (group_logs or {}):
+                    self.job_log.write_text(group_logs[sha])
                 return out(json.dumps({"workflow_runs": [
                     dict(group_run("failure"), head_sha=sha)]}))
             return routed(target, argv, body, path)
@@ -327,18 +331,57 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
 
-    def test_the_same_specs_ejected_again_after_no_reproduction_park(self):
-        self.eject(REMOVED_TWICE, config=FULL, log=FAILED,
-                   groups=((GROUP_SHA, UNIT), (SECOND_GROUP, UNIT)))
+    def test_the_same_spec_ejected_again_with_another_error_parks(self):
+        self.eject(REMOVED_TWICE, config=FULL,
+                   groups=((GROUP_SHA, UNIT), (SECOND_GROUP, UNIT)),
+                   group_logs={GROUP_SHA: f"{FAILED}\nAssertionError: 1 != 2",
+                               SECOND_GROUP: f"{FAILED}\nAssertionError:"
+                                             " 'a' != 'b'"})
 
         self.assertEqual([kind for kind, _ in self.asked],
                          ["enqueue", "POST", "/rerun", "DELETE", "enqueue"])
         question = self.question()
-        self.assertIn(FAILED, question)
+        self.assertIn("test_x (tests.test_y.Case.test_x)", question)
         self.assertIn(GROUP_SHA[:12], question)
         self.assertIn(SECOND_GROUP[:12], question)
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
+
+    def test_a_playwright_spec_renumbered_and_failing_otherwise_parks(self):
+        spec = "[chromium] › e2e/login.spec.ts:12:5 › logs in"
+        self.eject(REMOVED_TWICE, config=FULL,
+                   groups=((GROUP_SHA, UNIT), (SECOND_GROUP, UNIT)),
+                   group_logs={
+                       GROUP_SHA: f"  1) {spec} ───\n    Error: timed out",
+                       SECOND_GROUP: f"  3) {spec} (retry #1) ───\n"
+                                     "    Error: expected 2, got 3"})
+
+        self.assertEqual(self.asked.count(("/rerun", FULL_RUN)), 1)
+        self.assertIn(spec, self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_a_label_that_cannot_be_removed_parks_instead_of_requeuing(self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), unreadable=("/labels/",))
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "/rerun", "DELETE"])
+        self.assertEqual(len(self.enqueued()), 1)
+        self.assertIn("removing e2e:full", self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
+    def test_a_label_that_cannot_be_removed_after_a_fix_is_not_requeued(self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), rerun="failure",
+                   unreadable=("/labels/",),
+                   steps=(Commit("fix: the e2e failure"), APPROVE, Idle("")))
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "/rerun", "DELETE"])
+        self.assertEqual(len(self.enqueued()), 1)
+        self.assertIn("removing e2e:full", self.question())
 
     def test_a_test_failure_with_no_full_run_on_the_head_parks_unlabelled(
             self):

@@ -4,7 +4,7 @@ import re
 from time import monotonic
 
 import store
-from holophyte.babysit.check_failures import Failure
+from holophyte.babysit.check_failures import failure_lines, normalized
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while, warn_on_run
@@ -14,6 +14,9 @@ from holophyte.pr.merge_queue import RUNS_PAGE
 from holophyte.redact import redact_values
 
 INFRA, PARK, TEST, UNREADABLE = "infra", "park", "test", "unreadable"
+_SPECS = (re.compile(r"(?:FAIL|ERROR): (\S+ \(\S+\))"),
+          re.compile(r"(?:FAILED|ERROR) (\S*::\S*)"),
+          re.compile(r"\d+\) (\[[^\]]+\] › .*?)[\s─]*$"))
 _STAMP = re.compile(r"^\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z ?")
 ANNOTATIONS_PAGE = 100
 REQUEUE_EVENT = "queue_infra_requeue"
@@ -35,9 +38,14 @@ def classify(target, pull, failed):
            or _first_match(merge.queue_infra_signatures, lines)
            for check, lines, _ in texts):
         return INFRA, "", []
-    failure = Failure.read([check.name for check in failed],
-                           ["\n".join(lines) for _, lines, _ in texts])
-    return TEST, "", sorted(failure.signature) or sorted(failure.names)
+    specs = {_spec(line) for _, lines, _ in texts
+             for line in failure_lines("\n".join(lines))} - {""}
+    return TEST, "", sorted(specs) or sorted({check.name for check in failed})
+
+
+def _spec(line):
+    match = next(filter(None, (p.match(line) for p in _SPECS)), None)
+    return normalized(match[1]) if match else ""
 
 
 def _first_match(patterns, lines):
@@ -143,7 +151,7 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
                     f" reproduce: workflow run {latest['id']} passed on the"
                     f" head commit {run.sha[:12]}; re-queuing {pull.url}"
                     " once")
-    drop_label(run.project, run.conn, run.run_id, pull, label)
+    _drop_or_park(run, pull, reviewed, label)
     return (*requeued, (TEST, specs, removed.group)), None
 
 
@@ -158,8 +166,15 @@ def labelled_full_run(run, beat_s, pull, reviewed):
         return _head_failures(run, beat_s, pull, latest["id"])
     _record(run, f"workflow run {latest['id']} passed on the head commit"
                  f" {run.sha[:12]}; removing {label} before re-queuing")
-    drop_label(run.project, run.conn, run.run_id, pull, label)
+    _drop_or_park(run, pull, reviewed, label)
     return None
+
+
+def _drop_or_park(run, pull, reviewed, label):
+    if not drop_label(run.project, run.conn, run.run_id, pull, label):
+        _park(run, pull, reviewed,
+              f"removing {label} from the pull request failed, so it is not"
+              " re-queued with every later run of it a full one")
 
 
 def unlabel_ended_run(target, conn, run_id):
@@ -179,8 +194,9 @@ def drop_label(target, conn, run_id, pull, label):
     except InfraFailure as refused:
         warn_on_run(conn, run_id, f"removing {label} from {pull.url}"
                                   f" failed: {refused}")
-        return
+        return False
     _label_event(conn, run_id, label, False, f"removed {label} from {pull.url}")
+    return True
 
 
 def _label_on(conn, run_id):
