@@ -54,22 +54,21 @@ def observe(target, conn, project, now, watch, listed):
     for run, jobs in failed_jobs_of_required_runs(checks).items():
         sha = checks["sha"]
         names = ", ".join(job["name"] for job in jobs)
-        reason = (f"would rerun the failed jobs of workflow run {run}"
-                  f" ({names}) at {sha}")
+        jobs_at = f"the failed jobs of workflow run {run} ({names}) at {sha}"
         detail = {"sha": sha, "workflow_run_id": run, "jobs": jobs}
         cause = f"{pull.owner}/{pull.name}@{sha} run {run}"
         if watch.mode != ACT or held is not None:
             store.automations.reserve_firing(
                 conn, project, MAIN_WATCH, REVISION, SUBJECT, cause,
-                mode=DRY_RUN, reason=reason if held is None
-                else f"{reason}; dry run: {held}", detail=detail, now=now)
+                mode=DRY_RUN, reason=f"would rerun {jobs_at}" if held is None
+                else f"would rerun {jobs_at}; dry run: {held}", detail=detail,
+                now=now)
             continue
         detail.update(action=RERUN_FAILED_JOBS,
                       run_attempt=workflow_run_attempt(target, pull, run))
         firing = store.automations.reserve_firing(
             conn, project, MAIN_WATCH, REVISION, SUBJECT, cause, mode=ACT,
-            reason=f"rerunning the failed jobs of workflow run {run}"
-                   f" ({names}) at {sha}",
+            reason=f"rerunning {jobs_at}",
             detail=detail, now=now,
             lease_until=int(time.time() * 1000) + LEASE_MS)
         if firing is not None:
