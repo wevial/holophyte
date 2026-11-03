@@ -95,13 +95,7 @@ class FullWorkflow:
                 return refused("gh: Bad Gateway (HTTP 502)")
             return out(json.dumps([{"name": n} for n in sorted(self.labels)]))
         if label:
-            self.asked.append((label[1], json.loads(body or "null")))
-            if label[1] == "POST":
-                self.labels |= set(json.loads(body)["labels"])
-            elif self.spent:
-                raise holophyte.deadline.CallRefused("share spent before the call")
-            else:
-                self.labels.discard(unquote(label[2].lstrip("/")))
+            self.relabel(label[1], label[2], body)
         if "enqueuePullRequest" in (body or ""):
             self.asked.append(("enqueue", None))
         if "actions/runs?head_sha=" in args:
@@ -128,6 +122,17 @@ class FullWorkflow:
             return out("{}")
         return out(json.dumps(self.run(int(ran[1])))) if ran else None
 
+    def relabel(self, method, path, body):
+        self.asked.append((method, json.loads(body or "null")))
+        if method == "POST":
+            self.labels |= set(json.loads(body)["labels"])
+            if self.abort == "label":
+                self.test.abort_run()
+        elif self.spent:
+            raise holophyte.deadline.CallRefused("share spent before the call")
+        else:
+            self.labels.discard(unquote(path.lstrip("/")))
+
     def runs_on(self, sha):
         """Newest first, as GitHub lists them: a page of newer lint runs
         ahead of the E2E runs."""
@@ -147,7 +152,7 @@ class FullWorkflow:
             return done
         if not self.reruns:
             return dict(done, conclusion="failure")
-        if self.abort:
+        if self.abort is True:
             self.test.abort_run()
             return dict(done, status="in_progress", conclusion=None,
                         run_attempt=2)
@@ -175,7 +180,8 @@ class QueueEjectionTests(MergeModeFixture):
         re-run of `FULL_RUN` ends `rerun`, and once it ends red the
         head commit reports `E2E_HEAD`. A later commit's E2E run
         `FIX_RUN` is green. `abort` asks the run to abort while the
-        re-run is still in progress. `self.asked` keeps the label calls,
+        re-run is still in progress, or as the label is added when it is
+        `"label"`. `self.asked` keeps the label calls,
         re-runs and enqueues in order. `group_logs` maps a merge group
         sha to the job log every check reads once that group is served.
         `merged_by_hand` then runs the loop again with every call readable
@@ -583,6 +589,15 @@ class QueueEjectionTests(MergeModeFixture):
 
         self.assertEqual([kind for kind, _ in self.asked],
                          ["enqueue", "POST", "/rerun", "DELETE"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"),
+                         [("abandoned",)])
+
+    def test_a_run_aborted_while_it_adds_its_label_removes_it(self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), abort="label")
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "DELETE"])
         self.assertEqual(self.read("SELECT outcome FROM runs"),
                          [("abandoned",)])
 

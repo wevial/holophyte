@@ -158,6 +158,8 @@ def _label_if_absent(run, beat_s, pull, reviewed, label, why):
                                    f" labelling it {label} failed: {failure}")
     if on:
         return False
+    _label_event(run.conn, run.run_id, {"label": label, "on": True},
+                 f"labelling the pull request {label}")
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
             github.add_label(run.project, pull, label)
@@ -171,9 +173,9 @@ def _label_if_absent(run, beat_s, pull, reviewed, label, why):
         added = None
     if added:
         return True
-    if added is None:
-        _label_event(run.conn, run.run_id, {"label": label, "on": True},
-                     f"labelling the pull request {label} may have taken")
+    if added is False:
+        _label_event(run.conn, run.run_id, {"label": label, "on": False},
+                     f"labelling the pull request {label} did not take")
     _park(run, pull, reviewed, f"{why}, and labelling it {label} failed:"
                                f" {refused}")
 
