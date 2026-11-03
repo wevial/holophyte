@@ -29,6 +29,7 @@ from tests.phase_fixture import park_run
 from tests.test_patrol import MIN, NOW, PatrolFixture, projects_text
 
 PULL = "https://github.com/o/n/pull/{}"
+MAIN_HEAD = "0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e"
 SKIPPED_UNITS = "  units: skipped (systemctl is not on this host)"
 UNREADABLE_KERNEL = "  kernel log: not readable"
 UNITS_SCRIPT = """#!/bin/sh
@@ -67,9 +68,12 @@ class GithubFixture(PatrolFixture):
                                            for context in self.required]}}]
         if path.endswith("/branches/main"):
             return {"name": "main", "protected": False}
+        if path.endswith("/commits/main"):
+            return {"sha": MAIN_HEAD}
         found = re.search(r"/commits/([^/]+)/check-runs", path)
         if found:
-            batch = self.check_runs[found[1]]
+            batch = self.check_runs["main" if found[1] == MAIN_HEAD
+                                    else found[1]]
             return {"total_count": len(batch), "check_runs": batch}
         found = re.search(r"/pulls/(\d+)$", path)
         if found:
@@ -112,15 +116,19 @@ class MainChecksTests(GithubFixture):
         self.check_runs["main"] = runs(unit="failure", docs="failure",
                                        lint="success")
         row = self.patrol("q")
-        self.assertEqual(row["main"], {"state": "failure", "failed": [
-            {"name": "unit", "required": True},
-            {"name": "docs", "required": False}]})
+        self.assertEqual(row["main"], {"state": "failure", "sha": MAIN_HEAD,
+                                       "failed": [
+            {"name": "unit", "required": True, "job_id": None,
+             "workflow_run_id": None},
+            {"name": "docs", "required": False, "job_id": None,
+             "workflow_run_id": None}]})
         self.assertFalse(row["clean"])
         self.assertIn("  main failure: unit (required), docs\n",
                       self.holo("-p", "q")[1])
         self.check_runs["main"] = runs(unit="success", docs="success",
                                        lint="success")
-        self.assertEqual(self.patrol("q")["main"], {"state": "success"})
+        self.assertEqual(self.patrol("q")["main"],
+                         {"state": "success", "sha": MAIN_HEAD})
         self.assertEqual(projects_text(self.holo("-p", "q")[1]),
                          "[q] nothing to do\n")
 

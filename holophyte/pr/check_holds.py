@@ -17,22 +17,38 @@ def _failed(runs, required):
             for check in pr_status._failed_checks(runs)]
 
 
+def _head(target, pull):
+    answer = pr_status.rest(target, pull, "GET",
+                            f"repos/{pull.owner}/{pull.name}/commits/main")
+    sha = answer.get("sha") if isinstance(answer, dict) else None
+    if not isinstance(sha, str) or not sha:
+        raise InfraFailure("GitHub answered main's head without its sha")
+    return sha
+
+
+def _failed_jobs(runs, required):
+    return [{"name": check.name, "required": check.name in required,
+             "job_id": check.job_id, "workflow_run_id": check.workflow_run_id}
+            for check in pr_status._failed_checks(runs)]
+
+
 def main_checks(target):
     pull = github._origin_pull(target)
     if pull is None:
         return {"state": "skipped", "detail": "no GitHub origin"}
     try:
-        runs, required = _reads(target, pull, "main")
+        sha = _head(target, pull)
+        runs, required = _reads(target, pull, sha)
     except InfraFailure as bad:
         return {"state": "unknown", "detail": str(bad)}
-    failed = _failed(runs, required)
+    failed = _failed_jobs(runs, required)
     if failed:
-        return {"state": "failure", "failed": failed}
+        return {"state": "failure", "sha": sha, "failed": failed}
     if not runs:
-        return {"state": "none"}
+        return {"state": "none", "sha": sha}
     if any(run.get("status") != "completed" for run in runs):
-        return {"state": "pending"}
-    return {"state": "success"}
+        return {"state": "pending", "sha": sha}
+    return {"state": "success", "sha": sha}
 
 
 def pull_checks(target, pull):

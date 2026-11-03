@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 from holophyte.agents import harness
+from holophyte.automation.automation_config import check_automations
 from holophyte.config.agent_settings import (
     agent_command,
     budget_scale,
@@ -69,6 +70,7 @@ def check_config(project):
         raise SystemExit(str(error)) from None
     verify_config(project)
     check_config_keys(project)
+    check_automations(project)
     board_alias_notice(project)
     from holophyte.scout.scout_config import scout_config
     scout_config(project)

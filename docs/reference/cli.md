@@ -79,19 +79,25 @@ form finds; each of `projects`, in `host.toml` order, is `{"name", "path",
 `repeat_failures` rows `ticket`, `runs` (newest first), `failure_kind` and
 `reason`; `ignored` the ignored keys that hid an entry. Each project also
 holds `main`, main's check runs on GitHub: `state` is `success`, `failure`
-(any red run, with `failed` listing each as `{"name", "required"}`, where
-`required` says main's rules require it), `pending`, `none` (no runs),
+(any red run, with `failed` listing each as `{"name", "required", "job_id",
+"workflow_run_id"}`, where `required` says main's rules require it and the
+two ids are the GitHub Actions job and workflow run, null for a check that
+is not an Actions job), `pending`, `none` (no runs),
 `unknown` (the read failed; `detail` holds the error) or `skipped` (no GitHub
-origin); and `pull_requests`, each open pull request a live or parked run
+origin), with `sha`, main's head commit the check runs were read at, beside
+every state but the last two; `automations`, each automation firing
+proposed in the last 24 hours, newest first: `id`, `automation`, `state`,
+`reason`, `detail` and `created_ms`; and `pull_requests`, each open pull request a live or parked run
 carries that a red check holds as the merge fold decides (a red required
 check, or any red check when main requires none): `ticket`, `run`, `url`,
 `number`, `failed`, `open_threads` (the recorded count) and `checks_only`
 (no open threads); and `unreadable_pulls`, each such pull request whose
 GitHub read failed: `ticket`, `run`, `url`, `number` and `detail`. A main
-`failure` or `unknown`, a held pull request or an unreadable one makes the
-project not `clean`; the text adds `main failure: NAME (required), NAME`,
+`failure` or `unknown`, a proposed firing, a held pull request or an
+unreadable one makes the project not `clean`; the text adds `main failure: NAME (required), NAME`,
 `github: unreadable (DETAIL)`, `pr KEY #N held by checks: NAMES` with
-` (checks only)`, and `pr KEY #N github: unreadable (DETAIL)`. `host` holds, beside `attention`, `tmp`
+` (checks only)`, `pr KEY #N github: unreadable (DETAIL)` and
+`automation main_watch proposed SHA12: REASON`. `host` holds, beside `attention`, `tmp`
 (`used_percent` as `df` gives it, `free_bytes`, `full` at 80% or more),
 `leftovers` (this user's processes whose cwd or an absolute argument lies in
 a removed or finished witness tree under the temporary directory or a

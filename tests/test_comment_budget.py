@@ -57,6 +57,11 @@ PINNED = {
     "holophyte/agents/turn_progress.py": 0,
     "holophyte/agents/turn_tools.py": 1,
 
+    "holophyte/automation/__init__.py": 0,
+    "holophyte/automation/automation_config.py": 1,
+    "holophyte/automation/main_watch.py": 1,
+    "holophyte/automation/step.py": 3,
+
     "holophyte/babysit/__init__.py": 0,
     "holophyte/babysit/adjudicator_outage.py": 0,
     "holophyte/babysit/babysit_steps.py": 0,
@@ -326,6 +331,7 @@ PINNED = {
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
+    "store/automations.py": 3,
     "store/board.py": 7,
     "store/criteria.py": 0,
     "store/console_asks.py": 0,

@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
+import store.automations
 import store.board
 import store.console_asks
 import store.criteria
@@ -438,6 +439,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                        "take_message",
                                                        "take_steer",
                                                        "waiting_messages"]),
+                                 # HOLO-615: the host sweep's automation
+                                 # firings, reserved once per key and read.
+                                 (store.automations, ["firings",
+                                                      "reserve_firing"]),
                                  # HOLO-175: a story child's follow-up proposed
                                  # as a new child, outside the plan.
                                  # HOLO-176: `--decide` accepts or rejects it.
