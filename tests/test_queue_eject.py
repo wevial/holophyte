@@ -48,6 +48,9 @@ MERGED_BY_HAND = {"data": {"repository": {"pullRequest": {
 FULL_RUN, FIX_RUN = 77, 78
 E2E_HEAD = dict(UNIT, name="e2e", id=44, html_url="https://github.com/example"
                 f"/repo/actions/runs/{FULL_RUN}/job/44")
+# A failed check left on the head commit by the first attempt of FULL_RUN.
+E2E_STALE = dict(E2E_HEAD, id=45, html_url="https://github.com/example"
+                 f"/repo/actions/runs/{FULL_RUN}/job/45")
 REMOVED_TWICE = [queue_read(), queue_read(queued=False),
                  queue_read(), queue_read(queued=False)]
 REQUEUED_AND_MERGED = [queue_read(), queue_read(queued=False),
@@ -58,13 +61,17 @@ class FullWorkflow:
     """The E2E workflow's runs and the pull request's labels, answered for
     `eject`: the first `refuse` re-runs are refused, a red re-run's
     check run reaches the head commit after `late` reads of it, and
-    `spent` refuses label removals as a spent call deadline does."""
+    `spent` refuses label removals as a spent call deadline does. The
+    first `failing_reads[path]` reads of the labels or the re-run's jobs
+    are refused, and `stale` leaves the first attempt's failed check on
+    the head commit."""
 
     def __init__(self, test, rerun, abort, labels=(), refuse=0, late=0,
-                 spent=False):
+                 spent=False, failing_reads=None, stale=False):
         self.test, self.rerun, self.abort = test, rerun, abort
         self.labels, self.refuse, self.late = set(labels), refuse, late
-        self.spent = spent
+        self.spent, self.stale = spent, stale
+        self.failing = dict(failing_reads or {})
         self.asked, self.reruns = [], []
 
     def head_checks(self, sha):
@@ -72,11 +79,20 @@ class FullWorkflow:
                 or sha != self.test.pushed()[0][1]:
             return []
         self.late -= 1
-        return [E2E_HEAD] if self.late < 0 else []
+        return ([E2E_STALE] if self.stale else []) \
+            + ([E2E_HEAD] if self.late < 0 else [])
+
+    def refused_read(self, path):
+        if self.failing.get(path, 0) > 0:
+            self.failing[path] -= 1
+            return True
+        return False
 
     def answer(self, args, body):
         label = re.search(r"--method (\w+) \S+/labels(\S*)", args)
         if label and label[1] == "GET":
+            if self.refused_read("labels"):
+                return refused("gh: Bad Gateway (HTTP 502)")
             return out(json.dumps([{"name": n} for n in sorted(self.labels)]))
         if label:
             self.asked.append((label[1], json.loads(body or "null")))
@@ -96,6 +112,8 @@ class FullWorkflow:
                                    runs[(page - 1) * size:page * size]}))
         jobs = re.search(r"actions/runs/(\d+)/attempts/(\d+)/jobs", args)
         if jobs:
+            if self.refused_read("jobs"):
+                return refused("gh: Bad Gateway (HTTP 502)")
             red = (int(jobs[1]), self.rerun) == (FULL_RUN, "failure")
             return out(json.dumps({"jobs": [{"id": E2E_HEAD["id"],
                                              "conclusion": "failure"}]
@@ -142,7 +160,8 @@ class QueueEjectionTests(MergeModeFixture):
               groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False,
               unreadable=(), bodies=None, rerun="success", abort=False,
               group_logs=None, merged_by_hand=False, labels=(), refuse=0,
-              late=0, then=None, spent=False):
+              late=0, then=None, spent=False, failing_reads=None,
+              stale=False):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the check runs it failed with. Every job log reads
@@ -164,15 +183,17 @@ class QueueEjectionTests(MergeModeFixture):
         The pull request starts with `labels` on, the first `refuse`
         re-runs are refused, and the red re-run's check run reaches the
         head commit only on its `late`-th read after the first; `spent`
-        refuses every label removal for a spent call deadline. `then`
-        is called last, still against the fake."""
+        refuses every label removal for a spent call deadline;
+        `failing_reads` and `stale` are `FullWorkflow`'s. `then` is called
+        last, still against the fake."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
         self.job_log.write_text(log)
         served, routed = list(groups), holophyte.pr.github._gh_run
         reads_of_group = {sha: list(runs) for sha, *runs in groups}
 
-        full = FullWorkflow(self, rerun, abort, labels, refuse, late, spent)
+        full = FullWorkflow(self, rerun, abort, labels, refuse, late, spent,
+                            failing_reads, stale)
         self.asked = full.asked
 
         unread, by_hand = list(unreadable), []
@@ -482,6 +503,29 @@ class QueueEjectionTests(MergeModeFixture):
         (turn,) = [t for t in self.fake.turns if "CHECK e2e" in t.goal]
         self.assertIn(E2E_HEAD["html_url"], turn.goal)
 
+    def test_a_red_rerun_whose_jobs_read_fails_once_fixes_only_its_own_checks(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), rerun="failure", late=2,
+                   stale=True, failing_reads={"jobs": 1},
+                   steps=(Commit("fix: the e2e failure"), APPROVE, Idle("")))
+
+        (turn,) = [t for t in self.fake.turns if "CHECK e2e" in t.goal]
+        self.assertIn(E2E_HEAD["html_url"], turn.goal)
+        self.assertNotIn(E2E_STALE["html_url"], turn.goal)
+
+    def test_a_red_rerun_whose_jobs_cannot_be_read_parks_instead_of_fixing(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), rerun="failure", stale=True,
+                   failing_reads={"jobs": 10**6})
+
+        self.assertEqual([t for t in self.fake.turns if "CHECK e2e" in t.goal],
+                         [])
+        self.assertIn("its jobs could not be read", self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
+
     def test_a_red_rerun_with_no_readable_failed_check_parks_naming_the_run(
             self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
@@ -501,6 +545,16 @@ class QueueEjectionTests(MergeModeFixture):
                          ["enqueue", "/rerun", "enqueue"])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
+
+    def test_an_operator_label_behind_a_failed_labels_read_is_never_removed(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), labels=("e2e:full",),
+                   failing_reads={"labels": 1}, merged_by_hand=True)
+
+        self.assertNotIn("DELETE", [kind for kind, _ in self.asked])
+        self.assertNotIn("POST", [kind for kind, _ in self.asked])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_test_failure_with_no_full_run_on_the_head_parks_unlabelled(
             self):

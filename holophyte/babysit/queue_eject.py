@@ -152,8 +152,14 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
 def _label_if_absent(run, beat_s, pull, reviewed, label, why):
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
-            if label in _labels(run, pull):
-                return False
+            on = label in _labels(run, pull)
+    except InfraFailure as failure:
+        _park(run, pull, reviewed, f"{why}, and reading its labels before"
+                                   f" labelling it {label} failed: {failure}")
+    if on:
+        return False
+    try:
+        with heartbeat_while(run.conn, run.run_id, beat_s):
             github.add_label(run.project, pull, label)
         return True
     except InfraFailure as failure:
@@ -359,6 +365,11 @@ def _nap(run, beat_s, remaining):
 
 def _red_or_park(run, beat_s, pull, reviewed, workflow_run, attempt, ended):
     failed = _reported_failures(run, beat_s, pull, workflow_run, attempt)
+    if failed is None:
+        _park(run, pull, reviewed,
+              f"workflow run {workflow_run} attempt {attempt} on the head"
+              f" commit {run.sha[:12]} ended {ended}, and its jobs could not"
+              " be read to tell its failed checks from an earlier attempt's")
     if not failed:
         _park(run, pull, reviewed,
               f"workflow run {workflow_run} attempt {attempt} on the head"
@@ -368,26 +379,38 @@ def _red_or_park(run, beat_s, pull, reviewed, workflow_run, attempt, ended):
 
 
 def _reported_failures(run, beat_s, pull, workflow_run, attempt):
+    deadline = monotonic() + merge_config(run.project).check_wait_sec
+    jobs = None
+    while True:
+        if jobs is None:
+            jobs = _attempt_failures(run, beat_s, pull, workflow_run, attempt)
+        failed = () if jobs is None else _failed_of(run, beat_s, pull,
+                                                    workflow_run, jobs)
+        remaining = deadline - monotonic()
+        if jobs is not None and {check.job_id for check in failed} >= jobs:
+            return failed
+        if remaining <= 0:
+            return None if jobs is None else failed
+        _nap(run, beat_s, remaining)
+
+
+def _attempt_failures(run, beat_s, pull, workflow_run, attempt):
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
-            jobs = _failed_jobs(run, pull, workflow_run, attempt)
+            return _failed_jobs(run, pull, workflow_run, attempt)
     except InfraFailure:
-        jobs = None
-    deadline = monotonic() + merge_config(run.project).check_wait_sec
-    while True:
-        try:
-            with heartbeat_while(run.conn, run.run_id, beat_s):
-                runs = pr_status._check_runs_of(run.project, pull, run.sha)
-        except InfraFailure:
-            runs = None
-        failed = tuple(check for check in pr_status._failed_checks(runs)
-                       if check.workflow_run_id == workflow_run
-                       and (jobs is None or check.job_id in jobs))
-        seen = {check.job_id for check in failed}
-        remaining = deadline - monotonic()
-        if (seen >= jobs if jobs is not None else failed) or remaining <= 0:
-            return failed
-        _nap(run, beat_s, remaining)
+        return None
+
+
+def _failed_of(run, beat_s, pull, workflow_run, jobs):
+    try:
+        with heartbeat_while(run.conn, run.run_id, beat_s):
+            runs = pr_status._check_runs_of(run.project, pull, run.sha)
+    except InfraFailure:
+        runs = None
+    return tuple(check for check in pr_status._failed_checks(runs)
+                 if check.workflow_run_id == workflow_run
+                 and check.job_id in jobs)
 
 
 def _failed_jobs(run, pull, workflow_run, attempt):
