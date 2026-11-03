@@ -18,6 +18,7 @@ from holophyte.config.project import Project
 from holophyte.holo import cli as holo_cli
 from holophyte.serve.views import attention
 from tests.host_fixture import HostFixture
+from tests.main_watch_fixture import FakeMainGitHub, automations, job, sweep_pass
 from tests.phase_fixture import park_run
 from tests.test_status import file_stuck_wait
 
@@ -310,6 +311,31 @@ class UnreadableTests(PatrolFixture):
         (row,) = json.loads(text)["projects"]
         self.assertIn("DatabaseError", row["error"])
         self.assertEqual(projects_text(self.holo("-p", "q")[1])[:4], "[q] ")
+
+
+class AutomationTests(PatrolFixture):
+    def test_a_proposed_firing_is_an_automations_line(self):
+        sha = "5e1f0c2a9b7d4e3f8a6c1b0d2e4f6a8c0b1d3e5f"
+        self.project("q")
+        path = self.conns["q"][2]
+        github = FakeMainGitHub(self, self.root / "gh")
+        github.origin(path)
+        github.main(path, sha, [job("unit", "failure", 11, 7)])
+        automations(path, "dry_run")
+        sweep_pass(NOW)
+        github.main(path, sha, [job("unit", "success", 11, 7)])
+
+        row = self.patrol("q")
+
+        self.assertEqual(row["main"]["state"], "success")
+        [firing] = row["automations"]
+        self.assertEqual((firing["automation"], firing["state"],
+                          firing["detail"]["sha"]),
+                         ("main_watch", "proposed", sha))
+        self.assertFalse(row["clean"])
+        self.assertIn(f"  automation main_watch proposed {sha[:12]}: would"
+                      " rerun the failed jobs of workflow run 7",
+                      self.holo("-p", "q")[1])
 
 
 class LastEventTests(PatrolFixture):

@@ -299,6 +299,20 @@ class ThreadMode(str, Enum):
     ANSWER = 'answer'
 
 
+class FiringMode(str, Enum):
+    DRY_RUN = 'dry_run'
+    ACT = 'act'
+
+
+class FiringState(str, Enum):
+    PROPOSED = 'proposed'
+    REFUSED = 'refused'
+    LEASED = 'leased'
+    CONFIRMED = 'confirmed'
+    UNKNOWN = 'unknown'
+    CANCELED = 'canceled'
+
+
 # Line breaks are part of the existing sqlite_master SQL contract.
 _WRAPPING = {
     TicketStatus: {4: 26},
@@ -349,6 +363,8 @@ CONSTRAINED_COLUMNS = {
     ('scoutTasks', 'mode'): ScoutTaskMode,
     ('scoutTasks', 'phase'): ScoutTaskPhase,
     ('threadMessages', 'mode'): ThreadMode,
+    ('automationFirings', 'mode'): FiringMode,
+    ('automationFirings', 'state'): FiringState,
 }
 
 

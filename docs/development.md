@@ -23,6 +23,7 @@ Each module, one line:
 - `holophyte/config/__init__.py` — the `config` package; empty.
 - `holophyte/cli/__init__.py` — the `cli` package; empty.
 - `holophyte/scout/__init__.py` — the `scout` package; empty.
+- `holophyte/automation/__init__.py` — the `automation` package; empty.
 - `holophyte/cli/cli_project.py` — project registration, listing and admission commands.
 - `holophyte/cli/cli_story.py` — the `--file-story SLUG`, `--approve-story KEY-n`
   and `--witness-pass KEY-n` options and their dispatch.
@@ -324,8 +325,8 @@ Each module, one line:
   --supervise` loop.
 - `holophyte/host/sweep_host.py` — `--supervise [--once]` with no project: the
   host sweep over every store in `host.toml`, its per-run home lock,
-  `sweep.json`, the round-robin reconcile under a deadline, and one
-  project's failure its own `error`.
+  `sweep.json`, the round-robin reconcile under a deadline, the automation
+  step after it, and one project's failure its own `error`.
 - `holophyte/board/board_sync.py` — `observe_board()` (KO-739): in store mode
   the host sweep's ask of the board's `states()` for every open ticket,
   once per `board_ask_sec` — the state name and column recorded, an
@@ -333,6 +334,18 @@ Each module, one line:
   every pass between those asks it delivers what is queued: the pending
   notes, and the queued pushes after one `states()` ask naming only their
   tickets.
+- `holophyte/automation/automation_config.py` — `[automations]`:
+  `main_watch_mode()` reads `[automations.main_watch] mode`, `off` without
+  the table and a `ValueError` naming the key for a wrong value, and
+  `check_automations()` refuses that value at the loop's startup.
+- `holophyte/automation/main_watch.py` — the main watch, `REVISION = 1`:
+  `observe()` reads main's head and its check runs through `main_checks()`
+  and reserves one `dry_run` firing per workflow run with a failed required
+  check, proposing to rerun its failed jobs.
+- `holophyte/automation/step.py` — the host sweep's automation step after
+  the reconcile: each project in `dry_run`, round robin from
+  `automation_cursor` under its own `AUTOMATION_SHARE` of `sweep_sec`, a cut
+  or failed project one `automations cut` or `automations failed` line.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
   `check()` before each unit of Linear or GitHub work, and `admit()`
   before each Linear or GitHub request, which past the bound fails as an
@@ -358,11 +371,13 @@ Each module, one line:
 - `holophyte/cli/patrol.py` — `--patrol [--json]`: per project, the
   attention items grouped by kind, the runs in flight, stranded tickets,
   quiet runs and repeat failures, less `[patrol] ignore`, then main's
-  checks, the check-held pull requests and the host's health; read only.
+  checks, the check-held pull requests, the automation firings proposed in
+  the last 24 hours and the host's health; read only.
 - `holophyte/pr/check_holds.py` — the patrol's GitHub reads: `main_checks()`,
-  main's check-run conclusion with each red run and whether main requires
-  it, and `pull_checks()`, the red checks holding an open pull request
-  as the merge fold decides.
+  main's head sha and the conclusion of its check runs, with each red run,
+  whether main requires it and its job and workflow run ids, and
+  `pull_checks()`, the red checks holding an open pull request as the
+  merge fold decides.
 - `holophyte/host/host_health.py` — the patrol's host part: `tmp_usage()`,
   `leftovers()` (this user's processes in a finished witness or worktree
   tree, read from `/proc`), `units()` (`systemctl --user is-active`) and
@@ -932,6 +947,9 @@ The store is its own package:
   `open_proposals()` reads a story's open proposals, `story_duplicate()`
   finds the child or proposal a follow-up repeats, and `accept_proposal()`
   and `reject_proposal()` answer one with its `decide` intervention.
+- `store/automations.py` — the `automationFirings` table:
+  `reserve_firing()` inserts a `proposed` firing once per key, returning
+  its id or `None`, and `firings()` reads them back, newest first.
 - `store/scouts.py` — a scout run's record: `create_scout()`,
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper

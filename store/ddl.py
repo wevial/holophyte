@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from . import enums as _enums
+from .automations import FIRINGS_DDL
 
 # Every statement is IF NOT EXISTS, so a column added here also needs its
 # `ADDED_COLUMNS` entry in schema.py. `trigger` and `action` are SQLite
@@ -621,7 +622,7 @@ CREATE TABLE IF NOT EXISTS threadMessages (
     consumedBy INTEGER REFERENCES runEvents (id),
     consumedAt INTEGER
 );
-"""
+{FIRINGS_DDL}"""
 
 
 # Outside SCHEMA: `_widen_interventions_action()` rebuilds an older store's

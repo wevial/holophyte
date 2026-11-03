@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 62) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 63) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -58,6 +58,7 @@ A new table or column follows the ones already there:
 | `scoutTasks` | helper sub-task in a wave of a scout pass | `store/scouts.py` | `mode` ∈ `read, run`; `phase` ∈ `queued, running, done, failed, stopped`; `title` the lead's short name for it, null for a task stored before the lead wrote one; `paths` the JSON list the lead gave; `durationMs` is `endedAt − startedAt`; `tokens`, `costUsd` and `excerpt` recorded at its end |
 | `scoutActions` | action item of a scout | `store/scouts.py` | `position` unique within the scout and counting across passes; `item` JSON; `ticketKey` and `filedAt` set once when it is filed |
 | `threadMessages` | message of a scout's thread | `store/scout_thread.py` | `mode` ∈ `ask, steer, answer`: an ask or steer is a person's, posted on a `done` scout with none still waiting, and an answer is the scout's, its `answersId` the message it answers; `blocks` a JSON list of objects whose `type` is `finding`, `action` or `proposal`; text and blocks redacted; `consumedBy` the `runEvents` row that took it and `consumedAt`, set once: an ask moves the scout `done → answering` with a `scout_answer_started` event, a steer `done → planning` with a `scout_pass_started` event naming the next pass; the scout returns to `done` keeping its first `endedAt`, `reason` and `totals` |
+| `automationFirings` | firing of a host-sweep automation | `store/automations.py` | `firingKey` unique, the `automation`, its rule `revision`, `projectId`, `subject` and `cause` joined, so `reserve_firing()` inserts a firing once and a second call with the same key returns `None`; `mode` ∈ `dry_run, act`; `state` ∈ `proposed, refused, leased, confirmed, unknown, canceled`, only `proposed` written so far; `reason` the text the firing gives; `detail` a JSON object (the main watch's `sha`, `workflow_run_id` and failed `jobs` with each `name` and `job_id`); `settledAt` NULL until it settles |
 
 A story is a parent ticket whose children serve one outcome; the five tables
 `stories`, `storyWitnesses`, `storyChildren`, `witnessResults` and

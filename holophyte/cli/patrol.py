@@ -3,6 +3,7 @@ import json
 import re
 from time import time
 
+import store.automations
 import store.read
 from holophyte.config.config_tables import patrol_config
 from holophyte.holo.render import age
@@ -18,6 +19,7 @@ HOST_KINDS = frozenset(("sweep_stale", "project_error", "no_store",
 SECTIONS = ("in_flight", "stranded", "quiet", "repeat_failures")
 REASON_WIDTH = 80
 SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
+PROPOSALS_MS = 24 * 60 * 60 * 1000
 
 
 def first_line(text):
@@ -88,13 +90,22 @@ def store_sections(target, now, quiet_ms, repeat_runs):
         tickets = store.read.stranded_tickets(conn)
         ended = store.read.last_ended_runs(conn, repeat_runs)
         blocked = store.read.blocked_tickets(conn)
+        fired = store.automations.firings(conn, since=now - PROPOSALS_MS)
     finally:
         conn.close()
     flying = in_flight(runs, now)
     return {"in_flight": flying, "stranded": stranded(tickets),
             "quiet": quiet(flying, events, now, quiet_ms),
             "repeat_failures": repeat_failures(ended, repeat_runs),
-            "pulls": pull_candidates(runs, blocked)}
+            "pulls": pull_candidates(runs, blocked),
+            "automations": proposals(fired)}
+
+
+def proposals(fired):
+    return [{"id": firing.id, "automation": firing.automation,
+             "state": firing.state, "reason": firing.reason,
+             "detail": firing.detail, "created_ms": firing.createdAt}
+            for firing in fired if firing.state == store.automations.PROPOSED]
 
 
 def pull_candidates(runs, blocked):
@@ -153,9 +164,10 @@ def project_row(name, target, items, now):
     row["pull_requests"] = unignored(held, knobs.ignore, hid)
     row["unreadable_pulls"] = unignored(unreadable, knobs.ignore, hid)
     row["ignored"] = [key for key in dict.fromkeys(knobs.ignore) if key in hid]
+    row["automations"] = sections["automations"]
     row["clean"] = not (row["attention"] or row["stranded"] or row["quiet"]
                         or row["repeat_failures"] or row["pull_requests"]
-                        or row["unreadable_pulls"]
+                        or row["unreadable_pulls"] or row["automations"]
                         or row["main"]["state"] in ("failure", "unknown"))
     return row
 
@@ -163,7 +175,8 @@ def project_row(name, target, items, now):
 def error_row(name, path, error):
     return {"name": name, "path": str(path), "error": error, "clean": False,
             "attention": [], **{key: [] for key in SECTIONS}, "main": None,
-            "pull_requests": [], "unreadable_pulls": [], "ignored": []}
+            "pull_requests": [], "unreadable_pulls": [], "ignored": [],
+            "automations": []}
 
 
 def entry_name(target):
@@ -305,6 +318,12 @@ def github_lines(row):
     return lines
 
 
+def automation_lines(row):
+    return [f"automation {firing['automation']} {firing['state']}"
+            f" {str(firing['detail'].get('sha', ''))[:12]}: {firing['reason']}"
+            for firing in row["automations"]]
+
+
 def project_lines(row, now):
     name = f"[{row['name'] or row['path']}]"
     if row["error"]:
@@ -314,7 +333,8 @@ def project_lines(row, now):
         tail = [f"{len(row['in_flight'])} in flight"] * bool(row["in_flight"])
         return [" · ".join([f"{name} nothing to do", *tail,
                             *[ignored] * bool(ignored)])]
-    lines = attention_lines(row) + section_lines(row, now) + github_lines(row)
+    lines = (attention_lines(row) + section_lines(row, now) + github_lines(row)
+             + automation_lines(row))
     return [name, *(f"  {line}" for line in lines + [ignored] * bool(ignored))]
 
 

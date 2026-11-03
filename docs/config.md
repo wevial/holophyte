@@ -1678,6 +1678,28 @@ repeat_runs = 2
 Reasons are compared by their first line, digits replaced by `N`, cut to 80
 characters. A wrong value exits naming the key and its constraint.
 
+## `[automations]`
+
+The host sweep's automations, each a subtable a project opts into. The
+automation step runs after the reconcile, over the projects that opt in,
+round robin from `sweep.json`'s `automation_cursor`, within its own share
+of the host's `sweep_sec`. Without the table nothing is read for the
+project.
+
+| Key | Default | Allowed values and when to change |
+| --- | --- | --- |
+| `main_watch` | Default: `mode = "off"` | A table with `mode`: `"off"` or `"dry_run"`. In `dry_run` the sweep reads main's head commit and its check runs once a pass, and for each workflow run with a failed required check records one `proposed` firing, `would rerun the failed jobs of workflow run W (NAMES) at SHA`, once per head and workflow run; it acts on nothing. `holo patrol` lists the proposals of the last 24 hours. |
+
+```toml
+[automations.main_watch]
+mode = "dry_run"
+```
+
+A red optional check, a pending main and an unreadable one record nothing.
+A wrong `mode` is `off` for that project in the sweep, which prints one
+line naming `[automations.main_watch] mode` and goes on; the loop refuses
+it at startup.
+
 ## `[questions]`
 
 Typed triage of bare PR mentions, answered by TypeSafe's Jev or by the Claude
