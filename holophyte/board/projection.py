@@ -120,6 +120,8 @@ def drop_lease_label(conn, ticket_id, provider, issue_id, label):
 
 
 def release_lease_label(target, conn, ticket_id, provider, run_id):
+    from holophyte.babysit.queue_eject import unlabel_ended_run
+    unlabel_ended_run(target, conn, run_id)
     if conn is None or provider is None:
         return
     # The label names the writer, not the run: a fresh claim may have re-asserted it.
