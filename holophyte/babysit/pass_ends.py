@@ -1,6 +1,7 @@
 """Where a babysit pass ends besides its loop: a merge, a person's merge, a cap."""
 from dataclasses import replace
 
+from holophyte.babysit import queue_eject
 from holophyte.babysit.check_fix import fix_checks_or_park
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while, set_phase
@@ -32,20 +33,29 @@ def _at_the_cap(run, beat_s, pull, pushed_state, reviewed, refresh, refreshed):
 
 def _merge_or_fix_checks(run, beat_s, pull, state, reviewed, verified, ticket,
                          verify_cmd, contracts, pass_no, check_fix):
-    try:
-        return merge_queue.verified_merge(
-            run.project, run.conn, run.run_id, run.provider, run.task_id,
-            run.issue_id, run.branch, run.wt, run.sha, beat_s, pull, reviewed,
-            verified, verify_cmd, contracts, ticket, run.budget_min,
-            merge_config(run.project).approve == "auto"), run.sha, None
-    except merge_queue.QueueRemoved as removed:
-        set_phase(run.conn, run.run_id, "merge_gate", "the merge queue removed"
-                  " the pull request; fixing its checks")
-        return (None, *fix_checks_or_park(
-            run, beat_s, pull, replace(
-                state, checks="failure", failed_checks=removed.failed),
-            ticket, verify_cmd, contracts, pass_no, reviewed,
-            check_fix, removed.group))
+    requeued = ()
+    while True:
+        try:
+            return merge_queue.verified_merge(
+                run.project, run.conn, run.run_id, run.provider, run.task_id,
+                run.issue_id, run.branch, run.wt, run.sha, beat_s, pull,
+                reviewed, verified, verify_cmd, contracts, ticket,
+                run.budget_min, merge_config(run.project).approve == "auto"
+            ), run.sha, None
+        except merge_queue.QueueRemoved as removed:
+            if merge_config(run.project).queue_full_label:
+                requeued = queue_eject.requeue_or_park(
+                    run, beat_s, pull, removed, requeued, reviewed)
+                if requeued:
+                    verified = run.sha
+                    continue
+            set_phase(run.conn, run.run_id, "merge_gate", "the merge queue"
+                      " removed the pull request; fixing its checks")
+            return (None, *fix_checks_or_park(
+                run, beat_s, pull, replace(
+                    state, checks="failure", failed_checks=removed.failed),
+                ticket, verify_cmd, contracts, pass_no, reviewed,
+                check_fix, removed.group))
 
 
 def _merged_meanwhile(run, beat_s, pull, reviewed):

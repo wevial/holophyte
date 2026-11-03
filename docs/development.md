@@ -825,6 +825,10 @@ Each module, one line:
   loop: the verified merge or the merge queue's check fix, a pull request a
   person merged while a covering review ran, and the park at `[merge]
   pr_rounds` or `pr_main_refreshes`.
+- `holophyte/babysit/queue_eject.py` — a merge-queue ejection under `[merge]
+  queue_full_label` told apart by its failed checks' job logs and annotations:
+  infra re-queued once and parked if it repeats, a park signature parked at
+  once, a test failure left to the check fix round.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
   commands at one commit of main, in the warm tree for a loop pass and
   otherwise in a scratch worktree, within
