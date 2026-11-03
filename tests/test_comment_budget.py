@@ -75,6 +75,7 @@ PINNED = {
     "holophyte/babysit/maintainer_notes.py": 1,
     "holophyte/babysit/pass_ends.py": 1,
     "holophyte/babysit/plain_text.py": 0,
+    "holophyte/babysit/queue_eject.py": 3,
     "holophyte/babysit/review_body.py": 0,
     "holophyte/babysit/thread_answers.py": 3,
     "holophyte/babysit/thread_findings.py": 2,

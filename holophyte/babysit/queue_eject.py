@@ -63,10 +63,7 @@ def _annotations(target, pull, check):
 
 
 def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
-    """The ejections re-queued so far, this one added; None for a test failure.
-
-    An infra ejection whose failed check names repeat a re-queued one parks.
-    """
+    """The ejections re-queued so far, this one added; None for a test failure."""
     with heartbeat_while(run.conn, run.run_id, beat_s):
         verdict = classify(run.project, pull, removed.failed)
     names = ", ".join(check.name for check in removed.failed)
