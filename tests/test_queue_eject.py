@@ -38,6 +38,9 @@ E2E = dict(UNIT, name="e2e", id=43,
 LABELLED = '[merge]\nmode = "pr"\nqueue_full_label = "e2e:full"\n'
 FULL = (LABELLED + 'queue_full_workflow = "E2E"\n'
         "queue_infra_signatures = ['lost communication with the server']\n")
+MERGED_BY_HAND = {"data": {"repository": {"pullRequest": {
+    "state": "MERGED", "merged": True, "mergeCommit": {"oid": QUEUE_SHA},
+    "mergedBy": {"login": "maintainer"}}}}}
 # The latest E2E run on the first head commit, and on the fix commit.
 FULL_RUN, FIX_RUN = 77, 78
 E2E_HEAD = dict(UNIT, name="e2e", id=44, html_url="https://github.com/example"
@@ -75,11 +78,13 @@ class FullWorkflow:
         first = sha == self.test.pushed()[0][1]
         ids = (76, FULL_RUN) if first else (FIX_RUN,)
         return [dict(self.run(n), head_sha=sha) for n in ids] + (
-            [dict(self.run(90), name="lint", head_sha=sha)] if first else [])
+            [dict(self.run(90), name="lint", head_sha=sha),
+             dict(self.run(95), event="push", head_sha=sha)] if first else [])
 
     def run(self, n):
-        done = {"id": n, "name": "E2E", "status": "completed",
-                "conclusion": "success", "run_attempt": 1}
+        done = {"id": n, "name": "E2E", "event": "pull_request",
+                "status": "completed", "conclusion": "success",
+                "run_attempt": 1}
         if n != FULL_RUN:
             return done
         if not self.reruns:
@@ -96,7 +101,7 @@ class QueueEjectionTests(MergeModeFixture):
     def eject(self, reads, config=LABELLED, log="", annotations=(),
               groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False,
               unreadable=(), bodies=None, rerun="success", abort=False,
-              group_logs=None):
+              group_logs=None, merged_by_hand=False):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the check runs it failed with. Every job log reads
@@ -105,13 +110,16 @@ class QueueEjectionTests(MergeModeFixture):
         `unreadable` fails with an HTTP 502 and one holding a key of
         `bodies` answers its value. `main_moves` lands a commit
         on `origin/main` as the first removal is read. The first pushed
-        commit has E2E runs 76 and `FULL_RUN` and a newer lint run; a
+        commit has pull request E2E runs 76 and `FULL_RUN`, a newer lint
+        run and a newer push run of E2E; a
         re-run of `FULL_RUN` ends `rerun`, and once it ends red the
         head commit reports `E2E_HEAD`. A later commit's E2E run
         `FIX_RUN` is green. `abort` asks the run to abort while the
         re-run is still in progress. `self.asked` keeps the label calls,
         re-runs and enqueues in order. `group_logs` maps a merge group
-        sha to the job log every check reads once that group is served."""
+        sha to the job log every check reads once that group is served.
+        `merged_by_hand` then runs the loop again with every call readable
+        and the pull request read as merged on GitHub by a maintainer."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
         self.job_log.write_text(log)
@@ -121,12 +129,16 @@ class QueueEjectionTests(MergeModeFixture):
         full = FullWorkflow(self, rerun, abort)
         self.asked = full.asked
 
+        unread, by_hand = list(unreadable), []
+
         def gh(target, argv, body, path):
             args = " ".join(argv[1:])
             answer = full.answer(args, body)
             if answer is not None:
                 return answer
-            if any(part in args for part in unreadable):
+            if by_hand and "mergedBy" in (body or ""):
+                return out(json.dumps(MERGED_BY_HAND))
+            if any(part in args for part in unread):
                 return refused("gh: Bad Gateway (HTTP 502)")
             body_of = [v for part, v in (bodies or {}).items() if part in args]
             if body_of:
@@ -159,6 +171,10 @@ class QueueEjectionTests(MergeModeFixture):
                           and sha == self.pushed()[0][1] else [])):
             self.fake, _ = self.loop(Commit("the scripted work"), APPROVE,
                                      Idle(""), *steps, provider=self.provider())
+            if merged_by_hand:
+                unread.clear()
+                by_hand.append(True)
+                self.loop(provider=self.provider())
 
     def abort_run(self):
         conn = store.open(str(self.db))
@@ -280,7 +296,7 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
 
-    def test_a_test_failure_labels_the_pull_request_then_reruns_its_latest_full_run(
+    def test_a_test_failure_labels_the_pull_request_then_reruns_its_latest_pr_full_run(
             self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
                    groups=((GROUP_SHA, UNIT),))
@@ -394,6 +410,15 @@ class QueueEjectionTests(MergeModeFixture):
                       self.question())
         self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
                          [("awaiting_merge_approval", None)])
+
+    def test_a_parked_run_with_its_label_on_merged_by_hand_removes_it(self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), unreadable=("/labels/",),
+                   merged_by_hand=True)
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "/rerun", "DELETE", "DELETE"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_run_that_ends_with_its_label_on_removes_it(self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,

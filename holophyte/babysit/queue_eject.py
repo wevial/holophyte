@@ -22,6 +22,7 @@ ANNOTATIONS_PAGE = 100
 REQUEUE_EVENT = "queue_infra_requeue"
 UNREPRODUCED_EVENT = "queue_test_requeue"
 LABEL_EVENT = "queue_full_label"
+PULL_EVENTS = ("pull_request", "pull_request_target")
 
 
 def classify(target, pull, failed):
@@ -226,7 +227,8 @@ def _latest_full_run(run, beat_s, pull, reviewed, why):
         answer, refused = {}, f": {failure}"
     batch = answer.get("workflow_runs") if isinstance(answer, dict) else None
     runs = [r for r in batch or () if isinstance(r, dict)
-            and r.get("name") == workflow and isinstance(r.get("id"), int)]
+            and r.get("name") == workflow and isinstance(r.get("id"), int)
+            and r.get("event") in PULL_EVENTS]
     if not runs:
         _park(run, pull, reviewed,
               f"the pull request is due a full run because {why}, and no run"

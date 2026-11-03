@@ -544,6 +544,8 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
         store.set_question(conn, ticket.id, None)
         store.tickets.walk_ticket(conn, ticket.id, "merged")
     mirror_push(conn, ticket.id, provider)
+    from holophyte.babysit.queue_eject import unlabel_ended_run
+    unlabel_ended_run(target, conn, run_id)
     cleanup = "no local branch recorded"
     if branch:
         from holophyte.loop.task_worktree import retire_merged_worktree
