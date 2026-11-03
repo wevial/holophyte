@@ -16,11 +16,15 @@ def save_switch(home, record):
     home.mkdir(parents=True, exist_ok=True)
     path = home / SWITCH_FILE
     temporary = path.with_name(f"{SWITCH_FILE}.{os.getpid()}.tmp")
-    with open(temporary, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True, indent=1))
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True, indent=1))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except OSError as bad:
+        temporary.unlink(missing_ok=True)
+        raise SystemExit(f"[holo2] could not write {path} ({bad})") from None
 
 
 def standing(switch):

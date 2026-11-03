@@ -34,8 +34,8 @@ def switch_reason(switch):
     return None
 
 
-def inhibitor(conn, home, automation):
-    reason = switch_reason(read_switch(home))
+def inhibitor(conn, home, automation, switch=None):
+    reason = switch_reason(read_switch(home) if switch is None else switch)
     if reason is not None:
         return reason
     pause = store.automations.automation_pause(conn, automation)

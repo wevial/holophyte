@@ -94,8 +94,6 @@ def _automation_checks(parser, args):
 
 
 def _note_checks(parser, args):
-    if _automation_checks(parser, args):
-        return
     if args.force and args.approve is None and args.requeue is None:
         parser.error("--force belongs to --approve or --requeue")
     if args.force and args.approve is not None \
@@ -108,6 +106,8 @@ def _note_checks(parser, args):
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
+    if _automation_checks(parser, args):
+        return
     if args.hold or args.release_hold or args.pause or args.resume \
             or args.abort or args.cancel or args.gap_layer \
             or args.approve_story or args.decide:

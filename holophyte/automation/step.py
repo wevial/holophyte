@@ -16,20 +16,20 @@ from holophyte.loop.runs import open_store
 AUTOMATION_SHARE = 0.25
 
 
-def inhibited(entry, home):
+def inhibited(entry, home, switch):
     conn = store.read.open_readonly(entry.target.store_path)
     try:
-        return inhibitor(conn, home, MAIN_WATCH)
+        return inhibitor(conn, home, MAIN_WATCH, switch)
     finally:
         conn.close()
 
 
-def watched(entries, out, key, home):
+def watched(entries, out, key, home, switch):
     """The entries in `dry_run`; a wrong mode is off for this pass, said once."""
     found = []
     for entry in entries:
         try:
-            if inhibited(entry, home) is not None:
+            if inhibited(entry, home, switch) is not None:
                 continue
         except (Exception, SystemExit) as bad:
             print(f"[holo2] {key(entry)}: automations failed: {bad}",
@@ -76,7 +76,7 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
         print(f"[holo2] automations off: {switch.problem}", file=out)
     if switch.off:
         return
-    order = watched(entries, out, key, home)
+    order = watched(entries, out, key, home, switch)
     if not order:
         return
     names = [key(entry) for entry in order]
