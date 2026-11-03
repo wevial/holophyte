@@ -63,7 +63,7 @@ def reserve_firing(conn, project, automation, revision, subject, cause, *,
         return cursor.lastrowid if cursor.rowcount else None
 
 
-def firings(conn, since=None):
+def firings(conn, since=0):
     """None read from a store an older build last wrote, which lacks the table."""
     if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
                     " AND name = 'automationFirings'").fetchone() is None:
@@ -71,6 +71,6 @@ def firings(conn, since=None):
     rows = conn.execute(
         f"SELECT {', '.join(Firing._fields)} FROM automationFirings"
         " WHERE createdAt >= ? ORDER BY createdAt DESC, id DESC",
-        (since if since is not None else 0,)).fetchall()
+        (since,)).fetchall()
     return [Firing(*row[:10], json.loads(row[10]), *row[11:])
             for row in rows]
