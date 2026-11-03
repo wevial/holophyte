@@ -41,15 +41,14 @@ def workflow_run_attempt(target, pull, run):
     return attempt
 
 
-def observe(target, conn, project, now, watch, listed):
+def observe(target, conn, project, now, watch, listed, leased):
     pull = github._origin_pull(target)
     if pull is None:
-        return []
+        return
     held = None
     if watch.mode == ACT:
         held = (unapproved(watch, REVISION)
                 or report_only_reason(pull, listed))
-    leased = []
     checks = main_checks(target)
     for run, jobs in failed_jobs_of_required_runs(checks).items():
         sha = checks["sha"]
@@ -73,4 +72,3 @@ def observe(target, conn, project, now, watch, listed):
             lease_until=int(time.time() * 1000) + LEASE_MS)
         if firing is not None:
             leased.append(firing)
-    return leased

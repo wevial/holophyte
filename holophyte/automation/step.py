@@ -75,18 +75,24 @@ def start_worker(name, target, firing_id):
     return f"pid {child.pid}"
 
 
-def observe_store(name, target, watch, listed, now, out):
-    conn = open_store(target)
-    try:
-        project = project_of(conn, target)
-        leased = [] if project is None else main_watch.observe(
-            target, conn, project, now, watch, listed)
-    finally:
-        conn.close()
+def start_workers(name, target, leased, out):
     for firing_id in leased:
         started = start_worker(name, target, firing_id)
         print(f"[holo2] {name}: firing {firing_id} leased to a worker,"
               f" {started}", file=out)
+
+
+def observe_store(name, target, watch, listed, now, out):
+    leased = []
+    conn = open_store(target)
+    try:
+        project = project_of(conn, target)
+        if project is not None:
+            main_watch.observe(target, conn, project, now, watch, listed,
+                               leased)
+    finally:
+        conn.close()
+        start_workers(name, target, leased, out)
 
 
 def observe_one(name, target, watch, listed, now, end, stop, out):

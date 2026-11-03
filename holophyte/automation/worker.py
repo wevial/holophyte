@@ -92,16 +92,18 @@ class Worker:
         pull = github._origin_pull(self.target)
         detail = self.firing.detail
         run, recorded = detail["workflow_run_id"], detail["run_attempt"]
-        if self.settled_if_refused(self.attempt_refusal(pull, run, recorded)):
-            return 0
-        try:
-            rerun_failed_jobs(self.target, pull, run)
-        except InfraFailure as bad:
-            return self.settle(REFUSED, f"GitHub refused the rerun: {bad}")
-        return self.settle(
-            CONFIRMED, f"reran the failed jobs of workflow run {run} at"
-                       f" {detail['sha']}, attempt {recorded + 1}",
-            {**detail, "rerun_attempt": recorded + 1})
+        refused = self.attempt_refusal(pull, run, recorded)
+        with store.transaction(self.conn):
+            if self.settled_if_refused(refused):
+                return 0
+            try:
+                rerun_failed_jobs(self.target, pull, run)
+            except InfraFailure as bad:
+                return self.settle(REFUSED, f"GitHub refused the rerun: {bad}")
+            return self.settle(
+                CONFIRMED, f"reran the failed jobs of workflow run {run} at"
+                           f" {detail['sha']}, attempt {recorded + 1}",
+                {**detail, "rerun_attempt": recorded + 1})
 
 
 def automation_firing_mode(target, firing_id):

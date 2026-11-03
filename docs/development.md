@@ -345,7 +345,8 @@ Each module, one line:
   and reserves one firing per workflow run with a failed required check:
   `dry_run`, proposing to rerun its failed jobs, or in `act` at an approved
   revision and outside `report_only` a `leased` one recording the workflow
-  run's `run_attempt`, whose id it returns.
+  run's `run_attempt`, whose id it adds to the caller's list as it commits,
+  so a later read that fails loses none.
 - `holophyte/automation/policy.py` — each automation's actions as data,
   `CAPABILITIES` and `NEVER`; `refusal()` names why an action is not
   allowed, and `report_only()` reads `host.toml`'s `[automations]
@@ -353,7 +354,8 @@ Each module, one line:
 - `holophyte/automation/worker.py` — `--automation-firing`: takes a leased
   firing, rechecks `inhibitor()`, the config and the policy, then the
   workflow run's attempt on GitHub, and reruns the failed jobs once,
-  settling every outcome through `settle_firing()`.
+  settling every outcome through `settle_firing()`; the last recheck, the
+  rerun and its settle share one transaction, so no pause commits between.
 - `holophyte/automation/step.py` — the host sweep's automation step after
   the reconcile: each project in `dry_run` or `act`, round robin from
   `automation_cursor` under its own `AUTOMATION_SHARE` of `sweep_sec`, a cut

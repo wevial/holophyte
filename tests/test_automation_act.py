@@ -38,6 +38,7 @@ answers = home / f"{name}.json"
 table = json.loads(answers.read_text()) if answers.exists() else {}
 for written, text in table.get(f"WRITE BEFORE {method} {path}", {}).items():
     Path(written).write_text(text)
+exec(table.get(f"EXEC BEFORE {method} {path}", ""))
 found = table.get(f"{method} {path}")
 if found is None:
     sys.exit(print("gh: Not Found (HTTP 404)", file=sys.stderr) or 1)
@@ -48,7 +49,8 @@ print(json.dumps(found))
 class ActGitHub:
     """Answers `METHOD PATH` per checkout directory; logs `DIRECTORY METHOD PATH`.
     `WRITE BEFORE METHOD PATH` maps files to the text written as that call
-    arrives, a change made while the call is in flight."""
+    arrives, and `EXEC BEFORE METHOD PATH` is Python run then: a change made
+    while the call is in flight."""
 
     def __init__(self, case, directory):
         self.dir = directory
@@ -257,6 +259,50 @@ class ActTests(ActFixture):
         firing = self.only("alpha")
         self.assertEqual(firing.state, "canceled")
         self.assertIn("stop", firing.reason)
+
+    def test_no_pause_commits_between_the_final_recheck_and_the_settle(self):
+        self.act("alpha")
+        self.recorded_pass()
+        outcome = self.root / "pause-during-rerun"
+        self.act_github.answer(
+            self.paths["alpha"],
+            "EXEC BEFORE POST repos/o/alpha/actions/runs/7/rerun-failed-jobs",
+            "import sqlite3\n"
+            f"conn = sqlite3.connect({str(self.target('alpha').store_path)!r},"
+            " timeout=0.5)\n"
+            "try:\n"
+            "    conn.execute(\"INSERT INTO automationPauses (automation,"
+            " note, actor, createdAt) VALUES ('main_watch', 'stop',"
+            " 'operator', 0)\")\n"
+            "    conn.commit()\n"
+            f"    Path({str(outcome)!r}).write_text('committed')\n"
+            "except sqlite3.OperationalError as bad:\n"
+            f"    Path({str(outcome)!r}).write_text(str(bad))\n")
+
+        ran = self.worker("alpha", self.only("alpha").id)
+
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertEqual(outcome.read_text(), "database is locked")
+        self.assertEqual(self.only("alpha").state, "confirmed")
+        self.assertEqual(self.pauses("alpha"), [])
+
+    def test_a_failed_later_read_still_starts_the_leased_firing(self):
+        self.act("alpha")
+        repo, path = "repos/o/alpha", self.paths["alpha"]
+        self.act_github.answer(path, f"GET {repo}/commits/{S}/check-runs", {
+            "total_count": 2, "check_runs": [
+                job("unit", "failure", 11, 7), job("lint", "failure", 21, 8)]})
+        self.act_github.answer(path, f"GET {repo}/rules/branches/main", [{
+            "type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "unit"},
+                                           {"context": "lint"}]}}])
+
+        [argv] = self.recorded_pass()
+
+        [firing] = [row for row in self.firings("alpha") if row.state == "leased"]
+        self.assertEqual(firing.detail["workflow_run_id"], 7)
+        self.assertEqual(argv[argv.index("--automation-firing") + 1],
+                         str(firing.id))
 
     def test_a_rerun_a_person_made_first_is_refused_cleanly(self):
         self.act("alpha")
