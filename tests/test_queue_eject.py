@@ -65,7 +65,8 @@ class FullWorkflow:
     `spent` refuses label removals as a spent call deadline does. The
     first `failing_reads[path]` reads of the labels or the re-run's jobs
     are refused, and `stale` leaves the first attempt's failed check on
-    the head commit."""
+    the head commit. The first `failing_reads["add"]` label adds are
+    refused together with the labels read straight after each."""
 
     def __init__(self, test, rerun, abort, labels=(), refuse=0, late=0,
                  spent=False, failing_reads=None, stale=False):
@@ -95,8 +96,8 @@ class FullWorkflow:
             if self.refused_read("labels"):
                 return refused("gh: Bad Gateway (HTTP 502)")
             return out(json.dumps([{"name": n} for n in sorted(self.labels)]))
-        if label:
-            self.relabel(label[1], label[2], body)
+        if label and self.relabel(label[1], label[2], body):
+            return refused("gh: Bad Gateway (HTTP 502)")
         if "enqueuePullRequest" in (body or ""):
             self.asked.append(("enqueue", None))
         if "actions/runs?head_sha=" in args:
@@ -125,6 +126,9 @@ class FullWorkflow:
 
     def relabel(self, method, path, body):
         self.asked.append((method, json.loads(body or "null")))
+        if method == "POST" and self.refused_read("add"):
+            self.failing["labels"] = self.failing.get("labels", 0) + 1
+            return True
         if method == "POST":
             self.labels |= set(json.loads(body)["labels"])
             if self.abort == "label":
@@ -493,6 +497,17 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(len(self.read("SELECT summary FROM runEvents WHERE"
                                        " summary LIKE '%did not reproduce%'")),
                          1)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("abandoned",), ("merged",)])
+
+    def test_a_successor_after_an_unconfirmed_label_add_reruns_the_full_run(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), failing_reads={"add": 1},
+                   then=self.hand_off)
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "/rerun", "DELETE", "enqueue"])
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("abandoned",), ("merged",)])
 

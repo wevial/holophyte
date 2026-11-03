@@ -133,11 +133,11 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
     why = f"the merge queue removed the pull request for a test failure ({shown})"
     latest = _latest_full_run(run, beat_s, pull, reviewed,
                               f"a test failure ({shown}) ejected it")
-    record = {"label": label,
-              "on": _label_if_absent(run, beat_s, pull, reviewed, label, why),
-              "run": latest["id"], "sha": run.sha,
-              "attempt": (latest.get("run_attempt") or 1) + 1,
-              "specs": specs, "group": removed.group}
+    pending = {"label": label, "run": latest["id"], "sha": run.sha,
+               "attempt": (latest.get("run_attempt") or 1) + 1,
+               "specs": specs, "group": removed.group}
+    record = {**pending, "on": _label_if_absent(run, beat_s, pull, reviewed,
+                                                why, pending)}
     _label_event(run.conn, run.run_id, record,
                  f"{label} on the pull request; re-running workflow run"
                  f" {latest['id']}")
@@ -150,7 +150,8 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
     return (*requeued, (TEST, specs, removed.group)), None
 
 
-def _label_if_absent(run, beat_s, pull, reviewed, label, why):
+def _label_if_absent(run, beat_s, pull, reviewed, why, pending):
+    label = pending["label"]
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
             on = label in _labels(run, pull)
@@ -159,7 +160,7 @@ def _label_if_absent(run, beat_s, pull, reviewed, label, why):
                                    f" labelling it {label} failed: {failure}")
     if on:
         return False
-    _label_event(run.conn, run.run_id, {"label": label, "on": True},
+    _label_event(run.conn, run.run_id, {**pending, "on": True},
                  f"labelling the pull request {label}")
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
