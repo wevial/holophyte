@@ -42,13 +42,14 @@ REQUEUED_AND_MERGED = [queue_read(), queue_read(queued=False),
 class QueueEjectionTests(MergeModeFixture):
     def eject(self, reads, config=LABELLED, log="", annotations=(),
               groups=((GROUP_SHA, CANCELLED),), steps=(), main_moves=False,
-              unreadable=()):
+              unreadable=(), bodies=None):
         """Run a green, quiet candidate into the merge queue; the n-th
         removal reads the n-th of `groups` (the last kept), a merge group
         sha and the check runs it failed with. Every job log reads
         `log`, every check run's annotations `annotations`, served in
         pages of the size asked for; a request whose path holds one of
-        `unreadable` fails with an HTTP 502. `main_moves` lands a commit
+        `unreadable` fails with an HTTP 502 and one holding a key of
+        `bodies` answers its value. `main_moves` lands a commit
         on `origin/main` as the first removal is read."""
         self.configure(config)
         self.fake_route(merge_queue=reads)
@@ -60,6 +61,9 @@ class QueueEjectionTests(MergeModeFixture):
             args = " ".join(argv[1:])
             if any(part in args for part in unreadable):
                 return refused("gh: Bad Gateway (HTTP 502)")
+            body_of = [v for part, v in (bodies or {}).items() if part in args]
+            if body_of:
+                return out(json.dumps(body_of[0]))
             if "/annotations" in args:
                 query = parse_qs(args.split("?", 1)[1].split()[0])
                 size, page = int(query["per_page"][0]), int(query.get("page", ["1"])[0])
@@ -250,6 +254,33 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(len(self.enqueued()), 2)
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
+
+    def test_an_annotations_page_answering_no_list_is_requeued_not_fixed(
+            self):
+        warning = {"annotation_level": "warning",
+                   "message": "Node.js 16 actions are deprecated."}
+        self.eject(REQUEUED_AND_MERGED, log=FAILED, groups=((GROUP_SHA, UNIT),),
+                   annotations=[warning] * 101,
+                   bodies={"annotations?per_page=100&page=2":
+                           {"message": "Server Error"}})
+
+        self.assertEqual(self.fix_turns(), [])
+        self.assertEqual(len(self.enqueued()), 2)
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
+                         [("merged", QUEUE_SHA)])
+
+    def test_a_park_match_in_a_log_whose_annotations_fail_parks_at_once(self):
+        line = "Error: secret E2E_TOKEN is not set"
+        self.eject(REQUEUED_AND_MERGED,
+                   config=LABELLED + "queue_park_signatures ="
+                   " ['secret \\S+ is not set']\n",
+                   log=f"{line}\n", groups=((GROUP_SHA, UNIT),),
+                   unreadable=("/annotations",))
+
+        self.assertEqual(len(self.enqueued()), 1)
+        self.assertIn(line, self.question())
+        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
+                         [("awaiting_merge_approval", None)])
 
     def test_a_park_match_beside_an_unreadable_check_parks_at_once(self):
         line = "Error: secret E2E_TOKEN is not set"

@@ -18,16 +18,16 @@ REQUEUE_EVENT = "queue_infra_requeue"
 def classify(target, pull, failed):
     """A park signature on a readable check wins; an unread check is never empty."""
     merge = merge_config(target)
-    texts = [(check, _lines(target, pull, check)) for check in failed]
-    for _, lines in texts:
-        line = _first_match(merge.queue_park_signatures, lines or ())
+    texts = [(check, *_lines(target, pull, check)) for check in failed]
+    for _, lines, _ in texts:
+        line = _first_match(merge.queue_park_signatures, lines)
         if line:
             return PARK, line
-    if any(lines is None for _, lines in texts):
+    if not all(read for _, _, read in texts):
         return UNREADABLE, ""
     if all(check.conclusion == "cancelled"
            or _first_match(merge.queue_infra_signatures, lines)
-           for check, lines in texts):
+           for check, lines, _ in texts):
         return INFRA, ""
     return TEST, ""
 
@@ -41,11 +41,14 @@ def _first_match(patterns, lines):
 def _lines(target, pull, check):
     try:
         log = github.job_log(target, pull, check.job_id)
+    except InfraFailure:
+        return [], False
+    lines = [_STAMP.sub("", line).strip() for line in log.splitlines()]
+    try:
         notes = _annotations(target, pull, check)
     except InfraFailure:
-        return None
-    lines = [_STAMP.sub("", line).strip() for line in log.splitlines()]
-    return [line for line in lines + notes if line]
+        return [line for line in lines if line], False
+    return [line for line in lines + notes if line], True
 
 
 def _annotations(target, pull, check):
@@ -55,7 +58,8 @@ def _annotations(target, pull, check):
     while True:
         answer = github.rest(target, pull, "GET", f"{base}&page={page}")
         if not isinstance(answer, list):
-            break
+            raise InfraFailure(f"annotations page {page} of check run"
+                               f" {check.job_id} did not return a list")
         notes.extend(note for note in answer if isinstance(note, dict))
         if len(answer) < ANNOTATIONS_PAGE:
             break
