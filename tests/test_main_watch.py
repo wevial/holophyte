@@ -60,6 +60,21 @@ class MainWatchTests(MainWatchFixture):
                          (S2, 8))
         self.assertIn("workflow run 8", newest.reason)
 
+    def test_a_proposal_names_every_failed_job_of_its_workflow_run(self):
+        automations(self.paths["alpha"], "dry_run")
+        self.github.main(self.paths["alpha"], S, [
+            job("unit", "failure", 11, 7), job("docs", "failure", 12, 7),
+            job("lint", "failure", 31, 9)])
+
+        sweep_pass(T0)
+
+        [firing] = self.firings("alpha")
+        self.assertEqual(firing.detail["workflow_run_id"], 7)
+        self.assertEqual(firing.detail["jobs"],
+                         [{"name": "unit", "job_id": 11},
+                          {"name": "docs", "job_id": 12}])
+        self.assertIn("workflow run 7 (unit, docs)", firing.reason)
+
     def test_an_optional_or_pending_main_reserves_nothing(self):
         for name in ("alpha", "beta"):
             automations(self.paths[name], "dry_run")

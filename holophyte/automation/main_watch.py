@@ -8,12 +8,14 @@ REVISION = 1
 SUBJECT = "main"
 
 
-def failed_required_jobs_by_run(checks):
+def failed_jobs_of_required_runs(checks):
     if checks["state"] != "failure":
         return {}
+    eligible = {check["workflow_run_id"] for check in checks["failed"]
+                if check["required"] and check["workflow_run_id"] is not None}
     runs = {}
     for check in checks["failed"]:
-        if check["required"] and check["workflow_run_id"] is not None:
+        if check["workflow_run_id"] in eligible:
             runs.setdefault(check["workflow_run_id"], []).append(
                 {"name": check["name"], "job_id": check["job_id"]})
     return runs
@@ -24,7 +26,7 @@ def observe(target, conn, project, now):
     if pull is None:
         return
     checks = main_checks(target)
-    for run, jobs in failed_required_jobs_by_run(checks).items():
+    for run, jobs in failed_jobs_of_required_runs(checks).items():
         sha = checks["sha"]
         names = ", ".join(job["name"] for job in jobs)
         store.automations.reserve_firing(
