@@ -33,8 +33,10 @@ def _at_the_cap(run, beat_s, pull, pushed_state, reviewed, refresh, refreshed):
 
 def _merge_or_fix_checks(run, beat_s, pull, state, reviewed, verified, ticket,
                          verify_cmd, contracts, pass_no, check_fix):
-    requeued = ()
-    while True:
+    requeued, group = (), None
+    why = "the full run on the head commit failed"
+    failed = queue_eject.labelled_full_run(run, beat_s, pull, reviewed)
+    while failed is None:
         try:
             return merge_queue.verified_merge(
                 run.project, run.conn, run.run_id, run.provider, run.task_id,
@@ -43,19 +45,18 @@ def _merge_or_fix_checks(run, beat_s, pull, state, reviewed, verified, ticket,
                 run.budget_min, merge_config(run.project).approve == "auto"
             ), run.sha, None
         except merge_queue.QueueRemoved as removed:
+            failed, group = removed.failed, removed.group
+            why = "the merge queue removed the pull request"
             if merge_config(run.project).queue_full_label:
-                requeued = queue_eject.requeue_or_park(
+                requeued, failed = queue_eject.requeue_or_park(
                     run, beat_s, pull, removed, requeued, reviewed)
-                if requeued:
-                    verified = run.sha
-                    continue
-            set_phase(run.conn, run.run_id, "merge_gate", "the merge queue"
-                      " removed the pull request; fixing its checks")
-            return (None, *fix_checks_or_park(
-                run, beat_s, pull, replace(
-                    state, checks="failure", failed_checks=removed.failed),
-                ticket, verify_cmd, contracts, pass_no, reviewed,
-                check_fix, removed.group))
+                verified, group = run.sha, None
+    check_fix.reran = check_fix.reran or group is None
+    set_phase(run.conn, run.run_id, "merge_gate", f"{why}; fixing its checks")
+    return (None, *fix_checks_or_park(
+        run, beat_s, pull, replace(
+            state, checks="failure", failed_checks=failed),
+        ticket, verify_cmd, contracts, pass_no, reviewed, check_fix, group))
 
 
 def _merged_meanwhile(run, beat_s, pull, reviewed):
