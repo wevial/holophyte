@@ -1,6 +1,7 @@
 """Importing this module locates no target, reads no config or HOLOPHYTE_HOME."""
 import sys
 
+from holophyte.automation.worker import automation_firing_mode
 from holophyte.board.projection import file_ticket
 from holophyte.board.provider import board_for
 from holophyte.cli.arguments import (
@@ -59,6 +60,14 @@ def _boardless_mode(args, target):
     return None
 
 
+def _checked_boardless_mode(args, target):
+    if args.automation_firing is not None:
+        return lambda: automation_firing_mode(target, args.automation_firing)
+    target.config()
+    check_config(target)
+    return _boardless_mode(args, target)
+
+
 def _legacy_cli(argv):
     parser, modes = build_parser()
     args = parser.parse_args(argv)
@@ -80,9 +89,7 @@ def _legacy_cli(argv):
     target = Project.locate(args.target, adopt=not (
         args.import_store is not None or args.board_diff or args.dry_run
         or args.patrol))
-    target.config()
-    check_config(target)
-    boardless = _boardless_mode(args, target)
+    boardless = _checked_boardless_mode(args, target)
     if boardless is not None:
         return boardless()
     read_only = _read_only_mode(args, target)

@@ -240,7 +240,8 @@ NOT_EXPOSED = {"--worker": "internal: the loop's pool spawns it",
                "--witness-step": "internal: the loop's pool spawns it",
                "--shadow": "internal: a fresh claim's implement stage spawns it",
                "--scout-probe": "no holo command runs the scout probe yet",
-               "--scout": "internal: the host sweep spawns it"}
+               "--scout": "internal: the host sweep spawns it",
+               "--automation-firing": "internal: the host sweep spawns it"}
 
 TICKET_VERBS = ("file", "move", "cancel", "requeue", "approve", "babysit",
                 "repoint", "pause", "resume", "abort", "close", "gap")

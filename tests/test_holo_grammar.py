@@ -100,7 +100,8 @@ class TableTests(unittest.TestCase):
         self.assertEqual(registered - set(rows), set(NOT_EXPOSED))
         self.assertEqual(set(rows) - registered, set())
         self.assertEqual(set(NOT_EXPOSED), {"--worker", "--witness-step", "--shadow",
-                                            "--scout-probe", "--scout"})
+                                            "--scout-probe", "--scout",
+                                            "--automation-firing"})
 
     def test_each_row_translates_to_its_mode_and_note_in_the_factory_parser(self):
         self.assertEqual(set(SAMPLES), {command.words for command in COMMANDS

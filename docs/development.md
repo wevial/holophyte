@@ -335,22 +335,39 @@ Each module, one line:
   notes, and the queued pushes after one `states()` ask naming only their
   tickets.
 - `holophyte/automation/automation_config.py` — `[automations]`:
-  `main_watch_mode()` reads `[automations.main_watch] mode`, `off` without
-  the table and a `ValueError` naming the key for a wrong value, and
-  `check_automations()` refuses that value at the loop's startup.
+  `main_watch_config()` reads `[automations.main_watch] mode` and
+  `revision`, `off` without the table and a `ValueError` naming the key for
+  a wrong value or an `act` without `revision`; `unapproved()` names why an
+  `act` config whose `revision` is not the rule's stays in dry run; and
+  `check_automations()` refuses a wrong value at the loop's startup.
 - `holophyte/automation/main_watch.py` — the main watch, `REVISION = 1`:
   `observe()` reads main's head and its check runs through `main_checks()`
-  and reserves one `dry_run` firing per workflow run with a failed required
-  check, proposing to rerun its failed jobs.
+  and reserves one firing per workflow run with a failed required check:
+  `dry_run`, proposing to rerun its failed jobs, or in `act` at an approved
+  revision and outside `report_only` a `leased` one recording the workflow
+  run's `run_attempt`, whose id it adds to the caller's list as it commits,
+  so a later read that fails loses none.
+- `holophyte/automation/policy.py` — each automation's actions as data,
+  `CAPABILITIES` and `NEVER`; `refusal()` names why an action is not
+  allowed, and `report_only()` reads `host.toml`'s `[automations]
+  report_only`, matched against a project's origin.
+- `holophyte/automation/worker.py` — `--automation-firing`: takes a leased
+  firing, rechecks `inhibitor()`, the config and the policy, then the
+  workflow run's attempt on GitHub, and reruns the failed jobs once,
+  settling every outcome through `settle_firing()`; the last recheck, the
+  rerun and its settle share one transaction, so no pause commits between.
 - `holophyte/automation/step.py` — the host sweep's automation step after
-  the reconcile: each project in `dry_run`, round robin from
+  the reconcile: each project in `dry_run` or `act`, round robin from
   `automation_cursor` under its own `AUTOMATION_SHARE` of `sweep_sec`, a cut
   or failed project one `automations cut` or `automations failed` line;
   nothing at all while the kill switch is off, and a project only while
-  its main watch has no standing pause, before its mode is read.
+  its main watch has no standing pause, before its mode is read; each
+  leased firing's worker started through `start_worker()`, a transient
+  unit or a detached process through `SPAWN`, without waiting for it.
 - `holophyte/automation/gate.py` — the host's kill switch:
   `read_switch()` reads `HOLOPHYTE_HOME/automations.json`, an unreadable
-  record counting as off.
+  record counting as off, and `inhibitor()` names the switch's or an
+  automation's pause note that stops it.
 - `holophyte/automation/switches.py` — the operator's commands:
   `set_switch()` for `--automations-off` and `--automations-on`, the record
   replaced whole and a `host-actions.jsonl` line, and `pause()` and
@@ -962,8 +979,11 @@ The store is its own package:
   finds the child or proposal a follow-up repeats, and `accept_proposal()`
   and `reject_proposal()` answer one with its `decide` intervention.
 - `store/automations.py` — the `automationFirings` table:
-  `reserve_firing()` inserts a `proposed` firing once per key, returning
-  its id or `None`, and `firings()` reads them back, newest first; and the
+  `reserve_firing()` inserts a `proposed` firing, or with `lease_until` a
+  `leased` one, once per key, returning its id or `None`, `firings()` reads
+  them back, newest first, and `firing()` one; `take_firing()` records a
+  worker's pid on an unexpired lease no worker holds and
+  `settle_firing()` settles that worker's firing; and the
   `automationPauses` table: `pause_automation()` and `resume_automation()`
   open and clear an automation's one pause, and `automation_pause()` reads
   the open one.
