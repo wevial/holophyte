@@ -327,6 +327,8 @@ MERGE_KEYS = {
     "after": (), "bot_authors": ("devin-ai-integration", "coderabbitai",
                                "greptile-apps", "github-actions"),
     "private_patterns": (),
+    "queue_full_label": "", "queue_full_workflow": "",
+    "queue_infra_signatures": (), "queue_park_signatures": (),
 }
 MERGE_APPROVALS = ("auto", "human")
 MERGE_MODES = ("local", "pr")
@@ -382,6 +384,7 @@ def merge_config(project):
     values["ui_capture_video"] = _merge_boolean(
         project, "ui_capture_video",
         table.get("ui_capture_video", defaults.pop("ui_capture_video")))
+    values.update(_queue_signatures(project, table, defaults))
     for key, default in defaults.items():
         value = table.get(key, default)
         if key in ("media_bucket", "media_max_file_mb", "media_max_total_mb"):
@@ -397,7 +400,8 @@ def merge_config(project):
             values[key] = value
             continue
         if key in ("pr_style", "mention_handle", "ui_capture",
-                   "ui_capture_dir", "media_repo"):
+                   "ui_capture_dir", "media_repo", "queue_full_label",
+                   "queue_full_workflow"):
             if not isinstance(value, str):
                 raise SystemExit(
                     f"[holo2] {project.config_path}: [merge] {key} must be a"
@@ -430,6 +434,26 @@ def _merge_boolean(project, key, value):
             f"[holo2] {project.config_path}: [merge] {key} must be a"
             f" boolean, got {value!r}")
     return value
+
+
+def _queue_signatures(project, table, defaults):
+    return {key: _merge_patterns(project, key, table.get(key, defaults.pop(key)))
+            for key in ("queue_infra_signatures", "queue_park_signatures")}
+
+
+def _merge_patterns(project, key, value):
+    if not isinstance(value, (list, tuple)) or not all(
+            isinstance(p, str) for p in value):
+        raise SystemExit(f"[holo2] {project.config_path}: [merge] {key} must"
+                         f" be a list of regular expressions, got {value!r}")
+    for n, pattern in enumerate(value):
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise SystemExit(
+                f"[holo2] {project.config_path}: [merge] {key} #{n} is an"
+                f" invalid regular expression: {exc}") from None
+    return tuple(value)
 
 
 def _pr_draft(project, value):

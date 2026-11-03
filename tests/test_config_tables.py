@@ -423,7 +423,7 @@ class MergeConfigTests(ConfigTestCase):
                           (), "", "e2e/capture", False, False, "", None, 10, 20,
                           "park", "act", (), "holophyte", (), (),
                           ("devin-ai-integration", "coderabbitai", "greptile-apps",
-                           "github-actions"), ()))
+                           "github-actions"), (), "", "", (), ()))
 
     def test_bucket_validates_without_credentials_and_secrets_are_redacted(self):
         from holophyte.redact import known_secrets, redact_prose
@@ -562,6 +562,16 @@ class MergeConfigTests(ConfigTestCase):
         message = refused(self, '[merge]\nui_capture_video = "yes"\n')
         self.assertIn("[merge] ui_capture_video", message)
         self.assertIn("boolean", message)
+
+    def test_queue_signatures_must_be_a_list_of_valid_regular_expressions(self):
+        for key in ("queue_infra_signatures", "queue_park_signatures"):
+            for value, reason in (('"runner lost"', "list of regular"),
+                                  ("[1]", "list of regular"),
+                                  ('["ok", "(unclosed"]', "#1 is an invalid")):
+                with self.subTest(key=key, value=value):
+                    message = refused(self, f"[merge]\n{key} = {value}\n")
+                    self.assertIn(f"[merge] {key}", message)
+                    self.assertIn(reason, message)
 
     def test_any_other_value_or_key_is_a_startup_error_naming_it(self):
         """`"later"` names no gate and `approve_by` is a key nobody reads:
