@@ -45,7 +45,7 @@ def _merge_or_fix_checks(run, beat_s, pull, state, reviewed, verified, ticket,
         except merge_queue.QueueRemoved as removed:
             if merge_config(run.project).queue_full_label:
                 requeued = queue_eject.requeue_or_park(
-                    run, beat_s, pull, removed, requeued, reviewed) or ()
+                    run, beat_s, pull, removed, requeued, reviewed)
                 if requeued:
                     verified = run.sha
                     continue

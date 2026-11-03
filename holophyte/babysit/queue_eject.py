@@ -1,7 +1,6 @@
 """Tell a merge-queue ejection's infra failure from a test failure."""
 import json
 import re
-from dataclasses import dataclass
 
 import store
 from holophyte.config.config_tables import merge_config
@@ -15,12 +14,6 @@ ANNOTATIONS_PAGE = 100
 REQUEUE_EVENT = "queue_infra_requeue"
 
 
-@dataclass(frozen=True)
-class Verdict:
-    kind: str
-    line: str = ""
-
-
 def classify(target, pull, failed):
     """Every failed check is read: a park signature anywhere wins."""
     merge = merge_config(target)
@@ -28,12 +21,12 @@ def classify(target, pull, failed):
     for _, lines in texts:
         line = _first_match(merge.queue_park_signatures, lines)
         if line:
-            return Verdict(PARK, line)
+            return PARK, line
     if all(check.conclusion == "cancelled"
            or _first_match(merge.queue_infra_signatures, lines)
            for check, lines in texts):
-        return Verdict(INFRA)
-    return Verdict(TEST)
+        return INFRA, ""
+    return TEST, ""
 
 
 def _first_match(patterns, lines):
@@ -74,14 +67,14 @@ def _annotations(target, pull, check):
 def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
     """The ejections re-queued so far, this one added; None for a test failure."""
     with heartbeat_while(run.conn, run.run_id, beat_s):
-        verdict = classify(run.project, pull, removed.failed)
+        kind, line = classify(run.project, pull, removed.failed)
     names = ", ".join(check.name for check in removed.failed)
-    if verdict.kind == PARK:
+    if kind == PARK:
         _park(run, pull, reviewed,
               f"the merge queue removed the pull request: {names} failed on"
               f" merge group {removed.group[:12]} with a problem a re-queue"
-              f" cannot fix ([merge] queue_park_signatures): {verdict.line}")
-    if verdict.kind == TEST:
+              f" cannot fix ([merge] queue_park_signatures): {line}")
+    if kind == TEST:
         return None
     failed = sorted({check.name for check in removed.failed})
     history = _requeued(run) if run.conn is not None else requeued
