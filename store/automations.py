@@ -114,14 +114,13 @@ def _firing(row):
     return Firing(*row[:10], json.loads(row[10]), *row[11:])
 
 
-def firings(conn, since=None):
+def firings(conn):
     """None read from a store an older build last wrote, which lacks the table."""
     if not _has_table(conn, "automationFirings"):
         return []
     rows = conn.execute(
         f"SELECT {_selected(conn)} FROM automationFirings"
-        " WHERE createdAt >= ? ORDER BY createdAt DESC, id DESC",
-        (0 if since is None else since,)).fetchall()
+        " ORDER BY createdAt DESC, id DESC").fetchall()
     return [_firing(row) for row in rows]
 
 

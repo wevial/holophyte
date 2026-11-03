@@ -114,7 +114,7 @@ def listed(firing, since):
     if firing.state == store.automations.UNKNOWN:
         return True
     if firing.detail.get("result") == RED_AGAIN:
-        return firing.detail.get("result_at", 0) >= since
+        return firing.detail["result_at"] >= since
     return (firing.state == store.automations.PROPOSED
             and firing.createdAt >= since)
 
