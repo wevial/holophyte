@@ -93,8 +93,8 @@ def hold_merges(conn, project, now, watch, held, pull, checks):
     red = f"main is red at {sha[:12]} ({', '.join(names)})"
     cause = f"{pull.owner}/{pull.name}@{sha}"
     detail = {"action": HOLD_MERGES, "sha": sha, "checks": names}
-    held = held or (refusal(MAIN_WATCH, HOLD_MERGES) if watch.mode == ACT
-                    else None)
+    if watch.mode == ACT:
+        held = held or refusal(MAIN_WATCH, HOLD_MERGES)
     if watch.mode != ACT or held is not None:
         store.automations.reserve_firing(
             conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause,

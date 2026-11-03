@@ -45,8 +45,7 @@ def carries(wt, held, sha):
             raise InfraFailure(f"git fetch {github.REMOTE} {github.BASE}"
                                " failed before the merge hold's check:"
                                f" {(fetched.stderr or fetched.stdout).strip()}")
-    ancestry = _git(wt, "merge-base", "--is-ancestor", held, sha)
-    return ancestry.returncode == 0
+    return _git(wt, "merge-base", "--is-ancestor", held, sha).returncode == 0
 
 
 def passes(project, pull, sha, names):
@@ -57,7 +56,7 @@ def passes(project, pull, sha, names):
     passed = {run.get("name") for run in runs
               if run.get("status") == "completed"
               and run.get("conclusion") == "success"}
-    return all(name in passed for name in names)
+    return set(names) <= passed
 
 
 def held_merge(project, conn, run_id, wt, sha, pull):
