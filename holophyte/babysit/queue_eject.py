@@ -150,7 +150,7 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
     return (*requeued, (TEST, specs, removed.group)), None
 
 
-def _label_if_absent(run, beat_s, pull, reviewed, why, pending):
+def _label_if_absent(run, beat_s, pull, reviewed, why, pending, owned=False):
     label = pending["label"]
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
@@ -159,7 +159,7 @@ def _label_if_absent(run, beat_s, pull, reviewed, why, pending):
         _park(run, pull, reviewed, f"{why}, and reading its labels before"
                                    f" labelling it {label} failed: {failure}")
     if on:
-        return False
+        return owned
     _label_event(run.conn, run.run_id, {**pending, "on": True},
                  f"labelling the pull request {label}")
     try:
@@ -176,7 +176,7 @@ def _label_if_absent(run, beat_s, pull, reviewed, why, pending):
     if added:
         return True
     if added is False:
-        _label_event(run.conn, run.run_id, {"label": label, "on": False},
+        _label_event(run.conn, run.run_id, {**pending, "on": False},
                      f"labelling the pull request {label} did not take")
     _park(run, pull, reviewed, f"{why}, and labelling it {label} failed:"
                                f" {refused}")
@@ -234,7 +234,11 @@ def _rerun_unless_started(run, beat_s, pull, reviewed, workflow_run, attempt):
 def labelled_full_run(run, beat_s, pull, reviewed):
     record = _label_record(run.conn, run.run_id)
     if record.get("run") and record.get("sha") == run.sha:
-        return _full_result(run, beat_s, pull, reviewed, record)
+        why = (f"the pull request is due a full run on the head commit"
+               f" {run.sha[:12]}")
+        on = _label_if_absent(run, beat_s, pull, reviewed, why, record,
+                              owned=record["on"])
+        return _full_result(run, beat_s, pull, reviewed, {**record, "on": on})
     if not record.get("on"):
         return None
     label = record["label"]

@@ -66,7 +66,9 @@ class FullWorkflow:
     first `failing_reads[path]` reads of the labels or the re-run's jobs
     are refused, and `stale` leaves the first attempt's failed check on
     the head commit. The first `failing_reads["add"]` label adds are
-    refused together with the labels read straight after each."""
+    refused together with the labels read straight after each, and the
+    next `failing_reads["lost_add"]` are refused alone. `rerun_labels`
+    keeps the labels on at each re-run."""
 
     def __init__(self, test, rerun, abort, labels=(), refuse=0, late=0,
                  spent=False, failing_reads=None, stale=False):
@@ -74,7 +76,7 @@ class FullWorkflow:
         self.labels, self.refuse, self.late = set(labels), refuse, late
         self.spent, self.stale = spent, stale
         self.failing = dict(failing_reads or {})
-        self.asked, self.reruns = [], []
+        self.asked, self.reruns, self.rerun_labels = [], [], []
 
     def head_checks(self, sha):
         if self.rerun == "success" or not self.reruns \
@@ -121,6 +123,7 @@ class FullWorkflow:
                 self.refuse -= 1
                 return refused("gh: Bad Gateway (HTTP 502)")
             self.reruns.append(int(ran[1]))
+            self.rerun_labels.append(set(self.labels))
             return out("{}")
         return out(json.dumps(self.run(int(ran[1])))) if ran else None
 
@@ -128,6 +131,8 @@ class FullWorkflow:
         self.asked.append((method, json.loads(body or "null")))
         if method == "POST" and self.refused_read("add"):
             self.failing["labels"] = self.failing.get("labels", 0) + 1
+            return True
+        if method == "POST" and self.refused_read("lost_add"):
             return True
         if method == "POST":
             self.labels |= set(json.loads(body)["labels"])
@@ -205,7 +210,7 @@ class QueueEjectionTests(MergeModeFixture):
 
         full = FullWorkflow(self, rerun, abort, labels, refuse, late, spent,
                             failing_reads, stale)
-        self.asked = full.asked
+        self.asked, self.rerun_labels = full.asked, full.rerun_labels
 
         unread, by_hand = list(unreadable), []
 
@@ -500,16 +505,29 @@ class QueueEjectionTests(MergeModeFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("abandoned",), ("merged",)])
 
-    def test_a_successor_after_an_unconfirmed_label_add_reruns_the_full_run(
+    def test_a_successor_after_an_unconfirmed_label_add_labels_before_the_rerun(
             self):
         self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
                    groups=((GROUP_SHA, UNIT),), failing_reads={"add": 1},
                    then=self.hand_off)
 
         self.assertEqual([kind for kind, _ in self.asked],
-                         ["enqueue", "POST", "/rerun", "DELETE", "enqueue"])
+                         ["enqueue", "POST", "POST", "/rerun", "DELETE",
+                          "enqueue"])
+        self.assertEqual(self.rerun_labels, [{"e2e:full"}])
         self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
                          [("abandoned",), ("merged",)])
+
+    def test_a_successor_after_a_label_add_seen_failing_still_reproduces(
+            self):
+        self.eject(REQUEUED_AND_MERGED, config=FULL, log=FAILED,
+                   groups=((GROUP_SHA, UNIT),), failing_reads={"lost_add": 1},
+                   then=self.hand_off)
+
+        self.assertEqual([kind for kind, _ in self.asked],
+                         ["enqueue", "POST", "POST", "/rerun", "DELETE",
+                          "enqueue"])
+        self.assertEqual(self.rerun_labels, [{"e2e:full"}])
 
     def test_a_successor_run_that_ends_removes_the_label_its_parked_run_added(
             self):
