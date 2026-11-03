@@ -20,22 +20,17 @@ def failed_required_jobs_by_run(checks):
 
 
 def observe(target, conn, project, now):
-    """The ids of the firings this read reserved."""
     pull = github._origin_pull(target)
     if pull is None:
-        return []
+        return
     checks = main_checks(target)
-    reserved = []
     for run, jobs in failed_required_jobs_by_run(checks).items():
         sha = checks["sha"]
         names = ", ".join(job["name"] for job in jobs)
-        found = store.automations.reserve_firing(
+        store.automations.reserve_firing(
             conn, project, MAIN_WATCH, REVISION, SUBJECT,
             f"{pull.owner}/{pull.name}@{sha} run {run}", mode=DRY_RUN,
             reason=(f"would rerun the failed jobs of workflow run {run}"
                     f" ({names}) at {sha}"),
             detail={"sha": sha, "workflow_run_id": run, "jobs": jobs},
             now=now)
-        if found is not None:
-            reserved.append(found)
-    return reserved

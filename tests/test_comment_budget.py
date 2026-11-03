@@ -59,7 +59,7 @@ PINNED = {
 
     "holophyte/automation/__init__.py": 0,
     "holophyte/automation/automation_config.py": 1,
-    "holophyte/automation/main_watch.py": 2,
+    "holophyte/automation/main_watch.py": 1,
     "holophyte/automation/step.py": 3,
 
     "holophyte/babysit/__init__.py": 0,
