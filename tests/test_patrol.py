@@ -354,6 +354,8 @@ class MergeHoldTests(PatrolFixture):
         run = self.live("q", "K", NOW - MIN)
         store.record_event(conn, run, "main_hold_parked", "waits",
                            level="detail", payload=json.dumps({"hold": hold}))
+        park_run(conn, run, "awaiting_merge_approval",
+                 park_kind="pull_request")
 
         row = self.patrol("q")
         text = projects_text(self.holo("-p", "q")[1])

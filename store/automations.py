@@ -149,6 +149,12 @@ def firings(conn, since=None):
     return [_firing(row) for row in rows]
 
 
+def keyed_firing(conn, project, automation, revision, subject, cause):
+    key = _firing_key(automation, revision, project, subject, cause)
+    return conn.execute("SELECT id FROM automationFirings WHERE firingKey = ?",
+                        (key,)).fetchone()[0]
+
+
 def firing(conn, firing_id):
     row = conn.execute(f"SELECT {_selected(conn)} FROM automationFirings"
                        " WHERE id = ?", (firing_id,)).fetchone()
@@ -224,7 +230,9 @@ def open_merge_hold(conn, project):
 
 def held_runs(conn, hold_id):
     return conn.execute(
-        "SELECT COUNT(*) FROM runEvents AS e WHERE e.kind = 'main_hold_parked'"
+        "SELECT COUNT(*) FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
+        " WHERE e.kind = 'main_hold_parked' AND r.endedAt IS NULL"
+        " AND r.phase = 'awaiting_merge_approval'"
         " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
         " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')",
         (hold_id,)).fetchone()[0]

@@ -446,13 +446,14 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-617: an act firing's worker reads
                                  # its firing, takes it and settles it.
                                  # HOLO-620: the main watch's merge hold,
-                                 # placed, ended and read by the merge gate,
-                                 # and the runs it holds read by the patrol.
+                                 # placed on its firing, ended and read by
+                                 # the merge gate, its runs read by patrol.
                                  (store.automations, ["automation_pause",
                                                       "end_merge_hold",
                                                       "firing",
                                                       "firings",
                                                       "held_runs",
+                                                      "keyed_firing",
                                                       "open_merge_hold",
                                                       "pause_automation",
                                                       "place_merge_hold",

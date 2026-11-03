@@ -104,13 +104,15 @@ def hold_merges(conn, project, now, watch, held, pull, checks):
         return
     with store.transaction(conn):
         standing = store.automations.open_merge_hold(conn, project)
-        if standing is not None and standing.sha == sha:
+        if (standing is not None and standing.sha == sha
+                and sorted(standing.checks) == sorted(names)):
             return
         firing = store.automations.reserve_firing(
             conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause,
             mode=ACT, reason=f"holding merges: {red}", detail=detail, now=now,
             lease_until=int(time.time() * 1000) + LEASE_MS)
-        if firing is not None:
-            store.automations.place_merge_hold(
-                conn, project, firing, sha, names, f"held merges: {red}",
-                now=now)
+        if firing is None:
+            firing = store.automations.keyed_firing(
+                conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause)
+        store.automations.place_merge_hold(
+            conn, project, firing, sha, names, f"held merges: {red}", now=now)

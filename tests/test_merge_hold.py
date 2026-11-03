@@ -9,13 +9,16 @@ import json
 import subprocess
 from unittest.mock import patch
 
+import holophyte.automation.merge_hold
 import holophyte.pr.github
 import holophyte.pr.merge_queue
 import holophyte.pr.pr_status
 import holophyte.pr.pullrequest
 import store.automations
+import store.operate
 from holophyte.config.project import Project
-from holophyte.loop.gates import MergeParked
+from holophyte.host.registry import HOST_FILE
+from holophyte.loop.gates import InfraFailure, MergeParked
 from tests.main_watch_fixture import automations, job, sweep_pass
 from tests.phase_fixture import advance_phase
 from tests.test_automation_act import ActFixture, S
@@ -32,13 +35,26 @@ class HoldFixture(ActFixture):
             "SELECT sha, checks, firingId, endedAt, endReason FROM mergeHolds"
             " ORDER BY id").fetchall()
 
-    def red_at(self, sha, name="alpha"):
+    def red_at(self, sha, name="alpha", failed=("unit",)):
         repo, path = self.repos[name], self.paths[name]
         self.act_github.answer(path, f"GET repos/{repo}/commits/main",
                                {"sha": sha})
+        self.act_github.answer(path, f"GET repos/{repo}/rules/branches/main", [{
+            "type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "unit"},
+                                           {"context": "lint"}]}}])
+        runs = [job(check, "failure" if check in failed else "success",
+                    11 + index, 7)
+                for index, check in enumerate(("unit", "lint"))]
         self.act_github.answer(
             path, f"GET repos/{repo}/commits/{sha}/check-runs",
-            {"total_count": 1, "check_runs": [job("unit", "failure", 11, 7)]})
+            {"total_count": len(runs), "check_runs": runs})
+
+    def open_hold(self):
+        [(sha, checks)] = self.conn("alpha").execute(
+            "SELECT sha, checks FROM mergeHolds WHERE endedAt IS NULL"
+        ).fetchall()
+        return sha, json.loads(checks)
 
 
 class HoldPlacementTests(HoldFixture):
@@ -63,6 +79,26 @@ class HoldPlacementTests(HoldFixture):
         self.assertEqual(old[4], f"superseded by {S2[:12]}")
         self.assertEqual((new[0], json.loads(new[1]), new[3]),
                          (S2, ["unit"], None))
+
+    def test_new_red_checks_at_the_same_head_replace_the_hold(self):
+        self.act("alpha")
+        self.red_at(S)
+        self.recorded_pass()
+
+        self.red_at(S, failed=("lint",))
+        self.recorded_pass()
+
+        self.assertEqual(self.open_hold(), (S, ["lint"]))
+        self.assertEqual(len(self.holds()), 2)
+
+    def test_a_red_head_main_returns_to_is_held_again(self):
+        self.act("alpha")
+        for sha in (S, S2, S):
+            self.red_at(sha)
+            self.recorded_pass()
+
+        self.assertEqual(self.open_hold(), (S, ["unit"]))
+        self.assertEqual([row[0] for row in self.holds()], [S, S2, S])
 
     def test_dry_run_only_proposes_the_hold(self):
         automations(self.paths["alpha"], "dry_run")
@@ -139,8 +175,10 @@ class MergeGateFixture(HoldFixture):
 
         def check_runs_of(_target, _pull, ref):
             runs = self.runs_at.get(ref, [])
-            return [{"name": name, "status": "completed", "conclusion": result}
-                    for name, result in runs]
+            return [{"id": index, "name": name,
+                     "status": "in_progress" if result is None
+                     else "completed", "conclusion": result}
+                    for index, (name, result) in enumerate(runs, 1)]
 
         with patch.object(holophyte.pr.merge_queue, "merge_queue_required",
                           return_value=False), \
@@ -205,6 +243,52 @@ class MergeGateTests(MergeGateFixture):
 
         self.assertEqual((failed_parked, missing_parked), (True, True))
         self.assertEqual(self.merged, [])
+
+    def test_a_later_failed_or_pending_run_of_a_held_check_parks(self):
+        fix = self.fix()
+        self.runs_at[fix] = [("unit", "success"), ("unit", "failure")]
+        failed_parked = self.merge(fix)[1]
+        self.runs_at[fix] = [("unit", "success"), ("unit", None)]
+        pending_parked = self.merge(fix)[1]
+
+        self.assertEqual((failed_parked, pending_parked), (True, True))
+        self.assertEqual(self.merged, [])
+
+    def test_a_git_error_or_timeout_is_an_infra_failure_not_a_park(self):
+        missing = "0" * 40
+        with self.assertRaises(InfraFailure):
+            holophyte.automation.merge_hold.carries(self.wt, missing,
+                                                    self.early)
+        timeout = subprocess.TimeoutExpired(["git"], 1)
+        with patch.object(subprocess, "run", side_effect=timeout), \
+                self.assertRaises(InfraFailure):
+            holophyte.automation.merge_hold.carries(self.wt, self.red_commit,
+                                                    self.early)
+        self.assertFalse(holophyte.automation.merge_hold.carries(
+            self.wt, self.red_commit, self.early))
+
+    def test_held_runs_counts_only_runs_still_parked(self):
+        conn = self.conn("alpha")
+        run = self.merge(self.early)[0]
+        self.assertEqual(store.automations.held_runs(conn, self.hold_id()), 1)
+
+        store.operate.release(conn, run, "abandoned", "resumed")
+
+        self.assertEqual(store.automations.held_runs(conn, self.hold_id()), 0)
+
+    def test_an_unapproved_revision_or_report_only_repo_holds_nothing(self):
+        config = Project.locate(self.paths["alpha"], adopt=False).config_path
+        approved = config.read_text()
+        config.write_text(approved.replace("revision = 1", "revision = 0"))
+        self.assertFalse(self.merge(self.early)[1])
+        config.write_text(approved)
+
+        with open(self.home / HOST_FILE, "a") as registry:
+            registry.write('\n[automations]\nreport_only = ["O/Alpha"]\n')
+        self.assertFalse(self.merge(self.early)[1])
+
+        self.assertEqual(self.merged, [self.early] * 2)
+        self.assertIsNotNone(self.hold_id())
 
     def test_an_inhibited_or_dry_run_watch_holds_nothing(self):
         self.assertEqual(self.holo("automation", "pause", "main_watch", "x",
