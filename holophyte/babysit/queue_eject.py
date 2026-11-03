@@ -77,7 +77,8 @@ def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
     if kind == TEST:
         return None
     failed = sorted({check.name for check in removed.failed})
-    history = _requeued(run) if run.conn is not None else requeued
+    persisted = run.conn is not None and run.run_id is not None
+    history = _requeued(run) if persisted else requeued
     earlier = next((group for names_of, group in history
                     if names_of == failed), None)
     if earlier is not None:
@@ -86,7 +87,7 @@ def requeue_or_park(run, beat_s, pull, removed, requeued, reviewed):
               f" {names} failed on merge group {earlier[:12]}, was"
               f" re-queued once, and failed the same way on merge group"
               f" {removed.group[:12]}")
-    if run.conn is not None and run.run_id is not None:
+    if persisted:
         store.record_event(run.conn, run.run_id, "merge_queue",
                            f"{names} failed on merge group"
                            f" {removed.group[:12]} for infra; re-queuing"
