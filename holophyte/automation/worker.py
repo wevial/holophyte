@@ -65,33 +65,34 @@ class Worker:
         print(f"[holo2] firing {self.firing.id} {state}: {reason}", flush=True)
         return 0
 
-    def settled_if_refused(self, attempt=None):
+    def settled_if_refused(self, refused=None):
         with store.transaction(self.conn):
-            found = standing_refusal(self.conn, self.target, self.firing)
-            detail = self.firing.detail
-            if found is None and attempt is not None \
-                    and attempt > detail["run_attempt"]:
-                found = (REFUSED, f"workflow run {detail['workflow_run_id']}"
-                                  f" is at attempt {attempt}, past attempt"
-                                  f" {detail['run_attempt']} seen at"
-                                  " detection; someone reran it already")
+            found = standing_refusal(self.conn, self.target, self.firing) or (
+                None if refused is None else (REFUSED, refused))
             if found is not None:
                 self.settle(*found)
             return found is not None
+
+    def attempt_refusal(self, pull, run, recorded):
+        if pull is None:
+            return "the project has no GitHub origin"
+        try:
+            attempt = workflow_run_attempt(self.target, pull, run)
+        except InfraFailure as bad:
+            return f"GitHub refused the read: {bad}"
+        if attempt > recorded:
+            return (f"workflow run {run} is at attempt {attempt}, past"
+                    f" attempt {recorded} seen at detection; someone reran"
+                    " it already")
+        return None
 
     def run(self):
         if self.settled_if_refused():
             return 0
         pull = github._origin_pull(self.target)
-        if pull is None:
-            return self.settle(REFUSED, "the project has no GitHub origin")
         detail = self.firing.detail
         run, recorded = detail["workflow_run_id"], detail["run_attempt"]
-        try:
-            attempt = workflow_run_attempt(self.target, pull, run)
-        except InfraFailure as bad:
-            return self.settle(REFUSED, f"GitHub refused the read: {bad}")
-        if self.settled_if_refused(attempt):
+        if self.settled_if_refused(self.attempt_refusal(pull, run, recorded)):
             return 0
         try:
             rerun_failed_jobs(self.target, pull, run)

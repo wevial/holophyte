@@ -36,6 +36,8 @@ with open(home / "calls.log", "a") as log:
     log.write(f"{name} {method} {path}\\n")
 answers = home / f"{name}.json"
 table = json.loads(answers.read_text()) if answers.exists() else {}
+for written, text in table.get(f"WRITE BEFORE {method} {path}", {}).items():
+    Path(written).write_text(text)
 found = table.get(f"{method} {path}")
 if found is None:
     sys.exit(print("gh: Not Found (HTTP 404)", file=sys.stderr) or 1)
@@ -44,7 +46,9 @@ print(json.dumps(found))
 
 
 class ActGitHub:
-    """Answers `METHOD PATH` per checkout directory; logs `DIRECTORY METHOD PATH`."""
+    """Answers `METHOD PATH` per checkout directory; logs `DIRECTORY METHOD PATH`.
+    `WRITE BEFORE METHOD PATH` maps files to the text written as that call
+    arrives, a change made while the call is in flight."""
 
     def __init__(self, case, directory):
         self.dir = directory
@@ -82,6 +86,15 @@ class ActGitHub:
         return [line.split(" ", 1)[1] for line in lines
                 if line.split(" ")[0] == path.name
                 and (method is None or line.split(" ")[1] == method)]
+
+    def answer(self, path, key, value):
+        answers = self.dir / f"{path.name}.json"
+        table = json.loads(answers.read_text())
+        if value is None:
+            table.pop(key)
+        else:
+            table[key] = value
+        answers.write_text(json.dumps(table))
 
     def writes(self, path):
         return [call for call in self.calls(path)
@@ -226,6 +239,24 @@ class ActTests(ActFixture):
             self.assertEqual(self.act_github.writes(self.paths[name]), [])
         self.assertIn("off on this host", self.only("alpha").reason)
         self.assertIn("paused", self.only("beta").reason)
+
+    def test_a_stop_during_a_failed_attempt_read_cancels_the_firing(self):
+        self.act("alpha")
+        self.recorded_pass()
+        read = "GET repos/o/alpha/actions/runs/7"
+        self.act_github.answer(self.paths["alpha"], read, None)
+        self.act_github.answer(
+            self.paths["alpha"], f"WRITE BEFORE {read}",
+            {str(self.home / "automations.json"):
+             json.dumps({"off": True, "note": "stop"})})
+
+        ran = self.worker("alpha", self.only("alpha").id)
+
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertEqual(self.rerun_posts("alpha"), [])
+        firing = self.only("alpha")
+        self.assertEqual(firing.state, "canceled")
+        self.assertIn("stop", firing.reason)
 
     def test_a_rerun_a_person_made_first_is_refused_cleanly(self):
         self.act("alpha")
