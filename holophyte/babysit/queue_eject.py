@@ -10,6 +10,7 @@ from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while, warn_on_run
 from holophyte.loop.stop import stop_if_requested
 from holophyte.pr import github, pr_status
+from holophyte.pr.merge_queue import RUNS_PAGE
 from holophyte.redact import redact_values
 
 INFRA, PARK, TEST, UNREADABLE = "infra", "park", "test", "unreadable"
@@ -18,7 +19,6 @@ ANNOTATIONS_PAGE = 100
 REQUEUE_EVENT = "queue_infra_requeue"
 UNREPRODUCED_EVENT = "queue_test_requeue"
 LABEL_EVENT = "queue_full_label"
-RUNS_PAGE = 100
 
 
 def classify(target, pull, failed):
@@ -121,7 +121,8 @@ def _reproduce(run, beat_s, pull, removed, specs, requeued, reviewed):
     label = merge_config(run.project).queue_full_label
     latest = _latest_full_run(run, beat_s, pull, reviewed,
                               f"a test failure ({shown}) ejected it")
-    _record_label(run, label)
+    _label_event(run.conn, run.run_id, label, True,
+                 f"labelling the pull request {label}")
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
             github.add_label(run.project, pull, label)
@@ -179,10 +180,7 @@ def drop_label(target, conn, run_id, pull, label):
         warn_on_run(conn, run_id, f"removing {label} from {pull.url}"
                                   f" failed: {refused}")
         return
-    if conn is not None and run_id is not None:
-        store.record_event(conn, run_id, LABEL_EVENT,
-                           f"removed {label} from {pull.url}", level="detail",
-                           payload=json.dumps({"label": label, "on": False}))
+    _label_event(conn, run_id, label, False, f"removed {label} from {pull.url}")
 
 
 def _label_on(conn, run_id):
@@ -195,12 +193,10 @@ def _label_on(conn, run_id):
     return record["label"] if record.get("on") else None
 
 
-def _record_label(run, label):
-    if run.conn is not None and run.run_id is not None:
-        store.record_event(run.conn, run.run_id, LABEL_EVENT,
-                           f"labelling the pull request {label}",
-                           level="detail",
-                           payload=json.dumps({"label": label, "on": True}))
+def _label_event(conn, run_id, label, on, summary):
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, LABEL_EVENT, summary, level="detail",
+                           payload=json.dumps({"label": label, "on": on}))
 
 
 def _latest_full_run(run, beat_s, pull, reviewed, why):
