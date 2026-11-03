@@ -389,6 +389,13 @@ def ticket_runs(conn, ticket_id):
         " ORDER BY r.attempt DESC, r.id DESC", (ticket_id,))]
 
 
+def pull_request_runs(conn, run_id):
+    return conn.execute(
+        "SELECT s.id, s.endedAt FROM runs r JOIN runs s"
+        " ON s.ticketId = r.ticketId AND (s.id = r.id OR s.prUrl = r.prUrl)"
+        " WHERE r.id = ? ORDER BY s.id", (run_id,)).fetchall()
+
+
 @dataclass(frozen=True)
 class ReviewRound:
     id: int

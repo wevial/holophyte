@@ -845,7 +845,11 @@ Each module, one line:
 - `holophyte/babysit/queue_eject.py` — a merge-queue ejection under `[merge]
   queue_full_label` told apart by its failed checks' job logs and annotations:
   infra re-queued once and parked if it repeats, a park signature parked at
-  once, a test failure left to the check fix round.
+  once, a test failure reproduced on the pull request by labelling it and
+  re-running the latest `queue_full_workflow` run on its head commit (red: the
+  check fix round on the head commit; green: unlabelled and re-queued once,
+  parked if the same failing specs eject it again); the label comes off after
+  the next green full run, and when the run ends.
 - `holophyte/story/witness.py` — `run_witnesses()` runs a story's witness
   commands at one commit of main, in the warm tree for a loop pass and
   otherwise in a scratch worktree, within
