@@ -13,7 +13,6 @@ from holophyte.serve.serve_host import HOST_LEDGER, record_host_action
 
 
 def save_switch(home, record):
-    home.mkdir(parents=True, exist_ok=True)
     path = home / SWITCH_FILE
     temporary = path.with_name(f"{SWITCH_FILE}.{os.getpid()}.tmp")
     try:
@@ -34,13 +33,13 @@ def standing(switch):
             if switch.record else "no record")
 
 
-def set_switch(home, off, note, now=None):
+def set_switch(home, off, note):
     word = "off" if off else "on"
     switch = read_switch(home)
     if switch.off == off and switch.problem is None:
         raise SystemExit(f"[holo2] automations are already {word},"
                          f" {standing(switch)}")
-    now = int(time() * 1000) if now is None else now
+    now = int(time() * 1000)
     author = getpass.getuser()
     record = {"off": off, "note": note, "at": now, "author": author}
     home.mkdir(parents=True, exist_ok=True)
@@ -63,9 +62,9 @@ def built_in(name):
         raise SystemExit(2)
 
 
-def pause(target, name, note, now=None):
+def pause(target, name, note):
     built_in(name)
-    now = int(time() * 1000) if now is None else now
+    now = int(time() * 1000)
     conn = open_store(target)
     try:
         if store.automations.pause_automation(
@@ -79,9 +78,9 @@ def pause(target, name, note, now=None):
     print(f"[holo2] automation {name} paused on {target.path}: {note}")
 
 
-def resume(target, name, note, now=None):
+def resume(target, name, note):
     built_in(name)
-    now = int(time() * 1000) if now is None else now
+    now = int(time() * 1000)
     conn = open_store(target)
     try:
         if store.automations.resume_automation(conn, name, note,

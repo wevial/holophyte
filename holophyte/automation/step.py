@@ -1,6 +1,7 @@
 """The host sweep's automation step: each opted-in project's rules, round robin."""
 import time
 
+import store.automations
 import store.read
 from holophyte import deadline
 from holophyte.admission import project_of
@@ -10,26 +11,26 @@ from holophyte.automation.automation_config import (
     MAIN_WATCH,
     main_watch_mode,
 )
-from holophyte.automation.gate import inhibitor, read_switch
+from holophyte.automation.gate import read_switch
 from holophyte.loop.runs import open_store
 
 AUTOMATION_SHARE = 0.25
 
 
-def inhibited(entry, home, switch):
+def paused(entry):
     conn = store.read.open_readonly(entry.target.store_path)
     try:
-        return inhibitor(conn, home, MAIN_WATCH, switch)
+        return store.automations.automation_pause(conn, MAIN_WATCH)
     finally:
         conn.close()
 
 
-def watched(entries, out, key, home, switch):
+def watched(entries, out, key):
     """The entries in `dry_run`; a wrong mode is off for this pass, said once."""
     found = []
     for entry in entries:
         try:
-            if inhibited(entry, home, switch) is not None:
+            if paused(entry) is not None:
                 continue
         except (Exception, SystemExit) as bad:
             print(f"[holo2] {key(entry)}: automations failed: {bad}",
@@ -76,7 +77,7 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
         print(f"[holo2] automations off: {switch.problem}", file=out)
     if switch.off:
         return
-    order = watched(entries, out, key, home, switch)
+    order = watched(entries, out, key)
     if not order:
         return
     names = [key(entry) for entry in order]

@@ -1,8 +1,6 @@
-"""What stops an automation ahead of its mode: the host's kill switch, then a pause."""
+"""The host's kill switch, read ahead of every automation."""
 import json
 from typing import NamedTuple
-
-import store.automations
 
 SWITCH_FILE = "automations.json"
 
@@ -25,20 +23,3 @@ def read_switch(home):
         return Switch(True, None, f"{path} holds no boolean `off`")
     return Switch(record["off"], record, None)
 
-
-def switch_reason(switch):
-    if switch.problem is not None:
-        return f"automations off: {switch.problem}"
-    if switch.off:
-        return f"automations off: {switch.record.get('note')}"
-    return None
-
-
-def inhibitor(conn, home, automation, switch=None):
-    reason = switch_reason(read_switch(home) if switch is None else switch)
-    if reason is not None:
-        return reason
-    pause = store.automations.automation_pause(conn, automation)
-    if pause is not None:
-        return f"automation {automation} paused: {pause.note}"
-    return None

@@ -346,12 +346,11 @@ Each module, one line:
   the reconcile: each project in `dry_run`, round robin from
   `automation_cursor` under its own `AUTOMATION_SHARE` of `sweep_sec`, a cut
   or failed project one `automations cut` or `automations failed` line;
-  nothing at all while the kill switch is off, and a project only once
-  `inhibitor()` passes it, before its mode is read.
-- `holophyte/automation/gate.py` — the stops ahead of an automation's mode:
+  nothing at all while the kill switch is off, and a project only while
+  its main watch has no standing pause, before its mode is read.
+- `holophyte/automation/gate.py` — the host's kill switch:
   `read_switch()` reads `HOLOPHYTE_HOME/automations.json`, an unreadable
-  record counting as off, and `inhibitor()` returns why an automation may
-  not run on a store, the kill switch first and then its pause, or `None`.
+  record counting as off.
 - `holophyte/automation/switches.py` — the operator's commands:
   `set_switch()` for `--automations-off` and `--automations-on`, the record
   replaced whole and a `host-actions.jsonl` line, and `pause()` and
