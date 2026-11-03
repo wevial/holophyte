@@ -10,6 +10,7 @@ from holophyte.automation.automation_config import (
     main_watch_config,
 )
 from holophyte.automation.gate import inhibitor
+from holophyte.config.project import Project
 from holophyte.host.registry import home
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github, pr_status
@@ -25,8 +26,8 @@ def standing_hold(project, conn, run_id):
     if hold is None:
         return None
     try:
-        watch = main_watch_config(project)
-    except ValueError:
+        watch = main_watch_config(Project.locate(project.path, adopt=False))
+    except (ValueError, SystemExit):
         return None
     if watch.mode != ACT or inhibitor(home(), conn, MAIN_WATCH) is not None:
         return None

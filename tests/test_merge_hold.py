@@ -125,10 +125,12 @@ class MergeGateFixture(HoldFixture):
         self.git(self.wt, "checkout", "-qb", "fix", "FETCH_HEAD")
         return self.commit(self.wt, "FIX.md")
 
-    def merge(self, sha):
+    def merge(self, sha, target=None):
+        """`_merge_pr()` on `sha`; `target`, when given, the factory's own,
+        whose config it read before this merge."""
         run = self.a_run("alpha")
         advance_phase(self.conn("alpha"), run, "merge_gate")
-        target = Project.locate(self.paths["alpha"], adopt=False)
+        target = target or Project.locate(self.paths["alpha"], adopt=False)
         pull = holophyte.pr.pr_status.parse_pr_url(URL)
 
         def merge_pull_request(_project, _pull, pinned):
@@ -222,3 +224,21 @@ class MergeGateTests(MergeGateFixture):
 
         self.assertEqual(self.merged, [self.early] * 3)
         self.assertIsNotNone(self.hold_id())
+
+    def test_the_gate_reads_the_watch_mode_as_it_stands_at_the_merge(self):
+        target = Project.locate(self.paths["alpha"], adopt=False)
+        config = target.config_path
+        act = config.read_text()
+        config.write_text(act.replace('mode = "act"', 'mode = "dry_run"'))
+        self.assertEqual(target.config()["automations"]["main_watch"]["mode"],
+                         "dry_run")
+        config.write_text(act)
+        self.assertTrue(self.merge(self.early, target)[1])
+
+        target = Project.locate(self.paths["alpha"], adopt=False)
+        self.assertEqual(target.config()["automations"]["main_watch"]["mode"],
+                         "act")
+        config.write_text(act.replace('mode = "act"', 'mode = "dry_run"'))
+        self.assertFalse(self.merge(self.early, target)[1])
+
+        self.assertEqual(self.merged, [self.early])
