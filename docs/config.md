@@ -1702,7 +1702,7 @@ revision = 1
 
 `host.toml`'s `[automations] report_only` is a list of `OWNER/NAME`
 repositories, compared without case with each project's GitHub origin,
-never its `[serve] name`, whose automations never leave dry run. A rule
+never its `[serve] name`, whose firings the sweep reserves in dry run. A rule
 change that bumps the main watch's revision returns an `act` project to dry
 run until its `revision` names the new one.
 

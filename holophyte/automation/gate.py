@@ -26,7 +26,6 @@ def read_switch(home):
     return Switch(record["off"], record, None)
 
 
-
 def inhibitor(home, conn, automation):
     switch = read_switch(home)
     if switch.off:

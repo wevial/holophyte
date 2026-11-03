@@ -192,8 +192,8 @@ class ActTests(ActFixture):
 
         firing = self.only("alpha")
         self.assertEqual((firing.state, firing.mode), ("proposed", "dry_run"))
-        self.assertIn("rule revision 1 is not approved", firing.reason)
-        self.assertIn("revision = 0", firing.reason)
+        self.assertIn("rule revision 1 is not approved ([automations.main_watch]"
+                      " revision = 0)", firing.reason)
         self.assertEqual(self.act_github.writes(self.paths["alpha"]), [])
 
     def test_a_stop_after_the_lease_cancels_the_dispatch(self):
@@ -274,7 +274,7 @@ class PolicyTests(ActFixture):
         self.assertEqual({row.state for row in refused.values()}, {"refused"})
         self.assertIn("NEVER", refused["merge"].reason)
         self.assertIn("main_watch's list", refused["move_ready"].reason)
-        self.assertEqual(self.act_github.writes(self.paths["alpha"]), [])
+        self.assertEqual(self.act_github.calls(self.paths["alpha"]), [])
 
 
 if __name__ == "__main__":

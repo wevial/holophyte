@@ -1,4 +1,6 @@
 """The main watch: a red required check on main's head, one firing per workflow run."""
+import time
+
 import store.automations
 from holophyte.automation.automation_config import (
     ACT,
@@ -68,7 +70,8 @@ def observe(target, conn, project, now, watch, listed):
             conn, project, MAIN_WATCH, REVISION, SUBJECT, cause, mode=ACT,
             reason=f"rerunning the failed jobs of workflow run {run}"
                    f" ({names}) at {sha}",
-            detail=detail, now=now, lease_until=now + LEASE_MS)
+            detail=detail, now=now,
+            lease_until=int(time.time() * 1000) + LEASE_MS)
         if firing is not None:
             leased.append(firing)
     return leased

@@ -527,7 +527,7 @@ max_parallel = 2
 
 [automations]
 # Repositories, as OWNER/NAME of a project's GitHub origin compared without
-# case, whose automations stay in dry run whatever their mode.
+# case, whose firings the sweep reserves in dry run whatever their mode.
 report_only = []
 
 [[project]]

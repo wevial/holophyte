@@ -58,9 +58,16 @@ class Worker:
         print(f"[holo2] firing {self.firing.id} {state}: {reason}", flush=True)
         return 0
 
-    def settled_if_refused(self):
+    def settled_if_refused(self, attempt=None):
         with store.transaction(self.conn):
             found = standing_refusal(self.conn, self.target, self.firing)
+            detail = self.firing.detail
+            if found is None and attempt is not None \
+                    and attempt > detail["run_attempt"]:
+                found = (REFUSED, f"workflow run {detail['workflow_run_id']}"
+                                  f" is at attempt {attempt}, past attempt"
+                                  f" {detail['run_attempt']} seen at"
+                                  " detection; someone reran it already")
             if found is not None:
                 self.settle(*found)
             return found is not None
@@ -77,12 +84,7 @@ class Worker:
             attempt = workflow_run_attempt(self.target, pull, run)
         except InfraFailure as bad:
             return self.settle(REFUSED, f"GitHub refused the read: {bad}")
-        if attempt > recorded:
-            return self.settle(
-                REFUSED, f"workflow run {run} is at attempt {attempt}, past"
-                         f" attempt {recorded} seen at detection; someone"
-                         " reran it already")
-        if self.settled_if_refused():
+        if self.settled_if_refused(attempt):
             return 0
         try:
             rerun_failed_jobs(self.target, pull, run)
