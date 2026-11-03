@@ -167,6 +167,8 @@ class MergeGateFixture(HoldFixture):
 
 class MergeGateTests(MergeGateFixture):
     def test_a_candidate_without_the_red_commit_is_parked(self):
+        self.runs_at[self.early] = [("unit", "success")]
+
         run, parked = self.merge(self.early)
 
         self.assertTrue(parked)

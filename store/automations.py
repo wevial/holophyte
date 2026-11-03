@@ -222,13 +222,13 @@ def open_merge_hold(conn, project):
                                               *row[4:])
 
 
-
 def held_runs(conn, hold_id):
     return conn.execute(
         "SELECT COUNT(*) FROM runEvents AS e WHERE e.kind = 'main_hold_parked'"
         " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
         " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')",
         (hold_id,)).fetchone()[0]
+
 
 def end_merge_hold(conn, hold_id, reason, *, now):
     with store.transaction(conn):

@@ -364,6 +364,7 @@ class MergeHoldTests(PatrolFixture):
         self.assertIn(f"{sha[:12]} (unit)", line)
         self.assertIn("1 runs held", line)
 
+
 class AutomationStopTests(PatrolFixture):
     def run_holo(self, *argv):
         with contextlib.redirect_stdout(io.StringIO()):
