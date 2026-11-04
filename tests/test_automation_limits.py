@@ -17,7 +17,7 @@ import store.automations
 from holophyte.host.registry import HOST_FILE
 from tests.main_watch_fixture import automations, job, sweep_pass
 from tests.test_automation_act import S
-from tests.test_automation_results import ResultFixture
+from tests.test_automation_results import S2, ResultFixture
 from tests.test_sweep_host import MINUTE, T0
 
 HOUR = 60 * MINUTE
@@ -95,6 +95,18 @@ class RateTests(LimitFixture):
         firing = self.of_run("alpha", 7)
         self.assertEqual((firing.mode, firing.state), ("act", "refused"))
         self.assertEqual(firing.reason, "rate: 6 actions in the last hour")
+
+    def test_a_merge_hold_is_not_counted_as_a_rerun_action(self):
+        self.act("alpha")
+        for index in range(5):
+            self.seed("alpha", self.clock - (55 - 10 * index) * MINUTE,
+                      100 + index)
+
+        self.assertEqual(len(self.pass_at(self.clock)), 1)
+
+        self.assertEqual(self.of_run("alpha", 7).state, "leased")
+        self.assertEqual(self.conn("alpha").execute(
+            "SELECT COUNT(*) FROM mergeHolds").fetchone(), (1,))
 
     def test_a_promoted_proposal_counts_from_its_promotion(self):
         self.act("alpha")
@@ -295,9 +307,13 @@ class SelfPauseTests(LimitFixture):
         self.assertIn("403", first.reason)
         self.assertIsNone(self.open_pause("alpha"))
         self.red_run("alpha", 8)
+        self.head("alpha", S2, [job("unit", "failure", 11, 8)])
         self.refuse_posts("alpha", 8)
         self.assertEqual(self.worked_pass(), [0])
 
+        self.assertEqual(self.conn("alpha").execute(
+            "SELECT sha FROM mergeHolds WHERE endedAt IS NULL").fetchone(),
+            (S2,))
         second = self.of_run("alpha", 8)
         self.assertEqual(second.state, "refused")
         actor, note = self.open_pause("alpha")

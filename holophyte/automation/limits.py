@@ -5,6 +5,7 @@ import zoneinfo
 import store.automations
 from holophyte.automation.automation_config import ACT
 from holophyte.automation.main_watch import RED_AGAIN
+from holophyte.automation.policy import RERUN_FAILED_JOBS
 from holophyte.host.registry import HostError
 
 QUEUED, PER_HOUR, PER_DAY = 3, 6, 30
@@ -61,7 +62,8 @@ class HostReruns:
     def limit(self, project, automation, now):
         def limited(conn):
             counts = store.automations.act_counts(
-                conn, project, automation, hour_since=now - HOUR_MS,
+                conn, project, automation, RERUN_FAILED_JOBS,
+                hour_since=now - HOUR_MS,
                 day_since=midnight(now)[0])
             return limit_reason(counts, self.today(now), self.cap)
         return limited
@@ -70,7 +72,8 @@ class HostReruns:
 def act_firings(conn, project, automation):
     return [firing for firing in store.automations.firings(conn)
             if firing.projectId == project and firing.automation == automation
-            and firing.mode == ACT]
+            and firing.mode == ACT
+            and firing.detail.get("action") == RERUN_FAILED_JOBS]
 
 
 def same_failure_twice(fired, trigger, now):

@@ -116,15 +116,17 @@ class ActCounts(NamedTuple):
     today: int
 
 
-def act_counts(conn, project, automation, *, hour_since, day_since):
+def act_counts(conn, project, automation, action, *, hour_since, day_since):
     if not _has_table(conn, "automationFirings"):
         return ActCounts(0, 0, 0)
     row = conn.execute(
         "SELECT COALESCE(SUM(state = ?), 0), COALESCE(SUM(createdAt >= ?), 0),"
         " COALESCE(SUM(createdAt >= ?), 0) FROM automationFirings"
         " WHERE projectId = ? AND automation = ? AND mode = 'act'"
+        " AND json_extract(detail, '$.action') = ?"
         " AND json_extract(detail, '$.limit') IS NULL",
-        (LEASED, hour_since, day_since, project, automation)).fetchone()
+        (LEASED, hour_since, day_since, project, automation, action)
+    ).fetchone()
     return ActCounts(*row)
 
 

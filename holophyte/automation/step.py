@@ -197,13 +197,9 @@ def store_reruns(target, now):
     conn = store.read.open_readonly(target.store_path)
     try:
         project = project_of(conn, target)
-        since = midnight(now)[0]
-        return 0 if project is None else sum(
-            1 for firing in store.automations.firings(conn)
-            if firing.projectId == project and firing.mode == ACT
-            and firing.automation == MAIN_WATCH and firing.createdAt >= since
-            and firing.detail.get("action") == RERUN_FAILED_JOBS
-            and "limit" not in firing.detail)
+        return 0 if project is None else store.automations.act_counts(
+            conn, project, MAIN_WATCH, RERUN_FAILED_JOBS, hour_since=now,
+            day_since=midnight(now)[0]).today
     finally:
         conn.close()
 
