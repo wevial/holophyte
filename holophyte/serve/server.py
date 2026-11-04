@@ -67,6 +67,7 @@ from holophyte.serve.serve_merge import (
     run_merge,
 )
 from holophyte.serve.serve_merge_queue import MERGE_QUEUE_PATH, merge_queue
+from holophyte.serve.serve_queue_actions import QUEUE_ACTIONS
 from holophyte.serve.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
@@ -432,8 +433,9 @@ class StatusHandler(BaseHTTPRequestHandler):
             return stop(project, body)
         if action == SCOUT_MESSAGE_ACTION:
             return message_action(project, body)
-        if action in LEVERS:
-            return LEVERS[action](project, body)
+        handler = LEVERS.get(action) or QUEUE_ACTIONS.get(action)
+        if handler is not None:
+            return handler(project, body)
         return unit_action(project, action, scope.unit_name)
 
     def act_failed(self, scope, action, failure):

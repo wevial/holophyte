@@ -106,6 +106,9 @@ BASELINE['INTERVENTION_ACTIONS'] += ('approve_story', 'decide')
 # A maintainer's steer of a ticket with no live run.
 BASELINE['INTERVENTION_ACTIONS'] += ('steer',)
 
+# A merge queue entry jumped to the front, or a hand pull request removed.
+BASELINE['INTERVENTION_ACTIONS'] += ('queue_jump', 'queue_remove')
+
 # KO-653: a pull request a person merges while the run watches it in the gate.
 BASELINE['RUN_PHASE_TRANSITIONS']['merge_gate'] |= {'done'}
 

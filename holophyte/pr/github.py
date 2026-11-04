@@ -630,8 +630,18 @@ def _gh_output(target, host, method, path, payload, accept=JSON, flags=()):
             break
         SLEEP(wait)
         deadline.admit(f"GitHub's {method} {path} request")
+    if path == "graphql" and _graphql_errors(r.stdout):
+        return r.stdout
     detail = " ".join((r.stderr or r.stdout).split())[-500:]
     raise InfraFailure(f"{GH} api {path} failed: {detail or 'no output'}")
+
+
+def _graphql_errors(stdout):
+    try:
+        answer = json.loads(stdout)
+    except ValueError:
+        return False
+    return isinstance(answer, dict) and bool(answer.get("errors"))
 
 
 def _gh_run(target, argv, body, path):

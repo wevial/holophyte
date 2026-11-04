@@ -42,8 +42,9 @@ results cite: the row the action itself inserted, never another
 writer's row of the same name (`restart_supervisor`, `launch_loop`,
 `requeue`, `operator_note` for `send-back`, `approve` for `merge`,
 `babysit` for `ask`, `hold`,
-`release_hold`, `pause`, `resume`, `abort` or `abort_close`, and `steer`
-or `operator_note` for `steer`). It is
+`release_hold`, `pause`, `resume`, `abort` or `abort_close`, `steer`
+or `operator_note` for `steer`, `queue_jump` for `queue-jump` and
+`queue_remove` for `queue-remove`). It is
 null when the action wrote none: a refusal, `ok: false` before the
 write, or a `pause` or `abort` of a run whose request is already
 pending. `scout` writes no interventions row, so its `recorded` is always
@@ -256,6 +257,44 @@ project's own token is 401. A `run` that is not a positive integer is
 400, and so is a `bypass_review` that is not a boolean, before GitHub is
 read; a project with no store is 503. `--approve` and `holo approve` keep
 releasing without reading GitHub.
+
+## `POST /actions/queue-jump` and `POST /actions/queue-remove`
+
+Body: a JSON object with `pr` (required, the pull request's number),
+`note` and `author` (both optional). They are the Merge queue page's "Jump
+to front" and "Remove from queue". `queue-jump` sends GitHub's
+`enqueuePullRequest` with `jump: true` and the pull request's head commit
+as `expectedHeadOid`, for a pull request at position 2 or later;
+`queue-remove` sends `dequeuePullRequest` for a pull request no store run
+carries. Each reads the queue afresh, uncached, as
+[`GET /merge-queue`](http.md#get-merge-queue) reads it, to find the entry,
+its position, its head commit and the store run carrying it.
+
+Refused before anything is written, `ok: false` and `recorded: null`, with
+`reason`: `not_queued`, the pull request is not in the queue; `at_front`,
+a jump of the entry at position 1; `factory_owned`, a remove of a pull
+request a store run carries, `detail` naming the run and its ticket and
+saying to pause or abort the run instead (its run would read the removal
+as an ejection and start a fix round); `unread`, the queue read failed,
+`detail` its error; `unrecorded`, a store with no project row to
+record on. Otherwise the action is recorded first: a `queue_jump`
+or `queue_remove` interventions row on the run carrying the pull request,
+else on the project, its note `AUTHOR via the console: jump #N` or
+`remove #N`, then `; NOTE` when the body carries one; `author` defaults to
+`maintainer`. Then GitHub is called:
+
+```json
+{"action": "queue-jump", "ok": true, "pr": 52, "recorded": 91,
+ "detail": "#52 jumped to the front of the merge queue"}
+```
+
+Permission to jump is not checked first: GitHub decides whether the
+host's user may bypass the queue's ruleset. Its GraphQL refusal is
+`ok: false` with `reason` `refused`, `detail` GitHub's message verbatim
+and `recorded` the row already written; another failure to reach GitHub is
+`reason` `failed`. A success drops the project's cached `GET /merge-queue`
+answer, so the next read asks GitHub. A `pr` that is not a positive
+integer is 400 and a project with no store 503, before GitHub is read.
 
 ## `POST /actions/ask`
 

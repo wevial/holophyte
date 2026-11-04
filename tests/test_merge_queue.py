@@ -89,7 +89,8 @@ class MergeQueueTests(MergeModeFixture):
 
         ((_, pushed),) = self.pushed()
         enqueues = [v for kind, v in self.api_calls() if kind == "enqueue"]
-        self.assertEqual(enqueues, [{"pull": "PR_1", "sha": pushed}])
+        self.assertEqual(enqueues, [{"pull": "PR_1", "sha": pushed,
+                                     "jump": False}])
         self.assertEqual(self.rest_merges(), [])
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
                          [("merged", QUEUE_SHA)])
