@@ -125,8 +125,6 @@ def status(args, target, zone_name):
 
 
 def audit(args, target, zone_name):
-    from pathlib import Path
-
     from holophyte.automation.audit import read
     from holophyte.config.project import Project
     firing_id = getattr(args, "arg0", None)
@@ -135,7 +133,7 @@ def audit(args, target, zone_name):
     limit = args.limit[-1] if getattr(args, "limit", None) else None
     if limit is not None and not (limit.isdigit() and int(limit) > 0):
         args.leaf.error(f"--limit takes a count of 1 or more, not {limit!r}")
-    return read(Project.locate(Path(target), adopt=False), args.command.mode,
+    return read(Project.locate(target, adopt=False), args.command.mode,
                 None if firing_id is None else int(firing_id),
                 None if limit is None else int(limit),
                 args.json, zone_name)

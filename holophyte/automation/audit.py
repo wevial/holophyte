@@ -121,8 +121,7 @@ def missing(firing_id, target):
 
 
 def read(target, mode, firing_id=None, limit=None, as_json=False,
-         zone_name=None, out=None):
-    out = sys.stdout if out is None else out
+         zone_name=None):
     body = {"firings": [], "now_ms": int(time() * 1000)}
     if target.store_path.exists():
         conn = store.read.open_readonly(target.store_path)
@@ -139,7 +138,7 @@ def read(target, mode, firing_id=None, limit=None, as_json=False,
     text = (json.dumps(body) if as_json
             else "\n".join(render(mode, body, zone_name)))
     if text:
-        print(text, file=out)
+        print(text)
     return 0
 
 
