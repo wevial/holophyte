@@ -11,14 +11,16 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import store
 import store.automations
 import store.schema
 from holophyte.automation import main_watch
 from holophyte.automation.automation_config import main_watch_config
-from holophyte.pr import github
+from holophyte.pr import github, pr_activity
 from tests.main_watch_fixture import job
+from tests.test_main_watch import S2
 from tests.test_merge_hold import URL, MergeGateFixture
 
 HERE = Path(__file__).resolve().parent
@@ -132,6 +134,46 @@ class ReleaseTests(ReleaseFixture):
             {"ticket": self.identifier(ticket_c),
              "reason": f"a person acted on run {run_c} after the hold"
                        " parked it"}])
+
+    def test_a_run_parked_under_a_superseded_hold_is_released(self):
+        run, ticket = self.parked()
+        first = self.hold_id()
+        self.red_at(S2)
+        self.recorded_pass()
+        self.assertNotEqual(self.hold_id(), first)
+        self.green()
+
+        self.recorded_pass()
+
+        firing = self.release_firing()
+        self.assertEqual(firing.detail["released"], [self.identifier(ticket)])
+        self.assertEqual(self.interventions(run),
+                         [("babysit", "automation", "supervisor", firing.id)])
+
+    def test_a_run_parked_again_after_the_hold_is_left_alone(self):
+        run, ticket = self.parked()
+        conn = self.conn("alpha")
+        store.record_event(conn, run, "pr_empty_wakes", "2")
+        pr_activity.break_empty_wakes(conn, SimpleNamespace(id=ticket,
+                                                            runId=run))
+        self.green()
+
+        self.recorded_pass()
+
+        self.assertEqual(self.interventions(run), [])
+        self.assertEqual(self.release_firing().detail["left"], [
+            {"ticket": self.identifier(ticket),
+             "reason": f"run {run} was parked again after the hold parked"
+                       " it"}])
+
+    def test_a_released_run_carries_no_babysit_note(self):
+        run, _ = self.parked()
+        self.green()
+
+        self.recorded_pass()
+
+        self.assertEqual(self.released(), 1)
+        self.assertEqual(store.read.babysit_note(self.conn("alpha"), run), "")
 
     def test_a_pending_or_red_head_keeps_the_hold(self):
         hold = self.hold_id()

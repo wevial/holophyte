@@ -180,6 +180,8 @@ def left_reason(run):
                 " the hold parked")
     if run.touched:
         return f"a person acted on run {run.runId} after the hold parked it"
+    if run.reparked:
+        return f"run {run.runId} was parked again after the hold parked it"
     return None
 
 
