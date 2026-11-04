@@ -334,7 +334,9 @@ def render(args, code, text, tail, timezone):
         show(args, f"holo {' '.join(args.command.words)}", code == 0, body)
     elif args.command.mode in AUTOMATION_READS:
         from holophyte.automation.audit import render as audit_lines
-        print("\n".join(audit_lines(args.command.mode, body, timezone)))
+        lines = audit_lines(args.command.mode, body, timezone)
+        if lines:
+            print("\n".join(lines))
     elif args.command.records is not None:
         detail = body.get("detail", "")
         said = tail.removeprefix(PREFIX) == detail.removeprefix(PREFIX)

@@ -165,13 +165,13 @@ def _firing(row):
     return Firing(*row[:10], json.loads(row[10]), *row[11:])
 
 
-def firings(conn):
+def firings(conn, limit=-1):
     """None read from a store an older build last wrote, which lacks the table."""
     if not _has_table(conn, "automationFirings"):
         return []
     rows = conn.execute(
         f"SELECT {_selected(conn)} FROM automationFirings"
-        " ORDER BY createdAt DESC, id DESC").fetchall()
+        " ORDER BY createdAt DESC, id DESC LIMIT ?", (limit,)).fetchall()
     return [_firing(row) for row in rows]
 
 
@@ -189,7 +189,14 @@ def firing(conn, firing_id):
     return None if row is None else _firing(row)
 
 
+def _has_column(conn, table, name):
+    return any(row[1] == name for row in
+               conn.execute(f"PRAGMA table_info({table})"))
+
+
 def firing_interventions(conn, firing_id):
+    if not _has_column(conn, "interventions", "firingId"):
+        return []
     rows = conn.execute(
         'SELECT i.id, i.runId, t.linearIdentifier, i."action", i.source,'
         " i.actor, i.note, i.at FROM interventions AS i"
@@ -206,8 +213,9 @@ def firing_counts(conn, since_ms):
     states.update(conn.execute(
         "SELECT state, COUNT(*) FROM automationFirings WHERE createdAt >= ?"
         " GROUP BY state", (since_ms,)).fetchall())
-    holds = conn.execute("SELECT COUNT(*) FROM mergeHolds WHERE heldAt >= ?",
-                         (since_ms,)).fetchone()[0]
+    holds = conn.execute(
+        "SELECT COUNT(*) FROM mergeHolds WHERE heldAt >= ?",
+        (since_ms,)).fetchone()[0] if _has_table(conn, "mergeHolds") else 0
     released = conn.execute(
         "SELECT COUNT(*) FROM interventions WHERE source = 'automation'"
         " AND \"action\" = 'babysit' AND at >= ?", (since_ms,)).fetchone()[0]
@@ -315,6 +323,8 @@ def open_merge_hold(conn, project):
 
 
 def firing_holds(conn, firing):
+    if not _has_table(conn, "mergeHolds"):
+        return []
     rows = conn.execute(
         f"SELECT {', '.join(MergeHold._fields)} FROM mergeHolds"
         " WHERE firingId = ? OR id = ? ORDER BY id",

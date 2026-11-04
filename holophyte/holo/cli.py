@@ -132,9 +132,12 @@ def audit(args, target, zone_name):
     firing_id = getattr(args, "arg0", None)
     if firing_id is not None and not firing_id.isdigit():
         args.leaf.error(f"ID is a firing id, not {firing_id!r}")
-    limit = int(args.limit[-1]) if getattr(args, "limit", None) else None
+    limit = args.limit[-1] if getattr(args, "limit", None) else None
+    if limit is not None and not (limit.isdigit() and int(limit) > 0):
+        args.leaf.error(f"--limit takes a count of 1 or more, not {limit!r}")
     return read(Project.locate(Path(target), adopt=False), args.command.mode,
-                None if firing_id is None else int(firing_id), limit,
+                None if firing_id is None else int(firing_id),
+                None if limit is None else int(limit),
                 args.json, zone_name)
 
 

@@ -42,7 +42,7 @@ def intervention_json(row):
 
 def list_body(conn, limit, now):
     return {"firings": [firing_json(firing) for firing in
-                        store.automations.firings(conn)[:limit]],
+                        store.automations.firings(conn, limit)],
             "now_ms": now}
 
 
