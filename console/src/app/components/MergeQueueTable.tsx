@@ -6,10 +6,13 @@ import { checkLook, configurationWords, entryLine, isBuilding, mergesIn, runWord
 import { keepScope } from "../scope";
 import { useTableWidth } from "../viewport";
 import { LaneHead } from "./LaneHead";
+import { JumpToFront, RemoveFromQueue, type QueueDaemon } from "./QueueActions";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 const GRID = "grid grid-cols-[44px_64px_minmax(0,1fr)_150px_104px_64px_56px] items-start gap-x-3";
+const ACTION_GRID = "grid grid-cols-[44px_64px_minmax(0,1fr)_150px_104px_64px_56px_124px] items-start gap-x-3";
+const gridFor = (daemon: QueueDaemon) => (daemon.actions ? ACTION_GRID : GRID);
 const NARROW_GRID = "grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
@@ -88,7 +91,7 @@ function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; no
   );
 }
 
-function EntryDetail({ entry, now, id }: { entry: MergeQueueEntry; now: number; id: string }) {
+function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: number; id: string; daemon: QueueDaemon }) {
   const { required, other } = splitChecks(entry.checks.runs);
   const line = entryLine(entry, now);
   return (
@@ -100,14 +103,15 @@ function EntryDetail({ entry, now, id }: { entry: MergeQueueEntry; now: number; 
           <CheckColumn title="Other" part={other} now={now} />
         </div>
       )}
-      <div>
+      <div className="flex flex-wrap gap-2.5">
         <a href={entry.pr.url} target="_blank" rel="noreferrer" className="btn" data-variant="quiet">Open on GitHub</a>
+        {daemon.actions && entry.run == null && <RemoveFromQueue entry={entry} daemon={daemon} />}
       </div>
     </div>
   );
 }
 
-function EntryRow({ entry, project, now, wide }: { entry: MergeQueueEntry; project: string; now: number; wide: boolean }) {
+function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; entry: MergeQueueEntry; project: string; wide: boolean; daemon: QueueDaemon }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const title = entry.pr.title ?? `#${entry.pr.number}`;
@@ -129,10 +133,11 @@ function EntryRow({ entry, project, now, wide }: { entry: MergeQueueEntry; proje
   );
   const titleText = <span data-entry-title className="font-read text-[15px] font-medium leading-[1.35] text-ink"><TitleText>{title}</TitleText></span>;
   const carrier = <Carrier project={project} run={entry.run} author={entry.pr.author} />;
+  const jump = daemon.actions && entry.position > 1 ? <JumpToFront queue={queue} entry={entry} daemon={daemon} /> : null;
   return (
     <li data-entry={entry.position} data-open={open || undefined} className="border-b border-rule-2 last:border-b-0 data-open:bg-row-selected data-open:shadow-[inset_2px_0_0_var(--act)]">
       {wide ? (
-        <div data-row className={`${GRID} px-3 py-3`}>
+        <div data-row className={`${gridFor(daemon)} px-3 py-3`}>
           {toggle}
           <span className="pt-[3px] font-mono text-[13px]"><PrNumber pr={entry.pr} /></span>
           <span className="flex min-w-0 flex-col gap-1">
@@ -143,6 +148,7 @@ function EntryRow({ entry, project, now, wide }: { entry: MergeQueueEntry; proje
           <span className={`${MONO} pt-[2px]`}><ChecksDone entry={entry} /></span>
           <span className={`${MONO} pt-[2px] text-ink-2`}>{mergesIn(entry.estimated_s)}</span>
           <span className={`${MONO} pt-[2px]`}>{added}</span>
+          {daemon.actions && <span className="justify-self-end">{jump}</span>}
         </div>
       ) : (
         <div data-row className={`${NARROW_GRID} px-3 py-3`}>
@@ -160,30 +166,31 @@ function EntryRow({ entry, project, now, wide }: { entry: MergeQueueEntry; proje
               {DOT}
               <span className="whitespace-nowrap">added {added}</span>
             </span>
+            {jump && <span className="pt-1">{jump}</span>}
           </span>
           <EntryState entry={entry} />
         </div>
       )}
-      {open && <EntryDetail entry={entry} now={now} id={detailId} />}
+      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} />}
     </li>
   );
 }
 
 /** One queue's settings tab over its entries, a row each that opens onto its checks. */
-export function QueueTable({ queue, project }: { queue: MergeQueue; project: string }) {
+export function QueueTable({ queue, project, daemon }: { queue: MergeQueue; project: string; daemon: QueueDaemon }) {
   const wide = useTableWidth();
   return (
     <div data-queue-table className="min-w-0">
       <LaneHead name={queue.branch} held={false} meta={configurationWords(queue.configuration)} />
       <div className="border border-rule bg-paper">
         {wide && (
-          <div data-queue-heads className={`${GRID} border-b border-rule px-3 pt-3 pb-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
+          <div data-queue-heads className={`${gridFor(daemon)} border-b border-rule px-3 pt-3 pb-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
             {HEADS.map((head) => <span key={head}>{head}</span>)}
           </div>
         )}
         <ol aria-label={`${project} merge queue`} className="m-0 list-none p-0">
           {queue.entries.map((entry) => (
-            <EntryRow key={entry.pr.number} entry={entry} project={project} now={queue.now} wide={wide} />
+            <EntryRow key={entry.pr.number} queue={queue} entry={entry} project={project} wide={wide} daemon={daemon} />
           ))}
         </ol>
         {queue.entries.length === 0 && <p className="m-0 px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">The queue is empty.</p>}
