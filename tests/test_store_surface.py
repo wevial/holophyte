@@ -459,10 +459,13 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-618: the sweep replays or settles
                                  # an expired lease, and records a
                                  # confirmed rerun's result.
+                                 # HOLO-619: an automation's act counts,
+                                 # read inside a firing's reservation.
                                  # HOLO-622: `holo automation show`'s
                                  # holds and interventions, `holo report`'s
                                  # counts, and settling an unknown firing.
-                                 (store.automations, ["automation_pause",
+                                 (store.automations, ["act_counts",
+                                                      "automation_pause",
                                                       "end_merge_hold",
                                                       "firing",
                                                       "firing_counts",

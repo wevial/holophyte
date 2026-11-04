@@ -7,12 +7,14 @@ import store
 from .enums import FiringMode, FiringState, PauseActor, check_clause
 
 PROPOSED = FiringState.PROPOSED.value
+REFUSED = FiringState.REFUSED.value
 LEASED = FiringState.LEASED.value
 CONFIRMED = FiringState.CONFIRMED.value
 UNKNOWN = FiringState.UNKNOWN.value
 CANCELED = FiringState.CANCELED.value
-SETTLED = frozenset((FiringState.REFUSED.value, CONFIRMED, UNKNOWN, CANCELED))
+SETTLED = frozenset((REFUSED, CONFIRMED, UNKNOWN, CANCELED))
 OPERATOR = PauseActor.OPERATOR.value
+AUTOMATION = PauseActor.AUTOMATION.value
 
 FIRINGS_DDL = f"""
 CREATE TABLE IF NOT EXISTS automationFirings (
@@ -133,24 +135,50 @@ def _firing_key(automation, revision, project, subject, cause):
     return ":".join((automation, str(revision), str(project), subject, cause))
 
 
+class ActCounts(NamedTuple):
+    queued: int
+    hour: int
+    today: int
+
+
+def act_counts(conn, project, automation, action, *, hour_since, day_since):
+    if not _has_table(conn, "automationFirings"):
+        return ActCounts(0, 0, 0)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(state = ?), 0), COALESCE(SUM(createdAt >= ?), 0),"
+        " COALESCE(SUM(createdAt >= ?), 0) FROM automationFirings"
+        " WHERE projectId = ? AND automation = ? AND mode = 'act'"
+        " AND json_extract(detail, '$.action') = ?"
+        " AND json_extract(detail, '$.limit') IS NULL",
+        (LEASED, hour_since, day_since, project, automation, action)
+    ).fetchone()
+    return ActCounts(*row)
+
+
 def reserve_firing(conn, project, automation, revision, subject, cause, *,
-                   mode, reason, detail, now, lease_until=None):
+                   mode, reason, detail, now, lease_until=None, limit=None):
     """The id of a new row, or of a proposal on the key a lease takes over."""
     key = _firing_key(automation, revision, project, subject, cause)
-    state = PROPOSED if lease_until is None else LEASED
+    state, settled = PROPOSED if lease_until is None else LEASED, None
     with store.transaction(conn):
+        limited = None if state == PROPOSED or limit is None else limit(conn)
+        if limited is not None:
+            state, reason, settled, lease_until = REFUSED, limited, now, None
+            detail = {**detail, "limit": limited}
         row = conn.execute(
             "INSERT INTO automationFirings (projectId, automation, revision,"
             " subject, cause, firingKey, mode, state, reason, detail,"
-            " createdAt, leaseUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " createdAt, settledAt, leaseUntil)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (firingKey) DO UPDATE SET mode = excluded.mode,"
             " state = excluded.state, reason = excluded.reason,"
-            " detail = excluded.detail, leaseUntil = excluded.leaseUntil"
-            " WHERE automationFirings.state = ? AND excluded.state = ?"
+            " detail = excluded.detail, createdAt = excluded.createdAt,"
+            " settledAt = excluded.settledAt, leaseUntil = excluded.leaseUntil"
+            " WHERE automationFirings.state = ? AND excluded.state IN (?, ?)"
             " RETURNING id",
             (project, automation, revision, subject, cause, key, mode,
-             state, reason, json.dumps(detail, sort_keys=True), now,
-             lease_until, PROPOSED, LEASED)).fetchone()
+             state, reason, json.dumps(detail, sort_keys=True), now, settled,
+             lease_until, PROPOSED, LEASED, REFUSED)).fetchone()
         return None if row is None else row[0]
 
 
@@ -269,13 +297,15 @@ def replay_firing(conn, firing_id, *, lease_until, now):
         return cursor.rowcount == 1
 
 
-def record_result(conn, firing_id, result, reason, *, now):
+def record_result(conn, firing_id, result, reason, checks, *, now):
     with store.transaction(conn):
         cursor = conn.execute(
             "UPDATE automationFirings SET reason = ?, detail = json_set("
-            "detail, '$.result', ?, '$.result_at', ?) WHERE id = ?"
-            " AND state = ? AND json_extract(detail, '$.result') IS NULL",
-            (reason, result, now, firing_id, CONFIRMED))
+            "detail, '$.result', ?, '$.result_at', ?, '$.result_checks',"
+            " json(?)) WHERE id = ? AND state = ?"
+            " AND json_extract(detail, '$.result') IS NULL",
+            (reason, result, now, json.dumps(sorted(checks)), firing_id,
+             CONFIRMED))
         return cursor.rowcount == 1
 
 
