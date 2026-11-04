@@ -649,7 +649,7 @@ const queueOf = (first: MergeQueueEntry): MergeQueue => ({
 });
 const nextLines = () => [...section().querySelectorAll<HTMLElement>("[data-next-in-queue]")];
 
-test("with nothing waiting on you, a project's lane shows its queue's position 1 alone, linking to its Merge queue page", async () => {
+test("with nothing waiting on you, a project's lane shows its queue's position 1 alone", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
   const relos = lane("relos");
   expect(relos.querySelector("[data-lane-head]")!.textContent).toContain("relos");
@@ -659,10 +659,61 @@ test("with nothing waiting on you, a project's lane shows its queue's position 1
   const text = line.textContent!;
   for (const words of ["Next in queue", "#2547", "[Dependency Update]: Update Vite to 8.3.5", "checks running", "5/13 done", "merges ~10m"]) expect(text).toContain(words);
   expect(within(line).getByRole("link", { name: "#2547" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
-  expect(within(line).getByRole("link", { name: /Next in queue/ }).getAttribute("href")).toEndWith("#/merge-queue?project=relos");
   expect(section().textContent).not.toMatch(/#2549|#2550|#2552/);
   expect(section().textContent).not.toContain("No pull request waits on you.");
 });
+
+const check = (name: string, required: boolean) => ({
+  name, workflow: "ci", status: "completed", conclusion: "success", started_ms: NOW - 3 * MINUTE, completed_ms: NOW - MINUTE,
+  url: `https://github.com/example/relos/actions/runs/7/job/${name}`, required,
+});
+const checkedVite = { ...vite, checks: { done: 2, total: 2, failed: 0, runs: [check("unit", true), check("preview", false)] } };
+const nextButton = (line: HTMLElement) => within(line).getByRole("button", { name: /Next in queue/ });
+const clickIn = (target: HTMLElement) => act(async () => {
+  fireEvent.click(target);
+  await settle();
+});
+
+test("clicking the next-in-queue title opens its checks, Open on GitHub and a Merge queue link under it, and a second click closes it", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
+  const [line] = nextLines() as [HTMLElement];
+  const button = nextButton(line);
+  expect(line.querySelector("[data-entry-detail]")).toBeNull();
+  await clickIn(button);
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+  expect(line.hasAttribute("data-open")).toBe(true);
+  const detail = line.querySelector<HTMLElement>("[data-entry-detail]")!;
+  expect(button.getAttribute("aria-controls")).toBe(detail.id);
+  expect(within(within(detail).getByRole("region", { name: "Required" })).getByRole("link", { name: "unit" })).toBeTruthy();
+  expect(within(within(detail).getByRole("region", { name: "Other" })).getByRole("link", { name: "preview" })).toBeTruthy();
+  expect(within(detail).getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
+  expect(within(detail).getByRole("link", { name: "Merge queue" }).getAttribute("href")).toEndWith("#/merge-queue?project=relos");
+  await clickIn(button);
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(line.hasAttribute("data-open")).toBe(false);
+  expect(line.querySelector("[data-entry-detail]")).toBeNull();
+});
+
+test("the next-in-queue PR number links to GitHub without opening the line", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
+  const [line] = nextLines() as [HTMLElement];
+  const link = within(line).getByRole("link", { name: "#2547" });
+  await clickIn(link);
+  expect(link.getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
+  expect(nextButton(line).getAttribute("aria-expanded")).toBe("false");
+  expect(line.hasAttribute("data-open")).toBe(false);
+  expect(line.querySelector("[data-entry-detail]")).toBeNull();
+});
+
+for (const actions of [true, false]) {
+  test(`an open next-in-queue line with no store run ${actions ? "offers" : "has no"} Remove from queue with actions ${actions ? "on" : "off"}`, async () => {
+    await mount({ items: [], actions, projects: ["relos", "writer"], queue: queueOf(checkedVite) });
+    const [line] = nextLines() as [HTMLElement];
+    await clickIn(nextButton(line));
+    const detail = line.querySelector<HTMLElement>("[data-entry-detail]")!;
+    expect(within(detail).queryByRole("button", { name: "Remove from queue" }) != null).toBe(actions);
+  });
+}
 
 test("position 1 with no merge group reads queued, not checks running", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5")) });

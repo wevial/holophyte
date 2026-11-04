@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { MergeQueue, MergeQueueEntry, MergeQueueLeft, MergeQueuePull, MergeQueueRun } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
@@ -18,6 +18,7 @@ const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 const HEADS = ["#", "PR", "Title", "State", "Checks", "Merges", "Added"];
 const DOT = <span className="text-ink-3">{" · "}</span>;
+const ENTRY_PAD = "pr-5 pl-[calc(12px+44px+12px+64px+12px)] max-[1099px]:pl-[calc(12px+28px+12px)] max-[720px]:px-3";
 
 function PrNumber({ pr }: { pr: MergeQueuePull }) {
   return (
@@ -91,11 +92,11 @@ function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; no
   );
 }
 
-function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: number; id: string; daemon: QueueDaemon }) {
+export function EntryDetail({ entry, now, id, daemon, pad, links }: { entry: MergeQueueEntry; now: number; id: string; daemon: QueueDaemon; pad: string; links?: ReactNode }) {
   const { required, other } = splitChecks(entry.checks.runs);
   const line = entryLine(entry, now);
   return (
-    <div id={id} data-entry-detail className="flex flex-col gap-4 border-t border-dashed border-rule-2 py-4 pr-5 pl-[calc(12px+44px+12px+64px+12px)] max-[1099px]:pl-[calc(12px+28px+12px)] max-[720px]:px-3">
+    <div id={id} data-entry-detail className={`flex flex-col gap-4 border-t border-dashed border-rule-2 py-4 ${pad}`}>
       {line && <p className={MONO}>{line}</p>}
       {entry.checks.runs.length > 0 && (
         <div className="grid grid-cols-2 gap-x-10 gap-y-5 max-[720px]:grid-cols-1">
@@ -105,6 +106,7 @@ function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: 
       )}
       <div className="flex flex-wrap gap-2.5">
         <a href={entry.pr.url} target="_blank" rel="noreferrer" className="btn" data-variant="quiet">Open on GitHub</a>
+        {links}
         {daemon.actions && entry.run == null && <RemoveFromQueue entry={entry} daemon={daemon} />}
       </div>
     </div>
@@ -171,7 +173,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
           <EntryState entry={entry} />
         </div>
       )}
-      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} />}
+      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} pad={ENTRY_PAD} />}
     </li>
   );
 }

@@ -13,6 +13,7 @@ import { mergesIn } from "../mergeQueue";
 import { prWait, rowFacts } from "../prRow";
 import { stateOf } from "../state";
 import { LaneHead } from "./LaneHead";
+import { EntryDetail } from "./MergeQueueTable";
 import { PrRowDetail } from "./PrRowDetail";
 import { TONE_TEXT } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
@@ -22,7 +23,8 @@ type Host = HostRecord<ContractBodies>;
 const ROW_GRID =
   "grid min-h-[66px] grid-cols-[64px_minmax(0,1fr)_auto] items-start gap-x-5 gap-y-1.5 px-5 py-3.5 font-mono text-[12px] leading-[1.3] text-ink-3 transition-colors duration-(--motion-colour) hover:bg-paper-2 group-data-open:hover:bg-transparent max-[720px]:grid-cols-[minmax(0,1fr)]";
 const OPEN_ROW = "data-open:bg-act-wash data-open:shadow-[inset_2px_0_0_var(--act)]";
-const DETAIL = "border-t border-dashed border-rule-2 py-4 pl-[calc(20px+64px+20px)] pr-5 max-[720px]:px-5";
+const DETAIL_PAD = "pl-[calc(20px+64px+20px)] pr-5 max-[720px]:px-5";
+const DETAIL = `border-t border-dashed border-rule-2 py-4 ${DETAIL_PAD}`;
 
 interface PrRow {
   item: AttentionItem;
@@ -35,6 +37,7 @@ interface PrLaneGroup {
   name: string;
   rows: PrRow[];
   next: MergeQueueEntry | null;
+  queueNow: number;
   queued: number;
 }
 
@@ -56,7 +59,7 @@ export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number,
       });
     const next = entries.find((entry) => entry.position === 1) ?? null;
     if (rows.length === 0 && next == null) return [];
-    return [{ host, name: projectName(status.project), rows: orderByAge(rows, (row) => row.ageMs), next, queued: entries.length }];
+    return [{ host, name: projectName(status.project), rows: orderByAge(rows, (row) => row.ageMs), next, queueNow: queue?.now ?? 0, queued: entries.length }];
   });
 }
 
@@ -133,25 +136,35 @@ function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness
   );
 }
 
-function NextInQueue({ entry, project }: { entry: MergeQueueEntry; project: string }) {
+function NextInQueue({ entry, now, host, project }: { entry: MergeQueueEntry; now: number; host: Host; project: string }) {
+  const [open, setOpen] = useState(false);
+  const detailId = useId();
   const building = entry.group_sha != null;
+  const daemon = { project, base: host.base, actions: host.status?.actions === true };
   return (
-    <li data-next-in-queue className="border-rule-2 not-first:border-t">
+    <li data-next-in-queue data-open={open || undefined} className={`group border-rule-2 ${OPEN_ROW} not-first:border-t`}>
       <div className={ROW_GRID}>
         <a
           href={entry.pr.url}
           target="_blank"
           rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
           className="justify-self-start whitespace-nowrap border-b border-rule pt-[3px] text-ink hover:border-ink hover:text-ink"
         >
           #{entry.pr.number}
         </a>
-        <Link to="/merge-queue" search={{ project }} className="flex min-w-0 flex-col gap-1 text-left">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={detailId}
+          onClick={() => setOpen(!open)}
+          className="flex min-h-11 min-w-0 flex-col gap-1 text-left"
+        >
           <span className="text-ink-3">Next in queue</span>
           <span className="font-read text-[15px] font-medium leading-[1.35] [overflow-wrap:anywhere] text-ink">
             <TitleText>{entry.pr.title ?? ""}</TitleText>
           </span>
-        </Link>
+        </button>
         <span className="flex flex-col items-end gap-0.5 text-right max-[720px]:flex-row max-[720px]:flex-wrap max-[720px]:items-baseline max-[720px]:gap-x-3 max-[720px]:text-left">
           <span data-next-state className={`font-sans text-[14px] font-semibold leading-[1.3] ${building ? TONE_TEXT.wait : "text-ink-2"}`}>
             {building ? "checks running" : "queued"}
@@ -161,6 +174,16 @@ function NextInQueue({ entry, project }: { entry: MergeQueueEntry; project: stri
           </span>
         </span>
       </div>
+      {open && (
+        <EntryDetail
+          entry={entry}
+          now={now}
+          id={detailId}
+          daemon={daemon}
+          pad={DETAIL_PAD}
+          links={<Link to="/merge-queue" search={{ project }} className="btn" data-variant="quiet">Merge queue</Link>}
+        />
+      )}
     </li>
   );
 }
@@ -177,7 +200,7 @@ function PrLane({ group, readiness }: { group: PrLaneGroup; readiness: Readiness
         {group.rows.map((row, index) => (
           <PrLaneRow key={entryKey({ item: row.item }, index)} row={row} host={group.host} readiness={readiness} />
         ))}
-        {group.next && <NextInQueue entry={group.next} project={group.name} />}
+        {group.next && <NextInQueue entry={group.next} now={group.queueNow} host={group.host} project={group.name} />}
       </ul>
     </div>
   );
