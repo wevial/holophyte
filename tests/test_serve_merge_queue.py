@@ -298,16 +298,32 @@ class MergeQueueTests(MergeQueueRouteCase):
         self.assertEqual((row["at_ms"], row["outcome"], row["reason"]),
                          (NOW - 80 * MIN, "removed", "MANUAL"))
 
-    def test_a_queue_merge_whose_own_removal_comes_first_reads_merged(self):
+    def read_queue_merge(self, number, reason):
         self.github.pulls.append(timeline(
-            2565, event("AddedToMergeQueueEvent", 50 * MIN),
-            event("RemovedFromMergeQueueEvent", 20 * MIN + 2 * SEC, None),
+            number, event("AddedToMergeQueueEvent", 50 * MIN),
+            event("RemovedFromMergeQueueEvent", 20 * MIN + SEC, reason),
             event("MergedEvent", 20 * MIN)))
         (row,) = [row for row in self.read_queue()["left"]
-                  if row["pr"]["number"] == 2565]
-        self.assertEqual((row["at_ms"], row["outcome"], row["reason"],
-                          row["waits_on_you"]),
+                  if row["pr"]["number"] == number]
+        return (row["at_ms"], row["outcome"], row["reason"],
+                row["waits_on_you"])
+
+    def test_a_queue_merge_whose_own_removal_comes_first_reads_merged(self):
+        self.assertEqual(self.read_queue_merge(2565, "merged"),
                          (NOW - 20 * MIN, "merged", None, False))
+
+    def test_an_upper_case_merged_removal_before_its_merge_reads_merged(self):
+        self.assertEqual(self.read_queue_merge(2569, "MERGED"),
+                         (NOW - 20 * MIN, "merged", None, False))
+
+    def test_a_merged_removal_with_no_merge_reads_removed(self):
+        self.github.pulls.append(timeline(
+            2568, event("AddedToMergeQueueEvent", 50 * MIN),
+            event("RemovedFromMergeQueueEvent", 20 * MIN, "merged")))
+        (row,) = [row for row in self.read_queue()["left"]
+                  if row["pr"]["number"] == 2568]
+        self.assertEqual((row["at_ms"], row["outcome"], row["reason"]),
+                         (NOW - 20 * MIN, "removed", "merged"))
 
     def test_a_removed_pull_request_queued_again_has_not_left(self):
         self.github.pulls.append(timeline(
