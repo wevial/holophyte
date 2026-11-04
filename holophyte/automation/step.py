@@ -15,6 +15,7 @@ from holophyte.automation.automation_config import (
     main_watch_config,
 )
 from holophyte.automation.gate import read_switch
+from holophyte.automation.limits import HostReruns, reruns_per_day, self_pause
 from holophyte.automation.policy import report_only
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.host.registry import Host, HostError
@@ -144,11 +145,12 @@ def read_results(target, conn, project, pull, checks, green, now):
                                          checks["sha"], green)
         except InfraFailure:
             continue
-        if found is not None:
-            store.automations.record_result(conn, firing.id, *found, now=now)
+        if found is not None and store.automations.record_result(
+                conn, firing.id, *found, now=now):
+            self_pause(conn, firing.id, now=now)
 
 
-def observe_store(name, target, watch, listed, now, greens, out):
+def observe_store(name, target, watch, listed, now, greens, reruns, out):
     leased = []
     conn = open_store(target)
     try:
@@ -162,16 +164,18 @@ def observe_store(name, target, watch, listed, now, greens, out):
             if required_green:
                 greens[name] = checks["sha"]
             main_watch.observe(target, conn, project, pull, checks, now,
-                               watch, listed, leased)
+                               watch, listed, leased, reruns)
     finally:
         conn.close()
         start_workers(name, target, leased, out)
 
 
-def observe_one(name, target, watch, listed, now, end, stop, out, greens):
+def observe_one(name, target, watch, listed, now, end, stop, out, greens,
+                reruns):
     try:
         with deadline.bounded(end, stop) as bound:
-            observe_store(name, target, watch, listed, now, greens, out)
+            observe_store(name, target, watch, listed, now, greens, reruns,
+                          out)
     except (deadline.DeadlineReached, deadline.CallRefused) as reached:
         return str(reached), None
     except (Exception, SystemExit) as bad:  # noqa: BLE001 - the boundary
@@ -189,7 +193,9 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
     if switch.off:
         return
     try:
-        listed = report_only(Host.locate(home))
+        host = Host.locate(home)
+        listed = report_only(host)
+        reruns = HostReruns(state, reruns_per_day(host))
     except HostError as bad:
         print(f"{bad}; automations are off this pass", file=out)
         return
@@ -211,7 +217,8 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
         share = (end - time.monotonic()) / (len(order) - index)
         reached, bad = observe_one(name, entry.target, watch, listed, now,
                                    time.monotonic() + share, stop, out,
-                                   state.setdefault("main_green", {}))
+                                   state.setdefault("main_green", {}),
+                                   reruns)
         if reached is not None:
             print(f"[holo2] {name}: automations cut, {reached}; the next"
                   " pass starts after it", file=out)

@@ -347,6 +347,15 @@ Each module, one line:
   revision and outside `report_only` a `leased` one recording the workflow
   run's `run_attempt`, whose id it adds to the caller's list as it commits,
   so a later read that fails loses none.
+- `holophyte/automation/limits.py` — an automation's act limits on one
+  project, `QUEUED`, `PER_HOUR` and `PER_DAY`, read through `act_counts()`
+  inside `reserve_firing()`'s transaction, and the host's daily GitHub
+  reruns, `HostReruns`, counted in `sweep.json`'s `reruns` against
+  `reruns_per_day()`; days start at midnight in `America/Los_Angeles`.
+  `self_pause()`, called after the step records a result and after the
+  worker settles a firing, writes an `automation` pause when the same
+  checks were red again twice within 24 hours or GitHub refused the two
+  newest act firings' reruns.
 - `holophyte/automation/policy.py` — each automation's actions as data,
   `CAPABILITIES` and `NEVER`; `refusal()` names why an action is not
   allowed, and `report_only()` reads `host.toml`'s `[automations]

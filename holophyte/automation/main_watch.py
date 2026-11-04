@@ -82,23 +82,25 @@ def result_of(target, pull, firing, head, green):
     sha = firing.detail["sha"]
     if head != sha:
         return SUPERSEDED, (f"main moved to {head[:12]} before the rerun at"
-                            f" {sha[:12]} was read")
+                            f" {sha[:12]} was read"), []
     runs = pr_status._check_runs_of(target, pull, sha)
     if runs is None:
         raise InfraFailure(f"GitHub answered an unreadable check read at {sha}")
     result, names = rerun_reading(firing, runs)
     named = ", ".join(names)
     if result == GREEN:
-        return GREEN, f"suspected flake: {named} passed on rerun at {sha[:12]}"
+        return (GREEN, f"suspected flake: {named} passed on rerun at"
+                f" {sha[:12]}", names)
     if result == RED_AGAIN:
         since = ("no green main seen yet" if green is None else
                  f"merged since {green[:12]}:"
                  f" {merged_since(target, pull, green, sha)}")
-        return RED_AGAIN, f"red again at {sha[:12]}: {named}; {since}"
+        return RED_AGAIN, f"red again at {sha[:12]}: {named}; {since}", names
     return None
 
 
-def observe(target, conn, project, pull, checks, now, watch, listed, leased):
+def observe(target, conn, project, pull, checks, now, watch, listed, leased,
+            reruns):
     held = None
     if watch.mode == ACT:
         held = (unapproved(watch, REVISION)
@@ -122,6 +124,10 @@ def observe(target, conn, project, pull, checks, now, watch, listed, leased):
             conn, project, MAIN_WATCH, REVISION, SUBJECT, cause, mode=ACT,
             reason=f"rerunning {jobs_at}",
             detail=detail, now=now,
-            lease_until=int(time.time() * 1000) + LEASE_MS)
-        if firing is not None:
+            lease_until=int(time.time() * 1000) + LEASE_MS,
+            limit=reruns.limit(project, MAIN_WATCH, now))
+        reserved = (None if firing is None
+                    else store.automations.firing(conn, firing))
+        if reserved is not None and reserved.state == store.automations.LEASED:
+            reruns.count(now)
             leased.append(firing)
