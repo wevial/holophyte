@@ -112,7 +112,6 @@ function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: 
 }
 
 function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; entry: MergeQueueEntry; project: string; wide: boolean; daemon: QueueDaemon }) {
-  const now = queue.now;
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const title = entry.pr.title ?? `#${entry.pr.number}`;
@@ -172,7 +171,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
           <EntryState entry={entry} />
         </div>
       )}
-      {open && <EntryDetail entry={entry} now={now} id={detailId} daemon={daemon} />}
+      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} />}
     </li>
   );
 }
