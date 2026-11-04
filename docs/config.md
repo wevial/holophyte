@@ -1731,7 +1731,8 @@ reruns of its two newest act firings with an HTTP 4xx answer (a recheck's
 refusal, a limit's refusal, or a rerun request GitHub never answered,
 between them breaks the run).
 The note names the rule and both firing ids, and only `holo automation
-resume` clears it.
+resume` clears it. A pass whose result reading pauses the automation
+reserves nothing after it.
 
 A leased firing whose lease expires is settled from what GitHub shows,
 never by calling again. One no worker took is leased once more and its

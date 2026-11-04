@@ -169,8 +169,9 @@ def observe_store(name, target, watch, listed, now, greens, reruns, out):
                          greens.get(name), now)
             if required_green:
                 greens[name] = checks["sha"]
-            main_watch.observe(target, conn, project, pull, checks, now,
-                               watch, listed, leased, reruns)
+            if store.automations.automation_pause(conn, MAIN_WATCH) is None:
+                main_watch.observe(target, conn, project, pull, checks, now,
+                                   watch, listed, leased, reruns)
     finally:
         conn.close()
         start_workers(name, target, leased, out)

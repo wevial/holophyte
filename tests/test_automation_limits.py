@@ -262,6 +262,30 @@ class SelfPauseTests(LimitFixture):
         self.assertEqual(len(self.pass_at(start + 3 * HOUR + 3 * MINUTE)), 1)
         self.assertEqual(self.of_run("alpha", 9).state, "leased")
 
+    def test_a_pass_that_pauses_reserves_nothing_after_it(self):
+        self.act("alpha")
+        repo, path = "repos/o/alpha", self.paths["alpha"]
+        start = self.clock - 4 * HOUR
+        self.assertEqual(self.worked_pass(start), [0])
+        self.rerun_answers("alpha", [job("unit", "failure", 12, 7)])
+        self.pass_at(start + MINUTE)
+        self.red_run("alpha", 8)
+        self.assertEqual(self.worked_pass(start + 3 * HOUR), [0])
+        self.act_github.answer(path, f"GET {repo}/rules/branches/main", [{
+            "type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "unit"},
+                                           {"context": "lint"}]}}])
+        self.act_github.answer(path, f"GET {repo}/actions/runs/9",
+                               {"id": 9, "run_attempt": 1})
+        self.rerun_answers("alpha", [job("unit", "failure", 13, 8),
+                                     job("lint", "failure", 21, 9)])
+
+        self.assertEqual(self.pass_at(start + 3 * HOUR + MINUTE), [])
+
+        self.assertEqual(self.open_pause("alpha")[0], "automation")
+        self.assertEqual(sorted(firing.detail["workflow_run_id"]
+                                for firing in self.firings("alpha")), [7, 8])
+
     def test_two_github_refusals_in_a_row_pause_it(self):
         self.act("alpha")
         self.refuse_posts("alpha", 7)
