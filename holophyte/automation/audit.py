@@ -16,7 +16,8 @@ LABEL = 10
 
 
 def firing_json(firing):
-    return {"id": firing.id, "automation": firing.automation,
+    return {"id": firing.id, "project": firing.projectId,
+            "automation": firing.automation,
             "revision": firing.revision, "subject": firing.subject,
             "cause": firing.cause, "firing_key": firing.firingKey,
             "mode": firing.mode, "state": firing.state,

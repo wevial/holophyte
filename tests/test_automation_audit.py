@@ -18,6 +18,8 @@ HOUR = 60 * MIN
 RED = "5e1f0c2a9b7d4e3f8a6c1b0d2e4f6a8c0b1d3e5f"
 G = "0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3"
 PID = 4242
+RERUN = {"action": "rerun_failed_jobs", "workflow_run_id": 7,
+         "run_attempt": 1, "rerun_attempt": 2}
 AUDITED = ("automationFirings", "mergeHolds", "interventions")
 
 
@@ -66,11 +68,11 @@ class AuditCase(HostFixture):
 
     def seed_25(self):
         """25 firings a minute apart, oldest first, among them a proposal, a
-        confirmed rerun at run_attempt 2 and a refusal."""
+        confirmed rerun at rerun_attempt 2 and a refusal."""
         states = ["proposed", "confirmed", "refused"] + ["canceled"] * 22
         ids = []
         for n, state in enumerate(states):
-            detail = {"run_attempt": 2} if state == "confirmed" else {}
+            detail = RERUN if state == "confirmed" else {}
             ids.append(self.fire(state, self.now - (30 - n) * MIN,
                                  f"o/alpha@{n:040x} run {n}", detail))
         return ids
@@ -99,7 +101,10 @@ class ListTests(AuditCase):
         firings = json.loads(out)["firings"]
         self.assertEqual([row["id"] for row in firings], list(reversed(ids)))
         [rerun] = [row for row in firings if row["state"] == "confirmed"]
-        self.assertEqual(rerun["detail"], {"run_attempt": 2})
+        self.assertEqual(rerun["detail"]["rerun_attempt"], 2)
+        columns = len(self.conn.execute(
+            "PRAGMA table_info(automationFirings)").fetchall())
+        self.assertEqual({len(row) for row in firings}, {columns})
 
 
 class ShowCase(AuditCase):
