@@ -1719,10 +1719,9 @@ proposal promoted to a lease counts from its promotion. A firing past a
 limit is reserved `refused`, its reason the first limit that is full:
 `rate: 3 firings queued`, `rate: 6 actions in the last hour`,
 `rate: 30 actions today` or `GitHub rerun cap: N today`, and no worker
-starts. A merge hold's `hold_merges` firing passes the same rate limits,
-though not the rerun cap, and one they refuse places no hold. A firing a
-limit refused is not counted, and a dry-run proposal is neither counted nor
-limited. A wrong `reruns_per_day` is off for every automation on the host
+starts. A firing a
+limit refused is not counted, and a dry-run proposal or a merge hold's
+`hold_merges` firing is neither counted nor limited. A wrong `reruns_per_day` is off for every automation on the host
 that pass, with one line naming the key; the rest of the sweep goes on.
 
 An automation pauses itself, writing the pause `holo automation pause`

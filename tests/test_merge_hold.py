@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_merge_hold.py' -v
 import io
 import json
 import subprocess
+import time
 from unittest.mock import patch
 
 import holophyte.automation.merge_hold
@@ -233,6 +234,38 @@ class MergeGateTests(MergeGateFixture):
         self.assertEqual(self.merged, [fix])
         self.assertEqual(self.events(run, "main_hold_passed"),
                          [{"hold": self.hold_id()}])
+
+    def test_a_full_hourly_limit_still_moves_the_hold_to_a_new_red_head(self):
+        old_fix = self.fix()
+        self.runs_at[old_fix] = [("unit", "success")]
+        later = self.root / "later"
+        self.git(self.root, "clone", "-q", str(self.origin), str(later))
+        new_red = self.commit(later, "LATER.md")
+        self.git(later, "push", "-q", "origin", "main")
+        conn = self.conn("alpha")
+        project = conn.execute("SELECT id FROM projects").fetchone()[0]
+        now = int(time.time() * 1000)
+        for run in range(100, 105):
+            seeded = store.automations.reserve_firing(
+                conn, project, "main_watch", 1, "main", f"seeded run {run}",
+                mode="act", reason="seeded", detail={
+                    "sha": S, "workflow_run_id": run, "jobs": [],
+                    "action": "rerun_failed_jobs", "run_attempt": 1},
+                now=now - 10 * 60 * 1000, lease_until=now + 60 * 60 * 1000)
+            store.automations.settle_firing(conn, seeded, None, "canceled",
+                                            "seeded", now=now)
+
+        self.red_at(new_red, failed=("lint",))
+        self.recorded_pass()
+
+        [rerun] = [firing for firing in store.automations.firings(conn)
+                   if firing.detail.get("sha") == new_red
+                   and firing.subject == "main"]
+        self.assertEqual((rerun.state, rerun.reason),
+                         ("refused", "rate: 6 actions in the last hour"))
+        self.assertEqual(self.open_hold(), (new_red, ["lint"]))
+        self.assertTrue(self.merge(old_fix)[1])
+        self.assertEqual(self.merged, [])
 
     def test_a_candidate_that_does_not_pass_the_held_checks_is_parked(self):
         fix = self.fix()
