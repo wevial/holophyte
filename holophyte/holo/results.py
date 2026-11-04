@@ -59,7 +59,7 @@ def run_write(args, resolve):
     from_stderr = not lines and code != 0
     if from_stderr:
         lines = err.getvalue().strip().splitlines()[-1:]
-    row = recorded_row(args, target, before) if code == 0 else (None, None)
+    row = result_row(args, target, before, code)
     result = build_result(args, code, lines, row)
     if args.json:
         print(json.dumps(result))
@@ -282,7 +282,7 @@ def queue(args, target):
 
     def answered(project, body, _):
         code, reply = action(project, body)
-        args.answered = {"recorded": reply.get("recorded")}
+        args.recorded = reply.get("recorded")
         return code, reply
     return scout_action(args, target, queue_body(args), answered,
                         f"holo {' '.join(args.command.words)}")
@@ -340,6 +340,24 @@ def named(args):
         return value, None
     update = getattr(args, "update", None)
     return (update[-1] if update else None), None
+
+
+def result_row(args, target, before, code):
+    if hasattr(args, "recorded"):
+        return intervention_row(target, args.recorded)
+    return recorded_row(args, target, before) if code == 0 else (None, None)
+
+
+def intervention_row(target, recorded):
+    path = store_path(target)
+    if recorded is None or path is None:
+        return None, None
+    conn = open_readonly(path)
+    try:
+        return conn.execute("SELECT id, runId FROM interventions WHERE id = ?",
+                            (recorded,)).fetchone() or (None, None)
+    finally:
+        conn.close()
 
 
 def recorded_row(args, target, before):

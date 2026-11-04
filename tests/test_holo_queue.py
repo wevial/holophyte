@@ -44,6 +44,7 @@ if "--input" in argv:
     path = argv[argv.index("--input") - 1]
 fake = QueueGithub()
 fake.refusal = {refusal!r}
+fake.overlap = {overlap!r}
 if path == "graphql":
     payload = json.load(sys.stdin)
     try:
@@ -68,16 +69,26 @@ class QueueGithub(FakeGithub):
             entry(4, 2552, "QUEUED"), entry(2, 2549, "QUEUED")]
         self.pulls = [pull for pull in self.pulls
                       if pull["number"] != HAND_REMOVED]
-        self.mutations, self.refusal = [], None
+        self.mutations, self.refusal, self.overlap = [], None, None
 
     def graphql(self, target, pull, query, variables):
         for name in ("enqueuePullRequest", "dequeuePullRequest"):
             if name in query:
                 self.mutations.append((name, variables))
+                if self.overlap is not None:
+                    self.record_overlapping_jump()
                 if self.refusal is not None:
                     raise InfraFailure(GRAPHQL_REFUSED + self.refusal)
                 return {name: {"mergeQueueEntry": None}}
         return super().graphql(target, pull, query, variables)
+
+    def record_overlapping_jump(self):
+        conn = store.open(self.overlap)
+        try:
+            store.record_project_intervention(conn, "queue_jump",
+                                              "an overlapping jump #2552")
+        finally:
+            conn.close()
 
     def rest(self, target, pull, method, path, payload=None):
         if path.startswith("repos/example/repo/pulls/"):
@@ -145,10 +156,10 @@ class QueueCase(HttpCase):
         finally:
             conn.close()
 
-    def install_gh(self, refusal=None):
+    def install_gh(self, refusal=None, overlap=None):
         gh = self.bin / "gh"
         gh.write_text(FAKE_GH.format(python=sys.executable, root=str(ROOT),
-                                     refusal=refusal))
+                                     refusal=refusal, overlap=overlap))
         gh.chmod(0o755)
 
     def newest_intervention(self):
@@ -254,6 +265,17 @@ class QueueWriteTests(QueueCase):
                 self.assertIn(REFUSAL, result["detail"])
                 self.assertEqual(result["recorded"], self.newest_intervention())
                 self.assertEqual(self.interventions()[-1][1], "queue_jump")
+
+    def test_a_local_jump_reports_the_run_of_its_own_intervention(self):
+        self.install_gh(overlap=str(Project.locate(self.relos).store_path))
+        completed = self.holo("queue", "jump", "2549", "--json",
+                              "-p", "relos", home=self.host)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(self.interventions()[-2][0], self.carried)
+        self.assertEqual(self.interventions()[-1][0], None)
+        self.assertEqual(result["recorded"], self.newest_intervention() - 1)
+        self.assertEqual(result["run"], self.carried)
 
     def test_removing_a_runs_pull_request_is_refused_over_http_and_locally(self):
         refusal = (f"#2549 is run {self.carried}'s pull request (RELOS-227);"
