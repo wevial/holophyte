@@ -200,7 +200,7 @@ def _queue_entries(target, pull, nodes):
     building = {(node.get("pullRequest") or {}).get("number"):
                 node.get("enqueuedAt") for node in nodes
                 if node.get("state") != QUEUED}
-    groups = merge_groups(target, pull, building) if building else {}
+    groups = merge_groups(target, pull, building)
     required = set()
     if groups:
         required = set(pr_status._required_contexts(
