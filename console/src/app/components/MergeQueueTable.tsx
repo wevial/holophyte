@@ -61,8 +61,9 @@ function ChecksDone({ entry }: { entry: MergeQueueEntry }) {
 function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; now: number }) {
   return (
     <section aria-label={title} className="min-w-0">
-      <h3 className="border-b border-rule-2 pb-2 font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-ink-3">
-        {title} <span data-check-count>{part.done} of {part.checks.length} done</span>
+      <h3 className="flex items-baseline gap-2 border-b border-rule-2 pb-2 font-mono text-[11px] font-medium text-ink-3">
+        <span className="uppercase tracking-[0.12em]">{title}</span>
+        <span data-check-count className="text-[12px]">{part.done} of {part.checks.length} done</span>
       </h3>
       <ul className="m-0 list-none p-0">
         {part.checks.map((check, index) => {
