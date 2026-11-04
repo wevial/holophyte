@@ -126,8 +126,7 @@ def observe(target, conn, project, pull, checks, now, watch, listed, leased,
             detail=detail, now=now,
             lease_until=int(time.time() * 1000) + LEASE_MS,
             limit=reruns.limit(project, MAIN_WATCH, now))
-        reserved = (None if firing is None
-                    else store.automations.firing(conn, firing))
-        if reserved is not None and reserved.state == store.automations.LEASED:
+        if (firing is not None and store.automations.firing(conn, firing)
+                .state == store.automations.LEASED):
             reruns.count(now)
             leased.append(firing)

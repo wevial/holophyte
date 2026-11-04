@@ -57,12 +57,10 @@ class HostReruns:
                                 "count": self.today(now) + 1}
 
     def limit(self, project, automation, now):
-        day_since = midnight(now)[0]
-
         def limited(conn):
             counts = store.automations.act_counts(
                 conn, project, automation, hour_since=now - HOUR_MS,
-                day_since=day_since)
+                day_since=midnight(now)[0])
             return limit_reason(counts, self.today(now), self.cap)
         return limited
 
