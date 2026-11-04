@@ -42,10 +42,14 @@ method, path = argv[argv.index("--method") + 1], argv[-1]
 if "--input" in argv:
     path = argv[argv.index("--input") - 1]
 fake = QueueGithub()
+fake.refusal = {refusal!r}
 if path == "graphql":
     payload = json.load(sys.stdin)
-    print(json.dumps({{"data": fake.graphql(None, None, payload["query"],
-                                            payload["variables"])}}))
+    try:
+        print(json.dumps({{"data": fake.graphql(None, None, payload["query"],
+                                                payload["variables"])}}))
+    except Exception:
+        print(json.dumps({{"errors": [{{"message": fake.refusal}}]}}))
 else:
     print(json.dumps(fake.rest(None, None, method, path)))
 '''
@@ -140,6 +144,19 @@ class QueueCase(HttpCase):
         finally:
             conn.close()
 
+    def install_gh(self, refusal=None):
+        gh = self.bin / "gh"
+        gh.write_text(FAKE_GH.format(python=sys.executable, root=str(ROOT),
+                                     refusal=refusal))
+        gh.chmod(0o755)
+
+    def newest_intervention(self):
+        conn = store.open(str(Project.locate(self.relos).store_path))
+        try:
+            return conn.execute("SELECT MAX(id) FROM interventions").fetchone()[0]
+        finally:
+            conn.close()
+
     def route(self, path):
         connection = http.client.HTTPConnection(
             "127.0.0.1", self.server.server_address[1], timeout=10)
@@ -204,15 +221,27 @@ class QueueWriteTests(QueueCase):
         self.assertIn(REFUSAL, completed.stderr)
         self.assertNotIn(GRAPHQL_REFUSED, completed.stderr)
 
+    def test_a_refused_jump_reports_its_recorded_row_over_http_and_locally(self):
+        self.github.refusal = REFUSAL
+        self.install_gh(REFUSAL)
+        for name, home in (("http", None), ("local", self.host)):
+            with self.subTest(transport=name):
+                completed = self.holo("queue", "jump", "2552", "--json",
+                                      "-p", "relos", home=home)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                result = json.loads(completed.stdout)
+                self.assertFalse(result["ok"])
+                self.assertIn(REFUSAL, result["detail"])
+                self.assertEqual(result["recorded"], self.newest_intervention())
+                self.assertEqual(self.interventions()[-1][1], "queue_jump")
+
     def test_removing_a_runs_pull_request_is_refused_over_http_and_locally(self):
         refusal = (f"#2549 is run {self.carried}'s pull request (RELOS-227);"
                    " pause or abort the run instead")
         before = self.interventions()
         over_http = self.holo("queue", "remove", "2549", "-p", "relos")
         self.assertEqual(self.github.mutations, [])
-        gh = self.bin / "gh"
-        gh.write_text(FAKE_GH.format(python=sys.executable, root=str(ROOT)))
-        gh.chmod(0o755)
+        self.install_gh()
         local = self.holo("queue", "remove", "2549", "-p", "relos",
                           home=self.host)
         for name, completed in (("http", over_http), ("local", local)):

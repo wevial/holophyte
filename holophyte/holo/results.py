@@ -279,8 +279,12 @@ def queue_body(args):
 def queue(args, target):
     from holophyte.serve.serve_queue_actions import QUEUE_ACTIONS
     action = QUEUE_ACTIONS[f"queue-{args.command.words[1]}"]
-    return scout_action(args, target, queue_body(args),
-                        lambda project, body, _: action(project, body),
+
+    def answered(project, body, _):
+        code, reply = action(project, body)
+        args.answered = {"recorded": reply.get("recorded")}
+        return code, reply
+    return scout_action(args, target, queue_body(args), answered,
                         f"holo {' '.join(args.command.words)}")
 
 
