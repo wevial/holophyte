@@ -46,7 +46,7 @@ function Numbers({ numbers }: { numbers: number[] }) {
 
 function Warning({ children }: { children: ReactNode }) {
   return (
-    <li data-jump-warning className="flex items-start gap-2.5 border-b border-dashed border-rule-2 py-[7px]">
+    <li data-jump-warning className="flex items-start gap-2.5 border-b border-dashed border-rule-2 py-[9px]">
       <FactIcon ok={false} />
       <span className="min-w-0 break-words">{children}</span>
     </li>
@@ -58,7 +58,7 @@ function JumpCostLines({ queue, entry }: { queue: MergeQueue; entry: MergeQueueE
   const later = cost.estimate == null ? null : `about ${cost.estimate}m`;
   return (
     <>
-      <ul aria-label="What jumping costs" className="mt-[18px] border-t border-rule-2 font-mono text-[12.5px] leading-normal text-ink-2">
+      <ul aria-label="What jumping costs" className="mt-[18px] border-t border-rule-2 font-mono text-[12px] leading-normal text-ink-2">
         {cost.restarts.length > 0 && (
           <Warning>
             restarts the builds of <Numbers numbers={cost.restarts} />
