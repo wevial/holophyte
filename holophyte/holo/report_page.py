@@ -191,20 +191,16 @@ def count_lines(body):
     ] + automations_lines(body.get("automations"))
 
 
-def automations_line(counts):
-    states = counts["states"]
-    shown = FIRING_STATES + tuple(state for state, count in states.items()
-                                  if count and state not in FIRING_STATES)
-    return (f"{plural(sum(states.values()), 'firing')} ("
-            + " · ".join(f"{state} {states[state]}" for state in shown)
-            + f") · {plural(counts['holds'], 'hold')}"
-            f" · {plural(counts['released'], 'run')} released")
-
-
 def automations_lines(counts):
     if counts is None or not any(counts["states"].values()):
         return []
-    return [("Automations", automations_line(counts))]
+    states = counts["states"]
+    shown = FIRING_STATES + tuple(state for state, count in states.items()
+                                  if count and state not in FIRING_STATES)
+    return [("Automations", f"{plural(sum(states.values()), 'firing')} ("
+             + " · ".join(f"{state} {states[state]}" for state in shown)
+             + f") · {plural(counts['holds'], 'hold')}"
+             f" · {plural(counts['released'], 'run')} released")]
 
 
 def run_lines(body, colour):
