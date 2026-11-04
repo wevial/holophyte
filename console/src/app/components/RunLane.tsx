@@ -14,7 +14,7 @@ import { prWait } from "../prRow";
 import { runPage } from "../run";
 import { stateOf } from "../state";
 import { LaneHead } from "./LaneHead";
-import { reviewRound, StageChip } from "./StageChip";
+import { reviewRound, StageChip, StageTab } from "./StageChip";
 import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
@@ -229,11 +229,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
             <RunLaneRow key={run.id} run={run} project={group.path} sinceMs={sinceMs} />
           ))}
           {group.onCi.length > 0 && (
-            <li data-on-ci-divider aria-label="On CI" className="flex border-b border-rule px-5 pt-1.5">
-              <span className="relative -mb-px border border-b-0 border-rule bg-paper px-2 py-1">
-                <StageChip label="CI" state="on_ci" />
-              </span>
-            </li>
+            <StageTab data-on-ci-divider aria-label="On CI" label="CI" state="on_ci" />
           )}
           {group.onCi.map((row, index) => (
             <OnCiLaneRow key={row.item.pr_url ?? index} row={row} />

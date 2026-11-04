@@ -15,6 +15,7 @@ import { stateOf } from "../state";
 import { LaneHead } from "./LaneHead";
 import { EntryDetail } from "./MergeQueueTable";
 import { PrRowDetail } from "./PrRowDetail";
+import { StageTab } from "./StageChip";
 import { TONE_TEXT } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
@@ -36,9 +37,9 @@ interface PrLaneGroup {
   host: Host;
   name: string;
   rows: PrRow[];
-  next: MergeQueueEntry | null;
+  /** The merge queue's entries in position order. */
+  entries: MergeQueueEntry[];
   queueNow: number;
-  queued: number;
 }
 
 const waitsOnYou = (item: AttentionItem) =>
@@ -57,9 +58,9 @@ export function prLaneGroups(hosts: Host[], items: AttentionItem[], now: number,
         const pr = item.pr != null && typeof item.pr === "object" ? (item.pr as PullRequestFacts) : null;
         return { item, ageMs: describe(item, status.thresholds, clock).ageMs, facts: rowFacts(pr, { round: item.round, waits_on: item.waits_on }) };
       });
-    const next = entries.find((entry) => entry.position === 1) ?? null;
-    if (rows.length === 0 && next == null) return [];
-    return [{ host, name: projectName(status.project), rows: orderByAge(rows, (row) => row.ageMs), next, queueNow: queue?.now ?? 0, queued: entries.length }];
+    if (rows.length === 0 && entries.length === 0) return [];
+    const ordered = [...entries].sort((a, b) => a.position - b.position);
+    return [{ host, name: projectName(status.project), rows: orderByAge(rows, (row) => row.ageMs), entries: ordered, queueNow: queue?.now ?? 0 }];
   });
 }
 
@@ -136,13 +137,13 @@ function PrLaneRow({ row, host, readiness }: { row: PrRow; host: Host; readiness
   );
 }
 
-function NextInQueue({ entry, now, host, project }: { entry: MergeQueueEntry; now: number; host: Host; project: string }) {
+function QueueRow({ entry, now, host, project }: { entry: MergeQueueEntry; now: number; host: Host; project: string }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const building = entry.group_sha != null;
   const daemon = { project, base: host.base, actions: host.status?.actions === true };
   return (
-    <li data-next-in-queue data-open={open || undefined} className={`group border-rule-2 ${OPEN_ROW} not-first:border-t`}>
+    <li data-queue-entry data-open={open || undefined} className={`group border-rule-2 ${OPEN_ROW} [&+&]:border-t`}>
       <div className={`${ROW_GRID} cursor-pointer`} onClick={() => setOpen(!open)}>
         <a
           href={entry.pr.url}
@@ -159,13 +160,12 @@ function NextInQueue({ entry, now, host, project }: { entry: MergeQueueEntry; no
           aria-controls={detailId}
           className="flex min-h-11 min-w-0 flex-col gap-1 text-left"
         >
-          <span className="text-ink-3">Next in queue</span>
           <span className="font-read text-[15px] font-medium leading-[1.35] [overflow-wrap:anywhere] text-ink">
             <TitleText>{entry.pr.title ?? ""}</TitleText>
           </span>
         </button>
         <span className="flex flex-col items-end gap-0.5 text-right max-[720px]:flex-row max-[720px]:flex-wrap max-[720px]:items-baseline max-[720px]:gap-x-3 max-[720px]:text-left">
-          <span data-next-state className={`font-sans text-[14px] font-semibold leading-[1.3] ${building ? TONE_TEXT.wait : "text-ink-2"}`}>
+          <span data-queue-state className={`font-sans text-[14px] font-semibold leading-[1.3] ${building ? TONE_TEXT.wait : "text-ink-2"}`}>
             {building ? "checks running" : "queued"}
           </span>
           <span className="whitespace-nowrap">
@@ -188,18 +188,41 @@ function NextInQueue({ entry, now, host, project }: { entry: MergeQueueEntry; no
 }
 
 /** One project's pull requests waiting on the maintainer, a row each that
- *  opens onto its detail, then the head of its merge queue. */
+ *  opens onto its detail, then its merge queue under a tab: the head, and the
+ *  rest behind a count that unfolds. */
 function PrLane({ group, readiness }: { group: PrLaneGroup; readiness: ReadinessMap }) {
+  const [unfolded, setUnfolded] = useState(false);
+  const listId = useId();
   const status = group.host.status!;
-  const meta = group.rows.length > 0 ? `${group.rows.length} open` : `${group.queued} queued`;
+  const { entries } = group;
+  const meta = group.rows.length > 0 ? `${group.rows.length} open` : `${entries.length} queued`;
+  const more = entries.length - 1;
+  const shown = unfolded ? entries : entries.slice(0, 1);
   return (
     <div role="group" aria-label={group.name}>
       <LaneHead name={group.name} held={status.admission === "held"} holdNote={status.hold_note} meta={meta} />
-      <ul className="border border-rule bg-paper">
+      <ul id={listId} className="border border-rule bg-paper">
         {group.rows.map((row, index) => (
           <PrLaneRow key={entryKey({ item: row.item }, index)} row={row} host={group.host} readiness={readiness} />
         ))}
-        {group.next && <NextInQueue key={group.next.pr.url} entry={group.next} now={group.queueNow} host={group.host} project={group.name} />}
+        {entries.length > 0 && (
+          <StageTab data-queue-tab aria-label="Queue" label="Queue" state={entries[0]!.group_sha != null ? "on_ci" : "queued"}>
+            {more > 0 && (
+              <button
+                type="button"
+                aria-expanded={unfolded}
+                aria-controls={listId}
+                onClick={() => setUnfolded(!unfolded)}
+                className="mb-1 border-b border-rule font-sans text-[13px] text-ink-2 transition-colors duration-(--motion-colour) hover:border-ink hover:text-ink"
+              >
+                {more} more
+              </button>
+            )}
+          </StageTab>
+        )}
+        {shown.map((entry) => (
+          <QueueRow key={entry.pr.url} entry={entry} now={group.queueNow} host={group.host} project={group.name} />
+        ))}
       </ul>
     </div>
   );

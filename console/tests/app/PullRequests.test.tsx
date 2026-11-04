@@ -647,20 +647,39 @@ const queueOf = (first: MergeQueueEntry): MergeQueue => ({
   ...servedQueue, configured: true, now: NOW, left: [],
   entries: [first, entry(2, 2549, "[MCP] Add the unit lookup read tool"), entry(3, 2550, "[PDF] Keep the page position"), entry(4, 2552, "[Auth] Stop the sign-in loop")],
 });
-const nextLines = () => [...section().querySelectorAll<HTMLElement>("[data-next-in-queue]")];
+const queueRows = () => [...section().querySelectorAll<HTMLElement>("[data-queue-entry]")];
+const queueTab = () => lane("relos").querySelector<HTMLElement>("[data-queue-tab]")!;
+const moreButton = () => within(queueTab()).getByRole("button", { name: /more$/ });
+const numbers = () => queueRows().map((row) => within(row).getAllByRole("link")[0]!.textContent);
 
-test("with nothing waiting on you, a project's lane shows its queue's position 1 alone", async () => {
+test("with nothing waiting on you, a project's lane shows a Queue tab over its queue's position 1 alone, the rest behind a count", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
   const relos = lane("relos");
   expect(relos.querySelector("[data-lane-head]")!.textContent).toContain("relos");
-  const [line] = nextLines() as [HTMLElement];
-  expect(nextLines()).toHaveLength(1);
+  expect(queueTab().textContent).toContain("Queue");
+  expect(queueTab().querySelector("[data-state]")!.getAttribute("data-state")).toBe("on_ci");
+  expect(moreButton().textContent).toBe("3 more");
+  expect(moreButton().getAttribute("aria-expanded")).toBe("false");
   expect(rows()).toEqual([]);
-  const text = line.textContent!;
-  for (const words of ["Next in queue", "#2547", "[Dependency Update]: Update Vite to 8.3.5", "checks running", "5/13 done", "merges ~10m"]) expect(text).toContain(words);
-  expect(within(line).getByRole("link", { name: "#2547" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
+  expect(numbers()).toEqual(["#2547"]);
+  const text = queueRows()[0]!.textContent!;
+  for (const words of ["#2547", "[Dependency Update]: Update Vite to 8.3.5", "checks running", "5/13 done", "merges ~10m"]) expect(text).toContain(words);
+  expect(within(queueRows()[0]!).getByRole("link", { name: "#2547" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
   expect(section().textContent).not.toMatch(/#2549|#2550|#2552/);
+  expect(section().textContent).not.toContain("Next in queue");
   expect(section().textContent).not.toContain("No pull request waits on you.");
+});
+
+test("the Queue tab's count unfolds the rest of the queue after position 1 in position order, and a second click folds it", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
+  const more = moreButton();
+  expect(document.getElementById(more.getAttribute("aria-controls")!)!.contains(queueRows()[0]!)).toBe(true);
+  await clickIn(more);
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  expect(numbers()).toEqual(["#2547", "#2549", "#2550", "#2552"]);
+  await clickIn(more);
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  expect(numbers()).toEqual(["#2547"]);
 });
 
 const check = (name: string, required: boolean) => ({
@@ -668,16 +687,27 @@ const check = (name: string, required: boolean) => ({
   url: `https://github.com/example/relos/actions/runs/7/job/${name}`, required,
 });
 const checkedVite = { ...vite, checks: { done: 2, total: 2, failed: 0, runs: [check("unit", true), check("preview", false)] } };
-const nextButton = (line: HTMLElement) => within(line).getByRole("button", { name: /Next in queue/ });
+const titleButton = (row: HTMLElement) => within(row).getAllByRole("button")[0]!;
 const clickIn = (target: HTMLElement) => act(async () => {
   fireEvent.click(target);
   await settle();
 });
 
-test("clicking the next-in-queue title opens its checks, Open on GitHub and a Merge queue link under it, and a second click closes it", async () => {
+test("an unfolded row's title opens its own detail with Open on GitHub to its pull request, leaving position 1 closed", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
+  await clickIn(moreButton());
+  const row = queueRows().find((line) => within(line).queryByRole("link", { name: "#2550" }))!;
+  await clickIn(titleButton(row));
+  const detail = row.querySelector<HTMLElement>("[data-entry-detail]")!;
+  expect(within(detail).getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2550");
+  expect(queueRows()[0]!.hasAttribute("data-open")).toBe(false);
+  expect(queueRows()[0]!.querySelector("[data-entry-detail]")).toBeNull();
+});
+
+test("clicking a queue row's title opens its checks, Open on GitHub and a Merge queue link under it, and a second click closes it", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-  const [line] = nextLines() as [HTMLElement];
-  const button = nextButton(line);
+  const [line] = queueRows() as [HTMLElement];
+  const button = titleButton(line);
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
   await clickIn(button);
   expect(button.getAttribute("aria-expanded")).toBe("true");
@@ -694,68 +724,73 @@ test("clicking the next-in-queue title opens its checks, Open on GitHub and a Me
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
 });
 
-test("clicking the next-in-queue line's state words opens and closes it like its title", async () => {
+test("clicking a queue row's state words opens and closes it like its title", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-  const [line] = nextLines() as [HTMLElement];
-  const state = line.querySelector<HTMLElement>("[data-next-state]")!;
+  const [line] = queueRows() as [HTMLElement];
+  const state = line.querySelector<HTMLElement>("[data-queue-state]")!;
   await clickIn(state);
-  expect(nextButton(line).getAttribute("aria-expanded")).toBe("true");
+  expect(titleButton(line).getAttribute("aria-expanded")).toBe("true");
   expect(line.hasAttribute("data-open")).toBe(true);
   await clickIn(state);
-  expect(nextButton(line).getAttribute("aria-expanded")).toBe("false");
+  expect(titleButton(line).getAttribute("aria-expanded")).toBe("false");
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
 });
 
-test("the next-in-queue PR number links to GitHub without opening the line", async () => {
+test("a queue row's PR number links to GitHub without opening the row", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-  const [line] = nextLines() as [HTMLElement];
+  const [line] = queueRows() as [HTMLElement];
   const link = within(line).getByRole("link", { name: "#2547" });
   await clickIn(link);
   expect(link.getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
-  expect(nextButton(line).getAttribute("aria-expanded")).toBe("false");
+  expect(titleButton(line).getAttribute("aria-expanded")).toBe("false");
   expect(line.hasAttribute("data-open")).toBe(false);
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
 });
 
-test("an open next-in-queue line closes when a poll brings a different pull request to position 1", async () => {
+test("an open position 1 row closes when a poll brings a different pull request to position 1", async () => {
   const queue = queueOf(checkedVite);
   await mount({ items: [], actions: true, projects: ["relos", "writer"], queue });
-  await clickIn(nextButton(nextLines()[0]!));
-  expect(nextLines()[0]!.querySelector("[data-entry-detail]")).not.toBeNull();
+  await clickIn(titleButton(queueRows()[0]!));
+  expect(queueRows()[0]!.querySelector("[data-entry-detail]")).not.toBeNull();
   queue.entries = [{ ...queue.entries[1]!, position: 1 }, ...queue.entries.slice(2)];
   await act(async () => {
     await client!.refetchQueries();
     await settle();
   });
   for (let round = 0; round < 3; round += 1) await act(settle);
-  const [line] = nextLines() as [HTMLElement];
+  const [line] = queueRows() as [HTMLElement];
   expect(within(line).getByRole("link", { name: "#2549" })).toBeTruthy();
-  expect(nextButton(line).getAttribute("aria-expanded")).toBe("false");
+  expect(titleButton(line).getAttribute("aria-expanded")).toBe("false");
   expect(line.hasAttribute("data-open")).toBe(false);
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
 });
 
 for (const actions of [true, false]) {
-  test(`an open next-in-queue line with no store run ${actions ? "offers" : "has no"} Remove from queue with actions ${actions ? "on" : "off"}`, async () => {
+  test(`an open queue row with no store run ${actions ? "offers" : "has no"} Remove from queue with actions ${actions ? "on" : "off"}`, async () => {
     await mount({ items: [], actions, projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-    const [line] = nextLines() as [HTMLElement];
-    await clickIn(nextButton(line));
+    const [line] = queueRows() as [HTMLElement];
+    await clickIn(titleButton(line));
     const detail = line.querySelector<HTMLElement>("[data-entry-detail]")!;
     expect(within(detail).queryByRole("button", { name: "Remove from queue" }) != null).toBe(actions);
   });
 }
 
-test("position 1 with no merge group reads queued, not checks running", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5")) });
-  const [line] = nextLines() as [HTMLElement];
-  expect(line.querySelector("[data-next-state]")!.textContent).toBe("queued");
+test("a queue of one entry with no merge group draws a queued tab icon with no count and its row reads queued", async () => {
+  const lone = entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5");
+  await mount({ items: [], projects: ["relos", "writer"], queue: { ...queueOf(lone), entries: [lone] } });
+  expect(queueTab().querySelector("[data-state]")!.getAttribute("data-state")).toBe("queued");
+  expect(within(queueTab()).queryByRole("button", { name: /more/ })).toBeNull();
+  const [line] = queueRows() as [HTMLElement];
+  expect(line.querySelector("[data-queue-state]")!.textContent).toBe("queued");
   expect(line.textContent).not.toContain("checks running");
 });
 
-test("a lane with a waiting row and a queue draws the row first and the next-in-queue line after it, and counts only the row", async () => {
+test("a lane with a waiting row and a queue draws the row first, then the Queue tab and position 1, and counts only the row", async () => {
   await mount({ items: [readyPark], projects: ["relos", "writer"], queue: queueOf(vite) });
   const items = [...lane("relos").querySelectorAll("li")];
-  expect(items.map((item) => (item.hasAttribute("data-pr-row") ? "row" : item.hasAttribute("data-next-in-queue") ? "next" : "other"))).toEqual(["row", "next"]);
+  const kind = (item: Element) =>
+    item.hasAttribute("data-pr-row") ? "row" : item.hasAttribute("data-queue-tab") ? "tab" : item.hasAttribute("data-queue-entry") ? within(item as HTMLElement).getAllByRole("link")[0]!.textContent : "other";
+  expect(items.map(kind)).toEqual(["row", "tab", "#2547"]);
   expect(lane("relos").querySelector("[data-lane-head]")!.textContent).toContain("1 open");
   expect(section().querySelector("header")!.textContent).toContain("Pull requests1");
 });
