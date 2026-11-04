@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fcntl
+from functools import partial
 
 import store
 from holophyte.admission import project_of
@@ -20,17 +21,6 @@ from holophyte.serve.serve_runs import no_store
 QUEUE_JUMP_ACTION = "queue-jump"
 QUEUE_REMOVE_ACTION = "queue-remove"
 
-
-def queue_jump_action(project, body):
-    return queue_action(project, body, QUEUE_JUMP_ACTION)
-
-
-def queue_remove_action(project, body):
-    return queue_action(project, body, QUEUE_REMOVE_ACTION)
-
-
-QUEUE_ACTIONS = {QUEUE_JUMP_ACTION: queue_jump_action,
-                 QUEUE_REMOVE_ACTION: queue_remove_action}
 
 
 def queue_action(project, body, action):
@@ -117,3 +107,7 @@ def forget_cached_queue(project):
     with open(path.with_suffix(".lock"), "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         path.unlink(missing_ok=True)
+
+
+QUEUE_ACTIONS = {action: partial(queue_action, action=action)
+                 for action in (QUEUE_JUMP_ACTION, QUEUE_REMOVE_ACTION)}
