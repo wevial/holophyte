@@ -221,7 +221,7 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
         host = Host.locate(home)
         listed = report_only(host)
         reruns = HostReruns(state, reruns_per_day(host),
-                            reruns_committed(entries, now), now)
+                            reruns_committed(host.projects(), now), now)
     except HostError as bad:
         print(f"{bad}; automations are off this pass", file=out)
         return

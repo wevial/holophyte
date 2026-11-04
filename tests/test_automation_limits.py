@@ -12,6 +12,7 @@ import zoneinfo
 from unittest.mock import patch
 
 import holophyte.automation.step as step
+import store
 import store.automations
 from holophyte.host.registry import HOST_FILE
 from tests.main_watch_fixture import automations, job, sweep_pass
@@ -192,6 +193,23 @@ class HostRerunCapTests(LimitFixture):
         self.assertEqual((firing.state, firing.reason),
                          ("refused", "GitHub rerun cap: 1 today"))
 
+    def test_a_skipped_projects_lease_still_counts_toward_the_cap(self):
+        with open(self.home / HOST_FILE, "a") as registry:
+            registry.write("\n[automations]\nreruns_per_day = 1\n")
+        self.act("alpha")
+        self.assertEqual(len(self.pass_at(self.clock)), 1)
+        saved = self.state()
+        del saved["reruns"]
+        (self.home / "sweep.json").write_text(json.dumps(saved))
+        store.set_admission(self.conn("alpha"), 1, "disabled", "retired")
+
+        self.act("beta")
+        self.assertEqual(self.pass_at(self.clock + MINUTE), [])
+
+        firing = self.of_run("beta", 7)
+        self.assertEqual((firing.state, firing.reason),
+                         ("refused", "GitHub rerun cap: 1 today"))
+
     def test_a_wrong_rerun_cap_is_off_and_the_sweep_goes_on(self):
         with open(self.home / HOST_FILE, "a") as registry:
             registry.write("\n[automations]\nreruns_per_day = 0\n")
@@ -280,6 +298,24 @@ class SelfPauseTests(LimitFixture):
                          ["refused"] * 3)
         self.assertIn("403", self.of_run("beta", 9).reason)
         self.assertIsNone(self.open_pause("beta"))
+
+    def test_a_limit_refusal_between_github_refusals_breaks_the_run(self):
+        with open(self.home / HOST_FILE, "a") as registry:
+            registry.write("\n[automations]\nreruns_per_day = 1\n")
+        self.act("alpha")
+        self.refuse_posts("alpha", 7)
+        self.assertEqual(self.worked_pass(pacific(2, 10)), [0])
+        self.red_run("alpha", 8)
+        self.assertEqual(self.worked_pass(pacific(2, 10, 5)), [])
+        self.assertEqual(self.of_run("alpha", 8).reason,
+                         "GitHub rerun cap: 1 today")
+        self.red_run("alpha", 9)
+        self.refuse_posts("alpha", 9)
+
+        self.assertEqual(self.worked_pass(pacific(3, 0, 10)), [0])
+
+        self.assertIn("403", self.of_run("alpha", 9).reason)
+        self.assertIsNone(self.open_pause("alpha"))
 
     def test_dispatches_github_never_answered_do_not_pause_it(self):
         self.act("alpha")

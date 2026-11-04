@@ -70,7 +70,7 @@ class HostReruns:
 def act_firings(conn, project, automation):
     return [firing for firing in store.automations.firings(conn)
             if firing.projectId == project and firing.automation == automation
-            and firing.mode == ACT and "limit" not in firing.detail]
+            and firing.mode == ACT]
 
 
 def same_failure_twice(fired, trigger, now):
