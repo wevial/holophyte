@@ -13,7 +13,6 @@ import { useToast } from "./Toast";
 const JUMP = "Jump to front";
 const REMOVE = "Remove from queue";
 
-/** The project daemon a queue's buttons post to, and whether its `/status` said `actions`. */
 export interface QueueDaemon {
   project: string;
   base: string;
@@ -30,7 +29,6 @@ function JumpIcon() {
 
 const PrNumber = ({ number }: { number: number }) => <b className="font-semibold text-ink">#{number}</b>;
 
-/** `#A, #B and #C`, each number bold. */
 function Numbers({ numbers }: { numbers: number[] }) {
   return (
     <>
@@ -75,8 +73,6 @@ function JumpCostLines({ queue, entry }: { queue: MergeQueue; entry: MergeQueueE
   );
 }
 
-/** A row's Jump to front: a confirm saying what jumping costs, then a post;
- *  a refusal keeps the dialog open with the daemon's detail under its buttons. */
 export function JumpToFront({ queue, entry, daemon }: { queue: MergeQueue; entry: MergeQueueEntry; daemon: QueueDaemon }) {
   const action = useAction();
   const [open, setOpen] = useState(false);
@@ -111,7 +107,6 @@ export function JumpToFront({ queue, entry, daemon }: { queue: MergeQueue; entry
   );
 }
 
-/** A hand pull request's Remove from queue: one post, its answer in the toast. */
 export function RemoveFromQueue({ entry, daemon }: { entry: MergeQueueEntry; daemon: QueueDaemon }) {
   const action = useAction();
   const toast = useToast();

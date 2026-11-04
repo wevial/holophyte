@@ -47,8 +47,6 @@ interface Seen {
   authorization: string | null;
 }
 
-/** The relos daemon: its status with `actions`, the queue, and each action
- *  post recorded and answered with the next of `answers`. */
 function daemon(actions: boolean, answers: object[] = []) {
   const posts: Seen[] = [];
   let reads = 0;

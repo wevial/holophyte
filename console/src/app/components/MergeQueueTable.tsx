@@ -176,8 +176,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
   );
 }
 
-/** One queue's settings tab over its entries, a row each that opens onto its
- *  checks; with `daemon`, the actions its `/status` allows. */
+/** One queue's settings tab over its entries, a row each that opens onto its checks. */
 export function QueueTable({ queue, project, daemon }: { queue: MergeQueue; project: string; daemon: QueueDaemon }) {
   const wide = useTableWidth();
   return (

@@ -76,9 +76,6 @@ export function entryLine(entry: MergeQueueEntry, now: number): string {
   ].filter((part) => part != null).join(" · ");
 }
 
-/** What jumping `entry` to the front costs: the numbers ahead of it whose
- *  builds restart, position 1's estimate in minutes, and the minutes of
- *  checks position 1 drops while it builds. */
 interface JumpCost {
   restarts: number[];
   estimate: number | null;
