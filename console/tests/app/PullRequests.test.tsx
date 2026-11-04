@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import type { Attention, Status, StatusRun } from "../../src/lib/contract.gen";
+import type { Attention, MergeQueue, MergeQueueEntry, Status, StatusRun } from "../../src/lib/contract.gen";
 import { addressOf } from "../../src/lib/hosts";
 import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/app/fleet";
@@ -16,6 +16,7 @@ const DEMO = "http://writer-host:7710";
 const WRITER = "http://writer-host:7711";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const served = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const servedQueue = (await Bun.file(new URL("merge-queue.json", SERVE)).json()) as MergeQueue;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -48,13 +49,15 @@ interface Daemon {
   merge?: { ok: boolean; detail: string };
   /** What `demo` answers once mark-ready is posted; its `/attention` waits on `answer`. */
   woken?: { items: Item[]; queued: Status["queued"]; answer: Promise<void> };
+  /** The first project's `/merge-queue` answer; with none the route is missing. */
+  queue?: MergeQueue;
 }
 
 let client: QueryClient | null = null;
 /** `demo`'s `/attention` requests made after the mark-ready post. */
 let readsAfterPost = 0;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken, queue }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
   const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
@@ -71,6 +74,7 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], answe
       await woken.answer;
       return Response.json(attention(first, woken.items));
     }
+    if (queue && url === `${DEMO}/merge-queue`) return Response.json(queue);
     if (posted && woken && url === `${DEMO}/status`) return Response.json({ ...statusOf(first, runs), queued: woken.queued });
     const readiness = url.match(/\/runs\/(\d+)\/merge$/);
     if (readiness) {
@@ -629,4 +633,48 @@ test("a backticked span in a row's title shows as inline code, and its accessibl
   const button = rowButton(42);
   expect(button.getAttribute("aria-label")).toStartWith("PR #42, DEMO-9 Read a +++ TOML header, ");
   expect([...button.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+});
+
+const entry = (position: number, number: number, title: string, rest: Partial<MergeQueueEntry> = {}): MergeQueueEntry => ({
+  position, state: "QUEUED", enqueued_ms: NOW - 10 * MINUTE, estimated_s: position * 600, jump: false, solo: false,
+  pr: { number, title, author: "wevial", url: `https://github.com/example/relos/pull/${number}`, head_oid: null },
+  group_sha: null, building_ms: null, run: null, checks: { done: 0, total: 0, failed: 0, runs: [] }, ...rest,
+});
+const vite = entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5", {
+  state: "AWAITING_CHECKS", group_sha: "3f9c2ab0d1e2f3a4", building_ms: NOW - 3 * MINUTE, checks: { done: 5, total: 13, failed: 0, runs: [] },
+});
+const queueOf = (first: MergeQueueEntry): MergeQueue => ({
+  ...servedQueue, configured: true, now: NOW, left: [],
+  entries: [first, entry(2, 2549, "[MCP] Add the unit lookup read tool"), entry(3, 2550, "[PDF] Keep the page position"), entry(4, 2552, "[Auth] Stop the sign-in loop")],
+});
+const nextLines = () => [...section().querySelectorAll<HTMLElement>("[data-next-in-queue]")];
+
+test("with nothing waiting on you, a project's lane shows its queue's position 1 alone, linking to its Merge queue page", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
+  const relos = lane("relos");
+  expect(relos.querySelector("[data-lane-head]")!.textContent).toContain("relos");
+  const [line] = nextLines() as [HTMLElement];
+  expect(nextLines()).toHaveLength(1);
+  expect(rows()).toEqual([]);
+  const text = line.textContent!;
+  for (const words of ["Next in queue", "#2547", "[Dependency Update]: Update Vite to 8.3.5", "checks running", "5/13 done", "merges ~10m"]) expect(text).toContain(words);
+  expect(within(line).getByRole("link", { name: "#2547" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
+  expect(within(line).getByRole("link", { name: /Next in queue/ }).getAttribute("href")).toEndWith("#/merge-queue?project=relos");
+  expect(section().textContent).not.toMatch(/#2549|#2550|#2552/);
+  expect(section().textContent).not.toContain("No pull request waits on you.");
+});
+
+test("position 1 with no merge group reads queued, not checks running", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5")) });
+  const [line] = nextLines() as [HTMLElement];
+  expect(line.querySelector("[data-next-state]")!.textContent).toBe("queued");
+  expect(line.textContent).not.toContain("checks running");
+});
+
+test("a lane with a waiting row and a queue draws the row first and the next-in-queue line after it, and counts only the row", async () => {
+  await mount({ items: [readyPark], projects: ["relos", "writer"], queue: queueOf(vite) });
+  const items = [...lane("relos").querySelectorAll("li")];
+  expect(items.map((item) => (item.hasAttribute("data-pr-row") ? "row" : item.hasAttribute("data-next-in-queue") ? "next" : "other"))).toEqual(["row", "next"]);
+  expect(lane("relos").querySelector("[data-lane-head]")!.textContent).toContain("1 open");
+  expect(section().querySelector("header")!.textContent).toContain("Pull requests1");
 });
